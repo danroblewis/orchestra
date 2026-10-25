@@ -1,0 +1,114 @@
+"""Collectors: measurements that become stock levels and flow counts.
+
+The first collector reads Orchestra's own event log. Every ticket event is a flow observation:
+``ticket_created`` moves a ticket from outside into OPEN, and ``ticket_transition`` moves it from
+one state to another. Replaying the log gives:
+
+- ``orchestra_stock{project, stock}``: how many tickets are in each state (a stock's level),
+  written at every change;
+- ``orchestra_flow_total{project, flow}``: how many tickets have moved along each flow
+  (``OPEN>IN_PROGRESS``, ``outside>OPEN``), a cumulative counter whose differences are rates;
+- ``orchestra_events_total{project, type}``: every event type, counted the same way;
+- ``orchestra_stock_sampled{project, stock}``: the ticket store's own count, read directly.
+
+Integrated levels drift when an event is missing (tickets created before the log began, a lost
+line), so after a replay each stock's series is **anchored**: shifted so that its final level
+equals the count sampled from the ticket store. The size of each shift is reported, because it is
+a measure of how much the log misses.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from dataclasses import dataclass, field
+from datetime import datetime
+
+from .metrics import MetricsStore, Point
+
+STOCK = "orchestra_stock"
+FLOW = "orchestra_flow_total"
+EVENTS = "orchestra_events_total"
+SAMPLED = "orchestra_stock_sampled"
+OUTSIDE = "outside"
+
+
+def ts_of(ev: dict) -> float:
+    return datetime.fromisoformat(ev["ts"]).timestamp()
+
+
+@dataclass
+class TicketCollector:
+    project: str
+    state: dict[str, str] = field(default_factory=dict)        # ticket -> its state, as far as the log shows
+    levels: Counter = field(default_factory=Counter)
+    flows: Counter = field(default_factory=Counter)
+    events: Counter = field(default_factory=Counter)
+
+    def _move(self, ts: float, src: str, dst: str) -> list[Point]:
+        out = []
+        if src != OUTSIDE:
+            self.levels[src] -= 1
+            out.append(Point(STOCK, self.levels[src], ts, {"project": self.project, "stock": src}))
+        if dst != OUTSIDE:
+            self.levels[dst] += 1
+            out.append(Point(STOCK, self.levels[dst], ts, {"project": self.project, "stock": dst}))
+        flow = f"{src}>{dst}"
+        self.flows[flow] += 1
+        out.append(Point(FLOW, self.flows[flow], ts, {"project": self.project, "flow": flow}))
+        return out
+
+    def observe(self, ev: dict) -> list[Point]:
+        """The points one event produces (none for events that move nothing but its type count)."""
+        ts = ts_of(ev)
+        self.events[ev["type"]] += 1
+        out = [Point(EVENTS, self.events[ev["type"]], ts, {"project": self.project, "type": ev["type"]})]
+        if ev["type"] == "ticket_created":
+            self.state[ev["ticket"]] = "OPEN"
+            out += self._move(ts, OUTSIDE, "OPEN")
+        elif ev["type"] == "ticket_transition":
+            self.state[ev["ticket"]] = ev["to"]
+            out += self._move(ts, ev["from"], ev["to"])
+        return out
+
+
+def anchor(points: list[Point], sampled: dict[str, int]) -> tuple[list[Point], dict[str, int]]:
+    """Shift each stock's series so its last value equals the sampled count. Returns the shifted
+    points and each stock's shift (sampled minus integrated)."""
+    final: dict[str, float] = {}
+    for p in points:
+        if p.series == STOCK:
+            final[p.labels["stock"]] = p.value
+    shift = {s: int(sampled.get(s, 0) - v) for s, v in final.items()}
+    for s in sampled:
+        shift.setdefault(s, 0)
+    out = [Point(p.series, p.value + shift[p.labels["stock"]], p.ts, p.labels) if p.series == STOCK else p for p in points]
+    return out, shift
+
+
+@dataclass
+class BackfillReport:
+    events: int
+    points: int
+    first: float | None
+    last: float | None
+    shifts: dict[str, int]
+    flows: dict[str, int]
+
+
+def backfill(events: list[dict], *, project: str, store: MetricsStore, sampled: dict[str, int],
+             sampled_at: float, replace: bool = True) -> BackfillReport:
+    """Replay a whole event log into the metrics store."""
+    col = TicketCollector(project)
+    points: list[Point] = []
+    for ev in events:
+        if "ts" in ev and "type" in ev:
+            points += col.observe(ev)
+    points, shifts = anchor(points, sampled)
+    points += [Point(SAMPLED, n, sampled_at, {"project": project, "stock": s}) for s, n in sampled.items()]
+    if replace:
+        for name in (STOCK, FLOW, EVENTS, SAMPLED):
+            store.delete(name, {"project": project})
+    store.write(points)
+    stamps = [ts_of(e) for e in events if "ts" in e]
+    return BackfillReport(len(events), len(points), stamps[0] if stamps else None, stamps[-1] if stamps else None,
+                          shifts, dict(col.flows))

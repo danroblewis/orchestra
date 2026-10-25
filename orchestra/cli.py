@@ -317,6 +317,57 @@ def cmd_roles(args) -> int:
     return 0
 
 
+def cmd_metrics(args) -> int:
+    """Measured series: replay the event log into the metrics store, list series, show a stock or flow."""
+    from collections import Counter
+    from datetime import UTC, datetime
+
+    from . import collectors
+    from .metrics import for_project as metrics_for
+
+    project = load_project()
+    store = metrics_for(project)
+    if args.action == "backfill":
+        events = Events.for_project(project)
+        evs, _ = events.read(0, limit=10_000_000)
+        sampled = Counter(t.state.value for t in LocalStore(project).list_tickets())
+        rep = collectors.backfill(evs, project=project.key, store=store, sampled=dict(sampled),
+                                  sampled_at=time.time(), replace=not args.append)
+        when = lambda t: datetime.fromtimestamp(t, UTC).strftime("%Y-%m-%d %H:%M") if t else "-"  # noqa: E731
+        print(f"{rep.events} events ({when(rep.first)} → {when(rep.last)}) → {rep.points} points in {store.name}")
+        drift = {s: n for s, n in rep.shifts.items() if n}
+        print("anchored to the ticket store; integrated levels were off by: " + (", ".join(f"{s} {n:+d}" for s, n in sorted(drift.items())) or "nothing"))
+        print("flows: " + ", ".join(f"{f} {n}" for f, n in sorted(rep.flows.items(), key=lambda x: -x[1])))
+        return 0
+    if args.action == "series":
+        for name, labels in store.series():
+            print(name, " ".join(f"{k}={v}" for k, v in sorted(labels.items()) if k != "project"))
+        return 0
+    if args.action == "show":
+        kind, _, what = args.what.partition(":")
+        series, label = ({"stock": (collectors.STOCK, "stock"), "flow": (collectors.FLOW, "flow"),
+                          "event": (collectors.EVENTS, "type")}.get(kind) or (None, None))
+        if not series:
+            print("show stock:<STATE>, flow:<FROM>><TO> or event:<type>")
+            return 2
+        labels = {"project": project.key, label: what}
+        pts = store.raw(series, labels)
+        if not pts:
+            print("no data; run `orchestra metrics backfill` first")
+            return 1
+        step = args.step * 3600
+        start = pts[0][0] - pts[0][0] % step
+        sampled = store.range(series, labels, start, pts[-1][0] + step, step)
+        prev = None
+        for t, v in sampled:
+            stamp = datetime.fromtimestamp(t, UTC).strftime("%Y-%m-%d %H:%M")
+            extra = f"   +{v - prev:g} in the step" if kind != "stock" and prev is not None else ""
+            print(f"{stamp}  {v:g}{extra}")
+            prev = v
+        return 0
+    return 2
+
+
 def cmd_doctor(args) -> int:
     from .git import Git
 
@@ -404,6 +455,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("action", choices=["list", "show"])
     s.add_argument("name", nargs="?")
     s.set_defaults(fn=cmd_roles)
+
+    s = sub.add_parser("metrics", help="measured series: backfill from the event log, list, show")
+    s.add_argument("action", choices=["backfill", "series", "show"])
+    s.add_argument("what", nargs="?", default="", help="for show: stock:OPEN, flow:OPEN>IN_PROGRESS, event:gate_started")
+    s.add_argument("--step", type=float, default=24.0, help="for show: hours per step (default 24)")
+    s.add_argument("--append", action="store_true", help="for backfill: keep existing points instead of replacing them")
+    s.set_defaults(fn=cmd_metrics)
 
     s = sub.add_parser("doctor")
     s.add_argument("--fix", action="store_true")

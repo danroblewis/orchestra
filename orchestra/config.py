@@ -86,6 +86,7 @@ class Config:
     tunnel_name: str | None = None
     tunnel_hostname: str | None = None
     events_url: str | None = None      # [events] url: file (default), redis://, amqp://, kafka://
+    metrics_url: str | None = None     # [metrics] url: file (default) or http://host:port (VictoriaMetrics)
     raw: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -145,6 +146,7 @@ class Config:
             tunnel_name=tun.get("name"),
             tunnel_hostname=tun.get("hostname"),
             events_url=(raw.get("events", {}) or {}).get("url"),
+            metrics_url=(raw.get("metrics", {}) or {}).get("url"),
             raw=raw,
         )
 

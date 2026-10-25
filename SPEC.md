@@ -578,6 +578,28 @@ One conformance suite (`tests/bus/`) runs against every backend. Server
 backends need their client library (`orchestra[bus-redis]`,
 `[bus-rabbitmq]`, `[bus-kafka]`).
 
+### 6.6 Metrics and collectors
+
+Measured series live in a **metrics store** (`orchestra/metrics/`): a
+JSONL file in the state directory by default, or VictoriaMetrics
+(`[metrics] url = "http://host:port"`, or `ORCHESTRA_METRICS_URL`). Series
+are named `orchestra_*` and carry a `project` label. A stock's current
+value is a query; a range carries the last value forward at each step.
+
+**Collectors** (`orchestra/collectors.py`) turn the event log into series:
+
+| Series | What it is |
+|---|---|
+| `orchestra_stock{stock}` | Tickets in each state (a stock's level) |
+| `orchestra_flow_total{flow}` | Tickets that have moved along each flow, e.g. `OPEN>IN_PROGRESS` or `outside>OPEN` (a cumulative counter) |
+| `orchestra_events_total{type}` | Events of each type |
+| `orchestra_stock_sampled{stock}` | The ticket store's own count, read directly |
+
+Integrated levels are **anchored**: each stock's series is shifted so its
+last value equals the sampled count. The shift is reported, as a measure of
+what the log missed. `orchestra metrics backfill|series|show` replays the
+log, lists series, and prints a stock or flow over time.
+
 ---
 
 ## 7. The merge gate
