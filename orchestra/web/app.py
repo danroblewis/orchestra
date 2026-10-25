@@ -258,12 +258,8 @@ def create_app(project: Project) -> FastAPI:
         return explore.catalog()
 
     @app.get("/api/core/metrics/query")
-    def core_metrics_query(metric: str, match: str = "", hours: float = 24, step: float = 900, agg: str = "step") -> dict:
-        return explore.query(metric, match, hours, step, agg)
-
-    @app.get("/api/core/metrics/promql")
-    def core_metrics_promql(q: str, hours: float = 24, step: float = 900) -> dict:
-        return explore.promql(q, hours, step)
+    def core_metrics_query(q: str, hours: float = 24) -> dict:
+        return explore.query(q, hours)
 
     @app.get("/api/core/events")
     def core_events(hours: float = 24) -> dict:

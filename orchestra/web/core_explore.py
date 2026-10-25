@@ -14,10 +14,11 @@ import urllib.parse
 import urllib.request
 from collections import Counter, defaultdict
 from datetime import datetime
-from itertools import pairwise
 
-from ..metrics import step_sample
+from ..metrics import promql
 
+MAX_LINES = 30
+NICE_STEPS = [15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400]
 RESIDENT = {"supervisor": "supervisor", "coordinator": "coordinator", "pipeline-manager": "pipeline-manager"}
 CACHE_S = 20.0
 
@@ -27,6 +28,18 @@ def _ts(ev: dict) -> float | None:
         return datetime.fromisoformat(ev["ts"]).timestamp()
     except (KeyError, ValueError, TypeError):
         return None
+
+
+def auto_step(span_s: float) -> float:
+    """About 240 points across the range, on a round step."""
+    want = span_s / 240
+    return next((x for x in NICE_STEPS if x >= want), NICE_STEPS[-1])
+
+
+def _label(lab: dict, hide: set) -> str:
+    name = lab.get("__name__", "")
+    inner = ",".join(f'{k}="{v}"' for k, v in sorted(lab.items()) if k not in hide and k != "__name__")
+    return f"{name}{{{inner}}}" if inner else name
 
 
 def emitter(ev: dict) -> str:
@@ -97,68 +110,55 @@ class Explorer:
                         hourly[int((t - (now - 86400)) // 3600)] += 1
                         if t >= now - 3600:
                             d["last_hour"] += 1
-            rows = [{**d, "labels": {k: {"arity": len(v), "values": sorted(v)[:12]} for k, v in sorted(d["labels"].items())}}
+            rows = [{**d, "labels": {k: {"arity": len(v), "values": sorted(v)[:200]} for k, v in sorted(d["labels"].items())}}
                     for d in sorted(names.values(), key=lambda x: x["name"])]
             return {"ok": True, "backend": self.core.metrics.name, "project": self.core.project.key, "metrics": rows, "series": sum(r["series"] for r in rows),
                     "points": sum(r["points"] for r in rows),
                     "writes_per_hour_24h": [[now - 86400 + h * 3600, hourly.get(h, 0)] for h in range(24)]}
         return self._guard(go)
 
-    def query(self, metric: str, match: str, hours: float, step_s: float, agg: str) -> dict:
-        def go():
-            want = dict(kv.split("=", 1) for kv in [x.strip() for x in match.split(",")] if "=" in kv)
-            now = time.time()
-            start = now - hours * 3600 if hours > 0 else None
-            sel = [(n, lab, pts) for n, lab, pts in self._dump() if n == metric and all(lab.get(k) == v for k, v in want.items())]
-            if not sel:
-                return {"ok": True, "lines": [], "note": "no series match"}
-            all_t = [t for _, _, pts in sel for t, _ in pts]
-            t0 = start if start is not None else min(all_t)
-            t0 -= t0 % step_s
-            hide = {"project"} if len({lab.get("project") for _, lab, _ in sel}) == 1 else set()
-            lines = []
-            for _, lab, pts in sel:
-                stepped = step_sample(pts, t0, now, step_s)
-                if agg == "rate":           # a counter's increase per hour in each step
-                    stepped = [(t, max(0.0, v - pv) * 3600 / step_s) for (_, pv), (t, v) in pairwise(stepped)]
-                elif agg == "raw":
-                    stepped = [(t, v) for t, v in pts if t >= t0]
-                if agg == "rate" and not any(v for _, v in stepped):
-                    continue                # a counter that did not move in range says nothing here
-                key = ",".join(f"{k}={v}" for k, v in sorted(lab.items()) if k not in hide) or metric
-                lines.append({"label": key, "points": [[round(t), v] for t, v in stepped]})
-            if agg == "sum" and lines:
-                acc: dict[float, float] = defaultdict(float)
-                for ln in lines:
-                    for t, v in ln["points"]:
-                        acc[t] += v
-                lines = [{"label": f"sum of {len(sel)} series", "points": [[t, acc[t]] for t in sorted(acc)]}]
-            moving = len(lines)
-            lines = lines[:30]
-            return {"ok": True, "lines": lines, "matched": len(sel), "moving": moving, "shown": len(lines)}
-        return self._guard(go)
-
-    def promql(self, query: str, hours: float, step_s: float) -> dict:
+    def query(self, q: str, hours: float) -> dict:
+        """Run a PromQL range query over the last ``hours``, scoped to this project: natively on
+        VictoriaMetrics (with ``extra_label``), with ``metrics.promql``'s subset elsewhere."""
         def go():
             m = self.core.metrics
-            if m is None or m.name != "victoriametrics":
-                return {"ok": False, "error": "PromQL needs the VictoriaMetrics backend"}
-            now = time.time()
-            params = urllib.parse.urlencode({"query": query, "start": now - hours * 3600, "end": now, "step": f"{int(step_s)}s"})
-            try:
-                with urllib.request.urlopen(f"{m.base}/api/v1/query_range?{params}", timeout=8) as r:
-                    d = json.loads(r.read())
-            except urllib.error.HTTPError as e:      # VictoriaMetrics explains a bad query in the body
+            if m is None:
+                raise RuntimeError("the metrics store could not be opened")
+            end = time.time()
+            start = end - hours * 3600
+            step = auto_step(end - start)
+            if m.name == "victoriametrics":
+                result = self._vm(m, q, start, end, step)
+                if "error" in result:
+                    return {"ok": False, "error": result["error"]}
+            else:
                 try:
-                    return {"ok": False, "error": json.loads(e.read()).get("error", str(e))}
-                except ValueError:
+                    result = [(lab, pts) for lab, pts in promql.query_range(self._dump(), q, start, end, step)]
+                except promql.PromQLError as e:
                     return {"ok": False, "error": str(e)}
-            if d.get("status") != "success":
-                return {"ok": False, "error": d.get("error", "query failed")}
-            lines = [{"label": ",".join(f"{k}={v}" for k, v in sorted(res["metric"].items()) if k != "project") or query,
-                      "points": [[float(t), float(v)] for t, v in res["values"]]} for res in d["data"]["result"][:30]]
-            return {"ok": True, "lines": lines, "matched": len(d["data"]["result"])}
+            hide = {"project"}
+            lines = [{"label": _label(lab, hide) or q, "points": [[t, v] for t, v in pts]} for lab, pts in result]
+            lines.sort(key=lambda ln: -max((v for _, v in ln["points"]), default=0))
+            return {"ok": True, "lines": lines[:MAX_LINES], "matched": len(lines), "step": step,
+                    "engine": "victoriametrics" if m.name == "victoriametrics" else "orchestra (PromQL subset)"}
         return self._guard(go)
+
+    def _vm(self, m, q: str, start: float, end: float, step: float):
+        params = urllib.parse.urlencode({"query": q, "start": start, "end": end, "step": f"{int(step)}s",
+                                         "extra_label": f"project={self.core.project.key}"})
+        try:
+            with urllib.request.urlopen(f"{m.base}/api/v1/query_range?{params}", timeout=8) as r:
+                d = json.loads(r.read())
+        except urllib.error.HTTPError as e:      # VictoriaMetrics explains a bad query in the body
+            try:
+                return {"error": json.loads(e.read()).get("error", str(e))}
+            except ValueError:
+                return {"error": str(e)}
+        if d.get("status") != "success":
+            return {"error": d.get("error", "query failed")}
+        if d["data"]["resultType"] != "matrix":
+            return {"error": f"the query returned a {d['data']['resultType']}, not series"}
+        return [(res["metric"], [(float(t), float(v)) for t, v in res["values"]]) for res in d["data"]["result"]]
 
     # ---- events ----
     def _events(self):
