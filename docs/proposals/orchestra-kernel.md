@@ -211,6 +211,16 @@ What this buys:
 
 ## 4. Migration, in order: the loop keeps working throughout
 
+**Progress (2026-10-25, branch `sd-kernel`):** steps 1–4 are built and tested.
+
+| Step | Commit | What |
+|---|---|---|
+| 1 | `9d8e8cc` | `EventBus` with file, Redis Streams, RabbitMQ Streams and Kafka backends; 45/45 conformance tests across all four |
+| 2 | `e14ed25` | Metrics store (file, VictoriaMetrics); ticket collector with anchoring; `orchestra metrics` |
+| 3–4 | `99cef93` | `orchestra.sd`: model, model store, Orchestra's factory declared, Poisson fitter; `orchestra sd` |
+
+The engagement side of machines (requests, drivers, jobs, the dispatcher) is not built yet.
+
 1. **`EventBus`, with backends and the shared e2e suite** (`events-and-data-infrastructure.md` §6).
 2. **Collectors and the metrics store.**
    - Counts of tickets by state, counters per transition event, and probes.
