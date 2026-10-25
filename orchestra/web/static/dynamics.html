@@ -159,12 +159,14 @@ function draw() {
     // a flow is one arrow from its source to its destination (a cloud when either is outside);
     // in the causal graph used for loops, it is a node between them ("f:<id>")
     const col = mcolor(f.machine), v = "f:" + f.id, e = f.current || {};
-    const src = f.from ? "s:" + f.from : "c:" + f.id + ":in", dst = f.to ? "s:" + f.to : "c:" + f.id + ":out";
-    if (!f.from) nodes.push({ id: src, kind: "cloud", charge: -160 });
-    if (!f.to) nodes.push({ id: dst, kind: "cloud", charge: -160 });
+    // one cloud per stock and direction, named for the stock (flow ids change between discoveries;
+    // a stock's place outside does not): sources pulled to the top left, sinks to the bottom right
+    const src = f.from ? "s:" + f.from : "c:in:" + (f.to || f.id), dst = f.to ? "s:" + f.to : "c:out:" + (f.from || f.id);
+    if (!f.from && !nodes.some((n) => n.id === src)) nodes.push({ id: src, kind: "cloud", charge: -160, anchor: [0.05, 0.08] });
+    if (!f.to && !nodes.some((n) => n.id === dst)) nodes.push({ id: dst, kind: "cloud", charge: -160, anchor: [0.95, 0.92] });
     const fe = `${src}>${dst}:${f.id}`;
     edges.push({ id: fe, source: src, target: dst, color: col, width: 3.4, distance: 230, fid: f.id, flowPart: true, bend: 18,
-      label: [eqText(f, true), f.machine ? (byMachine[f.machine] || {}).name || f.machine : ""] });
+      label: [((t) => (t.length > 44 ? t.slice(0, 42) + "…" : t))(eqText(f, true)), f.machine ? (byMachine[f.machine] || {}).name || f.machine : ""] });
     FLOWEDGE[v] = fe;
     if (f.to) causal.push({ source: v, target: "s:" + f.to, sign: 1 });
     if (f.from) causal.push({ source: v, target: "s:" + f.from, sign: -1 });
@@ -173,7 +175,7 @@ function draw() {
       if (!isInput && hiddenStock(name)) continue;
       // a measured input the rate reads: a node outside the system, where simulations will set it
       if (isInput && !nodes.some((n) => n.id === node)) nodes.push({ id: node, kind: "box", input: name, label: name.replace(/_/g, " "), lines: [name.replace(/_/g, " ")],
-        w: Math.max(150, name.length * 6.4 + 24), h: 64, color: "#94a3b8", fill: "#0e1118", charge: -700, decorate: Live.decorateInput, sub: " " });
+        w: Math.max(150, name.length * 6.4 + 24), h: 64, color: "#94a3b8", fill: "#0e1118", charge: -700, decorate: Live.decorateInput, sub: " ", anchor: [0.04, 0.5] });
       if (sign !== 0) causal.push({ source: node, target: v, sign });
       // an influence: a dashed link to the middle of the flow it drives (not a flow's plain dependence on its own source)
       const plain = !isInput && name === f.from && (e.form === "proportional" || (e.spec && e.spec.form === "proportional"));
@@ -198,7 +200,7 @@ function draw() {
     return `<span class="lg prog" style="--c:${mcolor(id)}"><i></i>${esc(mc.name)} <span class="muted">${mc.kind === "agent" ? "AI agent" : "program"}</span></span>`; }).join("")
     + `<label class="lg" style="cursor:pointer"><input type="checkbox" ${window.SHOW_ALL ? "checked" : ""} onchange="window.SHOW_ALL=this.checked;draw()" style="margin:0"> flows with no events</label>`
     + (acc.size ? `<label class="lg" style="cursor:pointer" title="stocks that only fill, such as the event bus's length"><input type="checkbox" ${window.SHOW_ACC ? "checked" : ""} onchange="window.SHOW_ACC=this.checked;draw()" style="margin:0"> stocks that only fill (${acc.size})</label>` : "")
-    + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it; double-click to release) · scroll to zoom · hover or click a stock or a flow</span>`;
+    + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it, through rediscoveries; double-click to release) · tidy lays out the rest · reset starts over · scroll to zoom · hover or click a stock or a flow</span>`;
 }
 function loops(nodes, causal) {
   const name = (id) => id.startsWith("s:") ? stockName(id.slice(2)) : id.startsWith("i:") ? id.slice(2).replace(/_/g, " ") : (MODEL.flows.find((f) => "f:" + f.id === id) || {}).name || id;

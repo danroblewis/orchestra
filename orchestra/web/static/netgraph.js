@@ -8,9 +8,16 @@
 //           (``toEdge``), drawn to its middle: an influence on a flow;
 //   loops   elementary cycles of a directed graph, listed and clickable: clicking one highlights
 //           its nodes and edges and fades the rest;
-// plus drag (a dropped node stays pinned where it was put; double-click lets it float again), zoom
-// and pan, hover to isolate a neighbourhood, and positions that persist across redraws (and
-// reloads) so a live graph never reshuffles.
+// plus drag, zoom and pan, and hover to isolate a neighbourhood.
+//
+// Layout: a node keeps its place. Positions persist across redraws, reloads and new structures
+// (every node ever placed is remembered, so one that leaves and comes back returns where it was).
+// The forces run only to place nodes: all of them the first time; when the structure changes, only
+// the new ones (each starts by its neighbours) while every known node is held still; and all of
+// them again on "tidy" (around the ones the viewer placed) or "reset" (from scratch). Dragging
+// moves just that node, which then stays where it was dropped (double-click lets the forces place it
+// again). Weak gravity keeps nodes from drifting off; a node with an ``anchor`` ([fx, fy], fractions
+// of the view) is pulled toward that spot (sources top-left, sinks bottom-right).
 const NetGraph = (() => {
   const NS = "http://www.w3.org/2000/svg";
   const POS_KEY = (k) => `orchestra.netgraph.${k}`;
@@ -83,7 +90,7 @@ const NetGraph = (() => {
     function keepOutside(alpha) {
       const b = frameBox(); if (!b) return;
       for (const n of NODES) {
-        if (boundary.inside(n) || n.fx != null) continue;
+        if (boundary.inside(n) || n.fx != null) continue;          // held or placed by the viewer: left where it is
         const r = (size(n).r || 14) + 6;
         if (n.x > b.x0 - r && n.x < b.x1 + r && n.y > b.y0 - r && n.y < b.y1 + r) {
           const d = [[n.x - (b.x0 - r), -1, 0], [(b.x1 + r) - n.x, 1, 0], [n.y - (b.y0 - r), 0, -1], [(b.y1 + r) - n.y, 0, 1]].sort((a, c) => a[0] - c[0])[0];
@@ -101,6 +108,8 @@ const NetGraph = (() => {
       if (!NODES.length || NODES.some((n) => n.x === undefined)) return;
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const n of NODES) { const s = size(n), hw = (s.r || s.w / 2) + 40, hh = (s.r || s.h / 2) + 40; x0 = Math.min(x0, n.x - hw); x1 = Math.max(x1, n.x + hw); y0 = Math.min(y0, n.y - hh); y1 = Math.max(y1, n.y + hh); }
+      const fb = frameBox();
+      if (fb) { x0 = Math.min(x0, fb.x0 - 16); x1 = Math.max(x1, fb.x1 + 16); y0 = Math.min(y0, fb.y0 - 16); y1 = Math.max(y1, fb.y1 + 16); }
       const w = W(), k = Math.min(w / (x1 - x0), H / (y1 - y0), 1.4);
       const t = d3.zoomIdentity.translate(w / 2 - k * (x0 + x1) / 2, H / 2 - k * (y0 + y1) / 2).scale(k);
       (animate ? svg.transition().duration(400) : svg).call(zoom.transform, t);
@@ -109,6 +118,9 @@ const NetGraph = (() => {
     fitBtn.className = "ctl ng-fit"; fitBtn.textContent = "fit"; fitBtn.title = "fit the whole graph in view";
     fitBtn.onclick = () => { userZoomed = false; fit(); };
     container.style.position = "relative"; container.appendChild(fitBtn);
+    const ctl = (text, title, right, fn) => { const b = document.createElement("button"); b.className = "ctl ng-fit"; b.textContent = text; b.title = title; b.style.right = right + "px"; b.onclick = fn; container.appendChild(b); };
+    ctl("tidy", "lay the graph out again around the nodes you placed", 52, () => tidy(false));
+    ctl("reset", "forget every position, including the ones you placed, and lay it out from scratch", 104, () => tidy(true));
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(POS_KEY(key)) || "{}"); } catch (e) {}
     const markers = new Set();
@@ -123,9 +135,15 @@ const NetGraph = (() => {
     const moveTip = (ev) => { const t = tipEl(), r = t.getBoundingClientRect(); t.style.left = Math.min(innerWidth - r.width - 8, ev.clientX + 14) + "px"; t.style.top = Math.min(innerHeight - r.height - 8, ev.clientY + 14) + "px"; };
     const hideTip = () => { tipEl().style.display = "none"; };
 
+    // remember every node's place, including nodes not drawn now (the most recent 500)
     function save() {
-      const pos = Object.fromEntries(NODES.map((n) => [n.id, [Math.round(n.x), Math.round(n.y), n.fx != null ? 1 : 0]]));
-      try { localStorage.setItem(POS_KEY(key), JSON.stringify(pos)); } catch (e) {}
+      for (const n of NODES) {
+        if (n.x === undefined || !isFinite(n.x)) continue;
+        delete saved[n.id]; saved[n.id] = [Math.round(n.x), Math.round(n.y), n.pin ? 1 : 0];
+      }
+      const ids = Object.keys(saved);
+      for (const id of ids.slice(0, Math.max(0, ids.length - 500))) delete saved[id];
+      try { localStorage.setItem(POS_KEY(key), JSON.stringify(saved)); } catch (e) {}
     }
     function path(e) {
       if (e.toEdge) return linkPath(e);
@@ -177,13 +195,14 @@ const NetGraph = (() => {
     function render(nodes, edges) {
       const newSig = JSON.stringify([nodes.map((n) => n.id + n.kind), edges.map((e) => e.id)]);
       const old = new Map(NODES.map((n) => [n.id, n]));
-      // a node keeps its place across redraws; one the viewer dropped stays pinned there
+      // a node keeps its place across redraws and structures; one the viewer dropped is marked so
       NODES = nodes.map((n) => {
         const o = old.get(n.id), sv = saved[n.id];
-        const p = o ? [o.x, o.y] : sv, pin = o ? o.fx != null : !!(sv && sv[2]);
-        return { ...n, x: p ? p[0] : undefined, y: p ? p[1] : undefined, fx: pin ? p[0] : null, fy: pin ? p[1] : null };
+        const p = o && o.x !== undefined ? [o.x, o.y] : sv, pin = o ? !!o.pin : !!(sv && sv[2]);
+        return { ...n, x: p ? p[0] : undefined, y: p ? p[1] : undefined, pin, fx: null, fy: null, _new: !p };
       });
       const byId = new Map(NODES.map((n) => [n.id, n]));
+      placeNew(edges, byId);
       EDGES = edges.filter((e) => !e.toEdge && byId.has(e.source) && byId.has(e.target)).map((e) => ({ ...e, source: byId.get(e.source), target: byId.get(e.target) }));
       // links that end on another edge (``toEdge``: its id), drawn to that edge's middle; for
       // hovering they touch both of its ends
@@ -214,22 +233,57 @@ const NetGraph = (() => {
       nodeSel.each(function (n) { drawNode(d3.select(this), n); });
       nodeSel.on("mouseenter", (ev, n) => { isolate(n.id); showTip(tip && tip(n, "node"), ev); }).on("mousemove", moveTip)
         .on("mouseleave", () => { isolate(null); hideTip(); }).on("click", (ev, n) => { hideTip(); onClick && onClick(n, "node"); })
-        .call(d3.drag().on("start", (ev, d) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
-          .on("drag", (ev, d) => { d.fx = ev.x; d.fy = ev.y; }).on("end", (ev, d) => { if (!ev.active) sim.alphaTarget(0); save(); }))      // stays where it was dropped
-        .on("dblclick", (ev, d) => { ev.stopPropagation(); d.fx = d.fy = null; sim.alpha(0.3).restart(); save(); });   // let it float again
-      if (sim) sim.stop();
+        // dragging moves this node alone (nothing else is pushed around), and it stays where it is dropped
+        .call(d3.drag().on("start", () => { if (sim) sim.stop(); })
+          .on("drag", (ev, d) => { d.x = ev.x; d.y = ev.y; tick(); }).on("end", (ev, d) => { d.pin = true; save(); }))
+        .on("dblclick", (ev, d) => { ev.stopPropagation(); d.pin = false; settle(new Set([d.id]), 0.3, false); });   // let the forces place it again
+      // parallel edges (several flows between the same two nodes) spread apart
+      const par = new Map();
+      for (const e of EDGES) { const k = e.source.id + ">" + e.target.id; par.set(k, [...(par.get(k) || []), e]); }
+      for (const group of par.values()) group.forEach((e, k) => { e.bend = (e.bend ?? 22) + (k - (group.length - 1) / 2) * 44; });
+      const fresh = NODES.filter((n) => n._new);
+      if (fresh.length === NODES.length) settle(new Set(NODES.map((n) => n.id)), 1, true);
+      else if (fresh.length) settle(new Set(fresh.map((n) => n.id)), 0.5, true);
+      else { if (sim) sim.stop(); tick(); }                       // nothing new: nothing moves
+      if (pinned) highlight(pinned.nodes, pinned.edges);
+    }
+    // a new node starts by the nodes it is linked to (or at its anchor, or the middle)
+    function placeNew(edges, byId) {
       const w = W();
+      for (const n of NODES.filter((x) => x._new)) {
+        const nb = edges.flatMap((e) => (e.source === n.id ? [e.target] : e.target === n.id ? [e.source] : []))
+          .map((id) => byId.get(id)).filter((m) => m && !m._new);
+        const [x, y] = nb.length ? [nb.reduce((a, m) => a + m.x, 0) / nb.length, nb.reduce((a, m) => a + m.y, 0) / nb.length]
+          : n.anchor ? [n.anchor[0] * w, n.anchor[1] * H] : [w / 2, H / 2];
+        n.x = x + (Math.random() - 0.5) * 80; n.y = y + (Math.random() - 0.5) * 80;
+      }
+    }
+    // run the forces on ``movable`` nodes only; every other node, and every node the viewer placed,
+    // is held where it is
+    function settle(movable, alpha, refit) {
+      if (sim) sim.stop();
+      for (const n of NODES) { const hold = n.pin || !movable.has(n.id); n.fx = hold ? n.x : null; n.fy = hold ? n.y : null; }
+      const w = W(), ax = (n) => (n.anchor ? n.anchor[0] * w : w / 2), ay = (n) => (n.anchor ? n.anchor[1] * H : H / 2);
       sim = d3.forceSimulation(NODES)
         .force("link", d3.forceLink(EDGES).id((d) => d.id).distance((e) => e.distance || 110).strength((e) => e.strength ?? 0.6))
         .force("charge", d3.forceManyBody().strength((n) => n.charge ?? -480))
-        .force("center", d3.forceCenter(w / 2, H / 2))
+        .force("x", d3.forceX(ax).strength((n) => (n.anchor ? 0.15 : 0.04)))     // weak gravity; anchored nodes pulled to their spot
+        .force("y", d3.forceY(ay).strength((n) => (n.anchor ? 0.15 : 0.04)))
         .force("collide", d3.forceCollide((n) => { const s = size(n); return (s.r || Math.max(s.w, s.h) / 2) + 24; }))
-        .force("boundary", boundary ? keepOutside : null);
-      if (!structural && NODES.every((n) => n.x !== undefined)) sim.alpha(0.02);   // live update: barely move
-      else if (NODES.every((n) => n.x !== undefined)) sim.alpha(0.15);
-      sim.on("tick", tick).on("end", () => { save(); if (structural && !userZoomed) fit(); });
+        .force("boundary", boundary ? keepOutside : null)
+        .alpha(alpha);
+      sim.on("tick", tick).on("end", () => { for (const n of NODES) { n.fx = n.fy = null; n._new = false; } save(); if (refit && !userZoomed) fit(); });
       tick();
-      if (pinned) highlight(pinned.nodes, pinned.edges);
+    }
+    // lay it out again: around the viewer's placements, or (``reset``) from nothing
+    function tidy(reset) {
+      if (!NODES.length) return;
+      if (reset) {
+        for (const n of NODES) { n.pin = false; n._new = true; delete saved[n.id]; }
+        placeNew(ALLEDGES.filter((e) => !e.toEdge).map((e) => ({ source: e.source.id, target: e.target.id })), new Map(NODES.map((n) => [n.id, n])));
+      }
+      userZoomed = false;
+      settle(new Set(NODES.map((n) => n.id)), 1, true);
     }
     function tick() {
       const b = frameBox();
@@ -288,7 +342,7 @@ const NetGraph = (() => {
         if (r && r > 0.01) g.append("path").attr("class", "ng-flowdash").attr("d", g.select(".ng-line").attr("d")).style("animation-duration", `${Math.max(0.25, Math.min(6, 8 / Math.sqrt(r))).toFixed(2)}s`);
       });
     }
-    return { render, highlight, refreshNodes, setRates, fit, edgesBetween: (ids) => EDGES.filter((e) => ids.includes(e.source.id) && ids.includes(e.target.id)) };
+    return { render, highlight, refreshNodes, setRates, fit, tidy, edgesBetween: (ids) => EDGES.filter((e) => ids.includes(e.source.id) && ids.includes(e.target.id)) };
   }
 
   // a clickable list of loops under a graph: clicking one highlights it; clicking it again clears
