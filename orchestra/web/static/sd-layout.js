@@ -20,7 +20,7 @@
     "elk.layered.spacing.nodeNodeBetweenLayers": "120",
     "elk.spacing.componentComponent": "70",
     "elk.separateConnectedComponents": "true",
-    "elk.aspectRatio": "1.6",
+    "elk.aspectRatio": "2.1",          // the diagram's view is about twice as wide as tall
     "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
     "elk.layered.crossingMinimization.semiInteractive": "false",
   };
@@ -61,7 +61,7 @@
     // the clouds by the renderer's own rule: just outside the frame, beside their stocks
     if (frameOf && tetherPlaces) {
       const placed = nodes.map((n) => (at[n.id] ? { ...n, x: at[n.id][0], y: at[n.id][1] } : { ...n, x: undefined, y: undefined }));
-      Object.assign(at, tetherPlaces(placed, frameOf(placed, inside)));
+      Object.assign(at, tetherPlaces(placed, frameOf(placed, inside), edges));
     }
     return at;
   }
@@ -119,7 +119,44 @@
     for (const [id, p] of P) out[id] = [p.x, p.y];
     if (frameOf && tetherPlaces) {
       const placed = nodes.map((n) => (P.has(n.id) ? { ...n, x: out[n.id][0], y: out[n.id][1] } : { ...n, x: undefined, y: undefined }));
-      Object.assign(out, tetherPlaces(placed, frameOf(placed, inside)));
+      Object.assign(out, tetherPlaces(placed, frameOf(placed, inside), edges));
+    }
+    return out;
+  }
+
+  // The groups of a graph: what is connected inside the system (by flows between its nodes, and
+  // by influences). [[node id]], biggest first.
+  function groupsOf(nodes, edges, inside = (n) => n.kind !== "cloud") {
+    const ids = nodes.filter(inside).map((n) => n.id), parent = new Map(ids.map((id) => [id, id]));
+    const find = (x) => { while (parent.get(x) !== x) x = parent.get(x); return x; };
+    const join = (a, b) => { if (parent.has(a) && parent.has(b)) parent.set(find(a), find(b)); };
+    const flowById = new Map(edges.filter((e) => !e.toEdge).map((e) => [e.id, e]));
+    for (const e of flowById.values()) join(e.source, e.target);
+    for (const e of edges.filter((x) => x.toEdge)) { const f = flowById.get(e.toEdge); if (f) { join(e.source, f.source); join(e.source, f.target); } }
+    return [...ids.reduce((m, id) => m.set(find(id), [...(m.get(find(id)) || []), id]), new Map()).values()].sort((a, b) => b.length - a.length);
+  }
+
+  // Pack the groups side by side in rows to fill a view of ``aspect`` (width / height), each keeping
+  // its own internal layout, so no group sits among another's lines and the drawing fits a wide view.
+  function pack(nodes, edges, at, { size, inside = (n) => n.kind !== "cloud", aspect = 2.1, gap = 90, frameOf, tetherPlaces }) {
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    const boxes = groupsOf(nodes, edges, inside).map((g) => {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const id of g) { const z = size(byId.get(id)), hw = z.r || z.w / 2, hh = z.r || z.h / 2, [x, y] = at[id]; x0 = Math.min(x0, x - hw); x1 = Math.max(x1, x + hw); y0 = Math.min(y0, y - hh); y1 = Math.max(y1, y + hh); }
+      return { g, x0, y0, w: x1 - x0, h: y1 - y0 };
+    }).sort((a, b) => b.h - a.h);
+    const area = boxes.reduce((a, b) => a + (b.w + gap) * (b.h + gap), 0);
+    const width = Math.max(Math.sqrt(area * aspect), ...boxes.map((b) => b.w));
+    const out = { ...at };
+    let x = 0, y = 0, rowH = 0;
+    for (const b of boxes) {
+      if (x > 0 && x + b.w > width) { x = 0; y += rowH + gap; rowH = 0; }
+      for (const id of b.g) out[id] = [at[id][0] - b.x0 + x, at[id][1] - b.y0 + y];
+      x += b.w + gap; rowH = Math.max(rowH, b.h);
+    }
+    if (frameOf && tetherPlaces) {
+      const placed = nodes.map((n) => (inside(n) ? { ...n, x: out[n.id][0], y: out[n.id][1] } : { ...n, x: undefined, y: undefined }));
+      Object.assign(out, tetherPlaces(placed, frameOf(placed, inside), edges));
     }
     return out;
   }
@@ -129,30 +166,42 @@
   // when it lowers the cost, which counts most what reads worst (a line hidden behind a box,
   // flows crossing, nodes overlapping), then any crossing, then length and spread. ``score`` is
   // LayoutScore.score. Clouds are placed by the cloud rule after every change.
-  const COST = (s) => 40 * s.through.length + 25 * s.crossings + 8 * s.allCrossings + 300 * s.overlaps.length
+  // any two lines that cross (a flow, a dashed influence, a cloud's stub) cost as much as a line
+  // behind a box: a crossing is allowed only when every way around it costs more in length and spread
+  const COST = (s) => 40 * s.through.length + 30 * s.crossings + 30 * s.allCrossings + 5000 * s.overlaps.length   // overlapping boxes: never worth it
     + 40 * (s.labelsOnNodes ? s.labelsOnNodes.length : 0) + 25 * (s.labelsOnLabels || 0)
-    + 0.02 * s.nearest.max + 0.02 * s.influenceLength.median + 2 * (s.emptiness || 0);
+    + 0.02 * s.nearest.max + 0.02 * s.influenceLength.median + 2 * (s.emptiness || 0)
+    + 150 * Math.max(0, 1 - (s.scale ?? 1));   // shrunk to fit the view: smaller words, so worth about five crossings at half size
   // ``labels(placed)``, when given, places the edge labels ({edge id: [x, y]}) so words covered by
   // boxes or other words count too (``labelSize`` sizes them)
-  function untangle(nodes, edges, at, { size, score, inside = (n) => n.kind !== "cloud", frameOf, tetherPlaces, labels = null, labelSize = null, passes = 4, steps = [60, 120] }) {
+  function untangle(nodes, edges, at, { size, score, inside = (n) => n.kind !== "cloud", frameOf, tetherPlaces, labels = null, labelSize = null, passes = 4, steps = [60, 120], groupSteps = [120, 240, 400], view = [1300, 600] }) {
     const ids = nodes.filter((n) => inside(n) && at[n.id]).map((n) => n.id), byId = new Map(nodes.map((n) => [n.id, n]));
     let cur = { ...at };
     const evaluate = (pos) => {
       const placed = nodes.map((n) => (inside(n) ? { ...n, x: pos[n.id][0], y: pos[n.id][1] } : { ...n, x: undefined, y: undefined }));
-      const frame = frameOf(placed, inside), clouds = tetherPlaces(placed, frame);
+      const frame = frameOf(placed, inside), clouds = tetherPlaces(placed, frame, edges);
       for (const n of placed) if (clouds[n.id]) [n.x, n.y] = clouds[n.id];
-      return { cost: COST(score(placed, edges, { size, frame, inside, labels: labels ? labels(placed) : null, labelSize })), clouds };
+      const sc = score(placed, edges, { size, frame, inside, labels: labels ? labels(placed) : null, labelSize });
+      // how big the drawing is when fitted to the view (1: full size; less: shrunk)
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const n of placed) { const z = size(n), hw = (z.r || z.w / 2) + 40, hh = (z.r || z.h / 2) + 40; x0 = Math.min(x0, n.x - hw); x1 = Math.max(x1, n.x + hw); y0 = Math.min(y0, n.y - hh); y1 = Math.max(y1, n.y + hh); }
+      sc.scale = Math.min(1, view[0] / (x1 - x0), view[1] / (y1 - y0));
+      return { cost: COST(sc), clouds };
     };
     let best = evaluate(cur);
     // only nodes in a problem are moved: the ends of a line through a box or crossing another, a box
     // under a label and the ends of the label's line (``tangled`` from the score)
     const tangledNow = (pos) => {
       const placed = nodes.map((n) => (inside(n) ? { ...n, x: pos[n.id][0], y: pos[n.id][1] } : { ...n, x: undefined, y: undefined }));
-      const frame = frameOf(placed, inside), clouds = tetherPlaces(placed, frame);
+      const frame = frameOf(placed, inside), clouds = tetherPlaces(placed, frame, edges);
       for (const n of placed) if (clouds[n.id]) [n.x, n.y] = clouds[n.id];
       return new Set(score(placed, edges, { size, frame, inside, labels: labels ? labels(placed) : null, labelSize }).tangled || ids);
     };
     const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+    // groups move as a whole too, so a group can step out of another's way instead of sitting among its lines
+    const groups = groupsOf(nodes, edges, inside);
+    const shift = (pos, members, dx, dy) => { const next = { ...pos }; for (const id of members) next[id] = [pos[id][0] + dx, pos[id][1] + dy]; return next; };
+    const centre = (pos, members) => [members.reduce((a, id) => a + pos[id][0], 0) / members.length, members.reduce((a, id) => a + pos[id][1], 0) / members.length];
     for (let pass = 0; pass < passes; pass++) {
       let improved = false;
       const busy = tangledNow(cur), movable = ids.filter((id) => busy.has(id));
@@ -162,6 +211,48 @@
           const next = { ...cur, [id]: [cur[id][0] + dx * step, cur[id][1] + dy * step] }, r = evaluate(next);
           if (r.cost < best.cost - 1e-6) { cur = next; best = r; improved = true; }
         }
+      }
+      for (const g of groups) {                                  // a whole group, by bigger steps
+        if (!g.some((id) => busy.has(id))) continue;
+        for (const step of groupSteps) for (const [dx, dy] of dirs) {
+          const next = shift(cur, g, dx * step, dy * step), r = evaluate(next);
+          if (r.cost < best.cost - 1e-6) { cur = next; best = r; improved = true; }
+        }
+      }
+      // a jump for an auxiliary: next to the middle of each flow it influences, all round it
+      const mid = (pos, f) => { const a = pos[f.source] || null, b = pos[f.target] || null; return a && b ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] : a || b; };
+      const flows = new Map(edges.filter((e) => !e.toEdge).map((e) => [e.id, e]));
+      for (const id of ids.filter((x) => busy.has(x) && !byId.get(x).sid)) {
+        for (const inf of edges.filter((e) => e.toEdge && e.source === id)) {
+          const f = flows.get(inf.toEdge), m = f && mid(cur, f); if (!m) continue;
+          for (const [dx, dy] of dirs) for (const r of [110, 170]) {
+            const next = { ...cur, [id]: [m[0] + dx * r * 1.4, m[1] + dy * r * 0.8] }, res = evaluate(next);
+            if (res.cost < best.cost - 1e-6) { cur = next; best = res; improved = true; }
+          }
+        }
+      }
+      // a jump: a group in a problem tried just beside each other group (left, right, above, below
+      // its box), so it can get out from between another group's lines
+      const half = (id) => { const z = size(byId.get(id)); return z.r ? [z.r, z.r] : [z.w / 2, z.h / 2]; };
+      const bbox = (pos, members) => members.reduce((b, id) => { const [hw, hh] = half(id), [x, y] = pos[id];
+        return [Math.min(b[0], x - hw), Math.min(b[1], y - hh), Math.max(b[2], x + hw), Math.max(b[3], y + hh)]; }, [Infinity, Infinity, -Infinity, -Infinity]);
+      for (const g of groups) {
+        if (!g.some((id) => busy.has(id))) continue;
+        for (const other of groups) {
+          if (other === g) continue;
+          const [x0, y0, x1, y1] = bbox(cur, other), [gx0, gy0, gx1, gy1] = bbox(cur, g), gw = gx1 - gx0, gh = gy1 - gy0, cx = (gx0 + gx1) / 2, cy = (gy0 + gy1) / 2;
+          for (const [tx, ty] of [[x0 - 60 - gw / 2, (y0 + y1) / 2], [x1 + 60 + gw / 2, (y0 + y1) / 2], [(x0 + x1) / 2, y0 - 60 - gh / 2], [(x0 + x1) / 2, y1 + 60 + gh / 2]]) {
+            const next = shift(cur, g, tx - cx, ty - cy), r = evaluate(next);
+            if (r.cost < best.cost - 1e-6) { cur = next; best = r; improved = true; }
+          }
+        }
+      }
+      for (let i = 0; i < groups.length; i++) for (let j = i + 1; j < groups.length; j++) {   // two groups trade places
+        const a = groups[i], b = groups[j];
+        if (!a.concat(b).some((id) => busy.has(id))) continue;
+        const [ax, ay] = centre(cur, a), [bx, by] = centre(cur, b);
+        const next = shift(shift(cur, a, bx - ax, by - ay), b, ax - bx, ay - by), r = evaluate(next);
+        if (r.cost < best.cost - 1e-6) { cur = next; best = r; improved = true; }
       }
       for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
         if (!busy.has(ids[i]) && !busy.has(ids[j])) continue;
@@ -175,5 +266,5 @@
     return { ...cur, ...best.clouds };
   }
 
-  return { layout, refine, untangle, OPTIONS, COST };
+  return { layout, pack, refine, untangle, groupsOf, OPTIONS, COST };
 });

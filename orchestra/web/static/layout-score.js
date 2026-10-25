@@ -62,12 +62,13 @@
     }
     // any two lines (flows and influences) that cross, not at a shared end or on a flow an influence ends on
     out.allCrossings = 0;
+    out.crossPairs = [];
     const tangled = new Set();                    // nodes at the ends of lines that cross
     const all = [...flows.map((f) => ({ f, ends: [f.a, f.b] })), ...links.map((l) => ({ f: l, ends: [l.a, flowById.get(l.e.toEdge).a, flowById.get(l.e.toEdge).b], on: l.e.toEdge }))];
     for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
       const u = all[i], v = all[j];
       if (u.ends.some((n) => v.ends.includes(n)) || u.on === v.f.e.id || v.on === u.f.e.id) continue;
-      if (cross(u.f.p, u.f.q, v.f.p, v.f.q)) { out.allCrossings++; for (const n of [...u.ends, ...v.ends]) tangled.add(n.id); }
+      if (cross(u.f.p, u.f.q, v.f.p, v.f.q)) { out.allCrossings++; for (const n of [...u.ends, ...v.ends]) tangled.add(n.id); if (out.crossPairs.length < 20) out.crossPairs.push([u.f.e.id, v.f.e.id]); }
     }
     // flows and influences drawn through a node that is not one of their ends
     out.through = [];

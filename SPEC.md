@@ -338,18 +338,21 @@ re-reads the metrics and may save a version, as the host does every 5 minutes).
 
 Both graphs are drawn by one renderer (`static/netgraph.js`). The Dynamics graph is laid out by
 ELK's layered algorithm (`static/sd-layout.js`: the system as a box of its own, in layers along
-its flows), refined by springs so nothing is left far from what it is connected to, busy stocks
-keep room for their flows and a labelled flow is long enough for its label, then untangled by a
-local search in a worker (`static/layout-worker.js`) for the fewest lines behind boxes or crossing
-and no covered labels; nodes glide to each stage. Edge labels sit where they cover no box and no
+its flows), its unconnected groups packed side by side to fill the view's shape (no group sits among
+another's lines), refined by springs so nothing is left far from what it is connected to, busy
+stocks keep room for their flows and a labelled flow is long enough for its label, then untangled
+by a local search in a worker (`static/layout-worker.js`: moves, jumps and swaps of nodes and
+groups) so that no two lines cross (flows, dashed influences and cloud stubs alike) and none runs
+behind a box unless avoiding it would shrink the drawing below readable size; nodes glide to each stage. Edge labels sit where they cover no box and no
 other label (`placeLabels`); the Machines page's event map uses d3's forces, its lines in
 their machine's colour, toned down (`static/edge-color.js`: solid, it publishes; dashed, it
 listens; near-grey, not seen in 24 hours; full colour on hover). A layout keeps its shape: only
 new nodes are placed (the known ones held still), every position is remembered per viewer,
 dragging moves one node, and "tidy" or "reset" lay it out again on purpose. The layout is measured
 (`static/layout-score.js`) by `tests/layout` on saved models (`tests/fixtures/dynamics`). On the Dynamics page each stock has at most one source cloud and one sink cloud. A cloud is
-placed by rule: just outside the frame, on the side nearest its stock, level with it, following
-it when it moves, never pinned elsewhere (a cloud far from the boundary means nothing). A stock with flows across the boundary is drawn toward the
+placed by rule: just outside the frame, level with its stock, on the side whose stub (and the
+influences into it) crosses fewest lines and boxes, nearest first, a crossing worth at most 300 px
+more stub; it follows its stock when it moves, never pinned elsewhere (a cloud far from the boundary means nothing). A stock with flows across the boundary is drawn toward the
 nearest side, and those flows are drawn thinner and dimmer, so a boundary crossing is a short,
 quiet stub (still visible: it is what the model does not explain). A measured level that a rate reads but no counters balance is an **auxiliary**: inside the
 system, drawn round so it does not read as a stock. Loops are elementary cycles; clicking

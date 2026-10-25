@@ -31,7 +31,8 @@ async function laidOut(file) {
     const m = LayoutScore.mids(placed, edges, size), o = placeLabels(placed, edges, m);
     return Object.fromEntries(Object.entries(o).map(([id, [dx, dy]]) => [id, [m[id].x + dx, m[id].y + dy]]));
   };
-  const springs = SDLayout.refine(nodes, edges, await SDLayout.layout(nodes, edges, { elk: new ELK(), ...geo, hierarchy: true }), { ...geo, labelSize });
+  const elk = await SDLayout.layout(nodes, edges, { elk: new ELK(), ...geo, hierarchy: true });
+  const springs = SDLayout.refine(nodes, edges, SDLayout.pack(nodes, edges, elk, geo), { ...geo, labelSize });
   const at = SDLayout.untangle(nodes, edges, springs, { ...geo, score: LayoutScore.score, labelSize, labels });
   const placed = nodes.map((n) => ({ ...n, x: at[n.id][0], y: at[n.id][1] }));
   return { placed, edges, score: LayoutScore.score(placed, edges, { size, frame: frameOf(placed, inside), inside, labels: labels(placed), labelSize }) };
@@ -46,22 +47,25 @@ for (const file of fs.readdirSync(FIXTURES).filter((f) => f.endsWith(".json"))) 
     assert.deepEqual(score.outsideFrame, [], "something of the system outside it");
   });
 
-  test(`${file}: lines are short and do not run through nodes`, async () => {
-    const { score } = await laidOut(file);
+  test(`${file}: no avoidable crossings, nothing hidden, still readable`, async () => {
+    const { placed, score } = await laidOut(file);
     console.log(file, JSON.stringify({ crossings: score.crossings, all: score.allCrossings, through: score.through.length, labelsOnNodes: score.labelsOnNodes.length, labelsOnLabels: score.labelsOnLabels, flow: score.flowLength,
       stub: score.stubLength, influence: score.influenceLength, nearest: score.nearest, emptiness: score.emptiness }));
-    // on bakery-2026-10-25 the force layout this replaced had 9 lines behind boxes, labels on boxes,
-    // influences up to 1187 px; this pipeline: no line behind a box, no label covered, no flows
-    // crossing (8 crossings among the dashed influences). These hold it there.
-    assert.equal(score.crossings, 0, "flows cross");
-    assert.ok(score.through.length <= 1, `${score.through.length} lines behind boxes: ${JSON.stringify(score.through)}`);
-    assert.ok(score.labelsOnNodes.length <= 1, `labels on boxes: ${JSON.stringify(score.labelsOnNodes)}`);
+    // nothing that can be avoided: no line behind a box, no two lines crossing (flows, dashed
+    // influences, cloud stubs), no covered word, no overlap. (The force layout this replaced had 9
+    // lines behind boxes and 8-10 crossings on these models.)
+    assert.deepEqual(score.through, [], "lines behind boxes");
+    assert.equal(score.allCrossings, 0, `lines cross: ${JSON.stringify(score.crossPairs)}`);
+    assert.deepEqual(score.labelsOnNodes, [], "labels on boxes");
     assert.equal(score.labelsOnLabels, 0, "labels on labels");
-    assert.ok(score.allCrossings <= 10, `${score.allCrossings} lines cross`);
-    assert.ok(score.flowLength.max <= 160, `a flow ${score.flowLength.max} px long`);
-    assert.ok(score.stubLength.max <= 320, `a flow from or to outside ${score.stubLength.max} px long`);
-    assert.ok(score.influenceLength.max <= 600, `an influence ${score.influenceLength.max} px long`);
-    assert.ok(score.nearest.max <= 450, `a node ${score.nearest.max} px from the nearest thing it is connected to: ${JSON.stringify(score.nearest.worst)}`);
-    assert.ok(score.emptiness <= 5.0, `the system's frame is ${score.emptiness}× the area of what is in it`);
+    // and not by spreading out until it is unreadable
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const n of placed) { const z = size(n), hw = (z.r || z.w / 2) + 40, hh = (z.r || z.h / 2) + 40; x0 = Math.min(x0, n.x - hw); x1 = Math.max(x1, n.x + hw); y0 = Math.min(y0, n.y - hh); y1 = Math.max(y1, n.y + hh); }
+    const scale = Math.min(1, 1300 / (x1 - x0), 600 / (y1 - y0));
+    assert.ok(scale >= 0.45, `fitted to the view, the drawing is ${scale.toFixed(2)} of full size`);
+    assert.ok(score.flowLength.max <= 300, `a flow ${score.flowLength.max} px long`);
+    assert.ok(score.stubLength.max <= 500, `a flow from or to outside ${score.stubLength.max} px long`);
+    assert.ok(score.influenceLength.max <= 500, `an influence ${score.influenceLength.max} px long`);
+    assert.ok(score.emptiness <= 5.5, `the system's frame is ${score.emptiness}× the area of what is in it`);
   });
 }

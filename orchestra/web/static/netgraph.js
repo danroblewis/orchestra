@@ -56,20 +56,61 @@ const NetGraph = (() => {
     for (const n of ins) { const s = size(n), hw = s.r || s.w / 2, hh = s.r || s.h / 2; x0 = Math.min(x0, n.x - hw); x1 = Math.max(x1, n.x + hw); y0 = Math.min(y0, n.y - hh); y1 = Math.max(y1, n.y + hh); }
     return { x0: x0 - PAD, y0: y0 - PAD - 12, x1: x1 + PAD, y1: y1 + PAD };
   }
-  // where each tethered node goes: just outside the frame, on the side nearest the node it belongs
-  // to, level with it (several on one side of one node sit side by side). {id: [x, y]}
-  function tetherPlaces(nodes, b) {
+  // where each tethered node goes: just outside the frame, level with the node it belongs to, on
+  // the side whose stub crosses the fewest lines and boxes (with ``edges``; nearest side first among
+  // equals, so with no edges it is simply the nearest side); several on one side of one node sit
+  // side by side, and clouds along a side never sit on each other. {id: [x, y]}
+  const segCross = (p1, p2, p3, p4) => {
+    const d = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    const d1 = d(p3, p4, p1), d2 = d(p3, p4, p2), d3 = d(p1, p2, p3), d4 = d(p1, p2, p4);
+    return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0)) && d1 && d2 && d3 && d4;
+  };
+  const segBox = (p, q, b) => { for (let i = 1; i < 16; i++) { const x = p[0] + (q[0] - p[0]) * i / 16, y = p[1] + (q[1] - p[1]) * i / 16; if (x > b[0] && x < b[2] && y > b[1] && y < b[3]) return true; } return false; };
+  function tetherPlaces(nodes, b, edges = null) {
     const byId = new Map(nodes.map((n) => [n.id, n])), count = new Map(), out = {};
     if (!b) return out;
+    const spot = (s, side, i) => {
+      const off = (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 38;              // 0, -38, +38, -76…
+      return side === "t" ? [s.x + off, b.y0 - GAP] : side === "b" ? [s.x + off, b.y1 + GAP] : side === "l" ? [b.x0 - GAP, s.y + off] : [b.x1 + GAP, s.y + off];
+    };
+    // the lines a stub must not cross: flows between placed nodes inside, and influences into them
+    const placedIn = (id) => { const n = byId.get(id); return n && n.x !== undefined && !n.tether; };
+    const lines = [];
+    if (edges) {
+      const mid = {};
+      for (const e of edges) if (!e.toEdge && placedIn(e.source) && placedIn(e.target)) {
+        const a = byId.get(e.source), c = byId.get(e.target); lines.push({ e, p: [a.x, a.y], q: [c.x, c.y] }); mid[e.id] = [(a.x + c.x) / 2, (a.y + c.y) / 2];
+      }
+      for (const e of edges) if (e.toEdge && placedIn(e.source) && mid[e.toEdge]) { const a = byId.get(e.source); lines.push({ e, p: [a.x, a.y], q: mid[e.toEdge] }); }
+    }
+    const boxes = nodes.filter((n) => n.x !== undefined && !n.tether).map((n) => { const z = size(n), hw = z.r || z.w / 2, hh = z.r || z.h / 2; return { n, b: [n.x - hw, n.y - hh, n.x + hw, n.y + hh] }; });
     for (const n of nodes) {
       const s = n.tether && byId.get(n.tether);
       if (!s || s.x === undefined) continue;
-      const side = [[s.x - b.x0, "l"], [b.x1 - s.x, "r"], [s.y - b.y0, "t"], [b.y1 - s.y, "b"]].sort((a, c) => a[0] - c[0])[0][1];
+      const near = [[s.x - b.x0, "l"], [b.x1 - s.x, "r"], [s.y - b.y0, "t"], [b.y1 - s.y, "b"]].sort((u, v) => u[0] - v[0]);
+      let side = near[0][1];
+      if (edges) {
+        let best = Infinity;
+        for (const [dist, sd] of near) {
+          const q = spot(s, sd, 0), p = [s.x, s.y];
+          let crossings = lines.filter((l) => l.e.source !== s.id && l.e.target !== s.id && segCross(p, q, l.p, l.q)).length;
+          // and the influences that point at this stub's middle, from where they start
+          const stub = edges.find((e) => !e.toEdge && ((e.source === n.id && e.target === s.id) || (e.source === s.id && e.target === n.id)));
+          if (stub) {
+            const m = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+            for (const inf of edges.filter((e) => e.toEdge === stub.id && placedIn(e.source))) {
+              const a = byId.get(inf.source), from = [a.x, a.y];
+              crossings += lines.filter((l) => l.e.source !== inf.source && l.e.target !== inf.source && l.e.source !== s.id && l.e.target !== s.id && segCross(from, m, l.p, l.q)).length;
+            }
+          }
+          const through = boxes.filter((x) => x.n !== s && segBox(p, q, x.b)).length;
+          const cost = 300 * crossings + 1000 * through + dist;   // a crossing is worth 300 px of longer stub, no more
+          if (cost < best) { best = cost; side = sd; }
+        }
+      }
       const k = `${s.id}|${side}`, i = count.get(k) || 0;
       count.set(k, i + 1);
-      const off = (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 38;              // 0, -38, +38, -76…: clouds side by side, not on top of each other
-      out[n.id] = side === "t" ? [s.x + off, b.y0 - GAP] : side === "b" ? [s.x + off, b.y1 + GAP]
-        : side === "l" ? [b.x0 - GAP, s.y + off] : [b.x1 + GAP, s.y + off];
+      out[n.id] = spot(s, side, i);
       out[n.id].side = side;
     }
     // clouds on one side never sit on each other: spread them along it, at least SPREAD apart
@@ -173,7 +214,7 @@ const NetGraph = (() => {
     // a tethered node's place: just outside the frame, on the side nearest the node it belongs to,
     // level with it (several on one side of one node sit side by side)
     function placeTethered() {
-      const at = tetherPlaces(NODES, frameBox());
+      const at = tetherPlaces(NODES, frameBox(), RAW_EDGES);
       for (const n of NODES) if (at[n.id]) { [n.x, n.y] = at[n.id]; n.vx = n.vy = 0; }
     }
     // a force drawing ``edgeward`` nodes toward the nearest side of the frame (nothing for a node

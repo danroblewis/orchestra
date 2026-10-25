@@ -123,7 +123,9 @@ function draw() {
       // then refined by springs, so nothing is left far from what it is connected to
       layout: window.ELK ? async (nodes, edges) => {
         const geo = { size: NetGraph.size, frameOf: NetGraph.frameOf, tetherPlaces: NetGraph.tetherPlaces };
-        return SDLayout.refine(nodes, edges, await SDLayout.layout(nodes, edges, { elk: new ELK(), ...geo, hierarchy: true }), { ...geo, labelSize: NetGraph.labelSize });
+        const elk = await SDLayout.layout(nodes, edges, { elk: new ELK(), ...geo, hierarchy: true });
+        // unconnected groups side by side, filling the view's shape, then springs
+        return SDLayout.refine(nodes, edges, SDLayout.pack(nodes, edges, elk, geo), { ...geo, labelSize: NetGraph.labelSize });
       } : null,
       // and then untangled in a worker (fewest lines behind boxes or crossing, every label readable)
       polish: window.Worker ? (nodes, edges, at) => new Promise((resolve, reject) => {
