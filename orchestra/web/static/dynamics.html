@@ -27,6 +27,9 @@
   table.dt tr:hover td { background:var(--panel3) } .mdot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--c); margin-right:5px }
   .origin { font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; border-radius:4px; padding:0 4px; border:1px solid var(--border2); color:var(--text2) }
   .origin.fitted { color:#bbf7d0; border-color:#166534 } .origin.declared { color:#fde68a; border-color:#92400e }
+  details { margin:4px 0 } summary { cursor:pointer; font-size:12px; color:var(--text2); padding:3px 0 }
+  .bal { font-size:12px; margin:4px 0; line-height:1.9 } .ty { background:var(--panel3); border:1px solid var(--border); border-radius:999px; padding:0 8px; font-size:11px; font-family:var(--mono) }
+  .tables h3 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:12px 0 6px }
 </style>
 </head>
 <body>
@@ -37,7 +40,10 @@
   <div class="diagram" id="diagram"></div>
   <div class="legend" id="legend"></div>
   <div class="tables">
-    <div class="panel"><h2 style="margin-top:0"><span>Flows</span><span class="count" id="nflows"></span></h2><table class="dt" id="flows"></table></div>
+    <div>
+      <div class="panel"><h2 style="margin-top:0"><span>Flows</span><span class="count" id="nflows"></span></h2><table class="dt" id="flows"></table></div>
+      <div class="panel"><h2 style="margin-top:0"><span>How it was found</span></h2><div id="found"></div></div>
+    </div>
     <div>
       <div class="panel"><h2 style="margin-top:0"><span>Stocks</span><span class="count" id="nstocks"></span></h2><table class="dt" id="stocks"></table></div>
       <div class="panel"><h2 style="margin-top:0"><span>Machines</span><span class="count" id="nmachines"></span></h2><table class="dt" id="machines"></table></div>
@@ -48,24 +54,32 @@
 <script src="/static/app.js?v={{v}}"></script>
 <script src="/static/sd-diagram.js?v={{v}}"></script>
 <script>
-const MCOLOR = { "orchestra-host": "#facc15", worker: "#60a5fa", reviewer: "#e879f9", gate: "#a3a3a3", recovery: "#f87171",
-  supervisor: "#c084fc", coordinator: "#38bdf8", "pipeline-manager": "#fb923c" };
-const mcolor = (id) => MCOLOR[id] || "#94a3b8";
+// one colour per machine, the same every time for the same id
+const MPAL = ["#60a5fa", "#f59e0b", "#e879f9", "#22c55e", "#f87171", "#38bdf8", "#facc15", "#a78bfa", "#fb923c"];
+const mcolor = (id) => { if (!id || id === "none") return "#94a3b8"; let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return MPAL[h % MPAL.length]; };
 let MODEL = null, VERSION = null;   // null: follow the current version
 const nice = (s) => (s || "outside").toLowerCase().replace(/_/g, " ");
+const stockName = (id) => { const s = MODEL && MODEL.stocks.find((x) => x.id === id); return s ? s.name : nice(id); };
+const num = (v, short) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(short ? 2 : 3));
 function eqText(f, short) {
   const e = f.current; if (!e) return "no equation yet";
-  const [p, v] = Object.entries(e.params)[0];
-  const body = e.form === "proportional" ? `${v.toFixed(short ? 2 : 3)} × ${nice(f.from)}` : `${v.toFixed(short ? 2 : 3)}`;
-  return `${body} /h`;
+  const p = e.params, x = (e.inputs && e.inputs[0]) || f.from, unit = (MODEL && MODEL.time_unit) || "hour";
+  const per = `/${unit === "minute" ? "min" : unit === "hour" ? "h" : "s"}`;
+  if (e.form === "constant") return `${num(p.c, short)} ${per}`;
+  if (e.form === "proportional") return `${num(p.k, short)} × ${stockName(x)} ${per}`;
+  if (e.form === "linear") return `${num(p.c, short)} ${p.k < 0 ? "−" : "+"} ${num(Math.abs(p.k), short)} × ${stockName(x)} ${per}`;
+  return JSON.stringify(p);
 }
+// a flow whose rate reads a stock other than its own source: an influence, the link that closes loops
+const influence = (f) => f.current && f.current.form === "linear" && f.current.inputs && f.current.inputs[0] && f.current.inputs[0] !== f.from ? f.current.inputs[0] : null;
 function draw() {
   const m = MODEL, byMachine = Object.fromEntries(m.machines.map((x) => [x.id, x]));
   const D = {
     stocks: m.stocks.map((s) => ({ id: s.id, name: nice(s.id), cls: "st-" + s.id,
-      sub: m.levels[s.id] ? `${m.levels[s.id].v} ${s.unit}` : (s.series ? "no data" : "not measured"), title: s.name })),
+      sub: m.levels[s.id] ? `${m.levels[s.id].v} now` : (s.series ? "no data" : "not measured"), title: s.name })),
     flows: m.flows.filter((f) => (f.current && f.current.quality && f.current.quality.events > 0) || window.SHOW_ALL)
       .map((f) => ({ from: f.from, to: f.to, cls: "m-" + (f.machine || "none"), label: eqText(f, true),
+        reads: influence(f) ? [{ stock: influence(f), label: f.current.params.k < 0 ? "−" : "+", cls: "m-" + (f.machine || "none") }] : [],
         label2: f.machine ? (byMachine[f.machine] || {}).name || f.machine : "", thin: !f.current || f.current.origin !== "fitted",
         title: `${nice(f.from)} → ${nice(f.to)} · ${f.current ? f.current.form + ", " + f.current.origin + " from " + f.current.quality.events + " events" : "no equation"}`, fid: f.id })),
   };
@@ -74,12 +88,28 @@ function draw() {
   const P = {}; for (const [id, p] of Object.entries(pos)) P[id] = { x: p.x * 1.55, y: p.y * 1.5 };
   const color = (cls) => cls.startsWith("st-") ? `var(--${cls.slice(3)})` : cls.startsWith("m-") ? mcolor(cls.slice(2)) : "var(--fg)";
   $("diagram").innerHTML = '<svg id="sd"></svg>';
-  SDDiagram.draw($("sd"), D, P, { color });
+  // flow labels sit outside the stocks' bounds: leave room for them, so nothing is clipped
+  const vb = SDDiagram.bounds(P, D.flows, SDDiagram.BOX, 60);
+  SDDiagram.draw($("sd"), D, P, { color, viewBox: { x: vb.x - 140, y: vb.y - 30, w: vb.w + 280, h: vb.h + 60 } });
   // legend: machines, hover to isolate their flows
   const used = [...new Set(D.flows.map((f) => f.cls.slice(2)))];
   $("legend").innerHTML = used.map((id) => { const mc = byMachine[id] || { name: id, kind: "?" };
     return `<span class="lg ${mc.kind === "agent" ? "" : "prog"}" style="--c:${mcolor(id)}" onmouseenter="isolate('${id}')" onmouseleave="isolate(null)"><i></i>${esc(mc.name)} <span class="muted">${mc.kind === "agent" ? "AI agent" : "program"}</span></span>`; }).join("")
     + `<label class="lg" style="cursor:pointer"><input type="checkbox" ${window.SHOW_ALL ? "checked" : ""} onchange="window.SHOW_ALL=this.checked;draw()" style="margin:0"> flows with no events</label>`;
+}
+// series left out, grouped by why: the ones that changed but didn't balance are worth reading;
+// the ones that didn't move in the window are collapsed
+function leftOut(lo) {
+  const groups = {};
+  for (const [k, why] of Object.entries(lo)) {
+    const g = why.startsWith("no counters balance") ? "changed, but no counters balance it" : why;
+    (groups[g] = groups[g] || []).push([k, why]);
+  }
+  const order = Object.keys(groups).sort((a, b) => (a.startsWith("changed") ? -1 : b.startsWith("changed") ? 1 : groups[b].length - groups[a].length));
+  return order.map((g) => {
+    const rows = groups[g].map(([k, why]) => `<tr><td class="num">${esc(k)}</td>${g.startsWith("changed") ? `<td class="muted">${esc(why.replace(/^no counters balance it /, ""))}</td>` : ""}</tr>`).join("");
+    return `<details ${g.startsWith("changed") ? "open" : ""}><summary>${esc(g)} <span class="count">${groups[g].length}</span></summary><table class="dt">${rows}</table></details>`;
+  }).join("");
 }
 function isolate(id) {
   document.querySelectorAll("#sd g.dflow, #sd g.dlabel").forEach((g) => g.classList.toggle("dim", !!id && !g.classList.contains("m-" + id)));
@@ -88,7 +118,8 @@ function tables() {
   const m = MODEL, byMachine = Object.fromEntries(m.machines.map((x) => [x.id, x]));
   $("nflows").textContent = m.flows.length; $("nstocks").textContent = m.stocks.length; $("nmachines").textContent = m.machines.length;
   $("flows").innerHTML = `<tr><th>flow</th><th>equation</th><th>fit</th><th>machine</th></tr>` + m.flows.map((f) => { const e = f.current, q = (e && e.quality) || {};
-    return `<tr><td>${esc(nice(f.from))} → ${esc(nice(f.to))}</td><td class="num">${esc(eqText(f))}${e ? ` <span class="muted">± ${(q.se || 0).toFixed(3)}</span>` : ""}</td>
+    const end = (id) => (id ? stockName(id) : "outside");
+    return `<tr><td>${esc(f.name)}<div class="muted" style="font-size:11px">${esc(end(f.from))} → ${esc(end(f.to))}</div></td><td class="num">${esc(eqText(f))}${e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}</td>
       <td>${e ? `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span> <span class="muted num">${esc(e.form)} · ${q.events ?? 0} ev · disp ${(q.dispersion ?? 0).toFixed(1)}</span>` : '<span class="muted">—</span>'}</td>
       <td>${f.machine ? `<span class="mdot" style="--c:${mcolor(f.machine)}"></span>${esc((byMachine[f.machine] || {}).name || f.machine)}` : '<span class="muted">none</span>'}</td></tr>`; }).join("");
   $("stocks").innerHTML = `<tr><th>stock</th><th>now</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr><td>${esc(s.name)}</td><td class="num">${m.levels[s.id] ? m.levels[s.id].v + " " + esc(s.unit) : "—"}</td>
@@ -96,6 +127,10 @@ function tables() {
   $("machines").innerHTML = `<tr><th>machine</th><th>kind</th><th>engaged</th><th>flows</th></tr>` + m.machines.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span>${esc(x.name)}${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
       <td>${x.kind === "agent" ? "AI agent" : "program"}</td><td class="muted">${esc(x.engagement.map((e) => e.mode.replace("_", " ") + " · " + e.driver).join(", ") || "observed only")}</td><td class="num">${x.attributed.length}</td></tr>`).join("");
   const fitted = m.flows.filter((f) => f.current && f.current.origin === "fitted").length;
+  const d = m.discovery || {};
+  $("found").innerHTML = d.left_out ? `<div class="muted" style="font-size:12px;margin-bottom:6px">Discovered from ${d.series} series over ${ago(d.end - d.start)}, in ${d.step} s steps. A level is a stock when counters balance it (R² ≥ ${d.min_r2}).</div>`
+    + m.stocks.map((s) => s.evidence && s.evidence.balance ? `<div class="bal"><b>${esc(s.name)}</b> <span class="muted">changes by</span> ${s.evidence.balance.map((b) => `<span class="ty">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join(" ")} <span class="muted">R² ${s.evidence.balance_r2.toFixed(3)} · exact in ${Math.round(100 * s.evidence.exact_steps)}% of steps</span></div>` : "").join("")
+    + `<h3>Left out <span class="count">${Object.keys(d.left_out).length}</span></h3>` + leftOut(d.left_out) : '<div class="muted">This version was declared, not discovered.</div>';
   $("sum").innerHTML = `${m.stocks.length} stocks · ${m.flows.length} flows (${fitted} fitted) · ${m.machines.length} machines${m.stored ? "" : ' · <span class="stale">not stored yet: <code>orchestra sd declare</code></span>'}${m.levels_error ? ` · <span class="stale">levels: ${esc(m.levels_error)}</span>` : ""}`;
 }
 function versionBar() {

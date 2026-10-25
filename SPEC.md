@@ -122,8 +122,26 @@ version (`<state>/model/vNNNN.json`), the highest is current, and past versions 
 level), fitted by maximum likelihood; the form with the higher likelihood is kept, with its
 standard error and dispersion.
 
-**Discovery** (building the model from the metrics, not declaring it) is being built
-(`docs/proposals/empty-orchestra.md` §8).
+**Discovery** (`sd/discover.py`, `orchestra sd discover --minutes N`) builds the model from the
+metrics store without being told what anything is:
+1. every series is sampled onto a grid of steps;
+2. a level is a **stock** when counters, added or subtracted, balance its changes
+   (`Δlevel ≈ Σ inflows − Σ outflows`, R² ≥ 0.9). The counters are found by least squares on all
+   counters, rounded to ±1, then a local search (change one coefficient, or swap one counter for
+   another) with a penalty per counter;
+3. a counter that leaves one stock and enters another is a **flow** between them; otherwise it
+   comes from or goes to outside;
+4. each flow's rate is fitted by maximum likelihood, choosing by AIC among constant, proportional
+   to its source, and linear in any stock (`c + k × X`). A linear form on a stock other than the
+   flow's source is an **influence**, the link that closes feedback loops. Forms are scored with
+   the exact point-process likelihood (each event against the levels just before it), because
+   counts per step favour spurious forms when a flow drains the level it depends on;
+5. each flow is attributed to the machine named by its counter's `machine` (or, for event
+   counters, `source`) label.
+
+Everything else is **left out, with the reason** (did not change, no counters balance it, not
+needed by any balance), recorded in the model version. Not yet: stocks no series measures,
+delays, non-linear forms, eras. `examples/bakery/` is a toy system it finds.
 
 ---
 
@@ -253,7 +271,7 @@ Unknown sections are ignored, so files written for older versions still load.
 | `orchestra web [--port]` | Serve the web UI |
 | `orchestra events info\|copy --to URL` | The event log |
 | `orchestra metrics backfill\|series` | Replay the log into event counters; list series |
-| `orchestra sd show\|fit\|versions` | The model |
+| `orchestra sd discover\|show\|fit\|versions` | The model: discover it from the metrics, show, refit, list versions |
 | `orchestra tools [--json]` | The agent tool catalogue |
 
 ---
@@ -281,9 +299,11 @@ orchestra/
   cli.py  config.py  events.py  runtime.py  host.py  collectors.py
   bus/       file, redis_streams, rabbitmq_streams, kafka
   metrics/   file, victoria, promql
-  sd/        model, store, fit
+  sd/        model, store, fit, discover
   harness/   base, pi, claude_code, codex, mcp, tools, pi_extension.ts
   web/       app, core, core_explore, machines, dynamics, static/
+examples/
+  bakery/    toy machines (oven, shop, weather) for discovery to find
 tests/
   unit/  bus/  metrics/  e2e/ (harness fakes)  acceptance/
 ```

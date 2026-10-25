@@ -30,13 +30,14 @@ class SeriesRef:
 
 @dataclass
 class Equation:
-    form: str                           # constant | proportional (more forms as inference grows)
-    params: dict[str, float]            # constant: {"c"}; proportional: {"k"} (per hour, per unit of the source stock)
+    form: str                           # constant | proportional | linear (more forms as inference grows)
+    params: dict[str, float]            # constant: {"c"}; proportional: {"k"}; linear: {"c", "k"}; per the model's time unit
     origin: str                         # fitted | discovered | declared
     method: str = ""                    # e.g. "poisson-mle" for fitted
     window: tuple[float, float] | None = None   # unix seconds the fit used
     era: str | None = None
     quality: dict[str, float] = field(default_factory=dict)   # se, loglik, dispersion, events, hours
+    inputs: list[str] = field(default_factory=list)            # stock ids the form reads (proportional: the source; linear: its driver)
 
 
 @dataclass
@@ -45,6 +46,7 @@ class Stock:
     name: str
     unit: str = "items"
     series: SeriesRef | None = None
+    evidence: dict[str, Any] = field(default_factory=dict)    # how it was found, when discovered: fit of the balance, steps
 
 
 @dataclass
@@ -95,6 +97,7 @@ class Model:
     flows: list[Flow] = field(default_factory=list)
     machines: list[Machine] = field(default_factory=list)
     eras: list[Era] = field(default_factory=list)
+    discovery: dict[str, Any] = field(default_factory=dict)   # when discovered: window, step, what was left out and why
 
     def stock(self, sid: str) -> Stock:
         return next(s for s in self.stocks if s.id == sid)
@@ -114,15 +117,18 @@ class Model:
             return SeriesRef(**r) if r else None
         return cls(
             id=d["id"], name=d["name"], description=d.get("description", ""), time_unit=d.get("time_unit", "hour"),
-            stocks=[Stock(s["id"], s["name"], s.get("unit", "items"), ref(s.get("series"))) for s in d.get("stocks", [])],
+            stocks=[Stock(s["id"], s["name"], s.get("unit", "items"), ref(s.get("series")), dict(s.get("evidence") or {}))
+                    for s in d.get("stocks", [])],
             flows=[Flow(f["id"], f["name"], f.get("from"), f.get("to"), ref(f.get("counter")),
-                        [Equation(**{**e, "window": tuple(e["window"]) if e.get("window") else None})
+                        [Equation(**{**e, "window": tuple(e["window"]) if e.get("window") else None,
+                                     "inputs": list(e.get("inputs") or [])})
                          for e in f.get("equations", [])]) for f in d.get("flows", [])],
             machines=[Machine(m["id"], m["name"], m["kind"], m.get("description", ""), list(m.get("attributed", [])),
                               [SeriesRef(**r) for r in m.get("observed_by", [])],
                               [Engagement(**e) for e in m.get("engagement", [])], bool(m.get("bootstrap", False)))
                       for m in d.get("machines", [])],
             eras=[Era(**e) for e in d.get("eras", [])],
+            discovery=dict(d.get("discovery") or {}),
         )
 
     def check(self) -> list[str]:

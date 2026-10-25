@@ -93,6 +93,24 @@ def cmd_sd(args) -> int:
 
     project = _project(args)
     models = ModelStore.for_state(project.state_dir)
+    if args.action == "discover":
+        from .sd.discover import discover
+
+        store = metrics_for(project)
+        end = time.time()
+        start = end - args.minutes * 60
+        m = discover(store.dump("", {"project": project.key}), start=start, end=end, step=args.step_s, time_unit=args.unit)
+        print(f"{len(m.discovery['left_out']) + len(m.stocks) + len(m.flows)} series over the last {args.minutes:g} min, "
+              f"in {args.step_s:g} s steps: {len(m.stocks)} stocks, {len(m.flows)} flows, {len(m.machines)} machines")
+        for st in m.stocks:
+            terms = " ".join(("+ " if b["sign"] > 0 else "− ") + b["series"] for b in st.evidence["balance"])
+            print(f"  stock {st.id}: Δ = {terms}   (R² {st.evidence['balance_r2']:.3f}, exact in {st.evidence['exact_steps']:.0%} of steps)")
+        print("left out:")
+        for k, why in m.discovery["left_out"].items():
+            print(f"  {k}: {why}")
+        if m.stocks:
+            print(f"saved as version {models.save(m, note=f'discovered from the last {args.minutes:g} min of metrics')}")
+        args.version = None
     if args.action == "versions":
         for v in models.versions():
             print(f"v{v['version']:<4} {_when(v['saved_at'])}  {v['stocks']} stocks, {v['flows']} flows ({v['fitted']} fitted)  {v['note']}")
@@ -116,8 +134,10 @@ def cmd_sd(args) -> int:
         if not eq:
             print(f"  {f.id:<36} no equation")
             continue
-        (_, v), = eq.params.items()
-        rate = f"{v:.4g}/{m.time_unit}" if eq.form == "constant" else f"{v:.4g} × {f.src}/{m.time_unit}"
+        p = eq.params
+        rate = {"constant": f"{p.get('c', 0):.4g}", "proportional": f"{p.get('k', 0):.4g} × {(eq.inputs or [f.src])[0]}",
+                "linear": f"{p.get('c', 0):.4g} {'+' if p.get('k', 0) >= 0 else '−'} {abs(p.get('k', 0)):.4g} × {(eq.inputs or ['?'])[0]}"
+                }.get(eq.form, str(p)) + f" /{m.time_unit}"
         print(f"  {f.id:<36} {eq.origin:<10} {eq.form:<12} {rate:<30} n={eq.quality.get('events', 0):.0f}")
     print("\nmachines (attributed flows are hypotheses):")
     for mc in m.machines:
@@ -187,8 +207,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--append", action="store_true", help="for backfill: keep existing points instead of replacing them")
     s.set_defaults(fn=cmd_metrics)
 
-    s = sub.add_parser("sd", help="the system dynamics model: show it, fit it, list its versions")
-    s.add_argument("action", choices=["show", "fit", "versions"])
+    s = sub.add_parser("sd", help="the system dynamics model: discover it from the metrics, show it, fit it, list its versions")
+    s.add_argument("action", choices=["show", "fit", "versions", "discover"])
+    s.add_argument("--minutes", type=float, default=60.0, help="for discover: the window, in minutes back from now (default 60)")
+    s.add_argument("--step-s", dest="step_s", type=float, default=30.0, help="for discover: seconds per step (default 30)")
+    s.add_argument("--unit", default="minute", choices=["second", "minute", "hour"], help="for discover: the model's time unit")
     s.add_argument("--version", type=int, help="for show and fit: start from this past version (default: the current one)")
     s.add_argument("--step", type=float, default=1.0, help="for fit: hours per step (default 1)")
     s.set_defaults(fn=cmd_sd)
