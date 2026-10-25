@@ -27,12 +27,28 @@ PROJECT_AGENTS = tuple(r.name for r in resident_roles() if r.name != "supervisor
 RESIDENT_AGENTS = tuple(r.name for r in resident_roles())
 
 
+HOST_LOG: Path | None = None          # <state>/logs/orchestra-host.log once a loop starts
+HOST_LOG_MAX = 5_000_000              # bytes; the file is rotated to .1 past this
+
+
 def log(msg: str) -> None:
-    print(f"[orchestra {time.strftime('%H:%M:%S')}] {msg}", flush=True)
+    line = f"[orchestra {time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}"
+    print(line, flush=True)
+    if HOST_LOG is not None:            # the bootstrap machine's log, shown on the Core page
+        try:
+            if HOST_LOG.exists() and HOST_LOG.stat().st_size > HOST_LOG_MAX:
+                HOST_LOG.replace(HOST_LOG.with_suffix(".log.1"))
+            with HOST_LOG.open("a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except OSError:
+            pass
 
 
 class Loop:
     def __init__(self, project: Project, store: LocalStore, events: Events):
+        global HOST_LOG
+        HOST_LOG = project.logs_dir / "orchestra-host.log"
+        HOST_LOG.parent.mkdir(parents=True, exist_ok=True)
         self.project = project
         self.store = store
         self.events = events

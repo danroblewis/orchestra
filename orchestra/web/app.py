@@ -234,15 +234,29 @@ def create_app(project: Project) -> FastAPI:
         snap["loop"] = store.runtime().get("control") or {}
         return snap
 
+    # ---- Core: the fundamental services. Kept independent of the model, the ticket store and
+    # the machines, so the page works when they do not (see web/core.py).
+    @app.get("/core", response_class=HTMLResponse)
+    async def core_page() -> str:
+        return page("core.html")
+
     @app.get("/api/core")
     def core_status() -> dict:
-        """The event bus and the metrics store, probed against their real backends."""
+        """The bootstrap host, the event bus and the metrics store, probed against their real backends."""
         return core.status()
 
     @app.post("/api/core/probe")
     def core_probe() -> dict:
         """Append a probe event to the event bus and read it back by offset."""
         return core.write_probe()
+
+    @app.get("/api/core/logs/sources")
+    def core_log_sources() -> dict:
+        return {"sources": core.log_sources()}
+
+    @app.get("/api/core/logs")
+    def core_logs(source: str = "host", lines: int = 200) -> dict:
+        return core.logs(source, lines)
 
     @app.get("/api/machines")
     async def machines() -> dict:

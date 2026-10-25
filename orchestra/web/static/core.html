@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orchestra · Core</title>
+<link rel="stylesheet" href="/static/style.css?v={{v}}">
+<style>
+  .corewrap { max-width:1400px; margin:0 auto; padding:16px 20px }
+  .corewrap .intro { font-size:12.5px; color:var(--text2); margin-bottom:12px; max-width:1000px }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:12px; align-items:start }
+  .cards .panel { margin:0 }
+  .logs { margin-top:16px } .logs .bar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:8px }
+  .logs .bar button.on { color:var(--text); border-color:var(--accent) } .logs select { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:11px; padding:2px 6px }
+  .logs .term { height:520px; white-space:pre; overflow:auto; font-size:11.5px }
+  .proc { font-size:11.5px; color:var(--text2) } .stale { color:#fcd34d }
+</style>
+</head>
+<body>
+<nav id="nav"><a href="/">Dashboard</a><a href="/tickets">Tickets</a><a href="/machines">Machines</a><a href="/core" class="on">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
+<div class="corewrap">
+  <div class="intro">Orchestra's fundamental services: the bootstrap host, the event bus and the metrics store. Each is probed against its real backend every few seconds, separately and with a time limit, so this page keeps working when the model or the other machines do not. <span id="core-sub" class="muted"></span></div>
+  <div class="cards" id="cards"></div>
+  <div class="logs">
+    <h2><span>Logs</span><span class="hctl"><span class="muted" id="log-note"></span></span></h2>
+    <div class="bar" id="log-bar"></div>
+    <div class="term" id="log"></div>
+  </div>
+</div>
+<div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
+<script src="/static/app.js?v={{v}}"></script>
+<script>
+let CORE = null, PROBE = null, LOG_SRC = "host";
+try { LOG_SRC = localStorage.getItem("orchestra.core.log") || "host"; } catch (e) {}
+const fmtNum = (v) => (Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : (+v).toFixed(v >= 10 ? 0 : 1));
+function spark(points, { unit = "", w = 300, h = 34, cls = "" } = {}) {
+  if (!points || points.length < 2) return `<div class="spark empty">collecting…</div>`;
+  const t0 = points[0][0], t1 = points[points.length - 1][0] || t0 + 1;
+  const vs = points.map((p) => p[1]), lo = Math.min(...vs), hi = Math.max(...vs), span = hi - lo || 1;
+  const d = points.map(([t, v], i) => (i ? "L" : "M") + (w * (t - t0) / Math.max(1, t1 - t0)).toFixed(1) + "," + (h - 3 - (h - 6) * (v - lo) / span).toFixed(1)).join(" ");
+  return `<svg class="spark ${cls}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><path class="a" d="${d} L${w},${h} L0,${h} Z"/><path class="l" d="${d}"/></svg>
+    <div class="lbl-row"><span>${fmtNum(lo)}–${fmtNum(hi)}${unit}</span><span>last 15m · ${points.length} points from the store</span></div>`;
+}
+function card(title, c, html, right = "", warn = false) {
+  return `<div class="panel env core" style="--ec:${!c.ok ? "#ef4444" : warn ? "#f59e0b" : "#22c55e"}"><div class="chead"><span><span class="led"></span><b>${title}</b></span>${right}</div>${c.ok ? html : `<div class="probe bad">${esc(c.error || "failing")}</div>`}</div>`;
+}
+const since = (t) => t ? ago(Date.now() / 1000 - t) : "—";
+function renderCore() {
+  const { host: h, bus: b, metrics: m } = CORE, sp = (m && m.spark) || {};
+  $("core-sub").textContent = `Probed ${since(CORE.probed_at)} ago, every ${CORE.interval}s, each component within ${CORE.timeout}s.`;
+  const loop = h.loop || {};
+  const hostHtml = `<div class="kv">
+      <div>loop</div><div>${loop.alive ? `<b>running</b> <span class="proc num">pid ${loop.pid} · up ${since(loop.since)} · ${fmtBytes(loop.rss || 0)}${loop.port ? " · control :" + loop.port : ""}</span>` : `<span class="stale">not running</span> <span class="proc">start it with <code>orchestra run</code></span>`}</div>
+      <div>web</div><div><b>running</b> <span class="proc num">pid ${h.web.pid} · up ${since(h.web.since)} · ${fmtBytes(h.web.rss || 0)}</span></div>
+      <div>version</div><div class="num">${esc(h.version)}${h.commit ? " · " + esc(h.commit) : ""} · ${esc(h.python)}</div>
+      <div>project</div><div class="num">${esc(h.project)}</div>
+      <div>state</div><div class="num">${esc(h.state)}</div>
+      <div>last log</div><div class="num" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(h.host_log_last || "—")}</div></div>`;
+  const types = ((b && b.recent_types) || []).map(([t, n]) => `<span class="ty">${esc(t)} <b>${n}</b></span>`).join("");
+  const probe = PROBE ? (PROBE.ok ? `<div class="probe ok">✓ appended at offset ${PROBE.offset.toLocaleString()} in ${PROBE.append_ms} ms · read back by offset in ${PROBE.read_back_ms} ms</div>`
+      : `<div class="probe bad">✗ ${esc(PROBE.error || "the probe event was not read back")}</div>`) : "";
+  const busHtml = b.ok ? `<div class="kv">
+      <div>backend</div><div><b>${esc(b.backend)}</b></div><div>at</div><div class="num">${esc(b.url)}</div>
+      <div>stream</div><div class="num">${esc(b.stream)}</div><div>events</div><div class="num">${(b.events || 0).toLocaleString()}</div>
+      <div>rate</div><div class="num">${b.per_min_10m} / min over the last 10 min</div>
+      <div>last event</div><div>${b.last_event ? `${esc(b.last_event.type)} · ${ago(b.last_event.age_s)} ago` : "—"}</div>
+      <div>read</div><div class="num">${b.read_ms} ms for the end and the latest 200</div></div>
+      <div class="types">${types}</div>
+      <div class="sl">events stored</div>${spark(sp.bus_events, { cls: "blue" })}<div class="sl">read latency</div>${spark(sp.bus_read_ms, { unit: " ms" })}${probe}` : "";
+  const metHtml = m.ok || m.backend ? `<div class="kv">
+      <div>backend</div><div><b>${esc(m.backend || "?")}</b></div><div>at</div><div class="num">${esc(m.url || "")}</div>
+      <div>series</div><div class="num">${m.series ?? "—"} for this project</div>
+      <div>round trip</div><div class="num">${m.round_trip_ok ? "✓" : "✗"} write ${m.write_ms ?? "—"} ms · readable after ${m.visible_ms ?? "—"} ms · read ${m.read_ms ?? "—"} ms</div></div>
+      <div class="sl">write latency</div>${spark(sp.metrics_write_ms, { unit: " ms" })}<div class="sl">write → readable</div>${spark(sp.metrics_visible_ms, { unit: " ms", cls: "amber" })}
+      <div class="muted" style="font-size:11px;margin-top:6px">Every probe writes its own measurements into the store; these lines are read back from it.</div>` : "";
+  $("cards").innerHTML = card("Bootstrap host", h, hostHtml, "", !(h.loop && h.loop.alive)) + card("Event bus", b, busHtml, `<button class="ctl" onclick="probeBus()" title="Append a bus_probe event to the stream and read it back by its offset">test write</button>`) + card("Metrics store", m, metHtml);
+}
+async function refreshCore() {
+  try { CORE = await (await fetch("/api/core")).json(); $("conn").textContent = "live"; renderCore(); } catch (e) { $("conn").textContent = "disconnected"; }
+}
+async function probeBus() {
+  try { PROBE = await (await fetch("/api/core/probe", { method: "POST" })).json(); } catch (e) { PROBE = { ok: false, error: String(e) }; }
+  renderCore(); refreshLog();
+}
+async function refreshSources() {
+  try {
+    const { sources } = await (await fetch("/api/core/logs/sources")).json();
+    const fixed = sources.filter((s) => !s.id.startsWith("agent:")), agents = sources.filter((s) => s.id.startsWith("agent:"));
+    $("log-bar").innerHTML = fixed.map((s) => `<button class="ctl ${s.id === LOG_SRC ? "on" : ""}" onclick="pickLog('${s.id}')">${esc(s.name)}</button>`).join("")
+      + (agents.length ? `<select onchange="pickLog(this.value)"><option value="">agent logs (${agents.length})…</option>${agents.map((s) => `<option value="${esc(s.id)}" ${s.id === LOG_SRC ? "selected" : ""}>${esc(s.name)} · ${fmtBytes(s.size)} · ${ago(Date.now() / 1000 - s.mtime)} ago</option>`).join("")}</select>` : "");
+  } catch (e) {}
+}
+function pickLog(id) { if (!id) return; LOG_SRC = id; try { localStorage.setItem("orchestra.core.log", id); } catch (e) {} refreshSources(); refreshLog(); }
+async function refreshLog() {
+  try {
+    const d = await (await fetch(`/api/core/logs?source=${encodeURIComponent(LOG_SRC)}&lines=400`)).json();
+    const el = $("log"), atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+    el.innerHTML = highlightLog(d.lines.join("\n"));
+    $("log-note").textContent = d.note || `${d.lines.length} lines`;
+    if (atBottom) el.scrollTop = el.scrollHeight;
+  } catch (e) {}
+}
+refreshCore(); refreshSources(); refreshLog();
+setInterval(refreshCore, 5000); setInterval(refreshLog, 3000); setInterval(refreshSources, 30000);
+</script>
+</body>
+</html>

@@ -188,3 +188,6 @@ svg.spark.blue .l { stroke:#6ea8fe } svg.spark.blue .a { fill:#6ea8fe22 } svg.sp
 .machine.detail .mflows > div:not(.mfh) { display:grid; grid-template-columns:170px 1fr; gap:8px; align-items:baseline } .machine.detail .mflows .num { text-align:left }
 .mgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(420px, 1fr)); gap:8px; margin-bottom:8px } .mgrid .machine { margin-bottom:0 }
 h3.subh { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:12px 0 6px; font-weight:700 }
+.corestrip { display:flex; gap:8px; align-items:center; font-size:12px; color:var(--text2); text-decoration:none; padding:8px 12px } .corestrip:hover { border-color:var(--accent) }
+.corestrip .cled { display:inline-block; width:8px; height:8px; border-radius:50%; margin-left:6px }
+.layout.two { grid-template-columns:repeat(2, minmax(0, 1fr)) }

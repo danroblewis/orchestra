@@ -11,19 +11,16 @@
 <link rel="stylesheet" href="/static/style.css?v={{v}}">
 </head>
 <body>
-<nav id="nav"><a href="/" class="on">Dashboard</a><a href="/tickets">Tickets</a><a href="/machines">Machines</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
-<div class="tabs"><button class="on" onclick="showCol(0,this)">Machines</button><button onclick="showCol(1,this)">Core</button><button onclick="showCol(2,this)">Host</button></div>
-<div class="layout">
+<nav id="nav"><a href="/" class="on">Dashboard</a><a href="/tickets">Tickets</a><a href="/machines">Machines</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
+<div class="tabs"><button class="on" onclick="showCol(0,this)">Machines</button><button onclick="showCol(1,this)">Host</button></div>
+<div class="layout two">
   <div class="col on">
     <div class="col-head"><h1>Machines</h1><span class="sub" id="machines-sub"></span></div>
     <div id="machines"></div>
   </div>
   <div class="col">
-    <div class="col-head"><h1>Core services</h1><span class="sub" id="core-sub"></span></div>
-    <div id="core"></div>
-  </div>
-  <div class="col">
     <div class="col-head"><h1>Host</h1><span class="sub" id="host-sub"></span></div>
+    <a class="panel corestrip" id="corestrip" href="/core" title="Orchestra's fundamental services: the Core page">Core …</a>
     <div class="panel">
       <div class="lbl-row"><span>GPU <select id="gpu-range" class="range"><option value="60">1m</option><option value="240" selected>4m</option><option value="900">15m</option><option value="3600">1h</option></select></span><span id="gpu-lbl" class="num">—</span></div>
       <svg id="gpu" class="gpu" viewBox="0 0 300 64" preserveAspectRatio="none"><path id="gpu-area"/><path id="gpu-line"/><line id="gpu-cursor" x1="0" x2="0" y1="0" y2="64"/></svg>
@@ -88,55 +85,13 @@ function setCapacity(kind, delta) {
 }
 function togglePause() { control({ action: STATE && STATE.pickup_paused ? "resume" : "pause" }); }
 
-// ---- core services: the event bus and the metrics store, probed live ----
-function spark(points, { unit = "", w = 300, h = 34, cls = "" } = {}) {
-  if (!points || points.length < 2) return `<div class="spark empty">collecting…</div>`;
-  const t0 = points[0][0], t1 = points[points.length - 1][0] || t0 + 1;
-  const vs = points.map((p) => p[1]), lo = Math.min(...vs), hi = Math.max(...vs), span = hi - lo || 1;
-  const xy = points.map(([t, v]) => [(w * (t - t0) / Math.max(1, t1 - t0)).toFixed(1), (h - 3 - (h - 6) * (v - lo) / span).toFixed(1)]);
-  const d = xy.map((p, i) => (i ? "L" : "M") + p[0] + "," + p[1]).join(" ");
-  return `<svg class="spark ${cls}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="height:${h}px;width:100%"><path class="a" d="${d} L${w},${h} L0,${h} Z"/><path class="l" d="${d}"/></svg>
-    <div class="lbl-row"><span>${fmtNum(lo)}–${fmtNum(hi)}${unit}</span><span>last 15m · ${points.length} points from the store</span></div>`;
-}
-const fmtNum = (v) => (Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : (+v).toFixed(v >= 10 ? 0 : 1));
-function ledCard(title, ok, body) {
-  return `<div class="panel env core" style="--ec:${ok ? "#22c55e" : "#ef4444"}"><div class="chead"><span><span class="led"></span><b>${title}</b></span>${body.right || ""}</div>${body.html}</div>`;
-}
-function renderCore() {
-  const { bus: b, metrics: m } = CORE;
-  $("core-sub").textContent = `${b.backend} · ${m.backend} · probed ${ago(Date.now() / 1000 - CORE.probed_at)} ago`;
-  const types = (b.recent_types || []).map(([t, n]) => `<span class="ty">${esc(t)} <b>${n}</b></span>`).join("");
-  const probe = PROBE ? (PROBE.ok
-      ? `<div class="probe ok">✓ appended at offset ${PROBE.offset.toLocaleString()} in ${PROBE.append_ms} ms · read back by offset in ${PROBE.read_back_ms} ms</div>`
-      : `<div class="probe bad">✗ ${esc(PROBE.error || "the probe event was not read back")}</div>`) : "";
-  const busHtml = b.ok ? `<div class="kv">
-      <div>backend</div><div><b>${esc(b.backend)}</b></div>
-      <div>at</div><div class="num">${esc(b.url)}</div>
-      <div>stream</div><div class="num">${esc(b.stream)}</div>
-      <div>events</div><div class="num">${(b.events || 0).toLocaleString()}</div>
-      <div>rate</div><div class="num">${b.per_min_10m} / min over the last 10 min</div>
-      <div>last event</div><div>${b.last_event ? `${esc(b.last_event.type)} · ${ago(b.last_event.age_s)} ago` : "—"}</div>
-      <div>read</div><div class="num">${b.read_ms} ms for the end and the latest 200</div></div>
-      <div class="types">${types}</div>
-      <div class="sl">events stored</div>${spark((m.spark || {}).bus_events, { cls: "blue" })}
-      <div class="sl">read latency</div>${spark((m.spark || {}).bus_read_ms, { unit: " ms" })}
-      ${probe}` : `<div class="probe bad">${esc(b.error)}</div>`;
-  const metHtml = m.ok ? `<div class="kv">
-      <div>backend</div><div><b>${esc(m.backend)}</b></div>
-      <div>at</div><div class="num">${esc(m.url)}</div>
-      <div>series</div><div class="num">${m.series} for this project</div>
-      <div>round trip</div><div class="num">${m.round_trip_ok ? "✓" : "✗"} write ${m.write_ms} ms · readable after ${m.visible_ms} ms · read ${m.read_ms} ms</div></div>
-      <div class="sl">write latency</div>${spark((m.spark || {}).metrics_write_ms, { unit: " ms" })}
-      <div class="sl">write → readable</div>${spark((m.spark || {}).metrics_visible_ms, { unit: " ms", cls: "amber" })}
-      <div class="muted" style="font-size:11px;margin-top:6px">Every probe writes its own measurements into the store; these lines are read back from it.</div>`
-      : `<div class="probe bad">${esc(m.error)}</div>`;
-  $("core").innerHTML = ledCard("Event bus", b.ok, { html: busHtml, right: `<button class="ctl" onclick="probeBus()" title="Append a bus_probe event to the stream and read it back by its offset">test write</button>` })
-    + ledCard("Metrics store", m.ok, { html: metHtml });
-}
-async function refreshCore() { try { CORE = await (await fetch("/api/core")).json(); renderCore(); } catch (e) {} }
-async function probeBus() {
-  try { PROBE = await (await fetch("/api/core/probe", { method: "POST" })).json(); } catch (e) { PROBE = { ok: false, error: String(e) }; }
-  renderCore(); setTimeout(refreshCore, 300);
+// ---- a one-line Core status; the detail is on the Core page ----
+async function refreshCoreStrip() {
+  try {
+    const c = await (await fetch("/api/core")).json();
+    const led = (ok) => `<span class="cled" style="background:${ok ? "#22c55e" : "#ef4444"}"></span>`;
+    $("corestrip").innerHTML = `<b>Core</b> ${led(c.host.ok && c.host.loop && c.host.loop.alive)} host ${c.host.loop && c.host.loop.alive ? "running" : "loop stopped"} · ${led(c.bus.ok)} bus ${esc(c.bus.backend || "")} · ${led(c.metrics.ok)} metrics ${esc(c.metrics.backend || "")} <span class="muted" style="margin-left:auto">open →</span>`;
+  } catch (e) { $("corestrip").innerHTML = `<b>Core</b> <span class="cled" style="background:#ef4444"></span> unreachable`; }
 }
 
 const SYSTEM_POLL_MS = 2000; let coreBars = [];
@@ -199,8 +154,8 @@ async function refreshStaging() {
   } catch (e) {}
 }
 
-refresh(); refreshSystem(); refreshStaging(); refreshCore();
-setInterval(refresh, 2500); setInterval(refreshSystem, SYSTEM_POLL_MS); setInterval(refreshStaging, 3000); setInterval(refreshCore, 5000);
+refresh(); refreshSystem(); refreshStaging(); refreshCoreStrip();
+setInterval(refresh, 2500); setInterval(refreshSystem, SYSTEM_POLL_MS); setInterval(refreshStaging, 3000); setInterval(refreshCoreStrip, 5000);
 openFromHash();
 try { const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/events"); ws.onmessage = () => refresh(); } catch (e) {}
 </script>
