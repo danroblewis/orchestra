@@ -345,12 +345,16 @@ def cmd_metrics(args) -> int:
         return 0
     if args.action == "show":
         kind, _, what = args.what.partition(":")
-        series, label = ({"stock": (collectors.STOCK, "stock"), "flow": (collectors.FLOW, "flow"),
-                          "event": (collectors.EVENTS, "type")}.get(kind) or (None, None))
+        src, _, dst = what.partition(">")
+        series, labels = {
+            "stock": (collectors.TICKETS, {"state": what}),
+            "flow": ((collectors.CREATED, {}) if src == collectors.OUTSIDE else (collectors.TRANSITIONS, {"from": src, "to": dst})),
+            "event": (collectors.EVENTS, {"type": what}),
+        }.get(kind) or (None, None)
         if not series:
-            print("show stock:<STATE>, flow:<FROM>><TO> or event:<type>")
+            print("show stock:<STATE>, flow:<FROM>><TO> (outside>OPEN for creation) or event:<type>")
             return 2
-        labels = {"project": project.key, label: what}
+        labels = {"project": project.key, **labels}
         pts = store.raw(series, labels)
         if not pts:
             print("no data; run `orchestra metrics backfill` first")
@@ -370,23 +374,32 @@ def cmd_metrics(args) -> int:
 
 def cmd_sd(args) -> int:
     """The system dynamics model: declare Orchestra's own factory, fit its flows, show it."""
+    from datetime import UTC, datetime
+
     from .metrics import for_project as metrics_for
     from .sd.factory import ticket_factory
     from .sd.fit import fit_model
     from .sd.store import ModelStore
 
     project = load_project()
-    models = ModelStore(project.state_dir / "models")
+    models = ModelStore.for_state(project.state_dir)
     if args.action == "declare":
         m = ticket_factory(project.key)
-        print(f"declared {m.id}: {len(m.stocks)} stocks, {len(m.flows)} flows, {len(m.machines)} machines → {models.save(m)}")
+        n = models.save(m, note="declared: Orchestra's task system")
+        print(f"declared {len(m.stocks)} stocks, {len(m.flows)} flows, {len(m.machines)} machines → version {n}")
         return 0
-    m = models.load(args.model) or ticket_factory(project.key)
+    if args.action == "versions":
+        for v in models.versions():
+            when = datetime.fromtimestamp(v["saved_at"], UTC).strftime("%Y-%m-%d %H:%M") if v["saved_at"] else "-"
+            print(f"v{v['version']:<4} {when}  {v['stocks']} stocks, {v['flows']} flows ({v['fitted']} fitted)  {v['note']}")
+        return 0
+    m = models.load(args.version) or ticket_factory(project.key)
     if args.action == "fit":
         fit_model(m, metrics_for(project), project.key, step=args.step * 3600)
-        models.save(m)
+        n = models.save(m, note=f"fitted from the metrics store, {args.step:g} h steps")
+        print(f"saved as version {n}")
     store = metrics_for(project)
-    print(f"{m.name} ({m.id})")
+    print(f"{m.name} (version {args.version or models.current_version() or 'not saved'})")
     print("\nstocks (latest level):")
     for s in m.stocks:
         last = store.latest(s.series.name, s.series.labels) if s.series else None
@@ -541,9 +554,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--append", action="store_true", help="for backfill: keep existing points instead of replacing them")
     s.set_defaults(fn=cmd_metrics)
 
-    s = sub.add_parser("sd", help="the system dynamics model: declare Orchestra's own factory, fit it, show it")
-    s.add_argument("action", choices=["declare", "fit", "show"])
-    s.add_argument("--model", default="tickets")
+    s = sub.add_parser("sd", help="the system dynamics model: declare Orchestra's own factory, fit it, show it, list its versions")
+    s.add_argument("action", choices=["declare", "fit", "show", "versions"])
+    s.add_argument("--version", type=int, help="for show and fit: start from this past version (default: the current one)")
     s.add_argument("--step", type=float, default=1.0, help="for fit: hours per step (default 1)")
     s.set_defaults(fn=cmd_sd)
 

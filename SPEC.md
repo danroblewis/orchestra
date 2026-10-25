@@ -590,10 +590,17 @@ value is a query; a range carries the last value forward at each step.
 
 | Series | What it is |
 |---|---|
-| `orchestra_stock{stock}` | Tickets in each state (a stock's level) |
-| `orchestra_flow_total{flow}` | Tickets that have moved along each flow, e.g. `OPEN>IN_PROGRESS` or `outside>OPEN` (a cumulative counter) |
+| `orchestra_tickets{state}` | Tickets in each state |
+| `orchestra_tickets_created_total` | Tickets created (a cumulative counter) |
+| `orchestra_ticket_transitions_total{from,to}` | Tickets that have moved from one state to another (a cumulative counter) |
 | `orchestra_events_total{type}` | Events of each type |
-| `orchestra_stock_sampled{stock}` | The ticket store's own count, read directly |
+| `orchestra_tickets_sampled{state}` | The ticket store's own count, read directly |
+
+Series are named for what they measure, so summing across a label means
+something; whether a series is a stock or a flow is the model's business,
+decided by what it binds (section 6.7). Only the last value of a series at
+an instant is written: events have one-second timestamps, and stores
+disagree on the order of points that share one.
 
 Integrated levels are **anchored**: each stock's series is shifted so its
 last value equals the sampled count. The shift is reported, as a measure of
@@ -603,21 +610,24 @@ log, lists series, and prints a stock or flow over time.
 ### 6.7 The system dynamics model
 
 `orchestra/sd/` holds the model (stocks bound to series, flows bound to
-counters, equations, machines, eras), a model store (`<state>/models/`), and
-inference. Every equation records its **origin**: `fitted` (with method,
+counters, equations, machines, eras), the model store, and inference. There
+is **one model** of the system. Every change to it is saved as a new
+version (`<state>/model/v0001.json`, …); the highest is current, and past
+versions stay readable. Sub-models are views of it, not separate models. Every equation records its **origin**: `fitted` (with method,
 window and quality), `discovered`, or `declared` (an assumption until
 fitted). A **machine** is a record of something outside Orchestra,
 attributed to flows as a hypothesis; it never defines a flow's equation.
 Exactly one machine is the **bootstrap** host.
 
-`orchestra sd declare` writes Orchestra's own task system as a model
+`orchestra sd declare` writes Orchestra's own task system into the model
 (ticket states as stocks, transitions as flows, today's loop steps as
 machines; descriptive only). `orchestra sd fit` fits every flow from the
 metrics store: each step's count is Poisson, with mean `c × running hours`
 (constant) or `k × the source stock's item-hours` (proportional, the exact
 integral of its level while the loop runs), fitted by maximum likelihood;
 the form with the higher likelihood is kept, with its standard error,
-dispersion and event count. Hours with the loop stopped are left out.
+dispersion and event count. Hours with the loop stopped are left out. Both
+save a new version; `orchestra sd versions` lists them.
 
 ---
 

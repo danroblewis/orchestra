@@ -21,7 +21,7 @@ from ..harness import read_transcript
 from ..store import LocalStore, StoreError
 from .core import CoreProbe
 from .core_explore import Explorer
-from .dynamics import model_view, models_index
+from .dynamics import model_view
 from .machines import machines_view
 
 STATIC = Path(__file__).parent / "static"
@@ -110,7 +110,7 @@ def create_app(project: Project) -> FastAPI:
         from ..sd.factory import PROGRAM_EVENTS, flow_event, ticket_factory
         from ..sd.store import ModelStore
         agents_, teams = all_agents(project), all_teams(project)
-        model = ModelStore(project.state_dir / "models").load("tickets") or ticket_factory(project.key)
+        model = ModelStore.for_state(project.state_dir).load() or ticket_factory(project.key)
         nodes: dict[str, dict] = {}
         edges: list[dict] = []
         def node(nid, kind, label=None, **extra):
@@ -277,13 +277,9 @@ def create_app(project: Project) -> FastAPI:
     async def dynamics_page() -> str:
         return page("dynamics.html")
 
-    @app.get("/api/dynamics/models")
-    def dynamics_models() -> dict:
-        return models_index(project)
-
     @app.get("/api/dynamics/model")
-    def dynamics_model(id: str = "tickets") -> dict:
-        return model_view(project, id)
+    def dynamics_model(version: int | None = None) -> dict:
+        return model_view(project, version)
 
     @app.get("/api/machines")
     async def machines() -> dict:

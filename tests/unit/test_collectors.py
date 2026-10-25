@@ -3,7 +3,15 @@
 from __future__ import annotations
 
 from orchestra import collectors
-from orchestra.collectors import FLOW, SAMPLED, STOCK, TicketCollector, anchor, backfill
+from orchestra.collectors import (
+    CREATED,
+    SAMPLED,
+    TICKETS,
+    TRANSITIONS,
+    TicketCollector,
+    anchor,
+    backfill,
+)
 from orchestra.metrics.file import FileMetrics
 
 
@@ -22,7 +30,7 @@ LOG = [
 
 
 def levels(points, stock):
-    return [p.value for p in points if p.series == STOCK and p.labels["stock"] == stock]
+    return [p.value for p in points if p.series == TICKETS and p.labels["state"] == stock]
 
 
 def test_events_become_levels_and_counters():
@@ -30,10 +38,12 @@ def test_events_become_levels_and_counters():
     pts = [p for e in LOG for p in col.observe(e)]
     assert levels(pts, "OPEN") == [1, 2, 1, 0]
     assert levels(pts, "IN_PROGRESS") == [1, 0, 1]
-    assert col.flows == {"outside>OPEN": 2, "OPEN>IN_PROGRESS": 2, "IN_PROGRESS>READY_FOR_REVIEW": 1}
+    assert col.flows == {("outside", "OPEN"): 2, ("OPEN", "IN_PROGRESS"): 2, ("IN_PROGRESS", "READY_FOR_REVIEW"): 1}
     assert col.events["session_started"] == 1
-    flow_pts = [p.value for p in pts if p.series == FLOW and p.labels["flow"] == "OPEN>IN_PROGRESS"]
+    flow_pts = [p.value for p in pts if p.series == TRANSITIONS and (p.labels["from"], p.labels["to"]) == ("OPEN", "IN_PROGRESS")]
     assert flow_pts == [1, 2], "a flow is a cumulative counter"
+    assert [p.value for p in pts if p.series == CREATED] == [1, 2], "creation has its own counter"
+    assert all(set(p.labels) == {"project"} for p in pts if p.series == CREATED)
 
 
 def test_anchor_shifts_integrated_levels_to_the_sampled_counts():
@@ -51,6 +61,22 @@ def test_backfill_writes_everything_and_replaces_on_rerun(tmp_path):
         rep = backfill(LOG, project="p", store=store, sampled={"OPEN": 1, "IN_PROGRESS": 1, "READY_FOR_REVIEW": 1},
                        sampled_at=1_800_000_000.0)
     assert rep.shifts["OPEN"] == 1 and rep.events == len(LOG)
-    assert [v for _, v in store.raw(STOCK, {"project": "p", "stock": "OPEN"})] == [2, 3, 2, 1], "rerun replaced, not doubled"
-    assert store.latest(SAMPLED, {"project": "p", "stock": "OPEN"}) == (1_800_000_000.0, 1)
+    assert [v for _, v in store.raw(TICKETS, {"project": "p", "state": "OPEN"})] == [2, 3, 2, 1], "rerun replaced, not doubled"
+    assert store.latest(SAMPLED, {"project": "p", "state": "OPEN"}) == (1_800_000_000.0, 1)
     assert store.latest(collectors.EVENTS, {"project": "p", "type": "ticket_created"})[1] == 2
+
+
+def test_one_value_per_series_per_instant(tmp_path):
+    """A ticket entering and leaving a state in the same second must not leave two values at one
+    instant: stores order those differently, and the level after the second would be ambiguous."""
+    log = [ev(0, "ticket_created", ticket="A-1"),
+           ev(5, "ticket_transition", ticket="A-1", **{"from": "OPEN", "to": "IN_PROGRESS"}),
+           ev(5, "ticket_transition", ticket="A-1", **{"from": "IN_PROGRESS", "to": "BLOCKED"})]
+    store = FileMetrics(tmp_path / "m.jsonl")
+    backfill(log, project="p", store=store, sampled={"BLOCKED": 1}, sampled_at=1_800_000_000.0)
+    stamp = TicketCollector("p")
+    t5 = [p for e in log for p in stamp.observe(e)][-1].ts
+    assert store.raw(TICKETS, {"project": "p", "state": "IN_PROGRESS"}) == [(t5, 0)]
+    pts = collectors.collapse([p for e in log for p in TicketCollector("p").observe(e)])
+    keys = [(p.key(), p.ts) for p in pts]
+    assert len(keys) == len(set(keys))

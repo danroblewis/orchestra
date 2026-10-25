@@ -31,7 +31,7 @@ def _owner(session_id: str) -> str | None:
 
 
 def machines_view(project, store, snapshot: dict) -> dict:
-    model = ModelStore(project.state_dir / "models").load("tickets") or ticket_factory(project.key)
+    model = ModelStore.for_state(project.state_dir).load() or ticket_factory(project.key)
     flows = {f.id: f for f in model.flows}
     sessions = snapshot.get("sessions", [])
     jobs: dict[str, list[dict]] = {}

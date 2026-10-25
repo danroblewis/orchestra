@@ -1,13 +1,15 @@
 """Orchestra's own task system, declared as a model: descriptive only.
 
-Ticket states are stocks (bound to ``orchestra_stock``), every transition the loop can make is a
-flow (bound to ``orchestra_flow_total``), and today's loop steps are machines attributed to the
+Ticket states are stocks (bound to ``orchestra_tickets{state}``), creation and every transition
+the loop can make are flows (bound to ``orchestra_tickets_created_total`` and
+``orchestra_ticket_transitions_total{from, to}``), and today's loop steps are machines attributed to the
 flows they cause (docs/proposals/orchestra-kernel.md §3). Nothing here changes behaviour: the loop
 still runs as before. Equations start empty; ``orchestra sd fit`` fills them from the history."""
 
 from __future__ import annotations
 
-from ..collectors import FLOW, OUTSIDE, STOCK
+from ..collectors import CREATED, OUTSIDE, TICKETS
+from ..collectors import TRANSITIONS as TRANSITIONS_SERIES
 from ..model import State
 from .model import Engagement, Flow, Machine, Model, SeriesRef, Stock
 
@@ -76,11 +78,13 @@ def flow_event(fid: str) -> str:
 def ticket_factory(project_key: str) -> Model:
     lab = {"project": project_key}
     stocks = [Stock(s.value, s.value.replace("_", " ").capitalize(), "tickets",
-                    SeriesRef(STOCK, {**lab, "stock": s.value})) for s in State]
+                    SeriesRef(TICKETS, {**lab, "state": s.value})) for s in State]
     flows = [Flow(flow_id(a, b), f"{(a or 'outside').lower()} → {b.lower()}", a, b,
-                  SeriesRef(FLOW, {**lab, "flow": flow_id(a, b)})) for a, b in TRANSITIONS]
+                  SeriesRef(CREATED, lab) if a is None else SeriesRef(TRANSITIONS_SERIES, {**lab, "from": a, "to": b}))
+             for a, b in TRANSITIONS]
     machines = [Machine(mid, name, kind, desc, flows_, [], eng, bootstrap=(mid == "orchestra-host"))
                 for mid, (name, kind, desc, flows_, eng) in MACHINES.items()]
-    return Model("tickets", "Orchestra's task system",
-                 "Ticket states as stocks, transitions as flows, today's loop steps as machines. Descriptive: "
-                 "equations are fitted from the event history.", "hour", stocks, flows, machines)
+    return Model("system", "The system",
+                 "Today it holds Orchestra's own task system: ticket states as stocks, creation and transitions as "
+                 "flows, today's loop steps as machines. Descriptive: equations are fitted from the event history.",
+                 "hour", stocks, flows, machines)

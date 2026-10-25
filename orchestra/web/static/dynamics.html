@@ -10,7 +10,10 @@
   .dynwrap { max-width:1500px; margin:0 auto; padding:16px 20px }
   .dynwrap .intro { font-size:12.5px; color:var(--text2); margin-bottom:12px; max-width:1100px }
   .dynhead { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:10px }
-  .dynhead select { background:var(--panel3); color:var(--text); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:12.5px; padding:3px 8px }
+  .dynhead h1 { font-size:15px; margin:0 }
+  .ver { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text2) }
+  .ver button { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:12px; padding:1px 8px; cursor:pointer }
+  .ver button:disabled { opacity:.35; cursor:default } .ver b { color:var(--text) } .ver .past { color:#fcd34d }
   .dynhead .sum { font-size:12px; color:var(--text2) }
   .diagram { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:8px; overflow:auto }
   .diagram svg { width:100%; height:auto; min-height:0; display:block }
@@ -29,8 +32,8 @@
 <body>
 <nav id="nav"><a href="/">Dashboard</a><a href="/tickets">Tickets</a><a href="/machines">Machines</a><a href="/dynamics" class="on">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="dynwrap">
-  <div class="intro">The system dynamics model of the systems Orchestra covers: stocks are measured quantities (each bound to a series in the metrics store), flows move material between them with equations fitted from the history, and machines (AI agents and programs) are attributed to the flows they are believed to cause. Every equation says whether it was fitted or only declared.</div>
-  <div class="dynhead"><select id="model" onchange="pick(this.value)"></select><span class="sum" id="sum"></span></div>
+  <div class="intro">The system dynamics model of the system Orchestra covers. There is one model; it changes over time, and each change is kept as a version. Stocks are measured quantities (each bound to a series in the metrics store), flows move material between them with equations fitted from the history, and machines (AI agents and programs) are attributed to the flows they are believed to cause. Every equation says whether it was fitted or only declared.</div>
+  <div class="dynhead"><h1 id="mname">The system</h1><span class="ver" id="ver"></span><span class="sum" id="sum"></span></div>
   <div class="diagram" id="diagram"></div>
   <div class="legend" id="legend"></div>
   <div class="tables">
@@ -48,8 +51,7 @@
 const MCOLOR = { "orchestra-host": "#facc15", worker: "#60a5fa", reviewer: "#e879f9", gate: "#a3a3a3", recovery: "#f87171",
   supervisor: "#c084fc", coordinator: "#38bdf8", "pipeline-manager": "#fb923c" };
 const mcolor = (id) => MCOLOR[id] || "#94a3b8";
-let MODEL = null, MID = null;
-try { MID = localStorage.getItem("orchestra.dynamics.model"); } catch (e) {}
+let MODEL = null, VERSION = null;   // null: follow the current version
 const nice = (s) => (s || "outside").toLowerCase().replace(/_/g, " ");
 function eqText(f, short) {
   const e = f.current; if (!e) return "no equation yet";
@@ -94,20 +96,43 @@ function tables() {
   $("machines").innerHTML = `<tr><th>machine</th><th>kind</th><th>engaged</th><th>flows</th></tr>` + m.machines.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span>${esc(x.name)}${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
       <td>${x.kind === "agent" ? "AI agent" : "program"}</td><td class="muted">${esc(x.engagement.map((e) => e.mode.replace("_", " ") + " · " + e.driver).join(", ") || "observed only")}</td><td class="num">${x.attributed.length}</td></tr>`).join("");
   const fitted = m.flows.filter((f) => f.current && f.current.origin === "fitted").length;
-  $("sum").innerHTML = `${esc(m.name)} · ${m.stocks.length} stocks · ${m.flows.length} flows (${fitted} fitted) · ${m.machines.length} machines${m.stored ? "" : ' · <span class="stale">not stored yet: <code>orchestra sd declare</code></span>'}${m.levels_error ? ` · <span class="stale">levels: ${esc(m.levels_error)}</span>` : ""}`;
+  $("sum").innerHTML = `${m.stocks.length} stocks · ${m.flows.length} flows (${fitted} fitted) · ${m.machines.length} machines${m.stored ? "" : ' · <span class="stale">not stored yet: <code>orchestra sd declare</code></span>'}${m.levels_error ? ` · <span class="stale">levels: ${esc(m.levels_error)}</span>` : ""}`;
+}
+function versionBar() {
+  const m = MODEL, vs = m.versions || [], i = vs.findIndex((v) => v.version === m.version);
+  $("mname").textContent = m.name;
+  if (!vs.length) { $("ver").innerHTML = ""; return; }
+  const v = vs[i] || {}, past = m.version !== m.current;
+  const when = v.saved_at ? new Date(v.saved_at * 1000).toLocaleString() : "";
+  $("ver").innerHTML = `<button ${i <= 0 ? "disabled" : ""} onclick="step(-1)" title="older version">‹</button>
+    <span>version <b>${m.version}</b> of ${vs.length}${past ? ' <span class="past">· a past version</span>' : " · current"}</span>
+    <button ${i >= vs.length - 1 ? "disabled" : ""} onclick="step(1)" title="newer version">›</button>
+    <span class="muted" title="${esc(when)}">${esc(v.note || "")}${when ? " · " + esc(ago(Date.now() / 1000 - v.saved_at)) + " ago" : ""}</span>`;
+}
+function step(d) {
+  const vs = MODEL.versions, i = vs.findIndex((v) => v.version === MODEL.version), n = vs[i + d];
+  if (!n) return;
+  VERSION = n.version === MODEL.current ? null : n.version;
+  load();
 }
 async function load() {
   try {
-    const idx = await (await fetch("/api/dynamics/models")).json();
-    if (!MID || !idx.models.includes(MID)) MID = idx.models[0];
-    $("model").innerHTML = idx.models.map((id) => `<option ${id === MID ? "selected" : ""}>${esc(id)}</option>`).join("");
-    const d = await (await fetch(`/api/dynamics/model?id=${encodeURIComponent(MID)}`)).json();
+    const d = await (await fetch("/api/dynamics/model" + (VERSION ? `?version=${VERSION}` : ""))).json();
     if (!d.ok) { $("diagram").innerHTML = `<div class="empty">${esc(d.error)}</div>`; return; }
-    MODEL = d.model; $("conn").textContent = "live"; draw(); tables();
+    MODEL = d.model; $("conn").textContent = "live"; versionBar(); draw(); tables();
   } catch (e) { $("conn").textContent = "disconnected"; }
 }
-function pick(id) { MID = id; try { localStorage.setItem("orchestra.dynamics.model", id); } catch (e) {} load(); }
-load(); setInterval(() => { fetch(`/api/dynamics/model?id=${encodeURIComponent(MID)}`).then((r) => r.json()).then((d) => { if (d.ok) { MODEL = d.model; tables(); } }).catch(() => {}); }, 15000);
+load();
+// follow the current model (a fit makes a new version), unless a past one is being read
+setInterval(async () => {
+  if (VERSION !== null) return;
+  try {
+    const d = await (await fetch("/api/dynamics/model")).json();
+    if (!d.ok) return;
+    const changed = !MODEL || d.model.version !== MODEL.version;
+    MODEL = d.model; versionBar(); if (changed) draw(); tables();
+  } catch (e) {}
+}, 15000);
 </script>
 </body>
 </html>

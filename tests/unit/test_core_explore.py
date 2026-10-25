@@ -27,13 +27,13 @@ def test_emitter_names_the_machine():
 def test_catalog_and_query_are_scoped_to_the_project(tmp_path):
     core = _core(tmp_path)
     now = time.time()
-    core.metrics.write([Point("orchestra_flow_total", v, now - 3600 + 600 * i, {"project": "p1", "flow": "a"}) for i, v in enumerate([0, 1, 3, 3, 6])]
-                       + [Point("orchestra_flow_total", 9, now, {"project": "other", "flow": "a"})])
+    core.metrics.write([Point("orchestra_ticket_transitions_total", v, now - 3600 + 600 * i, {"project": "p1", "flow": "a"}) for i, v in enumerate([0, 1, 3, 3, 6])]
+                       + [Point("orchestra_ticket_transitions_total", 9, now, {"project": "other", "flow": "a"})])
     ex = Explorer(core)
     cat = ex.catalog()
     assert cat["ok"] and cat["series"] == 1 and cat["points"] == 5
     assert cat["metrics"][0]["labels"]["flow"]["arity"] == 1
-    q = ex.query('increase(orchestra_flow_total{flow="a"}[1h])', 2)
+    q = ex.query('increase(orchestra_ticket_transitions_total{flow="a"}[1h])', 2)
     assert q["ok"] and q["engine"].startswith("orchestra") and q["lines"][0]["label"] == '{flow="a"}'
     assert max(v for _, v in q["lines"][0]["points"]) == 6.0      # p1's counter only: "other" is not seen
     bad = ex.query("sum(((", 2)
