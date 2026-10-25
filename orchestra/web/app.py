@@ -20,6 +20,7 @@ from ..model import State
 from ..harness import read_transcript
 from ..store import LocalStore, StoreError
 from .core import CoreProbe
+from .core_explore import Explorer
 from .dynamics import model_view, models_index
 from .machines import machines_view
 
@@ -43,6 +44,7 @@ def create_app(project: Project) -> FastAPI:
     events = Events.for_project(project)
     store = LocalStore(project, events)
     core = CoreProbe(project, events)
+    explore = Explorer(core)
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
     @app.middleware("http")
@@ -250,6 +252,22 @@ def create_app(project: Project) -> FastAPI:
     def core_probe() -> dict:
         """Append a probe event to the event bus and read it back by offset."""
         return core.write_probe()
+
+    @app.get("/api/core/metrics/catalog")
+    def core_metrics_catalog() -> dict:
+        return explore.catalog()
+
+    @app.get("/api/core/metrics/query")
+    def core_metrics_query(metric: str, match: str = "", hours: float = 24, step: float = 900, agg: str = "step") -> dict:
+        return explore.query(metric, match, hours, step, agg)
+
+    @app.get("/api/core/metrics/promql")
+    def core_metrics_promql(q: str, hours: float = 24, step: float = 900) -> dict:
+        return explore.promql(q, hours, step)
+
+    @app.get("/api/core/events")
+    def core_events(hours: float = 24) -> dict:
+        return explore.events(hours)
 
     @app.get("/api/core/logs/sources")
     def core_log_sources() -> dict:

@@ -59,6 +59,14 @@ class FileMetrics:
                 seen.setdefault((r["s"], tuple(sorted(r["l"].items()))), (r["s"], r["l"]))
         return sorted(seen.values(), key=lambda x: (x[0], sorted(x[1].items())))
 
+    def dump(self, prefix="orchestra_", labels=None):
+        groups: dict[tuple, tuple[str, dict, list]] = {}
+        for r in self._records():
+            if r["s"].startswith(prefix) and all(r["l"].get(k) == v for k, v in (labels or {}).items()):
+                g = groups.setdefault((r["s"], tuple(sorted(r["l"].items()))), (r["s"], r["l"], []))
+                g[2].append((r["t"], r["v"]))
+        return [(n, lab, sorted(pts, key=lambda p: p[0])) for n, lab, pts in sorted(groups.values(), key=lambda g: (g[0], sorted(g[1].items())))]
+
     def delete(self, series_prefix, labels=None):
         with self._lock:
             keep = [r for r in self._records()

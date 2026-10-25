@@ -57,6 +57,11 @@ class MetricsStore(Protocol):
 
     def series(self, prefix: str = "orchestra_") -> list[tuple[str, dict[str, str]]]: ...
 
+    def dump(self, prefix: str = "orchestra_", labels: dict[str, str] | None = None
+             ) -> list[tuple[str, dict[str, str], list[tuple[float, float]]]]:
+        """Every series whose name starts with ``prefix`` (and matches ``labels``), with all its
+        points in time order, in one pass: for catalogues and exploration."""
+
     def delete(self, series_prefix: str, labels: dict[str, str] | None = None) -> None:
         """Remove every series whose name starts with ``series_prefix`` (and matches ``labels``)."""
 

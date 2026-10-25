@@ -14,6 +14,19 @@
   .logs .bar button.on { color:var(--text); border-color:var(--accent) } .logs select { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:11px; padding:2px 6px }
   .logs .term { height:520px; white-space:pre; overflow:auto; font-size:11.5px }
   .proc { font-size:11.5px; color:var(--text2) } .stale { color:#fcd34d }
+  .explore { margin-top:16px; display:grid; grid-template-columns:repeat(auto-fit, minmax(560px, 1fr)); gap:12px; align-items:start }
+  .explore .panel { margin:0 } .explore h3 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:12px 0 6px }
+  .qbar { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size:12px }
+  .qbar input, .qbar select { background:var(--panel3); color:var(--text); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:12px; padding:3px 7px }
+  .qbar input.wide { flex:1; min-width:220px; font-family:var(--mono) }
+  table.ct { width:100%; border-collapse:collapse; font-size:12px } table.ct th { text-align:left; color:var(--muted); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; padding:4px 6px; border-bottom:1px solid var(--border) }
+  table.ct td { padding:4px 6px; border-bottom:1px solid var(--border); vertical-align:top } table.ct td.num { font-family:var(--mono); white-space:nowrap; text-align:right }
+  table.ct tr.pick { cursor:pointer } table.ct tr.pick:hover td { background:var(--panel3) }
+  .lk { display:inline-block; font-family:var(--mono); font-size:11px; color:var(--text2); margin-right:8px } .lk b { color:var(--text) }
+  svg.chart { width:100%; height:auto; min-height:0; display:block } .chart .ax { stroke:var(--border2); stroke-width:1 } .chart text { fill:var(--muted); font-size:10px; font-family:var(--mono) }
+  .chart path { fill:none; stroke-width:1.6 } .ckeys { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:11px; color:var(--text2); margin-top:4px }
+  .ckeys i { display:inline-block; width:10px; height:3px; border-radius:2px; margin-right:4px; vertical-align:middle }
+  .scroll { max-height:340px; overflow:auto } .mono { font-family:var(--mono); font-size:11.5px }
 </style>
 </head>
 <body>
@@ -21,6 +34,34 @@
 <div class="corewrap">
   <div class="intro">Orchestra's fundamental services: the bootstrap host, the event bus and the metrics store. Each is probed against its real backend every few seconds, separately and with a time limit, so this page keeps working when the model or the other machines do not. <span id="core-sub" class="muted"></span></div>
   <div class="cards" id="cards"></div>
+  <div class="explore">
+    <div class="panel" id="mx">
+      <h2 style="margin-top:0"><span>Metrics store explorer</span><span class="hctl"><span class="muted" id="mx-note"></span></span></h2>
+      <div id="mx-cat" class="scroll"></div>
+      <h3>Query</h3>
+      <div class="qbar">
+        <select id="mx-metric"></select>
+        <input id="mx-match" class="wide" placeholder="label filter, e.g. flow=OPEN>IN_PROGRESS">
+        <select id="mx-hours"><option value="6">6 h</option><option value="24" selected>24 h</option><option value="168">7 d</option><option value="0">all</option></select>
+        <select id="mx-step"><option value="300">5 min</option><option value="900" selected>15 min</option><option value="3600">1 h</option><option value="86400">1 day</option></select>
+        <select id="mx-agg"><option value="step">level</option><option value="rate">rate / h</option><option value="sum">sum</option><option value="raw">raw points</option></select>
+        <button class="ctl" onclick="runQuery()">run</button>
+      </div>
+      <div class="qbar" id="mx-promql-bar" style="margin-top:6px;display:none">
+        <input id="mx-promql" class="wide" placeholder='PromQL, e.g. sum by (flow) (increase(orchestra_flow_total[1h]))'>
+        <button class="ctl" onclick="runPromql()">run PromQL</button>
+      </div>
+      <div id="mx-out"></div>
+    </div>
+    <div class="panel" id="ex">
+      <h2 style="margin-top:0"><span>Event bus explorer</span><span class="hctl"><select id="ex-hours" onchange="loadEvents()" style="background:var(--panel3);color:var(--text);border:1px solid var(--border2);border-radius:6px;font:inherit;font-size:11px;padding:1px 6px"><option value="1">1 h</option><option value="24" selected>24 h</option><option value="168">7 d</option><option value="0">all</option></select> <span class="muted" id="ex-note"></span></span></h2>
+      <div id="ex-vol"></div>
+      <h3>Emitters, by machine</h3>
+      <div id="ex-mach"></div>
+      <h3>Event types</h3>
+      <div id="ex-types" class="scroll"></div>
+    </div>
+  </div>
   <div class="logs">
     <h2><span>Logs</span><span class="hctl"><span class="muted" id="log-note"></span></span></h2>
     <div class="bar" id="log-bar"></div>
@@ -33,17 +74,18 @@
 let CORE = null, PROBE = null, LOG_SRC = "host";
 try { LOG_SRC = localStorage.getItem("orchestra.core.log") || "host"; } catch (e) {}
 const fmtNum = (v) => (Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : (+v).toFixed(v >= 10 ? 0 : 1));
-function spark(points, { unit = "", w = 300, h = 34, cls = "" } = {}) {
+function spark(points, { unit = "", w = 300, h = 34, cls = "", note = null } = {}) {
   if (!points || points.length < 2) return `<div class="spark empty">collecting…</div>`;
   const t0 = points[0][0], t1 = points[points.length - 1][0] || t0 + 1;
   const vs = points.map((p) => p[1]), lo = Math.min(...vs), hi = Math.max(...vs), span = hi - lo || 1;
   const d = points.map(([t, v], i) => (i ? "L" : "M") + (w * (t - t0) / Math.max(1, t1 - t0)).toFixed(1) + "," + (h - 3 - (h - 6) * (v - lo) / span).toFixed(1)).join(" ");
   return `<svg class="spark ${cls}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><path class="a" d="${d} L${w},${h} L0,${h} Z"/><path class="l" d="${d}"/></svg>
-    <div class="lbl-row"><span>${fmtNum(lo)}–${fmtNum(hi)}${unit}</span><span>last 15m · ${points.length} points from the store</span></div>`;
+    <div class="lbl-row"><span>${fmtNum(lo)}–${fmtNum(hi)}${unit}</span><span>${note ?? `last 15m · ${points.length} points from the store`}</span></div>`;
 }
 function card(title, c, html, right = "", warn = false) {
   return `<div class="panel env core" style="--ec:${!c.ok ? "#ef4444" : warn ? "#f59e0b" : "#22c55e"}"><div class="chead"><span><span class="led"></span><b>${title}</b></span>${right}</div>${c.ok ? html : `<div class="probe bad">${esc(c.error || "failing")}</div>`}</div>`;
 }
+const age = (sec) => (sec >= 2 * 86400 ? `${(sec / 86400).toFixed(1)}d` : ago(sec));
 const since = (t) => t ? ago(Date.now() / 1000 - t) : "—";
 function renderCore() {
   const { host: h, bus: b, metrics: m } = CORE, sp = (m && m.spark) || {};
@@ -100,7 +142,81 @@ async function refreshLog() {
     if (atBottom) el.scrollTop = el.scrollHeight;
   } catch (e) {}
 }
-refreshCore(); refreshSources(); refreshLog();
+const PAL = ["#60a5fa", "#f59e0b", "#22c55e", "#e879f9", "#f87171", "#38bdf8", "#facc15", "#a78bfa", "#fb923c", "#94a3b8"];
+const tlabel = (t, span) => { const d = new Date(t * 1000); return span > 2 * 86400 ? `${d.getMonth() + 1}/${d.getDate()}` : d.toTimeString().slice(0, 5); };
+function lineChart(lines, { unit = "" } = {}) {
+  const pts = lines.flatMap((l) => l.points);
+  if (!pts.length) return `<div class="empty">no points in this range</div>`;
+  const W = 720, H = 200, L = 46, B = 18, T = 6, R = 8;
+  const t0 = Math.min(...pts.map((p) => p[0])), t1 = Math.max(...pts.map((p) => p[0])) || t0 + 1;
+  const hi = Math.max(0, ...pts.map((p) => p[1])), lo = Math.min(0, ...pts.map((p) => p[1])), span = hi - lo || 1;
+  const x = (t) => L + (W - L - R) * (t - t0) / Math.max(1, t1 - t0), y = (v) => T + (H - T - B) * (1 - (v - lo) / span);
+  const ticks = [lo, lo + span / 2, hi].map((v) => `<line class="ax" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke-dasharray="2 4"/><text x="${L - 4}" y="${y(v) + 3}" text-anchor="end">${fmtNum(v)}</text>`).join("");
+  const xt = [0, .5, 1].map((f) => `<text x="${L + (W - L - R) * f}" y="${H - 4}" text-anchor="${f === 0 ? "start" : f === 1 ? "end" : "middle"}">${tlabel(t0 + (t1 - t0) * f, t1 - t0)}</text>`).join("");
+  const paths = lines.map((l, i) => `<path stroke="${PAL[i % PAL.length]}" d="${l.points.map(([t, v], j) => (j ? "L" : "M") + x(t).toFixed(1) + "," + y(v).toFixed(1)).join(" ")}"><title>${esc(l.label)}</title></path>`).join("");
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}">${ticks}${xt}${paths}</svg>
+    <div class="ckeys">${lines.map((l, i) => `<span><i style="background:${PAL[i % PAL.length]}"></i>${esc(l.label)}</span>`).join("")}${unit ? `<span class="muted">${esc(unit)}</span>` : ""}</div>`;
+}
+let CAT = null;
+async function loadCatalog() {
+  $("mx-note").textContent = "reading…";
+  try {
+    CAT = await (await fetch("/api/core/metrics/catalog")).json();
+    if (!CAT.ok) { $("mx-cat").innerHTML = `<div class="probe bad">${esc(CAT.error)}</div>`; $("mx-note").textContent = ""; return; }
+    $("mx-note").textContent = `${CAT.backend} · project ${CAT.project} · ${CAT.metrics.length} metrics · ${CAT.series} series · ${CAT.points.toLocaleString()} points`;
+    $("mx-cat").innerHTML = `<div class="sl">points written per hour, last 24 h</div>${spark(CAT.writes_per_hour_24h, { w: 520, note: "per hour, last 24 h" })}
+      <table class="ct"><tr><th>metric</th><th>labels (unique values)</th><th>series</th><th>points</th><th>last 1 h</th><th>last write</th></tr>${CAT.metrics.map((m) =>
+        `<tr class="pick" onclick="pickMetric('${esc(m.name)}')" title="first written ${m.first ? age(Date.now() / 1000 - m.first) + " ago" : "—"}"><td class="mono">${esc(m.name)}</td>
+         <td>${Object.entries(m.labels).map(([k, v]) => `<span class="lk" title="${esc(v.values.join(", "))}">${esc(k)} <b>${v.arity}</b></span>`).join("")}</td>
+         <td class="num">${m.series}</td><td class="num">${m.points.toLocaleString()}</td><td class="num">${m.last_hour}</td><td class="num">${m.last ? age(Date.now() / 1000 - m.last) + " ago" : "—"}</td></tr>`).join("")}</table>`;
+    const cur = $("mx-metric").value;
+    $("mx-metric").innerHTML = CAT.metrics.map((m) => `<option ${m.name === cur ? "selected" : ""}>${esc(m.name)}</option>`).join("");
+    $("mx-promql-bar").style.display = CAT.backend === "victoriametrics" ? "flex" : "none";
+    if (!cur) pickMetric((CAT.metrics.find((m) => m.name === "orchestra_events_total") || CAT.metrics[0]).name);
+  } catch (e) { $("mx-note").textContent = "unreachable"; }
+}
+function pickMetric(name) {
+  $("mx-metric").value = name;
+  $("mx-agg").value = name.endsWith("_total") ? "rate" : "step";
+  runQuery();
+}
+async function runQuery() {
+  const q = new URLSearchParams({ metric: $("mx-metric").value, match: $("mx-match").value, hours: $("mx-hours").value, step: $("mx-step").value, agg: $("mx-agg").value });
+  $("mx-out").innerHTML = `<div class="muted">querying…</div>`;
+  try {
+    const d = await (await fetch("/api/core/metrics/query?" + q)).json();
+    $("mx-out").innerHTML = !d.ok ? `<div class="probe bad">${esc(d.error)}</div>` : d.note ? `<div class="empty">${esc(d.note)}</div>`
+      : `<div class="muted" style="font-size:11px;margin:6px 0">${d.matched} series matched${d.moving < d.matched ? `, ${d.moving} moved in range` : ""}${d.moving > d.shown ? `, first ${d.shown} shown` : ""}</div>` + lineChart(d.lines, { unit: $("mx-agg").value === "rate" ? "per hour" : "" });
+  } catch (e) { $("mx-out").innerHTML = `<div class="probe bad">${esc(String(e))}</div>`; }
+}
+async function runPromql() {
+  const q = new URLSearchParams({ q: $("mx-promql").value, hours: $("mx-hours").value || 24, step: $("mx-step").value });
+  $("mx-out").innerHTML = `<div class="muted">querying…</div>`;
+  try {
+    const d = await (await fetch("/api/core/metrics/promql?" + q)).json();
+    $("mx-out").innerHTML = !d.ok ? `<div class="probe bad">${esc(d.error)}</div>` : `<div class="muted" style="font-size:11px;margin:6px 0">${d.matched} series</div>` + lineChart(d.lines);
+  } catch (e) { $("mx-out").innerHTML = `<div class="probe bad">${esc(String(e))}</div>`; }
+}
+async function loadEvents() {
+  $("ex-note").textContent = "reading…";
+  try {
+    const d = await (await fetch("/api/core/events?hours=" + $("ex-hours").value)).json();
+    if (!d.ok) { $("ex-vol").innerHTML = `<div class="probe bad">${esc(d.error)}</div>`; $("ex-note").textContent = ""; return; }
+    $("ex-note").textContent = `${d.backend} · ${d.in_range.toLocaleString()} of ${d.total.toLocaleString()} events in range`;
+    $("ex-vol").innerHTML = `<div class="sl">events per ${ago(d.bucket_s)} bucket, top types</div>` + lineChart(d.volume);
+    const max = Math.max(1, ...d.machines.map((m) => m.events));
+    $("ex-mach").innerHTML = `<table class="ct"><tr><th>machine</th><th>events</th><th></th><th>mostly</th></tr>${d.machines.map((m) =>
+      `<tr><td>${esc(m.machine)}</td><td class="num">${m.events.toLocaleString()}</td><td style="width:30%"><div style="height:6px;border-radius:3px;background:var(--accent);width:${(100 * m.events / max).toFixed(1)}%"></div></td>
+       <td class="muted">${m.types.map(([t, n]) => `${esc(t)} ${n}`).join(" · ")}</td></tr>`).join("")}</table>
+      <div class="muted" style="font-size:11px;margin-top:4px">Inferred from each event: the agent named in <code>by</code>/<code>author</code>, else a resident or agent session, else the loop on the bootstrap host.</div>`;
+    $("ex-types").innerHTML = `<table class="ct"><tr><th>type</th><th>in range</th><th>total</th><th>first</th><th>last</th><th>from</th></tr>${d.types.map((t) =>
+      `<tr><td class="mono">${esc(t.type)}</td><td class="num">${t.in_range.toLocaleString()}</td><td class="num">${t.total.toLocaleString()}</td>
+       <td class="num">${t.first ? age(Date.now() / 1000 - t.first) : "—"}</td><td class="num">${t.last ? age(Date.now() / 1000 - t.last) : "—"}</td>
+       <td class="muted">${t.machines.map(([m, n]) => `${esc(m)} ${n}`).join(" · ")}</td></tr>`).join("")}</table>`;
+  } catch (e) { $("ex-note").textContent = "unreachable"; }
+}
+refreshCore(); refreshSources(); refreshLog(); loadCatalog(); loadEvents();
+setInterval(loadCatalog, 60000); setInterval(loadEvents, 60000);
 setInterval(refreshCore, 5000); setInterval(refreshLog, 3000); setInterval(refreshSources, 30000);
 </script>
 </body>

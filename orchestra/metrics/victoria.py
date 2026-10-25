@@ -84,6 +84,14 @@ class VictoriaMetrics:
                for r in self._export(f'{{__name__=~"{prefix}.*"}}', 0)]
         return sorted(out, key=lambda x: (x[0], sorted(x[1].items())))
 
+    def dump(self, prefix="orchestra_", labels=None):
+        out = []
+        for r in self._export(_selector(prefix, labels, prefix=True), 0):
+            lab = {k: v for k, v in r["metric"].items() if k != "__name__"}
+            pts = sorted(zip([t / 1000 for t in r["timestamps"]], r["values"]), key=lambda p: p[0])
+            out.append((r["metric"]["__name__"], lab, pts))
+        return sorted(out, key=lambda g: (g[0], sorted(g[1].items())))
+
     def delete(self, series_prefix, labels=None):
         self._req("/api/v1/admin/tsdb/delete_series", {"match[]": _selector(series_prefix, labels, prefix=True)}, body=b"")
 

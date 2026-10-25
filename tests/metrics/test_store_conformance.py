@@ -62,3 +62,11 @@ def test_delete_by_prefix_and_label(store):
     store.delete("orchestra_flow", {"project": store.project})
     assert store.raw("orchestra_flow_total", {"project": store.project, "flow": "a>b"}) == []
     assert store.raw("orchestra_stock", {"project": store.project, "stock": "OPEN"}) == [(1000, 1)]
+
+
+def test_dump_returns_every_matching_series_in_one_pass(store):
+    store.write([P(store, "orchestra_stock", 1, 1000, stock="OPEN"), P(store, "orchestra_stock", 2, 1010, stock="OPEN"),
+                 P(store, "orchestra_flow_total", 4, 1000, flow="a>b")])
+    got = store.dump("orchestra_", {"project": store.project})
+    assert [(n, l.get("stock") or l.get("flow"), pts) for n, l, pts in got] == [
+        ("orchestra_flow_total", "a>b", [(1000, 4)]), ("orchestra_stock", "OPEN", [(1000, 1), (1010, 2)])]
