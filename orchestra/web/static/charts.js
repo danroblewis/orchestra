@@ -10,8 +10,10 @@ const Charts = (() => {
   const colorOf = (l, i) => l.color || PAL[i % PAL.length];     // a line may carry its own colour
   const register = (spec) => { const id = "c" + ++seq; REG.set(id, spec); if (REG.size > 60) REG.delete(REG.keys().next().value); return id; };
 
-  // W is the drawing width in pixels: pass the container's width so text and lines keep their size
-  function line(lines, { unit = "", H = 200, W = 720 } = {}) {
+  // W is the drawing width in pixels: pass the container's width so text and lines keep their size.
+  // A line may be dashed (``dash``: an SVG dash array); ``marks`` are labelled vertical lines
+  // ([{t, label}], such as "now")
+  function line(lines, { unit = "", H = 200, W = 720, marks = [] } = {}) {
     const pts = lines.flatMap((l) => l.points);
     if (!pts.length) return `<div class="empty">no points in this range</div>`;
     W = Math.max(320, Math.round(W));
@@ -22,9 +24,10 @@ const Charts = (() => {
     const id = register({ lines, x, y, t0, t1, L, R, W, H, T, B, unit, dots: true });
     const ticks = [lo, lo + span / 2, hi].map((v) => `<line class="ax" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke-dasharray="2 4"/><text x="${L - 4}" y="${y(v) + 3}" text-anchor="end">${num(v)}</text>`).join("");
     const xt = [0, 0.5, 1].map((f) => `<text x="${L + (W - L - R) * f}" y="${H - 4}" text-anchor="${f === 0 ? "start" : f === 1 ? "end" : "middle"}">${tlabel(t0 + (t1 - t0) * f, t1 - t0)}</text>`).join("");
-    const paths = lines.map((l, i) => `<path data-i="${i}" stroke="${colorOf(l, i)}" d="${l.points.map(([t, v], j) => (j ? "L" : "M") + x(t).toFixed(1) + "," + y(v).toFixed(1)).join(" ")}"/>`).join("");
-    return `<svg class="chart" data-cid="${id}" viewBox="0 0 ${W} ${H}">${ticks}${xt}<g class="lines">${paths}</g><g class="hov"></g><rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/></svg>
-      <div class="ckeys" data-for="${id}">${lines.map((l, i) => `<span data-i="${i}"><i style="background:${colorOf(l, i)}"></i>${esc(l.label)}</span>`).join("")}${unit ? `<span class="muted">${esc(unit)}</span>` : ""}</div>`;
+    const mk = marks.filter((m) => m.t >= t0 && m.t <= t1).map((m) => `<line class="ax" x1="${x(m.t)}" x2="${x(m.t)}" y1="${T}" y2="${H - B}" stroke-dasharray="3 3"/><text x="${x(m.t) + 3}" y="${T + 10}">${esc(m.label)}</text>`).join("");
+    const paths = lines.map((l, i) => `<path data-i="${i}" stroke="${colorOf(l, i)}"${l.dash ? ` stroke-dasharray="${l.dash}"` : ""} d="${l.points.map(([t, v], j) => (j ? "L" : "M") + x(t).toFixed(1) + "," + y(v).toFixed(1)).join(" ")}"/>`).join("");
+    return `<svg class="chart" data-cid="${id}" viewBox="0 0 ${W} ${H}">${ticks}${xt}${mk}<g class="lines">${paths}</g><g class="hov"></g><rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/></svg>
+      <div class="ckeys" data-for="${id}">${lines.map((l, i) => `<span data-i="${i}"><i style="${l.dash ? `background:none;border-top:2px dashed ${colorOf(l, i)};height:0` : `background:${colorOf(l, i)}`}"></i>${esc(l.label)}</span>`).join("")}${unit ? `<span class="muted">${esc(unit)}</span>` : ""}</div>`;
   }
 
   function spark(points, { unit = "", w = 300, h = 34, cls = "", note = null, label = "" } = {}) {

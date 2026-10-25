@@ -87,16 +87,50 @@ const Live = (() => {
       <div class="tr"><span>observed, last 2 min</span><b>${fmt(r)}${per()}</b></div><div class="tr"><span>equation says now</span><b>${fmt(pr)}${per()}</b></div>
       <div class="tr"><span>equation</span><b>${esc(eqText(f))}</b></div>${f.machine ? `<div class="tr"><span>machine</span><b>${esc(f.machine)}</b></div>` : ""}<div class="hint">click for history and fit</div>`;
   }
+  // the stock's drawer: what it is, its level measured and as the equations run it (since the era
+  // began, and projected ahead), and the flows that fill and drain it
+  const horizon = () => { try { return +localStorage.getItem("orchestra.dyn.horizon") || 30; } catch (e) { return 30; } };
   function openStock(id) {
     const s = MODEL.stocks.find((x) => x.id === id), io = flowsOf(id), ev = s.evidence || {};
-    const lines = [...io.in.map((f) => ({ label: "+ " + f.name, points: flowHist(f.id) })), ...io.out.map((f) => ({ label: "− " + f.name, points: flowHist(f.id).map(([t, v]) => [t, v]) }))].filter((l) => l.points.length);
-    openDrawer(`<h3>${esc(s.name)} <span class="tag">stock</span></h3>
+    const rate = (f) => `${fmt(recentRate(f.id))}${per()}`;
+    const flowRow = (f, sg) => `<div class="tr"><span>${sg} <span class="mdot" style="--c:${mcolor(f.machine)}"></span>${esc(f.name)} <span class="muted">${esc(sg === "+" ? "from " + (f.from ? stockName(f.from) : "outside") : "to " + (f.to ? stockName(f.to) : "outside"))}</span></span> <b style="margin-left:10px">${rate(f)}</b></div>`;
+    // outflows are drawn below zero, so what fills and what drains it read apart at a glance
+    const lines = [...io.in.map((f) => ({ label: "in: " + f.name, points: flowHist(f.id), color: mcolor(f.machine) })),
+      ...io.out.map((f) => ({ label: "out: " + f.name, points: flowHist(f.id).map(([t, v]) => [t, -v]), color: mcolor(f.machine), dash: "5 3" }))].filter((l) => l.points.length);
+    const net = new Map();
+    for (const l of lines) for (const [t, v] of l.points) net.set(t, (net.get(t) || 0) + v);
+    if (lines.length > 1) lines.push({ label: "net (in − out)", points: [...net.entries()].sort((a, b) => a[0] - b[0]), color: "#e5e7eb" });
+    openDrawer(`<h3>${esc(s.name)} <span class="tag">stock</span>${ev.hidden ? ' <span class="tag">hidden: found from the levels, not measured</span>' : ""}</h3>
       <div class="def"><div>now</div><div class="num">${fmt(now(id))}</div>
       <div>changed by</div><div>${[...new Set([...io.in, ...io.out].map((f) => f.machine).filter(Boolean))].map((m) => `<span class="mdot" style="--c:${mcolor(m)}"></span>${esc(m)}`).join(" ") || "—"}</div>
       <div>measured by</div><div>${esc(ev.machine || "—")} <span class="muted">(writes the series)</span></div><div>bound to</div><div class="num">${esc(s.series ? s.series.name + JSON.stringify(Object.fromEntries(Object.entries(s.series.labels).filter(([k]) => k !== "project"))) : "—")}</div>
       ${ev.balance ? `<div>balance</div><div class="num">Δ = ${ev.balance.map((b) => `${b.sign > 0 ? "+" : "−"} ${esc(b.series)}`).join(" ")}<br><span class="muted">R² ${ev.balance_r2} · exact in ${Math.round(100 * ev.exact_steps)}% of steps</span></div>` : ""}</div>
-      <h4>Level, last hour</h4>${Charts.line([{ label: s.name, points: stockHist(id), color: stockColor(id) }], { W: 700, H: 220 })}
-      <h4>Its flows' rates (${per()})</h4>${lines.length ? Charts.line(lines, { W: 700, H: 220, unit: per() }) : '<div class="muted">no flows</div>'}`);
+      <h4 style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">Level: measured, as the equations run it, and projected
+        <label class="muted" style="font-weight:400;font-size:11.5px">project <input id="sim-h" type="number" min="1" max="1440" value="${horizon()}" style="width:58px"> min ahead</label></h4>
+      <div id="sim-chart"><div class="muted">running the equations…</div></div><div id="sim-note" class="muted" style="font-size:11.5px"></div>
+      <h4>Fills it <span class="muted">(inflows)</span></h4>${io.in.map((f) => flowRow(f, "+")).join("") || '<div class="muted">nothing flows in</div>'}
+      <h4>Drains it <span class="muted">(outflows)</span></h4>${io.out.map((f) => flowRow(f, "−")).join("") || '<div class="muted">nothing flows out</div>'}
+      <h4>Its flows' rates (${per()}): inflows above zero, outflows below</h4>${lines.length ? Charts.line(lines, { W: 700, H: 220, unit: per() }) : '<div class="muted">no flows measured</div>'}`);
+    const inp = document.getElementById("sim-h");
+    inp.addEventListener("change", () => { try { localStorage.setItem("orchestra.dyn.horizon", String(Math.max(1, +inp.value || 30))); } catch (e) {} simChart(id); });
+    simChart(id);
+  }
+  async function simChart(id) {
+    const el = document.getElementById("sim-chart"), note = document.getElementById("sim-note"); if (!el) return;
+    let d;
+    try { d = await (await fetch(`/api/dynamics/simulate?horizon_min=${horizon()}`)).json(); } catch (e) { d = { ok: false, error: String(e) }; }
+    if (!document.getElementById("sim-chart")) return;
+    const measured = { label: "measured", points: stockHist(id), color: stockColor(id) };
+    if (!d.ok) { el.innerHTML = Charts.line([measured], { W: 700, H: 240 }); note.textContent = "Not simulated: " + d.error; return; }
+    const era = (d.era || {})[id] || [], proj = (d.projection || {})[id] || [];
+    el.innerHTML = Charts.line([measured,
+      { label: `the equations, from ${new Date(d.start * 1000).toTimeString().slice(0, 5)}`, points: era, color: "#e5e7eb", dash: "6 4" },
+      { label: `projected, next ${horizon()} min`, points: proj, color: stockColor(id), dash: "2 3" }],
+      { W: 700, H: 240, marks: [{ t: d.now, label: "now" }, ...(era.length ? [{ t: d.start, label: "era began" }] : [])] });
+    const rep = (d.replayed || []).map((fid) => (MODEL.flows.find((f) => f.id === fid) || {}).name || fid);
+    note.innerHTML = `The equations start from the measured levels when the era began (the start of the window the model was fitted on, when every series was being written), and run with nothing else but the measured inputs; the projection starts from the levels now, with each input held at its last value. Nothing leaves a stock that is not there.`
+      + (rep.length ? ` <b>Replayed, not simulated</b> (no equation the simulator steps): ${rep.map(esc).join(", ")}: their observed rate, then their mean over the last 10 minutes.` : " Every flow was simulated from its equation.")
+      + (VERSION !== null ? " These are the latest discovery's equations, not this past version's." : "");
   }
   function openFlow(fid) {
     const f = MODEL.flows.find((x) => x.id === fid), e = f.current || {}, q = e.quality || {};
