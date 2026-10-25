@@ -193,6 +193,9 @@ Choose A for a single service and SQL.
 
 ## 7. Candidate first version of the system dynamics core (not decided)
 
+Superseded in detail by `orchestra-kernel.md`, which defines the primitives and the decomposition.
+This section is kept as the short version.
+
 A way to start without breaking what runs. Each step keeps the current loop working.
 
 1. **`EventBus` interface and backends** (§6).
