@@ -7,6 +7,7 @@ const Charts = (() => {
   let seq = 0;
   const num = (v) => (v == null ? "—" : Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : Math.abs(v) >= 10 ? (+v).toFixed(1) : (+v).toPrecision(3).replace(/\.?0+$/, ""));
   const tlabel = (t, span) => { const d = new Date(t * 1000); return span > 2 * 86400 ? `${d.getMonth() + 1}/${d.getDate()}` : d.toTimeString().slice(0, 5); };
+  const colorOf = (l, i) => l.color || PAL[i % PAL.length];     // a line may carry its own colour
   const register = (spec) => { const id = "c" + ++seq; REG.set(id, spec); if (REG.size > 60) REG.delete(REG.keys().next().value); return id; };
 
   // W is the drawing width in pixels: pass the container's width so text and lines keep their size
@@ -21,9 +22,9 @@ const Charts = (() => {
     const id = register({ lines, x, y, t0, t1, L, R, W, H, T, B, unit, dots: true });
     const ticks = [lo, lo + span / 2, hi].map((v) => `<line class="ax" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke-dasharray="2 4"/><text x="${L - 4}" y="${y(v) + 3}" text-anchor="end">${num(v)}</text>`).join("");
     const xt = [0, 0.5, 1].map((f) => `<text x="${L + (W - L - R) * f}" y="${H - 4}" text-anchor="${f === 0 ? "start" : f === 1 ? "end" : "middle"}">${tlabel(t0 + (t1 - t0) * f, t1 - t0)}</text>`).join("");
-    const paths = lines.map((l, i) => `<path data-i="${i}" stroke="${PAL[i % PAL.length]}" d="${l.points.map(([t, v], j) => (j ? "L" : "M") + x(t).toFixed(1) + "," + y(v).toFixed(1)).join(" ")}"/>`).join("");
+    const paths = lines.map((l, i) => `<path data-i="${i}" stroke="${colorOf(l, i)}" d="${l.points.map(([t, v], j) => (j ? "L" : "M") + x(t).toFixed(1) + "," + y(v).toFixed(1)).join(" ")}"/>`).join("");
     return `<svg class="chart" data-cid="${id}" viewBox="0 0 ${W} ${H}">${ticks}${xt}<g class="lines">${paths}</g><g class="hov"></g><rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/></svg>
-      <div class="ckeys" data-for="${id}">${lines.map((l, i) => `<span data-i="${i}"><i style="background:${PAL[i % PAL.length]}"></i>${esc(l.label)}</span>`).join("")}${unit ? `<span class="muted">${esc(unit)}</span>` : ""}</div>`;
+      <div class="ckeys" data-for="${id}">${lines.map((l, i) => `<span data-i="${i}"><i style="background:${colorOf(l, i)}"></i>${esc(l.label)}</span>`).join("")}${unit ? `<span class="muted">${esc(unit)}</span>` : ""}</div>`;
   }
 
   function spark(points, { unit = "", w = 300, h = 34, cls = "", note = null, label = "" } = {}) {
@@ -61,11 +62,11 @@ const Charts = (() => {
     const at = hits.filter((h) => h.p[0] === tt || c.lines.length > 1);
     const X = c.x(tt);
     svg.querySelector("g.hov").innerHTML = `<line x1="${X}" x2="${X}" y1="${c.T}" y2="${c.H - c.B}" class="xh"/>`
-      + (c.dots ? at.map((h) => `<circle cx="${c.x(h.p[0])}" cy="${c.y(h.p[1])}" r="3.2" fill="${PAL[h.i % PAL.length]}"/>`).join("") : "");
+      + (c.dots ? at.map((h) => `<circle cx="${c.x(h.p[0])}" cy="${c.y(h.p[1])}" r="3.2" fill="${colorOf(h.l, h.i)}"/>`).join("") : "");
     const rows = at.slice().sort((a, b) => b.p[1] - a.p[1]).slice(0, 14);
     const el = tipEl();
     el.innerHTML = `<div class="tt">${new Date(tt * 1000).toLocaleString()}</div>` + rows.map((h) =>
-      `<div class="tr">${c.lines.length > 1 ? `<i style="background:${PAL[h.i % PAL.length]}"></i>` : ""}<span class="tl">${esc(h.l.label)}</span><b>${num(h.p[1])}${esc(c.unit && c.lines.length === 1 ? c.unit : "")}</b></div>`).join("")
+      `<div class="tr">${c.lines.length > 1 ? `<i style="background:${colorOf(h.l, h.i)}"></i>` : ""}<span class="tl">${esc(h.l.label)}</span><b>${num(h.p[1])}${esc(c.unit && c.lines.length === 1 ? c.unit : "")}</b></div>`).join("")
       + (at.length > rows.length ? `<div class="muted">+${at.length - rows.length} more</div>` : "");
     el.style.display = "block";
     const r = el.getBoundingClientRect();
@@ -88,5 +89,5 @@ const Charts = (() => {
     svg.classList.add("focus");
     svg.querySelector(`path[data-i="${k.dataset.i}"]`)?.classList.add("on");
   });
-  return { line, spark, PAL, num };
+  return { line, spark, PAL, num, colorOf };
 })();

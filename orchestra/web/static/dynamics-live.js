@@ -38,6 +38,9 @@ const Live = (() => {
     const x0 = -sz.w / 2, y0 = -sz.h / 2;
     g.append("rect").attr("x", x0 + 1.5).attr("y", y0 + 1.5 + (sz.h - 3) * (1 - frac)).attr("width", sz.w - 3).attr("height", (sz.h - 3) * frac).attr("rx", 3).attr("fill", col).attr("opacity", 0.16);
     g.append("text").attr("class", "ng-sub").attr("text-anchor", "middle").attr("y", y0 + 32).attr("fill", col).text(v == null ? "no data" : `${fmt(v)} now · max ${fmt(max)}`);
+    // the machines that change this stock: one dot per machine whose flows fill or drain it
+    const io = flowsOf(id), ms = [...new Set([...io.in, ...io.out].map((f) => f.machine).filter(Boolean))];
+    ms.forEach((m, k) => g.append("circle").attr("cx", -x0 - 9 - k * 11).attr("cy", y0 + 10).attr("r", 4).attr("fill", mcolor(m)).append("title").text(m));
     if (h.length > 1) {
       const a = x0 + 10, b = -x0 - 10, top = -y0 - 34, bot = -y0 - 8, t0 = h[0][0], t1 = h[h.length - 1][0] || t0 + 1;
       g.append("path").attr("fill", "none").attr("stroke", col).attr("stroke-width", 1.4)
@@ -49,7 +52,10 @@ const Live = (() => {
   function stockSummary(id) {
     const s = MODEL.stocks.find((x) => x.id === id), h = stockHist(id).map((p) => p[1]), v = now(id), io = flowsOf(id);
     const rows = [...io.in.map((f) => ["+", f]), ...io.out.map((f) => ["−", f])].map(([sg, f]) => `<div class="tr"><span>${sg} ${esc(f.name)}</span><b>${fmt(recentRate(f.id))}${per()}</b></div>`).join("");
-    return `<div class="tt">${esc(s.name)}</div><div class="tr"><span>now</span><b>${fmt(v)}</b></div><div class="tr"><span>range, last hour</span><b>${fmt(h.length ? Math.min(...h) : null)} – ${fmt(h.length ? Math.max(...h) : null)}</b></div>${rows}<div class="hint">click for history and details</div>`;
+    const changers = [...new Set([...io.in, ...io.out].map((f) => f.machine).filter(Boolean))];
+    return `<div class="tt">${esc(s.name)}</div><div class="tr"><span>now</span><b>${fmt(v)}</b></div>
+      <div class="tr"><span>changed by</span><b>${changers.map((m) => `<span style="color:${mcolor(m)}">${esc(m)}</span>`).join(", ") || "—"}</b></div>
+      <div class="tr"><span>measured by</span><b>${esc((s.evidence && s.evidence.machine) || "—")}</b></div><div class="tr"><span>range, last hour</span><b>${fmt(h.length ? Math.min(...h) : null)} – ${fmt(h.length ? Math.max(...h) : null)}</b></div>${rows}<div class="hint">click for history and details</div>`;
   }
   function flowSummary(fid) {
     const f = MODEL.flows.find((x) => x.id === fid); if (!f) return "";
@@ -62,9 +68,11 @@ const Live = (() => {
     const s = MODEL.stocks.find((x) => x.id === id), io = flowsOf(id), ev = s.evidence || {};
     const lines = [...io.in.map((f) => ({ label: "+ " + f.name, points: flowHist(f.id) })), ...io.out.map((f) => ({ label: "− " + f.name, points: flowHist(f.id).map(([t, v]) => [t, v]) }))].filter((l) => l.points.length);
     openDrawer(`<h3>${esc(s.name)} <span class="tag">stock</span></h3>
-      <div class="def"><div>now</div><div class="num">${fmt(now(id))}</div><div>bound to</div><div class="num">${esc(s.series ? s.series.name + JSON.stringify(Object.fromEntries(Object.entries(s.series.labels).filter(([k]) => k !== "project"))) : "—")}</div>
+      <div class="def"><div>now</div><div class="num">${fmt(now(id))}</div>
+      <div>changed by</div><div>${[...new Set([...io.in, ...io.out].map((f) => f.machine).filter(Boolean))].map((m) => `<span class="mdot" style="--c:${mcolor(m)}"></span>${esc(m)}`).join(" ") || "—"}</div>
+      <div>measured by</div><div>${esc(ev.machine || "—")} <span class="muted">(writes the series)</span></div><div>bound to</div><div class="num">${esc(s.series ? s.series.name + JSON.stringify(Object.fromEntries(Object.entries(s.series.labels).filter(([k]) => k !== "project"))) : "—")}</div>
       ${ev.balance ? `<div>balance</div><div class="num">Δ = ${ev.balance.map((b) => `${b.sign > 0 ? "+" : "−"} ${esc(b.series)}`).join(" ")}<br><span class="muted">R² ${ev.balance_r2} · exact in ${Math.round(100 * ev.exact_steps)}% of steps</span></div>` : ""}</div>
-      <h4>Level, last hour</h4>${Charts.line([{ label: s.name, points: stockHist(id) }], { W: 700, H: 220 })}
+      <h4>Level, last hour</h4>${Charts.line([{ label: s.name, points: stockHist(id), color: stockColor(id) }], { W: 700, H: 220 })}
       <h4>Its flows' rates (${per()})</h4>${lines.length ? Charts.line(lines, { W: 700, H: 220, unit: per() }) : '<div class="muted">no flows</div>'}`);
   }
   function openFlow(fid) {
@@ -77,7 +85,7 @@ const Live = (() => {
       <div>fit</div><div class="num">${esc(e.origin || "")} · ${esc(e.form || "")} · ${q.events ?? 0} events over ${q.live_minutes ?? "?"} min · dispersion ${fmt(q.dispersion)}</div>
       <div>counter</div><div class="num">${esc(f.counter ? f.counter.name : "—")}</div></div>
       <h4>Rate, last hour (${per()}): observed and what the equation predicts from the levels</h4>
-      ${Charts.line([{ label: "observed", points: obs }, { label: "equation", points: model }], { W: 700, H: 240, unit: per() })}
+      ${Charts.line([{ label: "observed", points: obs, color: mcolor(f.machine) }, { label: "equation", points: model, color: "#e5e7eb" }], { W: 700, H: 240, unit: per() })}
       ${alts ? `<h4>Other forms considered (AIC; lower is better)</h4><table class="dt"><tr><th>form</th><th>AIC</th><th>worse by</th></tr><tr><td><b>${esc(e.form)}</b> (chosen)</td><td class="num">${fmt(q.aic)}</td><td></td></tr>${alts}</table>` : ""}`);
   }
 
@@ -87,11 +95,11 @@ const Live = (() => {
     const ids = MODEL.stocks.map((s) => s.id).filter((id) => stockHist(id).length);
     if (!ids.length) { el.innerHTML = '<div class="muted">No history yet.</div>'; return; }
     if (HIDDEN === null) HIDDEN = new Set(MODEL.stocks.filter((s) => s.evidence && s.evidence.accumulator).map((s) => s.id));
-    const lines = ids.map((id, i) => ({ id, i, label: stockName(id), points: stockHist(id) }));
+    const lines = ids.map((id, i) => ({ id, i, label: stockName(id), points: stockHist(id), color: stockColor(id) }));
     const shown = lines.filter((l) => !HIDDEN.has(l.id));
-    document.getElementById("hist-keys").innerHTML = lines.map((l) => `<span class="hk ${HIDDEN.has(l.id) ? "off" : ""}" onclick="Live.toggle('${esc(l.id)}')"><i style="background:${Charts.PAL[l.i % Charts.PAL.length]}"></i>${esc(l.label)} <b>${fmt(now(l.id))}</b></span>`).join("");
+    document.getElementById("hist-keys").innerHTML = lines.map((l) => `<span class="hk ${HIDDEN.has(l.id) ? "off" : ""}" onclick="Live.toggle('${esc(l.id)}')"><i style="background:${stockColor(l.id)}"></i>${esc(l.label)} <b>${fmt(now(l.id))}</b></span>`).join("");
     // keep each stock's colour when others are hidden: pad hidden lines as empty
-    el.innerHTML = shown.length ? Charts.line(lines.map((l) => (HIDDEN.has(l.id) ? { label: l.label, points: [] } : l)), { W: el.clientWidth || 900, H: 220 })
+    el.innerHTML = shown.length ? Charts.line(lines.map((l) => (HIDDEN.has(l.id) ? { label: l.label, points: [], color: l.color } : l)), { W: el.clientWidth || 900, H: 220 })
       : '<div class="muted">Every stock is hidden; click one above.</div>';
     el.querySelectorAll(".ckeys").forEach((k) => k.remove());
   }

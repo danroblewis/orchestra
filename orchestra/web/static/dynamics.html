@@ -88,6 +88,10 @@ function eqText(f, short) {
 // a flow whose rate reads a stock other than its own source: an influence, the link that closes loops
 const influence = (f) => f.current && f.current.form === "linear" && f.current.inputs && f.current.inputs[0] && f.current.inputs[0] !== f.from ? f.current.inputs[0] : null;
 let GRAPH = null, GSIG = null, FLOWEDGE = {};
+// One colour per stock, used everywhere it appears: its box, its sparkline, its line on the chart
+// and in its drawer. Flows keep their machine's colour; a stock's box carries a dot for each
+// machine whose flows change it (any number), and its tooltip says which machine measures it.
+const stockColor = (id) => { const i = MODEL ? MODEL.stocks.findIndex((s) => s.id === id) : -1; return i < 0 ? "#cbd5e1" : Charts.PAL[i % Charts.PAL.length]; };
 // The model as a network: stocks as boxes, each flow as one arrow from its source to its
 // destination (a cloud when either is outside), influences as dashed links from a stock to the
 // middle of the flow whose rate they drive. Feedback loops are cycles of the causal graph: a flow adds to its destination
@@ -103,7 +107,8 @@ function draw() {
     && !hiddenStock(f.from) && !hiddenStock(f.to));
   const nodes = [], edges = [], causal = [];
   for (const s of m.stocks.filter((s) => !hiddenStock(s.id))) nodes.push({ id: "s:" + s.id, kind: "box", sid: s.id, label: s.name, lines: [s.name], w: Math.max(180, s.name.length * 7 + 30), h: 92,
-    color: owner[s.id] ? mcolor(owner[s.id]) : "#cbd5e1", fill: "#0b0e14", charge: -1600, decorate: Live.decorateStock, sub: " " });
+    color: stockColor(s.id),
+    fill: "#0b0e14", charge: -1600, decorate: Live.decorateStock, sub: " " });
   for (const f of flows) {
     // a flow is one arrow from its source to its destination (a cloud when either is outside);
     // in the causal graph used for loops, it is a node between them ("f:<id>")
