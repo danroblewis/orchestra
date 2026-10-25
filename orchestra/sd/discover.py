@@ -452,8 +452,20 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     n = max(2, int((end - start) // step))
     dt = step / UNITS[time_unit]
     series = sample(dump, start, step, n)
-    counters = [s for s in series if s.counter and any(s.deltas)]
     left_out: dict[str, str] = {}
+    # a series written on a schedule that is no longer written at the end of the window (its
+    # machine is gone, or was replaced) is not measured now: left out, or its silence would leave no
+    # time when every series involved was being written, and nothing could be fitted
+    current = []
+    for ser in series:
+        ivs = live_intervals(ser.points, start, end) if regular(ser.points) else [(start, end)]
+        if ivs and ivs[-1][1] >= start + n * step:
+            current.append(ser)
+        else:
+            last = max((t for t, _ in ser.points), default=start)
+            left_out[ser.key] = f"no longer written: its last point is {round((end - last) / 60)} min before the end of the window"
+    series = current
+    counters = [s for s in series if s.counter and any(s.deltas)]
     for s in series:
         if s.counter and not any(s.deltas):
             left_out[s.key] = "a counter that did not move in the window"
@@ -496,17 +508,6 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         else:
             left_out[s.key] = f"only an accumulator of other stocks' flows (R² {r2b:.2f} with counters of its own)"
     found = kept
-    # a level no longer written at the end of the window (its machine is gone, or renamed) is not
-    # measured now: it is left out, or its silence would leave no time when every series was written
-    current = []
-    for x in found:
-        ivs = live_intervals(x[0].points, start, end) if regular(x[0].points) else [(start, end)]
-        if ivs and ivs[-1][1] >= end:
-            current.append(x)
-        else:
-            last = max((t for t, _ in x[0].points), default=start)
-            left_out[x[0].key] = f"no longer written: its last point is {round((end - last) / 60)} min before the end of the window"
-    found = current
     stocks, sid_of = [], {}
     for s, terms, r2, exact in found:
         sid = _slug(s)
