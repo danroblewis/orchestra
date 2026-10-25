@@ -62,6 +62,121 @@ That's the difference between a queue and a factory floor.
 **intervention**, which is the system dynamics and causal-inference term. A time-boxed
 intervention meant to be reverted could be called a **trial**.
 
+## 2a. What a machine is (revised 2026-10-25)
+
+The user's framing, adopted here:
+- **A machine is outside both Orchestra and the model.** It may be:
+  - one of our scripts;
+  - a Kubernetes job;
+  - a shell command on another host;
+  - a container;
+  - an RPC endpoint;
+  - a team of people;
+  - a physical device.
+- **Orchestra can't instantiate most machines, and can't guarantee what any of them does.**
+- **A machine may not respond at all.**
+- **We know a machine's outcomes only through the metrics we collect.**
+
+So Orchestra holds a **model of the machine**, never the machine.
+
+### Perspectives considered
+
+| Perspective | What it says about a machine | Verdict |
+|---|---|---|
+| **Black box, defined by its boundary** (cybernetics: Ashby; also system dynamics) | Know a machine by what it takes in, which flows it affects, and how it's observed. Its inside is unknown. | **The core.** Matches "outcomes only through metrics". |
+| **State machine** | The machine has a lifecycle: idle, busy, down. | Wrong level for the machine. Right for a **job**: a request's lifecycle as the driver sees it. A machine's availability is a measured stock, not a state we hold. |
+| **Actor model** (Erlang, Akka) | A machine is a mailbox: send it messages. | Fits machines that read our bus; can't cover a device, a team, or another team's cron. Reading our queue is one way to engage a machine, not the definition of one. |
+| **Controller / reconcile** (Kubernetes operators) | Write desired state; controllers converge; observe status. | **Right for engaging machines.** A request is a declared intent, and a reconciler watches what actually happened. No pretence that a call succeeded. |
+| **Digital twin** | Keep a model of the machine fitted to its observations. | **This is our machine record:** capacity, service rate and effect on flows, fitted, not declared. |
+| **Workflow engine** (Temporal) | Activities with retries and an illusion of exactly-once. | Not ours. We observe outcomes instead of guaranteeing them. Usable as one way to drive a machine. |
+
+### The definition: five separate things
+
+1. **Machine** (a record, our model of an external thing). Its fields:
+   - **identity** (id, name, owner, description);
+   - **boundary:** the items or requests it can take, and the flows it's **attributed** to, as
+     hypotheses;
+   - **observability:** the collectors that evidence its activity and its effects;
+   - **fitted characteristics:** capacity, service rate, cost, and effect on its flows, each with
+     an origin and a confidence;
+   - **engagement:** zero or more ways to send it a request.
+
+   **A machine with no engagement is still a machine**: the company's reviewers, SAIL, another
+   team's cron. It's observed and attributed, never invoked. "Environment" is just machines we
+   don't control.
+2. **Request** (a work order): an event on the bus that **asks** a machine to act, with a
+   correlation id. Every invocation, of every machine, is a request. A request is a declared
+   intent; it guarantees nothing.
+3. **Driver:** code in Orchestra that delivers a request to a machine through some medium, then
+   watches its status. Examples:
+   - agent harnesses (Pi, Claude Code, Codex);
+   - local process; SSH command; container; Kubernetes Job;
+   - HTTP or RPC with polling;
+   - a Slack or Jira message to people;
+   - the outbox (for me);
+   - a device API;
+   - "the machine reads our bus itself": the trivial driver.
+
+   Interface: `submit(request) → handle`, `watch(handle) → status`, `cancel(handle)`, and its
+   capabilities.
+4. **Job:** a request's lifecycle as its driver sees it: `submitted`, `running`, `finished`,
+   `failed`, **`unknown`**, `lost`. `unknown` is a normal, expected state. Jobs carry leases on the
+   items they hold, and expiry returns the items. That's how "no zombies" survives remote and
+   silent machines.
+5. **Evidence**, at three levels, never mixed:
+   - **delivered:** the driver handed it over;
+   - **claimed:** the machine or agent reported something, such as `report_ticket`. A claim is an
+     observation of low trust;
+   - **observed:** a collector measured the effect.
+
+   **Only observed evidence moves flows, or counts toward fitting and interventions.** Correlation
+   ids let collectors link an observed outcome to a request where possible, such as a PR naming its
+   ticket. Otherwise attribution is statistical, by era.
+
+### Engagement modes apply to every machine, not just agents
+
+The three agent kinds are **engagement modes**. They're properties of how we engage a machine,
+not of the machine:
+
+| Mode | Agents | Other machines |
+|---|---|---|
+| **Continuous** | A resident session receiving requests | A long-running deployment consuming a stream; a daemon; a team's channel |
+| **Ad hoc** | A fresh session per request, optionally re-enterable | `docker run`, a Kubernetes Job, an RPC call, an SSH command |
+| **Scheduled** | Clock-triggered requests | The clock primitive emits requests, through whichever driver the machine uses |
+
+**An AI agent is one kind of machine:** the universal one, driven by the harness driver. Everything
+true of agents, apart from harness details, is true of machines.
+
+### The bootstrap machine
+
+One machine is registered by Orchestra itself at startup, and tracked by Orchestra: **Orchestra's
+own host.** It runs the dispatcher and **hosts the drivers.** Every other machine is engaged
+through it, or merely observed.
+
+- **It's a machine like any other.**
+  - Its flows: requests → delivered, and delivered → finished, failed or unknown.
+  - Its collectors: dispatch rate, latency, driver failures, unknown jobs.
+  - Its effect is fitted like everyone else's. Orchestra models itself.
+- **It decides nothing about outcomes.** It delivers requests and records job status and claims.
+  Collectors and the model decide what happened. That keeps it from becoming the old `loop.py`
+  under a new name.
+- **Its first drivers:** agent harnesses (exists), local process (exists in effect), SSH command,
+  container, Kubernetes Job, HTTP. Each driver gets an e2e fake, as harnesses do now.
+- **More hosts later.** A second Orchestra host on another computer is another bootstrap-like
+  machine that registers itself, hosts its own drivers, and holds leases. That's the multi-machine
+  path.
+
+### What this changes in §2
+
+- Primitives 8–10 (machines, dispatcher, executors) become **machine records, requests, drivers,
+  jobs, and the bootstrap host**.
+- The dispatcher is part of the bootstrap host.
+- "Executor kinds" are drivers.
+- The machine table in §3 stays valid. Each row now names its **driver** (agent harness, or local
+  process), its **engagement mode**, and its **collectors**.
+- New rows are possible with no kernel change: "company reviewers" (no driver, observed only); a
+  Kubernetes test runner (Kubernetes Job driver).
+
 ## 3. The task system, decomposed
 
 **Items:** ticket, worktree, build, gate run.
@@ -127,7 +242,10 @@ To be stated in the commits that change them, per AGENTS.md:
 
 ## 6. Open questions for the user
 
-1. The names: collector, machine, executor, job, item, intervention, factory. Keep, or change?
+1. The names: collector, machine, request, driver, job, bootstrap host, item, intervention, factory.
+   Keep, or change?
+2a. Is the bootstrap host the right first machine? Its first six drivers, in what order?
+2b. The job status vocabulary, especially `unknown` and `lost`, and lease lengths per driver.
 2. Does an item store belong in the kernel, or are items only ever external (GitHub, Jira), with
    stocks purely measured? Proposal: in the kernel, because machines need identity and leases.
 3. Where inference lives: `orchestra.sd` inside this package, or a dependency built from the SD Lab
