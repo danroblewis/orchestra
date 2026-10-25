@@ -20,6 +20,7 @@ from ..model import State
 from ..harness import read_transcript
 from ..store import LocalStore, StoreError
 from .core import CoreProbe
+from .dynamics import model_view, models_index
 from .machines import machines_view
 
 STATIC = Path(__file__).parent / "static"
@@ -257,6 +258,18 @@ def create_app(project: Project) -> FastAPI:
     @app.get("/api/core/logs")
     def core_logs(source: str = "host", lines: int = 200) -> dict:
         return core.logs(source, lines)
+
+    @app.get("/dynamics", response_class=HTMLResponse)
+    async def dynamics_page() -> str:
+        return page("dynamics.html")
+
+    @app.get("/api/dynamics/models")
+    def dynamics_models() -> dict:
+        return models_index(project)
+
+    @app.get("/api/dynamics/model")
+    def dynamics_model(id: str = "tickets") -> dict:
+        return model_view(project, id)
 
     @app.get("/api/machines")
     async def machines() -> dict:
