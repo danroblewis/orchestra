@@ -137,7 +137,7 @@ function draw() {
     return `<span class="lg prog" style="--c:${mcolor(id)}"><i></i>${esc(mc.name)} <span class="muted">${mc.kind === "agent" ? "AI agent" : "program"}</span></span>`; }).join("")
     + `<label class="lg" style="cursor:pointer"><input type="checkbox" ${window.SHOW_ALL ? "checked" : ""} onchange="window.SHOW_ALL=this.checked;draw()" style="margin:0"> flows with no events</label>`
     + (acc.size ? `<label class="lg" style="cursor:pointer" title="stocks that only fill, such as the event bus's length"><input type="checkbox" ${window.SHOW_ACC ? "checked" : ""} onchange="window.SHOW_ACC=this.checked;draw()" style="margin:0"> stocks that only fill (${acc.size})</label>` : "")
-    + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange · scroll to zoom · hover or click a stock or a valve</span>`;
+    + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it; double-click to release) · scroll to zoom · hover or click a stock or a valve</span>`;
 }
 function loops(nodes, causal) {
   const name = (id) => id.startsWith("s:") ? stockName(id.slice(2)) : (MODEL.flows.find((f) => "f:" + f.id === id) || {}).name || id;

@@ -98,7 +98,7 @@ function eventMap(d) {
   const g = agentGraph(d);
   if (!$("evsvg-host")) {
     $("evmap-host").innerHTML = `<div class="evmap"><div id="evsvg-host"></div>
-      <div class="legend"><span><i style="border-color:#4b5563"></i>publishes / listens for</span><span><span style="color:#fcd34d">▭</span> event type</span><span>○ machine</span><span>halo: active in the last two minutes</span><span><i style="border-color:#22c55e"></i>seen on the bus, last 24h</span><label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_ALL ? "checked" : ""} onchange="window.EV_SHOW_ALL=this.checked;window.LOOPSIG=null;render()"> show events nobody listens for</label><span>· drag nodes, scroll to zoom, hover to isolate, click a machine to find its card</span></div>
+      <div class="legend"><span><i style="border-color:#4b5563"></i>publishes / listens for</span><span><span style="color:#fcd34d">▭</span> event type</span><span>○ machine</span><span>halo: active in the last two minutes</span><span><i style="border-color:#22c55e"></i>seen on the bus, last 24h</span><label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_ALL ? "checked" : ""} onchange="window.EV_SHOW_ALL=this.checked;window.LOOPSIG=null;render()"> show events nobody listens for</label><span>· drag nodes (they stay where dropped; double-click to release), scroll to zoom, hover to isolate, click a machine to find its card</span></div>
       <div class="ng-loops" id="loops"></div></div>`;
     GRAPH = NetGraph.create($("evsvg-host"), { key: "machines", height: 600, isolateHops: 2,
       onClick: (x, kind) => { if (kind === "node" && x.machine) openMachine(x.label); },

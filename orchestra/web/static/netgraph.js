@@ -7,8 +7,9 @@
 //           moving dashes whose speed follows a rate;
 //   loops   elementary cycles of a directed graph, listed and clickable: clicking one highlights
 //           its nodes and edges and fades the rest;
-// plus drag, zoom and pan, hover to isolate a neighbourhood, and positions that persist across
-// redraws (and reloads) so a live graph never reshuffles.
+// plus drag (a dropped node stays pinned where it was put; double-click lets it float again), zoom
+// and pan, hover to isolate a neighbourhood, and positions that persist across redraws (and
+// reloads) so a live graph never reshuffles.
 const NetGraph = (() => {
   const NS = "http://www.w3.org/2000/svg";
   const POS_KEY = (k) => `orchestra.netgraph.${k}`;
@@ -78,7 +79,7 @@ const NetGraph = (() => {
     const hideTip = () => { tipEl().style.display = "none"; };
 
     function save() {
-      const pos = Object.fromEntries(NODES.map((n) => [n.id, [Math.round(n.x), Math.round(n.y)]]));
+      const pos = Object.fromEntries(NODES.map((n) => [n.id, [Math.round(n.x), Math.round(n.y), n.fx != null ? 1 : 0]]));
       try { localStorage.setItem(POS_KEY(key), JSON.stringify(pos)); } catch (e) {}
     }
     function path(e) {
@@ -100,8 +101,10 @@ const NetGraph = (() => {
         g.append("text").attr("class", "ng-name").attr("text-anchor", "middle").attr("dy", s.r + 13).text(n.label);
         if (n.sub) g.append("text").attr("class", "ng-sub").attr("text-anchor", "middle").attr("dy", s.r + 25).text(n.sub);
       } else if (n.kind === "valve") {
+        g.append("circle").attr("class", "ng-grab").attr("r", 14);
         g.append("circle").attr("r", s.r).attr("fill", n.color || "#94a3b8").attr("stroke", "var(--panel)").attr("stroke-width", 2);
       } else if (n.kind === "cloud") {
+        g.append("circle").attr("class", "ng-grab").attr("r", 18);          // an outline alone is too thin to grab
         g.append("path").attr("class", "ng-cloud").attr("d", "M-10,6 a6,6 0 0 1 0,-12 a8,8 0 0 1 14,-3 a6,6 0 0 1 8,9 a5,5 0 0 1 -4,6 Z");
       } else {
         g.append("rect").attr("class", "ng-box").attr("x", -s.w / 2).attr("y", -s.h / 2).attr("width", s.w).attr("height", s.h).attr("rx", n.rx ?? 5)
@@ -117,7 +120,12 @@ const NetGraph = (() => {
     function render(nodes, edges) {
       const newSig = JSON.stringify([nodes.map((n) => n.id + n.kind), edges.map((e) => e.id)]);
       const old = new Map(NODES.map((n) => [n.id, n]));
-      NODES = nodes.map((n) => { const o = old.get(n.id); const p = o ? [o.x, o.y] : saved[n.id]; return { ...n, x: p ? p[0] : undefined, y: p ? p[1] : undefined }; });
+      // a node keeps its place across redraws; one the viewer dropped stays pinned there
+      NODES = nodes.map((n) => {
+        const o = old.get(n.id), sv = saved[n.id];
+        const p = o ? [o.x, o.y] : sv, pin = o ? o.fx != null : !!(sv && sv[2]);
+        return { ...n, x: p ? p[0] : undefined, y: p ? p[1] : undefined, fx: pin ? p[0] : null, fy: pin ? p[1] : null };
+      });
       const byId = new Map(NODES.map((n) => [n.id, n]));
       EDGES = edges.filter((e) => byId.has(e.source) && byId.has(e.target)).map((e) => ({ ...e, source: byId.get(e.source), target: byId.get(e.target) }));
       const structural = newSig !== sig;
@@ -143,7 +151,8 @@ const NetGraph = (() => {
       nodeSel.on("mouseenter", (ev, n) => { isolate(n.id); showTip(tip && tip(n, "node"), ev); }).on("mousemove", moveTip)
         .on("mouseleave", () => { isolate(null); hideTip(); }).on("click", (ev, n) => { hideTip(); onClick && onClick(n, "node"); })
         .call(d3.drag().on("start", (ev, d) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
-          .on("drag", (ev, d) => { d.fx = ev.x; d.fy = ev.y; }).on("end", (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = d.fy = null; save(); }));
+          .on("drag", (ev, d) => { d.fx = ev.x; d.fy = ev.y; }).on("end", (ev, d) => { if (!ev.active) sim.alphaTarget(0); save(); }))      // stays where it was dropped
+        .on("dblclick", (ev, d) => { ev.stopPropagation(); d.fx = d.fy = null; sim.alpha(0.3).restart(); save(); });   // let it float again
       if (sim) sim.stop();
       const w = W();
       sim = d3.forceSimulation(NODES)
