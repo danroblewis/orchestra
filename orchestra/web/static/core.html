@@ -42,6 +42,8 @@
   .lk { display:inline-block; font-family:var(--mono); font-size:11px; color:var(--text2); margin-right:8px } .lk b { color:var(--text) }
   svg.chart { width:100%; height:auto; min-height:0; display:block } .chart .ax { stroke:var(--border2); stroke-width:1 } .chart text { fill:var(--muted); font-size:10px; font-family:var(--mono) }
   .chart path { fill:none; stroke-width:1.6 } .ckeys { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:11px; color:var(--text2); margin-top:4px }
+  .qkeys .qk { cursor:pointer; padding:1px 7px; border:1px solid transparent; border-radius:999px; user-select:none } .qkeys .qk:hover { border-color:var(--border2) }
+  .qkeys .qk.on { border-color:var(--accent); color:var(--text) } .qkeys .qk.off { opacity:.5 } .qkeys .qk.clear { color:var(--accent) }
   .ckeys i { display:inline-block; width:10px; height:3px; border-radius:2px; margin-right:4px; vertical-align:middle }
   .scroll { max-height:340px; overflow:auto } .mono { font-family:var(--mono); font-size:11.5px }
 </style>
@@ -162,7 +164,7 @@ async function loadCatalog() {
         `<tr class="pick" onclick="pickMetric('${esc(m.name)}')" title="click to query · first written ${m.first ? age(Date.now() / 1000 - m.first) + " ago" : "—"}"><td class="mono">${esc(m.name)}</td>
          <td>${Object.entries(m.labels).map(([k, v]) => `<span class="lk" title="${esc(v.values.join(", "))}">${esc(k)} <b>${v.arity}</b></span>`).join("")}</td>
          <td class="num">${m.series}</td><td class="num">${m.points.toLocaleString()}</td><td class="num">${m.last_hour}</td><td class="num">${m.last ? age(Date.now() / 1000 - m.last) + " ago" : "—"}</td></tr>`).join("")}</table>`;
-    if (!FIRST_RUN) { FIRST_RUN = true; if (EDITOR.value.trim()) runQuery(); else pickMetric((CAT.metrics.find((m) => m.name === "orchestra_events_total") || CAT.metrics[0] || {}).name); }
+    if (!FIRST_RUN) { FIRST_RUN = true; if (!EDITOR.value.trim()) EDITOR.value = DEFAULT_QUERY; runQuery(); }
   } catch (e) { $("mx-note").textContent = "unreachable"; }
 }
 // a starting query for a metric: counters as increase per hour by their main label; gauges as
@@ -185,6 +187,25 @@ function renderRange() {
   $("mx-range").innerHTML = RANGES.map(([l, h]) => `<button class="${h === HOURS ? "on" : ""}" onclick="setRange(${h})">${l}</button>`).join("");
 }
 function setRange(h) { HOURS = h; try { localStorage.setItem("orchestra.core.qhours", h); } catch (e) {} renderRange(); runQuery(); }
+// every series that is not Orchestra's own, one line per metric
+const DEFAULT_QUERY = 'sum by (__name__)({__name__!~"orchestra.*"})';
+// the result's series, each with its colour for good, and the ones the viewer has selected: with a
+// selection only those are drawn, on a y axis fitted to them; clicking a selected one unselects it
+let QLINES = [], QSEL = new Set(), QTEXT = null;
+function drawQuery() {
+  const out = $("mx-out");
+  if (!QLINES.length) { out.innerHTML = `<div class="empty" style="margin-top:8px">no data in this range</div>`; return; }
+  const shown = QSEL.size ? QLINES.filter((l) => QSEL.has(l.label)) : QLINES;
+  out.innerHTML = Charts.line(shown, { W: out.clientWidth, tight: QSEL.size > 0 })
+    + `<div class="ckeys qkeys">${QLINES.map((l, i) => `<span class="qk ${QSEL.has(l.label) ? "on" : ""} ${QSEL.size && !QSEL.has(l.label) ? "off" : ""}" data-k="${i}" title="click to ${QSEL.has(l.label) ? "unselect" : "show only the selected series"}"><i style="background:${l.color}"></i>${esc(l.label)}</span>`).join("")}`
+    + (QSEL.size ? `<span class="qk clear" data-k="clear">show all</span>` : "") + `</div>`;
+  out.querySelector(".ckeys:not(.qkeys)")?.remove();
+  out.querySelectorAll(".qk").forEach((k) => k.addEventListener("click", () => {
+    if (k.dataset.k === "clear") QSEL.clear();
+    else { const lab = QLINES[+k.dataset.k].label; QSEL.has(lab) ? QSEL.delete(lab) : QSEL.add(lab); }
+    drawQuery();
+  }));
+}
 async function runQuery() {
   const q = EDITOR.value.trim();
   if (!q) return;
@@ -194,10 +215,13 @@ async function runQuery() {
     const d = await (await fetch("/api/core/metrics/query?" + new URLSearchParams({ q, hours: HOURS }))).json();
     if (!d.ok) { $("mx-out").innerHTML = `<div class="probe bad" style="margin-top:8px;white-space:pre-wrap">${esc(d.error)}</div>`; $("mx-engine").textContent = ""; return; }
     $("mx-engine").textContent = `${d.matched} series${d.matched > d.lines.length ? `, top ${d.lines.length} shown` : ""} · step ${ago(d.step)} · ${d.engine}`;
-    $("mx-out").innerHTML = d.lines.length ? Charts.line(d.lines, { W: $("mx-out").clientWidth }) : `<div class="empty" style="margin-top:8px">no data in this range</div>`;
+    if (q !== QTEXT) { QSEL = new Set(); QTEXT = q; }                  // a new query starts with nothing selected
+    QLINES = d.lines.map((l, i) => ({ ...l, color: Charts.PAL[i % Charts.PAL.length] }));
+    QSEL = new Set([...QSEL].filter((lab) => QLINES.some((l) => l.label === lab)));
+    drawQuery();
   } catch (e) { $("mx-out").innerHTML = `<div class="probe bad">${esc(String(e))}</div>`; }
 }
-const EDITOR = PromEditor.create($("mx-q"), { onRun: runQuery, catalog: () => CAT, placeholder: "sum by (type) (increase(orchestra_events_total[1h]))" });
+const EDITOR = PromEditor.create($("mx-q"), { onRun: runQuery, catalog: () => CAT, placeholder: DEFAULT_QUERY });
 try { EDITOR.value = localStorage.getItem("orchestra.core.query") || ""; } catch (e) {}
 renderRange();
 async function loadEvents() {

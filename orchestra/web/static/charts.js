@@ -12,14 +12,17 @@ const Charts = (() => {
 
   // W is the drawing width in pixels: pass the container's width so text and lines keep their size.
   // A line may be dashed (``dash``: an SVG dash array); ``marks`` are labelled vertical lines
-  // ([{t, label}], such as "now")
-  function line(lines, { unit = "", H = 200, W = 720, marks = [] } = {}) {
+  // ([{t, label}], such as "now"). ``tight`` fits the y axis to the lines' own range instead of
+  // always including zero
+  function line(lines, { unit = "", H = 200, W = 720, marks = [], tight = false } = {}) {
     const pts = lines.flatMap((l) => l.points);
     if (!pts.length) return `<div class="empty">no points in this range</div>`;
     W = Math.max(320, Math.round(W));
     const L = 46, B = 18, T = 6, R = 8;
     const t0 = Math.min(...pts.map((p) => p[0])), t1 = Math.max(...pts.map((p) => p[0])) || t0 + 1;
-    const hi = Math.max(0, ...pts.map((p) => p[1])), lo = Math.min(0, ...pts.map((p) => p[1])), span = hi - lo || 1;
+    let hi = Math.max(...pts.map((p) => p[1])), lo = Math.min(...pts.map((p) => p[1]));
+    if (tight) { const pad = (hi - lo) * 0.06 || Math.abs(hi) * 0.05 || 1; hi += pad; lo = lo >= 0 ? Math.max(0, lo - pad) : lo - pad; }   // never below zero for what never is else { hi = Math.max(0, hi); lo = Math.min(0, lo); }
+    const span = hi - lo || 1;
     const x = (t) => L + (W - L - R) * (t - t0) / Math.max(1, t1 - t0), y = (v) => T + (H - T - B) * (1 - (v - lo) / span);
     const id = register({ lines, x, y, t0, t1, L, R, W, H, T, B, unit, dots: true });
     const ticks = [lo, lo + span / 2, hi].map((v) => `<line class="ax" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke-dasharray="2 4"/><text x="${L - 4}" y="${y(v) + 3}" text-anchor="end">${num(v)}</text>`).join("");
