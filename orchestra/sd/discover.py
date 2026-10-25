@@ -496,6 +496,17 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         else:
             left_out[s.key] = f"only an accumulator of other stocks' flows (R² {r2b:.2f} with counters of its own)"
     found = kept
+    # a level no longer written at the end of the window (its machine is gone, or renamed) is not
+    # measured now: it is left out, or its silence would leave no time when every series was written
+    current = []
+    for x in found:
+        ivs = live_intervals(x[0].points, start, end) if regular(x[0].points) else [(start, end)]
+        if ivs and ivs[-1][1] >= end:
+            current.append(x)
+        else:
+            last = max((t for t, _ in x[0].points), default=start)
+            left_out[x[0].key] = f"no longer written: its last point is {round((end - last) / 60)} min before the end of the window"
+    found = current
     stocks, sid_of = [], {}
     for s, terms, r2, exact in found:
         sid = _slug(s)
