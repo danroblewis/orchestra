@@ -53,6 +53,26 @@ MACHINES = {
 }
 
 
+# The events program machines emit and are woken by (agents declare theirs in the org). A
+# machine's ticket events also follow from the flows it is attributed to (flow_event).
+PROGRAM_EVENTS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "orchestra-host": (("session_started", "session_settled", "turn_timed_out", "turn_interrupted", "agent_compacted",
+                        "agent_reset", "pickup_paused", "pickup_resumed", "loop_started", "loop_stopped"),
+                       ("ticket_created", "ticket_transition:OPEN", "ticket_transition:READY_FOR_REVIEW",
+                        "ticket_transition:REJECTED", "ticket_transition:APPROVED")),
+    "gate": (("gate_started", "gate_landed", "gate_rejected", "gate_conflict", "gate_error", "gate_base_broken",
+              "staging_deployed", "staging_failed", "pipeline_paused"),
+             ("ticket_transition:MERGING",)),
+    "recovery": ((), ("turn_timed_out", "agent_crashed", "loop_started")),
+}
+
+
+def flow_event(fid: str) -> str:
+    """The event a move along a flow shows up as: creation, or a transition into its target."""
+    src, _, dst = fid.partition(">")
+    return "ticket_created" if src == OUTSIDE else f"ticket_transition:{dst}"
+
+
 def ticket_factory(project_key: str) -> Model:
     lab = {"project": project_key}
     stocks = [Stock(s.value, s.value.replace("_", " ").capitalize(), "tickets",

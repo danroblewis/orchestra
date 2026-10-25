@@ -104,7 +104,10 @@ def create_app(project: Project) -> FastAPI:
         from ..agents.roles import SYSTEM_BINDINGS
         from ..org import all_agents, all_teams
         from ..roles import EVENT_TYPES
+        from ..sd.factory import PROGRAM_EVENTS, flow_event, ticket_factory
+        from ..sd.store import ModelStore
         agents_, teams = all_agents(project), all_teams(project)
+        model = ModelStore(project.state_dir / "models").load("tickets") or ticket_factory(project.key)
         nodes: dict[str, dict] = {}
         edges: list[dict] = []
         def node(nid, kind, label=None, **extra):
@@ -112,33 +115,60 @@ def create_app(project: Project) -> FastAPI:
         def split(w):
             t, _, f = w.partition(":")
             return t, f or None
-        for sid, sb in SYSTEM_BINDINGS.items():
-            node("sys:" + sid, "system", sid.replace("_", " "), description=sb["description"])
-            for e in sb["emits"]:
-                t, f = split(e); node("ev:" + t, "event", t)
-                edges.append({"from": "sys:" + sid, "to": "ev:" + t, "kind": "emits", "filter": f})
-            for w in sb["wake_on"]:
-                t, f = split(w); node("ev:" + t, "event", t)
-                edges.append({"from": "ev:" + t, "to": "sys:" + sid, "kind": "wakes", "filter": f})
-        for t in teams.values():
-            for e in t.emits:
-                node("ev:" + e, "event", e, custom=True, team=t.name)
-            for pr in t.probes or []:
-                node("probe:" + pr["name"], "probe", pr["name"], team=t.name)
-                for e in ("probe_failed", "probe_recovered"):
-                    node("ev:" + e, "event", e)
-                    edges.append({"from": "probe:" + pr["name"], "to": "ev:" + e, "kind": "emits", "filter": pr["name"]})
+        def edge(a, b, kind, f, **extra):
+            if not any(x["from"] == a and x["to"] == b and x["filter"] == f for x in edges):
+                edges.append({"from": a, "to": b, "kind": kind, "filter": f, **extra})
+        def emits(nid, w, kind="emits"):
+            t, f = split(w); node("ev:" + t, "event", t); edge(nid, "ev:" + t, kind, f)
+        def wakes(nid, w, loop=False):
+            t, f = split(w); node("ev:" + t, "event", t); edge("ev:" + t, nid, "wakes", f, loop=loop)
+        # every machine in the factory model is a node; nothing else is (events aside)
+        agent_node: dict[str, str] = {}
+        for m in model.machines:
+            nid = "m:" + m.id
+            org_name = m.id.replace("-", "_")
+            if m.kind == "agent":
+                ag = agents_.get(org_name)
+                node(nid, "agent", org_name, machine=True, builtin=True, team=ag.team if ag else None, kind_of=ag.kind if ag else None)
+                agent_node[org_name] = nid
+                for w in (ag.wake_on if ag else ()):
+                    wakes(nid, w, loop=True)
+                for w in (ag.emits if ag else ()):
+                    emits(nid, w)
+            else:
+                node(nid, "program", m.name, machine=True, bootstrap=m.bootstrap, description=m.description)
+                em, wk = PROGRAM_EVENTS.get(m.id, ((), ()))
+                for w in wk:
+                    wakes(nid, w, loop=True)
+                for w in em:
+                    emits(nid, w)
+            for fid in m.attributed:                  # the ticket events its flows show up as
+                emits(nid, flow_event(fid))
+        # custom agents are machines too
         for ag in agents_.values():
-            node("agent:" + ag.name, "agent", ag.name, team=ag.team, builtin=ag.builtin, kind_of=ag.kind)
+            if ag.name in agent_node or ag.builtin:
+                continue
+            nid = "m:" + ag.name
+            node(nid, "agent", ag.name, machine=True, team=ag.team, builtin=False, kind_of=ag.kind)
+            agent_node[ag.name] = nid
             for w in ag.wake_on:
-                t, f = split(w); node("ev:" + t, "event", t)
-                edges.append({"from": "ev:" + t, "to": "agent:" + ag.name, "kind": "wakes", "filter": f, "loop": ag.builtin})
-            for e in ag.emits:
-                t, f = split(e); node("ev:" + t, "event", t)
-                edges.append({"from": "agent:" + ag.name, "to": "ev:" + t, "kind": "emits", "filter": f})
+                wakes(nid, w)
+            for w in ag.emits:
+                emits(nid, w)
             if ag.team and ag.team in teams:
                 for e in teams[ag.team].emits:
-                    edges.append({"from": "agent:" + ag.name, "to": "ev:" + e, "kind": "may_emit", "filter": None})
+                    edge(nid, "ev:" + e, "may_emit", None)
+        # probes: scheduled program machines run in a team's space
+        for t in teams.values():
+            for e in t.emits:
+                node("ev:" + e, "event", e)
+                nodes["ev:" + e].update(custom=True, team=t.name)
+            for pr in t.probes or []:
+                nid = "m:probe:" + pr["name"]
+                node(nid, "program", pr["name"], machine=True, probe=True, team=t.name)
+                for e in ("probe_failed", "probe_recovered"):
+                    node("ev:" + e, "event", e)
+                    edge(nid, "ev:" + e, "emits", pr["name"])
         # observed: counts per event type, and per emitter, over the last day
         import datetime as _dt
         since = (_dt.datetime.now(_dt.UTC) - _dt.timedelta(days=1)).isoformat(timespec="seconds")
@@ -156,15 +186,16 @@ def create_app(project: Project) -> FastAPI:
                 by.setdefault(who, {})
                 by[who][e["type"]] = by[who].get(e["type"], 0) + 1
         for who, ts_ in by.items():
-            if who in agents_:
+            nid = agent_node.get(who)
+            if nid:
                 for t, n in ts_.items():
                     node("ev:" + t, "event", t)
-                    hits = [x for x in edges if x["from"] == "agent:" + who and x["to"] == "ev:" + t]
+                    hits = [x for x in edges if x["from"] == nid and x["to"] == "ev:" + t]
                     if hits:
                         for x in hits:
                             x["seen"] = n                      # a declared edge that actually fired
                     else:
-                        edges.append({"from": "agent:" + who, "to": "ev:" + t, "kind": "observed", "filter": None, "seen": n})
+                        edges.append({"from": nid, "to": "ev:" + t, "kind": "observed", "filter": None, "seen": n})
         return {"ok": True, "nodes": list(nodes.values()), "edges": edges, "counts": counts, "by": by,
                 "known_types": list(EVENT_TYPES)}
 

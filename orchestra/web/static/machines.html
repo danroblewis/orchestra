@@ -50,10 +50,10 @@
   .evmap { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:6px }
   .evmap svg { display:block; width:100%; height:560px; font-size:11px }
   .evmap .n circle.body { fill:var(--rc, #94a3b8); stroke:var(--border2); stroke-width:1.5 }
-  .evmap .n text.initial { fill:#0b0d12; font-weight:800; font-size:15px } .evmap .n.system text.initial, .evmap .n.probe text.initial { fill:var(--text2) }
+  .evmap .n text.initial { fill:#0b0d12; font-weight:800; font-size:15px } .evmap .n.program text.initial { fill:var(--text2) }
   .evmap .n text.name { fill:var(--text); font-weight:600; font-size:11.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
   .evmap .n.resident circle.body { stroke:#22c55e; stroke-width:2.5 }
-  .evmap .n.system circle.body { fill:var(--panel3); stroke:#94a3b8; stroke-dasharray:4 2 } .evmap .n.probe circle.body { fill:var(--panel3); stroke:#c4b5fd }
+  .evmap .n.program circle.body { fill:var(--panel3); stroke:#94a3b8; stroke-width:1.5 } .evmap .n.program.bootstrap circle.body { stroke:#fbbf24; stroke-width:2 }
   .evmap .n .halo { fill:none; stroke:url(#halo); stroke-width:4; stroke-dasharray:14 10; stroke-linecap:round; filter:drop-shadow(0 0 5px #60a5fa); animation:halo 2.4s linear infinite; transform-box:fill-box; transform-origin:center }
   @keyframes halo { to { transform:rotate(360deg) } }
   .evmap .n.cyc circle, .evmap .n.cyc rect { stroke-width:3 } .evmap .n.event rect { fill:#0b0e14; stroke:#6b5313 } .evmap .n text.ev { fill:#fcd34d; font-family:var(--mono); font-size:10px; font-weight:600 } .evmap .n text.ev.custom { fill:#c4b5fd } .evmap .n text { fill:var(--text); font-weight:600; pointer-events:none } .evmap .n .sub { fill:var(--muted); font-weight:400; font-size:9.5px }
@@ -152,7 +152,8 @@ function agentGraph(m) {
     ls = Object.values(merged);
   }
   const used = new Set(ls.flatMap((l) => [l.source, l.target]));
-  const ns = [...m.nodes.filter((n) => n.kind !== "event" && used.has(n.id)).map((n) => ({ ...n })), ...Object.values(evNodes).filter((n) => used.has(n.id))];
+  // every machine is drawn, connected or not; events only when something links them
+  const ns = [...m.nodes.filter((n) => n.kind !== "event" && (used.has(n.id) || n.machine)).map((n) => ({ ...n })), ...Object.values(evNodes).filter((n) => used.has(n.id))];
   return { nodes: ns, links: ls };
 }
 function sccs(nodes, links) {   // Tarjan: the feedback loops
@@ -185,7 +186,7 @@ function drawGraph(g, inCyc) {
   const palette = { supervisor: "var(--r-supervisor)", coordinator: "var(--r-coordinator)", pipeline_manager: "var(--r-pipeline)", worker: "var(--r-worker)", reviewer: "var(--r-reviewer)" };
   const byName = Object.fromEntries((ORG ? ORG.agents : []).map((a) => [a.name, a]));
   // An agent is active when a session of its kind is running: one resident process, or any of an ad hoc agent's per-ticket sessions.
-  const active = new Set((STATE ? STATE.sessions : []).filter((s) => s.status === "running" && s.kind).map((s) => "agent:" + s.kind));
+  const active = new Set((STATE ? STATE.sessions : []).filter((s) => s.status === "running" && s.kind).map((s) => "m:" + s.kind.replace(/_/g, "-")));
   svg.append("defs").html(`<linearGradient id="halo" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="60" y2="60"><stop offset="0" stop-color="#60a5fa"/><stop offset=".5" stop-color="#c084fc"/><stop offset="1" stop-color="#22c55e"/></linearGradient><marker id="arr" viewBox="0 -4 8 8" refX="8" refY="0" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,-4L8,0L0,4" fill="#6b7280"></path></marker><marker id="arrc" viewBox="0 -4 8 8" refX="8" refY="0" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,-4L8,0L0,4" fill="#fcd34d"></path></marker>`);
   const links = g.links.map((l) => ({ ...l })), nodes = g.nodes.map((n) => ({ ...n }));
   const R = 22;
@@ -198,7 +199,7 @@ function drawGraph(g, inCyc) {
   path.append("title").text((l) => `${(l.source.label || l.source)} → ${(l.target.label || l.target)}${l.seen ? ` · ${l.seen} in 24h` : ""}`);
   const lbl = svg.append("g").selectAll("text").data([]).join("text");
   const node = svg.append("g").selectAll("g").data(nodes).join("g")
-    .attr("class", (n) => `n ${n.kind} ${inCyc.has(n.id) ? "cyc" : ""} ${n.kind === "agent" && byName[n.label] && byName[n.label].resident ? "resident" : ""}`)
+    .attr("class", (n) => `n ${n.kind} ${n.bootstrap ? "bootstrap" : ""} ${inCyc.has(n.id) ? "cyc" : ""} ${n.kind === "agent" && byName[n.label] && byName[n.label].resident ? "resident" : ""}`)
     .attr("style", (n) => n.kind === "agent" ? `--rc:${palette[n.label] || "#94a3b8"}` : "").attr("data-id", (n) => n.id)
     .on("mouseenter", (ev, n) => evHover(n.id)).on("mouseleave", () => evHover(null)).on("click", (ev, n) => { if (n.kind === "agent") openAgent(n.label); })
     .call(d3.drag().on("start", (ev, d) => { if (!ev.active) sim.alphaTarget(.3).restart(); d.fx = d.x; d.fy = d.y; }).on("drag", (ev, d) => { d.fx = ev.x; d.fy = ev.y; }).on("end", (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = d.fy = null; }));
@@ -211,7 +212,7 @@ function drawGraph(g, inCyc) {
   evText.selectAll("tspan").data((n) => evLines(n).map((l, i, arr) => ({ l, i, n: arr.length }))).join("tspan").attr("x", 0).attr("dy", (d) => d.i === 0 ? 3 - (d.n - 1) * 6.5 : 13).text((d) => d.l);
   node.filter((n) => n.kind !== "event").append("text").attr("text-anchor", "middle").attr("dy", 5).attr("class", "initial").text((n) => n.label[0].toUpperCase());
   node.filter((n) => n.kind !== "event").append("text").attr("text-anchor", "middle").attr("dy", R + 13).attr("class", "name").text((n) => n.label);
-  node.append("text").attr("class", "sub").attr("text-anchor", "middle").attr("dy", (n) => n.kind === "event" ? evHH(n) + 12 : R + 24).text((n) => n.kind === "event" ? (n.cnt ? n.cnt + "/24h" : "") : n.team || (n.kind === "system" ? "system" : ""));
+  node.append("text").attr("class", "sub").attr("text-anchor", "middle").attr("dy", (n) => n.kind === "event" ? evHH(n) + 12 : R + 24).text((n) => n.kind === "event" ? (n.cnt ? n.cnt + "/24h" : "") : n.kind === "program" ? (n.bootstrap ? "bootstrap" : n.probe ? "probe" : "program") : n.team || "");
   node.append("title").text((n) => `${n.label}${n.description ? ": " + n.description : ""}`);
   sim.on("tick", () => {
     nodes.forEach((n) => { const hw = n.kind === "event" ? Math.max(40, Math.max(...(n.labels || [n.label]).map((l) => l.length)) * 3.4 + 12) + 4 : Math.max(R + 4, n.label.length * 3.3); const hh = n.kind === "event" ? 10 + ((n.labels || [1]).length - 1) * 6.5 + 14 : R + 10; n.x = Math.max(hw, Math.min(W - hw, n.x)); n.y = Math.max(hh, Math.min(H - hh - 20, n.y)); });

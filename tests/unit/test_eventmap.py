@@ -37,6 +37,18 @@ def test_builtin_roles_name_real_events():
     assert "ticket_transition:APPROVED" in ROLES["reviewer"].emits and "a free reviewer slot" in ROLES["reviewer"].triggers
 
 
+def test_eventmap_nodes_are_machines(project):
+    m = TestClient(web.create_app(project)).get("/api/eventmap").json()
+    machines = {n["id"]: n for n in m["nodes"] if n["kind"] != "event"}
+    assert all(n.get("machine") for n in machines.values()), "nothing but machines (and events) on the map"
+    for mid in ("orchestra-host", "worker", "reviewer", "gate", "recovery", "supervisor", "coordinator", "pipeline-manager"):
+        assert "m:" + mid in machines, mid
+    assert machines["m:orchestra-host"]["bootstrap"] is True and machines["m:recovery"]["kind"] == "program"
+    edge = lambda f, t, flt=None: any(e["from"] == f and e["to"] == t and (flt is None or e["filter"] == flt) for e in m["edges"])
+    assert edge("ev:turn_timed_out", "m:recovery") and edge("m:recovery", "ev:ticket_transition", "OPEN")
+    assert edge("ev:ticket_transition", "m:orchestra-host", "OPEN"), "the host picks returned tickets back up"
+
+
 def test_eventmap_has_declared_and_observed_edges(project):
     store = LocalStore(project)
     sup = {"role": "supervisor"}
@@ -49,13 +61,13 @@ def test_eventmap_has_declared_and_observed_edges(project):
     api.handle(project, store, "emit_event", {"type": "lesson_proposed", "subject": "T-1"}, role="keeper")
     m = TestClient(web.create_app(project)).get("/api/eventmap").json()
     edge = lambda f, t, k=None: any(e["from"] == f and e["to"] == t and (k is None or e["kind"] == k) for e in m["edges"])
-    assert edge("ev:ticket_transition", "agent:reviewer", "wakes")                      # a built-in, woken by the loop
-    assert next(e for e in m["edges"] if e["from"] == "ev:ticket_transition" and e["to"] == "agent:reviewer")["loop"] is True
-    assert edge("agent:reviewer", "ev:ticket_transition", "emits")
-    assert edge("ev:ticket_transition", "sys:merge_gate", "wakes") and edge("sys:merge_gate", "ev:gate_landed", "emits")
-    assert edge("probe:docs_budget", "ev:probe_failed", "emits") and edge("ev:probe_failed", "agent:retro", "wakes")
-    assert edge("agent:keeper", "ev:lesson_proposed", "may_emit") and edge("ev:lesson_proposed", "agent:retro", "wakes")
-    assert next(e for e in m["edges"] if e["from"] == "agent:keeper" and e["to"] == "ev:lesson_proposed")["seen"] == 1   # declared, and it fired
+    assert edge("ev:ticket_transition", "m:reviewer", "wakes")                      # a built-in, woken by the loop
+    assert next(e for e in m["edges"] if e["from"] == "ev:ticket_transition" and e["to"] == "m:reviewer")["loop"] is True
+    assert edge("m:reviewer", "ev:ticket_transition", "emits")
+    assert edge("ev:ticket_transition", "m:gate", "wakes") and edge("m:gate", "ev:gate_landed", "emits")
+    assert edge("m:probe:docs_budget", "ev:probe_failed", "emits") and edge("ev:probe_failed", "m:retro", "wakes")
+    assert edge("m:keeper", "ev:lesson_proposed", "may_emit") and edge("ev:lesson_proposed", "m:retro", "wakes")
+    assert next(e for e in m["edges"] if e["from"] == "m:keeper" and e["to"] == "ev:lesson_proposed")["seen"] == 1   # declared, and it fired
     assert m["by"]["keeper"]["lesson_proposed"] == 1
     assert m["counts"]["lesson_proposed"] == 1
     assert next(n for n in m["nodes"] if n["id"] == "ev:lesson_proposed")["custom"] is True
