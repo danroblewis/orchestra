@@ -80,8 +80,9 @@ def cmd_metrics(args) -> int:
         print(f"{rep.events} events ({_when(rep.first)} → {_when(rep.last)}) → {rep.points} points in {store.name}")
         print("types: " + ", ".join(f"{t} {n}" for t, n in sorted(rep.types.items(), key=lambda x: -x[1])[:20]))
         return 0
-    for name, labels in store.series():
-        print(name, " ".join(f"{k}={v}" for k, v in sorted(labels.items()) if k != "project"))
+    for name, labels in store.series(""):
+        if labels.get("project") == project.key:
+            print(name, " ".join(f"{k}={v}" for k, v in sorted(labels.items()) if k != "project"))
     return 0
 
 

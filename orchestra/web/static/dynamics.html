@@ -85,14 +85,21 @@ function draw() {
   };
   const pos = SDDiagram.layout(m.stocks.map((s) => s.id), D.flows, { maxCols: 5 });
   // spread the boxes out: the layout's grid is tight for labelled flows
-  const P = {}; for (const [id, p] of Object.entries(pos)) P[id] = { x: p.x * 1.55, y: p.y * 1.5 };
-  const color = (cls) => cls.startsWith("st-") ? `var(--${cls.slice(3)})` : cls.startsWith("m-") ? mcolor(cls.slice(2)) : "var(--fg)";
+  // spread the boxes out: the layout's grid is tight for labelled flows and wide stock names
+  const boxW = Math.max(150, ...D.stocks.map((s) => (s.name || s.id).length * 8.2 + 24));
+  const P = {}; for (const [id, p] of Object.entries(pos)) P[id] = { x: p.x * 1.55 * Math.max(1, boxW / 190), y: p.y * 1.5 };
+  // stocks: outlined in the colour of the machine that writes them (neutral when none does)
+  const stockOwner = Object.fromEntries(m.stocks.map((s) => [s.id, (s.evidence && s.evidence.machine) || ""]));
+  const color = (cls) => cls.startsWith("st-") ? (stockOwner[cls.slice(3)] ? mcolor(stockOwner[cls.slice(3)]) : "#cbd5e1") : cls.startsWith("m-") ? mcolor(cls.slice(2)) : "var(--fg)";
   $("diagram").innerHTML = '<svg id="sd"></svg>';
   // flow labels sit outside the stocks' bounds: leave room for them, so nothing is clipped
   // boxes as wide as the longest stock name needs
-  const box = { w: Math.max(150, ...D.stocks.map((s) => (s.name || s.id).length * 8.2 + 24)), h: 64 };
+  const box = { w: boxW, h: 64 };
   const vb = SDDiagram.bounds(P, D.flows, box, 60);
   SDDiagram.draw($("sd"), D, P, { color, box, viewBox: { x: vb.x - 140, y: vb.y - 30, w: vb.w + 280, h: vb.h + 60 } });
+  // stocks above the flow labels, so a label beside a stock never hides its name
+  const stocks = $("sd").querySelector("g.dstock");
+  if (stocks && stocks.parentNode) $("sd").appendChild(stocks.parentNode);
   // legend: machines, hover to isolate their flows
   const used = [...new Set(D.flows.map((f) => f.cls.slice(2)))];
   $("legend").innerHTML = used.map((id) => { const mc = byMachine[id] || { name: id, kind: "?" };

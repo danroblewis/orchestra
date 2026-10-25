@@ -141,7 +141,8 @@ metrics store without being told what anything is:
 
 Everything else is **left out, with the reason** (did not change, no counters balance it, not
 needed by any balance), recorded in the model version. Not yet: stocks no series measures,
-delays, non-linear forms, eras. `examples/bakery/` is a toy system it finds.
+delays, non-linear forms, eras. The bakery (`~/orchestra-bakery`, its own repository) is a toy
+system it is tested on.
 
 ---
 
@@ -302,8 +303,6 @@ orchestra/
   sd/        model, store, fit, discover
   harness/   base, pi, claude_code, codex, mcp, tools, pi_extension.ts
   web/       app, core, core_explore, machines, dynamics, static/
-examples/
-  bakery/    toy machines (oven, shop, weather) for discovery to find
 tests/
   unit/  bus/  metrics/  e2e/ (harness fakes)  acceptance/
 ```

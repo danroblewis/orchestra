@@ -1,7 +1,7 @@
 """Discovery finds a system's stocks, flows, equations and machines from its metrics alone.
 
-The system is the bakery in examples/bakery, simulated here without sleeping so the right
-answer is known: the rates below."""
+The system is a small bakery (an early version of ~/orchestra-bakery), simulated here without
+sleeping so the right answer is known: the rates below."""
 
 import math
 import random
@@ -115,3 +115,16 @@ def test_an_outage_is_missing_data_not_a_rate_of_zero(tmp_path):
     sold = f["bakery_loaves_sold_total"].current()
     assert abs(sold.quality["proportional_k"] - SELL) < 0.03, sold.quality
     assert 80 < m.discovery["live_minutes"] < 90, m.discovery["live_minutes"]
+
+
+def test_event_driven_counters_do_not_shrink_the_live_time(tmp_path):
+    """A counter written only when an event happens is silent most of the time; that is not an
+    outage, and must not cut the time the fit uses."""
+    store = FileMetrics(tmp_path / "m.jsonl")
+    start, end = simulate(store, minutes=60)
+    sparse = [Point("orchestra_events_total", n + 1, start + 600 + 900 * n, {"project": "p", "type": "bread.ordered", "source": "shop"})
+              for n in range(3)]
+    store.write(sparse)
+    m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
+    assert m.discovery["live_minutes"] > 55, m.discovery["live_minutes"]
+    assert len(m.flows) >= 4

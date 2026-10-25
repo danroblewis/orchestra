@@ -38,7 +38,8 @@ them locally.
 Machines are your programs. Publish events with the CloudEvents envelope
 (`orchestra.events.Events.publish`) and write metrics labelled `machine=<id>`
 (`orchestra.metrics`); they appear on the Machines page and in the Core explorers.
-`examples/` has toy machines to start from.
+`~/orchestra-bakery` (its own repository) is a toy system of machines used to test Orchestra
+from the outside.
 
 ## Tests
 

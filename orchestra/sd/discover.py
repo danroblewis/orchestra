@@ -97,8 +97,8 @@ GAP_FACTOR, MIN_GAP_S = 10.0, 60.0
 
 
 def live_intervals(points: list[tuple[float, float]], start: float, end: float) -> list[tuple[float, float]]:
-    """When a series was being written: between consecutive points no further apart than ten times
-    its usual interval (at least a minute). A longer silence is missing data (its machine was down
+    """When a series written on a schedule was being written: between consecutive points no further
+    apart than ten times its usual interval (at least a minute). A longer silence is missing data (its machine was down
     or cut off), not a measurement: carrying the last value through it would read as "nothing
     happened at this level", which is false."""
     ts = [t for t, _ in points if start - 3600 <= t <= end]
@@ -120,6 +120,18 @@ def live_intervals(points: list[tuple[float, float]], start: float, end: float) 
     if out and ts[-1] >= end - limit:                 # still being written at the end of the window
         out[-1] = (out[-1][0], end)
     return out
+
+
+def regular(points: list[tuple[float, float]]) -> bool:
+    """Written on a schedule (most intervals near the usual one), as a machine's own metrics are.
+    A series written only when something happens (Orchestra's event counters) is not: its
+    silences mean nothing happened, so they say nothing about whether anything was running."""
+    ts = [t for t, _ in points[-2000:]]
+    if len(ts) < 10:
+        return False
+    gaps = sorted(b - a for a, b in pairwise(ts))
+    med = gaps[len(gaps) // 2]
+    return med > 0 and sum(1 for g in gaps if g <= 3 * med) >= 0.8 * len(gaps)
 
 
 def intersect(a: list[tuple[float, float]], b: list[tuple[float, float]]) -> list[tuple[float, float]]:
@@ -202,6 +214,9 @@ def balance(level: Series, counters: list[Series], ls: LeastSquares | None = Non
     mean = sum(y) / len(y)
     sst = sum((v - mean) ** 2 for v in y) or 1e-12
     pen = MIN_GAIN * sst
+    # a machine's own measurement (labelled machine=…) is preferred over Orchestra's generic event
+    # count of the same thing when the two fit about equally: it costs a little less to use
+    cost = [pen * (1.0 if c.labels.get("machine") else 1.1) for c in counters]
     xs = [c.deltas for c in counters]
     live = [j for j, x in enumerate(xs) if any(x)]
     coef: dict[int, int] = {}
@@ -222,7 +237,7 @@ def balance(level: Series, counters: list[Series], ls: LeastSquares | None = Non
                     continue
                 d = new - old
                 e = sum((r - d * v) ** 2 for r, v in zip(resid, xs[j]))
-                gain = (sse - e) - pen * ((new != 0) - (old != 0))
+                gain = (sse - e) - cost[j] * ((new != 0) - (old != 0))
                 if gain > 1e-9 and (best is None or gain > best[0]):
                     best = (gain, {j: new}, e)
         for j, sign in list(coef.items()):            # swap a chosen counter for another, same sign:
@@ -230,7 +245,7 @@ def balance(level: Series, counters: list[Series], ls: LeastSquares | None = Non
                 if k in coef:
                     continue
                 e = sum((r + sign * a - sign * b) ** 2 for r, a, b in zip(resid, xs[j], xs[k]))
-                gain = sse - e
+                gain = (sse - e) - (cost[k] - cost[j])
                 if gain > 1e-9 and (best is None or gain > best[0]):
                     best = (gain, {j: 0, k: sign}, e)
         if best is None:
@@ -460,7 +475,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # or while it was down, its silence is not a rate of zero
     live = [(start, end)]
     for ser in [s for s, _, _, _ in found] + [e["series"] for e in ends.values()]:
-        live = intersect(live, live_intervals(ser.points, start, end))
+        if regular(ser.points):           # only a scheduled series' silence means its machine was down
+            live = intersect(live, live_intervals(ser.points, start, end))
     live_s = sum(b - a for a, b in live)
     steps_live = [i for i in range(n) if any(a <= start + i * step and start + (i + 1) * step <= b for a, b in live)]
     fit_start = live[0][0] if live else end
