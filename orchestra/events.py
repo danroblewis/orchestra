@@ -1,44 +1,93 @@
-"""Append-only event log plus in-process subscribers. SPEC.md section 6.5.
+"""The events facade over the event bus.
 
-``Events`` is the facade the rest of Orchestra uses; the log itself is an ``EventBus``
+``Events`` is what the rest of Orchestra uses; the log itself is an ``EventBus``
 (``orchestra.bus``): a JSONL file by default, or Redis Streams, a RabbitMQ stream or Kafka, chosen
 by ``[events] url`` in ``orchestra.toml`` or the ``ORCHESTRA_EVENTS_URL`` environment variable.
-Subscribers registered here hear only the events this process emits; other processes read the
-log by offset."""
+
+Every event published now carries the **CloudEvents** envelope (``specversion`` 1.0):
+
+- ``id``, ``type``, ``source`` (the machine that emitted it), ``time`` (RFC 3339);
+- optional ``subject`` (what it is about), ``correlationid`` and ``causationid`` (extensions);
+- ``data``: the payload, which belongs to the machines that use it; Orchestra never reads it.
+
+Events written before the envelope (flat dicts with ``ts`` and ``type``) stay readable:
+``event_time`` and ``event_source`` read either shape."""
 
 from __future__ import annotations
 
 import os
+import uuid
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .bus import EventBus, open_bus
 from .bus.file import FileBus
-from .model import now
 
 if TYPE_CHECKING:
     from .config import Project
 
+HOST = "orchestra-host"
+
+
+def now() -> str:
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
+
+
+def envelope(type: str, source: str, data: Any = None, *, subject: str | None = None,
+             correlationid: str | None = None, causationid: str | None = None) -> dict:
+    """A CloudEvents 1.0 event, as a dict."""
+    ev: dict[str, Any] = {"specversion": "1.0", "id": uuid.uuid4().hex, "type": type, "source": source, "time": now()}
+    if subject is not None:
+        ev["subject"] = subject
+    if correlationid is not None:
+        ev["correlationid"] = correlationid
+    if causationid is not None:
+        ev["causationid"] = causationid
+    if data is not None:
+        ev["datacontenttype"] = "application/json"
+        ev["data"] = data
+    return ev
+
+
+def event_time(ev: dict) -> float | None:
+    """Unix seconds of an event, from ``time`` (CloudEvents) or ``ts`` (older events)."""
+    raw = ev.get("time") or ev.get("ts")
+    try:
+        return datetime.fromisoformat(raw).timestamp() if raw else None
+    except (TypeError, ValueError):
+        return None
+
+
+def event_source(ev: dict) -> str | None:
+    """The machine that emitted an event, when the event says so (CloudEvents ``source``)."""
+    return ev.get("source")
+
 
 class Events:
-    def __init__(self, path: Path | None = None, *, bus: EventBus | None = None):
+    def __init__(self, path: Path | None = None, *, bus: EventBus | None = None, source: str = HOST):
         if bus is None and path is None:
             raise ValueError("Events needs a file path or a bus")
         self.bus: EventBus = bus or FileBus(path)
         self.path = path
+        self.source = source
         self._subs: list[Callable[[dict], None]] = []
 
     @classmethod
-    def for_project(cls, project: Project) -> Events:
+    def for_project(cls, project: Project, source: str = HOST) -> Events:
         url = os.environ.get("ORCHESTRA_EVENTS_URL") or project.config.events_url
-        return cls(project.events_file, bus=open_bus(url, project_key=project.key, file_path=project.events_file))
+        return cls(project.events_file, bus=open_bus(url, project_key=project.key, file_path=project.events_file),
+                   source=source)
 
     def subscribe(self, fn: Callable[[dict], None]) -> None:
+        """Hear the events this process publishes (other processes read the bus by offset)."""
         self._subs.append(fn)
 
-    def emit(self, type: str, **data: Any) -> dict:
-        ev = {"ts": now(), "type": type, **data}
+    def publish(self, type: str, data: Any = None, *, source: str | None = None, **ext: Any) -> dict:
+        """Publish one event with the CloudEvents envelope; ``ext`` takes subject, correlationid
+        and causationid."""
+        ev = envelope(type, source or self.source, data, **ext)
         self.bus.append(ev)
         for fn in list(self._subs):
             try:
@@ -46,6 +95,10 @@ class Events:
             except Exception:
                 pass
         return ev
+
+    def emit(self, type: str, **data: Any) -> dict:
+        """Publish an event from this process's own source, its keyword arguments as the data."""
+        return self.publish(type, data or None)
 
     def read(self, since: int = 0, limit: int = 500) -> tuple[list[dict], int]:
         """Return (events, next_offset): the last ``limit`` events after ``since``, and the offset

@@ -7,26 +7,30 @@ import json
 import math
 import random
 
-from orchestra.collectors import CREATED, EVENTS, TICKETS, TRANSITIONS
+from orchestra.collectors import EVENTS
+
+LEVEL, IN, OUT = "sim_level", "sim_in_total", "sim_out_total"
 from orchestra.metrics import Point
 from orchestra.metrics.file import FileMetrics
-from orchestra.sd.factory import MACHINES, ticket_factory
 from orchestra.sd.fit import fit_model
 from orchestra.sd.model import Equation, Flow, Machine, Model, SeriesRef, Stock
 from orchestra.sd.store import ModelStore
 
 
-def test_factory_is_valid_and_round_trips(tmp_path):
-    m = ticket_factory("p")
+def small_model() -> Model:
+    lab = {"project": "p"}
+    return Model("system", "The system",
+                 stocks=[Stock("S", "S", series=SeriesRef(LEVEL, lab))],
+                 flows=[Flow("outside>S", "in", None, "S", SeriesRef(IN, lab)), Flow("S>outside", "out", "S", None, SeriesRef(OUT, lab))],
+                 machines=[Machine("m", "m", "program", "", ["outside>S"])])
+
+
+def test_model_round_trips(tmp_path):
+    m = small_model()
     assert m.check() == []
-    assert sum(mc.bootstrap for mc in m.machines) == 1, "exactly one bootstrap machine: Orchestra's host"
-    attributed = {f for mc in m.machines for f in mc.attributed}
-    assert attributed == {f.id for f in m.flows}, "every flow has a machine hypothesis, and only real flows do"
     store = ModelStore(tmp_path)
     assert store.save(m, note="declared") == 1
-    back = store.load()
-    assert back.to_json() == m.to_json()
-    assert set(MACHINES) == {mc.id for mc in back.machines}
+    assert store.load().to_json() == m.to_json()
 
 
 def test_check_catches_bad_structure():
@@ -56,12 +60,12 @@ def _simulate(store, *, inflow_per_h: float, k_per_h: float, hours: int, stopped
         if rnd.random() < inflow_per_h / 60:
             level += 1
             n_in += 1
-            pts += [Point(TICKETS, level, t, {**lab, "state": "S"}), Point(CREATED, n_in, t, lab)]
+            pts += [Point(LEVEL, level, t, lab), Point(IN, n_in, t, lab)]
         for _ in range(level):
             if rnd.random() < k_per_h / 60:
                 level -= 1
                 n_out += 1
-                pts += [Point(TICKETS, level, t + 1, {**lab, "state": "S"}), Point(TRANSITIONS, n_out, t + 1, {**lab, "from": "S", "to": "DONE"})]
+                pts += [Point(LEVEL, level, t + 1, lab), Point(OUT, n_out, t + 1, lab)]
     store.write(pts)
 
 
@@ -69,9 +73,9 @@ def test_fit_recovers_known_rates_and_forms(tmp_path):
     store = FileMetrics(tmp_path / "m.jsonl")
     _simulate(store, inflow_per_h=3.0, k_per_h=0.5, hours=400, stopped=(150, 230))
     lab = {"project": "p"}
-    m = Model("sim", "sim", stocks=[Stock("S", "S", series=SeriesRef(TICKETS, {**lab, "state": "S"}))],
-              flows=[Flow("outside>S", "in", None, "S", SeriesRef(CREATED, lab)),
-                     Flow("S>outside", "out", "S", None, SeriesRef(TRANSITIONS, {**lab, "from": "S", "to": "DONE"}))])
+    m = Model("sim", "sim", stocks=[Stock("S", "S", series=SeriesRef(LEVEL, lab))],
+              flows=[Flow("outside>S", "in", None, "S", SeriesRef(IN, lab)),
+                     Flow("S>outside", "out", "S", None, SeriesRef(OUT, lab))])
     fit_model(m, store, "p")
     inflow, outflow = m.flow("outside>S").current(), m.flow("S>outside").current()
     assert inflow.form == "constant" and outflow.form == "proportional"
@@ -84,7 +88,7 @@ def test_fit_recovers_known_rates_and_forms(tmp_path):
 
 def test_one_model_with_versions(tmp_path):
     store = ModelStore.for_state(tmp_path)
-    m = ticket_factory("p")
+    m = small_model()
     assert store.load() is None
     assert store.save(m, "declared") == 1
     assert store.save(m, "same again") == 1, "an unchanged model adds no version"
@@ -97,7 +101,7 @@ def test_one_model_with_versions(tmp_path):
 
 def test_a_legacy_model_becomes_version_1(tmp_path):
     (tmp_path / "models").mkdir()
-    (tmp_path / "models" / "tickets.json").write_text(json.dumps(ticket_factory("p").to_json()))
+    (tmp_path / "models" / "tickets.json").write_text(json.dumps(small_model().to_json()))
     store = ModelStore.for_state(tmp_path)
     assert store.versions()[0]["note"] == "imported from models/tickets.json"
     assert store.load().name == "The system"

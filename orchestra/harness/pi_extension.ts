@@ -14,9 +14,8 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const ROLE = process.env.ORCHESTRA_ROLE ?? "";
 const REPO = process.env.ORCHESTRA_REPO ?? "";
-const TICKET = process.env.ORCHESTRA_TICKET ?? "";
 const PYTHON = process.env.ORCHESTRA_PYTHON ?? "python3";
-const ENV = { ...process.env, ORCHESTRA_REPO: REPO, ORCHESTRA_ROLE: ROLE, ORCHESTRA_TICKET: TICKET };
+const ENV = { ...process.env, ORCHESTRA_REPO: REPO, ORCHESTRA_ROLE: ROLE };
 
 function api(command: string, args: Record<string, unknown>): string {
   try {

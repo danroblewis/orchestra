@@ -1,48 +1,31 @@
-"""Read-only FastAPI app: state snapshot, ticket detail, transcripts, system stats, events.
-SPEC.md section 11."""
+"""The web UI: Dashboard, Machines, Dynamics and Core. Read-only for humans: nothing here
+changes the system (AGENTS.md rule 7)."""
 
 from __future__ import annotations
 
 import asyncio
-import threading
 import time
 from pathlib import Path
 
 import psutil
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi import Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..config import Project
 from ..events import Events
-from ..model import State
-from ..harness import read_transcript
-from ..store import LocalStore, StoreError
 from .core import CoreProbe
 from .core_explore import Explorer
 from .dynamics import model_view
 from .machines import machines_view
 
 STATIC = Path(__file__).parent / "static"
-
-
-CHAT_PING_SECONDS = 20   # keep the chat stream alive through proxies while the Supervisor thinks
-MARKER_TYPES = ("session_started", "turn_timed_out", "turn_error", "turn_interrupted", "agent_killed", "agent_crashed", "agent_crash_loop", "agent_reset", "agent_compacted")
-
-
-def _alive(pid) -> bool:
-    """A recorded pid proves liveness only if that process exists and is not a zombie."""
-    try:
-        return bool(pid) and psutil.Process(int(pid)).status() != psutil.STATUS_ZOMBIE
-    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
-        return False
+MACHINES_CACHE_S = 5.0
 
 
 def create_app(project: Project) -> FastAPI:
     app = FastAPI(title="Orchestra")
     events = Events.for_project(project)
-    store = LocalStore(project, events)
     core = CoreProbe(project, events)
     explore = Explorer(core)
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
@@ -63,182 +46,20 @@ def create_app(project: Project) -> FastAPI:
     async def index() -> str:
         return page("index.html")
 
-    @app.get("/tickets", response_class=HTMLResponse)
-    async def tickets_page() -> str:
-        return page("tickets.html")
-
-    @app.get("/agents")
-    async def agents_redirect():
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse("/machines", status_code=308)
-
     @app.get("/machines", response_class=HTMLResponse)
     async def machines_page() -> str:
         return page("machines.html")
 
-    @app.get("/api/roles")
-    async def roles() -> dict:
-        from .. import api as api_mod
-        return api_mod.handle(project, store, "list_roles", {})
+    @app.get("/agents")
+    async def agents_redirect():
+        return RedirectResponse("/machines", status_code=308)
 
-    @app.get("/api/roles/{name}")
-    async def role_detail(name: str) -> dict:
-        from .. import api as api_mod
-        try:
-            return api_mod.handle(project, store, "get_role", {"name": name})
-        except StoreError:
-            raise HTTPException(404)
+    @app.get("/api/project")
+    def project_info() -> dict:
+        return {"key": project.key, "repo": str(project.repo_root)}
 
-    @app.get("/api/org")
-    async def org() -> dict:
-        """The organisation in one read: roles (job descriptions), agents (what runs), teams (who owns what)."""
-        from .. import api as api_mod
-        return {"ok": True, "now": time.time(),
-                "roles": api_mod.handle(project, store, "list_roles", {})["roles"],
-                "agents": api_mod.handle(project, store, "list_agents", {})["agents"],
-                "teams": api_mod.handle(project, store, "list_teams", {})["teams"]}
-
-    @app.get("/api/eventmap")
-    async def eventmap() -> dict:
-        """Who wakes whom through which events: the intended bindings (declared wake_on,
-        team emits, probes, the built-ins' loop-detected conditions, the gate) plus what
-        was observed in the event log over the last 24 hours."""
-        from .. import api as api_mod
-        from ..agents.roles import SYSTEM_BINDINGS
-        from ..org import all_agents, all_teams
-        from ..roles import EVENT_TYPES
-        from ..sd.factory import PROGRAM_EVENTS, flow_event, ticket_factory
-        from ..sd.store import ModelStore
-        agents_, teams = all_agents(project), all_teams(project)
-        model = ModelStore.for_state(project.state_dir).load() or ticket_factory(project.key)
-        nodes: dict[str, dict] = {}
-        edges: list[dict] = []
-        def node(nid, kind, label=None, **extra):
-            nodes.setdefault(nid, {"id": nid, "kind": kind, "label": label or nid, **extra})
-        def split(w):
-            t, _, f = w.partition(":")
-            return t, f or None
-        def edge(a, b, kind, f, **extra):
-            if not any(x["from"] == a and x["to"] == b and x["filter"] == f for x in edges):
-                edges.append({"from": a, "to": b, "kind": kind, "filter": f, **extra})
-        def emits(nid, w, kind="emits"):
-            t, f = split(w); node("ev:" + t, "event", t); edge(nid, "ev:" + t, kind, f)
-        def wakes(nid, w, loop=False):
-            t, f = split(w); node("ev:" + t, "event", t); edge("ev:" + t, nid, "wakes", f, loop=loop)
-        # every machine in the factory model is a node; nothing else is (events aside)
-        agent_node: dict[str, str] = {}
-        for m in model.machines:
-            nid = "m:" + m.id
-            org_name = m.id.replace("-", "_")
-            if m.kind == "agent":
-                ag = agents_.get(org_name)
-                node(nid, "agent", org_name, machine=True, builtin=True, team=ag.team if ag else None, kind_of=ag.kind if ag else None)
-                agent_node[org_name] = nid
-                for w in (ag.wake_on if ag else ()):
-                    wakes(nid, w, loop=True)
-                for w in (ag.emits if ag else ()):
-                    emits(nid, w)
-            else:
-                node(nid, "program", m.name, machine=True, bootstrap=m.bootstrap, description=m.description)
-                em, wk = PROGRAM_EVENTS.get(m.id, ((), ()))
-                for w in wk:
-                    wakes(nid, w, loop=True)
-                for w in em:
-                    emits(nid, w)
-            for fid in m.attributed:                  # the ticket events its flows show up as
-                emits(nid, flow_event(fid))
-        # custom agents are machines too
-        for ag in agents_.values():
-            if ag.name in agent_node or ag.builtin:
-                continue
-            nid = "m:" + ag.name
-            node(nid, "agent", ag.name, machine=True, team=ag.team, builtin=False, kind_of=ag.kind)
-            agent_node[ag.name] = nid
-            for w in ag.wake_on:
-                wakes(nid, w)
-            for w in ag.emits:
-                emits(nid, w)
-            if ag.team and ag.team in teams:
-                for e in teams[ag.team].emits:
-                    edge(nid, "ev:" + e, "may_emit", None)
-        # probes: scheduled program machines run in a team's space
-        for t in teams.values():
-            for e in t.emits:
-                node("ev:" + e, "event", e)
-                nodes["ev:" + e].update(custom=True, team=t.name)
-            for pr in t.probes or []:
-                nid = "m:probe:" + pr["name"]
-                node(nid, "program", pr["name"], machine=True, probe=True, team=t.name)
-                for e in ("probe_failed", "probe_recovered"):
-                    node("ev:" + e, "event", e)
-                    edge(nid, "ev:" + e, "emits", pr["name"])
-        # observed: counts per event type, and per emitter, over the last day
-        import datetime as _dt
-        since = (_dt.datetime.now(_dt.UTC) - _dt.timedelta(days=1)).isoformat(timespec="seconds")
-        counts: dict[str, int] = {}
-        by: dict[str, dict[str, int]] = {}
-        for e in events.read(0, limit=200000)[0]:
-            if e.get("ts", "") < since:
-                continue
-            counts[e["type"]] = counts.get(e["type"], 0) + 1
-            variant = e.get("to") or e.get("probe") or e.get("subject")
-            if variant:
-                counts[f"{e['type']}:{variant}"] = counts.get(f"{e['type']}:{variant}", 0) + 1
-            who = e.get("by") or e.get("author")
-            if who and who != "orchestra":
-                by.setdefault(who, {})
-                by[who][e["type"]] = by[who].get(e["type"], 0) + 1
-        for who, ts_ in by.items():
-            nid = agent_node.get(who)
-            if nid:
-                for t, n in ts_.items():
-                    node("ev:" + t, "event", t)
-                    hits = [x for x in edges if x["from"] == nid and x["to"] == "ev:" + t]
-                    if hits:
-                        for x in hits:
-                            x["seen"] = n                      # a declared edge that actually fired
-                    else:
-                        edges.append({"from": nid, "to": "ev:" + t, "kind": "observed", "filter": None, "seen": n})
-        return {"ok": True, "nodes": list(nodes.values()), "edges": edges, "counts": counts, "by": by,
-                "known_types": list(EVENT_TYPES)}
-
-    @app.get("/api/agents/{name}")
-    async def agent_detail(name: str) -> dict:
-        from .. import api as api_mod
-        try:
-            return api_mod.handle(project, store, "get_agent", {"name": name})
-        except StoreError:
-            raise HTTPException(404)
-
-    @app.get("/api/teams/{name:path}")
-    async def team_detail(name: str) -> dict:
-        from .. import api as api_mod
-        try:
-            return api_mod.handle(project, store, "get_team", {"name": name})
-        except StoreError:
-            raise HTTPException(404)
-
-    @app.get("/api/state")
-    async def state() -> dict:
-        project.reload_config()
-        snap = store.snapshot()
-        snap["now"] = time.time()
-        snap["gate_runs"] = store.gate_runs()[-30:]
-        snap["batch_size"] = 1  # the gate takes one ticket per run until batching lands
-        for s in snap["sessions"]:
-            s["alive"] = _alive(s.get("pid"))
-        try:
-            from ..org import all_agents
-            snap["agents"] = [{"name": a.name, "session_id": a.session_id, "description": a.description, "builtin": a.builtin,
-                               "team": a.team, "kind": a.kind, "resident": a.resident,
-                               "paused": bool(store.agent_state(a.name).get("paused"))} for a in all_agents(project).values()]
-        except Exception:
-            snap["agents"] = []
-        snap["loop"] = store.runtime().get("control") or {}
-        return snap
-
-    # ---- Core: the fundamental services. Kept independent of the model, the ticket store and
-    # the machines, so the page works when they do not (see web/core.py).
+    # ---- Core: the fundamental services. Kept independent of the model and the machines, so
+    # the page works when they do not (see web/core.py).
     @app.get("/core", response_class=HTMLResponse)
     async def core_page() -> str:
         return page("core.html")
@@ -281,11 +102,27 @@ def create_app(project: Project) -> FastAPI:
     def dynamics_model(version: int | None = None) -> dict:
         return model_view(project, version)
 
+    machines_cache: dict = {}
+
     @app.get("/api/machines")
-    async def machines() -> dict:
-        snap = store.snapshot()
-        snap["gate_runs"] = store.gate_runs()[-30:]
-        return machines_view(project, store, snap)
+    def machines() -> dict:
+        """The machines seen on the bus and the publish/subscribe graph; read in Core's pool
+        under its time limit, cached briefly."""
+        hit = machines_cache.get("v")
+        if hit and time.time() - hit[0] < MACHINES_CACHE_S:
+            return hit[1]
+
+        def go():
+            evs, _ = events.read(0, limit=10_000_000)
+            series = core.metrics.series("") if core.metrics else []
+            mine = [(n, lab) for n, lab in series if lab.get("project") == project.key]
+            return {"ok": True, **machines_view(evs, mine)}
+        try:
+            out = core._pool.submit(go).result(timeout=8)
+        except Exception as e:  # noqa: BLE001 - shown on the page
+            out = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        machines_cache["v"] = (time.time(), out)
+        return out
 
     gpu_history: list[dict] = []
 
@@ -335,211 +172,6 @@ def create_app(project: Project) -> FastAPI:
             "gpu_window": max(30, min(gpu_window, 3600)),
             "now": time.time(),
         }
-
-    @app.get("/api/landings")
-    async def landings(hours: int = 24, bucket: int = 1) -> dict:
-        """Tickets landed on the base branch per bucket (bucket = hours per bar), from gate runs."""
-        from datetime import datetime, timezone
-        hours = max(1, min(hours, 24 * 30))
-        bucket = max(1, min(bucket, 24))
-        bsec = bucket * 3600
-        now_ts = time.time()
-        n = max(1, hours // bucket)
-        start = int(now_ts // bsec) * bsec - (n - 1) * bsec
-        buckets = [{"t": start + i * bsec, "landed": 0, "runs": 0, "failed": 0} for i in range(n)]
-        for r in store.gate_runs():
-            if not r.get("finished_at"):
-                continue
-            try:
-                ts = datetime.fromisoformat(r["finished_at"]).replace(tzinfo=timezone.utc).timestamp()
-            except Exception:
-                continue
-            i = int((ts - start) // bsec)
-            if 0 <= i < n:
-                buckets[i]["runs"] += 1
-                if r.get("status") == "landed":
-                    buckets[i]["landed"] += len(r.get("merged") or [])
-                elif r.get("status") in ("rejected", "base_broken", "error", "conflict"):
-                    buckets[i]["failed"] += 1
-        total = sum(b["landed"] for b in buckets)
-        return {"hours": hours, "bucket": bucket, "buckets": buckets, "total": total, "per_hour": round(total / hours, 2)}
-
-    @app.get("/api/burndown")
-    async def burndown(hours: int = 24) -> dict:
-        """Remaining (not DONE/CANCELLED) and total tickets over time, from the event log."""
-        from datetime import datetime, timezone
-        hours = max(1, min(hours, 24 * 30))
-        since = time.time() - hours * 3600
-        evs, _ = events.read(0, limit=200000)
-        total = remaining = 0
-        series: list[dict] = []
-        for e in evs:
-            t = e.get("type")
-            if t not in ("ticket_created", "ticket_transition"):
-                continue
-            try:
-                ts = datetime.fromisoformat(e["ts"]).replace(tzinfo=timezone.utc).timestamp()
-            except Exception:
-                continue
-            if t == "ticket_created":
-                total += 1; remaining += 1
-            else:
-                to, frm = e.get("to"), e.get("from")
-                if to in ("DONE", "CANCELLED") and frm not in ("DONE", "CANCELLED"):
-                    remaining -= 1
-            if ts >= since:
-                if not series:  # anchor the left edge at the window start with the value then
-                    series.append({"t": since, "remaining": remaining, "total": total})
-                series.append({"t": ts, "remaining": remaining, "total": total})
-        # Carry the current value to now so the chart reaches the right edge.
-        if not series:
-            series.append({"t": since, "remaining": remaining, "total": total})
-        series.append({"t": time.time(), "remaining": remaining, "total": total})
-        return {"hours": hours, "series": series[-2000:], "remaining": remaining, "total": total}
-
-    @app.get("/api/staging")
-    async def staging() -> dict:
-        from ..staging import Staging
-        project.reload_config()
-        st = Staging(project, store, events)
-        state = st.state()
-        build = store.runtime().get("builds", {}).get(state.get("current_build_id") or "")
-        return {**state, "build": build, "log": st.logs(), "health_path": project.config.staging_health}
-
-    @app.post("/api/supervisor")
-    async def supervisor_message(request: Request):
-        """The one write path in the UI: a human message to the resident Supervisor.
-        Proxied to the control endpoint that `orchestra run` serves; streams its NDJSON."""
-        import urllib.request
-
-        body = await request.json()
-        ctl = store.runtime().get("control") or {}
-        if not ctl.get("port"):
-            raise HTTPException(503, "orchestra run is not running; the Supervisor is only reachable while it is")
-        req = urllib.request.Request(f"http://127.0.0.1:{ctl['port']}/supervisor", method="POST",
-                                     data=__import__("json").dumps({"message": body.get("message", "")}).encode(),
-                                     headers={"Content-Type": "application/json"})
-        try:
-            # The control endpoint ends the stream when the turn ends; reads must not time out before that.
-            resp = await asyncio.to_thread(lambda: urllib.request.urlopen(req, timeout=max(project.config.turn_timeout or 0, 86400)))
-        except Exception as e:
-            raise HTTPException(503, f"cannot reach orchestra run: {e}")
-
-        async def gen():
-            # Proxies in front of this page (Cloudflare closes a response that is silent for
-            # 100s) must see bytes while the Supervisor thinks, so a ping goes out whenever
-            # nothing has arrived for CHAT_PING_SECONDS. The client ignores pings.
-            q: asyncio.Queue[bytes | None] = asyncio.Queue()
-            loop = asyncio.get_running_loop()
-
-            def pump():
-                try:
-                    while True:
-                        line = resp.readline()
-                        loop.call_soon_threadsafe(q.put_nowait, line or None)
-                        if not line:
-                            return
-                except Exception:
-                    loop.call_soon_threadsafe(q.put_nowait, None)
-            threading.Thread(target=pump, daemon=True).start()
-            while True:
-                try:
-                    line = await asyncio.wait_for(q.get(), timeout=CHAT_PING_SECONDS)
-                except TimeoutError:
-                    yield b'{"type": "ping"}\n'
-                    continue
-                if line is None:
-                    break
-                yield line
-
-        return StreamingResponse(gen(), media_type="application/x-ndjson")
-
-    @app.get("/api/context")
-    async def context() -> dict:
-        from .. import agents
-        return {"text": agents.read_context(project)}
-
-    @app.post("/api/control")
-    async def control(request: Request) -> dict:
-        """Operator controls (not ticket editing): pause/resume new worker pickup, stop an agent."""
-        body = await request.json()
-        action = body.get("action")
-        if action in ("pause", "resume"):
-            store.set_pickup_paused(action == "pause", by="operator")
-            return {"ok": True, "pickup_paused": action == "pause"}
-        if action == "capacity":
-            # The operator's ceiling on workers and reviewers, live. Running turns finish;
-            # only new pickups see the new number. Omit both to return to orchestra.toml.
-            try:
-                w = int(body["workers"]) if body.get("workers") is not None else None
-                r = int(body["reviewers"]) if body.get("reviewers") is not None else None
-            except (TypeError, ValueError):
-                raise HTTPException(400, "workers and reviewers must be whole numbers")
-            if (w is not None and not 0 <= w <= 64) or (r is not None and not 0 <= r <= 64):
-                raise HTTPException(400, "capacity must be between 0 and 64")
-            return {"ok": True, "capacity": store.set_operator_capacity(w, r, by="operator")}
-        if action == "kill":
-            tid = body.get("ticket") or ""
-            try:
-                t = store.get_ticket(tid)
-            except StoreError:
-                raise HTTPException(404)
-            if t.state not in (State.IN_PROGRESS, State.IN_REVIEW):
-                raise HTTPException(409, f"{tid} is {t.state}; nothing to stop")
-            store.request_kill(tid, by="operator")
-            return {"ok": True, "ticket": tid, "will_reset_to": "OPEN" if t.state == State.IN_PROGRESS else "READY_FOR_REVIEW"}
-        if action in ("pause_agent", "resume_agent", "restart_agent", "reset_agent", "delete_agent", "delete_role", "delete_team"):
-            from .. import api as api_mod
-            try:
-                return api_mod.handle(project, store, action, {"name": body.get("name") or ""}, role="supervisor")
-            except StoreError as e:
-                raise HTTPException(409, str(e))
-        raise HTTPException(400, "unknown action")
-
-    @app.get("/api/tickets/{ticket_id}")
-    async def ticket(ticket_id: str) -> dict:
-        try:
-            t = store.get_ticket(ticket_id)
-        except StoreError:
-            raise HTTPException(404)
-        return {**t.to_dict(), "notes": store.notes(ticket_id), "worktree": store.worktree(ticket_id)}
-
-    @app.get("/api/sessions/{session_id}/transcript")
-    async def transcript(session_id: str, before: int = 0, limit: int = 30, after: int | None = None) -> dict:
-        """A page of a session's transcript, newest first. `before` counts messages back from
-        the end that are already shown; the page returns the next `limit` older ones. `after`
-        instead returns every message past the first `after` ones, which is how an open
-        drawer polls for what arrived since it was rendered (transcripts only grow)."""
-        s = store.find_session(session_id)
-        if not s:
-            raise HTTPException(404)
-        f = s.get("session_file")
-        exists = bool(f) and Path(f).exists()
-        msgs = read_transcript(s) if exists else []
-        total = len(msgs)
-        if after is not None:
-            page, end = msgs[max(0, after):], total
-        else:
-            end = max(0, total - max(0, before))
-            page = msgs[max(0, end - max(1, min(limit, 200))):end]
-        page.reverse()
-        s = {**s, "alive": _alive(s.get("pid")), "file_exists": exists}
-        pf = project.logs_dir / "agents" / f"{session_id}.prompt.md"
-        started_with = pf.read_text(encoding="utf-8") if pf.exists() else None
-        # What Orchestra did to this session: turn starts, cut-offs, errors, operator stops.
-        # The session file stays the only transcript; the view overlays the event log.
-        markers = [e for e in events.read(0, limit=100000)[0]
-                   if e.get("session") == session_id and e["type"] in MARKER_TYPES][-50:]
-        return {"session": s, "messages": page, "total": total, "before": before, "next_before": total - (end - len(page)) if page else before,
-                "has_more": end - len(page) > 0, "turns": sum(1 for m in msgs if m["role"] == "user"), "started_with": started_with,
-                "markers": markers}
-
-    @app.get("/api/gate/runs/{run_id}")
-    async def gate_run(run_id: str) -> dict:
-        for r in store.gate_runs():
-            if r["id"] == run_id:
-                return r
-        raise HTTPException(404)
 
     @app.get("/api/events")
     async def get_events(since: int = 0) -> dict:

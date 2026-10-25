@@ -9,9 +9,14 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <link rel="stylesheet" href="/static/style.css?v={{v}}">
+<style>
+  .mcard { margin-bottom:10px } .mcard .chead { display:flex; gap:8px; align-items:center; margin-bottom:6px }
+  .mrow { font-size:12px; margin:3px 0; display:flex; flex-wrap:wrap; gap:4px; align-items:center } .mrow > .muted:first-child { width:78px; flex:none }
+  .ty { background:var(--panel3); border:1px solid var(--border); border-radius:999px; padding:0 8px; font-size:11px } .ty b { font-weight:600 }
+</style>
 </head>
 <body>
-<nav id="nav"><a href="/" class="on">Dashboard</a><a href="/tickets">Tickets</a><a href="/machines">Machines</a><a href="/dynamics">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
+<nav id="nav"><a href="/" class="on">Dashboard</a><a href="/machines">Machines</a><a href="/dynamics">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="tabs"><button class="on" onclick="showCol(0,this)">Machines</button><button onclick="showCol(1,this)">Host</button></div>
 <div class="layout two">
   <div class="col on">
@@ -32,9 +37,6 @@
       </div>
       <div class="muted num" id="load" style="font-size:11px;margin-top:8px"></div>
     </div>
-    <h2>Staging environment</h2>
-    <div class="panel env" id="staging-head"></div>
-    <div class="term" id="staging"></div>
   </div>
 </div>
 <div id="tip" class="tip" hidden></div>
@@ -47,50 +49,30 @@ function showCol(i, btn) {
   try { localStorage.setItem("orchestra.tab", String(i)); } catch (e) {}
 }
 try { const t = Number(localStorage.getItem("orchestra.tab") || 0); if (t) showCol(t); } catch (e) {}
-const TERMINAL = ["DONE", "CANCELLED"];
-let STATE = null, MACHINES = null, CORE = null, PROBE = null;
+let MACHINES = null;
 
+// the machines active on the bus in the last two minutes; the Machines page has all of them
 async function refresh() {
   try {
-    const [st, mc] = await Promise.all([fetch("/api/state").then((r) => r.json()), fetch("/api/machines").then((r) => r.json())]);
-    STATE = st; MACHINES = mc;
-    renderNav("dashboard", STATE.project); $("conn").textContent = "live";
-    renderMachines();
+    MACHINES = await (await fetch("/api/machines")).json();
+    $("conn").textContent = "live";
+    if (!MACHINES.ok) { $("machines").innerHTML = `<div class="empty">${esc(MACHINES.error)}</div>`; return; }
+    const active = MACHINES.machines.filter((m) => m.active);
+    $("machines-sub").textContent = `${active.length} active · ${MACHINES.machines.length} seen`;
+    $("machines").innerHTML = active.length ? active.map((m) => `<div class="panel mcard"><div class="chead"><b>${esc(m.id)}</b>${m.bootstrap ? ' <span class="tag">bootstrap</span>' : ""}<span class="muted" style="margin-left:auto">last event ${ago(Date.now() / 1000 - m.last_seen)} ago</span></div>
+        <div class="mrow"><span class="muted">publishes</span> ${m.publishes.map((p) => `<span class="ty">${esc(p.type)} <b>${p.per_min_10m}</b>/min</span>`).join("") || '<span class="muted">nothing</span>'}</div>
+        <div class="mrow"><span class="muted">listens for</span> ${m.subscribes.map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">nothing</span>'}</div>
+        <div class="mrow"><span class="muted">metrics</span> ${m.metrics.map((x) => `<code>${esc(x)}</code>`).join(" ") || '<span class="muted">none</span>'}</div></div>`).join("")
+      : `<div class="empty">No machine has published anything in the last two minutes.</div>`;
   } catch (e) { $("conn").textContent = "disconnected"; }
 }
-
-// ---- machines that are running now; every machine is on the Machines page ----
-function renderMachines() {
-  const all = MACHINES.machines, ms = all.filter((m) => !MACHINE_STOPPED.includes(m.status));
-  const working = ms.reduce((n, m) => n + m.jobs.length, 0);
-  $("machines-sub").textContent = `${ms.length} of ${all.length} running · ${working} job${working === 1 ? "" : "s"}`;
-  $("machines").innerHTML = ms.map((m) => machineCard(m, { controls: m.id === "worker" && STATE ? `<div class="mctl">${capacityCtl(STATE)}${STATE.pickup_paused ? "<span>new work PAUSED</span>" : ""}<button class="ctl ${STATE.pickup_paused ? "paused" : ""}" onclick="event.stopPropagation();togglePause()">${STATE.pickup_paused ? "▶ resume" : "⏸ pause new work"}</button></div>` : "" })).join("")
-    || `<div class="empty">No machines running. Machines that run inside Orchestra come up with <code>orchestra run</code>. Every machine, running or not, is on the <a href="/machines">Machines</a> page.</div>`;
-}
-
-async function control(body) {
-  const r = await fetch("/api/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  if (!r.ok) alert(await r.text()); refresh();
-}
-function capacityCtl(s) {
-  const c = s.capacity || {};
-  const step = (kind, n) => `<button class="ctl" style="padding:0 6px" onclick="event.stopPropagation();setCapacity('${kind}',${n})" title="${n < 0 ? "one fewer" : "one more"} ${kind}">${n < 0 ? "−" : "+"}</button>`;
-  return `<span title="Concurrent workers and reviewers: the machines' capacity.">${step("workers", -1)}<b>${c.max_workers ?? "?"}</b>${step("workers", 1)} workers · ${step("reviewers", -1)}<b>${c.max_reviewers ?? "?"}</b>${step("reviewers", 1)} reviewers</span>`;
-}
-function setCapacity(kind, delta) {
-  const c = (STATE && STATE.capacity) || {};
-  const body = { action: "capacity", workers: c.max_workers, reviewers: c.max_reviewers };
-  body[kind] = Math.max(0, (c["max_" + kind] || 0) + delta);
-  control(body);
-}
-function togglePause() { control({ action: STATE && STATE.pickup_paused ? "resume" : "pause" }); }
 
 // ---- a one-line Core status; the detail is on the Core page ----
 async function refreshCoreStrip() {
   try {
     const c = await (await fetch("/api/core")).json();
     const led = (ok) => `<span class="cled" style="background:${ok ? "#22c55e" : "#ef4444"}"></span>`;
-    $("corestrip").innerHTML = `<b>Core</b> ${led(c.host.ok && c.host.loop && c.host.loop.alive)} host ${c.host.loop && c.host.loop.alive ? "running" : "loop stopped"} · ${led(c.bus.ok)} bus ${esc(c.bus.backend || "")} · ${led(c.metrics.ok)} metrics ${esc(c.metrics.backend || "")} <span class="muted" style="margin-left:auto">open →</span>`;
+    $("corestrip").innerHTML = `<b>Core</b> ${led(c.host.ok && c.host.loop && c.host.loop.alive)} host ${c.host.loop && c.host.loop.alive ? "running" : "stopped"} · ${led(c.bus.ok)} bus ${esc(c.bus.backend || "")} · ${led(c.metrics.ok)} metrics ${esc(c.metrics.backend || "")} <span class="muted" style="margin-left:auto">open →</span>`;
   } catch (e) { $("corestrip").innerHTML = `<b>Core</b> <span class="cled" style="background:#ef4444"></span> unreachable`; }
 }
 
@@ -134,30 +116,8 @@ function renderGpu(d) {
   $("gpu").setAttribute("title", `GPU utilization, last ${win >= 3600 ? win / 3600 + "h" : win / 60 + "m"}`);
 }
 
-async function refreshStaging() {
-  try {
-    const d = await (await fetch("/api/staging")).json();
-    const head = $("staging-head");
-    const ok = d.status === "running" && d.alive;
-    head.style.setProperty("--ec", !d.configured ? "var(--muted)" : ok ? "#22c55e" : d.status === "starting" ? "#f59e0b" : "#ef4444");
-    if (!d.configured) head.innerHTML = '<span class="muted">Not configured. Add a [staging] section to orchestra.toml.</span>';
-    else if (!d.current_build_id) head.innerHTML = '<span class="muted">No build deployed yet. The gate deploys the next landed build, or run <code>orchestra staging deploy</code>.</span>';
-    else head.innerHTML = `<div class="kv"><div>status</div><div><span class="led"></span>${esc(d.status)}${d.alive ? "" : " (process not running)"}</div>
-        <div>build</div><div class="num">${esc(d.current_build_id)} · ${esc((d.build && d.build.commit || "").slice(0, 10))}</div>
-        <div>deployed</div><div class="num">${d.deployed_at ? esc(d.deployed_at) : "—"}</div>
-        <div>local</div><div><a href="${esc(d.local_url || "")}" target="_blank">${esc(d.local_url || "")}</a></div>
-        ${d.public_url ? `<div>public</div><div><a href="${esc(d.public_url)}" target="_blank">${esc(d.public_url)}</a></div>` : ""}
-        ${d.previous_build_id ? `<div>previous</div><div class="num">${esc(d.previous_build_id)}</div>` : ""}</div>`;
-    const el = $("staging"); const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
-    el.innerHTML = highlightLog(d.log || "");
-    if (atBottom) el.scrollTop = el.scrollHeight;
-  } catch (e) {}
-}
-
-refresh(); refreshSystem(); refreshStaging(); refreshCoreStrip();
-setInterval(refresh, 2500); setInterval(refreshSystem, SYSTEM_POLL_MS); setInterval(refreshStaging, 3000); setInterval(refreshCoreStrip, 5000);
-openFromHash();
-try { const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/events"); ws.onmessage = () => refresh(); } catch (e) {}
+refresh(); refreshSystem(); refreshCoreStrip();
+setInterval(refresh, 5000); setInterval(refreshSystem, SYSTEM_POLL_MS); setInterval(refreshCoreStrip, 5000);
 </script>
 </body>
 </html>

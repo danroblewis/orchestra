@@ -13,8 +13,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import Counter, defaultdict
-from datetime import datetime
 
+from ..events import event_time
 from ..metrics import promql
 
 MAX_LINES = 30
@@ -24,10 +24,7 @@ CACHE_S = 20.0
 
 
 def _ts(ev: dict) -> float | None:
-    try:
-        return datetime.fromisoformat(ev["ts"]).timestamp()
-    except (KeyError, ValueError, TypeError):
-        return None
+    return event_time(ev)
 
 
 def auto_step(span_s: float) -> float:
@@ -43,9 +40,12 @@ def _label(lab: dict, hide: set) -> str:
 
 
 def emitter(ev: dict) -> str:
-    """Which machine an event came from, from what the event itself says. An agent's tool call
-    names it (``by``); a session event names its session; everything else the loop emitted, so it
-    belongs to the bootstrap host."""
+    """Which machine an event came from. CloudEvents name it (``source``). Older events, from
+    before the envelope, are attributed as the old loop wrote them: an agent's tool call names it
+    (``by``); a session event names its session; everything else the loop emitted, so it belongs
+    to the bootstrap host."""
+    if ev.get("source"):
+        return str(ev["source"])
     who = ev.get("by") or ev.get("author")
     if who and who != "orchestra":
         return str(who).replace("_", "-")
@@ -86,7 +86,7 @@ class Explorer:
         m = self.core.metrics
         if m is None:
             raise RuntimeError("the metrics store could not be opened")
-        return self._cached("dump", lambda: m.dump("orchestra_", {"project": self.core.project.key}))
+        return self._cached("dump", lambda: m.dump("", {"project": self.core.project.key}))
 
     def catalog(self) -> dict:
         def go():

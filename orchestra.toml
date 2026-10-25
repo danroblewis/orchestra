@@ -1,65 +1,14 @@
-# Orchestra managing its own development. See SPEC.md section 9.
+# Orchestra for its own repository. The old merge gate configuration that lived here went with
+# the task system on 2026-10-25 (see SPEC.md); a gate comes back as a machine.
 
-[project]
-base_branch = "main"
-ticket_prefix = "ORC"
-push = false
+[events]
+url = "file"
+
+[metrics]
+url = "file"
 
 [agents]
 provider = "ornith-1.5-35b-a3b-q6k"
 model = "ornith-1.5-35b-a3b-q6k"
 thinking = "medium"
-workers = 3
-reviewers = 3
 silence_timeout = "20m"
-review_rounds_before_escalation = 3
-
-# Stage 1: build the artifact the acceptance tests will run against.
-[build]
-command = "rm -rf dist && uv build --wheel -q"
-artifact = "dist/orchestra-*.whl"
-timeout = "300s"
-
-# Stage 3: start the built wheel as the acceptance target. {python} is a persistent
-# venv with the wheel installed. The script creates a throwaway project, seeds it
-# through the CLI, smoke-tests every read command, runs the agent loop against the
-# fake Pi from tests/e2e, and serves the web UI on {port}.
-[acceptance]
-start = "{python} scripts/acceptance_target.py --port {port}"
-ready = "http://127.0.0.1:{port}/api/state"
-ready_timeout = "120s"
-
-[gate]
-batch_size = 6
-batch_wait = "120s"
-timeout = "900s"
-
-# Stage 2: unit and end-to-end tests. `select` reruns named failures for bisection.
-[[gate.unit]]
-name = "unit"
-command = "uv run pytest tests/unit -q"
-select = "uv run pytest -q {selector}"
-
-[[gate.unit]]
-name = "e2e"
-command = "uv run pytest tests/e2e -q"
-select = "uv run pytest -q {selector}"
-
-# Stage 4: acceptance tests against the running target.
-[[gate.acceptance]]
-name = "acceptance"
-command = "ORCHESTRA_TARGET_URL={url} uv run pytest tests/acceptance -q"
-
-# Staging: the most recently landed wheel, running as a live instance on port 8001
-# against the persistent demo project at ~/orchestra-demo (not this repository), so a
-# new build can be tried on real tickets there before the tooling on this repo is
-# upgraded to it. Only the web UI runs in staging; no second agent loop is started.
-[staging]
-start = "{python} scripts/acceptance_target.py --port {port} --project ~/orchestra-demo"
-port = 8001
-health = "/api/state"
-health_timeout = "120s"
-
-[staging.tunnel]              # named cloudflared tunnel, created and DNS-routed by the operator
-name = "orchestra-stage"
-hostname = "orchestra-stage.dansproject.space"

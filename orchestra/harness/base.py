@@ -81,7 +81,7 @@ class _Deadlines:
 @dataclass
 class SessionSpec:
     """Everything a harness needs to open a session. ``env`` carries the ORCHESTRA_*
-    variables the Orchestra tools read (repo, role, ticket, tool groups)."""
+    variables the Orchestra tools read (repo, role, tool groups)."""
 
     session_id: str
     session_dir: Path          # Orchestra's per-project sessions directory
@@ -94,7 +94,6 @@ class SessionSpec:
     model: str | None = None
     provider: str | None = None
     thinking: str | None = None
-    ticket_id: str = ""
     compact_tokens: int | None = None   # ask the harness to compact its own context past this many tokens, if it can
 
 

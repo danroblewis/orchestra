@@ -1,13 +1,13 @@
 """Core: Orchestra's fundamental services, for the Core page.
 
 The Core page must keep working when the rest of Orchestra does not: when the system dynamics
-model is broken, the ticket store is corrupt, or every other machine is down. So this module
+model is broken or every other machine is down. So this module
 imports only the event bus, the metrics store and the runtime record; each component is probed in
 its own thread with a time limit, and a failure or a hang shows on that component's card instead
 of taking the page down.
 
 Components:
-- **bootstrap host**: the loop process (Orchestra's bootstrap machine) and this web process;
+- **bootstrap host**: the ``orchestra run`` process (Orchestra's own machine) and this web process;
 - **event bus**: reads the stream's end and latest events; ``write_probe`` appends a ``bus_probe``
   event and reads it back by offset;
 - **metrics store**: writes the probe's own measurements as ``orchestra_core_*`` series and reads
@@ -33,9 +33,9 @@ from pathlib import Path
 
 import psutil
 
-from .. import __version__
+from .. import __version__, runtime
 from ..config import Project
-from ..events import Events
+from ..events import Events, event_time
 from ..metrics import MetricsStore, Point
 from ..metrics import for_project as metrics_for
 
@@ -59,10 +59,7 @@ def redact(url: str | None) -> str:
 
 
 def _ts(ev: dict) -> float | None:
-    try:
-        return datetime.fromisoformat(ev["ts"]).timestamp()
-    except (KeyError, ValueError, TypeError):
-        return None
+    return event_time(ev)
 
 
 def _proc(pid) -> dict:
@@ -118,14 +115,9 @@ class CoreProbe:
 
     # ---- components ----
     def _host(self) -> dict:
-        runtime = {}
-        try:
-            runtime = json.loads((self.project.state_dir / "runtime.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            pass
-        control = runtime.get("control") or {}
-        loop = _proc(control.get("pid")) if control.get("pid") else {"alive": False}
-        loop["port"] = control.get("port")
+        rec = runtime.read(self.project).get("host") or {}
+        loop = _proc(rec.get("pid")) if rec.get("pid") else {"alive": False}
+        loop["since"] = rec.get("since", loop.get("since"))
         log = self.project.logs_dir / "orchestra-host.log"
         last = _tail(log, 1)
         me = _proc(os.getpid())
@@ -230,11 +222,11 @@ class CoreProbe:
             bus = self.events.bus
             t0 = time.perf_counter()
             before = bus.end()
-            ev = self.events.emit("bus_probe", note="core page test write")
+            ev = self.events.publish("orchestra.core.bus_probe", {"note": "core page test write"})
             t1 = time.perf_counter()
             got, end = bus.read(before, limit=max(1, min(1000, bus.end() - before)))
             t2 = time.perf_counter()
-            found = any(e.get("type") == "bus_probe" and e.get("ts") == ev["ts"] for e in got)
+            found = any(e.get("id") == ev["id"] for e in got)
             return {"ok": found, "offset": before, "end": end, "append_ms": round((t1 - t0) * 1000, 1),
                     "read_back_ms": round((t2 - t1) * 1000, 1), "backend": bus.name}
         out = self._guarded("bus-write", go)

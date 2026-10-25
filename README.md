@@ -1,97 +1,50 @@
 # Orchestra
 
-A ticket tracker, milestone planner, and CI/CD workflow operated by AI agents on
-[Pi](https://github.com/earendil-works/pi), Claude Code, or Codex. Point it at a git
-repository; describe work to the Supervisor; workers build tickets on their
-own branches, reviewers check them, and a merge gate builds, tests, and lands
-what passes on `main`.
+Orchestra observes a system of machines (programs, AI agents, services, people) through an event
+bus and a metrics store, and keeps one system dynamics model of it: stocks, flows, feedback loops,
+and which machines drive which flows. Its aim is to find the loops between a project's own domain
+and the processes used to develop it.
 
-- `SPEC.md` is the design.
+This is an **empty Orchestra**: the bus, the metrics store, the model, the bootstrap host and the
+agent driver, with no task system. The old ticket tracker, agent loop and merge gate were removed
+on 2026-10-25; task management comes back as the first package of machines
+(`docs/proposals/empty-orchestra.md`).
+
+- `SPEC.md` is the design of what exists.
 - `AGENTS.md` is the list of rules that must not be broken.
 
 ## Install
 
-As a tool, available on your PATH from any directory:
-
 ```bash
-uv tool install /path/to/orchestra          # or: uv tool install -e /path/to/orchestra for development
+uv tool install /path/to/orchestra          # or: uv tool install -e /path/to/orchestra
 ```
 
-Or for hacking on Orchestra itself: `uv sync --extra dev` and `uv run orchestra ...`.
-
-Requires `pi` on your PATH with a configured model.
+For working on Orchestra itself: `uv sync --extra dev` and `uv run orchestra ...`. Server event
+buses need an extra: `--extra bus-redis`, `bus-rabbitmq`, `bus-kafka`, or `bus` for all three.
 
 ## Use it on a project
 
 ```bash
-cd my_other_project          # any git repository, or a subdirectory or worktree of one
+cd my_project                # any git repository
 orchestra init               # writes orchestra.toml and registers the project (once)
-orchestra web &              # the dashboard on http://127.0.0.1:8000
-orchestra run                # the loop: workers, reviewers, merge gate, and the resident
-                             # coordinator and pipeline-manager sessions
-orchestra chat               # in another terminal: talk to the Supervisor
+orchestra run &              # the bootstrap host: Orchestra's own machine and its event collector
+orchestra web                # the UI on http://127.0.0.1:8000
 ```
 
-The project is the nearest git repository above the current directory; from
-inside a linked worktree it resolves to the main repository. A repository that
-already carries an `orchestra.toml` needs no `init`, so a fresh clone works
-immediately. `--repo /path` or `ORCHESTRA_REPO` override the directory.
+`orchestra.toml` picks the event bus (`[events] url`: file, Redis, RabbitMQ or Kafka) and the
+metrics store (`[metrics] url`: file or VictoriaMetrics). `deploy/dev/compose.yaml` starts all of
+them locally.
 
-`orchestra init` accepts `--provider`, `--model`, `--prefix`, and
-`--unit-command`; leave provider and model empty to use the harness's defaults.
-`[agents] harness` in `orchestra.toml` picks `pi` (default), `claude_code`, or
-`codex` (for example `harness = "claude_code"` with `model = "haiku"`). Edit
-`orchestra.toml` for the build, unit, acceptance, and staging stages the gate
-runs (see `SPEC.md` section 9, or this repository's own `orchestra.toml`).
+Machines are your programs. Publish events with the CloudEvents envelope
+(`orchestra.events.Events.publish`) and write metrics labelled `machine=<id>`
+(`orchestra.metrics`); they appear on the Machines page and in the Core explorers.
+`examples/` has toy machines to start from.
 
-Read-only inspection:
+## Tests
 
 ```bash
-orchestra status
-orchestra ticket list | show ABC-3
-orchestra milestone list
-orchestra sessions list | show worker-ABC-3
-orchestra doctor
+uv run python -m pytest                     # unit, harness fakes, and the file backends
+ORCHESTRA_TEST_REDIS_URL=redis://127.0.0.1:6379/15 uv run python -m pytest tests/bus   # see tests/bus/README.md
+python scripts/acceptance_target.py --port 8123 &
+ORCHESTRA_TARGET_URL=http://127.0.0.1:8123 uv run python -m pytest tests/acceptance
 ```
-
-State lives in `~/.orchestrator/<repo-name>-<hash>/`: tickets, runtime records,
-the event log, agent session records, worktrees, gate logs. Nothing is written to your
-repository except `orchestra.toml`.
-
-## Orchestra on Orchestra
-
-This repository is configured to be developed by Orchestra. Its
-`orchestra.toml` defines the gate the way any project should:
-
-| Stage | What runs |
-|---|---|
-| build | `uv build --wheel` producing `dist/orchestra-*.whl` |
-| unit | `tests/unit` (model, store, config, harness layer) and `tests/e2e` (the real loop and gate driven by fake harnesses: `tests/e2e/fake_pi.py`, `fake_claude.py`, and `fake_codex.py`, once each) |
-| start | `scripts/acceptance_target.py` installs the built wheel in an isolated environment, creates a throwaway project, seeds it through the CLI, runs the loop on the fake Pi, and serves the web UI |
-| acceptance | `tests/acceptance` against that running instance; `scripts/acceptance_real.sh [harnesses]` runs the opt-in real-model flow (a Supervisor message becomes code on main) once per harness, Pi, Claude Code, and Codex, with real models |
-
-Each unit spec has a `select` template so the gate can rerun individual
-failing tests during bisection. Run the ordinary suite with
-`uv run pytest tests/unit tests/e2e -q`; acceptance tests skip unless
-`ORCHESTRA_TARGET_URL` is set.
-
-## What is implemented
-
-Phase 1 of `SPEC.md` plus the project agents:
-
-- Ten-state ticket model with the transition table enforced by the store.
-- Worker and reviewer sessions in per-ticket worktrees, reporting through the
-  `report_ticket` and `report_review` tools, on whichever harness the project
-  configures (`orchestra/harness/`: Pi, Claude Code, Codex; others slot in behind the
-  same interface).
-- Long-lived Supervisor, Coordinator, and Pipeline Manager sessions with role
-  prompts in `orchestra/agents/prompts/`, resident while `orchestra run` is up.
-- A merge gate that assembles a gate branch, runs build, unit, start, and
-  acceptance stages, and fast-forwards `main`. One ticket per run for now.
-- Staging: the most recently landed build runs as a live instance, supervised by the
-  loop, redeployed by the gate, rolled back on a failed health probe; optional
-  cloudflared tunnel. `orchestra staging deploy|status|logs|restart|stop`.
-- The dashboard (agents, merge gate, system stats, staging) and the ticket graph page.
-
-Not yet: batched gates with bisection, external
-ticket backends, the React frontend.

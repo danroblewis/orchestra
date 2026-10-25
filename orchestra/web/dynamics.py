@@ -9,7 +9,6 @@ comparisons with observed metrics, collectors and sub-models come later
 from __future__ import annotations
 
 from ..metrics import for_project as metrics_for
-from ..sd.factory import ticket_factory
 from ..sd.store import ModelStore
 
 
@@ -22,7 +21,7 @@ def model_view(project, version: int | None = None) -> dict:
         return {"ok": False, "error": f"there is no version {version}"}
     stored = model is not None
     if model is None:
-        model = ticket_factory(project.key)
+        return {"ok": False, "error": "There is no model yet. `orchestra sd discover` builds one from the metrics store."}
     out = model.to_json()
     out["stored"] = stored
     out["version"] = (version or current) if stored else None

@@ -1,10 +1,9 @@
 """A stdio MCP server exposing Orchestra's tools to a harness that speaks MCP (Claude Code,
 Codex, OpenCode). Dependency-free: newline-delimited JSON-RPC 2.0 over stdin/stdout.
 
-    ORCHESTRA_REPO=<repo> ORCHESTRA_ROLE=<role> ORCHESTRA_TOOLS=<groups> ORCHESTRA_TICKET=<id> \\
-        python -m orchestra.harness.mcp
+    ORCHESTRA_REPO=<repo> ORCHESTRA_ROLE=<role> ORCHESTRA_TOOLS=<groups> python -m orchestra.harness.mcp
 
-Tool calls go straight to ``orchestra.api.handle``; there is no shelling out."""
+The catalogue (``tools.py``) is empty in an empty Orchestra, so this serves no tools yet."""
 
 from __future__ import annotations
 
@@ -38,30 +37,13 @@ class Server:
         groups = [g for g in (os.environ.get("ORCHESTRA_TOOLS") or "").split(",") if g]
         self.tools = tools_for(groups)
         self.role = os.environ.get("ORCHESTRA_ROLE", "")
-        self._project = None
-        self._store = None
-
-    def _ctx(self):
-        if self._project is None:
-            from ..config import load_project
-            from ..events import Events
-            from ..store import LocalStore
-            self._project = load_project(os.environ.get("ORCHESTRA_REPO") or None)
-            self._store = LocalStore(self._project, Events.for_project(self._project))
-        return self._project, self._store
 
     def call(self, name: str, args: dict) -> dict:
         tool = BY_NAME.get(name)
         if tool is None or tool not in self.tools:
             return {"content": [{"type": "text", "text": json.dumps({"ok": False, "error": f"unknown tool {name}"})}], "isError": True}
-        try:
-            from .. import api as api_mod
-            project, store = self._ctx()
-            result = api_mod.handle(project, store, tool.api_command, dict(args or {}), role=self.role,
-                                    ticket_env=os.environ.get("ORCHESTRA_TICKET", ""))
-            return {"content": [{"type": "text", "text": _tool_text(result)}]}
-        except Exception as e:  # the model gets the error text, like the Pi extension
-            return {"content": [{"type": "text", "text": json.dumps({"ok": False, "error": str(e)})}], "isError": True}
+        # no tool has a handler yet: the catalogue is empty in an empty Orchestra
+        return {"content": [{"type": "text", "text": json.dumps({"ok": False, "error": f"{name} has no handler"})}], "isError": True}
 
     def handle(self, msg: dict) -> None:
         method = msg.get("method")

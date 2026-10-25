@@ -1,77 +1,65 @@
-"""The Machines panel: every machine in the factory model, AI agent or program, with what it is
-doing now and the fitted equations of the flows it is attributed to.
+"""The Machines page's data: the machines seen on the event bus, and the graph of which machine
+publishes and subscribes to which event types.
 
-Machines come from the project's model (``orchestra sd declare``; the declared factory if none is
-stored). What each is doing comes from the live sessions and the loop's runtime record: a
-machine's jobs are the running sessions that belong to it."""
+Everything here is observed, not declared:
+- a **machine** is a CloudEvents ``source`` seen on the bus (plus Orchestra's own host);
+- **publishes**: the event types it emitted, with counts;
+- **subscribes**: the event types it listens for. Until the bus adapters provide subscriptions
+  that the backend can list (docs/proposals/empty-orchestra.md §3), a machine announces its own
+  with an ``orchestra.machine.subscribed`` event (``data.types``), and the latest announcement
+  stands;
+- **metrics**: the series in the metrics store labelled ``machine=<id>``.
+
+Events from before the envelope have no ``source``; they are counted, not attributed."""
 
 from __future__ import annotations
 
-import psutil
+import time
+from collections import Counter, defaultdict
 
-from ..sd.factory import ticket_factory
-from ..sd.store import ModelStore
+from ..events import HOST, event_time
 
-# which sessions belong to which machine: by exact id, or by id prefix
-SESSION_OWNER = {"supervisor": "supervisor", "coordinator": "coordinator", "pipeline-manager": "pipeline-manager"}
-SESSION_PREFIX = {"worker-": "worker", "reviewer-": "reviewer"}
+SUBSCRIBED = "orchestra.machine.subscribed"
 
 
-def _alive(pid) -> bool:
-    try:
-        return bool(pid) and psutil.Process(int(pid)).status() != psutil.STATUS_ZOMBIE
-    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
-        return False
-
-
-def _owner(session_id: str) -> str | None:
-    if session_id in SESSION_OWNER:
-        return SESSION_OWNER[session_id]
-    return next((m for p, m in SESSION_PREFIX.items() if session_id.startswith(p)), None)
-
-
-def machines_view(project, store, snapshot: dict) -> dict:
-    model = ModelStore.for_state(project.state_dir).load() or ticket_factory(project.key)
-    flows = {f.id: f for f in model.flows}
-    sessions = snapshot.get("sessions", [])
-    jobs: dict[str, list[dict]] = {}
-    resident_alive: dict[str, bool] = {}
-    for s in sessions:
-        owner = _owner(s["id"])
-        if not owner:
+def machines_view(events: list[dict], series: list[tuple[str, dict]], now: float | None = None) -> dict:
+    now = now or time.time()
+    pubs: dict[str, Counter] = defaultdict(Counter)
+    recent: dict[str, Counter] = defaultdict(Counter)
+    subs: dict[str, list[str]] = {}
+    first: dict[str, float] = {}
+    last: dict[str, float] = {}
+    unattributed = 0
+    for ev in events:
+        src = ev.get("source")
+        if not src:
+            unattributed += 1
             continue
-        if s["id"] in SESSION_OWNER:
-            resident_alive[owner] = _alive(s.get("pid"))
-        if s.get("status") == "running":
-            jobs.setdefault(owner, []).append({"session": s["id"], "ticket": s.get("ticket"),
-                                               "text": (s.get("partial_text") or s.get("last_text") or "")[-160:]})
-    loop = store.runtime().get("control") or {}
-    loop_alive = _alive(loop.get("pid"))
-    gate_running = any(r.get("status") == "running" for r in snapshot.get("gate_runs", []) or [])
-
-    out = []
-    for m in model.machines:
-        if m.id == "orchestra-host":
-            status = "running" if loop_alive else "stopped"
-        elif m.id == "gate":
-            status = "working" if gate_running else ("idle" if loop_alive else "stopped")
-        elif m.id in ("supervisor", "coordinator", "pipeline-manager"):
-            status = "working" if jobs.get(m.id) else ("waiting" if resident_alive.get(m.id) else "not running")
-        elif m.engagement:
-            status = "working" if jobs.get(m.id) else ("idle" if loop_alive else "stopped")
-        else:
-            status = "observed"
-        fl = []
-        for fid in m.attributed:
-            f = flows.get(fid)
-            eq = f.current() if f else None
-            fl.append({"id": fid, "form": eq.form if eq else None,
-                       "rate": next(iter(eq.params.values())) if eq else None,
-                       "se": eq.quality.get("se") if eq else None,
-                       "events": eq.quality.get("events") if eq else None,
-                       "dispersion": eq.quality.get("dispersion") if eq else None,
-                       "src": f.src if f else None, "origin": eq.origin if eq else None})
-        out.append({"id": m.id, "name": m.name, "kind": m.kind, "description": m.description, "bootstrap": m.bootstrap,
-                    "engagement": [{"mode": e.mode, "driver": e.driver} for e in m.engagement],
-                    "status": status, "jobs": jobs.get(m.id, []), "flows": fl})
-    return {"model": model.id, "fitted": any(f.current() for f in model.flows), "machines": out}
+        t = event_time(ev) or 0.0
+        first.setdefault(src, t)
+        last[src] = t
+        if ev.get("type") == SUBSCRIBED:
+            subs[src] = list((ev.get("data") or {}).get("types") or [])
+            continue
+        pubs[src][ev["type"]] += 1
+        if t >= now - 600:
+            recent[src][ev["type"]] += 1
+    metrics: dict[str, list[str]] = defaultdict(list)
+    for name, labels in series:
+        if labels.get("machine"):
+            metrics[labels["machine"]].append(name + ("{" + ",".join(f'{k}="{v}"' for k, v in sorted(labels.items())
+                                                                     if k not in ("project", "machine")) + "}"
+                                                     if len(labels) > 2 else ""))
+    ids = sorted(set(pubs) | set(subs) | set(metrics) | {HOST}, key=lambda m: (m != HOST, m))
+    machines = [{
+        "id": m, "bootstrap": m == HOST,
+        "publishes": [{"type": t, "count": n, "per_min_10m": round(recent[m][t] / 10, 2)} for t, n in pubs[m].most_common()],
+        "subscribes": subs.get(m, []),
+        "metrics": sorted(set(metrics.get(m, []))),
+        "first_seen": first.get(m), "last_seen": last.get(m),
+        "active": bool(last.get(m) and now - last[m] < 120),
+    } for m in ids]
+    types = sorted({t for m in machines for t in [p["type"] for p in m["publishes"]] + m["subscribes"]})
+    edges = [{"from": m["id"], "to": p["type"], "kind": "publishes", "count": p["count"]} for m in machines for p in m["publishes"]]
+    edges += [{"from": t, "to": m["id"], "kind": "subscribes"} for m in machines for t in m["subscribes"]]
+    return {"machines": machines, "types": types, "edges": edges, "unattributed_events": unattributed}

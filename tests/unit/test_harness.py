@@ -10,11 +10,13 @@ import pytest
 
 from orchestra.config import init_project
 from orchestra.harness import HARNESSES, SessionSpec, get_harness, read_transcript
-from orchestra.harness.claude_code import ClaudeCodeHarness, ClaudeCodeSession, _Normalizer as ClaudeNormalizer, transcript_path
-from orchestra.harness.codex import CodexHarness, CodexSession, _Normalizer as CodexNormalizer, toml_string
-from orchestra.harness.pi import PiHarness, _Normalizer as PiNormalizer
+from orchestra.harness.claude_code import ClaudeCodeHarness, ClaudeCodeSession, transcript_path
+from orchestra.harness.claude_code import _Normalizer as ClaudeNormalizer
+from orchestra.harness.codex import CodexHarness, CodexSession, toml_string
+from orchestra.harness.codex import _Normalizer as CodexNormalizer
+from orchestra.harness.pi import PiHarness
+from orchestra.harness.pi import _Normalizer as PiNormalizer
 from orchestra.harness.tools import TOOLS, tools_for
-from orchestra.store import LocalStore
 
 
 def test_registry():
@@ -26,18 +28,11 @@ def test_registry():
         get_harness("opencode")
 
 
-def test_tools_are_grouped_and_schema_shaped():
-    names = [t.name for t in TOOLS]
-    assert len(names) == len(set(names))
-    assert [t.name for t in tools_for(["report_ticket"])] == ["report_ticket"]
-    assert {t.group for t in tools_for(["tickets", "escalate"])} == {"tickets", "escalate"}
-    d = next(t for t in TOOLS if t.name == "create_ticket").to_dict()
-    assert d["inputSchema"]["type"] == "object" and "milestone_id" in d["inputSchema"]["required"]
-    assert d["inputSchema"]["additionalProperties"] is False
-    # Pi's extension and other harnesses read the catalogue from the CLI.
-    out = subprocess.run([sys.executable, "-m", "orchestra", "tools", "--json", "--groups", "report_review"],
-                         capture_output=True, text=True, check=True).stdout
-    assert [t["name"] for t in json.loads(out)] == ["report_review"]
+def test_the_tool_catalogue_is_empty_and_served_as_data():
+    # The old task system's tools went with it; the catalogue and how harnesses read it stay.
+    assert TOOLS == () and tools_for(["anything"]) == []
+    out = subprocess.run([sys.executable, "-m", "orchestra", "tools", "--json"], capture_output=True, text=True, check=True).stdout
+    assert json.loads(out) == []
 
 
 def collect(normalizer_cls, events):
@@ -284,39 +279,18 @@ def project(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
-    return init_project(repo, provider="p", model="m", prefix="T")
+    return init_project(repo, provider="p", model="m")
 
 
-def test_mcp_server_serves_the_role_tools(project, tmp_path):
+def test_mcp_server_speaks_the_protocol_with_no_tools(project, tmp_path):
     import os
     base = {**os.environ, "ORCHESTRATOR_HOME": str(tmp_path / "home"), "ORCHESTRA_REPO": str(project.repo_root)}
-    c = McpClient({**base, "ORCHESTRA_ROLE": "supervisor", "ORCHESTRA_TOOLS": "tickets,context"})
+    c = McpClient({**base, "ORCHESTRA_ROLE": "supervisor", "ORCHESTRA_TOOLS": "context"})
     try:
         init = c.rpc("initialize", {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}})
         assert init["result"]["serverInfo"]["name"] == "orchestra" and "tools" in init["result"]["capabilities"]
-        names = {t["name"] for t in c.rpc("tools/list")["result"]["tools"]}
-        assert "create_milestone" in names and "get_project_context" in names and "report_ticket" not in names
-        r = c.rpc("tools/call", {"name": "create_milestone", "arguments": {"name": "Via MCP"}})["result"]
-        assert not r.get("isError") and json.loads(r["content"][0]["text"])["milestone"]["id"] == "M1"
-        r = c.rpc("tools/call", {"name": "report_ticket", "arguments": {}})["result"]   # not granted
-        assert r["isError"]
-        r = c.rpc("tools/call", {"name": "create_ticket", "arguments": {"title": "x", "milestone_id": "M9"}})["result"]
-        assert r["isError"] and "M9" in r["content"][0]["text"]                           # store error surfaces as text
+        assert c.rpc("tools/list")["result"]["tools"] == []
+        assert c.rpc("tools/call", {"name": "create_ticket", "arguments": {}})["result"]["isError"]
         assert "error" in c.rpc("nonsense")
     finally:
         c.close()
-    assert LocalStore(project).get_milestone("M1").name == "Via MCP"
-    # The worker's exit tool goes through the same server with the ticket from the env.
-    store = LocalStore(project)
-    from orchestra.model import State
-    t = store.create_ticket(title="w", milestone_id="M1")
-    store.transition(t.id, t.version, State.IN_PROGRESS)   # reports are only accepted from a live worker
-    w = McpClient({**base, "ORCHESTRA_ROLE": "worker", "ORCHESTRA_TOOLS": "report_ticket", "ORCHESTRA_TICKET": t.id})
-    try:
-        w.rpc("initialize", {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}})
-        assert [x["name"] for x in w.rpc("tools/list")["result"]["tools"]] == ["report_ticket"]
-        r = w.rpc("tools/call", {"name": "report_ticket", "arguments": {"state": "READY_FOR_REVIEW", "summary": "done"}})["result"]
-        assert not r.get("isError"), r
-    finally:
-        w.close()
-    assert store.pop_report(t.id)["state"] == "READY_FOR_REVIEW"
