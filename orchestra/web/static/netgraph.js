@@ -234,17 +234,20 @@ const NetGraph = (() => {
       nodeSel.on("mouseenter", (ev, n) => { isolate(n.id); showTip(tip && tip(n, "node"), ev); }).on("mousemove", moveTip)
         .on("mouseleave", () => { isolate(null); hideTip(); }).on("click", (ev, n) => { hideTip(); onClick && onClick(n, "node"); })
         // dragging moves this node alone (nothing else is pushed around), and it stays where it is dropped
-        .call(d3.drag().on("start", () => { if (sim) sim.stop(); })
+        .call(d3.drag().on("start", () => { if (sim) sim.stop(); if (settling) { settling = null; for (const n of NODES) { n.fx = n.fy = null; n._new = false; } } })
           .on("drag", (ev, d) => { d.x = ev.x; d.y = ev.y; tick(); }).on("end", (ev, d) => { d.pin = true; save(); }))
         .on("dblclick", (ev, d) => { ev.stopPropagation(); d.pin = false; settle(new Set([d.id]), 0.3, false); });   // let the forces place it again
       // parallel edges (several flows between the same two nodes) spread apart
       const par = new Map();
       for (const e of EDGES) { const k = e.source.id + ">" + e.target.id; par.set(k, [...(par.get(k) || []), e]); }
       for (const group of par.values()) group.forEach((e, k) => { e.bend = (e.bend ?? 22) + (k - (group.length - 1) / 2) * 44; });
+      // a layout still settling carries on (with any new nodes added to it); otherwise only the
+      // new nodes move, or nothing does
       const fresh = NODES.filter((n) => n._new);
-      if (fresh.length === NODES.length) settle(new Set(NODES.map((n) => n.id)), 1, true);
+      if (settling) settle(new Set([...settling.movable].filter((id) => byId.has(id)).concat(fresh.map((n) => n.id))), Math.max(0.5, sim ? sim.alpha() : 0.5), true);
+      else if (fresh.length === NODES.length) settle(new Set(NODES.map((n) => n.id)), 1, true);
       else if (fresh.length) settle(new Set(fresh.map((n) => n.id)), 0.5, true);
-      else { if (sim) sim.stop(); tick(); }                       // nothing new: nothing moves
+      else tick();                                               // nothing new: nothing moves
       if (pinned) highlight(pinned.nodes, pinned.edges);
     }
     // a new node starts by the nodes it is linked to (or at its anchor, or the middle)
@@ -260,8 +263,10 @@ const NetGraph = (() => {
     }
     // run the forces on ``movable`` nodes only; every other node, and every node the viewer placed,
     // is held where it is
+    let settling = null;
     function settle(movable, alpha, refit) {
       if (sim) sim.stop();
+      settling = { movable, refit };
       for (const n of NODES) { const hold = n.pin || !movable.has(n.id); n.fx = hold ? n.x : null; n.fy = hold ? n.y : null; }
       const w = W(), ax = (n) => (n.anchor ? n.anchor[0] * w : w / 2), ay = (n) => (n.anchor ? n.anchor[1] * H : H / 2);
       sim = d3.forceSimulation(NODES)
@@ -272,7 +277,7 @@ const NetGraph = (() => {
         .force("collide", d3.forceCollide((n) => { const s = size(n); return (s.r || Math.max(s.w, s.h) / 2) + 24; }))
         .force("boundary", boundary ? keepOutside : null)
         .alpha(alpha);
-      sim.on("tick", tick).on("end", () => { for (const n of NODES) { n.fx = n.fy = null; n._new = false; } save(); if (refit && !userZoomed) fit(); });
+      sim.on("tick", tick).on("end", () => { settling = null; for (const n of NODES) { n.fx = n.fy = null; n._new = false; } save(); if (refit && !userZoomed) fit(); });
       tick();
     }
     // lay it out again: around the viewer's placements, or (``reset``) from nothing
