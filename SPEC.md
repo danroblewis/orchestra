@@ -243,7 +243,10 @@ Conservation (`sd/discover.py`):
 4. each flow's rate is fitted by maximum likelihood, choosing by AIC among constant, proportional
    to its source, and linear in any stock or any measured gauge that is not a stock (`c + k ×
    X`; the gauges are those `sd/inputs.py` offers, recorded in the equation's inputs as
-   `input:<name>`). A linear form on a stock other than the flow's source is an **influence**,
+   `input:<name>`). A form that reads another stock or an input is offered only with 10 events
+   per parameter (20 for `c + k × X`, on any X): below that a level that happened to be high
+   beats the constant on likelihood alone, and the constant or the source's proportion is all a
+   flow gets. A linear form on a stock other than the flow's source is an **influence**,
    the link that closes feedback loops. A stock that only fills is offered to no flow (it stands
    in for time), nor is a stock whose balance counts the flow's own events (the same events, or
    at least half of them either way; `sd/drivers.py`): it is one off just before each of those

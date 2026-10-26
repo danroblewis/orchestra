@@ -45,12 +45,12 @@ def test_one_event_per_level_unit_is_proportional_not_linear_with_a_negative_int
 
 def test_a_line_below_zero_where_the_stock_barely_was_is_rejected():
     # the stock is at 1 for a minute of the hour, during which, by chance, nothing arrived; the
-    # best line in it is negative at 1, which the data had no chance to show (a tenth of an event
-    # was due in that minute): rejected, with the reason, and the constant chosen
+    # best line in it is negative at 1, which the data had no chance to show (one event was due
+    # in that minute): rejected, with the reason, and the constant chosen
     rng = random.Random(5)
     at_one = set(range(1800, 1860))
     stock = Path.of([(T0 + i, 1.0 if i in at_one else 0.0) for i in range(0, 3600, 5)], LIVE, 60.0)
-    events = [(T0 + i, 1.0) for i in range(3600) if i not in at_one and rng.random() < 0.1 / 60]
+    events = [(T0 + i, 1.0) for i in range(3600) if i not in at_one and rng.random() < 1.0 / 60]
     forms = fit_flow(events, 60.0, {"s": stock}, None, {"s"})
     linear = next(f for f in forms if f["form"] == "linear")
     assert linear["params"]["k"] < 0 and "below zero from level 1" in linear["rejected"], linear
@@ -180,3 +180,16 @@ def test_dispersion_is_judged_between_events_at_the_forms_rate():
     # events on the clock, every ten seconds, at a constant form: more regular than chance
     clock = [(T0 + i * 10, 1.0) for i in range(360)]
     assert dispersion(clock, LIVE, {"form": "constant", "params": {"c": 6.0}, "inputs": [], "k": 1}, {}, 60.0) < 0.1
+
+
+def test_a_handful_of_events_beside_another_level_get_a_plain_form():
+    # eight returns, each while the shelf happened to hold an order: on so few events the shelf
+    # beats the constant on likelihood alone. A form that reads another stock needs ten events per
+    # parameter (twenty for a line), so the returns get the constant or their source's proportion
+    shelf_up = {i for i in range(3600) if (i // 120) % 3 == 0}
+    shelf = Path.of([(T0 + i, 1.0 if i in shelf_up else 0.0) for i in range(0, 3600, 5)], LIVE, 60.0)
+    src = Path.of([(T0 + i, 1.0 + (i // 900) % 2) for i in range(0, 3600, 5)], LIVE, 60.0)
+    events = [(T0 + i, 1.0) for i in sorted(shelf_up)[::150][:8]]
+    forms = fit_flow(events, 60.0, {"shelf": shelf, "src": src}, "src", {"shelf", "src"})
+    assert len(events) == 8 and forms[0]["inputs"] in ([], ["src"]), [(f["form"], f["inputs"], round(f["aic"], 2)) for f in forms]
+    assert not [f for f in forms if f["inputs"] == ["shelf"] or f["form"] == "linear"]

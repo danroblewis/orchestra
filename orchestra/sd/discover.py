@@ -44,7 +44,8 @@ equation of each flow, and the machine behind each flow:
    counts per step, which favour spurious forms; a second parameter must beat the best
    one-parameter form by ``AIC_MARGIN``, and a line below zero where the data had no chance to
    show the floor is rejected (see ``fit_flow``). A flow with fewer than ``MIN_EVENTS`` events
-   in the window gets the constant form only: an influence fitted on one event is noise.
+   in the window gets the constant form only: an influence fitted on one event is noise; one
+   that reads another stock or an input needs ``EVENTS_PER_PARAM`` events per parameter.
 5. **Attribute** each flow to the machine named by its counter's ``machine`` label, and each stock
    to the machine that writes it.
 
@@ -81,6 +82,7 @@ SAME_STEPS = 0.03          # counters that differ in no more than this share of 
 TWIN_STEPS = 0.97          # levels whose changes are equal in this share of steps are one stock measured twice
 MIN_STEPS = 5              # a level live in fewer steps than this (while every counter was) cannot be balanced
 AIC_MARGIN = 2.0           # a two-parameter form must beat the best one-parameter form by this much AIC to be chosen
+EVENTS_PER_PARAM = 10      # a form that reads another stock or an input needs this many events per parameter
 UNITS = {"second": 1.0, "minute": 60.0, "hour": 3600.0}
 
 
@@ -275,6 +277,11 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
     spurious intercept. The estimates of the constant and proportional forms are the same either
     way (events ÷ time, events ÷ level × time).
 
+    A form must have the events to be told from chance: ``EVENTS_PER_PARAM`` per parameter for
+    one that reads another stock or an input (on eight events a level that happened to be high
+    beats the constant on likelihood alone), twice that for a line ``c + k × X``; below that, the
+    constant and the form proportional to the flow's own source are all it is offered.
+
     The chosen form is the plain one (constant, or proportional to the flow's own source) with the
     lowest AIC, unless another beats it by at least ``AIC_MARGIN``: a second parameter, or a
     reading of another stock, must earn its place, and a tie goes to the plain form. A line's rate stops
@@ -309,9 +316,11 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
         # proportional to the flow's own source, or to another stock when every event came while
         # that stock held something (what waits is taken: the rate is nothing when nothing waits)
         expo = p.integral(0.0, 1.0)
-        if expo > 0:
+        if expo > 0 and (sid == src or total >= EVENTS_PER_PARAM):
             k = total / expo
             cands.append({"form": "proportional", "params": {"k": k}, "inputs": [sid], "loglik": ll(0.0, k, sid), "k": 1})
+        if total < 2 * EVENTS_PER_PARAM:
+            continue
         span = max(xs) - min(xs)
 
         def nll(q, sid=sid):
