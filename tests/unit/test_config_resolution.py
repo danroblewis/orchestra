@@ -43,7 +43,8 @@ def test_load_registers_state_on_demand(repo, monkeypatch):
     with pytest.raises(ConfigError):
         load_project(repo)  # no orchestra.toml yet
     p = init_project(repo)
-    assert "[agents]" not in (repo / "orchestra.toml").read_text()      # Orchestra runs no agents
+    starter = (repo / "orchestra.toml").read_text()
+    assert all(s in starter for s in ("[events]", "[metrics]", "[discovery]"))      # STARTER_TOML
     assert p.state_dir.exists()
     # A clone with orchestra.toml but no state dir: load creates it.
     import shutil

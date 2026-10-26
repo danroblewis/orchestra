@@ -410,19 +410,19 @@ const NetGraph = (() => {
     // ``polish``, from where the nodes are now (the viewer's placements held), then one glide.
     const plain = (n) => Object.fromEntries(Object.entries(n).filter(([, v]) => typeof v !== "function"));
     async function placeAll(all, fromHere = false) {
-      const ticket = ++placing;
+      const gen = ++placing;
       if (sim) sim.stop();
       settling = null;
       const first = NODES.every((n) => n._new);
       let at = Object.fromEntries(NODES.filter((n) => n.x !== undefined).map((n) => [n.id, [n.x, n.y]]));
       if (!fromHere) {
         try { at = await layout(NODES, RAW_EDGES); } catch (e) { console.error("layout failed; using the forces", e); settle(new Set(NODES.map((n) => n.id)), 1, true); return; }
-        if (ticket !== placing) return;                          // a newer layout was asked for
+        if (gen !== placing) return;                             // a newer layout was asked for
       }
       if (polish) {
         const fixed = all ? [] : NODES.filter((n) => n.pin).map((n) => n.id);
         try { at = await polish(NODES.map(plain), RAW_EDGES.map(plain), at, fixed); } catch (e) { console.error("polish failed", e); }
-        if (ticket !== placing) return;                          // the viewer dragged, or asked again
+        if (gen !== placing) return;                             // the viewer dragged, or asked again
       }
       await glide(at, all, first ? 0 : 650);                     // the first layout appears at once, finished
     }
@@ -432,10 +432,10 @@ const NetGraph = (() => {
       const moving = NODES.filter((n) => at[n.id] && (all || !n.pin)).map((n) => ({ n, x0: n.x ?? at[n.id][0], y0: n.y ?? at[n.id][1], x1: at[n.id][0], y1: at[n.id][1] }));
       for (const m of moving) { m.n._new = false; m.n.fx = m.n.fy = null; }
       return new Promise((resolve) => {
-        const t0 = performance.now(), ticket = placing;
+        const t0 = performance.now(), gen = placing;
         const frame = (t) => {
           const k = ms ? Math.min(1, (t - t0) / ms) : 1, e = k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2;
-          if (ticket !== placing) return resolve();
+          if (gen !== placing) return resolve();
           for (const m of moving) { m.n.x = m.x0 + (m.x1 - m.x0) * e; m.n.y = m.y0 + (m.y1 - m.y0) * e; }
           tick();
           if (k < 1) return requestAnimationFrame(frame);

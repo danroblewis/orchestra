@@ -1,5 +1,4 @@
-# Orchestra for its own repository. The old merge gate configuration that lived here went with
-# the task system on 2026-10-25 (see SPEC.md); a gate comes back as a machine.
+# Orchestra for its own repository: the file bus and the file metrics store.
 
 [events]
 url = "file"
