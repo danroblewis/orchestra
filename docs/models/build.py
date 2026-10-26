@@ -385,7 +385,7 @@ write("story-1-simple-task.json", model(
     "horizon 26 weeks.",
     t_stocks, t_flows, horizon=1040, loops=S1_LOOPS))
 
-ME = lambda work: {"machine": "me", "work": work, "uses": []}  # noqa: E731
+ME = lambda work: {"machine": "me", "work": work, "uses": []}
 OFF = {"machine": None}
 write("story-1-simple-task.variants.json", {
     "manual": {

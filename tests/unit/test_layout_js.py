@@ -15,19 +15,19 @@ LAYOUT = Path(__file__).resolve().parent.parent / "layout"
 @pytest.mark.skipif(shutil.which("node") is None, reason="needs Node")
 @pytest.mark.skipif(not (LAYOUT / "node_modules" / "elkjs").exists(), reason="needs elkjs: npm ci in tests/layout")
 def test_the_dynamics_layout():
-    r = subprocess.run(["node", "--test", "layout.test.mjs"], cwd=LAYOUT, capture_output=True, text=True, timeout=300)
+    r = subprocess.run(["node", "--test", "layout.test.mjs"], cwd=LAYOUT, capture_output=True, text=True, timeout=300, check=False)
     assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="needs Node")
 def test_the_feedback_loops():
     loops = LAYOUT.parent / "loops"
-    r = subprocess.run(["node", "--test", "loops.test.mjs"], cwd=loops, capture_output=True, text=True, timeout=120)
+    r = subprocess.run(["node", "--test", "loops.test.mjs"], cwd=loops, capture_output=True, text=True, timeout=120, check=False)
     assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="needs Node")
 def test_the_names_of_stocks_and_flows():
     names = LAYOUT.parent / "names"
-    r = subprocess.run(["node", "--test", "names.test.mjs"], cwd=names, capture_output=True, text=True, timeout=120)
+    r = subprocess.run(["node", "--test", "names.test.mjs"], cwd=names, capture_output=True, text=True, timeout=120, check=False)
     assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]

@@ -14,7 +14,7 @@ Components:
   them back until they are visible, so every probe proves the write and the read path.
 
 Logs: the bootstrap host's log file, a core log kept in this process (component state changes,
-errors, probe writes), the event stream's tail, and the agents' stderr logs."""
+errors, probe writes), the event stream's tail, and the logs machines announce."""
 
 from __future__ import annotations
 

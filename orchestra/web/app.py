@@ -239,9 +239,9 @@ def create_app(project: Project) -> FastAPI:
         if not shutil.which("ioreg"):
             return None
         try:
-            raw = subprocess.run(["ioreg", "-r", "-d", "1", "-c", "IOAccelerator", "-a"], capture_output=True, timeout=3).stdout
+            raw = subprocess.run(["ioreg", "-r", "-d", "1", "-c", "IOAccelerator", "-a"], capture_output=True, timeout=3, check=False).stdout
             items = plistlib.loads(raw) if raw else []
-        except Exception:
+        except Exception:  # noqa: BLE001 - a host without this tool has no GPU reading
             return None
         for it in items:
             ps = it.get("PerformanceStatistics") or {}

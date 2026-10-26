@@ -1,6 +1,6 @@
 """The default bus: one JSONL file, one event per line. Offsets are line numbers.
 
-Several processes (the loop, the agents' API calls, the web server) append to the same file;
+Several processes (the host, the machines, the web server) append to the same file;
 each append is one write of one line in append mode, so lines never interleave."""
 
 from __future__ import annotations

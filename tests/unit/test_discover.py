@@ -3,6 +3,7 @@
 The system is a small bakery (an early version of ~/orchestra-bakery), simulated here without
 sleeping so the right answer is known: the rates below."""
 
+import itertools
 import math
 import random
 
@@ -204,7 +205,7 @@ def test_counters_of_a_machines_instances_are_summed_into_one_flow(tmp_path):
     rng = random.Random(5)
     per = {i: 0 for i in (1, 2, 3)}
     pts = []
-    for (t0, a), (t1, b) in zip(sold, sold[1:]):
+    for (t0, a), (t1, b) in itertools.pairwise(sold):
         for _ in range(int(b - a)):
             per[rng.choice((1, 2, 3))] += 1
         pts += [Point("orchestra_events_total", per[i], t1, {"project": "p", "source": f"shop/{i}", "type": "loaf.sold"}) for i in per]

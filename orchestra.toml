@@ -6,9 +6,3 @@ url = "file"
 
 [metrics]
 url = "file"
-
-[agents]
-provider = "ornith-1.5-35b-a3b-q6k"
-model = "ornith-1.5-35b-a3b-q6k"
-thinking = "medium"
-silence_timeout = "20m"

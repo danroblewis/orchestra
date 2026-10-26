@@ -129,7 +129,7 @@ def find_repo_root(start: Path) -> Path:
     start = Path(start).resolve()
     probe = start if start.is_dir() else start.parent
     p = subprocess.run(["git", "-C", str(probe), "rev-parse", "--git-common-dir"],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, check=False)
     if p.returncode != 0:
         raise ConfigError(f"{start} is not inside a git repository")
     common = Path(p.stdout.strip())
@@ -138,7 +138,7 @@ def find_repo_root(start: Path) -> Path:
     if common.name == ".git":
         return common.parent.resolve()
     top = subprocess.run(["git", "-C", str(probe), "rev-parse", "--show-toplevel"],
-                         capture_output=True, text=True).stdout.strip()
+                         capture_output=True, text=True, check=False).stdout.strip()
     return Path(top).resolve() if top else common.parent.resolve()
 
 

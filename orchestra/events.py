@@ -105,7 +105,7 @@ class Events:
         for fn in list(self._subs):
             try:
                 fn(ev)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - a subscriber never breaks the publisher
                 pass
         return ev
 
