@@ -17,6 +17,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from .balance import explained_share
+from .live import balance_steps
 
 
 @dataclass
@@ -42,8 +43,9 @@ def claims(found: list, sid_of: dict, machine_of) -> dict[str, list[Claim]]:
     out: dict[str, list[Claim]] = defaultdict(list)
     for s, terms, _, _ in found:
         acc = all(sign > 0 for _, sign in terms)
+        steps = balance_steps(s, [c for c, _ in terms])      # the steps the balance was found on
         for c, sign in terms:
-            out[c.key].append(Claim(sid_of[s.key], sign, explained_share(s, terms, c), machine_of(s), acc))
+            out[c.key].append(Claim(sid_of[s.key], sign, explained_share(s, terms, c, steps), machine_of(s), acc))
     return out
 
 

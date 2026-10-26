@@ -41,10 +41,11 @@ import re
 import time
 from pathlib import Path
 
-from .discover import FLAG_EXACT, MIN_EVENTS, UNITS, discover, sample, series_key, sum_instances
+from .discover import FLAG_EXACT, MIN_EVENTS, UNITS, discover
 from .inputs import offered_inputs
 from .model import Equation, Flow, Model, Stock
 from .rates import combine, numbers, reads, scale
+from .series import sample, series_key, sum_instances
 
 CONSERVATION = "conservation"
 DEFAULT = "kalman_lna"

@@ -149,8 +149,9 @@ strategy, conservation still runs first and finds the stocks and the counters th
 the SD Lab strategy then works from the stocks' levels (on the time every series was written),
 with the measured moves handed to it as what is already **known** of each step, so it explains
 only the residual (hidden stocks, unmeasured inflows and drains, the inputs that drive them); the
-other measured gauges are its inputs (`sd/inputs.py`: not flags, one per machine with the
-instances summed), and stocks are grouped by the measured flows that join them. Its flows are
+other measured gauges are its inputs (`sd/inputs.py`: not flags nor a stock's twin, one per
+machine with the instances summed; conservation's fit reads the same gauges), and stocks are
+grouped by the measured flows that join them. Its flows are
 matched back to the counters and their machines (`sd/strategies.py`); several between the same
 ends become one with one rate of several terms; one that no counter measures is kept, as
 unmeasured, only where the stock's balance is not exact (a strategy that ignores `known` invents
@@ -161,30 +162,54 @@ deadline below `[discovery] every`, and one discovery runs at a time per project
 processes (the host skips a scheduled run while the CLI or the web page is discovering).
 
 Conservation (`sd/discover.py`):
-1. every series is sampled onto a grid of steps. A series written on a schedule that is no
-   longer written at the end of the window (its machine is gone or was replaced) is left out.
-   Counters that move together in all but 3% of steps (a machine's own count and Orchestra's
-   count of the event it publishes) are one: the machine's own is kept. Counters that differ only
-   by instance (an ``instance`` label, or ``source`` ``worker/3``) are summed into one per machine,
-   and a flow from such a sum is measured by every instance's series;
+1. every series is sampled onto a grid of steps, and marked with when it was being written
+   (`sd/series.py`, `sd/live.py`). A series written on a schedule is live between writes no
+   further apart than ten times its usual interval; a longer silence is its machine down or not
+   yet started, and its last value before the silence is not carried into it: a level's balance
+   and a flow's fit use only the steps in which the level and the counters involved were all
+   being written, and the stock records how many steps that was. A counter written only when it
+   moves (Orchestra's event counters) has no silences. A scheduled series no longer written at
+   the end of the window (its machine is gone or was replaced) is left out. Counters that move
+   together in all but 3% of steps are one when one is Orchestra's count of the other's events, or
+   both are one machine's: the machine's own, then the shorter name, is kept; two machines'
+   counts of the same events both stay (each machine's stocks take their own) and become one
+   afterwards where they join two stocks (step 2). Counters that differ only by instance (an
+   ``instance`` label, or ``source`` ``worker/3``) are summed into one per machine, and a flow
+   from such a sum is measured by every instance's series;
 2. a level is a **stock** when counters, added or subtracted, balance its changes
    (`Δlevel ≈ Σ inflows − Σ outflows`, R² ≥ 0.9). A level that only takes two values is
    usually a flag (busy or not) and is a stock only when its balance is exact in 97% of steps (a
-   shelf that holds nothing or one item). The counters are found by least squares on all
-   counters, rounded to ±1, then a local search (change one coefficient, or swap one counter for
-   another) with a penalty per counter;
+   shelf that holds nothing or one item). The counters are found by a local search on an
+   objective of squared error plus a penalty per counter (change one coefficient, or swap one
+   counter for another), run from many starts (least squares on all counters rounded to ±1,
+   nothing, each counter alone, the best pairs) with the best kept, on the counters' Gram matrix
+   so each candidate move is cheap (`sd/balance.py`). A balance exact in every step earns back
+   most of one penalty, so the one-event counter that completes it (a refund among a hundred
+   orders) is kept. A small set of chosen counters that cancels to nothing is dropped, and one
+   that equals an unchosen counter is replaced by it (`sd/collinear.py`). The level's own
+   machine's counters are searched first (its record of its transitions, with Orchestra's counts
+   of its events): when they balance it exactly, that is its balance; otherwise every counter is
+   searched, and that balance replaces the machine's own only when it explains more. Then, with
+   every balance known, the stand-ins give way (`sd/restate.py`): Orchestra's event counter to the
+   machine counters that sum to it, when one is another stock's or the level's own machine's;
+   another machine's counter that no other stock claims to the level's own counters that sum to
+   it; and two machines' counts of one flow, one leaving a stock and the other entering another,
+   to one counter in both balances. A restated balance must still fit as a stock's;
 3. a counter that leaves one stock and enters another is a **flow** between them; otherwise it
    comes from or goes to outside;
 4. each flow's rate is fitted by maximum likelihood, choosing by AIC among constant, proportional
-   to its source, and linear in any stock (`c + k × X`). A linear form on a stock other than the
-   flow's source is an **influence**, the link that closes feedback loops. Forms are scored with
-   the exact point-process likelihood (each event against the levels just before it), because
-   counts per step favour spurious forms when a flow drains the level it depends on;
+   to its source, and linear in any stock or any measured gauge that is not a stock (`c + k ×
+   X`; the gauges are those `sd/inputs.py` offers, recorded in the equation's inputs as
+   `input:<name>`). A linear form on a stock other than the flow's source is an **influence**,
+   the link that closes feedback loops. Forms are scored with the exact point-process likelihood
+   (each event against the levels just before it), because counts per step favour spurious forms
+   when a flow drains the level it depends on;
 5. each flow is attributed to the machine named by its counter's `machine` (or, for event
    counters, `source`) label.
 
-Everything else is **left out, with the reason** (did not change, no counters balance it, not
-needed by any balance), recorded in the model version. Not yet: stocks no series measures,
+Everything else is **left out, with the reason** (did not change, written in too few steps, no
+counters balance it, not needed by any balance, the same as another counter), recorded in the
+model version. Not yet: stocks no series measures,
 delays, non-linear forms, eras. The bakery (`~/orchestra-bakery`, its own repository) is a toy
 system it is tested on.
 
@@ -360,7 +385,9 @@ orchestra/
   cli.py  config.py  events.py  runtime.py  host.py  collectors.py  plugins.py
   bus/       file, redis_streams, rabbitmq_streams, kafka
   metrics/   file, victoria, promql
-  sd/        model, store, fit, discover (conservation), strategies, rediscover
+  sd/        model, store, fit, series and live (sampling, when a series was written), balance,
+             collinear and restate (a level's balance), ends, inputs, discover (conservation),
+             rates, strategies, simulate, rediscover
   sdlab/     SD Lab's discovery research: ~70 strategies (needs the sd extra)
   web/       app, core, core_explore, machines, dynamics, static/
 tests/

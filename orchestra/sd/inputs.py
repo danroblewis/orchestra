@@ -1,10 +1,10 @@
 """The measured levels an SD Lab strategy may read as inputs: gauges that are not stocks (a rating,
 a demand, the weather), offered one per machine.
 
-Left out: counters, the stocks' own series, Orchestra's plumbing, levels that did not move or are
-not written on a schedule, and the levels conservation left out as flags (a two-valued level that
-merely moves with the work: a baker is busy or not). A flag as a driver only restates that work
-was happening. A gauge written per instance (``bakery_baker_busy{instance="1"}``, and 2 and 3) is
+Left out: counters, the stocks' own series and their twins, Orchestra's plumbing, levels that did
+not move or are not written on a schedule, and the levels conservation left out as flags (a
+two-valued level that merely moves with the work: a baker is busy or not). A flag as a driver only
+restates that work was happening. A gauge written per instance (``bakery_baker_busy{instance="1"}``, and 2 and 3) is
 one input per machine, the instances summed (how many bakers are busy): a model is about
 machines, not their instances, and one flow per instance is not a model."""
 
@@ -13,7 +13,8 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 
-from .discover import Series, regular, series_key
+from .live import regular
+from .series import Series, series_key
 
 PLUMBING = re.compile(r"^orchestra_(core_|host_up)")   # Orchestra's own: measured, but never a driver of anyone's flows
 
@@ -39,7 +40,7 @@ def offered_inputs(series: list[Series], stocks: set[str], left_out: dict[str, s
     for s in series:
         why = left_out.get(series_key(s.name, s.labels), "")
         if s.counter or s.key in stocks or PLUMBING.match(s.name) or not any(s.deltas) or not regular(s.points) \
-                or why.startswith("a flag"):
+                or why.startswith(("a flag", "the same as")):
             continue
         groups[_group(s)].append(s)
     inputs, refs = {}, {}

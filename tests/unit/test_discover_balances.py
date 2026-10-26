@@ -1,0 +1,177 @@
+"""Discovery's balances on synthetic series, each case the shape of a bakery failure: a level's
+stale value from before a silence, a collinear group of counters, a gauge that drives a flow,
+Orchestra's event counter standing in for the machine counters it sums, another machine's copy of
+a machine's own counters, and one flow counted by two machines."""
+
+import math
+import random
+
+from orchestra.metrics import Point
+from orchestra.metrics.file import FileMetrics
+from orchestra.sd.balance import LeastSquares, balance
+from orchestra.sd.discover import discover, sample
+
+T0 = 1_800_000_000.0
+
+
+def run(store, minutes, rates, levels, machines, *, seed=1, silent=None, extra=None):
+    """Counters fired by Poisson draws at ``rates`` per minute (a number, or a function of the
+    time), each level ``{counter: sign}`` summed from them; every series written each second by
+    its machine, except while ``silent(name, t)``. ``extra(t, counts) -> [Point]`` adds other series."""
+    rng = random.Random(seed)
+    counts = dict.fromkeys(rates, 0)
+    value = dict.fromkeys(levels, 0)
+    pts = []
+    for i in range(minutes * 60):
+        t = T0 + i
+        for k, r in rates.items():
+            rate = r(t) if callable(r) else r
+            n = sum(1 for _ in range(3) if rng.random() < rate / 180)
+            counts[k] += n
+            for lv, terms in levels.items():
+                value[lv] += terms.get(k, 0) * n
+        for name, v in [*counts.items(), *value.items()]:
+            if not (silent and silent(name, t)):
+                pts.append(Point(name, v, t, {"project": "p", "machine": machines[name]}))
+        if extra:
+            pts += extra(t, counts)
+    store.write(pts)
+    return T0, T0 + minutes * 60
+
+
+def balance_of(m, sid):
+    return {(b["series"].split("{")[0], b["sign"]) for b in m.stock(sid).evidence["balance"]}
+
+
+def test_a_level_silent_with_a_stale_value_still_balances_exactly(tmp_path):
+    # the board was restarted with a cleared state: its waiting level was last written long before
+    # the window (11 orders) and is written again only from the window's second third, at 0. The
+    # stale 11 carried to the first fresh value is not a change any counter explains; the balance
+    # is found on the steps the level was being written, and the stock is exact there.
+    store = FileMetrics(tmp_path / "m.jsonl")
+    store.write([Point("waiting", 11, T0 - 3000, {"project": "p", "machine": "board"})])
+    rates = {"in_total": 6.0, "out_total": 5.0}
+    machines = {**dict.fromkeys(rates, "board"), "waiting": "board"}
+    start, end = run(store, 60, rates, {"waiting": {"in_total": 1, "out_total": -1}}, machines,
+                     silent=lambda name, t: name == "waiting" and t < T0 + 1200)
+    m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
+    assert [s.id for s in m.stocks] == ["waiting"], m.discovery["left_out"]
+    ev = m.stock("waiting").evidence
+    assert ev["exact_steps"] == 1.0 and ev["balance_r2"] == 1.0
+    assert ev["balance_steps"] < ev["steps"] == 120, "the silent third is cut, and the cut is recorded"
+    assert balance_of(m, "waiting") == {("in_total", 1), ("out_total", -1)}
+
+
+def test_a_collinear_group_gives_way_to_the_counter_that_is_their_sum(tmp_path):
+    # c counts a and b together (orders queued = taken + app orders); the level moves by +c −d. The
+    # balance is {+c, −d}: never {+a, +b, −d}, which fits the same and costs a penalty more. Least
+    # squares, pulled about by the collinear counters, may land on a and b (it did on the bakery),
+    # and a search that changes one counter at a time cannot leave that: the group is traded as a
+    # whole for the counter that is its sum, and the search also starts from each pair.
+    rng = random.Random(3)
+    a = [rng.choice([0, 0, 1, 2]) for _ in range(3600)]
+    b = [rng.choice([0, 0, 0, 1]) for _ in range(3600)]
+    d = [rng.choice([0, 0, 1, 1]) for _ in range(3600)]
+    pts, ca, cb, cd, level = [], 0, 0, 0, 50
+    for i in range(3600):
+        ca, cb, cd = ca + a[i], cb + b[i], cd + d[i]
+        level += a[i] + b[i] - d[i]
+        for name, v in (("a_total", ca), ("b_total", cb), ("c_total", ca + cb), ("d_total", cd), ("level", level)):
+            pts.append(Point(name, v, T0 + i, {"project": "p", "machine": "m"}))
+    store = FileMetrics(tmp_path / "m.jsonl")
+    store.write(pts)
+    m = discover(store.dump("", {"project": "p"}), start=T0, end=T0 + 3600, step=30)
+    assert [s.id for s in m.stocks] == ["level"]
+    assert balance_of(m, "level") == {("c_total", 1), ("d_total", -1)}, m.stock("level").evidence["balance"]
+
+    series = {s.key: s for s in sample(store.dump("", {"project": "p"}), T0, 30, 120)}
+    counters = [series[k] for k in ('a_total{machine="m"}', 'b_total{machine="m"}', 'c_total{machine="m"}', 'd_total{machine="m"}')]
+
+    class LandsOnTheParts(LeastSquares):
+        def solve(self, y):
+            return [1.0, 1.0, 0.0, -1.0]
+    terms, _, exact = balance(series['level{machine="m"}'], counters, LandsOnTheParts([c.deltas for c in counters]))
+    assert [(c.name, s) for c, s in terms] == [("c_total", 1), ("d_total", -1)] and exact == 1.0
+
+
+def test_a_flow_whose_rate_follows_a_gauge_reads_the_gauge(tmp_path):
+    # the arrivals' rate follows the rating (a measured gauge that is not a stock), not any stock:
+    # the gauge is offered to the fit beside the stocks and chosen by AIC, as input:<name>
+    store = FileMetrics(tmp_path / "m.jsonl")
+    rating = lambda t: round(3.0 + 2.0 * math.sin(2 * math.pi * (t - T0) / 1200), 2)     # 1 to 5, a 20 min cycle
+    rates = {"arrived_total": lambda t: 1.2 * rating(t), "served_total": 4.0}
+    machines = {**dict.fromkeys(rates, "shop"), "waiting": "shop"}
+    start, end = run(store, 90, rates, {"waiting": {"arrived_total": 1, "served_total": -1}}, machines,
+                     extra=lambda t, _: [Point("yelp_rating", rating(t), t, {"project": "p", "machine": "yelp"})])
+    m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
+    assert [s.id for s in m.stocks] == ["waiting"]
+    eq = m.flow("arrived_total").current()
+    assert eq.form == "linear" and eq.inputs == ["input:yelp_rating"] and eq.origin == "fitted", (eq.form, eq.inputs, eq.quality)
+    assert eq.params["k"] > 0
+    assert "yelp_rating" in m.discovery["inputs"], "the gauge is recorded as an input the model reads"
+
+
+def test_an_event_counter_gives_way_to_the_machine_counters_it_sums(tmp_path):
+    # order.rejected is returns plus refunds: the one event counter is cheaper for the accepting
+    # stock's balance, and a refund with few events can never pay its way alone; but returns go
+    # back to the waiting stock (another stock claims them), so the parts are the flows
+    store = FileMetrics(tmp_path / "m.jsonl")
+    rates = {"picked_total": 6.0, "accepted_total": 5.2, "returns_total": 0.6, "refunds_total": 0.1, "assigned_total": 0.6}
+    machines = {**dict.fromkeys(rates, "board"), "accepting": "board", "waiting": "board",
+                "returns_total": "customers", "refunds_total": "customers"}
+    last = [None]
+
+    def rejected(t, counts):                       # Orchestra's count, written when an event comes
+        n = counts["returns_total"] + counts["refunds_total"]
+        if n == last[0]:
+            return []
+        last[0] = n
+        return [Point("orchestra_events_total", n, t, {"project": "p", "source": "customers", "type": "order.rejected"})]
+    start, end = run(store, 90, rates, {"accepting": {"picked_total": 1, "accepted_total": -1, "returns_total": -1, "refunds_total": -1},
+                                         "waiting": {"returns_total": 1, "assigned_total": -1}}, machines, extra=rejected)
+    m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
+    assert balance_of(m, "accepting") == {("picked_total", 1), ("accepted_total", -1), ("returns_total", -1), ("refunds_total", -1)}, \
+        m.stock("accepting").evidence["balance"]
+    f = {x.id: x for x in m.flows}
+    assert (f["returns_total"].src, f["returns_total"].dst) == ("accepting", "waiting")
+    assert f["refunds_total"].src == "accepting"
+    assert not any(x.counter and x.counter.name == "orchestra_events_total" for x in m.flows)
+    why = [v for k, v in m.discovery["left_out"].items() if k.startswith("orchestra_events_total")]
+    assert why and why[0].startswith("the same as"), why
+
+
+def test_another_machines_copy_does_not_replace_a_machines_own_counters(tmp_path):
+    # every customer served or giving up posts a review: yelp's count equals the two customers'
+    # counters summed, and would balance the customers' waiting in one term; the customers'
+    # waiting is the customers' to account for, and the copy is left out
+    store = FileMetrics(tmp_path / "m.jsonl")
+    rates = {"ordered_total": 6.0, "served_total": 5.0, "gave_up_total": 0.8}
+    machines = {**dict.fromkeys(rates, "customers"), "waiting": "customers"}
+    start, end = run(store, 60, rates, {"waiting": {"ordered_total": 1, "served_total": -1, "gave_up_total": -1}}, machines)
+    served = store.raw("served_total", {"project": "p", "machine": "customers"})
+    gave = store.raw("gave_up_total", {"project": "p", "machine": "customers"})
+    store.write([Point("yelp_reviews_total", a[1] + b[1], a[0], {"project": "p", "machine": "yelp"}) for a, b in zip(served, gave)])
+    m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
+    assert balance_of(m, "waiting") == {("ordered_total", 1), ("served_total", -1), ("gave_up_total", -1)}, m.stock("waiting").evidence["balance"]
+    assert 'yelp_reviews_total{machine="yelp"}' in m.discovery["left_out"]
+
+
+def test_one_flow_counted_by_two_machines_joins_the_stocks(tmp_path):
+    # the board counts an order picked up and the shelf counts it handed over: the same events,
+    # written by two machines. Each stock takes its own machine's count; they are one flow, from
+    # the shelf's stock to the board's, not one out to outside and another in from it.
+    store = FileMetrics(tmp_path / "m.jsonl")
+    rates = {"passed_total": 6.0, "picked_total": 5.5, "accepted_total": 5.5}
+    machines = {**dict.fromkeys(rates, "board"), "on_shelf": "board", "accepting": "board"}
+    start, end = run(store, 60, rates, {"on_shelf": {"passed_total": 1, "picked_total": -1},
+                                         "accepting": {"picked_total": 1, "accepted_total": -1}}, machines)
+    picked = store.raw("picked_total", {"project": "p", "machine": "board"})
+    on_shelf = store.raw("on_shelf", {"project": "p", "machine": "board"})
+    store.write([Point("handed_total", v, t, {"project": "p", "machine": "shelf"}) for t, v in picked]
+                + [Point("shelf_items", v, t, {"project": "p", "machine": "shelf"}) for t, v in on_shelf])
+    m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
+    assert m.check() == []
+    f = {x.id: x for x in m.flows}
+    joins = [x for x in m.flows if x.src and x.dst and x.dst == "accepting"]
+    assert len(joins) == 1 and joins[0].src in ("on_shelf", "shelf_items"), [(x.id, x.src, x.dst) for x in m.flows]
+    assert not [x for x in m.flows if x.src is None and x.dst == "accepting"], f.keys()
