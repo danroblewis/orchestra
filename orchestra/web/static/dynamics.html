@@ -111,6 +111,18 @@ const stockColor = (id) => { const i = MODEL ? MODEL.stocks.findIndex((s) => s.i
 // middle of the flow whose rate they drive. Feedback loops are cycles of the causal graph: a flow adds to its destination
 // (+) and takes from its source (−); a rate depends on its input stock with the sign of its
 // coefficient. A loop with an odd number of − links is balancing (B), otherwise reinforcing (R).
+  // what a machine is comes from what it announced (the Machines page's /api/machines: a plugin's
+  // card kind, or a declaration), never from the model, which only knows it writes series
+  window.MKINDS = window.MKINDS || {};
+  async function loadKinds() {
+    try { const d = await (await fetch("/api/machines")).json();
+      for (const m of d.machines || []) MKINDS[m.id] = (m.about && m.about.kind) || (m.declared && m.declared.kind) || (m.bootstrap ? "program" : "");
+    } catch (e) {}
+  }
+  function kindWord(id, fallback) {
+    const k = MKINDS[id] || MKINDS[String(id).split("/")[0]] || (fallback && fallback !== "machine" ? fallback : "");
+    return { agent: "AI agent", program: "program", person: "person", team: "team", device: "device", external: "external" }[k] || "machine";
+  }
 function draw() {
   const m = MODEL, byMachine = Object.fromEntries(m.machines.map((x) => [x.id, x]));
   const g = SDGraph.build(m, { showAll: window.SHOW_ALL, showAcc: window.SHOW_ACC, mcolor, stockColor });
@@ -146,7 +158,7 @@ function draw() {
   Live.drawn(GRAPH);
   const used = [...new Set(flows.map((f) => f.machine || "none"))];
   $("legend").innerHTML = used.map((id) => { const mc = byMachine[id] || { name: id, kind: "?" };
-    return `<span class="lg prog" style="--c:${mcolor(id)}"><i></i>${esc(mc.name)} <span class="muted">${mc.kind === "agent" ? "AI agent" : "program"}</span></span>`; }).join("")
+    return `<span class="lg prog" style="--c:${mcolor(id)}"><i></i>${esc(mc.name)} <span class="muted">${kindWord(id, mc.kind)}</span></span>`; }).join("")
     + `<label class="lg" style="cursor:pointer"><input type="checkbox" ${window.SHOW_ALL ? "checked" : ""} onchange="window.SHOW_ALL=this.checked;draw()" style="margin:0"> flows with no events</label>`
     + (acc.size ? `<label class="lg" style="cursor:pointer" title="stocks that only fill, such as the event bus's length"><input type="checkbox" ${window.SHOW_ACC ? "checked" : ""} onchange="window.SHOW_ACC=this.checked;draw()" style="margin:0"> stocks that only fill (${acc.size})</label>` : "")
     + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it, through rediscoveries; double-click to release) · tidy lays out the rest · reset starts over · scroll to zoom · hover or click a stock or a flow</span>`;
@@ -217,7 +229,7 @@ function tables() {
   $("stocks").innerHTML = `<tr><th>stock</th><th>now</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr><td>${stockHead(s.id)}</td><td class="num">${m.levels[s.id] ? m.levels[s.id].v + " " + esc(s.unit) : "—"}</td>
       <td class="num muted">${s.series ? esc(s.series.name + "{" + Object.entries(s.series.labels).filter(([k]) => k !== "project").map(([k, v]) => `${k}="${v}"`).join(",") + "}") : "not measured"}</td></tr>`).join("");
   $("machines").innerHTML = `<tr><th>machine</th><th>kind</th><th>engaged</th><th>flows</th></tr>` + m.machines.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span>${esc(x.name)}${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
-      <td>${x.kind === "agent" ? "AI agent" : "program"}</td><td class="muted">${esc(x.engagement.map((e) => e.mode.replace("_", " ") + " · " + e.driver).join(", ") || "observed only")}</td><td class="num">${x.attributed.length}</td></tr>`).join("");
+      <td>${kindWord(x.id, x.kind)}</td><td class="muted">${esc(x.engagement.map((e) => e.mode.replace("_", " ") + " · " + e.driver).join(", ") || "observed only")}</td><td class="num">${x.attributed.length}</td></tr>`).join("");
   const fitted = m.flows.filter((f) => f.current && f.current.origin === "fitted").length;
   const d = m.discovery || {};
   $("found").innerHTML = d.left_out ? `<div class="muted" style="font-size:12px;margin-bottom:6px">Discovered from ${d.series} series over ${ago(d.end - d.start)}, in ${d.step} s steps. A level is a stock when counters balance it (R² ≥ ${d.min_r2}).</div>`
@@ -291,6 +303,7 @@ async function rediscover() {
 async function load() {
   try {
     const d = await (await fetch("/api/dynamics/model" + (VERSION ? `?version=${VERSION}` : ""))).json();
+    await loadKinds();
     if (!d.ok) { $("diagram").innerHTML = `<div class="empty">${esc(d.error)}</div>`; return; }
     MODEL = d.model; $("conn").textContent = "live"; versionBar(); draw(); tables();
   } catch (e) { $("conn").textContent = "disconnected"; }

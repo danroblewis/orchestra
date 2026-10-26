@@ -76,7 +76,7 @@ class Engagement:
 class Machine:
     id: str
     name: str
-    kind: str                           # agent | program | person | team | device | external
+    kind: str                           # machine (discovered: the metrics do not say what it is) | agent | program | person | team | device | external
     description: str = ""
     attributed: list[str] = field(default_factory=list)       # flow ids: hypotheses, validated by fits across eras
     observed_by: list[SeriesRef] = field(default_factory=list)

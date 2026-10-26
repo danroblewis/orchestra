@@ -541,7 +541,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         if who:
             by_machine[who].append(mv.id)
     owners = {st.evidence.get("machine") for st in stocks} - {None}
-    machines = [Machine(m, m, "program", "Seen in the metrics store: it writes the series these flows are bound to.",
+    # what a machine is (a program, an AI agent) is not in the metrics: the model says "machine"
+    machines = [Machine(m, m, "machine", "Seen in the metrics store: it writes the series these flows are bound to.",
                         sorted(by_machine.get(m, [])), [SeriesRef(s.name, s.labels) for s in series if machine_of(s) == m])
                 for m in sorted(set(by_machine) | owners)]
     model = Model("system", "The system",
