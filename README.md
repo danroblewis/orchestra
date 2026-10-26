@@ -6,9 +6,10 @@ and which machines drive which flows. Its aim is to find the loops between a pro
 and the processes used to develop it.
 
 This is an **empty Orchestra**: the bus, the metrics store, the model, the bootstrap host and the
-web UI, with no machines of its own. The task system (tickets, the agent loop, the AI agent
-harnesses, the merge gate) was removed on 2026-10-25 and lives in its own repository,
-`~/orchestra-tasking`, which adds its pages to the web UI as a plugin (`orchestra/plugins.py`).
+web UI, with no machines of its own. The task system (tickets, the scheduler, the merge gate)
+was removed on 2026-10-25 and lives in its own repository, `~/orchestra-tasking`; the AI agents
+that can fill its roles (the harnesses for Pi, Claude Code and Codex) live in another,
+`~/orchestra-agents`. Each adds its pages to the web UI as a plugin (`orchestra/plugins.py`).
 
 - `SPEC.md` is the design of what exists.
 - `AGENTS.md` is the list of rules that must not be broken.

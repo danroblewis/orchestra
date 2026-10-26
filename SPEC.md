@@ -12,8 +12,9 @@ used to develop it: do our workflows and AI agents change the measures the proje
 
 This version is an **empty Orchestra**: the bus, the metrics store, the model, the bootstrap host
 and the web UI, with no machines of its own beyond the host, and no AI: an AI agent is a machine
-like any other, run by whatever runs it. Task management, with its agent harnesses, lives in its
-own repository (`~/orchestra-tasking`) and adds its pages here as a plugin (§10.1).
+like any other, run by whatever runs it. Task management lives in its own repository
+(`~/orchestra-tasking`), the AI agents and their harnesses in another (`~/orchestra-agents`);
+each adds its pages here as a plugin (§10.1).
 The old ticket tracker, loop and merge gate were removed on 2026-10-25; their history stays on the
 bus and in model versions 1–4 of projects that used them.
 
@@ -197,9 +198,9 @@ Hosting drivers and starting the machines that packages declare come later.
 
 Orchestra runs no AI. An AI agent is a universal machine: it is known, like every machine, by its
 `source`, its events and its series. What starts it and talks to its model (a harness for Pi,
-Claude Code or Codex) belongs to the package that runs it; the task system keeps them
-(`~/orchestra-tasking/tasking/harness/`), with their tools, transcripts and fakes. They left
-Orchestra on 2026-10-25.
+Claude Code or Codex) belongs to the package that runs it: orchestra-agents keeps them
+(`~/orchestra-agents/orchestra_agents/harness/`), with their tools, transcripts and fakes. They
+left Orchestra on 2026-10-25, and the task system on 2026-10-26.
 
 ---
 

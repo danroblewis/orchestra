@@ -13,7 +13,7 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    the interfaces machines use (the bus, the metrics store, plugins). What
    machines do and what their events mean is theirs. An AI agent is a
    universal machine like any other: its harnesses live with the machines
-   that run it (the task system: `~/orchestra-tasking`), never here. Never add
+   that run it (the agents: `~/orchestra-agents`), never here. Never add
    a domain concept (ticket, task, build, agent) to the core.
 2. **Machines are outside Orchestra, and known only by observation.** A
    machine is its CloudEvents `source` (`<machine>/<instance>` for one of
