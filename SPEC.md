@@ -213,7 +213,11 @@ Conservation (`sd/discover.py`):
    copy of one of them); another machine's counter that no other stock claims to the level's
    own counters that sum to it; and two machines' counts of one flow, one leaving a stock and
    the other entering another, to one counter in both balances (one that a stock of its own
-   machine holds before another machine's copy, then the one stamped first). A restated balance must still
+   machine holds before another machine's copy, then the one stamped first). Last, two or three
+   of a balance's counters whose signed sum one unused counter counts by itself (each a moment
+   before or after the other: running totals never more than an event apart) give way to it
+   (`sd/parsimony.py`: the customers' orders less the app's are the takers' own orders taken),
+   never the level's own machine's counters, never for Orchestra's event counter. A restated balance must still
    fit as a stock's. Two levels that change alike in 97% of steps, or that the same counters
    balance (two machines' counts of the same events being one counter), are one stock measured
    twice: the machine whose counters make the balance keeps it, the other is recorded as its
@@ -232,8 +236,10 @@ Conservation (`sd/discover.py`):
    flow into the state and flows out of it. The state is the measured level whose raw points
    rise at the inflow's events and fall at the outflows' (`sd/between.py`: the grid misses it,
    the raw points do not); with none (no level is written, or one never reads above zero), a
-   stock measured by no series, drawn as hidden. No stock is both drained and filled by one
-   passage. The stock and its flows record it (`passing`, `through`);
+   stock measured by no series, drawn as hidden. The drain and the fill are each claimed by one
+   stock alone, other members are the drain's or the fill's machine's, no in and out but those
+   two count the same events, Orchestra's event counters take no part, and no stock is both
+   drained and filled by one passage. The stock and its flows record it (`passing`, `through`);
 4. each flow's rate is fitted by maximum likelihood, choosing by AIC among constant, proportional
    to its source, and linear in any stock or any measured gauge that is not a stock (`c + k ×
    X`; the gauges are those `sd/inputs.py` offers, recorded in the equation's inputs as

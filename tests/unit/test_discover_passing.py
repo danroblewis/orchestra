@@ -97,3 +97,23 @@ def test_a_drain_and_a_fill_of_one_stock_are_no_passage():
     got = passages([(a, [(called, -1)], 1.0, 1.0), (b, [(freed, 1)], 1.0, 1.0)], [called, freed], [other],
                    start=T0, end=T0 + 3600, step=30, machine_of=lambda s: "m")
     assert [([c.name for c in p.ins], [c.name for c in p.outs], p.measured) for p in got] == [(["called_total"], ["freed_total"], False)]
+
+
+def test_a_drain_two_stocks_claim_and_a_cancelling_pair_are_no_passage():
+    # an event that moves two machines' stocks says nothing of which material passes; and a pair
+    # of an in and an out that count the same events cancels, so it may not carry a passage
+    cum = lambda xs: [0.0, *accumulate(xs)]
+    d = [1.0 if i % 3 == 0 else 0.0 for i in range(120)]
+    e = [1.0 if i % 4 == 0 else 0.0 for i in range(120)]
+    mk = lambda name, xs, m="m": Series(name, {"machine": m}, [], cum(xs), True)
+    called, ordered = mk("called_total", d), mk("ordered_total", d)
+    lv = lambda name, m="m": Series(name, {"machine": m}, [], [3.0] * 121, False)
+    a, b, line = lv("a_level"), lv("b_level"), lv("line_level", "customers")
+    where = {"start": T0, "end": T0 + 3600, "step": 30, "machine_of": lambda s: s.labels["machine"]}
+    two = [(a, [(called, -1)], 1.0, 1.0), (line, [(called, -1)], 1.0, 1.0), (b, [(ordered, 1)], 1.0, 1.0)]
+    assert passages(two, [called, ordered], [], **where) == []
+    # called drains A and other (different events) fills B: two free counters, a copy of each,
+    # would make the totals and the steps agree, as an in and an out that cancel
+    other, copy_of_other, copy_of_called = mk("other_total", e), mk("other_copy_total", e), mk("called_copy_total", d)
+    found = [(a, [(called, -1)], 1.0, 1.0), (b, [(other, 1)], 1.0, 1.0)]
+    assert passages(found, [called, other, copy_of_other, copy_of_called], [], **where) == []

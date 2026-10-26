@@ -7,13 +7,17 @@ inflow ends at outside while its outflows begin there: the shelf drains to nowhe
 rejected orders come back from nowhere. The rework loop is open.
 
 A **passage** joins them. Its counters are ins and outs: at least one in drains a stock to
-outside, at least one out fills another stock from outside, and any other counter in it (one
-no balance used, or another such drain or fill) is free to join. They count the same items:
+outside, at least one out fills another stock from outside, each claimed by that one stock
+alone (an event that moves two machines' stocks says nothing of which material passes), and any
+other counter in it (one no balance used, or another such drain or fill) is free to join if
+the drain's or the fill's machine wrote it. No in and out but the drain and the fill count the
+same events (a pair that cancels would let any two flows pass), and Orchestra's event counters,
+stand-ins for the machines' own, take no part. They count the same items:
 their totals agree, and the outs' running total is never ahead of the ins' nor more than a step
 behind them (each item left within a step), in all but ``CANCEL_STEPS`` of the steps any of
 them moved (and in none, when a counter that counted fewer than ``MIN_EVENTS`` completes it).
 The fewest counters win, then the most of the first in's machine, then the fewest
-of Orchestra's event counters, then the fewest steps out of step.
+steps out of step.
 
 The state between is the measured level whose raw points rise at the ins' events and fall at
 the outs' (``sd.between``): the grid misses it, its raw points do not. With no such level (none
@@ -30,6 +34,7 @@ from itertools import accumulate, combinations
 from .balance import MIN_EVENTS
 from .between import SAME_TOTAL, state_level
 from .collinear import CANCEL_STEPS
+from .parsimony import same_events
 from .series import EVENT_COUNTER, Series
 
 MAX_COUNTERS = 4      # a passage is at most this many counters
@@ -101,7 +106,7 @@ def _best(o: Series, fills: list[Series], pool: list[tuple[Series, int]], total:
             if p is o:
                 continue
             for extra in combinations([(c, r) for c, r in pool if c is not o and c is not p], size):
-                if len({c.key for c, _ in extra}) < size:
+                if len({c.key for c, _ in extra}) < size or any(machine_of(c) not in (machine_of(o), machine_of(p)) for c, _ in extra):
                     continue
                 ins = [o, *(c for c, r in extra if r > 0)]
                 outs = [p, *(c for c, r in extra if r < 0)]
@@ -111,9 +116,10 @@ def _best(o: Series, fills: list[Series], pool: list[tuple[Series, int]], total:
                 bad, moved = out_of_step(_summed(ins), _summed(outs))
                 if not moved or bad > CANCEL_STEPS * moved or (bad and any(total[c.key] < floor for c, _ in extra)):
                     continue
+                if any(same_events(a.deltas, b.deltas) for a in ins for b in outs if (a, b) != (o, p)):
+                    continue
                 every = ins + outs
-                rank = (sum(1 for c in every if machine_of(c) != machine_of(o)), sum(1 for c in every if c.name == EVENT_COUNTER),
-                        bad, sorted(c.key for c in every))
+                rank = (sum(1 for c in every if machine_of(c) != machine_of(o)), bad, sorted(c.key for c in every))
                 if best is None or rank < best[0]:
                     best = (rank, ins, outs, bad, moved)
         if best is not None:
@@ -133,10 +139,11 @@ def passages(found: list, counters: list[Series], levels: list[Series], *, start
     total = {c.key: sum(c.deltas) for c in counters}
     while True:
         claims = _claims(found)
-        signs = {k: {sign for _, sign in v} for k, v in claims.items()}
-        drains = [c for c in counters if signs.get(c.key) == {-1}]
-        fills = [c for c in counters if signs.get(c.key) == {1} and total[c.key] >= floor]
-        free = [c for c in counters if c.key not in signs and total[c.key] > 0]
+        alone = {k: next(iter(v))[1] for k, v in claims.items() if len(v) == 1}       # claimed by one stock, with its sign
+        own = [c for c in counters if c.name != EVENT_COUNTER]
+        drains = [c for c in own if alone.get(c.key) == -1]
+        fills = [c for c in own if alone.get(c.key) == 1 and total[c.key] >= floor]
+        free = [c for c in own if c.key not in claims and total[c.key] > 0]
         pool = [(c, 1) for c in drains + free] + [(c, -1) for c in fills + free]
         got = None
         for o in sorted((c for c in drains if total[c.key] >= floor), key=lambda c: (-total[c.key], c.key)):

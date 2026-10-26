@@ -70,6 +70,7 @@ from .hops import split_hops
 from .inputs import offered_inputs
 from .live import balance_steps, held_for, intersect, within
 from .model import Equation, Flow, Machine, Model, SeriesRef, Stock
+from .parsimony import fewer_counters
 from .passing import passages
 from .restate import split_event_counters, split_foreign_counters, unify_same_flows
 from .series import EVENT_COUNTER, PLUMBING, Series, machine_of, sample, sum_instances
@@ -547,6 +548,10 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         left_out[drop.key] = made[drop.key]
     dropped = {drop.key for _, drop in joined}
     counters = [c for c in counters if c.key not in dropped]
+    # a set of a balance's counters that one unused counter counts at once gives way to it
+    # (sd.parsimony: the customers' orders less the app's are the takers' own orders taken)
+    found, made = fewer_counters(found, counters, masks, fits, set(notes), machine_of)
+    notes.update(made)
 
     # A level that only fills (its balance only adds) is a stock when its balance is exact,
     # whatever feeds it: a terminal state, where other stocks' outflows end (the orders delivered).

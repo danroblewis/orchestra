@@ -482,3 +482,33 @@ def test_a_stocks_own_machines_counter_is_kept_over_an_earlier_copy_of_the_same_
                                           lambda s: s.labels["machine"], lambda s, r2, exact: r2 >= 0.9)
     assert joined == [(rejected, returns)] and returns.key in notes
     assert [c.name for c, _ in got[0][1]] == ["orders_placed_total", "orders_rejected_total", "orders_assigned_total"]
+
+
+def test_two_counters_whose_difference_one_unused_counter_counts_give_way_to_it():
+    # the free takers balanced by the customers' orders less the app's: the takers' own count of
+    # the orders they took is that difference, a step early or late now and then, and replaces it.
+    # The level's own machine's counters are never replaced (the customers' own served and gave up
+    # stay, whatever another machine's count of their sum)
+    from orchestra.sd.parsimony import fewer_counters
+    n = 120
+    cum = lambda xs: [0.0, *accumulate(xs)]
+    mk = lambda name, m, xs, counter=True: Series(name, {"machine": m}, [], cum(xs), counter)
+    dapp = [1.0 if i % 5 == 0 else 0.0 for i in range(n)]
+    dtaken = [1.0 if i % 3 == 0 else 0.0 for i in range(n)]
+    dtaken_seen = list(dtaken)
+    for i in (30, 60):                       # two orders the taker counted a step later
+        dtaken_seen[i], dtaken_seen[i + 1] = 0.0, 1.0
+    dordered = [a + b for a, b in zip(dapp, dtaken)]
+    dcalled = [1.0 if i % 3 == 1 else 0.0 for i in range(n)]
+    ordered, app, taken = mk("ordered_total", "customers", dordered), mk("app_orders_total", "app", dapp), mk("taken_total", "taker", dtaken_seen)
+    called = mk("called_total", "expo", dcalled)
+    free = mk("takers_free", "expo", [t - c for t, c in zip(dtaken, dcalled)], False)
+    fits = lambda s, r2, exact: r2 >= 0.9
+    found = [(free, [(ordered, 1), (app, -1), (called, -1)], 1.0, 1.0)]
+    got, notes = fewer_counters(found, [ordered, app, taken, called], {free.key: list(range(n))}, fits, set(), lambda s: s.labels["machine"])
+    assert sorted((c.name, sg) for c, sg in got[0][1]) == [("called_total", -1), ("taken_total", 1)]
+    assert app.key in notes and ordered.key in notes
+    mine = mk("takers_free", "customers", [t - c for t, c in zip(dtaken, dcalled)], False)
+    got, notes = fewer_counters([(mine, [(ordered, 1), (app, -1), (called, -1)], 1.0, 1.0)], [ordered, app, taken, called],
+                                {mine.key: list(range(n))}, fits, set(), lambda s: s.labels["machine"])
+    assert sorted((c.name, sg) for c, sg in got[0][1]) == [("app_orders_total", -1), ("called_total", -1), ("ordered_total", 1)]
