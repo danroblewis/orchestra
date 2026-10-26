@@ -8,6 +8,8 @@ Orchestra.machineList = Orchestra.machineList || (() => []);
 // one colour per machine, the same every time for the same id
 const MPAL = ["#60a5fa", "#f59e0b", "#e879f9", "#22c55e", "#f87171", "#38bdf8", "#facc15", "#a78bfa", "#fb923c", "#2dd4bf"];
 const mcolor = (id) => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return MPAL[h % MPAL.length]; };
+// what a machine announced it is (orchestra.machine.started data.kind, or its package's declaration), in words
+const kindWord = (kind) => ({ agent: "AI agent", program: "program", person: "person", service: "service" }[kind] || kind || "machine");
 
 // a machine's dialog: what it is, its instances, what it publishes and listens for, its metrics
 // now, its last events and the tail of its log (refreshed while open)
@@ -20,7 +22,7 @@ function openMachine(id) {
   OPEN = id; LOG_INST = (m.logs || [])[0] || null;
   $("drawer").classList.add("mdlg");
   const insts = m.instances && m.instances.length ? m.instances : [];
-  openDrawer(`<h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.id)} <span class="tag">machine</span>${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}${m.mode ? ` <span class="tag k-${esc(m.mode)}">${esc(m.mode.replace("_", " "))}</span>` : ""}
+  openDrawer(`<h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.id)} <span class="tag">${esc(kindWord(m.kind))}</span>${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}${m.mode ? ` <span class="tag k-${esc(m.mode)}">${esc(m.mode.replace("_", " "))}</span>` : ""}${m.package ? ` <span class="tag">package: ${esc(m.package)}</span>` : ""}
       <button class="ctl" style="margin-left:auto" onclick="closeMachine()">close</button></h3>
     <div class="row"><span class="muted">seen</span><span>${m.first_seen ? `first ${ago(Date.now() / 1000 - m.first_seen)} ago, last ${ago(Date.now() / 1000 - m.last_seen)} ago` : "no events yet"} · ${m.active ? "active" : "quiet"}</span></div>
     ${insts.length ? `<h4>Instances</h4><table class="dt"><tr><th>instance</th><th>state</th><th>first seen</th><th>last seen</th><th>log</th></tr>${insts.map((i) => `<tr><td class="num">${esc(i.id)}</td><td>${i.active ? '<span style="color:#22c55e">active</span>' : '<span class="muted">quiet</span>'}</td><td>${ago(Date.now() / 1000 - i.first_seen)} ago</td><td>${ago(Date.now() / 1000 - i.last_seen)} ago</td><td>${(m.logs || []).includes(i.id) ? "announced" : '<span class="muted">—</span>'}</td></tr>`).join("")}</table>` : ""}

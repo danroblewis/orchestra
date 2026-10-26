@@ -85,6 +85,28 @@ program) and `reviewer/1` (package agents) answer; `agents` (the host) listens f
 continuous/scheduled machines of package agents.
 Forbidden: agent sessions as stocks of tickets; the host's heartbeat as a flow.
 
+## UC-3b: a sample with a domain stock of its own (not yet built; the next case to score)
+
+The sample's stocks are ticket states and the reviewer's sessions: the pipeline measured by
+itself. Orchestra's aim is the loops between a project's own domain and the process that
+develops it, and no such loop can appear until a sample's tickets accumulate something the
+project measures. The next sample writes one domain series of its own (a count of files, tests
+or records the tickets' work adds to), so a domain stock is filled by the pipeline's flows.
+
+Run: UC-3's command on a target whose tickets each add to that series, with the series written
+by the target's own program (a machine of the sample, not of either plugin).
+
+Expected: UC-3's stocks and flows, plus one domain stock balanced by a counter the tickets'
+work moves, with the flow from DONE (or from the worker's reports) into it; the model's
+machine table names the sample's own program on that flow.
+Expected loops: the first between the domain and the process: the domain stock read by a flow
+of the pipeline (a planner creating tickets while the count is below a goal), once a planner
+is written to do that.
+Forbidden: the domain series as a tally of ticket events (it must measure the project, not the
+pipeline).
+
+This is the next use case the model-acceptance workflow should score.
+
 ## UC-4: code mode (`~/orchestra-tasking` in-process e2e, extended to a run)
 
 Run: the task system with `work = "code"`, the fake machine (or the agents' fakes), a repository

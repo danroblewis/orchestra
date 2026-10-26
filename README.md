@@ -6,10 +6,15 @@ and which machines drive which flows. Its aim is to find the loops between a pro
 and the processes used to develop it.
 
 This is an **empty Orchestra**: the bus, the metrics store, the model, the bootstrap host and the
-web UI, with no machines of its own. The task system (tickets, the scheduler, the merge gate)
-was removed on 2026-10-25 and lives in its own repository, `~/orchestra-tasking`; the AI agents
-that can fill its roles (the harnesses for Pi, Claude Code and Codex) live in another,
-`~/orchestra-agents`. Each adds its pages to the web UI as a plugin (`orchestra/plugins.py`).
+web UI, with no machines of its own. Machines come from other packages. A **plugin** is a package
+installed in the same environment as `orchestra web` that registers itself in the entry-point
+group `orchestra.plugins` (`orchestra/plugins.py`, `SPEC.md` §10.1): it adds its pages, API routes
+and machine cards to the web UI. Two exist: the task system `orchestra-tasking` (package
+`tasking`, plugin `tasks`: tickets, a scheduler that offers work over the bus, the merge gate;
+[github.com/danroblewis/orchestra-tasking](https://github.com/danroblewis/orchestra-tasking),
+private) and the AI agents that fill its roles, `orchestra-agents` (package `orchestra_agents`,
+plugin `agents`: the Supervisor, Coordinator, worker and reviewer roles on Pi, Claude Code or
+Codex; private). How the task system left this repository is in `docs/proposals/empty-orchestra.md`.
 
 - `SPEC.md` is the design of what exists.
 - `AGENTS.md` is the list of rules that must not be broken.
@@ -40,8 +45,8 @@ them locally.
 Machines are your programs. Publish events with the CloudEvents envelope
 (`orchestra.events.Events.publish`) and write metrics labelled `machine=<id>`
 (`orchestra.metrics`); they appear on the Machines page and in the Core explorers.
-`~/orchestra-bakery` (its own repository) is a toy system of machines used to test Orchestra
-from the outside.
+The bakery, a separate repository, is a toy system of machines used to test Orchestra from the
+outside (`docs/roadmap/use-cases.md`).
 
 ## Tests
 

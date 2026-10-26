@@ -40,7 +40,7 @@
 <body>
 <nav id="nav"><a href="/">Dashboard</a><a href="/machines" class="on">Machines</a><a href="/dynamics">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="mwrap">
-  <div class="intro">A machine is anything outside Orchestra that does something: a program, an AI agent, a service, a person. Orchestra knows a machine only by what it observes: the events it publishes and listens for on the bus, and the metrics it writes. Nothing here is declared; every line is read from the bus and the metrics store.</div>
+  <div class="intro">A machine is anything outside Orchestra that does something: a program, an AI agent, a service, a person. What it publishes, its instances, the metrics it writes and the hand-offs between machines are observed on the bus and in the metrics store; how it is engaged, what it listens for, what kind of thing it is, where its log is and which package it belongs to are what the machine announces about itself when it starts. A package may list a machine before it is first seen (marked unseen); what is observed always wins.</div>
   <h2>Event map</h2>
   <div id="evmap-host"></div>
   <h2>Machines <span class="count" id="nm"></span></h2>
@@ -197,8 +197,9 @@ function eventMap(d0) {
   const machineIds = nodes.filter((n) => n.machine).map((n) => n.id);
   const r = Loops.analyse(machineIds, mm, { exchanges: true });
   const vias = (ls) => (EV_MODE === "machines" ? [] : [...new Set(ls.map((l) => l.via))]);
-  const viaNames = (ls) => [...new Set(ls.map((l) => l.via))];
-  const viaText = (ls) => viaNames(ls).map((v) => esc(name(v))).join(", ");
+  // each event type once; "(inferred)" when the listener never announced it and only the hand-offs say so
+  const viaText = (ls) => { const inf = new Map(); for (const l of ls) inf.set(l.via, (inf.get(l.via) ?? true) && !!l.inferred);
+    return [...inf].map(([v, i]) => esc(name(v)) + (i ? " (inferred)" : "")).join(", "); };
   const items = [];
   for (const x of r.exchanges) items.push({ nodes: [...x.nodes, ...vias(x.there), ...vias(x.back)], edges: [...x.there, ...x.back].flatMap((l) => l.ids),
     html: `<span class="ng-pol X" title="an exchange: each publishes something the other listens for">⇄</span><b>${esc(name(x.nodes[0]))} ⇄ ${esc(name(x.nodes[1]))}</b>: <span class="muted">→</span> ${viaText(x.there)} <span class="muted">←</span> ${viaText(x.back)}` });
@@ -221,7 +222,8 @@ function cards() {
   $("cards").innerHTML = Orchestra.machineCards.sort(DATA.machines).map((m) => { const own = Orchestra.machineCards.card(m);
     if (own != null) return Orchestra.machineCards.wrap(m, own);
     return `<div class="panel ${m.unseen ? "unseen" : ""}" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)" title="click for details and log"><h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.id)}${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}</h3>
-    <div class="row"><span class="muted">engaged</span><span>${m.mode ? `<span class="tag k-${esc(m.mode)}">${esc(m.mode.replace("_", " "))}</span>` : '<span class="muted">not announced</span>'}</span></div>
+    <div class="row"><span class="muted">engaged</span><span>${m.mode ? `<span class="tag k-${esc(m.mode)}">${esc(m.mode.replace("_", " "))}</span>` : '<span class="muted">not announced</span>'}</span><span class="muted">kind</span><span>${m.kind ? `<span class="tag">${esc(kindWord(m.kind))}</span>` : '<span class="muted">not announced</span>'}</span></div>
+    <div class="row"><span class="muted">package</span><span>${m.package ? esc(m.package) : '<span class="muted">no package</span>'}</span></div>
     ${m.instances && m.instances.length ? `<div class="row"><span class="muted">instances</span>${m.instances.map((i) => `<span class="ty" title="last seen ${ago(Date.now() / 1000 - i.last_seen)} ago"><span class="dot ${i.active ? "" : "off"}" style="--rc:${i.active ? "#22c55e" : "#64748b"};width:7px;height:7px"></span> ${esc(i.id)}</span>`).join("")}</div>` : ""}
     <div class="row"><span class="muted">seen</span><span>${m.first_seen ? `first ${ago(Date.now() / 1000 - m.first_seen)} ago, last ${ago(Date.now() / 1000 - m.last_seen)} ago` : "no events yet"}</span></div>
     <div class="row"><span class="muted">publishes</span>${m.publishes.map((p) => `<span class="ty" title="${p.count} events, ${p.day} in 24h">${esc(p.type)} · ${p.per_min_10m}/min</span>`).join("") || '<span class="muted">nothing</span>'}</div>

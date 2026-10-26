@@ -490,7 +490,7 @@ const NetGraph = (() => {
       frameRect.style("display", b ? null : "none"); frameLabel.style("display", b ? null : "none");
       if (b) {
         frameRect.attr("x", b.x0).attr("y", b.y0).attr("width", b.x1 - b.x0).attr("height", b.y1 - b.y0);
-        frameLabel.attr("x", b.x0 + 14).attr("y", b.y0 + 16).text(boundary.label || "the system");
+        frameLabel.attr("x", b.x0 + 14).attr("y", b.y0 - 6).text(boundary.label || "the system");   // above the frame: no flow label crosses it
       }
       const sel = gEdges.selectAll("g.ng-edge");
       for (const links of [false, true]) {       // edges first: links aim at their middles

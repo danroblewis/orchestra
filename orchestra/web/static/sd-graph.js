@@ -23,7 +23,9 @@
   // - a series alone in its family whose first word other stocks' series share (a namespace, by
   //   Prometheus' convention: bakery_orders_baking, bakery_shelf_items) has that word as its family;
   // - a flow is named by its series (it is a kind of event), with only what its two ends do not
-  //   already say: label values its stocks carry are left out.
+  //   already say: label values its stocks carry are left out;
+  // - a flow measured by two counters of the same events (evidence.same_as: two transitions
+  //   stamped at one instant) is named by both label sets in full, joined by "=".
   // Names are {name, family}; ``label`` is the name, with the family only where the name alone is
   // not unique in the model. The model's own ``name`` stays the full record.
   const IGNORE = new Set(["project", "machine", "instance", "source"]);
@@ -66,6 +68,12 @@
     const stocks = nameFamily(m.stocks || []);
     const valuesOf = (id) => { const s = (m.stocks || []).find((x) => x.id === id), r = s && seriesOf(s); return r ? Object.values(r.labels || {}) : []; };
     const flows = nameFamily(m.flows || [], (f) => new Set([...valuesOf(f.from), ...valuesOf(f.to)]));
+    for (const f of m.flows || []) {
+      const same = f.evidence && f.evidence.same_as, c = seriesOf(f);
+      if (!same || !same.length || !c) continue;
+      const said = (r) => Object.entries(r.labels || {}).filter(([k]) => !IGNORE.has(k)).map(([, v]) => words(v)).join(", ");
+      flows[f.id] = { name: familyName(c.name) + " · " + [...same, c].map(said).join(" = "), family: "" };
+    }
     for (const group of [stocks, flows]) {
       const seen = new Map(); for (const v of Object.values(group)) seen.set(v.name, (seen.get(v.name) || 0) + 1);
       for (const v of Object.values(group)) v.label = v.family && seen.get(v.name) > 1 ? `${v.name} · ${v.family}` : v.name;
@@ -120,15 +128,20 @@
   const shorten = (t, n = 44) => (t.length > n ? t.slice(0, n - 2) + "…" : t);
 
   // the graph: {nodes, edges, causal, flowEdge, flows, acc}. ``opts``: showAll (flows with no
-  // events), showAcc (stocks that only fill), and the colours (mcolor(machine), stockColor(id)).
+  // events), showAcc (stocks that only fill that nothing shown feeds), and the colours
+  // (mcolor(machine), stockColor(id)).
   function build(m, opts = {}) {
     const mcolor = opts.mcolor || (() => "#94a3b8"), stockColor = opts.stockColor || (() => "#cbd5e1");
     const byMachine = Object.fromEntries((m.machines || []).map((x) => [x.id, x]));
-    // stocks that only fill (like the event bus's length) start hidden, with their flows
-    const acc = new Set(m.stocks.filter((s) => s.evidence && s.evidence.accumulator).map((s) => s.id));
+    const shown = (f) => (f.current && f.current.quality && f.current.quality.events > 0) || opts.showAll;
+    // a stock that only fills is where another stock's material ends up (the tickets done) when a
+    // flow shown drains a stock into it: drawn. One that no such flow feeds (the event bus's
+    // length, a tally) starts hidden, with its flows; ``acc`` is those.
+    const filling = new Set(m.stocks.filter((s) => s.evidence && s.evidence.accumulator).map((s) => s.id));
+    const fed = new Set(m.flows.filter((f) => shown(f) && f.from && filling.has(f.to) && !filling.has(f.from)).map((f) => f.to));
+    const acc = new Set([...filling].filter((id) => !fed.has(id)));
     const hiddenStock = (id) => !opts.showAcc && acc.has(id);
-    const flows = m.flows.filter((f) => ((f.current && f.current.quality && f.current.quality.events > 0) || opts.showAll)
-      && !hiddenStock(f.from) && !hiddenStock(f.to));
+    const flows = m.flows.filter((f) => shown(f) && !hiddenStock(f.from) && !hiddenStock(f.to));
     const nodes = [], edges = [], causal = [], flowEdge = {};
     const has = (id) => nodes.some((n) => n.id === id);
     const nm = names(m).stocks;

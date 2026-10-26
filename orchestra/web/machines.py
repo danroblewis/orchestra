@@ -1,15 +1,17 @@
 """The Machines page's data: the machines seen on the event bus, their instances and how they are
 engaged, and the network of which machine publishes and which listens for which event types.
 
-Everything here is observed, not declared:
+Everything here is observed, or announced by the machine itself:
 - a **machine** is the machine part of a CloudEvents ``source``; a source ``<machine>/<instance>``
   is one **instance** of it (``baker/1``, ``baker/2``: one machine, two instances). Orchestra's own
   host is a machine too;
-- **how it is engaged** (continuous, scheduled or ad hoc) and **what it listens for**: until the
-  bus adapters provide subscriptions the backend can list (docs/proposals/empty-orchestra.md §3),
-  an instance announces both when it starts, with ``orchestra.machine.started`` (``data.mode``,
-  ``data.listens_for``; ``orchestra.machine.subscribed`` with ``data.types`` is read too). The
-  latest announcement stands;
+- **how it is engaged** (continuous, scheduled or ad hoc), **what it listens for**, **what kind
+  of thing it is** (a program, an AI agent, a person, a service) and **which package** it belongs
+  to: until the bus adapters provide subscriptions the backend can list
+  (docs/proposals/empty-orchestra.md §3), an instance announces these when it starts, with
+  ``orchestra.machine.started`` (``data.mode``, ``data.listens_for``, ``data.kind``,
+  ``data.package``; ``orchestra.machine.subscribed`` with ``data.types`` is read too). The latest
+  announcement stands; the rest of it is passed to the package's card unread;
 - **publishes**: the event types its instances emitted, with counts (all time and the last day);
 - **metrics**: the series in the metrics store labelled ``machine=<id>``;
 - **recent events**: the last ``RECENT`` events of each machine, by their envelope only (time,
@@ -18,10 +20,12 @@ Everything here is observed, not declared:
   reads it only within the project (``machine_logs.py``);
 - **hand-offs**: when one machine acts on a subject (an event's ``subject``: an order, an issue)
   and then a different machine acts on the same subject, the work passed from the first to the
-  second, following the first one's event (its type): the second machine is inferred to listen
-  for that type. Inferred from the envelope alone, so it shows how machines connect even when none
-  announces what it listens for (a system brought in from outside, whose log says who changed
-  what but never who reads). The last machine and event type per subject are kept for the latest ``SUBJECTS``.
+  second, following one of the first one's events about it (its type): the latest of its last
+  few that the second machine announced it listens for, or, when it announced nothing or none
+  matches, the last one, which the second machine is then inferred to listen for. Inferred from
+  the envelope alone, so it shows how machines connect even when none announces what it listens
+  for (a system brought in from outside, whose log says who changed what but never who reads).
+  The last machine and its last ``TRAIL`` event types per subject are kept for the latest ``SUBJECTS``.
 
 The index reads the bus incrementally: the whole log once, then only what is new, so a refresh
 costs one small read however long the log is. Events from before the envelope have no
@@ -40,6 +44,7 @@ DAY = 86400.0
 ACTIVE_S = 120.0
 RECENT = 60
 SUBJECTS = 50_000
+TRAIL = 4            # a machine's last event types about a subject, kept for crediting the hand-off
 
 
 class MachineIndex:
@@ -50,13 +55,14 @@ class MachineIndex:
         self.recent: dict[tuple[str, str], deque] = defaultdict(deque)   # (machine, type) -> times in the last day
         self.subs: dict[str, set] = defaultdict(set)                     # machine -> types its instances listen for
         self.mode: dict[str, str] = {}
+        self.kind: dict[str, str] = {}                                   # machine -> what it announced it is (program, agent, person, service)
         self.package: dict[str, str] = {}                                # machine -> the package it announced it belongs to
         self.about: dict[str, dict] = {}                                 # machine -> the rest of its last announcement (opaque)
         self.instances: dict[str, dict[str, dict]] = defaultdict(dict)  # machine -> instance -> first/last seen
         self.logs: dict[str, dict[str, str]] = defaultdict(dict)        # machine -> instance -> announced log path
         self.latest: dict[str, deque] = defaultdict(lambda: deque(maxlen=RECENT))  # machine -> its last events' envelopes
         self.unattributed = 0
-        self.last_on: OrderedDict[str, tuple[str, str]] = OrderedDict()  # subject -> (machine, event type) that last acted on it
+        self.last_on: OrderedDict[str, tuple[str, list[str]]] = OrderedDict()  # subject -> (machine, its last event types) that last acted on it
         self.handoffs: Counter = Counter()                               # (from machine, its event type, to machine) -> count
         self.recent_handoffs: dict[tuple[str, str, str], deque] = defaultdict(deque)
         self._lock = threading.Lock()
@@ -86,9 +92,10 @@ class MachineIndex:
             self.subs[machine].update(d.get("listens_for") or d.get("types") or [])
             if d.get("mode"):
                 self.mode[machine] = d["mode"]
-            if isinstance(d.get("package"), str) and d["package"]:
-                self.package[machine] = d["package"]
-            self.about[machine] = {k: v for k, v in d.items() if k not in ("mode", "listens_for", "types", "log", "package")
+            for field, into in (("kind", self.kind), ("package", self.package)):
+                if isinstance(d.get(field), str) and d[field]:
+                    into[machine] = d[field]
+            self.about[machine] = {k: v for k, v in d.items() if k not in ("mode", "listens_for", "types", "log", "package", "kind")
                                    and isinstance(v, str | int | float | bool | type(None) | list)}
             if isinstance(d.get("log"), str) and d["log"]:
                 self.logs[machine][instance or ""] = d["log"]
@@ -96,10 +103,15 @@ class MachineIndex:
         subject = ev.get("subject")
         if subject:
             prev = self.last_on.pop(subject, None)
-            if prev and prev[0] != machine:
-                self.handoffs[(*prev, machine)] += 1
-                self.recent_handoffs[(*prev, machine)].append(t)
-            self.last_on[subject] = (machine, ev["type"])
+            if prev and prev[0] == machine:
+                trail = [*prev[1][-(TRAIL - 1):], ev["type"]]
+            else:
+                if prev:
+                    via = next((ty for ty in reversed(prev[1]) if ty in self.subs.get(machine, ())), prev[1][-1])
+                    self.handoffs[(prev[0], via, machine)] += 1
+                    self.recent_handoffs[(prev[0], via, machine)].append(t)
+                trail = [ev["type"]]
+            self.last_on[subject] = (machine, trail)
             if len(self.last_on) > SUBJECTS:
                 self.last_on.popitem(last=False)
         self.total[machine][ev["type"]] += 1
@@ -140,8 +152,8 @@ class MachineIndex:
                          for i, v in sorted(self.instances[m].items())]
                 last = max((v["last"] for v in self.instances[m].values()), default=None)
                 first = min((v["first"] for v in self.instances[m].values()), default=None)
-                machines.append({"id": m, "bootstrap": m == HOST, "mode": self.mode.get(m), "package": self.package.get(m),
-                                 "about": self.about.get(m, {}), "publishes": pubs,
+                machines.append({"id": m, "bootstrap": m == HOST, "mode": self.mode.get(m), "kind": self.kind.get(m) or ("program" if m == HOST else None),
+                                 "package": self.package.get(m), "about": self.about.get(m, {}), "publishes": pubs,
                                  "subscribes": sorted(self.subs.get(m, ())), "metrics": sorted(metrics.get(m, [])),
                                  "logs": sorted(i or m for i in self.logs.get(m, {})),
                                  "instances": [i for i in insts if i["id"] != m] if any(k for k in self.instances[m]) else [],

@@ -21,10 +21,11 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    is engaged (continuous, scheduled, ad hoc), and the series it writes. The Machines page, the collectors and the
    model read what is observed, never a machine's description of itself. The
    exceptions are what an instance announces in `orchestra.machine.started`:
-   its mode, what it listens for, where its log is and which package it belongs
-   to (the rest of the announcement is passed on to that package's card,
-   unread), and the machines a plugin declares, which only fill in machines
-   not seen yet and never override what is observed. A log is read only
+   its mode, what it listens for, its kind (program, agent, person, service),
+   where its log is and which package it belongs to (the rest of the
+   announcement is passed on to that package's card, unread), and the machines
+   a plugin declares, which only fill in machines not seen yet and never
+   override what is observed. A log is read only
    within the project's repository or state directory (`web/machine_logs.py`).
 3. **Every event carries the CloudEvents envelope.** `orchestra.events`
    writes it; Orchestra reads the envelope and never the `data` payload, which

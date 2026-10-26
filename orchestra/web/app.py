@@ -333,17 +333,16 @@ def mount_plugins(app: FastAPI, project: Project, page):
     declared = [(p.name, d) for p in loaded.plugins for d in p.machines]
 
     def declare(machines: list[dict]) -> None:
-        """Observed machines keep what was observed; a declaration names the package of a machine
-        that announced none, and adds a machine not seen yet (marked so)."""
+        """Observed machines keep what was observed; a declaration names the package and the kind
+        of a machine that announced neither, and adds a machine not seen yet (marked so)."""
         seen = {m["id"]: m for m in machines}
         for pkg, d in declared:
             m = seen.get(d.id)
             if m is not None:
                 m["package"] = m.get("package") or pkg
-                m["declared"] = {"kind": d.kind, "description": d.description}
+                m["kind"] = m.get("kind") or d.kind
                 continue
-            machines.append({"id": d.id, "bootstrap": False, "mode": d.mode, "package": pkg, "about": {"kind": d.kind},
-                             "declared": {"kind": d.kind, "description": d.description}, "unseen": True, "publishes": [],
-                             "subscribes": list(d.listens_for), "metrics": [], "logs": [], "instances": [],
-                             "first_seen": None, "last_seen": None, "active": False})
+            machines.append({"id": d.id, "bootstrap": False, "mode": d.mode, "kind": d.kind, "package": pkg, "about": {},
+                             "unseen": True, "publishes": [], "subscribes": list(d.listens_for), "metrics": [], "logs": [],
+                             "instances": [], "first_seen": None, "last_seen": None, "active": False})
     return declare

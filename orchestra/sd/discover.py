@@ -30,16 +30,18 @@ equation of each flow, and the machine behind each flow:
    different machines claiming one counter make it a co-flow, one flow per machine).
 4. **Fit each flow's equation** by maximum likelihood, choosing by AIC among:
    - ``constant``: rate = c;
-   - ``proportional``: rate = k × the source stock (its exact time-average over the step);
+   - ``proportional``: rate = k × X, for X the source stock (its exact time-average over the
+     step) or another stock that held something whenever the flow's events came;
    - ``linear``: rate = c + k × X, for X any stock found, or any measured gauge that is not a
-     stock (``sd.inputs``: a rating, a demand; recorded as ``input:<name>``). When X is a stock
-     other than the flow's own source, that is an **influence**: one stock changing the rate of
-     another's flow, the link that closes feedback loops.
+     stock (``sd.inputs``: a rating, a demand; recorded as ``input:<name>``).
 
-   Forms are scored with the exact point-process likelihood (each event against the levels just
-   before it), not counts per step, which favour spurious forms (see ``fit_flow``). A flow with
-   fewer than ``MIN_EVENTS`` events in the window gets the constant form only: an influence fitted
-   on one event is noise.
+   When X is a stock other than the flow's own source, that is an **influence**: one stock
+   changing the rate of another's flow, the link that closes feedback loops. Forms are scored
+   with the exact point-process likelihood (each event against the levels just before it), not
+   counts per step, which favour spurious forms; a second parameter must beat the best
+   one-parameter form by ``AIC_MARGIN``, and a line below zero where the data had no chance to
+   show the floor is rejected (see ``fit_flow``). A flow with fewer than ``MIN_EVENTS`` events
+   in the window gets the constant form only: an influence fitted on one event is noise.
 5. **Attribute** each flow to the machine named by its counter's ``machine`` label, and each stock
    to the machine that writes it.
 
@@ -59,7 +61,7 @@ from dataclasses import dataclass
 from itertools import accumulate, pairwise
 
 from .balance import MIN_EVENTS, MIN_GAIN, LeastSquares, balance, fit_of
-from .drivers import co_counting
+from .drivers import behind, co_counting
 from .ends import claims, moves
 from .inputs import offered_inputs
 from .live import balance_steps, held_for, intersect, within
@@ -72,6 +74,7 @@ FLAG_EXACT = 0.97         # a two-valued level is a stock only if its balance is
 SAME_STEPS = 0.03          # counters that differ in no more than this share of steps are one
 TWIN_STEPS = 0.97          # levels whose changes are equal in this share of steps are one stock measured twice
 MIN_STEPS = 5              # a level live in fewer steps than this (while every counter was) cannot be balanced
+AIC_MARGIN = 2.0           # a two-parameter form must beat the best one-parameter form by this much AIC to be chosen
 UNITS = {"second": 1.0, "minute": 60.0, "hour": 3600.0}
 
 
@@ -105,15 +108,6 @@ def same_flow(a: Series, b: Series, n: int) -> bool:
         return False
     moved = sum(1 for x, y in zip(da, db) if x or y)                   # steps where either counted something
     if sum(1 for x, y in zip(da, db) if x != y) <= SAME_STEPS * moved:  # (of all steps, two rare counters always "agree")
-        return True
-
-    def behind(lead: list[float], lag: list[float]) -> bool:
-        cl = cg = before = 0.0
-        for x, y in zip(lead, lag):
-            cl, cg = cl + x, cg + y
-            if not before - 1e-9 <= cg <= cl + 1e-9:
-                return False
-            before = cl
         return True
     return (b.name == EVENT_COUNTER and a.name != EVENT_COUNTER and behind(da, db)) or \
         (a.name == EVENT_COUNTER and b.name != EVENT_COUNTER and behind(db, da))
@@ -208,8 +202,15 @@ class Path:
         return self.values[i] if i >= 0 else (self.values[0] if self.values else 0.0)
 
     def integral(self, c: float, k: float) -> float:
-        """∫ max(0, c + k × level) dt over the window."""
+        """∫ max(0, c + k × level) dt over the window: a rate stops at zero (``fit_flow`` says
+        when the data have shown that floor and when they have not)."""
         return sum(d * max(0.0, c + k * x) for x, d in self.time_at.items())
+
+    def below_zero(self, c: float, k: float) -> tuple[float | None, float]:
+        """The lowest level the stock held at which c + k × level is below zero, and how long it
+        held all such levels (in the model's time unit)."""
+        neg = [x for x in self.time_at if c + k * x < -1e-9]
+        return (min(neg) if neg else None), sum(self.time_at[x] for x in neg)
 
 
 def events_of(points: list[tuple[float, float]], live: list[tuple[float, float]]) -> list[tuple[float, float]]:
@@ -228,16 +229,26 @@ def events_of(points: list[tuple[float, float]], live: list[tuple[float, float]]
 
 def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, Path], src: str | None,
              drivers: set[str] | None = None) -> list[dict]:
-    """Every candidate form for one flow, best (lowest AIC) first, scored with the exact
+    """Every candidate form for one flow, the chosen one first, scored with the exact
     point-process likelihood: each event against the rate just before it, the rate integrated
     over the stocks' actual paths:
 
-        log L = Σ count × log rate(t⁻)  −  ∫ rate dt        (rate = c + k × X, never below zero)
+        log L = Σ count × log rate(t⁻)  −  ∫ rate dt        (rate = c + k × X)
 
     Scoring counts per step instead is biased for outflows: a step's average level is lowered by
     the very outflow being counted, which makes the rate look higher at low levels and favours a
     spurious intercept. The estimates of the constant and proportional forms are the same either
-    way (events ÷ time, events ÷ level × time)."""
+    way (events ÷ time, events ÷ level × time).
+
+    The chosen form is the plain one (constant, or proportional to the flow's own source) with the
+    lowest AIC, unless another beats it by at least ``AIC_MARGIN``: a second parameter, or a
+    reading of another stock, must earn its place, and a tie goes to the plain form. A line's rate stops
+    at zero, and the line may go below it only where the data have shown that nothing flows: at
+    levels the stock held long enough for ``MIN_EVENTS`` events to be due at the flow's mean rate
+    (a shelf kept full for an hour, with no order placed). Where it held them too briefly for
+    that, the zero is a rate the data never saw, and the form is rejected whatever its AIC (a
+    twelfth of an hour of a reviewer at work, during which nothing happened to arrive); it stays
+    in the list, marked ``rejected`` with the reason."""
     total = sum(d for _, d in events)
     if total < MIN_EVENTS:                 # too few events to tell a form from noise: the rate alone
         paths, src = {}, None
@@ -256,25 +267,35 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
     cands = []
     c0 = total / window
     cands.append({"form": "constant", "params": {"c": c0}, "inputs": [], "loglik": ll(c0, 0.0, None), "k": 1})
-    if src in paths:
-        expo = paths[src].integral(0.0, 1.0)
-        if expo > 0:
-            k = total / expo
-            cands.append({"form": "proportional", "params": {"k": k}, "inputs": [src], "loglik": ll(0.0, k, src), "k": 1})
     for sid, p in paths.items():
         xs = list(p.time_at)
         if not xs or max(xs) - min(xs) < 1e-9 or (drivers is not None and sid not in drivers and sid != src):
             continue
+        # proportional to the flow's own source, or to another stock when every event came while
+        # that stock held something (what waits is taken: the rate is nothing when nothing waits)
+        expo = p.integral(0.0, 1.0)
+        if expo > 0:
+            k = total / expo
+            cands.append({"form": "proportional", "params": {"k": k}, "inputs": [sid], "loglik": ll(0.0, k, sid), "k": 1})
         span = max(xs) - min(xs)
 
         def nll(q, sid=sid):
             v = ll(q[0], q[1], sid)
             return -v if math.isfinite(v) else 1e18
         cc, kk = _nelder_mead(nll, [c0, 0.0], [max(c0, 1e-3) * 0.5, max(c0, 1e-3) / span])
-        cands.append({"form": "linear", "params": {"c": cc, "k": kk}, "inputs": [sid], "loglik": ll(cc, kk, sid), "k": 2})
+        cand = {"form": "linear", "params": {"c": cc, "k": kk}, "inputs": [sid], "loglik": ll(cc, kk, sid), "k": 2}
+        level, held = p.below_zero(cc, kk)
+        if level is not None and c0 * held < MIN_EVENTS:
+            cand["rejected"] = (f"its rate is below zero from level {level:g} of {sid}, which the stock held only long enough for "
+                                f"{c0 * held:.1f} events at this flow's mean rate: too few to have seen that nothing flows there")
+        cands.append(cand)
     for cand in cands:
         cand["aic"] = 2 * cand["k"] - 2 * cand["loglik"] if math.isfinite(cand["loglik"]) else math.inf
-    return sorted(cands, key=lambda c: c["aic"])
+    plain = min((c for c in cands if c["k"] == 1 and c["inputs"] in ([], [src])), key=lambda c: c["aic"])
+    best = min((c for c in cands if "rejected" not in c), key=lambda c: c["aic"])
+    if best is not plain and best["aic"] > plain["aic"] - AIC_MARGIN:
+        best = plain
+    return [best, *sorted((c for c in cands if c is not best), key=lambda c: ("rejected" in c, c["aic"]))]
 
 
 def dispersion(y: list[float], dt: float, form: dict, levels: dict[str, list[float]]) -> float:
@@ -400,6 +421,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # stocks take their own, and the balances say which fits (restate.unify_same_flows).
     counters.sort(key=lambda c: (c.name.startswith(EVENT_COUNTER), len(c.key), c.key))
     kept_counters: list[Series] = []
+    same_as: dict[str, list[dict]] = defaultdict(list)     # kept counter key -> the counters it stands for
     for c in counters:
         twin = next((k for k in kept_counters if same_flow(c, k, n)
                      and (EVENT_COUNTER in (c.name, k.name) or machine_of(c) == machine_of(k))), None)
@@ -407,6 +429,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             kept_counters.append(c)
         else:
             left_out[c.key] = f"the same as {twin.key} (counts the same events)"
+            same_as[twin.key].append({"name": c.name, "labels": c.labels})
     counters = kept_counters
     for s in series:
         if s.counter and not any(s.deltas):
@@ -543,10 +566,16 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         barred = co_counting(c, mv.src, mv.dst, found, sid_of, steps_live, lambda a, b: same_flow(a, b, n))
         if barred:
             mv.evidence["not_drivers"] = barred
+        if c.key in same_as:                 # the counters of the same events this one stands for (one flow, measured twice)
+            mv.evidence["same_as"] = same_as[c.key]
         best, *rest = fit_flow(events_of(c.points, live), live_s / unit_s, paths, mv.src, set(paths) - accumulators - set(barred))
         best["dispersion"] = dispersion(y, dt, best, levels)
-        alt = {f"aic_{x['form']}" + (f"_{x['inputs'][0]}" if x["form"] == "linear" else ""): round(x["aic"], 2) for x in rest[:4]}
-        alt.update({f"{x['form']}_k": round(x["params"]["k"], 6) for x in [best, *rest] if x["form"] == "proportional"})
+        src = mv.src
+        other = lambda x, src=src: f"_{x['inputs'][0]}" if x["inputs"] and x["inputs"] != [src] else ""   # a form in another stock says which
+        alt = {f"aic_{x['form']}{other(x)}": round(x["aic"], 2) for x in rest[:4]}
+        alt.update({f"proportional_k{other(x)}": round(x["params"]["k"], 6) for x in [best, *rest] if x["form"] == "proportional"})
+        if rejected := {f"linear_{x['inputs'][0]}": x["rejected"] for x in rest if "rejected" in x}:
+            alt["rejected"] = rejected
         q = {"events": float(sum(y)), "loglik": round(best["loglik"], 3), "aic": round(best["aic"], 3),
              "dispersion": round(best["dispersion"], 3), "steps": float(len(steps_live)), "live_minutes": round(live_s / 60, 2), **alt}
         # a counter summed over instances is not a series in the store: the flow is measured by each of them

@@ -45,3 +45,24 @@ def test_hand_offs_are_inferred_from_events_about_the_same_subject():
     h = {(x["from"], x["via"], x["to"]): x["count"] for x in machines_view(evs, [])["handoffs"]}
     # the same machine twice in a row is no hand-off; each records the event the next machine followed
     assert h == {("planner", "issue.create", "worker"): 2, ("worker", "issue.update", "reviewer"): 1}
+
+
+def test_a_hand_off_is_credited_to_an_event_the_receiver_listens_for():
+    ev = lambda src, ty, subj: {"type": ty, "source": src, "subject": subj, "time": "2026-10-25T00:00:00Z"}
+    # A publishes X then Y about the subject; B, which announced it listens for X, acts next: the
+    # hand-off went via X, whatever A said last. Without the announcement, via the last event.
+    announced = [{"type": "orchestra.machine.started", "source": "b/1", "time": "2026-10-25T00:00:00Z", "data": {"listens_for": ["X"]}}]
+    work = [ev("a", "X", "s1"), ev("a", "Y", "s1"), ev("b/1", "Z", "s1")]
+    h = lambda evs: {(x["from"], x["via"], x["to"]) for x in machines_view(evs, [])["handoffs"]}
+    assert h(announced + work) == {("a", "X", "b")}
+    assert h(work) == {("a", "Y", "b")}
+
+
+def test_what_a_machine_announces_about_itself_is_read_once():
+    evs = [{"type": "orchestra.machine.started", "source": "reviewer/1", "time": "2026-10-25T00:00:00Z",
+            "data": {"mode": "ad_hoc", "kind": "agent", "package": "agents", "listens_for": ["task.assigned"], "team": "engineering"}}]
+    [m] = [m for m in machines_view(evs, [])["machines"] if m["id"] == "reviewer"]
+    assert (m["mode"], m["kind"], m["package"], m["subscribes"]) == ("ad_hoc", "agent", "agents", ["task.assigned"])
+    assert m["about"] == {"team": "engineering"}, "the rest of the announcement is the package's, passed on unread"
+    [host] = [m for m in machines_view(evs, [])["machines"] if m["bootstrap"]]
+    assert host["kind"] == "program"

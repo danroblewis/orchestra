@@ -48,3 +48,21 @@ test("names stay unique when the usual value is left out", () => {
   const names = Object.values(SDGraph.names(m).stocks).map((v) => v.label);
   assert.equal(new Set(names).size, names.length, names.join(" | "));
 });
+
+test("a flow measured by two counters of the same events is named by both label sets", () => {
+  const f = { ...flow("rd", "r", "d", "tasks_ticket_transitions_total", { from: "APPROVED", to: "DONE" }),
+              evidence: { same_as: [{ name: "tasks_ticket_transitions_total", labels: { project: "p", machine: "w", from: "IN_REVIEW", to: "APPROVED" } }] } };
+  const m = { stocks: [stock("r", "tasks_tickets", { state: "IN_REVIEW" }), stock("d", "tasks_tickets", { state: "DONE" })], flows: [f] };
+  assert.equal(SDGraph.flowName(m, f), "tasks ticket transitions · IN REVIEW, APPROVED = APPROVED, DONE");
+});
+
+test("a stock that only fills is drawn when a flow shown drains a stock into it", () => {
+  const acc = (id) => ({ ...stock(id, "tasks_tickets", { state: id }), evidence: { accumulator: true } });
+  const withEvents = (f) => ({ ...f, current: { form: "constant", params: { c: 1 }, quality: { events: 5 } } });
+  const m = { stocks: [stock("r", "tasks_tickets", { state: "r" }), acc("done"), acc("tally")], machines: [],
+              flows: [withEvents(flow("rd", "r", "done", "t_total", {})), withEvents(flow("x", null, "tally", "u_total", {}))] };
+  const g = SDGraph.build(m);
+  assert.deepEqual(g.nodes.filter((n) => n.sid).map((n) => n.sid).sort(), ["done", "r"]);
+  assert.deepEqual([...g.acc], ["tally"]);
+  assert.deepEqual(SDGraph.build(m, { showAcc: true }).nodes.filter((n) => n.sid).map((n) => n.sid).sort(), ["done", "r", "tally"]);
+});

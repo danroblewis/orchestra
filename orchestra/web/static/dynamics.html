@@ -111,12 +111,12 @@ const stockColor = (id) => { const i = MODEL ? MODEL.stocks.findIndex((s) => s.i
 // middle of the flow whose rate they drive. Feedback loops are cycles of the causal graph: a flow adds to its destination
 // (+) and takes from its source (−); a rate depends on its input stock with the sign of its
 // coefficient. A loop with an odd number of − links is balancing (B), otherwise reinforcing (R).
-  // what a machine is comes from what it announced (the Machines page's /api/machines: a plugin's
-  // card kind, or a declaration), never from the model, which only knows it writes series
+  // what a machine is comes from what it announced (the Machines page's /api/machines: its kind,
+  // or its package's declaration), never from the model, which only knows it writes series
   window.MKINDS = window.MKINDS || {};
   async function loadKinds() {
     try { const d = await (await fetch("/api/machines")).json();
-      for (const m of d.machines || []) MKINDS[m.id] = (m.about && m.about.kind) || (m.declared && m.declared.kind) || (m.bootstrap ? "program" : "");
+      for (const m of d.machines || []) MKINDS[m.id] = m.kind || "";
     } catch (e) {}
   }
   function kindWord(id, fallback) {
@@ -160,7 +160,7 @@ function draw() {
   $("legend").innerHTML = used.map((id) => { const mc = byMachine[id] || { name: id, kind: "?" };
     return `<span class="lg prog" style="--c:${mcolor(id)}"><i></i>${esc(mc.name)} <span class="muted">${kindWord(id, mc.kind)}</span></span>`; }).join("")
     + `<label class="lg" style="cursor:pointer"><input type="checkbox" ${window.SHOW_ALL ? "checked" : ""} onchange="window.SHOW_ALL=this.checked;draw()" style="margin:0"> flows with no events</label>`
-    + (acc.size ? `<label class="lg" style="cursor:pointer" title="stocks that only fill, such as the event bus's length"><input type="checkbox" ${window.SHOW_ACC ? "checked" : ""} onchange="window.SHOW_ACC=this.checked;draw()" style="margin:0"> stocks that only fill (${acc.size})</label>` : "")
+    + (acc.size ? `<label class="lg" style="cursor:pointer" title="stocks that only fill and that no flow shown feeds, such as the event bus's length"><input type="checkbox" ${window.SHOW_ACC ? "checked" : ""} onchange="window.SHOW_ACC=this.checked;draw()" style="margin:0"> stocks that only fill, fed by nothing shown (${acc.size})</label>` : "")
     + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it, through rediscoveries; double-click to release) · tidy lays out the rest · reset starts over · scroll to zoom · hover or click a stock or a flow</span>`;
 }
 // Feedback loops (loops.js): the causal graph's feedback structures and an independent set of

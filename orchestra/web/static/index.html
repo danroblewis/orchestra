@@ -57,7 +57,7 @@ Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 
       const run = MACHINES.machines.filter((m) => !m.unseen && (m.mode === "continuous" || m.active));
       ui.setSub(`${run.length} running · ${run.filter((m) => m.active).length} active now · ${MACHINES.machines.length} on the Machines page`);
       body.innerHTML = run.length ? Orchestra.machineCards.sort(run).map((m) => {
-        const kind = (m.about && m.about.kind) || (m.declared && m.declared.kind) || (m.bootstrap ? "program" : "");
+        const kind = m.kind || "";
         const own = Orchestra.machineCards.summary(m);
         const right = own != null ? own : m.last_seen ? `${m.active ? "active" : "quiet"} · last event ${ago(Date.now() / 1000 - m.last_seen)} ago` : "";
         return `<div class="mline" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)" title="click for its details">

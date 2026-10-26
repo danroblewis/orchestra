@@ -6,7 +6,10 @@ One thread keeps three caches warm:
   minute;
 - the **current levels** of the model's stocks, every few seconds;
 - the model's **recent history**: each stock's level and each flow's rate over the last
-  ``HISTORY_S``, for the Dynamics page's sparklines, charts and flow animation.
+  ``HISTORY_S``, for the Dynamics page's sparklines, charts and flow animation. Levels are
+  sampled at the project's discovery step when that is finer than ``STOCK_STEP_S``, so the
+  chart shows the levels discovery saw (a level held for four seconds is a stock on a 5 s grid
+  and invisible on a 15 s one).
 
 Endpoints read the caches and report how old they are. The model itself is rediscovered by the
 bootstrap host, not here (``orchestra.host``); this only reads what the host cached."""
@@ -26,7 +29,7 @@ SERIES_EVERY_S = 60.0
 LEVELS_EVERY_S = 15.0
 HISTORY_EVERY_S = 15.0
 HISTORY_S = 3600.0
-STOCK_STEP_S = 15.0
+STOCK_STEP_S = 15.0          # at most: finer when the project's discovery step is
 FLOW_STEP_S = 30.0
 
 
@@ -63,39 +66,13 @@ class Refresher:
         return cached[1] if cached and cached[1].stocks else self.models.load()
 
     def _history(self) -> None:
-        """Each stock's level every STOCK_STEP_S, and each flow's rate (per the model's time unit)
-        every FLOW_STEP_S, over the last HISTORY_S."""
+        """Each stock's level every ``stock_step``, and each flow's rate (per the model's time
+        unit) every FLOW_STEP_S, over the last HISTORY_S."""
         model = self.model()
         if model is None or self.metrics is None:
             self.history = {}
             return
-        end = time.time()
-        start = end - HISTORY_S
-        unit = {"second": 1.0, "minute": 60.0, "hour": 3600.0}.get(model.time_unit, 60.0)
-        stocks, flows = {}, {}
-        for s in model.stocks:
-            if s.series:
-                pts = self.metrics.raw(s.series.name, s.series.labels, start=start - 300, end=end)
-                t0 = start - start % STOCK_STEP_S
-                stocks[s.id] = [[round(t), v] for t, v in step_sample(pts, t0, end, STOCK_STEP_S)]
-        for f in model.flows:
-            refs = f.measured_by or ([f.counter] if f.counter else [])
-            total: dict[int, float] = {}
-            for c in refs:                     # a flow measured by several counters: their sum
-                pts = self.metrics.raw(c.name, c.labels, start=start - 300, end=end)
-                t0 = start - start % FLOW_STEP_S
-                for a, b in pairwise(step_sample(pts, t0, end, FLOW_STEP_S)):
-                    total[round(b[0])] = total.get(round(b[0]), 0.0) + ((b[1] - a[1]) if b[1] >= a[1] else b[1]) * unit / FLOW_STEP_S
-            if refs:
-                flows[f.id] = [[t, v] for t, v in sorted(total.items())]
-        # measured inputs the model's equations read (levels that are not stocks)
-        inputs = {}
-        for name, ref in (model.discovery.get("inputs") or {}).items():
-            pts = self.metrics.raw(ref["name"], ref["labels"], start=start - 300, end=end)
-            t0 = start - start % STOCK_STEP_S
-            inputs[name] = [[round(t), v] for t, v in step_sample(pts, t0, end, STOCK_STEP_S)]
-        self.history = {"at": end, "start": start, "stock_step": STOCK_STEP_S, "flow_step": FLOW_STEP_S,
-                        "time_unit": model.time_unit, "stocks": stocks, "flows": flows, "inputs": inputs}
+        self.history = history(model, self.metrics, time.time(), stock_step(self.project.config.discovery_step))
 
     def _levels(self) -> None:
         model = self.model()
@@ -121,3 +98,39 @@ class Refresher:
 
     def stop(self) -> None:
         self._stop.set()
+
+
+def stock_step(discovery_step: float) -> float:
+    """How often the history samples a level: discovery's own grid when it is finer."""
+    return min(STOCK_STEP_S, discovery_step) if discovery_step > 0 else STOCK_STEP_S
+
+
+def history(model, metrics, end: float, stock_step: float = STOCK_STEP_S) -> dict:
+    """The model's history over the HISTORY_S before ``end``: each stock's level every
+    ``stock_step``, each flow's rate every FLOW_STEP_S, and the measured inputs the equations read."""
+    start = end - HISTORY_S
+    unit = {"second": 1.0, "minute": 60.0, "hour": 3600.0}.get(model.time_unit, 60.0)
+    stocks, flows = {}, {}
+    for s in model.stocks:
+        if s.series:
+            pts = metrics.raw(s.series.name, s.series.labels, start=start - 300, end=end)
+            t0 = start - start % stock_step
+            stocks[s.id] = [[round(t), v] for t, v in step_sample(pts, t0, end, stock_step)]
+    for f in model.flows:
+        refs = f.measured_by or ([f.counter] if f.counter else [])
+        total: dict[int, float] = {}
+        for c in refs:                     # a flow measured by several counters: their sum
+            pts = metrics.raw(c.name, c.labels, start=start - 300, end=end)
+            t0 = start - start % FLOW_STEP_S
+            for a, b in pairwise(step_sample(pts, t0, end, FLOW_STEP_S)):
+                total[round(b[0])] = total.get(round(b[0]), 0.0) + ((b[1] - a[1]) if b[1] >= a[1] else b[1]) * unit / FLOW_STEP_S
+        if refs:
+            flows[f.id] = [[t, v] for t, v in sorted(total.items())]
+    # measured inputs the model's equations read (levels that are not stocks)
+    inputs = {}
+    for name, ref in (model.discovery.get("inputs") or {}).items():
+        pts = metrics.raw(ref["name"], ref["labels"], start=start - 300, end=end)
+        t0 = start - start % stock_step
+        inputs[name] = [[round(t), v] for t, v in step_sample(pts, t0, end, stock_step)]
+    return {"at": end, "start": start, "stock_step": stock_step, "flow_step": FLOW_STEP_S,
+            "time_unit": model.time_unit, "stocks": stocks, "flows": flows, "inputs": inputs}

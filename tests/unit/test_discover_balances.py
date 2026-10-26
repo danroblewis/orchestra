@@ -109,8 +109,8 @@ def test_a_flow_whose_rate_follows_a_gauge_reads_the_gauge(tmp_path):
     m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
     assert [s.id for s in m.stocks] == ["waiting"]
     eq = m.flow("arrived_total").current()
-    assert eq.form == "linear" and eq.inputs == ["input:yelp_rating"] and eq.origin == "fitted", (eq.form, eq.inputs, eq.quality)
-    assert eq.params["k"] > 0
+    assert eq.form == "proportional" and eq.inputs == ["input:yelp_rating"] and eq.origin == "fitted", (eq.form, eq.inputs, eq.quality)
+    assert abs(eq.params["k"] - 1.2) < 0.15, eq.params
     assert "yelp_rating" in m.discovery["inputs"], "the gauge is recorded as an input the model reads"
 
 
