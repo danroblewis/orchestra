@@ -9,7 +9,7 @@ schedule writes only when something happens, so its silence says nothing about i
 to be alive from its first write to the end of the window.
 
 A gauge that is not re-written because nothing changed holds its last value for as long as its
-machine is alive: a count of tickets by state is written when a ticket moves, and in a quiet
+machine is alive: a count of items by state is written when an item moves, and in a quiet
 quarter of an hour it is still the count. It goes stale only when its machine goes silent: the
 value from before a silence is not carried past it (a machine restarted with a cleared state
 re-writes its gauges), so a gauge is live from its first write in each stretch its machine was
@@ -31,7 +31,7 @@ LOOKBACK_S = 3600.0        # writes this long before the window still say whethe
 def usual_interval(points: list[tuple[float, float]]) -> float | None:
     """The interval a series is written on when it is on a schedule (a machine's own metrics, a
     heartbeat): most gaps between writes within half and twice the usual one. None for a series
-    written as things happen (a count of tickets by state, written at every move: a burst of writes
+    written as things happen (a count of items by state, written at every move: a burst of writes
     seconds apart, then minutes of nothing), whose silences say nothing about whether anything was
     running."""
     ts = [t for t, _ in points[-2000:]]

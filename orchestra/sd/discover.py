@@ -91,7 +91,7 @@ def same_flow(a: Series, b: Series, n: int) -> bool:
     stamped a moment apart, so some fall in the next step: one counter's running total is always
     between the other's at the step before and at this step (never more than a step behind). The
     same activity is often measured twice: Orchestra counts every event (orchestra_events_total)
-    and the machine counts what it did (a ticket's transitions, an agent's turns); they are one flow,
+    and the machine counts what it did (an order's moves, a run's turns); they are one flow,
     not two that share a balance. The lag is allowed only to Orchestra's own count, which is
     stamped after the machine's: two machines' counters a step apart may be a quick buffer's
     inflow and outflow (put on a shelf and taken within seconds), which are not one flow."""
@@ -310,7 +310,7 @@ def own_balance(s: Series, counters: list[Series], steps: list[int], fits) -> tu
     """The level's balance made of its own machine's counters (its record of its transitions, and
     Orchestra's counts of its events), when they balance it within the tolerance: that is its
     balance, whatever another machine's counts of the same events would say in fewer terms or a
-    step more exactly (a reviewer's turns are not the scheduler's transitions). Another machine's
+    step more exactly (one machine's turns are not another's moves). Another machine's
     counter enters only to explain the residual the machine's own leave, when there is one. None
     when the machine's own do not balance it: then every counter is searched."""
     own = [c for c in counters if machine_of(s) is not None and machine_of(c) == machine_of(s)]
@@ -460,7 +460,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     notes.update(made)
 
     # A level that only fills (its balance only adds) is a stock when its balance is exact,
-    # whatever feeds it: a terminal state, where other stocks' outflows end (the tickets done).
+    # whatever feeds it: a terminal state, where other stocks' outflows end (the orders delivered).
     # One the system's flows explain only roughly is more likely a tally of activity (a log's
     # length) than a stock of the material those flows move: it may only be balanced by counters
     # no ordinary stock uses, or it borrows the system's flows as stand-ins for what it counts.

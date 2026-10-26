@@ -7,7 +7,7 @@ is the rate × the step's **exposure**:
 - ``constant``:      mean = c × running hours in the step
 - ``proportional``:  mean = k × the source stock's **item-hours** in the step: the integral of its
   level over the part of the step when the loop was running. The stock's series records every
-  change, so the integral is exact; a ticket that passes through a state in five minutes counts
+  change, so the integral is exact; an item that passes through a state in five minutes counts
   for a twelfth of an hour, which is what makes this the maximum-likelihood estimate of k for a
   Poisson process (departures ÷ time at risk)
 
