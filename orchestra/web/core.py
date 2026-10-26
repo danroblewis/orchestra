@@ -238,11 +238,6 @@ class CoreProbe:
     def log_sources(self) -> list[dict]:
         out = [{"id": "host", "name": "Orchestra host (bootstrap)"}, {"id": "core", "name": "Core"},
                {"id": "events", "name": "Event stream"}]
-        agents = self.project.logs_dir / "agents"
-        if agents.is_dir():
-            for p in sorted(agents.glob("*.log"), key=lambda p: -p.stat().st_mtime)[:40]:
-                out.append({"id": "agent:" + p.name, "name": p.name.replace(".stderr.log", ""), "size": p.stat().st_size,
-                            "mtime": p.stat().st_mtime})
         return out
 
     def logs(self, source: str, lines: int = 200) -> dict:
@@ -264,7 +259,4 @@ class CoreProbe:
                 return {"source": source, "lines": self._pool.submit(go).result(timeout=TIMEOUT)}
             except Exception as e:  # noqa: BLE001
                 return {"source": source, "lines": [], "note": f"the event bus did not answer: {type(e).__name__}: {e}"}
-        if source.startswith("agent:"):
-            name = Path(source[6:]).name                       # no path tricks: a file name in logs/agents only
-            return {"source": source, "lines": _tail(self.project.logs_dir / "agents" / name, lines)}
         return {"source": source, "lines": [], "note": "unknown log source"}

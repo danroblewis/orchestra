@@ -137,9 +137,7 @@ async function probeBus() {
 async function refreshSources() {
   try {
     const { sources } = await (await fetch("/api/core/logs/sources")).json();
-    const fixed = sources.filter((s) => !s.id.startsWith("agent:")), agents = sources.filter((s) => s.id.startsWith("agent:"));
-    $("log-bar").innerHTML = fixed.map((s) => `<button class="ctl ${s.id === LOG_SRC ? "on" : ""}" onclick="pickLog('${s.id}')">${esc(s.name)}</button>`).join("")
-      + (agents.length ? `<select onchange="pickLog(this.value)"><option value="">agent logs (${agents.length})…</option>${agents.map((s) => `<option value="${esc(s.id)}" ${s.id === LOG_SRC ? "selected" : ""}>${esc(s.name)} · ${fmtBytes(s.size)} · ${ago(Date.now() / 1000 - s.mtime)} ago</option>`).join("")}</select>` : "");
+    $("log-bar").innerHTML = sources.map((s) => `<button class="ctl ${s.id === LOG_SRC ? "on" : ""}" onclick="pickLog('${s.id}')">${esc(s.name)}</button>`).join("");
   } catch (e) {}
 }
 function pickLog(id) { if (!id) return; LOG_SRC = id; try { localStorage.setItem("orchestra.core.log", id); } catch (e) {} refreshSources(); refreshLog(); }
