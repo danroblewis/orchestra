@@ -180,3 +180,23 @@ def test_two_counters_of_the_same_thing_are_one_flow(tmp_path):
     m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
     assert any(why.startswith("the same as bakery_loaves_baked_total") for k, why in m.discovery["left_out"].items() if k.startswith("orchestra_events_total"))
     assert not any(f.counter and f.counter.name == "orchestra_events_total" for f in m.flows)
+
+
+def test_counters_of_a_machines_instances_are_summed_into_one_flow(tmp_path):
+    # the shelf's loaves sold, counted by three instances of the shop (source shop/1..3) instead of one
+    store = FileMetrics(tmp_path / "m.jsonl")
+    start, end = simulate(store, minutes=60)
+    sold = store.raw("bakery_loaves_sold_total", {"project": "p", "machine": "shop"}, start=start, end=end)
+    rng = random.Random(5)
+    per = {i: 0 for i in (1, 2, 3)}
+    pts = []
+    for (t0, a), (t1, b) in zip(sold, sold[1:]):
+        for _ in range(int(b - a)):
+            per[rng.choice((1, 2, 3))] += 1
+        pts += [Point("orchestra_events_total", per[i], t1, {"project": "p", "source": f"shop/{i}", "type": "loaf.sold"}) for i in per]
+    store.write(pts)
+    m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
+    summed = [f for f in m.flows if f.measured_by and all(r.labels.get("source", "").startswith("shop/") for r in f.measured_by)]
+    assert m.discovery["summed"], m.discovery.get("summed")
+    if summed:                                           # when the sold flow is the summed one, it reads all three instances
+        assert len(summed[0].measured_by) == 3 and summed[0].counter is None

@@ -37,9 +37,12 @@ def now() -> str:
 
 
 def envelope(type: str, source: str, data: Any = None, *, subject: str | None = None,
-             correlationid: str | None = None, causationid: str | None = None) -> dict:
-    """A CloudEvents 1.0 event, as a dict."""
-    ev: dict[str, Any] = {"specversion": "1.0", "id": uuid.uuid4().hex, "type": type, "source": source, "time": now()}
+             correlationid: str | None = None, causationid: str | None = None,
+             time: str | None = None, id: str | None = None) -> dict:
+    """A CloudEvents 1.0 event, as a dict. ``time`` and ``id`` are for an event brought in from
+    another system (a sync): it keeps the time it happened there, and an id stable across
+    re-imports; otherwise now and a fresh id."""
+    ev: dict[str, Any] = {"specversion": "1.0", "id": id or uuid.uuid4().hex, "type": type, "source": source, "time": time or now()}
     if subject is not None:
         ev["subject"] = subject
     if correlationid is not None:
@@ -95,8 +98,8 @@ class Events:
         self._subs.append(fn)
 
     def publish(self, type: str, data: Any = None, *, source: str | None = None, **ext: Any) -> dict:
-        """Publish one event with the CloudEvents envelope; ``ext`` takes subject, correlationid
-        and causationid."""
+        """Publish one event with the CloudEvents envelope; ``ext`` takes subject, correlationid,
+        causationid, and for an event brought in from another system its time and id."""
         ev = envelope(type, source or self.source, data, **ext)
         self.bus.append(ev)
         for fn in list(self._subs):

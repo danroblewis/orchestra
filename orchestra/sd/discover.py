@@ -35,7 +35,7 @@ import math
 import re
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import pairwise
 
 from ..metrics import step_sample
@@ -57,6 +57,7 @@ class Series:
     points: list[tuple[float, float]]
     values: list[float]                     # at each grid time
     counter: bool
+    members: list = field(default_factory=list)   # the instances' series, when this one sums them (sum_instances)
 
     @property
     def key(self) -> str:
@@ -70,6 +71,54 @@ class Series:
         if self.counter:
             return [(b - a) if b >= a else b for a, b in pairwise(self.values)]
         return [b - a for a, b in pairwise(self.values)]
+
+
+def sum_instances(series: list[Series]) -> tuple[list[Series], dict[str, str]]:
+    """Counters that differ only by instance, summed into one per machine.
+
+    A model is about machines, not their instances: six workers' counts of one event are one flow.
+    Counting each instance apart multiplies the candidates a balance is chosen from (on a busy
+    system, past the number of steps, where least squares can no longer tell them apart). An
+    instance is an ``instance`` label, or the instance part of a ``source`` (``worker/3``).
+    Increments are summed, so one instance's reset does not read as the total going back.
+    Returns the series, and what each summed series was made from (for the record)."""
+    groups: dict[tuple, list[Series]] = defaultdict(list)
+    out: list[Series] = []
+    for ser in series:
+        src = ser.labels.get("source") or ""
+        if not ser.counter or ("instance" not in ser.labels and "/" not in src):
+            out.append(ser)
+            continue
+        labels = {k: v for k, v in ser.labels.items() if k != "instance"}
+        if "/" in src:
+            labels["source"] = src.partition("/")[0]
+        groups[(ser.name, tuple(sorted(labels.items())))].append(ser)
+    made: dict[str, str] = {}
+    for (name, labels), members in groups.items():
+        if len(members) == 1 and "/" not in (members[0].labels.get("source") or "") and "instance" not in members[0].labels:
+            out.append(members[0])
+            continue
+        n = len(members[0].values)
+        steps = [sum((b - a) if b >= a else b for a, b in ((m.values[i], m.values[i + 1]) for m in members)) for i in range(n - 1)]
+        values, total = [0.0], 0.0
+        for d in steps:
+            total += d
+            values.append(total)
+        incs = []                                        # every instance's increments, in time order
+        for m in members:
+            for (t0, a), (t1, b) in pairwise(m.points):
+                incs.append((t1, (b - a) if b >= a else b))
+        incs.sort()
+        points, total = [], 0.0
+        if members[0].points:
+            points.append((min(m.points[0][0] for m in members if m.points), 0.0))
+        for t, d in incs:
+            total += d
+            points.append((t, total))
+        merged = Series(name, dict(labels), points, values, True, members)
+        out.append(merged)
+        made[merged.key] = f"summed over {len(members)} instance{'s' if len(members) != 1 else ''}"
+    return out, made
 
 
 def _slug(s: Series) -> str:
@@ -453,7 +502,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     """The model the metrics imply over [start, end], with how it was found in ``model.discovery``."""
     n = max(2, int((end - start) // step))
     dt = step / UNITS[time_unit]
-    series = sample(dump, start, step, n)
+    series, summed = sum_instances(sample(dump, start, step, n))
     left_out: dict[str, str] = {}
     # a series written on a schedule that is no longer written at the end of the window (its
     # machine is gone, or was replaced) is not measured now: left out, or its silence would leave no
@@ -579,9 +628,11 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         q = {"events": float(sum(y)), "loglik": round(best["loglik"], 3), "aic": round(best["aic"], 3),
              "dispersion": round(best["dispersion"], 3), "steps": float(len(steps_live)), "live_minutes": round(live_s / 60, 2), **alt}
         fid = _slug(c)
-        flows.append(Flow(fid, _title(c), e["src"], e["dst"], SeriesRef(c.name, c.labels),
+        # a counter summed over instances is not a series in the store: the flow is measured by each of them
+        flows.append(Flow(fid, _title(c), e["src"], e["dst"], None if c.members else SeriesRef(c.name, c.labels),
                           [Equation(best["form"], {k: round(v, 6) for k, v in best["params"].items()}, "fitted", "poisson-mle",
-                                    (fit_start, end), None, q, best["inputs"])]))
+                                    (fit_start, end), None, q, best["inputs"])],
+                          [SeriesRef(m.name, m.labels) for m in c.members]))
         who = machine_of(c)
         if who:
             by_machine[who].append(fid)
@@ -593,7 +644,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                   "Discovered from the metrics store: stocks are levels that counters balance; flows are those "
                   "counters, with equations fitted by Poisson maximum likelihood.",
                   time_unit, stocks, flows, machines)
-    model.discovery = {"start": start, "end": end, "fit_start": fit_start, "live_minutes": round(live_s / 60, 2) if found else 0,
+    model.discovery = {"summed": summed, "start": start, "end": end, "fit_start": fit_start, "live_minutes": round(live_s / 60, 2) if found else 0,
                        "gaps": [[a, b] for (_, a), (b, _) in pairwise(live)] if found else [],
                        "step": step, "series": len(series),
                        "stocks": len(stocks), "flows": len(flows), "min_r2": MIN_R2,

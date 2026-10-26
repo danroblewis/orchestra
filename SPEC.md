@@ -71,7 +71,9 @@ Every event carries the **CloudEvents 1.0** envelope (`orchestra.events.envelope
 | `correlationid`, `causationid` | Optional extensions: the request it belongs to, the event that caused it |
 | `data` | The payload. It belongs to the machines that use it; Orchestra never reads it |
 
-Events written before the envelope (flat records with `ts`) stay readable; `event_time` and
+An event brought in from another system (a sync from its own log) keeps the `time` it happened
+there and an `id` stable across re-imports (`envelope(time=, id=)`), so a sync can tell what the
+bus already holds. Events written before the envelope (flat records with `ts`) stay readable; `event_time` and
 `event_source` read either shape.
 
 **Subscriptions.** Until the bus adapters provide subscriptions with leases
@@ -152,7 +154,9 @@ Conservation (`sd/discover.py`):
 1. every series is sampled onto a grid of steps. A series written on a schedule that is no
    longer written at the end of the window (its machine is gone or was replaced) is left out.
    Counters that move together in all but 3% of steps (a machine's own count and Orchestra's
-   count of the event it publishes) are one: the machine's own is kept;
+   count of the event it publishes) are one: the machine's own is kept. Counters that differ only
+   by instance (an ``instance`` label, or ``source`` ``worker/3``) are summed into one per machine,
+   and a flow from such a sum is measured by every instance's series;
 2. a level is a **stock** when counters, added or subtracted, balance its changes
    (`Δlevel ≈ Σ inflows − Σ outflows`, R² ≥ 0.9). A level that only takes two values is
    usually a flag (busy or not) and is a stock only when its balance is exact in 97% of steps (a
