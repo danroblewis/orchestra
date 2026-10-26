@@ -52,8 +52,11 @@ Done when:
   `orchestra_agents/protocol.py`).
 - `main` is fast-forwarded to the work; the private repositories are pushed.
 
-Stop rule: anything not needed for the above waits. In particular, no launcher, no ingestion
-layer, no new ticket states, no change to rule 9.
+- A launcher (D6): a plugin declares the processes it needs; `orchestra run` starts, watches
+  and stops them, so a project runs with one command and the demos keep no launcher of their own.
+
+Stop rule: anything not needed for the above waits. In particular, no ingestion layer, no new
+ticket states, no change to rule 9.
 
 ### H1: the model is trustworthy on known systems (next two weeks)
 
@@ -72,9 +75,13 @@ numbers came from." This horizon makes discovery earn trust on systems whose str
   independent run before it is called meaningful.
 - Version churn is bounded: a rediscovery that changes nothing of substance makes no new version.
 
+- Priors (D4): a model the user hands in is a prior; discovery produces something near it and
+  records what it kept, dropped and added; a user's edit to a discovered model is a new version
+  whose equations carry origin declared. Discovery is neither blind nor a fixed skeleton.
+
 Stop rule: if discovery cannot pass UC-1 (the bakery) and UC-2 (the task system with programs)
-after the listed follow-ups, the owner decides between a designed skeleton and discovery-first
-([decisions.md](decisions.md) D4) before anything else is built on the model.
+after the listed follow-ups, priors come first: the model is built from a declared prior and
+discovery fills and corrects it.
 
 ### H2: the agents are ordinary, measured machines (weeks 3–4)
 
@@ -84,13 +91,17 @@ after the listed follow-ups, the owner decides between a designed skeleton and d
   when a separate agent verifies it").
 - A machine that is a person is decided ([decisions.md](decisions.md) D1); until then humans act
   only through the Supervisor.
-- Team probes, schedules and wake-ups are observable as machines' modes on the Machines page.
+- Scheduled engagements are the task system's (D7): it publishes the due event; the agents'
+  host keeps no timers of its own. Team probes and wake-ups are observable as machines' modes
+  on the Machines page.
+- The bakery gets the plugins or retires (D15).
 - The Supervisor can read the model (the model tools proposed in `docs/proposals/empty-orchestra.md`
   §10) and nothing else changes it.
 
 ### H3: the first real user story (weeks 5–8)
 
-Story 1 (`docs/user-stories.md`: a simple task for another team) runs end to end against fakes
+What is the owner's alone (their company's systems, FedRAMP data classes, posting as them) is a
+plugin or a configuration for them, never core (D10). Story 1 (`docs/user-stories.md`: a simple task for another team) runs end to end against fakes
 that speak each company system's real protocol, with the task system and the agents as the
 machines. The model carries the stocks in `docs/user-story-equations.md`; the gaps the stories
 record (1.4, 1.8, 1.11) are reproduced or refuted on the measured system, never tuned away.

@@ -3,23 +3,23 @@
 Collected from the proposals, the handoff and the sessions since 2026-10-24. The plan proceeds
 around these; no agent decides them. Each has the document that raised it and what waits on it.
 
-| # | Question | Raised in | What waits |
+| # | Question | Decided 2026-10-26 (the owner, in the morning) | What it changes |
 |---|---|---|---|
-| D1 | May a person fill a worker or reviewer role (a human as a machine), or do humans act only through the Supervisor (rule 9)? | `~/orchestra-tasking/docs/proposals/agents-split.md` §4 | Human worker/reviewer cards; the Supervisor's rebuild |
-| D2 | Ticket-state gaps: DONE cannot be reopened; BLOCKED only from IN_PROGRESS; "needs a decision" is not distinct from blocked; OPEN mixes ready with waiting; no hold state; REJECTED returns only to a worker; APPROVED and MERGING are code-only. Which to change? | session 2026-10-25 | The task system's model; the Tasks panel's vocabulary |
-| D3 | Bus and time-series backends for real use (NATS + VictoriaMetrics, or Postgres + TimescaleDB), hosting and retention | `docs/proposals/events-and-data-infrastructure.md` §8 | Anything beyond the file bus and Redis in demos |
-| D4 | Discovery-first, or a designed skeleton that discovery fills? Decided only if H1's stop rule fires | `docs/proposals/system-dynamics-core.md` §13 | H1's exit |
-| D5 | SD Lab as `orchestra/sdlab` (vendored, as now) or as a dependency | `AGENTS.md` rule 10; `docs/analysis-plan.md` §7 | Nothing immediate; affects how discovery improvements land |
-| D6 | A launcher: should `orchestra run` start the plugins' processes, and how is that declared? | session 2026-10-26 | Demos use their own scripts until then |
-| D7 | Datetime scheduling of machines (`machine.due`): the task system's or the agents'? | session 2026-10-25 | Scheduled agents stay in the agents' host |
-| D8 | PR trees for code mode (gh-stack is the owner's tool; git-spice acceptable) | memory `pr-trees` | Code mode beyond one branch per ticket |
-| D9 | One ingest boundary (catalogue, HTTP/OTLP, collectors, read-only adapters such as Prometheus, bridges) | session 2026-10-25; `docs/proposals/events-and-data-infrastructure.md` | H4's target-system model |
-| D10 | FedRAMP data classes, model clearances, and posting as the owner | `docs/work-charter.md` §8 | H3's connectors and outbox |
-| D11 | Which user stories apply ("delete the ones that don't"); the order of H3 | `docs/user-stories.md` header | H3 |
-| D12 | Team and role open questions 1–11 | `docs/proposals/teams-and-roles.md` | Stage 2 of teams |
-| D13 | Where the two plugins' every-page scripts put their nav button and banner when both are installed | session 2026-10-25 | Cosmetic; the agents' script currently takes the button, the task plugin's banner stands aside |
-| D14 | Repository names and places: rename `~/orchestra_2` to `~/orchestra` once the SD Lab jobs in the old checkout finish; delete `~/orchestra-taskdemo` once the in-repo demos supersede it | session 2026-10-26 | Path references in four `pyproject.toml` files |
-| D15 | The bakery's own measurements (the owner's test system): count offers per phase (`bake`/`inspect`), count customers called (the line's outflow), stop publishing `customer_demand_per_min` (the model's formula as a gauge); and a `TAKERS=1` run so the line forms. Change the test system, or accept those gaps in its model? | model-acceptance runs 2026-10-26 | UC-1 passing |
+| D1 | May a person fill a worker or reviewer role? | **No.** Humans update roles only through the Supervisor (rule 9 stands). | The Agents page keeps no control that creates, pauses, restarts or deletes a role, agent or team; those are the Supervisor's tools. The task plugin's operator controls (capacity, pause pickup, stop a ticket's holder) are operations, not role changes, and stay. |
+| D2 | Ticket-state gaps | **DONE is never reopened.** A done ticket that needs fixing gets a bug ticket. The other gaps (BLOCKED only from IN_PROGRESS, no hold state, OPEN mixing ready with waiting, REJECTED only back to a worker, APPROVED/MERGING code-only) stay as they are until a use case needs otherwise. | No model change. The prompts and docs say "file a bug ticket". |
+| D3 | Backends, hosting, retention | **The user's.** They choose the bus and the time-series store, set and manage retention there. Orchestra decides only the query range it reads. | `[discovery] window` is Orchestra's; nothing about retention lives in Orchestra. |
+| D4 | Discovery-first or a designed skeleton? | **Priors.** Not blind, not a fixed skeleton: a human may offer a skeleton (and may be wrong); discovery should try to produce something near the priors, expecting things added to and removed from it; the human receives the discovered model and adds or removes. | H1 gets "priors": a model the user hands in is a prior; discovery records what it kept, dropped and added; the user's edits to a discovered model are a new version with origin declared. |
+| D5 | SD Lab: vendored or a dependency? | **Part of Orchestra; vendored for now.** Its interface is the strategy algorithm; it may be integrated further for priors and user-modifiable parts. | Rule 10 stands; a later horizon may move it in. |
+| D6 | A launcher? | **Yes.** `orchestra run` should start the plugins' processes. | H0 gets a launcher: a plugin declares the processes it needs (the scheduler, the agents' host, the demo's machines); the host starts, watches and stops them. The demos then need no `run.py` of their own beyond the project template. |
+| D7 | Datetime scheduling of machines | **The task system's.** | Scheduled engagements (every N minutes, at a time of day) become the task system's: it publishes the due event; the agents' host stops keeping timers of its own and wakes on that event. H2. |
+| D8 | PR trees for code mode | **git-spice is acceptable if it works.** | Code mode beyond one branch per ticket (H2/H3). |
+| D9 | One ingest boundary | **Approved** as proposed in `docs/proposals/events-and-data-infrastructure.md`. | H4's target-system model. |
+| D10 | FedRAMP data classes, clearances, posting as the owner | **Personal use cases, not the product.** The work charter is the owner's; what is personal is a plugin or a configuration, never core. | H3 is phrased as a plugin for the owner's company systems; Orchestra and the two plugins stay general. |
+| D11 | Which user stories apply | **All of them** are good examples to work towards. | H3 and onward take them in order of value; none deleted. |
+| D12 | Team and role open questions 1–11 | **The assistant decides**, with the owner's implicit approval; each decision is recorded here when it is taken. | — |
+| D13 | Nav button and banner placement | **Fine as it is.** | — |
+| D14 | Repository names and places on this machine | **Free.** The GitHub names matter more than the directory names. | `~/orchestra_2` may be renamed when the SD Lab jobs in `~/orchestra` finish; `~/orchestra-taskdemo` may go. |
+| D15 | The bakery's own measurements | **The bakery is only a test of Orchestra and its plugins; the owner does not care about its model.** It does not use the plugins today; keep it only if it gets them. | Assistant's decision under D12: keep it for now as the one system whose structure is known (UC-1, discovery's regression check), without changing its measures; add the plugins to it in H2 (its board becomes the task system, its bakers and chef machines that fill roles) or retire it then. |
 
-When one is decided, record the decision and date here, state the invariant change in the commit
-that makes it (per `AGENTS.md`), and remove the row's "what waits".
+When a decision is taken, it is recorded here with its date, and an invariant change is stated
+in the commit that makes it (per `AGENTS.md`).
