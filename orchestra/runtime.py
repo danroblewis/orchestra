@@ -10,7 +10,17 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+import psutil
+
 from .config import Project
+
+
+def alive(pid) -> bool:
+    """A recorded pid proves liveness only if that process exists and is not a zombie."""
+    try:
+        return bool(pid) and psutil.Process(int(pid)).status() != psutil.STATUS_ZOMBIE
+    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError, TypeError):
+        return False
 
 
 def read(project: Project) -> dict:

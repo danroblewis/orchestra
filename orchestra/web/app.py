@@ -24,13 +24,6 @@ from .dynamics import model_view
 STATIC = Path(__file__).parent / "static"
 
 
-def _alive(pid) -> bool:
-    try:
-        return bool(pid) and psutil.Process(int(pid)).status() != psutil.STATUS_ZOMBIE
-    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
-        return False
-
-
 def create_app(project: Project) -> FastAPI:
     app = FastAPI(title="Orchestra")
     events = Events.for_project(project)
@@ -188,7 +181,7 @@ def create_app(project: Project) -> FastAPI:
         rec = runtime.read(project).get("host") or {}
         for m in out["machines"]:
             if m["bootstrap"]:
-                m["active"] = _alive(rec.get("pid"))
+                m["active"] = runtime.alive(rec.get("pid"))
         if bg.errors:
             out["errors"] = bg.errors
         return out
