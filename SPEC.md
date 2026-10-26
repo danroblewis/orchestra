@@ -220,7 +220,19 @@ Conservation (`sd/discover.py`):
    terminal state, where other stocks' outflows end); one the system's flows explain only
    roughly is a tally of activity unless counters no ordinary stock uses balance it;
 3. a counter that leaves one stock and enters another is a **flow** between them; otherwise it
-   comes from or goes to outside;
+   comes from or goes to outside. A state each item leaves within a step (an order picked up and
+   at once accepted or rejected; a ticket rejected and back in progress a second later) is empty
+   at almost every step of the grid, so it is no stock, and the chain through it would run past
+   it or split through outside. It is joined through again (`sd/hops.py`, `sd/passing.py`): a
+   machine's two counts of one move (kept as one, being the same events within a step) are
+   split back into its two hops, and a drain to outside and fills from outside of other stocks
+   whose counts are the same items, the fills never ahead of the drain nor more than a step
+   behind (each counter of at least 5 events, a rarer one only completing it exactly), become a
+   flow into the state and flows out of it. The state is the measured level whose raw points
+   rise at the inflow's events and fall at the outflows' (`sd/between.py`: the grid misses it,
+   the raw points do not); with none (no level is written, or one never reads above zero), a
+   stock measured by no series, drawn as hidden. No stock is both drained and filled by one
+   passage. The stock and its flows record it (`passing`, `through`);
 4. each flow's rate is fitted by maximum likelihood, choosing by AIC among constant, proportional
    to its source, and linear in any stock or any measured gauge that is not a stock (`c + k ×
    X`; the gauges are those `sd/inputs.py` offers, recorded in the equation's inputs as

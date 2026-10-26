@@ -27,7 +27,10 @@ equation of each flow, and the machine behind each flow:
 3. **Connect flows.** A counter that is an outflow of one stock and an inflow of another is a flow
    between them; otherwise it comes from or goes to outside (``sd.ends``: when two stocks claim the
    same end, the one the counter explains most keeps it and the other claim is evidence; stocks of
-   different machines claiming one counter make it a co-flow, one flow per machine).
+   different machines claiming one counter make it a co-flow, one flow per machine). A state each
+   item leaves within a step is empty at almost every step, so the chain through it runs past it
+   or splits through outside; it is joined through again (``sd.hops``, ``sd.passing``), on the
+   measured level whose raw points show it (``sd.between``) or on a hidden stock.
 4. **Fit each flow's equation** by maximum likelihood, choosing by AIC among:
    - ``constant``: rate = c;
    - ``proportional``: rate = k × X, for X the source stock (its exact time-average over the
@@ -63,9 +66,11 @@ from itertools import accumulate, pairwise
 from .balance import MIN_EVENTS, MIN_GAIN, LeastSquares, balance, fit_of
 from .drivers import behind, co_counting
 from .ends import claims, moves
+from .hops import split_hops
 from .inputs import offered_inputs
 from .live import balance_steps, held_for, intersect, within
 from .model import Equation, Flow, Machine, Model, SeriesRef, Stock
+from .passing import passages
 from .restate import split_event_counters, split_foreign_counters, unify_same_flows
 from .series import EVENT_COUNTER, PLUMBING, Series, machine_of, sample, sum_instances
 
@@ -465,6 +470,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     counters.sort(key=lambda c: (c.name.startswith(EVENT_COUNTER), len(c.key), c.key))
     kept_counters: list[Series] = []
     same_as: dict[str, list[dict]] = defaultdict(list)     # kept counter key -> the counters it stands for
+    copies: dict[str, list[Series]] = defaultdict(list)    # ... as series (sd.hops may bring one back)
     for c in counters:
         twin = next((k for k in kept_counters if same_flow(c, k, n)
                      and (EVENT_COUNTER in (c.name, k.name) or machine_of(c) == machine_of(k))), None)
@@ -474,9 +480,11 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         if EVENT_COUNTER not in (c.name, twin.name) and first_stamped(c, twin):
             kept_counters[kept_counters.index(twin)] = c
             same_as[c.key] = same_as.pop(twin.key, [])
+            copies[c.key] = copies.pop(twin.key, [])
             c, twin = twin, c
         left_out[c.key] = f"the same as {twin.key} (counts the same events)"
         same_as[twin.key].append({"name": c.name, "labels": c.labels})
+        copies[twin.key].append(c)
     counters = kept_counters
     for s in series:
         if s.counter and not any(s.deltas):
@@ -535,6 +543,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     notes.update(made)
     for keep, drop in joined:              # a counter joined to another stands for nothing on its own
         same_as[keep.key] += [{"name": drop.name, "labels": drop.labels}, *same_as.pop(drop.key, [])]
+        copies[keep.key] += [drop, *copies.pop(drop.key, [])]
         left_out[drop.key] = made[drop.key]
     dropped = {drop.key for _, drop in joined}
     counters = [c for c in counters if c.key not in dropped]
@@ -560,6 +569,26 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         else:
             left_out[s.key] = f"only an accumulator of other stocks' flows (R² {r2b:.2f} with counters of its own)"
     found, twins = twin_levels(kept, left_out, lambda a, b: same_flow(a, b, n))
+    # a state each item leaves within a step is empty at almost every step of the grid, so the
+    # chain through it runs past it (sd.hops) or ends at outside and begins again there
+    # (sd.passing); joined through it
+    where = {"start": start, "end": end, "step": step, "machine_of": machine_of}
+    stock_keys = {s.key for s, _, _, _ in found}
+    levels = [s for s in series if not s.counter and s.key not in stock_keys and not left_out.get(s.key, "").startswith("the same as")]
+    found, hopped, revived = split_hops(found, counters, copies, levels, first_stamped=first_stamped, **where)
+    for d in revived:                      # a copy that came back as a hop of its own stands for itself
+        counters.append(d)
+        left_out.pop(d.key, None)
+        for k, recs in same_as.items():
+            same_as[k] = [x for x in recs if (x["name"], x["labels"]) != (d.name, d.labels)]
+    levels = [s for s in levels if all(s is not h.level for h in hopped)]
+    passed = {}
+    for p in hopped + passages(found + [(h.level, h.terms, 1.0, 1.0) for h in hopped], counters, levels, copies=copies, **where):
+        masks[p.level.key] = balance_steps(p.level, [c for c, _ in p.terms])
+        r2, exact = fit_of(p.level, p.terms, masks[p.level.key]) if p.measured else (1.0, 1.0)
+        found.append((p.level, p.terms, max(0.0, r2), exact))
+        left_out.pop(p.level.key, None)
+        passed[p.level.key] = p
     stocks, sid_of, ids = [], {}, set()
     held: dict[str, dict] = {}       # the levels whose value was carried on their machine's word, and for how long
     for s, terms, r2, exact in found:
@@ -568,16 +597,21 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         carried, at_end = held_for(s.points, s.intervals if s.intervals is not None else [(start, end)])
         if carried:
             held[sid] = {"minutes": round(carried / 60, 2), "at_end_minutes": round(at_end / 60, 2)}
-        stocks.append(Stock(sid, _title(s), "items", SeriesRef(s.name, s.labels),
+        p = passed.get(s.key)
+        stocks.append(Stock(sid, _title(s), "items", SeriesRef(s.name, s.labels) if not p or p.measured else None,
                             {"balance_r2": round(r2, 4), "exact_steps": round(exact, 4), "steps": n, "balance_steps": len(masks[s.key]),
                              "machine": machine_of(s), "accumulator": all(sign > 0 for _, sign in terms),
                              "balance": [{"series": c.key, "sign": sign} for c, sign in terms],
                              "held_minutes": round(carried / 60, 2),
-                             **({"twins": twins[s.key]} if s.key in twins else {})}))
+                             **({"twins": twins[s.key]} if s.key in twins else {}), **(p.evidence() if p else {})}))
     # a counter in two balances connects those stocks (sd.ends: contested ends and co-flows)
     fid_of = {c.key: unique_id(_slug(c), machine_of(c), ids) for c in counters}
     by_counter = claims(found, sid_of, machine_of)
     flow_moves = moves(counters, by_counter, fid_of, machine_of)
+    through = {sid_of[k]: p for k, p in passed.items()}
+    for mv in flow_moves:
+        if mv.src in through or mv.dst in through:
+            mv.evidence["through"] = [x for x in (mv.src, mv.dst) if x in through]
     for c in counters:
         if c.key in by_counter:
             continue
