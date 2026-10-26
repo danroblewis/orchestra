@@ -218,8 +218,8 @@ function eventMap(d0) {
 }
 function cards() {
   $("nm").textContent = DATA.machines.length;
-  $("cards").innerHTML = DATA.machines.map((m) => { const own = Orchestra.machineCards.card(m);
-    if (own != null) return `<div class="panel ${m.unseen ? "unseen" : ""}" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)">${own}</div>`;
+  $("cards").innerHTML = Orchestra.machineCards.sort(DATA.machines).map((m) => { const own = Orchestra.machineCards.card(m);
+    if (own != null) return Orchestra.machineCards.wrap(m, own);
     return `<div class="panel ${m.unseen ? "unseen" : ""}" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)" title="click for details and log"><h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.id)}${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}</h3>
     <div class="row"><span class="muted">engaged</span><span>${m.mode ? `<span class="tag k-${esc(m.mode)}">${esc(m.mode.replace("_", " "))}</span>` : '<span class="muted">not announced</span>'}</span></div>
     ${m.instances && m.instances.length ? `<div class="row"><span class="muted">instances</span>${m.instances.map((i) => `<span class="ty" title="last seen ${ago(Date.now() / 1000 - i.last_seen)} ago"><span class="dot ${i.active ? "" : "off"}" style="--rc:${i.active ? "#22c55e" : "#64748b"};width:7px;height:7px"></span> ${esc(i.id)}</span>`).join("")}</div>` : ""}

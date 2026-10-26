@@ -64,8 +64,8 @@ async function refresh() {
     const active = MACHINES.machines.filter((m) => !m.unseen && (m.mode === "continuous" || m.active));
     const now = active.filter((m) => m.active).length;
     $("machines-sub").textContent = `${active.length} running · ${now} active now · ${MACHINES.machines.length} on the Machines page`;
-    $("machines").innerHTML = active.length ? active.map((m) => { const own = Orchestra.machineCards.card(m, { compact: true });
-      if (own != null) return `<div class="panel mcard" style="cursor:pointer" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)">${own}</div>`;
+    $("machines").innerHTML = active.length ? Orchestra.machineCards.sort(active).map((m) => { const own = Orchestra.machineCards.card(m, { compact: true });
+      if (own != null) return Orchestra.machineCards.wrap(m, own, "mcard");
       return `<div class="panel mcard" style="cursor:pointer" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)" title="click for details and log"><div class="chead"><b>${esc(m.id)}</b>${m.bootstrap ? ' <span class="tag">bootstrap</span>' : ""}<span class="muted" style="margin-left:auto">last event ${ago(Date.now() / 1000 - m.last_seen)} ago</span></div>
         <div class="mrow"><span class="muted">publishes</span> ${m.publishes.map((p) => `<span class="ty">${esc(p.type)} <b>${p.per_min_10m}</b>/min</span>`).join("") || '<span class="muted">nothing</span>'}</div>
         <div class="mrow"><span class="muted">listens for</span> ${m.subscribes.map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">nothing</span>'}</div>

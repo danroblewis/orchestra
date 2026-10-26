@@ -9,7 +9,9 @@ const fmtBytes = (b) => (b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)} GB` : `${
 // a package when its announcement says so, or the package declares it (``m.package``). The
 // package's every-page script registers, for its package name:
 //   card(m, {compact})  -> the inside of the machine's card (HTML), or null for Orchestra's own;
-//   open(m)             -> true when it opened the machine's dialog itself, else Orchestra opens its own.
+//   open(m)             -> true when it opened the machine's dialog itself, else Orchestra opens its own;
+//   bare                -> true: its card is drawn without Orchestra's panel around it (it brings its own);
+//   rank(m)             -> where its machines go in a list (Orchestra's own are 0; default 50).
 // ``changed()`` asks the pages to draw the cards again (its data arrived). Any machine no package
 // claims gets Orchestra's card and dialog.
 window.Orchestra = window.Orchestra || {};
@@ -20,6 +22,13 @@ Orchestra.machineCards = (() => {
     register(pkg, spec) { by.set(pkg, spec); changed(); },
     of(m) { return (m && m.package && by.get(m.package)) || null; },
     card(m, opts = {}) { const s = this.of(m); try { return s && s.card ? s.card(m, opts) : null; } catch (e) { return null; } },
+    // the element a card goes in: Orchestra's panel, or none for a package that draws its own
+    wrap(m, html, extra = "") {
+      const s = this.of(m), bare = s && s.bare && html != null;
+      return `<div class="${bare ? "claimed" : "panel"} ${extra} ${m.unseen ? "unseen" : ""}" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)">${html}</div>`;
+    },
+    rank(m) { if (m.bootstrap) return 0; const s = this.of(m); try { return s && s.rank ? s.rank(m) : 50; } catch (e) { return 50; } },
+    sort(ms) { return [...ms].sort((a, b) => this.rank(a) - this.rank(b) || a.id.localeCompare(b.id)); },
     open(m) {
       if (this.skip === m.id) { this.skip = null; return false; }       // "machine details": Orchestra's own dialog
       const s = this.of(m); try { return !!(s && s.open && s.open(m)); } catch (e) { return false; }
