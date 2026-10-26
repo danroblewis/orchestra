@@ -90,7 +90,9 @@ the graph of publishers, event types and listeners from what it observes.
 
 An append-only, replayable, ordered log per project (`orchestra/bus/`), behind the `EventBus`
 interface: `append`, `read(since, limit)` → (events, end offset), `end`, `close`. Offsets are
-integers counting events. The stream is named `orchestra.<project key>.events` and never shares a
+integers counting events. A machine that follows the bus calls `Events.after(offset)`
+(`orchestra/events.py`), which returns every event after the offset and the offset to read from
+next; `read` returns only the last `limit`. The stream is named `orchestra.<project key>.events` and never shares a
 topic with anyone else's.
 
 | `[events] url` | Backend |

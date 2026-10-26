@@ -118,6 +118,17 @@ class Events:
         to read from next."""
         return self.bus.read(since, limit)
 
+    def after(self, offset: int) -> tuple[list[dict], int]:
+        """Return (events, next_offset): every event after ``offset``, in order, and the offset
+        to read from next. Unlike ``read`` nothing is cut off, even when events arrive while it
+        reads; nothing new is an empty list and the same offset."""
+        room = max(self.end() - offset, 1)
+        while True:
+            evs, nxt = self.bus.read(offset, room)
+            if nxt - offset <= room:
+                return evs, nxt
+            room = nxt - offset                  # more arrived between end() and the read
+
     def end(self) -> int:
         return self.bus.end()
 
