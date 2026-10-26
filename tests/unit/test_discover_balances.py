@@ -321,3 +321,18 @@ def test_a_stock_whose_balance_counts_the_flows_own_events_does_not_drive_it(tmp
     eq = f.current()
     assert eq.inputs == ["input:yelp_rating"], (eq.form, eq.inputs, eq.quality)
     assert "orders_taken_total" in f.evidence["not_drivers"]["takers_free"], f.evidence
+
+
+def test_a_terminal_level_fed_only_by_another_stocks_outflow_is_a_stock(tmp_path):
+    # tickets go from review to done; done only ever fills, by the very counter that drains the
+    # review. A level that is measured and exactly balanced is a stock whatever feeds it: that is
+    # what a terminal state is, and the flow ends in it instead of outside
+    store = FileMetrics(tmp_path / "m.jsonl")
+    rates = {"submitted_total": 5.0, "approved_total": 4.5}
+    machines = {**dict.fromkeys(rates, "desk"), "in_review": "desk", "done": "desk"}
+    start, end = run(store, 60, rates, {"in_review": {"submitted_total": 1, "approved_total": -1}, "done": {"approved_total": 1}}, machines)
+    m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
+    assert {s.id for s in m.stocks} == {"in_review", "done"}, m.discovery["left_out"]
+    assert m.stock("done").evidence["accumulator"] and balance_of(m, "done") == {("approved_total", 1)}
+    f = m.flow("approved_total")
+    assert (f.src, f.dst) == ("in_review", "done")

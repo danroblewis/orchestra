@@ -459,8 +459,11 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     found, made = unify_same_flows(found, masks, lambda a, b: same_flow(a, b, n), machine_of, fits)
     notes.update(made)
 
-    # An accumulator (a stock whose balance only adds) may only be balanced by counters no ordinary
-    # stock uses: otherwise it borrows the system's flows as stand-ins for what it really counts.
+    # A level that only fills (its balance only adds) is a stock when its balance is exact,
+    # whatever feeds it: a terminal state, where other stocks' outflows end (the tickets done).
+    # One the system's flows explain only roughly is more likely a tally of activity (a log's
+    # length) than a stock of the material those flows move: it may only be balanced by counters
+    # no ordinary stock uses, or it borrows the system's flows as stand-ins for what it counts.
     ordinary = [x for x in found if not all(sign > 0 for _, sign in x[1])]
     taken = {c.key for _, terms, _, _ in ordinary for c, _ in terms}
     free = [c for c in counters if c.key not in taken]
@@ -468,7 +471,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     for s, terms, r2, exact in found:
         if not all(sign > 0 for _, sign in terms):
             continue
-        if not any(c.key in taken for c, _ in terms):
+        if exact >= FLAG_EXACT or not any(c.key in taken for c, _ in terms):
             kept.append((s, terms, r2, exact))
             continue
         terms2, r2b, exact2 = balance(s, free, None, masks[s.key])
