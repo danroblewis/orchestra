@@ -18,7 +18,7 @@
   // its family, said apart (a caption): "in progress", family "beads issues".
   // - only labels whose values differ within the family are said; the one with the most values
   //   first and always, the others only where they are not the family's usual value ("open" and
-  //   "open · epic" beside "closed", not "open · task");
+  //   "open · cake" beside "closed", not "open · loaf");
   // - a series alone in its family is named by the series;
   // - a series alone in its family whose first word other stocks' series share (a namespace, by
   //   Prometheus' convention: bakery_orders_baking, bakery_shelf_items) has that word as its family;
@@ -134,7 +134,7 @@
     const mcolor = opts.mcolor || (() => "#94a3b8"), stockColor = opts.stockColor || (() => "#cbd5e1");
     const byMachine = Object.fromEntries((m.machines || []).map((x) => [x.id, x]));
     const shown = (f) => (f.current && f.current.quality && f.current.quality.events > 0) || opts.showAll;
-    // a stock that only fills is where another stock's material ends up (the tickets done) when a
+    // a stock that only fills is where another stock's material ends up (the orders delivered) when a
     // flow shown drains a stock into it: drawn. One that no such flow feeds (the event bus's
     // length, a tally) starts hidden, with its flows; ``acc`` is those.
     const filling = new Set(m.stocks.filter((s) => s.evidence && s.evidence.accumulator).map((s) => s.id));

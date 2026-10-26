@@ -276,7 +276,7 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
     levels the stock held long enough for ``MIN_EVENTS`` events to be due at the flow's mean rate
     (a shelf kept full for an hour, with no order placed). Where it held them too briefly for
     that, the zero is a rate the data never saw, and the form is rejected whatever its AIC (a
-    twelfth of an hour of a reviewer at work, during which nothing happened to arrive); it stays
+    twelfth of an hour of a baker at the oven, during which nothing happened to arrive); it stays
     in the list, marked ``rejected`` with the reason."""
     total = sum(d for _, d in events)
     if total < MIN_EVENTS:                 # too few events to tell a form from noise: the rate alone

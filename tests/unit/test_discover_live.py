@@ -13,7 +13,7 @@ T0 = 1_800_000_000.0
 
 def test_a_gauge_written_on_change_holds_while_its_machine_is_alive(tmp_path):
     # The board writes its waiting count, and the counters that move it, only when they change,
-    # as a ticket tracker writes its tickets by state: no schedule, no heartbeat. In the last
+    # as a board writes its orders by state: no schedule, no heartbeat. In the last
     # twenty minutes nothing arrives or leaves, so the count is not written at all, while the
     # board keeps counting other things. The count is still the count: the level is live while
     # its machine is, the balance is exact, and the model records how long the value was held.

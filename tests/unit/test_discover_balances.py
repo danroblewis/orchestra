@@ -183,7 +183,7 @@ def test_one_flow_counted_by_two_machines_joins_the_stocks(tmp_path):
 def test_another_machines_counter_never_replaces_the_machines_own_balance(tmp_path):
     # the board's waiting count is balanced by its own arrivals and departures, which it stamps a
     # second after the count (the few at a step's edge land in the next step: the balance is
-    # within tolerance, not exact). The reviewer counts every departure too, stamped with the
+    # within tolerance, not exact). The till counts every departure too, stamped with the
     # count, so it would balance the count exactly, in as few terms. The count is the board's to
     # account for: its own counters keep it, and another machine's enters only to explain what
     # they leave, which here is noise at the edges.
@@ -199,7 +199,7 @@ def test_another_machines_counter_never_replaces_the_machines_own_balance(tmp_pa
         if waiting and rng.random() < 0.09:
             served, waiting = served + 1, waiting - 1
             pts += [Point("waiting", waiting, t, lab("board")), Point("served_total", served, t + 1, lab("board")),
-                    Point("reviews_total", served, t, lab("reviewer"))]
+                    Point("receipts_total", served, t, lab("till"))]
     store = FileMetrics(tmp_path / "m.jsonl")
     store.write(sorted(pts, key=lambda p: p.ts))
     m = discover(store.dump("", {"project": "p"}), start=T0, end=T0 + 3600, step=30)
@@ -207,7 +207,7 @@ def test_another_machines_counter_never_replaces_the_machines_own_balance(tmp_pa
     ev = m.stock("waiting").evidence
     assert balance_of(m, "waiting") == {("arrived_total", 1), ("served_total", -1)}, ev["balance"]
     assert 0.9 <= ev["balance_r2"] < 1.0 and ev["exact_steps"] < 0.97, "within tolerance, not exact"
-    assert 'reviews_total{machine="reviewer"}' in m.discovery["left_out"]
+    assert 'receipts_total{machine="till"}' in m.discovery["left_out"]
 
 
 def test_a_level_and_a_counter_that_coincide_on_a_few_steps_are_no_stock_and_flow(tmp_path):
@@ -324,18 +324,18 @@ def test_a_stock_whose_balance_counts_the_flows_own_events_does_not_drive_it(tmp
 
 
 def test_a_terminal_level_fed_only_by_another_stocks_outflow_is_a_stock(tmp_path):
-    # tickets go from review to done; done only ever fills, by the very counter that drains the
-    # review. A level that is measured and exactly balanced is a stock whatever feeds it: that is
-    # what a terminal state is, and the flow ends in it instead of outside
+    # orders go from baking to delivered; delivered only ever fills, by the very counter that
+    # drains baking. A level that is measured and exactly balanced is a stock whatever feeds it:
+    # that is what a terminal state is, and the flow ends in it instead of outside
     store = FileMetrics(tmp_path / "m.jsonl")
-    rates = {"submitted_total": 5.0, "approved_total": 4.5}
-    machines = {**dict.fromkeys(rates, "desk"), "in_review": "desk", "done": "desk"}
-    start, end = run(store, 60, rates, {"in_review": {"submitted_total": 1, "approved_total": -1}, "done": {"approved_total": 1}}, machines)
+    rates = {"started_total": 5.0, "finished_total": 4.5}
+    machines = {**dict.fromkeys(rates, "board"), "baking": "board", "delivered": "board"}
+    start, end = run(store, 60, rates, {"baking": {"started_total": 1, "finished_total": -1}, "delivered": {"finished_total": 1}}, machines)
     m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
-    assert {s.id for s in m.stocks} == {"in_review", "done"}, m.discovery["left_out"]
-    assert m.stock("done").evidence["accumulator"] and balance_of(m, "done") == {("approved_total", 1)}
-    f = m.flow("approved_total")
-    assert (f.src, f.dst) == ("in_review", "done")
+    assert {s.id for s in m.stocks} == {"baking", "delivered"}, m.discovery["left_out"]
+    assert m.stock("delivered").evidence["accumulator"] and balance_of(m, "delivered") == {("finished_total", 1)}
+    f = m.flow("finished_total")
+    assert (f.src, f.dst) == ("baking", "delivered")
 
 
 def events_each_second(seconds, step, *, seed=1):

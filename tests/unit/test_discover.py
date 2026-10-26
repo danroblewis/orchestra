@@ -133,7 +133,7 @@ def test_event_driven_counters_do_not_shrink_the_live_time(tmp_path):
 
 def test_a_two_valued_level_is_a_stock_only_when_counters_balance_it_exactly(tmp_path):
     # a shelf that holds nothing or one item (in = put on it, out = picked up) is a stock; a
-    # worker's busy flag that only moves with the work, with no counter of its own, is not
+    # baker's busy flag that only moves with the work, with no counter of its own, is not
     rng, t0 = random.Random(3), 1_800_000_000.0
     lab = lambda m: {"project": "p", "machine": m}
     on, put, taken, busy, done = 0, 0, 0, 0, 0
@@ -149,13 +149,13 @@ def test_a_two_valued_level_is_a_stock_only_when_counters_balance_it_exactly(tmp
         elif busy == 1 and rng.random() < 0.1:
             busy, done = 0, done + 1
         pts += [Point("shelf_items", on, t, lab("shelf")), Point("shelf_put_total", put, t, lab("chef")),
-                Point("shelf_taken_total", taken, t, lab("shelf")), Point("worker_busy", busy, t, lab("worker")),
-                Point("worker_done_total", done, t, lab("worker"))]
+                Point("shelf_taken_total", taken, t, lab("shelf")), Point("baker_busy", busy, t, lab("baker")),
+                Point("baker_done_total", done, t, lab("baker"))]
     store = FileMetrics(tmp_path / "m.jsonl")
     store.write(pts)
     m = discover(store.dump("", {"project": "p"}), start=t0, end=t0 + 3600, step=30)
     assert [s.series.name for s in m.stocks] == ["shelf_items"]
-    assert any(k.startswith("worker_busy") and "flag" in why for k, why in m.discovery["left_out"].items()), m.discovery["left_out"]
+    assert any(k.startswith("baker_busy") and "flag" in why for k, why in m.discovery["left_out"].items()), m.discovery["left_out"]
 
 
 def test_a_level_no_longer_written_is_left_out_not_a_reason_to_fit_nothing(tmp_path):

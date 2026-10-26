@@ -7,19 +7,19 @@ const SDGraph = require(path.resolve(import.meta.dirname, "../../orchestra/web/s
 const stock = (id, name, labels) => ({ id, name: id, series: name ? { name, labels: { project: "p", machine: "beads", ...labels } } : null });
 const flow = (id, from, to, name, labels) => ({ id, name: id, from, to, counter: { name, labels: { project: "p", machine: "w", ...labels } } });
 const model = {
-  stocks: [stock("o", "beads_issues", { status: "open", type: "task" }), stock("p", "beads_issues", { status: "in_progress", type: "task" }),
-           stock("c", "beads_issues", { status: "closed", type: "task" }), stock("e", "beads_issues", { status: "open", type: "epic" }),
+  stocks: [stock("o", "beads_issues", { status: "open", type: "loaf" }), stock("p", "beads_issues", { status: "in_progress", type: "loaf" }),
+           stock("c", "beads_issues", { status: "closed", type: "loaf" }), stock("e", "beads_issues", { status: "open", type: "cake" }),
            stock("q", "bus_queue_length", {}), stock("h", null, {})],
-  flows: [flow("op", "o", "p", "beads_issue_transitions_total", { from: "open", to: "in_progress", type: "task" }),
-          flow("pc", "p", "c", "beads_issue_transitions_total", { from: "in_progress", to: "closed", type: "task" }),
-          flow("px", "p", null, "beads_issue_transitions_total", { from: "in_progress", to: "dropped", type: "task" }),
-          flow("ne", null, "e", "beads_issues_created_total", { type: "epic" }),
+  flows: [flow("op", "o", "p", "beads_issue_transitions_total", { from: "open", to: "in_progress", type: "loaf" }),
+          flow("pc", "p", "c", "beads_issue_transitions_total", { from: "in_progress", to: "closed", type: "loaf" }),
+          flow("px", "p", null, "beads_issue_transitions_total", { from: "in_progress", to: "dropped", type: "loaf" }),
+          flow("ne", null, "e", "beads_issues_created_total", { type: "cake" }),
           { id: "u", name: "outside → h", from: null, to: "h" }],
 };
 
 test("a stock is named by what tells it apart within its series, the series is its family", () => {
   const n = SDGraph.names(model).stocks;
-  assert.deepEqual([n.o.name, n.p.name, n.c.name, n.e.name], ["open", "in progress", "closed", "open · epic"]);
+  assert.deepEqual([n.o.name, n.p.name, n.c.name, n.e.name], ["open", "in progress", "closed", "open · cake"]);
   assert.equal(n.o.family, "beads issues");
 });
 
@@ -50,16 +50,16 @@ test("names stay unique when the usual value is left out", () => {
 });
 
 test("a flow measured by two counters of the same events is named by both label sets", () => {
-  const f = { ...flow("rd", "r", "d", "tasks_ticket_transitions_total", { from: "APPROVED", to: "DONE" }),
-              evidence: { same_as: [{ name: "tasks_ticket_transitions_total", labels: { project: "p", machine: "w", from: "IN_REVIEW", to: "APPROVED" } }] } };
-  const m = { stocks: [stock("r", "tasks_tickets", { state: "IN_REVIEW" }), stock("d", "tasks_tickets", { state: "DONE" })], flows: [f] };
-  assert.equal(SDGraph.flowName(m, f), "tasks ticket transitions · IN REVIEW, APPROVED = APPROVED, DONE");
+  const f = { ...flow("rd", "r", "d", "bakery_order_transitions_total", { from: "BOXED", to: "DELIVERED" }),
+              evidence: { same_as: [{ name: "bakery_order_transitions_total", labels: { project: "p", machine: "w", from: "BAKING", to: "BOXED" } }] } };
+  const m = { stocks: [stock("r", "bakery_orders", { state: "BAKING" }), stock("d", "bakery_orders", { state: "DELIVERED" })], flows: [f] };
+  assert.equal(SDGraph.flowName(m, f), "bakery order transitions · BAKING, BOXED = BOXED, DELIVERED");
 });
 
 test("a stock that only fills is drawn when a flow shown drains a stock into it", () => {
-  const acc = (id) => ({ ...stock(id, "tasks_tickets", { state: id }), evidence: { accumulator: true } });
+  const acc = (id) => ({ ...stock(id, "bakery_orders", { state: id }), evidence: { accumulator: true } });
   const withEvents = (f) => ({ ...f, current: { form: "constant", params: { c: 1 }, quality: { events: 5 } } });
-  const m = { stocks: [stock("r", "tasks_tickets", { state: "r" }), acc("done"), acc("tally")], machines: [],
+  const m = { stocks: [stock("r", "bakery_orders", { state: "r" }), acc("done"), acc("tally")], machines: [],
               flows: [withEvents(flow("rd", "r", "done", "t_total", {})), withEvents(flow("x", null, "tally", "u_total", {}))] };
   const g = SDGraph.build(m);
   assert.deepEqual(g.nodes.filter((n) => n.sid).map((n) => n.sid).sort(), ["done", "r"]);

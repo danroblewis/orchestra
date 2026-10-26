@@ -85,14 +85,14 @@ def test_a_counter_leads_another_when_its_events_fall_in_the_earlier_step():
 
 
 def test_a_stock_whose_counter_records_the_flows_events_afterwards_may_drive_it():
-    # a reviewer starts on what waits (the flow), and the scheduler records the ticket leaving the
-    # queue a moment later (the stock's counter, a part of the flow's events): the queue drives the
+    # a baker starts on what waits (the flow), and the board records the order leaving the queue
+    # a moment later (the stock's counter, a part of the flow's events): the queue drives the
     # flow. Stamped first, the queue's counter would be the flow's cause reversed, and barred.
     steps = list(range(20))
-    flow = series("turns_started_total", [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0], "reviewer")
-    after = series("left_queue_total", [1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0], "scheduler")    # the fourth a step later
-    before = series("left_queue_total", [1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0], "scheduler")   # the second a step earlier
-    queue = Series("queue", {"machine": "scheduler"}, [], [0.0] * 21, False)
+    flow = series("bakes_started_total", [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0], "baker")
+    after = series("left_queue_total", [1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0], "board")    # the fourth a step later
+    before = series("left_queue_total", [1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0], "board")   # the second a step earlier
+    queue = Series("queue", {"machine": "board"}, [], [0.0] * 21, False)
     same_flow = lambda a, b: False
     assert co_counting(flow, {"working"}, [(queue, [(after, -1)], 1.0, 1.0)], {queue.key: "queue"}, steps, same_flow) == {}
     barred = co_counting(flow, {"working"}, [(queue, [(before, -1)], 1.0, 1.0)], {queue.key: "queue"}, steps, same_flow)
@@ -133,35 +133,35 @@ def test_a_move_recorded_in_two_hops_is_judged_at_the_first_hop(tmp_path):
 
 
 def test_a_counter_of_the_same_events_is_recorded_on_the_flow_that_stands_for_it(tmp_path):
-    # the scheduler stamps "review → approved" and "approved → done" at the same instant: one flow,
+    # the board stamps "baking → boxed" and "boxed → delivered" at the same instant: one flow,
     # measured twice; the kept counter's flow records the other, so a reader sees both label sets
     rng = random.Random(6)
-    lab = lambda **kw: {"project": "p", "machine": "scheduler", **kw}
-    review = done = moved = sent = 0
+    lab = lambda **kw: {"project": "p", "machine": "board", **kw}
+    baking = delivered = moved = sent = 0
     pts = []
     for i in range(3600):
         t = T0 + i
         if rng.random() < 0.1:
-            review, sent = review + 1, sent + 1
-        if review and rng.random() < 0.08:
-            review, done, moved = review - 1, done + 1, moved + 1
-        pts += [Point("tickets", review, t, lab(state="review")), Point("tickets", done, t, lab(state="done")),
-                Point("transitions_total", sent, t, lab(**{"from": "ready", "to": "review"})),
-                Point("transitions_total", moved, t, lab(**{"from": "review", "to": "approved"})),
-                Point("transitions_total", moved, t, lab(**{"from": "approved", "to": "done"}))]
+            baking, sent = baking + 1, sent + 1
+        if baking and rng.random() < 0.08:
+            baking, delivered, moved = baking - 1, delivered + 1, moved + 1
+        pts += [Point("orders", baking, t, lab(state="baking")), Point("orders", delivered, t, lab(state="delivered")),
+                Point("transitions_total", sent, t, lab(**{"from": "ready", "to": "baking"})),
+                Point("transitions_total", moved, t, lab(**{"from": "baking", "to": "boxed"})),
+                Point("transitions_total", moved, t, lab(**{"from": "boxed", "to": "delivered"}))]
     store = FileMetrics(tmp_path / "m.jsonl")
     store.write(pts)
     m = discover(store.dump("", {"project": "p"}), start=T0, end=T0 + 3600, step=30)
-    [f] = [f for f in m.flows if f.counter.labels["to"] in ("approved", "done")]
-    assert f.src == "tickets_review" and f.dst == "tickets_done"
+    [f] = [f for f in m.flows if f.counter.labels["to"] in ("boxed", "delivered")]
+    assert f.src == "orders_baking" and f.dst == "orders_delivered"
     [other] = f.evidence["same_as"]
-    assert {other["labels"]["from"], f.counter.labels["from"]} == {"review", "approved"}
+    assert {other["labels"]["from"], f.counter.labels["from"]} == {"baking", "boxed"}
     assert any(v.startswith("the same as") for v in m.discovery["left_out"].values())
     assert math.isfinite(f.current().quality["aic"])
 
 
 def test_dispersion_is_judged_between_events_at_the_forms_rate():
-    # one reviewer: a turn starts at 9/min while it is idle and never while it works; it is busy
+    # one baker: a bake starts at 9/min while it is idle and never while it works; it is busy
     # most of the time. Counts per 5 s step judged at the step's average level would be impossible
     # (a dispersion of millions, where the level flipped inside the step); the rate integrated
     # from each start to the next is exponential with mean 1, as a Poisson process should be

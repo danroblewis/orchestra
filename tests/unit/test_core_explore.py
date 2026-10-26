@@ -17,7 +17,7 @@ def _core(tmp_path, key="p1"):
 
 def test_emitter_names_the_machine():
     assert emitter({"type": "order.baked", "source": "baker/2"}) == "baker/2"
-    assert emitter({"type": "note_added", "by": "reviewer"}) == "(no source)"      # before the envelope: not attributed
+    assert emitter({"type": "note_added", "by": "someone"}) == "(no source)"      # before the envelope: not attributed
 
 
 def test_catalog_and_query_are_scoped_to_the_project(tmp_path):

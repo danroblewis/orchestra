@@ -1,16 +1,16 @@
 """Plugins: pages and API routes that another package adds to Orchestra's web app.
 
-Orchestra holds no machines (AGENTS.md rule 2); a package of machines, such as a task system,
-may still want its own views inside the web UI. It declares a plugin as a Python entry point in
+Orchestra holds no machines (AGENTS.md rule 2); a package of machines (a bakery's, say) may
+still want its own views inside the web UI. It declares a plugin as a Python entry point in
 the group ``orchestra.plugins``, naming a function that takes the project and returns a
 ``Plugin``::
 
     [project.entry-points."orchestra.plugins"]
-    tasks = "tasking.web:plugin"
+    pages = "pkg.web:plugin"
 
 The web app mounts what it returns:
 
-- each page at its ``path`` (``/tasks``), linked from the navigation by its ``title``. Its HTML
+- each page at its ``path`` (``/pages``), linked from the navigation by its ``title``. Its HTML
   may use Orchestra's shared assets (``/static/app.js``, ``/static/style.css``) and ``{{v}}``
   to cache-bust them;
 - its ``static`` directory at ``/plugins/<name>/static``;
@@ -48,7 +48,7 @@ log = logging.getLogger("orchestra.plugins")
 
 @dataclass
 class Page:
-    path: str            # where it is served, e.g. "/tasks"
+    path: str            # where it is served, e.g. "/pages"
     title: str           # its link in the navigation
     file: Path           # the HTML
 

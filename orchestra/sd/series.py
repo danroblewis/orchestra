@@ -123,10 +123,10 @@ def sample(dump, start: float, step: float, n: int) -> list[Series]:
 def sum_instances(series: list[Series]) -> tuple[list[Series], dict[str, str]]:
     """Counters that differ only by instance, summed into one per machine.
 
-    A model is about machines, not their instances: six workers' counts of one event are one flow.
+    A model is about machines, not their instances: six bakers' counts of one event are one flow.
     Counting each instance apart multiplies the candidates a balance is chosen from (on a busy
     system, past the number of steps, where least squares can no longer tell them apart). An
-    instance is an ``instance`` label, or the instance part of a ``source`` (``worker/3``).
+    instance is an ``instance`` label, or the instance part of a ``source`` (``baker/3``).
     Increments are summed, so one instance's reset does not read as the total going back. The sum
     was live whenever any instance was. Returns the series, and what each summed series
     was made from (for the record)."""
