@@ -62,7 +62,7 @@ Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 
         const right = own != null ? own : m.last_seen ? `${m.active ? "active" : "quiet"} · last event ${ago(Date.now() / 1000 - m.last_seen)} ago` : "";
         return `<div class="mline" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)" title="click for its details">
           <span class="d" style="background:${m.active ? "#22c55e" : "#64748b"}"></span><b>${esc(m.id)}</b>
-          <span>${kind ? `<span class="k ${kind === "agent" ? "agent" : ""}">${kind === "agent" ? "AI agent" : esc(kind)}</span> ` : ""}${m.mode ? `<span class="k">${esc(m.mode)}</span>` : ""}</span>
+          <span>${kind ? `<span class="k ${kind === "agent" ? "agent" : ""}">${kind === "agent" ? "AI agent" : esc(kind)}</span> ` : ""}${m.mode ? `<span class="k">${esc(m.mode)}</span>` : ""}${m.package ? `<span class="k" title="the package this machine belongs to">${esc(m.package)}</span>` : ""}</span>
           <span class="r">${right}</span></div>`;
       }).join("") : `<div class="empty">Nothing is running: no continuous machine, and nothing has published in the last two minutes.</div>`;
     } catch (e) { $("conn").textContent = "disconnected"; }

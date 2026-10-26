@@ -12,7 +12,8 @@ const fmtBytes = (b) => (b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)} GB` : `${
 //   open(m)             -> true when it opened the machine's dialog itself, else Orchestra opens its own;
 //   summary(m)          -> a few words for a machine's line in a short list (the Dashboard's), or null;
 //   rank(m)             -> where its machines go in a list (Orchestra's own are 0; default 50).
-// The card is always drawn inside Orchestra's frame: a package draws what is in it, nothing around it.
+// The card is always drawn inside Orchestra's frame: a package draws what is in it, nothing around
+// it, and what Orchestra observed of the machine (``rows``) is drawn under it on every card.
 // ``changed()`` asks the pages to draw the cards again (its data arrived). Any machine no package
 // claims gets Orchestra's card and dialog.
 window.Orchestra = window.Orchestra || {};
@@ -26,6 +27,22 @@ Orchestra.machineCards = (() => {
     summary(m) { const s = this.of(m); try { return s && s.summary ? s.summary(m) : null; } catch (e) { return null; } },
     wrap(m, html, extra = "") {
       return `<div class="panel ${extra} ${m.unseen ? "unseen" : ""}" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)">${html}</div>`;
+    },
+    // What Orchestra observed of a machine, as the rows of its card, drawn under whatever its
+    // package put there: how it is engaged and what kind of thing it is (announced), its package,
+    // its instances, when it was seen, what it publishes (all time, and the rate in the last ten
+    // minutes when there is one) and listens for, and the metrics it writes. One function, so
+    // every card shows the same rows.
+    rows(m) {
+      const now = Date.now() / 1000;
+      const chip = (p) => `<span class="ty" title="${p.count} events, ${p.day} in 24 h, ${p.per_min_10m}/min in the last 10 min">${esc(p.type)} · ${p.count}${p.per_min_10m ? ` · ${p.per_min_10m}/min` : ""}</span>`;
+      return `<div class="row"><span class="muted">engaged</span><span>${m.mode ? `<span class="tag k-${esc(m.mode.replace(/ /g, "_"))}">${esc(m.mode.replace("_", " "))}</span>` : '<span class="muted">not announced</span>'}</span><span class="muted">kind</span><span>${m.kind ? `<span class="tag">${esc(kindWord(m.kind))}</span>` : '<span class="muted">not announced</span>'}</span></div>
+    <div class="row"><span class="muted">package</span><span>${m.package ? esc(m.package) : '<span class="muted">no package</span>'}</span></div>
+    ${m.instances && m.instances.length ? `<div class="row"><span class="muted">instances</span>${m.instances.map((i) => `<span class="ty" title="last seen ${ago(now - i.last_seen)} ago"><span class="dot ${i.active ? "" : "off"}" style="--rc:${i.active ? "#22c55e" : "#64748b"};width:7px;height:7px"></span> ${esc(i.id)}</span>`).join("")}</div>` : ""}
+    <div class="row"><span class="muted">seen</span><span>${m.first_seen ? `first ${ago(now - m.first_seen)} ago, last ${ago(now - m.last_seen)} ago` : "no events yet"}</span></div>
+    <div class="row"><span class="muted">publishes</span>${(m.publishes || []).map(chip).join("") || '<span class="muted">nothing</span>'}</div>
+    <div class="row"><span class="muted">listens for</span>${(m.subscribes || []).map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">nothing</span>'}</div>
+    <div class="row"><span class="muted">metrics</span>${(m.metrics || []).map((x) => `<span class="ty">${esc(x)}</span>`).join("") || `<span class="muted">none labelled machine="${esc(m.id)}"</span>`}</div>`;
     },
     rank(m) { if (m.bootstrap) return 0; const s = this.of(m); try { return s && s.rank ? s.rank(m) : 50; } catch (e) { return 50; } },
     sort(ms) { return [...ms].sort((a, b) => this.rank(a) - this.rank(b) || a.id.localeCompare(b.id)); },
