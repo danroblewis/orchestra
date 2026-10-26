@@ -45,7 +45,8 @@ def split_event_counters(found: list, counters: list[Series], masks: dict[str, l
                          ) -> tuple[list, dict[str, str]]:
     """Orchestra's event counters in the balances, each replaced by the machine counters that sum
     to it (``floor``: the events a sum of parts needs). ``order.queued`` is ``placed + returns +
-    failed + leases``: four flows into the waiting orders, two of them from other stocks."""
+    failed + leases``: four flows into the waiting orders, two of them from other stocks. Where
+    two sets sum to it alike, the level's own machine's parts win over another machine's copy."""
     out, notes = [], {}
     machine = [c for c in counters if c.labels.get("machine")]
     for s, terms, r2, exact in found:
@@ -53,8 +54,9 @@ def split_event_counters(found: list, counters: list[Series], masks: dict[str, l
             if c.name != EVENT_COUNTER:
                 continue
             used = {k.key for k, _ in terms}
-            evidence = _claimed_by_others(found, s) | {k.key for k in machine if machine_of(k) == machine_of(s)}
-            parts = decompose(c, [k for k in machine if k.key not in used], masks[s.key], sizes=(1, 2, 3, 4), required=evidence, floor=floor)
+            own = {k.key for k in machine if machine_of(k) == machine_of(s)}
+            parts = decompose(c, [k for k in machine if k.key not in used], masks[s.key], sizes=(1, 2, 3, 4),
+                              required=_claimed_by_others(found, s) | own, floor=floor, own=own)
             got = _replace(s, terms, c, parts, masks[s.key], fits) if parts else None
             if got:
                 terms, r2, exact = got

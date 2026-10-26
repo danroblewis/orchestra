@@ -6,7 +6,7 @@ import random
 from orchestra.metrics import Point
 from orchestra.metrics.file import FileMetrics
 from orchestra.sd.balance import balance, cancel
-from orchestra.sd.discover import Path, Series, discover, fit_flow
+from orchestra.sd.discover import Path, Series, discover, fit_flow, same_flow, twin_levels
 
 T0 = 1_800_000_000.0
 
@@ -88,6 +88,30 @@ def test_twin_levels_are_one_stock_measured_twice(tmp_path):
     [twin] = m.stock("on_shelf").evidence["twins"]
     assert twin["series"] == 'shelf_items{machine="shelf"}' and twin["machine"] == "shelf" and twin["equal_steps"] == 1.0
     assert m.discovery["left_out"]['shelf_items{machine="shelf"}'].startswith('the same as on_shelf{machine="board"} (one stock measured twice')
+
+
+def test_twin_levels_balanced_by_two_machines_counts_of_the_same_events():
+    # the expo's copy of the board's queue lags it by a step here and there (equal in fewer than
+    # 97% of steps), and its balance names the customers' count of the returns where the board's
+    # names the board's own rejected: the same events, counted by two machines, are the same
+    # counter, so the two balances are the same and the copy is the board's twin
+    rng = random.Random(7)
+    placed = [rng.choice([0, 1, 1, 2]) for _ in range(60)]
+    rejected = [rng.choice([0, 0, 0, 1]) for _ in range(60)]
+    assigned = [rng.choice([0, 1, 1]) for _ in range(60)]
+    change = [a + b - c for a, b, c in zip(placed, rejected, assigned)]
+    lag = [0, *change[:-1]]                      # the copy, a step behind
+    waiting = _series("waiting", change, counter=False, machine="board")
+    queue = _series("bake_queue", [x if i % 3 else y for i, (x, y) in enumerate(zip(change, lag))], counter=False, machine="expo")
+    c_placed, c_assigned = _series("placed_total", placed, machine="board"), _series("assigned_total", assigned, machine="board")
+    c_rejected, c_returns = _series("rejected_total", rejected, machine="board"), _series("returns_total", rejected, machine="customers")
+    found = [(waiting, [(c_placed, 1), (c_rejected, 1), (c_assigned, -1)], 1.0, 1.0),
+             (queue, [(c_placed, 1), (c_returns, 1), (c_assigned, -1)], 0.9, 0.7)]
+    left_out = {}
+    kept, twins = twin_levels(found, left_out, lambda a, b: same_flow(a, b, 60))
+    assert [s.key for s, _, _, _ in kept] == ['waiting{machine="board"}'], [s.key for s, _, _, _ in kept]
+    assert twins['waiting{machine="board"}'][0]["series"] == 'bake_queue{machine="expo"}'
+    assert left_out['bake_queue{machine="expo"}'].startswith("the same as waiting")
 
 
 def _series(name, deltas, counter=True, machine="m"):

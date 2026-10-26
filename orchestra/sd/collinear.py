@@ -91,7 +91,7 @@ def merge(coef: dict[int, int], resid: list[float], sse: float, xs: list[list[fl
 
 
 def decompose(counter, candidates: list, steps: list[int], *, sizes=(2, 3), required: set[str] | None = None,
-              floor: float = 0.0) -> list | None:
+              floor: float = 0.0, own: set[str] | None = None) -> list | None:
     """The one to three ``candidates`` whose sum is this counter in all but ``CANCEL_STEPS`` of the
     steps either moved in: the counters that count the same events apart (Orchestra's
     ``order.rejected`` is the machines' returns plus refunds; yelp's reviews are the customers
@@ -100,7 +100,11 @@ def decompose(counter, candidates: list, steps: list[int], *, sizes=(2, 3), requ
     between the stocks that exchange it, where the one counter goes through outside. ``required``:
     at least one of the parts must be among these keys (a counter another stock's balance claims:
     evidence that the parts are flows of their own); ``floor``: a sum of several parts needs at
-    least this many events, a coincidence of rare counters being cheap. None when no set fits."""
+    least this many events, a coincidence of rare counters being cheap. Among sets that differ in
+    equally few steps, the one with the fewest parts another machine wrote wins (``own``: the keys
+    of the level's own machine's counters; a board's count of its events is its own transitions
+    counted apart, which another machine's copy of one of them only mirrors), then the smallest.
+    None when no set fits."""
     y = [counter.deltas[i] for i in steps]
     total = sum(y)
     if total <= 0:
@@ -108,8 +112,9 @@ def decompose(counter, candidates: list, steps: list[int], *, sizes=(2, 3), requ
     pool = [c for c in candidates if c is not counter]
     xs = [[c.deltas[i] for i in steps] for c in pool]
     wanted = [required is None or c.key in required for c in pool]
+    foreign = [own is not None and c.key not in own for c in pool]
     sums = [sum(x) for x in xs]
-    best = None                                   # (steps that differ, size, parts): the closest set, then the smallest
+    best = None                                   # (steps that differ, parts another machine wrote, size, parts)
     for size in sizes:
         if size > 1 and total < floor:
             continue
@@ -119,8 +124,9 @@ def decompose(counter, candidates: list, steps: list[int], *, sizes=(2, 3), requ
             s = [sum(xs[j][i] for j in sub) for i in range(len(y))]
             moved = sum(1 for a, b in zip(s, y) if a or b)
             differ = sum(1 for a, b in zip(s, y) if abs(a - b) > 0.5)
-            if moved and differ <= CANCEL_STEPS * moved and (best is None or (differ, size) < best[:2]):
-                best = (differ, size, [pool[j] for j in sub])
-                if differ == 0:
-                    return best[2]
-    return best[2] if best else None
+            key = (differ, sum(1 for j in sub if foreign[j]), size)
+            if moved and differ <= CANCEL_STEPS * moved and (best is None or key < best[:3]):
+                best = (*key, [pool[j] for j in sub])
+                if key[:2] == (0, 0):
+                    return best[3]
+    return best[3] if best else None

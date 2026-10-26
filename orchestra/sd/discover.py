@@ -329,16 +329,22 @@ def own_balance(s: Series, counters: list[Series], steps: list[int], fits) -> tu
     return terms, r2, exact
 
 
-def twin_levels(found: list, left_out: dict[str, str]) -> tuple[list, dict[str, list[dict]]]:
+def _same_balance(a: list, b: list, same_flow) -> bool:
+    """Whether two balances are the same counters with the same signs, a counter of the same
+    events (``same_flow``: the board's rejected, the customers' returns) counting as the same."""
+    return len(a) == len(b) and all(any(sa == sb and (ca is cb or same_flow(ca, cb)) for cb, sb in b) for ca, sa in a)
+
+
+def twin_levels(found: list, left_out: dict[str, str], same_flow) -> tuple[list, dict[str, list[dict]]]:
     """One stock measured twice (a shelf counted by the shelf and by the board): two levels that
-    change alike in at least ``TWIN_STEPS`` of the steps, or that the same counters balance. The
-    one kept is the machine's whose counters make the balance, then the better balance; the other
-    is left out and recorded as its twin, in the kept stock's evidence."""
+    change alike in at least ``TWIN_STEPS`` of the steps, or that the same counters balance (two
+    machines' counts of the same events being the same counter). The one kept is the machine's
+    whose counters make the balance, then the better balance; the other is left out and recorded
+    as its twin, in the kept stock's evidence."""
     kept: list = []
     twins: dict[str, list[dict]] = defaultdict(list)
     for s, terms, r2, exact in found:
-        bal = {(c.key, sign) for c, sign in terms}
-        other = next((k for k in kept if _equal_steps(s, k[0]) >= TWIN_STEPS or {(c.key, sg) for c, sg in k[1]} == bal), None)
+        other = next((k for k in kept if _equal_steps(s, k[0]) >= TWIN_STEPS or _same_balance(terms, k[1], same_flow)), None)
         if other is None:
             kept.append((s, terms, r2, exact))
             continue
@@ -469,7 +475,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             kept.append((s, terms2, r2b, exact2))
         else:
             left_out[s.key] = f"only an accumulator of other stocks' flows (R² {r2b:.2f} with counters of its own)"
-    found, twins = twin_levels(kept, left_out)
+    found, twins = twin_levels(kept, left_out, lambda a, b: same_flow(a, b, n))
     stocks, sid_of, ids = [], {}, set()
     held: dict[str, dict] = {}       # the levels whose value was carried on their machine's word, and for how long
     for s, terms, r2, exact in found:

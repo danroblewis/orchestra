@@ -5,11 +5,14 @@ a machine's own counters, and one flow counted by two machines."""
 
 import math
 import random
+from itertools import accumulate
 
 from orchestra.metrics import Point
 from orchestra.metrics.file import FileMetrics
 from orchestra.sd.balance import LeastSquares, balance
+from orchestra.sd.collinear import decompose
 from orchestra.sd.discover import discover, sample
+from orchestra.sd.series import Series
 
 T0 = 1_800_000_000.0
 
@@ -230,3 +233,53 @@ def test_a_level_and_a_counter_that_coincide_on_a_few_steps_are_no_stock_and_flo
     assert "only 3 events" in why['planner_wakes_total{machine="planner"}'], why
     assert why['shelf_items{machine="shelf"}'].startswith("no counters balance it"), why
     assert "only 3 events" in why['shelf_put_total{machine="shelf"}'] and "only 3 events" in why['shelf_taken_total{machine="shelf"}']
+
+
+def test_an_event_counter_splits_into_the_levels_own_machines_counters_first(tmp_path):
+    # Orchestra counts an order queued, for the board, whenever an order is placed or rejected
+    # back to the queue; the customers count every rejection too, as a return, stamped with the
+    # board's, and the expo keeps a copy of the queue. The board's rejected and the customers'
+    # return split the event count alike, and the customers' key happens to be the shorter. The
+    # waiting orders are the board's record: its own rejected is the part, whichever set the search
+    # meets first, and the customers' copy is left out. (The copy of the queue is a twin, dropped
+    # later; while it is in the running it may claim the same counters, which on the bakery barred
+    # the pass that would otherwise have swapped the customers' copy for the board's own.)
+    store = FileMetrics(tmp_path / "m.jsonl")
+    rates = {"orders_placed_total": 6.0, "orders_rejected_total": 0.8, "orders_assigned_total": 6.5}
+    machines = {**dict.fromkeys(rates, "board"), "waiting": "board"}
+    last = [None]
+
+    def copies(t, counts):
+        out = [Point("returns_total", counts["orders_rejected_total"], t, {"project": "p", "machine": "customers"}),
+               Point("bake_queue", counts["orders_placed_total"] + counts["orders_rejected_total"] - counts["orders_assigned_total"], t,
+                     {"project": "p", "machine": "expo"})]
+        n = counts["orders_placed_total"] + counts["orders_rejected_total"]
+        if n != last[0]:
+            last[0] = n
+            out.append(Point("orchestra_events_total", n, t, {"project": "p", "source": "board", "type": "order.queued"}))
+        return out
+    start, end = run(store, 90, rates, {"waiting": {"orders_placed_total": 1, "orders_rejected_total": 1, "orders_assigned_total": -1}},
+                     machines, extra=copies)
+    m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
+    assert balance_of(m, "waiting") == {("orders_placed_total", 1), ("orders_rejected_total", 1), ("orders_assigned_total", -1)}, \
+        m.stock("waiting").evidence["balance"]
+    assert m.flow("orders_rejected_total").dst == "waiting"
+    assert 'returns_total{machine="customers"}' in m.discovery["left_out"], m.discovery["left_out"]
+
+
+def test_decompose_breaks_a_tie_for_the_levels_own_machines_parts():
+    # the pool is in key order, so the committed search met the customers' copy first and stopped
+    # at the first exact set; among exact sets the one with the fewest parts another machine wrote
+    # wins, then the smallest
+    rng = random.Random(6)
+    placed = [rng.choice([0, 1, 1, 2]) for _ in range(60)]
+    rejected = [rng.choice([0, 0, 0, 1]) for _ in range(60)]
+    cum = lambda xs: [0.0, *accumulate(xs)]
+    mk = lambda name, labels, xs: Series(name, labels, [], cum(xs), True)
+    queued = mk("orchestra_events_total", {"source": "board", "type": "order.queued"}, [a + b for a, b in zip(placed, rejected)])
+    pool = [mk("returns_total", {"machine": "customers"}, rejected), mk("orders_placed_total", {"machine": "board"}, placed),
+            mk("orders_rejected_total", {"machine": "board"}, rejected)]
+    steps = list(range(60))
+    assert [p.key for p in decompose(queued, pool, steps)] == ['returns_total{machine="customers"}', 'orders_placed_total{machine="board"}']
+    own = {'orders_placed_total{machine="board"}', 'orders_rejected_total{machine="board"}'}
+    assert [p.key for p in decompose(queued, pool, steps, own=own)] == ['orders_placed_total{machine="board"}', 'orders_rejected_total{machine="board"}']
