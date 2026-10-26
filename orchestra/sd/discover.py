@@ -59,6 +59,7 @@ from dataclasses import dataclass
 from itertools import accumulate, pairwise
 
 from .balance import MIN_EVENTS, MIN_GAIN, LeastSquares, balance, fit_of
+from .drivers import co_counting
 from .ends import claims, moves
 from .inputs import offered_inputs
 from .live import balance_steps, held_for, intersect, within
@@ -522,9 +523,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         paths[f"input:{name}"] = Path.of([(start + i * step, v) for i, v in enumerate(vals)], live, unit_s)
     # A stock that only fills (no outflow in its balance) grows with time whatever else happens,
     # so as a driver of another flow's rate it stands in for time itself and finds spurious
-    # influences. It stays a stock; it just may not explain other flows.
+    # influences. It stays a stock; it just may not explain other flows. Nor may a stock whose
+    # balance counts the flow's own events, one off just before each of them (sd.drivers).
     accumulators = {sid_of[s.key] for s, terms, _, _ in found if all(sign > 0 for _, sign in terms)}
-    drivers = set(paths) - accumulators
     flows, by_machine = [], defaultdict(list)
     for mv in flow_moves:
         c = mv.counter
@@ -532,7 +533,10 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             continue
         dl = c.deltas
         y = [dl[i] for i in steps_live]
-        best, *rest = fit_flow(events_of(c.points, live), live_s / unit_s, paths, mv.src, drivers)
+        barred = co_counting(c, mv.src, mv.dst, found, sid_of, steps_live, lambda a, b: same_flow(a, b, n))
+        if barred:
+            mv.evidence["not_drivers"] = barred
+        best, *rest = fit_flow(events_of(c.points, live), live_s / unit_s, paths, mv.src, set(paths) - accumulators - set(barred))
         best["dispersion"] = dispersion(y, dt, best, levels)
         alt = {f"aic_{x['form']}" + (f"_{x['inputs'][0]}" if x["form"] == "linear" else ""): round(x["aic"], 2) for x in rest[:4]}
         alt.update({f"{x['form']}_k": round(x["params"]["k"], 6) for x in [best, *rest] if x["form"] == "proportional"})

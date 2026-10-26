@@ -283,3 +283,41 @@ def test_decompose_breaks_a_tie_for_the_levels_own_machines_parts():
     assert [p.key for p in decompose(queued, pool, steps)] == ['returns_total{machine="customers"}', 'orders_placed_total{machine="board"}']
     own = {'orders_placed_total{machine="board"}', 'orders_rejected_total{machine="board"}'}
     assert [p.key for p in decompose(queued, pool, steps, own=own)] == ['orders_placed_total{machine="board"}', 'orders_rejected_total{machine="board"}']
+
+
+def test_a_stock_whose_balance_counts_the_flows_own_events_does_not_drive_it(tmp_path):
+    # orders come at the rate the rating sets: most through a taker, who is free again at the
+    # instant the order is placed (the takers' count of orders taken is a part of the board's
+    # count of orders placed: the same events), the rest online. The free takers just before each
+    # placing are one fewer by construction, and as an influence that beats the rating on
+    # likelihood; the takers are no driver of placed, and the rating is read
+    rng = random.Random(5)
+    lab = lambda m: {"project": "p", "machine": m}
+    rating = lambda t: round(3.0 + 2.0 * math.sin(2 * math.pi * (t - T0) / 1200), 2)
+    free, busy_until = 2, []
+    placed = taken = called = served = waiting = 0
+    pts = []
+    for i in range(90 * 60):
+        t = T0 + i
+        for u in [u for u in busy_until if u <= t]:          # a taker finishes: the order is placed
+            busy_until.remove(u)
+            free, taken, placed, waiting = free + 1, taken + 1, placed + 1, waiting + 1
+        if rng.random() < 0.9 * rating(t) / 60 and free:     # a customer walks in and a taker takes the order
+            free, called = free - 1, called + 1
+            busy_until.append(t + rng.randint(3, 8))
+        if rng.random() < 0.3 * rating(t) / 60:              # an order placed online, no taker involved
+            placed, waiting = placed + 1, waiting + 1
+        if waiting and rng.random() < 0.1:
+            served, waiting = served + 1, waiting - 1
+        pts += [Point("orders_placed_total", placed, t, lab("board")), Point("orders_waiting", waiting, t, lab("board")),
+                Point("orders_served_total", served, t, lab("board")), Point("orders_taken_total", taken, t, lab("taker")),
+                Point("customers_called_total", called, t, lab("expo")), Point("takers_free", free, t, lab("expo")),
+                Point("yelp_rating", rating(t), t, lab("yelp"))]
+    store = FileMetrics(tmp_path / "m.jsonl")
+    store.write(pts)
+    m = discover(store.dump("", {"project": "p"}), start=T0, end=T0 + 5400, step=30)
+    assert {s.id for s in m.stocks} == {"orders_waiting", "takers_free"}, m.discovery["left_out"]
+    f = m.flow("orders_placed_total")
+    eq = f.current()
+    assert eq.inputs == ["input:yelp_rating"], (eq.form, eq.inputs, eq.quality)
+    assert "orders_taken_total" in f.evidence["not_drivers"]["takers_free"], f.evidence
