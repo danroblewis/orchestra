@@ -1,5 +1,5 @@
-/* Orchestra's web UI. A package's own look (the task system's ticket states and cards, the agents'
-   roles, transcripts and chat) is in the package's stylesheet, not here. */
+/* Orchestra's web UI. A package's own look (its states, cards, drawers and colours) is in the
+   package's stylesheet, not here. */
 :root {
   --bg:#0b0d12; --panel:#12151c; --panel2:#181c25; --panel3:#1f2430; --border:#262b37; --border2:#333a49;
   --text:#e7eaf0; --text2:#aeb6c4; --muted:#6f7889; --accent:#6ea8fe;

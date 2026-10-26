@@ -1,5 +1,5 @@
 """The web UI: Dashboard, Machines, Dynamics and Core. Read-only for humans: nothing here
-changes the system (AGENTS.md rule 7)."""
+changes the system (AGENTS.md rule 9)."""
 
 from __future__ import annotations
 
