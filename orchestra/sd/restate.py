@@ -110,9 +110,11 @@ def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamp
     board's waiting and takes one of the kitchen's cooks), the one counter is claimed by both
     machines' stocks and ``sd.ends`` makes it a flow and a co-flow. The counter kept is the one every balance still
     fits with (``fits``); between two, the one that moves material between its own machine's
-    stocks (its flow is the move, the other's the co-flow), then the one stamped first (the
-    flow's events are judged against the levels just before them, which the later stamp has
-    already moved), then the one that leaves the balances fitting best. Returns the balances,
+    stocks (its flow is the move, the other's the co-flow), then one its own machine's stock
+    holds at all (the board's count of the orders rejected back into its waiting, over the
+    customers' count of the same returns: a stock's own machine's counters come first), then the
+    one stamped first (the flow's events are judged against the levels just before them, which
+    the later stamp has already moved), then the one that leaves the balances fitting best. Returns the balances,
     why each counter dropped was (by key), and the pairs joined (kept, dropped)."""
     found = list(found)
     notes: dict[str, str] = {}
@@ -136,7 +138,7 @@ def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamp
             if not ok:
                 continue
             own = {sg for s, terms, _, _ in trial for c, sg in terms if c is keep and machine_of(s) == machine_of(keep)}
-            rank = (len(own) == 2, first_stamped(keep, drop), total)
+            rank = (len(own) == 2, len(own) >= 1, first_stamped(keep, drop), total)
             if best is None or rank > best[0]:
                 best = (rank, trial, keep, drop)
         if best is not None:

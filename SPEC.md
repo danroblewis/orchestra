@@ -212,7 +212,8 @@ Conservation (`sd/discover.py`):
    (among sets that sum to it alike, the level's own machine's parts before another machine's
    copy of one of them); another machine's counter that no other stock claims to the level's
    own counters that sum to it; and two machines' counts of one flow, one leaving a stock and
-   the other entering another, to one counter in both balances. A restated balance must still
+   the other entering another, to one counter in both balances (one that a stock of its own
+   machine holds before another machine's copy, then the one stamped first). A restated balance must still
    fit as a stock's. Two levels that change alike in 97% of steps, or that the same counters
    balance (two machines' counts of the same events being one counter), are one stock measured
    twice: the machine whose counters make the balance keeps it, the other is recorded as its

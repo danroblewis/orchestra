@@ -459,3 +459,26 @@ def test_two_lagged_counters_with_a_stock_between_them_stay_its_inflow_and_outfl
     found = [*found, (b, [(x, 1), (y, -1)], 1.0, 1.0)]
     got, notes, joined = unify_same_flows(found, masks, same, first, lambda s: s.labels["machine"], fits)
     assert joined == [] and notes == {} and got == found
+
+
+def test_a_stocks_own_machines_counter_is_kept_over_an_earlier_copy_of_the_same_events():
+    # the customers stamp their returns a moment before the board counts the same orders rejected
+    # back into its waiting; the move's other end is no stock. The board's own counter is kept,
+    # and the customers' is recorded as the same events
+    from orchestra.sd.restate import unify_same_flows
+    n = 100
+    cum = lambda xs: [0.0, *accumulate(xs)]
+    mk = lambda name, m, xs, counter=True: Series(name, {"machine": m}, [], cum(xs), counter)
+    dret = [1.0 if i % 7 == 0 else 0.0 for i in range(n)]
+    din = [1.0 if i % 2 == 0 else 0.0 for i in range(n)]
+    dout = [1.0 if i % 2 == 1 else 0.0 for i in range(n)]
+    returns, rejected = mk("returns_total", "customers", dret), mk("orders_rejected_total", "board", dret)
+    inn, out = mk("orders_placed_total", "board", din), mk("orders_assigned_total", "board", dout)
+    level = [a + b - c for a, b, c in zip(din, dret, dout)]
+    waiting, queue = mk("waiting", "board", level, False), mk("bake_queue", "expo", level, False)
+    masks = {s.key: list(range(n)) for s in (waiting, queue)}
+    found = [(waiting, [(inn, 1), (returns, 1), (out, -1)], 1.0, 1.0), (queue, [(inn, 1), (rejected, 1), (out, -1)], 1.0, 1.0)]
+    got, notes, joined = unify_same_flows(found, masks, lambda p, q: p.deltas == q.deltas, lambda p, q: p is returns,
+                                          lambda s: s.labels["machine"], lambda s, r2, exact: r2 >= 0.9)
+    assert joined == [(rejected, returns)] and returns.key in notes
+    assert [c.name for c, _ in got[0][1]] == ["orders_placed_total", "orders_rejected_total", "orders_assigned_total"]
