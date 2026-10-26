@@ -80,6 +80,7 @@ MIN_R2 = 0.9            # how well a balance must fit for a level to count as a 
 FLAG_EXACT = 0.97         # a two-valued level is a stock only if its balance is exact in this share of steps
 SAME_STEPS = 0.03          # counters that differ in no more than this share of steps are one
 TWIN_STEPS = 0.97          # levels whose changes are equal in this share of steps are one stock measured twice
+TWIN_CORR = 0.9            # ... or whose changes correlate this well (one a moment behind the other)
 MIN_STEPS = 5              # a level live in fewer steps than this (while every counter was) cannot be balanced
 AIC_MARGIN = 2.0           # a two-parameter form must beat the best one-parameter form by this much AIC to be chosen
 EVENTS_PER_PARAM = 10      # a form that reads another stock or an input needs this many events per parameter
@@ -381,6 +382,27 @@ def _equal_steps(a: Series, b: Series) -> float:
     return sum(1 for x, y in moved if abs(x - y) <= 1e-6) / max(1, len(moved))
 
 
+def _alike(a: Series, b: Series) -> dict[str, float]:
+    """How alike two levels are, on the steps both were live in: the correlation of their
+    changes, and the share of the steps in which either held something where both held the same."""
+    steps = [i for i in range(min(len(a.deltas), len(b.deltas))) if (a.live is None or i in a.live) and (b.live is None or i in b.live)]
+    da, db = [a.deltas[i] for i in steps], [b.deltas[i] for i in steps]
+    n = max(1, len(steps))
+    ma, mb = sum(da) / n, sum(db) / n
+    va, vb = sum((x - ma) ** 2 for x in da), sum((y - mb) ** 2 for y in db)
+    corr = sum((x - ma) * (y - mb) for x, y in zip(da, db)) / math.sqrt(va * vb) if va > 0 and vb > 0 else 0.0
+    held = [i for i in steps if a.values[i + 1] or b.values[i + 1]]
+    same = sum(1 for i in held if abs(a.values[i + 1] - b.values[i + 1]) <= 1e-6) / len(held) if len(held) >= MIN_EVENTS else 0.0
+    return {"change_correlation": corr, "equal_values": same}
+
+
+def _twins(a: Series, b: Series, a_terms: list, b_terms: list, same_flow) -> bool:
+    if _equal_steps(a, b) >= TWIN_STEPS or _same_balance(a_terms, b_terms, same_flow):
+        return True
+    alike = _alike(a, b)
+    return alike["change_correlation"] >= TWIN_CORR or alike["equal_values"] >= TWIN_STEPS
+
+
 def _owns(s: Series, terms: list) -> int:
     """How many of the balance's counters the level's own machine writes: that machine owns the
     transitions, and the level is its record of them."""
@@ -420,13 +442,16 @@ def _same_balance(a: list, b: list, same_flow) -> bool:
 def twin_levels(found: list, left_out: dict[str, str], same_flow) -> tuple[list, dict[str, list[dict]]]:
     """One stock measured twice (a shelf counted by the shelf and by the board): two levels that
     change alike in at least ``TWIN_STEPS`` of the steps, or that the same counters balance (two
-    machines' counts of the same events being the same counter). The one kept is the machine's
+    machines' counts of the same events being the same counter), or, judged on the levels
+    themselves, whose changes correlate by ``TWIN_CORR`` or whose values are equal in
+    ``TWIN_STEPS`` of the steps either held something (the expo's view of the board's queue, a
+    moment behind it, whose balance takes the expo's own counters). The one kept is the machine's
     whose counters make the balance, then the better balance; the other is left out and recorded
     as its twin, in the kept stock's evidence."""
     kept: list = []
     twins: dict[str, list[dict]] = defaultdict(list)
     for s, terms, r2, exact in found:
-        other = next((k for k in kept if _equal_steps(s, k[0]) >= TWIN_STEPS or _same_balance(terms, k[1], same_flow)), None)
+        other = next((k for k in kept if _twins(s, k[0], terms, k[1], same_flow)), None)
         if other is None:
             kept.append((s, terms, r2, exact))
             continue
@@ -437,11 +462,13 @@ def twin_levels(found: list, left_out: dict[str, str], same_flow) -> tuple[list,
             twins[s.key] = twins.pop(o.key, [])
         else:
             win, lose = o, s
-        share = _equal_steps(win, lose)
-        twins[win.key].append({"series": lose.key, "machine": machine_of(lose), "equal_steps": round(share, 4)})
+        share, alike = _equal_steps(win, lose), _alike(win, lose)
+        twins[win.key].append({"series": lose.key, "machine": machine_of(lose), "equal_steps": round(share, 4),
+                               **{k: round(v, 4) for k, v in alike.items()}})
         for rec in twins[win.key]:
             left_out[rec["series"]] = (f"the same as {win.key} (one stock measured twice: their changes are equal in "
-                                       f"{rec['equal_steps']:.0%} of steps)")
+                                       f"{rec['equal_steps']:.0%} of steps and correlate by {rec['change_correlation']:.2f}; "
+                                       f"their values are equal in {rec['equal_values']:.0%} of the steps either held something)")
     return kept, dict(twins)
 
 

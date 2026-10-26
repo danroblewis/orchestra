@@ -161,7 +161,9 @@ flows for stocks whose counters already explain every step, and those are droppe
 Its richer forms (gap, linear in several stocks or inputs, expressions, effects) are kept in
 each equation's `spec`, and its hidden stocks are drawn dashed. The host gives a strategy a
 deadline below `[discovery] every`, and one discovery runs at a time per project across
-processes (the host skips a scheduled run while the CLI or the web page is discovering).
+processes (the host skips a scheduled run while the CLI or the web page is discovering). Every
+run's window starts and ends on multiples of the step (`sd/rediscover.py`), so runs a few
+seconds apart sample the same grid and agree.
 
 Conservation (`sd/discover.py`):
 1. every series is sampled onto a grid of steps, and marked with when it was live
@@ -219,8 +221,10 @@ Conservation (`sd/discover.py`):
    (`sd/parsimony.py`: the customers' orders less the app's are the takers' own orders taken),
    never the level's own machine's counters, never for Orchestra's event counter. A restated balance must still
    fit as a stock's. Two levels that change alike in 97% of steps, or that the same counters
-   balance (two machines' counts of the same events being one counter), are one stock measured
-   twice: the machine whose counters make the balance keeps it, the other is recorded as its
+   balance (two machines' counts of the same events being one counter), or, judged on the
+   levels themselves, whose changes correlate by 0.9 or whose values are equal in 97% of the
+   steps either held something (a copy a moment behind, balanced by its own machine's
+   counters), are one stock measured twice: the machine whose counters make the balance keeps it, the other is recorded as its
    twin. A level that only fills is a stock when its balance is exact, whatever feeds it (a
    terminal state, where other stocks' outflows end); one the system's flows explain only
    roughly is a tally of activity unless counters no ordinary stock uses balance it;

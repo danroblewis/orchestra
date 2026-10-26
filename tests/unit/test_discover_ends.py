@@ -2,6 +2,7 @@
 cancelling sets in a balance, series keys, and flows with too few events."""
 
 import random
+from itertools import accumulate, pairwise
 
 from orchestra.metrics import Point
 from orchestra.metrics.file import FileMetrics
@@ -191,3 +192,31 @@ def test_twin_levels_are_judged_on_the_steps_where_either_moved():
     assert _equal_steps(done, review) == 0.0
     assert _equal_steps(done, Series("copy", {}, [], [3, 3, 3, 4, 4, 4, 4, 4, 5, 5], False)) == 1.0
     assert _equal_steps(done, Series("flat", {}, [], [1] * 10, False)) == 0.0
+
+
+def test_twin_levels_are_judged_on_the_levels_when_their_balances_differ():
+    # the expo's copy of the board's queue lags it by a step here and there (its changes equal in
+    # fewer than 97% of steps), and its balance takes the expo's own counters (its offers and the
+    # inspections it starts) where the board's takes the board's: no counter says they are one.
+    # The levels do: their changes correlate closely. The board's queue, the better balanced, is
+    # kept and the copy is its twin
+    from orchestra.sd.discover import TWIN_STEPS, _equal_steps
+    rng = random.Random(8)
+    placed = [rng.choice([0, 1, 1, 2]) for _ in range(120)]
+    assigned = [rng.choice([0, 1, 1]) for _ in range(120)]
+    change = [a - c for a, c in zip(placed, assigned)]
+    level = [0, *accumulate(change)]
+    seen = [level[i - 1] if i % 10 == 0 and i else v for i, v in enumerate(level)]      # every tenth step, the last step's
+    copy = [b - a for a, b in pairwise(seen)]
+    waiting = _series("waiting", change, counter=False, machine="board")
+    queue = _series("bake_queue", copy, counter=False, machine="expo")
+    c_placed, c_assigned = _series("placed_total", placed, machine="board"), _series("assigned_total", assigned, machine="board")
+    c_in = _series("offers_in_total", [max(0, x) for x in copy], machine="expo")
+    c_out = _series("offers_out_total", [max(0, -x) for x in copy], machine="expo")
+    found = [(queue, [(c_in, 1), (c_out, -1)], 0.97, 0.92), (waiting, [(c_placed, 1), (c_assigned, -1)], 1.0, 1.0)]
+    assert _equal_steps(waiting, queue) < TWIN_STEPS
+    left_out = {}
+    kept, twins = twin_levels(found, left_out, lambda a, b: same_flow(a, b, 120))
+    assert [s.key for s, _, _, _ in kept] == ['waiting{machine="board"}'], [s.key for s, _, _, _ in kept]
+    assert twins['waiting{machine="board"}'][0]["change_correlation"] >= 0.9
+    assert "correlate by" in left_out['bake_queue{machine="expo"}']

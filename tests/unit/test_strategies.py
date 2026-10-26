@@ -184,3 +184,22 @@ def test_an_unmeasured_flow_is_kept_where_a_stock_is_not_balanced_exactly(tmp_pa
     eq = unmeasured[0].current()
     assert (eq.origin, eq.method, eq.form, eq.params["value"]) == ("discovered", "sdlab:fake", "constant", 1.0), "0.5 per 30 s step is 1 per minute"
     assert m.flow("b_in_total").current().method == "poisson-mle" and [d["to"] for d in m.discovery["dropped"]] == ["a"]
+
+
+def test_runs_a_few_seconds_apart_discover_over_the_same_grid(tmp_path, monkeypatch):
+    # the host and the CLI each end their window when they run; seven seconds apart, they must
+    # still sample the same grid, or a state seen in a step or two comes and goes between them
+    import time
+    from types import SimpleNamespace
+
+    from orchestra.sd import rediscover as rd
+    project = SimpleNamespace(key="p", state_dir=tmp_path, config=SimpleNamespace(
+        discovery_strategy=CONSERVATION, discovery_options={}, discovery_window=600.0, discovery_step=30.0, discovery_every=300.0))
+    store = FileMetrics(tmp_path / "m.jsonl")
+    windows = []
+    for now in (1_800_000_013.0, 1_800_000_020.0):
+        monkeypatch.setattr(time, "time", lambda now=now: now)
+        d = rd.rediscover(project, store).model.discovery
+        windows.append((d["start"], d["end"]))
+    assert windows[0] == windows[1] == (1_799_999_400.0, 1_800_000_000.0)
+    assert rd.aligned(100.0, 707.0, 30.0) == (90.0, 690.0)
