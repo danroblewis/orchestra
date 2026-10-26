@@ -298,4 +298,34 @@ def create_app(project: Project) -> FastAPI:
         except WebSocketDisconnect:
             return
 
+    mount_plugins(app, project, page)
     return app
+
+
+def mount_plugins(app: FastAPI, project: Project, page) -> None:
+    """Pages, static files and API routes of the installed plugins (orchestra/plugins.py)."""
+    from .. import plugins as plug
+    loaded = plug.load(project)
+    taken = {getattr(r, "path", None) for r in app.routes}
+    pages, errors = [], list(loaded.errors)
+    for p in loaded.plugins:
+        if p.static:
+            app.mount(f"/plugins/{p.name}/static", StaticFiles(directory=str(p.static)), name=f"plugin-{p.name}")
+        if p.router is not None:
+            app.include_router(p.router, prefix=f"/api/plugins/{p.name}")
+        for pg in p.pages:
+            if pg.path in taken:
+                errors.append({"plugin": p.name, "error": f"page {pg.path} is already served"})
+                continue
+            taken.add(pg.path)
+            pages.append({"plugin": p.name, "path": pg.path, "title": pg.title})
+
+            def serve(f=pg.file) -> str:
+                v = str(int(max(x.stat().st_mtime for x in STATIC.glob("*"))))
+                return Path(f).read_text(encoding="utf-8").replace("{{v}}", v)
+            app.add_api_route(pg.path, serve, methods=["GET"], response_class=HTMLResponse, include_in_schema=False)
+
+    @app.get("/api/plugins")
+    def plugin_list() -> dict:
+        """The installed plugins' pages (for the navigation) and any that failed to load."""
+        return {"ok": True, "pages": pages, "errors": errors}

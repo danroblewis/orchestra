@@ -377,13 +377,25 @@ it. Pages read only the web server's background caches
   a time limit; explorers for the metrics (a catalogue and a PromQL editor) and the events (types,
   volumes, sources); logs. It imports only the bus, the metrics store and the runtime record.
 
+### 10.1 Plugins
+
+A package installed beside Orchestra (a task system, for example) may add pages and API routes of
+its own (`orchestra/plugins.py`). It names a function in the entry-point group
+`orchestra.plugins`; the function takes the project and returns a `Plugin`: its pages (a path, a
+title for the navigation, an HTML file that may use `/static/app.js` and `/static/style.css`), a
+static directory (served at `/plugins/<name>/static`) and a FastAPI router (at
+`/api/plugins/<name>`). `/api/plugins` lists the pages, which the navigation adds after
+Orchestra's own, and any plugin that failed to load. A plugin that fails, or a page at a path
+Orchestra serves, is left out, never fatal. A plugin is the package's, not Orchestra's: its
+routes are its own, and Orchestra knows nothing of what they mean.
+
 ---
 
 ## 11. Package layout
 
 ```
 orchestra/
-  cli.py  config.py  events.py  runtime.py  host.py  collectors.py
+  cli.py  config.py  events.py  runtime.py  host.py  collectors.py  plugins.py
   bus/       file, redis_streams, rabbitmq_streams, kafka
   metrics/   file, victoria, promql
   sd/        model, store, fit, discover (conservation), strategies, rediscover

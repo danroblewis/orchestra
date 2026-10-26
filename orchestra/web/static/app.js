@@ -5,8 +5,19 @@ const color = (s) => `var(--${s})`;
 const ago = (sec) => (sec < 60 ? `${Math.round(sec)}s` : sec < 3600 ? `${Math.round(sec / 60)}m` : `${(sec / 3600).toFixed(1)}h`);
 const fmtBytes = (b) => (b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)} GB` : `${Math.round(b / (1 << 20))} MB`);
 
-// The nav links are static HTML; this fills in the project label on every page.
+// The nav links are static HTML; this fills in the project label on every page, and adds the
+// installed plugins' pages (orchestra/plugins.py) after Orchestra's own.
 fetch("/api/project").then((r) => r.json()).then((p) => { const el = $("proj"); if (el) el.textContent = p.key; }).catch(() => {});
+fetch("/api/plugins").then((r) => r.json()).then((d) => {
+  const nav = $("nav"), at = $("proj");
+  if (!nav) return;
+  for (const pg of d.pages || []) {
+    const a = document.createElement("a");
+    a.href = pg.path; a.textContent = pg.title;
+    if (location.pathname === pg.path || location.pathname.startsWith(pg.path + "/")) a.className = "on";
+    nav.insertBefore(a, at);
+  }
+}).catch(() => {});
 
 // Agent prose and human input are markdown. Render it sanitized, then highlight code
 // blocks, guessing the language when the fence does not name one.
