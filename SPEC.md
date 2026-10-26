@@ -324,8 +324,9 @@ A package installed beside Orchestra (a task system, for example) may add pages 
 its own (`orchestra/plugins.py`). It names a function in the entry-point group
 `orchestra.plugins`; the function takes the project and returns a `Plugin`: its pages (a path, a
 title for the navigation, an HTML file that may use `/static/app.js` and `/static/style.css`), a
-static directory (served at `/plugins/<name>/static`) and a FastAPI router (at
-`/api/plugins/<name>`). `/api/plugins` lists the pages, which the navigation adds after
+static directory (served at `/plugins/<name>/static`), a FastAPI router (at
+`/api/plugins/<name>`), and scripts from its static directory that every page loads after its own
+(for what must be visible wherever the viewer is, such as the way to reach the package's agents). `/api/plugins` lists the pages, which the navigation adds after
 Orchestra's own, and any plugin that failed to load. A plugin that fails, or a page at a path
 Orchestra serves, is left out, never fatal. A plugin is the package's, not Orchestra's: its
 routes are its own, and Orchestra knows nothing of what they mean.

@@ -17,6 +17,11 @@ fetch("/api/plugins").then((r) => r.json()).then((d) => {
     if (location.pathname === pg.path || location.pathname.startsWith(pg.path + "/")) a.className = "on";
     nav.insertBefore(a, at);
   }
+  // scripts a plugin runs on every page, after Orchestra's own (a page that already has one keeps it)
+  for (const src of d.scripts || []) {
+    if ([...document.scripts].some((s) => s.src && new URL(s.src).pathname === src)) continue;
+    const s = document.createElement("script"); s.src = src; document.body.appendChild(s);
+  }
 }).catch(() => {});
 
 // Agent prose and human input are markdown. Render it sanitized, then highlight code

@@ -303,8 +303,10 @@ def mount_plugins(app: FastAPI, project: Project, page) -> None:
     from .. import plugins as plug
     loaded = plug.load(project)
     taken = {getattr(r, "path", None) for r in app.routes}
-    pages, errors = [], list(loaded.errors)
+    pages, scripts, errors = [], [], list(loaded.errors)
     for p in loaded.plugins:
+        if p.static:
+            scripts += [f"/plugins/{p.name}/static/{s}" for s in p.scripts if (p.static / s).is_file()]
         if p.static:
             app.mount(f"/plugins/{p.name}/static", StaticFiles(directory=str(p.static)), name=f"plugin-{p.name}")
         if p.router is not None:
@@ -324,4 +326,4 @@ def mount_plugins(app: FastAPI, project: Project, page) -> None:
     @app.get("/api/plugins")
     def plugin_list() -> dict:
         """The installed plugins' pages (for the navigation) and any that failed to load."""
-        return {"ok": True, "pages": pages, "errors": errors}
+        return {"ok": True, "pages": pages, "scripts": scripts, "errors": errors}

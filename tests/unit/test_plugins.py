@@ -33,12 +33,14 @@ def a_plugin(tmp_path):
         page.write_text("<nav id='nav'></nav>tasks of {{v}}")
         (tmp_path / "s").mkdir(exist_ok=True)
         (tmp_path / "s" / "graph.js").write_text("// graph")
+        (tmp_path / "s" / "everywhere.js").write_text("// on every page")
         r = APIRouter()
 
         @r.get("/hello")
         def hello() -> dict:
             return {"project": project.key}
-        return plugins.Plugin("tasks", [plugins.Page("/tasks", "Tasks", page), plugins.Page("/machines", "Mine", page)], tmp_path / "s", r)
+        return plugins.Plugin("tasks", [plugins.Page("/tasks", "Tasks", page), plugins.Page("/machines", "Mine", page)], tmp_path / "s", r,
+                              scripts=["everywhere.js", "missing.js"])
     return make
 
 
@@ -54,5 +56,6 @@ def test_a_plugin_adds_pages_static_files_and_routes_and_a_broken_one_is_reporte
     assert c.get("/api/plugins/tasks/hello").json() == {"project": project.key}
     d = c.get("/api/plugins").json()
     assert d["pages"] == [{"plugin": "tasks", "path": "/tasks", "title": "Tasks"}]          # /machines is Orchestra's
+    assert d["scripts"] == ["/plugins/tasks/static/everywhere.js"]                         # a missing file is left out
     assert {e["plugin"] for e in d["errors"]} == {"bad", "tasks"}
     assert "tasks of" not in c.get("/machines").text                                       # still Orchestra's page
