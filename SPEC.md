@@ -258,9 +258,11 @@ machines may keep its own settings here (the task system's [project], [agents], 
 
 Read-only for humans. Navigation: Dashboard, Machines, Dynamics, Core.
 
-- **Dashboard:** a board of panels (`static/dashboard.js`) the viewer arranges: drag one by its
-  title bar to move it, widen it to two columns, hide it and bring it back from Panels; the
-  arrangement is kept in the browser. Orchestra's own panels are **Machines** (a short list of
+- **Dashboard:** panels as sections of one page on a 12-column grid (`static/dashboard.js`, with
+  gridstack.js): the viewer drags a panel by its title bar and resizes it from its edges and
+  corners, panels pack upward so one sits under another with no gap, and a panel can be hidden
+  and brought back from Panels (in the navigation); positions and sizes are kept in the browser,
+  and a narrow window has one column. A panel may give its starting size. Orchestra's own panels are **Machines** (a short list of
   what runs now: the machines that announced themselves continuous, and any other that published
   in the last two minutes; a click opens its dialog) and **Host** (a Core status strip; the
   host's CPU, GPU, memory and disk). A package adds panels of its own (`Orchestra.panels`, from its

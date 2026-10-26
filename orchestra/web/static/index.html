@@ -9,19 +9,23 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <link rel="stylesheet" href="/static/style.css?v={{v}}">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css">
 <style>
-  .dtop { display:flex; justify-content:flex-end; align-items:center; gap:8px; padding:10px 16px 0 }
-  #panels-menu { position:relative } .pmenu[hidden] { display:none } .pmenu { position:absolute; right:0; top:28px; z-index:8; background:var(--panel2); border:1px solid var(--border2); border-radius:8px; padding:6px; display:grid; gap:4px; min-width:200px; box-shadow:0 8px 24px rgba(0,0,0,.4) }
+  /* the Dashboard: panels as sections of one page on a grid (dashboard.js) */
+  body { overflow-y:auto }
+  #board { margin:3px }
+  .dpanel { background:var(--panel); border:1px solid var(--border); border-radius:3px; display:flex; flex-direction:column; overflow:hidden !important }
+  .dhead { display:flex; align-items:baseline; gap:8px; padding:5px 10px; border-bottom:1px solid var(--border); background:var(--panel2); cursor:move; user-select:none; flex:none }
+  .dhead h1 { font-size:12px; margin:0; letter-spacing:.02em; text-transform:uppercase; color:var(--text2) }
+  .dhead .sub { font-size:11px; color:var(--muted); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .dhead .dx { background:none; border:0; color:var(--muted); cursor:pointer; font-size:11px; padding:0 2px; opacity:0 } .dpanel:hover .dx { opacity:.7 } .dhead .dx:hover { opacity:1; color:var(--text) }
+  .dbody { padding:8px 10px; overflow:auto; flex:1; min-height:0 }
+  .dbody > .panel { background:none; border:0; border-bottom:1px solid var(--border); border-radius:0; padding:4px 0 8px; margin:0 0 8px } .dbody > .panel:last-child { border-bottom:0; margin:0 }
+  .grid-stack-placeholder > .placeholder-content { background:rgba(110,168,254,.08); border:1px dashed var(--accent); border-radius:3px }
+  .grid-stack > .grid-stack-item > .ui-resizable-se { filter:invert(1); opacity:.35 }
+  #panels-menu { position:relative; margin-left:auto } #panels-menu + #conn { margin-left:12px !important }
+  .pmenu[hidden] { display:none } .pmenu { position:absolute; right:0; top:28px; z-index:30; background:var(--panel2); border:1px solid var(--border2); border-radius:8px; padding:6px; display:grid; gap:4px; min-width:200px; box-shadow:0 8px 24px rgba(0,0,0,.4) }
   .pmenu button { text-align:left; background:var(--panel3); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:5px 8px; font:inherit; font-size:12px; cursor:pointer } .pmenu button:hover { border-color:var(--accent) }
-  .board { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 480px), 1fr)); gap:14px; padding:10px 16px 24px; align-items:start }
-  .dpanel { background:var(--panel); border:1px solid var(--border); border-radius:12px; min-width:0 }
-  .dpanel.wide { grid-column:span 2 } @media (max-width: 1000px) { .dpanel.wide { grid-column:auto } }
-  .dpanel.dragging { opacity:.45; outline:2px dashed var(--accent) }
-  .dpanel header { display:flex; align-items:baseline; gap:8px; padding:10px 12px 8px; border-bottom:1px solid var(--border); cursor:grab; user-select:none }
-  .dpanel header h1 { font-size:14px; margin:0 } .dpanel header .sub { font-size:11px; color:var(--muted); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-  .dpanel header .grip { color:var(--muted); font-size:12px } .dpanel header .acts { display:flex; gap:2px; opacity:.35 } .dpanel:hover header .acts { opacity:1 }
-  .dpanel header .acts button { background:none; border:0; color:var(--muted); cursor:pointer; font-size:12px; padding:0 4px } .dpanel header .acts button:hover { color:var(--text) }
-  .dbody { padding:10px 12px 12px; min-width:0 }
   .mline { display:grid; grid-template-columns:10px max-content max-content minmax(0, 1fr); gap:8px; align-items:center; padding:6px 8px; border-radius:8px; cursor:pointer; font-size:12.5px }
   .mline:hover { background:var(--panel3) } .mline + .mline { border-top:1px solid var(--border) }
   .mline .d { width:8px; height:8px; border-radius:50% } .mline b { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
@@ -31,8 +35,7 @@
 </head>
 <body>
 <nav id="nav"><a href="/" class="on">Dashboard</a><a href="/machines">Machines</a><a href="/dynamics">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
-<div class="dtop"><span id="panels-menu"></span></div>
-<div class="board" id="board"></div>
+<div class="grid-stack" id="board"></div>
 <div id="tip" class="tip" hidden></div>
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeMachine()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
@@ -45,7 +48,7 @@ Orchestra.machineList = () => (MACHINES && MACHINES.machines) || [];
 
 // ---- Machines: a short list of what runs now (continuous machines, and any other while it is
 // active); a click opens the machine's dialog. Every machine is on the Machines page.
-Orchestra.panels.register({ id: "machines", title: "Machines", mount(body, ui) {
+Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 9 }, mount(body, ui) {
   async function refresh() {
     try {
       MACHINES = await (await fetch("/api/machines")).json();
@@ -69,7 +72,7 @@ Orchestra.panels.register({ id: "machines", title: "Machines", mount(body, ui) {
 } });
 
 // ---- Host: the Core services in a line, and the machine Orchestra runs on
-Orchestra.panels.register({ id: "host", title: "Host", mount(body, ui) {
+Orchestra.panels.register({ id: "host", title: "Host", size: { w: 7, h: 9 }, mount(body, ui) {
   body.innerHTML = `<a class="panel corestrip" id="corestrip" href="/core" title="Orchestra's fundamental services: the Core page">Core …</a>
     <div class="panel" style="margin-bottom:0">
       <div class="lbl-row"><span>GPU <select id="gpu-range" class="range"><option value="60">1m</option><option value="240" selected>4m</option><option value="900">15m</option><option value="3600">1h</option></select></span><span id="gpu-lbl" class="num">—</span></div>
@@ -137,6 +140,7 @@ function renderGpu(d) {
 }
 
 </script>
+<script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
 <script src="/static/dashboard.js?v={{v}}"></script>
 </body>
 </html>
