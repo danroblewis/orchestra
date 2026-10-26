@@ -86,27 +86,7 @@ fetch("/api/plugins").then((r) => r.json()).then((d) => {
   }
 }).catch(() => {});
 
-// Agent prose and human input are markdown. Render it sanitized, then highlight code
-// blocks, guessing the language when the fence does not name one.
-function md(text) {
-  if (!text) return "";
-  if (!(window.marked && window.DOMPurify)) return `<pre>${esc(text)}</pre>`;
-  return `<div class="md">${DOMPurify.sanitize(marked.parse(text, { gfm: true, breaks: true }))}</div>`;
-}
-function highlightCode(root) {
-  if (!window.hljs) return;
-  root.querySelectorAll("pre code").forEach((el) => {
-    if (el.dataset.highlighted) return;
-    const named = [...el.classList].find((c) => c.startsWith("language-"));
-    if (named && hljs.getLanguage(named.slice(9))) hljs.highlightElement(el);
-    else {
-      const r = hljs.highlightAuto(el.textContent);
-      el.innerHTML = r.value; el.classList.add("hljs", `language-${r.language || "plaintext"}`);
-      el.dataset.highlighted = "yes";
-    }
-  });
-}
-function openDrawer(html) { $("drawer").innerHTML = html; highlightCode($("drawer")); $("overlay").classList.add("open"); }
+function openDrawer(html) { $("drawer").innerHTML = html; $("overlay").classList.add("open"); }
 function closeDrawer() { $("overlay").classList.remove("open"); }
 
 
