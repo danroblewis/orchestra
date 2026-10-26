@@ -213,10 +213,12 @@ class Path:
 
 
 def events_of(points: list[tuple[float, float]], live: list[tuple[float, float]]) -> list[tuple[float, float]]:
-    """A counter's increments inside the live time, as (time, count); a drop is a reset."""
-    out, prev = [], None
+    """A counter's increments inside the live time, as (time, count); a drop is a reset. Before
+    a counter's first point nothing had been counted (``sample``), so that point is its first
+    events."""
+    out, prev = [], 0.0
     for t, v in points:
-        if prev is not None and within(t, live):
+        if within(t, live):
             d = v - prev if v >= prev else v
             if d > 0:
                 out.append((t, d))
@@ -295,9 +297,11 @@ def unique_id(slug: str, machine: str | None, taken: set[str]) -> str:
 
 
 def _equal_steps(a: Series, b: Series) -> float:
-    """The share of steps in which two levels changed by the same amount."""
-    da, db = a.deltas, b.deltas
-    return sum(1 for x, y in zip(da, db) if abs(x - y) <= 1e-6) / max(1, len(da))
+    """The share of the steps in which either level changed where both changed by the same
+    amount. Steps where neither moved say nothing: over a long window every quiet level would
+    be every other's twin."""
+    moved = [(x, y) for x, y in zip(a.deltas, b.deltas) if abs(x) > 1e-6 or abs(y) > 1e-6]
+    return sum(1 for x, y in moved if abs(x - y) <= 1e-6) / max(1, len(moved))
 
 
 def _owns(s: Series, terms: list) -> int:

@@ -168,3 +168,26 @@ def test_a_flow_with_few_events_gets_the_constant_form_only():
     assert [f["form"] for f in forms] == ["constant"]
     forms = fit_flow([(T0 + 100 + 500 * i, 1.0) for i in range(6)], 60.0, {"s": stock}, "s")
     assert {f["form"] for f in forms} >= {"constant", "proportional"}
+
+
+def test_a_counter_born_in_the_window_counts_its_first_point_as_its_first_events():
+    # a counter written when it moves starts at its first event (sample): a counter with one
+    # event in the window has one event to fit, not none (a rate of zero with a dispersion of
+    # millions); one from before the window counts only what came after its last value
+    from orchestra.sd.discover import events_of
+    live = [(T0, T0 + 600)]
+    assert events_of([(T0 + 100, 1.0)], live) == [(T0 + 100, 1.0)]
+    assert events_of([(T0 + 100, 1.0), (T0 + 200, 3.0)], live) == [(T0 + 100, 1.0), (T0 + 200, 2.0)]
+    assert events_of([(T0 - 100, 500.0), (T0 + 200, 502.0)], live) == [(T0 + 200, 2.0)]
+
+
+def test_twin_levels_are_judged_on_the_steps_where_either_moved():
+    # an accumulator (DONE) and a level that goes up and down (IN_REVIEW) are flat in most of a
+    # long window's steps, where their changes are "equal"; on the steps where either moved they
+    # never change alike, so they are not one stock measured twice
+    from orchestra.sd.discover import _equal_steps
+    done = Series("done", {}, [], [0, 0, 0, 1, 1, 1, 1, 1, 2, 2], False)
+    review = Series("review", {}, [], [0, 0, 1, 0, 0, 0, 0, 1, 0, 0], False)
+    assert _equal_steps(done, review) == 0.0
+    assert _equal_steps(done, Series("copy", {}, [], [3, 3, 3, 4, 4, 4, 4, 4, 5, 5], False)) == 1.0
+    assert _equal_steps(done, Series("flat", {}, [], [1] * 10, False)) == 0.0
