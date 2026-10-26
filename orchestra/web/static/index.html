@@ -40,8 +40,9 @@
   </div>
 </div>
 <div id="tip" class="tip" hidden></div>
-<div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
+<div id="overlay" class="overlay" onclick="if(event.target===this)closeMachine()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
+<script src="/static/machine-dialog.js?v={{v}}"></script>
 <script>
 function showCol(i, btn) {
   document.querySelectorAll(".layout > .col").forEach((c, j) => c.classList.toggle("on", j === i));
@@ -50,6 +51,7 @@ function showCol(i, btn) {
 }
 try { const t = Number(localStorage.getItem("orchestra.tab") || 0); if (t) showCol(t); } catch (e) {}
 let MACHINES = null;
+Orchestra.machineList = () => (MACHINES && MACHINES.machines) || [];
 
 // the machines running now (continuous ones, and any active in the last two minutes); the Machines page has all of them
 async function refresh() {
@@ -63,8 +65,8 @@ async function refresh() {
     const now = active.filter((m) => m.active).length;
     $("machines-sub").textContent = `${active.length} running · ${now} active now · ${MACHINES.machines.length} on the Machines page`;
     $("machines").innerHTML = active.length ? active.map((m) => { const own = Orchestra.machineCards.card(m, { compact: true });
-      if (own != null) return `<div class="panel mcard" style="cursor:pointer" onclick="location.href='/machines#${esc(m.id)}'">${own}</div>`;
-      return `<div class="panel mcard"><div class="chead"><b>${esc(m.id)}</b>${m.bootstrap ? ' <span class="tag">bootstrap</span>' : ""}<span class="muted" style="margin-left:auto">last event ${ago(Date.now() / 1000 - m.last_seen)} ago</span></div>
+      if (own != null) return `<div class="panel mcard" style="cursor:pointer" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)">${own}</div>`;
+      return `<div class="panel mcard" style="cursor:pointer" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)" title="click for details and log"><div class="chead"><b>${esc(m.id)}</b>${m.bootstrap ? ' <span class="tag">bootstrap</span>' : ""}<span class="muted" style="margin-left:auto">last event ${ago(Date.now() / 1000 - m.last_seen)} ago</span></div>
         <div class="mrow"><span class="muted">publishes</span> ${m.publishes.map((p) => `<span class="ty">${esc(p.type)} <b>${p.per_min_10m}</b>/min</span>`).join("") || '<span class="muted">nothing</span>'}</div>
         <div class="mrow"><span class="muted">listens for</span> ${m.subscribes.map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">nothing</span>'}</div>
         <div class="mrow"><span class="muted">metrics</span> ${m.metrics.map((x) => `<code>${esc(x)}</code>`).join(" ") || '<span class="muted">none</span>'}</div></div>`; }).join("")

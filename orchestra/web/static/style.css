@@ -226,3 +226,12 @@ svg.netgraph { display:block; width:100%; min-height:0; font-size:11px; cursor:g
 
 /* a machine a package declared that has not been seen on the bus yet */
 .panel.unseen { opacity:.62; border-style:dashed }
+
+/* a machine's dialog (static/machine-dialog.js) */
+.mdlg .seg { display:flex; gap:4px; flex-wrap:wrap; margin:4px 0 6px } .mdlg .seg button { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:11.5px; padding:1px 8px; cursor:pointer } .mdlg .seg button.on { color:var(--text); border-color:var(--accent) }
+.mdlg table.dt { width:100%; border-collapse:collapse; font-size:11.5px } .mdlg table.dt td, .mdlg table.dt th { padding:3px 6px; border-bottom:1px solid var(--border); text-align:left } .mdlg table.dt th { color:var(--muted); font-weight:600; font-size:10.5px; text-transform:uppercase }
+.mdlg .num { font-family:var(--mono) } .mdlg h4 { margin:14px 0 6px; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted) }
+.tag.k-continuous { color:#93c5fd; border-color:#1d4ed8 } .tag.k-scheduled { color:#fcd34d; border-color:#92400e } .tag.k-ad_hoc, .tag.k-ad-hoc { color:#c4b5fd; border-color:#5b21b6 }
+.mdlg .row { font-size:12px; margin:4px 0; display:flex; gap:6px; flex-wrap:wrap; align-items:baseline } .mdlg .row > .muted:first-child { width:84px; flex:none }
+.mdlg .ty { background:var(--panel3); border:1px solid var(--border); border-radius:999px; padding:0 8px; font-size:11px; font-family:var(--mono) }
+.mdlg h3 .tag { font-size:9.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:#fde68a; border:1px solid #92400e; border-radius:4px; padding:0 4px; margin-left:4px }
