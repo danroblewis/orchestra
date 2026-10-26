@@ -349,7 +349,7 @@ const NetGraph = (() => {
         const g = d3.select(this); g.selectAll("*").remove();
         const col = e.color || "#4b5563";
         // ``both``: one line for two nodes linked both ways, an arrowhead at each end
-        g.append("path").attr("class", "ng-line").attr("stroke", col).attr("stroke-width", e.width || 1.6).attr("stroke-dasharray", e.dashed ? "5 4" : null).attr("marker-end", e.arrow === false ? null : marker(col))
+        g.append("path").attr("class", "ng-line").attr("stroke", col).attr("stroke-width", e.width || 1.6).attr("stroke-dasharray", e.dash || (e.dashed ? "5 4" : null)).attr("marker-end", e.arrow === false ? null : marker(col))
           .attr("marker-start", e.both ? marker(col, true) : null);
         g.append("path").attr("class", "ng-hit");
         if (e.rate) g.append("path").attr("class", "ng-flowdash").style("animation-duration", `${Math.max(0.25, Math.min(6, 8 / Math.sqrt(e.rate))).toFixed(2)}s`);

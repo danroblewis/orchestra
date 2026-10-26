@@ -15,7 +15,12 @@ Everything here is observed, not declared:
 - **recent events**: the last ``RECENT`` events of each machine, by their envelope only (time,
   type, instance, subject, id; never the ``data``, which is the machines' own);
 - **logs**: where an instance says its log is (``data.log`` in its announcement). The web server
-  reads it only within the project (``machine_logs.py``).
+  reads it only within the project (``machine_logs.py``);
+- **hand-offs**: when one machine acts on a subject (an event's ``subject``: an order, an issue)
+  and then a different machine acts on the same subject, the work passed from the first to the
+  second. Inferred from the envelope alone, so it shows how machines connect even when none
+  announces what it listens for (a system brought in from outside, whose log says who changed
+  what but never who reads). The last machine per subject is kept for the latest ``SUBJECTS``.
 
 The index reads the bus incrementally: the whole log once, then only what is new, so a refresh
 costs one small read however long the log is. Events from before the envelope have no
@@ -25,7 +30,7 @@ from __future__ import annotations
 
 import threading
 import time
-from collections import Counter, defaultdict, deque
+from collections import Counter, OrderedDict, defaultdict, deque
 
 from ..events import HOST, event_time, machine_and_instance
 
@@ -33,6 +38,7 @@ ANNOUNCE = ("orchestra.machine.started", "orchestra.machine.subscribed")
 DAY = 86400.0
 ACTIVE_S = 120.0
 RECENT = 60
+SUBJECTS = 50_000
 
 
 class MachineIndex:
@@ -47,6 +53,9 @@ class MachineIndex:
         self.logs: dict[str, dict[str, str]] = defaultdict(dict)        # machine -> instance -> announced log path
         self.latest: dict[str, deque] = defaultdict(lambda: deque(maxlen=RECENT))  # machine -> its last events' envelopes
         self.unattributed = 0
+        self.last_on: OrderedDict[str, str] = OrderedDict()                # subject -> machine that last acted on it
+        self.handoffs: Counter = Counter()                               # (from machine, to machine) -> count
+        self.recent_handoffs: dict[tuple[str, str], deque] = defaultdict(deque)
         self._lock = threading.Lock()
 
     def update(self) -> None:
@@ -77,6 +86,15 @@ class MachineIndex:
             if isinstance(d.get("log"), str) and d["log"]:
                 self.logs[machine][instance or ""] = d["log"]
             return
+        subject = ev.get("subject")
+        if subject:
+            prev = self.last_on.pop(subject, None)
+            if prev and prev != machine:
+                self.handoffs[(prev, machine)] += 1
+                self.recent_handoffs[(prev, machine)].append(t)
+            self.last_on[subject] = machine
+            if len(self.last_on) > SUBJECTS:
+                self.last_on.popitem(last=False)
         self.total[machine][ev["type"]] += 1
         self.recent[(machine, ev["type"])].append(t)
         self.latest[machine].append({"t": t, "type": ev["type"], "instance": instance, "subject": ev.get("subject"), "id": ev.get("id")})
@@ -95,7 +113,7 @@ class MachineIndex:
     def view(self, series: list[tuple[str, dict]], now: float | None = None) -> dict:
         now = now or time.time()
         with self._lock:
-            for q in self.recent.values():
+            for q in [*self.recent.values(), *self.recent_handoffs.values()]:
                 while q and q[0] < now - DAY:
                     q.popleft()
             metrics: dict[str, set] = defaultdict(set)
@@ -124,7 +142,8 @@ class MachineIndex:
             edges = [{"from": x["id"], "to": p["type"], "kind": "publishes", "count": p["count"], "day": p["day"]}
                      for x in machines for p in x["publishes"]]
             edges += [{"from": t, "to": x["id"], "kind": "subscribes"} for x in machines for t in x["subscribes"]]
-            return {"machines": machines, "types": types, "edges": edges, "unattributed_events": self.unattributed}
+            handoffs = [{"from": a, "to": b, "count": n, "day": len(self.recent_handoffs.get((a, b), ()))} for (a, b), n in self.handoffs.most_common()]
+            return {"machines": machines, "types": types, "edges": edges, "handoffs": handoffs, "unattributed_events": self.unattributed}
 
 
 class _ListBus:

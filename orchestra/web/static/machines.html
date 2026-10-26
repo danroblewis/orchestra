@@ -131,7 +131,7 @@ function eventMap(d0) {
   if (!$("evsvg-host") || window.EV_DRAWN_MODE !== EV_MODE) {      // each view has a layout of its own
     window.EV_DRAWN_MODE = EV_MODE; window.LOOPSIG = null;
     $("evmap-host").innerHTML = `<div class="evmap"><div class="evbar" id="ev-bar"></div><div id="evsvg-host"></div>
-      <div class="legend">${EV_MODE === "machines" ? "" : '<span><i style="border-color:#4b5563"></i>publishes / listens for</span><span><span style="color:#fcd34d">▭</span> event type</span>'}<span>○ machine</span><span>halo: active in the last two minutes</span>${EV_MODE === "machines" ? "<span>an arrow: the machine publishes something the other listens for (hover a line for which); arrowheads at both ends: they talk both ways; thicker: more in the last 24 h; grey: not seen in 24 h</span>" : "<span>lines take their machine's colour: solid, it publishes; dashed, it listens; grey, not seen in 24 h</span>"}<label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_ALL ? "checked" : ""} onchange="window.EV_SHOW_ALL=this.checked;window.LOOPSIG=null;render()"> show events nobody listens for</label><span>· drag nodes (they stay where dropped; double-click to release), scroll to zoom, hover to isolate, click a machine for its details and log</span></div>
+      <div class="legend">${EV_MODE === "machines" ? "" : '<span><i style="border-color:#4b5563"></i>publishes / listens for</span><span><span style="color:#fcd34d">▭</span> event type</span>'}<span>○ machine</span><span>halo: active in the last two minutes</span>${EV_MODE === "machines" ? "<span>an arrow: the machine publishes something the other listens for (hover a line for which); arrowheads at both ends: they talk both ways; thicker: more in the last 24 h; grey: not seen in 24 h</span>" : "<span>lines take their machine's colour: solid, it publishes; dashed, it listens; grey, not seen in 24 h</span>"}<span>dotted: a hand-off, inferred: one machine acted on something (an event's subject) after the other did</span><label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_ALL ? "checked" : ""} onchange="window.EV_SHOW_ALL=this.checked;window.LOOPSIG=null;render()"> show events nobody listens for</label><span>· drag nodes (they stay where dropped; double-click to release), scroll to zoom, hover to isolate, click a machine for its details and log</span></div>
       <div class="ng-loops" id="loops"></div></div>`;
     GRAPH = NetGraph.create($("evsvg-host"), { key: "machines." + EV_MODE, height: 600, isolateHops: EV_MODE === "machines" ? 1 : 2,
       onClick: (x, kind) => { if (kind === "node" && x.machine) openMachine(x.label); },
@@ -182,6 +182,18 @@ function eventMap(d0) {
     for (const c of chains) { const k = c.source + ">" + c.target; c.machineId = aliasOf.get(k) || k; }
   }
   for (const c of chains) c.ids = EV_MODE === "machines" ? [c.machineId] : c.evIds;
+  // hand-offs, inferred: a machine acted on a subject (an issue, an order) after another one did.
+  // Drawn dotted, machine to machine, in both views; they connect machines that announce nothing
+  const present = new Set(drawNodes.map((n) => n.id));
+  for (const h of d0.handoffs || []) {
+    const a = "m:" + h.from, b = "m:" + h.to;
+    if (!present.has(a) || !present.has(b)) continue;
+    const id = `h:${a}>${b}`, base = nodeColor(a);
+    drawEdges.push({ id, source: a, target: b, dash: "1 5", cls: "ev-handoff " + (h.day ? "ev-seen" : "ev-unseen"), bend: 34, distance: 190,
+                     color: edgeColor(base, h.day ? "publish" : "unseen"), hoverColor: base, width: 1.4 + Math.min(3, Math.log10(1 + h.day)),
+                     vias: [`hand-offs: ${h.count} subject${h.count === 1 ? "" : "s"} passed on (${h.day} in 24 h)`], seen: h.day });
+    chains.push({ source: a, target: b, via: "hand-off", ids: [id], seen: h.day });
+  }
   GRAPH.render(drawNodes, drawEdges);
   // communication cycles (loops.js): machine → machine when one publishes an event type the other
   // listens for. Two machines that talk both ways directly are an exchange (a request and its reply);

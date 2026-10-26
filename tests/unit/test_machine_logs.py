@@ -36,3 +36,11 @@ def test_the_index_keeps_announced_logs_and_recent_envelopes():
     assert e["type"] == "order.baked" and e["instance"] == "1" and e["subject"] == "o1" and "data" not in e
     [m] = [m for m in machines_view(evs, [])["machines"] if m["id"] == "baker"]
     assert m["logs"] == ["1"]
+
+
+def test_hand_offs_are_inferred_from_events_about_the_same_subject():
+    ev = lambda src, ty, subj: {"type": ty, "source": src, "subject": subj, "time": "2026-10-25T00:00:00Z"}
+    evs = [ev("planner", "issue.create", "t1"), ev("worker/1", "issue.update", "t1"), ev("worker/1", "issue.update", "t1"),
+           ev("reviewer/2", "issue.close", "t1"), ev("planner", "issue.create", "t2"), ev("worker/3", "issue.update", "t2")]
+    h = {(x["from"], x["to"]): x["count"] for x in machines_view(evs, [])["handoffs"]}
+    assert h == {("planner", "worker"): 2, ("worker", "reviewer"): 1}      # the same machine twice in a row is no hand-off
