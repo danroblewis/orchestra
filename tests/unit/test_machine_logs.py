@@ -58,6 +58,17 @@ def test_a_hand_off_is_credited_to_an_event_the_receiver_listens_for():
     assert h(work) == {("a", "Y", "b")}
 
 
+def test_a_hand_off_to_a_machine_that_announced_it_listens_for_none_of_the_senders_events_has_no_type():
+    ev = lambda src, ty, subj: {"type": ty, "source": src, "subject": subj, "time": "2026-10-25T00:00:00Z"}
+    # B announced it listens for W only; A's events about the subject were X and Y: the hand-off
+    # is counted, with no event credited (an announcement is not overruled by a guess), and the
+    # view carries it with via null
+    announced = [{"type": "orchestra.machine.started", "source": "b/1", "time": "2026-10-25T00:00:00Z", "data": {"listens_for": ["W"]}}]
+    work = [ev("a", "X", "s1"), ev("a", "Y", "s1"), ev("b/1", "Z", "s1")]
+    [h] = machines_view(announced + work, [])["handoffs"]
+    assert (h["from"], h["via"], h["to"], h["count"]) == ("a", None, "b", 1)
+
+
 def test_what_a_machine_announces_about_itself_is_read_once():
     evs = [{"type": "orchestra.machine.started", "source": "reviewer/1", "time": "2026-10-25T00:00:00Z",
             "data": {"mode": "ad_hoc", "kind": "agent", "package": "agents", "listens_for": ["task.assigned"], "team": "engineering"}}]

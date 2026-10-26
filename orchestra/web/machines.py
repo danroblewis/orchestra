@@ -21,11 +21,13 @@ Everything here is observed, or announced by the machine itself:
 - **hand-offs**: when one machine acts on a subject (an event's ``subject``: an order, an issue)
   and then a different machine acts on the same subject, the work passed from the first to the
   second, following one of the first one's events about it (its type): the latest of its last
-  few that the second machine announced it listens for, or, when it announced nothing or none
-  matches, the last one, which the second machine is then inferred to listen for. Inferred from
-  the envelope alone, so it shows how machines connect even when none announces what it listens
-  for (a system brought in from outside, whose log says who changed what but never who reads).
-  The last machine and its last ``TRAIL`` event types per subject are kept for the latest ``SUBJECTS``.
+  few that the second machine announced it listens for; when it announced nothing, the last one,
+  which the second machine is then inferred to listen for; when it announced a list and none of
+  them is in it, no type (the hand-off is counted, and the map draws no event edge for it: an
+  announcement is not overruled by a guess). Inferred from the envelope alone, so it shows how
+  machines connect even when none announces what it listens for (a system brought in from
+  outside, whose log says who changed what but never who reads). The last machine and its last
+  ``TRAIL`` event types per subject are kept for the latest ``SUBJECTS``.
 
 The index reads the bus incrementally: the whole log once, then only what is new, so a refresh
 costs one small read however long the log is. Events from before the envelope have no
@@ -63,7 +65,7 @@ class MachineIndex:
         self.latest: dict[str, deque] = defaultdict(lambda: deque(maxlen=RECENT))  # machine -> its last events' envelopes
         self.unattributed = 0
         self.last_on: OrderedDict[str, tuple[str, list[str]]] = OrderedDict()  # subject -> (machine, its last event types) that last acted on it
-        self.handoffs: Counter = Counter()                               # (from machine, its event type, to machine) -> count
+        self.handoffs: Counter = Counter()                               # (from machine, its event type or None, to machine) -> count
         self.recent_handoffs: dict[tuple[str, str, str], deque] = defaultdict(deque)
         self._lock = threading.Lock()
 
@@ -107,7 +109,8 @@ class MachineIndex:
                 trail = [*prev[1][-(TRAIL - 1):], ev["type"]]
             else:
                 if prev:
-                    via = next((ty for ty in reversed(prev[1]) if ty in self.subs.get(machine, ())), prev[1][-1])
+                    subs = self.subs.get(machine)
+                    via = next((ty for ty in reversed(prev[1]) if ty in subs), None) if subs else prev[1][-1]
                     self.handoffs[(prev[0], via, machine)] += 1
                     self.recent_handoffs[(prev[0], via, machine)].append(t)
                 trail = [ev["type"]]
