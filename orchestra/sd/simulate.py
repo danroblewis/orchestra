@@ -20,7 +20,7 @@ from itertools import pairwise
 
 from .discover import UNITS
 from .model import Equation, Model
-from .strategies import _scale
+from .rates import scale as _scale
 
 STEPPED = {"constant", "proportional", "linear", "gap"}
 HOLD_S = 600.0

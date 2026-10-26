@@ -4,13 +4,19 @@ changed.
 
 One code path for every caller: the bootstrap host (every ``[discovery] every``), ``orchestra sd
 discover``, and the Dynamics page's "rediscover" button, which may name another strategy or other
-options for that one run."""
+options for that one run. One discovery runs at a time per project, across processes (a lock file
+in the state directory): the host skips a scheduled run while another holds it, the others wait.
+An SD Lab strategy is given a deadline below ``[discovery] every``, so one run cannot outlast the
+interval."""
 
 from __future__ import annotations
 
+import fcntl
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 
 from ..metrics import MetricsStore
 from .discover import structure
@@ -19,6 +25,11 @@ from .store import ModelStore
 from .strategies import CONSERVATION, DEFAULT, discover_with, sd_installed
 
 _lock = threading.Lock()       # one rediscovery at a time per process
+DEADLINE_SHARE = 0.8           # of [discovery] every: what an SD Lab strategy may take
+
+
+class Busy(Exception):
+    """Another process is discovering this project's model."""
 
 
 @dataclass
@@ -34,19 +45,35 @@ def configured_strategy(project) -> str:
     return s if s == CONSERVATION or sd_installed() else CONSERVATION
 
 
+@contextmanager
+def discovery_lock(state_dir: Path, *, wait: bool):
+    """The project's cross-process discovery lock, held while discovering; ``Busy`` when another
+    process holds it and this caller would rather not wait."""
+    Path(state_dir).mkdir(parents=True, exist_ok=True)
+    with open(Path(state_dir) / "discovery.lock", "w") as fh:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
+        except BlockingIOError:
+            raise Busy("another discovery is running for this project") from None
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
 def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, options: dict | None = None,
                window_s: float | None = None, step_s: float | None = None,
-               note: str = "discovered: the structure changed") -> Result:
+               note: str = "discovered: the structure changed", skip_if_busy: bool = False) -> Result:
     cfg = project.config
     strategy = strategy or configured_strategy(project)
     options = cfg.discovery_options if options is None else options
     window_s = window_s or cfg.discovery_window
     step_s = step_s or cfg.discovery_step
-    with _lock:
+    with _lock, discovery_lock(project.state_dir, wait=not skip_if_busy):
         store = ModelStore.for_state(project.state_dir)
         end = time.time()
         m = discover_with(metrics.dump("", {"project": project.key}), start=end - window_s, end=end, step=step_s,
-                          strategy=strategy, options=options)
+                          strategy=strategy, options=options, deadline=DEADLINE_SHARE * cfg.discovery_every)
         m.discovery.update(window_s=window_s, step_s=step_s)
         store.write_discovery(m, at=end)
         cur = store.load()

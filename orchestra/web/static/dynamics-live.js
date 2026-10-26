@@ -133,7 +133,7 @@ const Live = (() => {
       + (VERSION !== null ? " These are the latest discovery's equations, not this past version's." : "");
   }
   function openFlow(fid) {
-    const f = MODEL.flows.find((x) => x.id === fid), e = f.current || {}, q = e.quality || {};
+    const f = MODEL.flows.find((x) => x.id === fid), e = f.current || {}, q = e.quality || {}, ev = f.evidence || {};
     const obs = flowHist(fid), model = obs.map(([t]) => [t, predicted(f, t)]).filter((p) => p[1] != null);
     const alts = Object.entries(q).filter(([k]) => k.startsWith("aic_")).map(([k, v]) => `<tr><td>${esc(k.slice(4).replace(/_/g, " "))}</td><td class="num">${fmt(v)}</td><td class="num">${fmt(v - q.aic)}</td></tr>`).join("");
     openDrawer(`<h3>${esc(flowName(f))} <span class="tag">flow</span></h3>
@@ -141,7 +141,10 @@ const Live = (() => {
       <div>equation</div><div class="num">${esc(eqText(f))}</div><div>machine</div><div>${esc(f.machine || "none")}</div>
       <div>fit</div><div class="num">${esc(e.origin || "")} by ${esc(e.method || "")} · ${esc(e.form || "")} · ${q.events ?? 0} events${q.live_minutes ? ` over ${q.live_minutes} min` : ""}${q.dispersion != null ? ` · dispersion ${fmt(q.dispersion)}` : ""}</div>
       ${(f.measured_by || []).length > 1 ? `<div>measured by</div><div class="num">${f.measured_by.map((c) => esc(c.name)).join(" + ")}</div>` : ""}
-      <div>counter</div><div class="num">${esc(f.counter ? f.counter.name : "—")}</div></div>
+      <div>counter</div><div class="num">${esc(f.counter ? f.counter.name : "—")}</div>
+      ${ev.co_flow_of ? `<div>co-flow</div><div>${esc(ev.note || "")} (see ${esc(flowName(MODEL.flows.find((x) => x.id === ev.co_flow_of)) || ev.co_flow_of)})</div>` : ""}
+      ${(ev.co_flows || []).length ? `<div>co-flows</div><div>the same events also move ${ev.co_flows.map((id) => esc(flowName(MODEL.flows.find((x) => x.id === id)) || id)).join(", ")}</div>` : ""}
+      ${(ev.conflicts || []).map((c) => `<div>also claimed</div><div>its ${c.end === "src" ? "source" : "destination"} by ${c.others.map((o) => `${esc(stockName(o.stock))} (explains ${Math.round(100 * o.share)}% of its changes)`).join(", ")}; kept ${esc(stockName(c.kept))}</div>`).join("")}</div>
       <h4>Rate, last hour (${per()}): observed and what the equation predicts from the levels</h4>
       ${Charts.line([{ label: "observed", points: obs, color: mcolor(f.machine) }, { label: "equation", points: model, color: "#e5e7eb" }], { W: 700, H: 240, unit: per() })}
       ${alts ? `<h4>Other forms considered (AIC; lower is better)</h4><table class="dt"><tr><th>form</th><th>AIC</th><th>worse by</th></tr><tr><td><b>${esc(e.form)}</b> (chosen)</td><td class="num">${fmt(q.aic)}</td><td></td></tr>${alts}</table>` : ""}`);

@@ -146,11 +146,19 @@ Dynamics page): `conservation`, Orchestra's own (below), or one of SD Lab's ~70
 (`orchestra/sdlab`, brought in from SD Lab's discovery research; `kalman_lna` by default when the
 `sd` extra is installed; `combined2` and `matrix_v2` are the other strong ones). With an SD Lab
 strategy, conservation still runs first and finds the stocks and the counters that measure flows;
-the SD Lab strategy then finds the equations from the stocks' levels (on the time every series
-was written), with the other measured gauges as inputs, and stocks grouped by the measured flows
-that join them; its flows are matched back to the counters and their machines
-(`sd/strategies.py`). Its richer forms (gap, linear in several stocks or inputs, expressions,
-effects) are kept in each equation's `spec`, and its hidden stocks are drawn dashed.
+the SD Lab strategy then works from the stocks' levels (on the time every series was written),
+with the measured moves handed to it as what is already **known** of each step, so it explains
+only the residual (hidden stocks, unmeasured inflows and drains, the inputs that drive them); the
+other measured gauges are its inputs (`sd/inputs.py`: not flags, one per machine with the
+instances summed), and stocks are grouped by the measured flows that join them. Its flows are
+matched back to the counters and their machines (`sd/strategies.py`); several between the same
+ends become one with one rate of several terms; one that no counter measures is kept, as
+unmeasured, only where the stock's balance is not exact (a strategy that ignores `known` invents
+flows for stocks whose counters already explain every step, and those are dropped and recorded).
+Its richer forms (gap, linear in several stocks or inputs, expressions, effects) are kept in
+each equation's `spec`, and its hidden stocks are drawn dashed. The host gives a strategy a
+deadline below `[discovery] every`, and one discovery runs at a time per project across
+processes (the host skips a scheduled run while the CLI or the web page is discovering).
 
 Conservation (`sd/discover.py`):
 1. every series is sampled onto a grid of steps. A series written on a schedule that is no

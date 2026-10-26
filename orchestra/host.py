@@ -80,15 +80,17 @@ class Host:
 
     def _discover(self) -> None:
         """Rediscover the model every interval (``orchestra.sd.rediscover``)."""
-        from .sd.rediscover import rediscover
+        from .sd.rediscover import Busy, rediscover
 
         wait = 5.0                                    # soon after starting, then every interval
         while not self._stop.wait(wait):
             wait = self.project.config.discovery_every
             try:
-                r = rediscover(self.project, metrics_for(self.project))
+                r = rediscover(self.project, metrics_for(self.project), skip_if_busy=True)
                 what = f"saved as version {r.version}" if r.version else "structure unchanged"
                 self.log(f"discovery ({r.strategy}): {len(r.model.stocks)} stocks, {len(r.model.flows)} flows; {what}")
+            except Busy:                              # the CLI or the web page is discovering: theirs will do
+                self.log("discovery: skipped, another process is discovering this project")
             except Exception as e:  # noqa: BLE001 - try again next interval
                 self.log(f"discovery: {type(e).__name__}: {e}")
 
