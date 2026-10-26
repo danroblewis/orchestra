@@ -50,6 +50,8 @@ class MachineIndex:
         self.recent: dict[tuple[str, str], deque] = defaultdict(deque)   # (machine, type) -> times in the last day
         self.subs: dict[str, set] = defaultdict(set)                     # machine -> types its instances listen for
         self.mode: dict[str, str] = {}
+        self.package: dict[str, str] = {}                                # machine -> the package it announced it belongs to
+        self.about: dict[str, dict] = {}                                 # machine -> the rest of its last announcement (opaque)
         self.instances: dict[str, dict[str, dict]] = defaultdict(dict)  # machine -> instance -> first/last seen
         self.logs: dict[str, dict[str, str]] = defaultdict(dict)        # machine -> instance -> announced log path
         self.latest: dict[str, deque] = defaultdict(lambda: deque(maxlen=RECENT))  # machine -> its last events' envelopes
@@ -84,6 +86,10 @@ class MachineIndex:
             self.subs[machine].update(d.get("listens_for") or d.get("types") or [])
             if d.get("mode"):
                 self.mode[machine] = d["mode"]
+            if isinstance(d.get("package"), str) and d["package"]:
+                self.package[machine] = d["package"]
+            self.about[machine] = {k: v for k, v in d.items() if k not in ("mode", "listens_for", "types", "log", "package")
+                                   and isinstance(v, str | int | float | bool | type(None) | list)}
             if isinstance(d.get("log"), str) and d["log"]:
                 self.logs[machine][instance or ""] = d["log"]
             return
@@ -134,7 +140,8 @@ class MachineIndex:
                          for i, v in sorted(self.instances[m].items())]
                 last = max((v["last"] for v in self.instances[m].values()), default=None)
                 first = min((v["first"] for v in self.instances[m].values()), default=None)
-                machines.append({"id": m, "bootstrap": m == HOST, "mode": self.mode.get(m), "publishes": pubs,
+                machines.append({"id": m, "bootstrap": m == HOST, "mode": self.mode.get(m), "package": self.package.get(m),
+                                 "about": self.about.get(m, {}), "publishes": pubs,
                                  "subscribes": sorted(self.subs.get(m, ())), "metrics": sorted(metrics.get(m, [])),
                                  "logs": sorted(i or m for i in self.logs.get(m, {})),
                                  "instances": [i for i in insts if i["id"] != m] if any(k for k in self.instances[m]) else [],

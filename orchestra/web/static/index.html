@@ -59,10 +59,12 @@ async function refresh() {
     if (!MACHINES.ok) { $("machines").innerHTML = `<div class="empty">${esc(MACHINES.error)}</div>`; return; }
     const active = MACHINES.machines.filter((m) => m.active);
     $("machines-sub").textContent = `${active.length} active · ${MACHINES.machines.length} seen`;
-    $("machines").innerHTML = active.length ? active.map((m) => `<div class="panel mcard"><div class="chead"><b>${esc(m.id)}</b>${m.bootstrap ? ' <span class="tag">bootstrap</span>' : ""}<span class="muted" style="margin-left:auto">last event ${ago(Date.now() / 1000 - m.last_seen)} ago</span></div>
+    $("machines").innerHTML = active.length ? active.map((m) => { const own = Orchestra.machineCards.card(m, { compact: true });
+      if (own != null) return `<div class="panel mcard" style="cursor:pointer" onclick="location.href='/machines#${esc(m.id)}'">${own}</div>`;
+      return `<div class="panel mcard"><div class="chead"><b>${esc(m.id)}</b>${m.bootstrap ? ' <span class="tag">bootstrap</span>' : ""}<span class="muted" style="margin-left:auto">last event ${ago(Date.now() / 1000 - m.last_seen)} ago</span></div>
         <div class="mrow"><span class="muted">publishes</span> ${m.publishes.map((p) => `<span class="ty">${esc(p.type)} <b>${p.per_min_10m}</b>/min</span>`).join("") || '<span class="muted">nothing</span>'}</div>
         <div class="mrow"><span class="muted">listens for</span> ${m.subscribes.map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">nothing</span>'}</div>
-        <div class="mrow"><span class="muted">metrics</span> ${m.metrics.map((x) => `<code>${esc(x)}</code>`).join(" ") || '<span class="muted">none</span>'}</div></div>`).join("")
+        <div class="mrow"><span class="muted">metrics</span> ${m.metrics.map((x) => `<code>${esc(x)}</code>`).join(" ") || '<span class="muted">none</span>'}</div></div>`; }).join("")
       : `<div class="empty">No machine has published anything in the last two minutes.</div>`;
   } catch (e) { $("conn").textContent = "disconnected"; }
 }
@@ -118,6 +120,7 @@ function renderGpu(d) {
 
 refresh(); refreshSystem(); refreshCoreStrip();
 setInterval(refresh, 5000); setInterval(refreshSystem, SYSTEM_POLL_MS); setInterval(refreshCoreStrip, 5000);
+document.addEventListener("orchestra:machinecards", () => { if (MACHINES) refresh(); });
 </script>
 </body>
 </html>

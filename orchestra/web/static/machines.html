@@ -228,6 +228,7 @@ function closeMachine() { OPEN = null; clearInterval(OPEN_TIMER); closeDrawer();
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && OPEN) closeMachine(); });
 function openMachine(id) {
   const m = DATA && DATA.machines.find((x) => x.id === id); if (!m) return;
+  if (Orchestra.machineCards.open(m)) return;                     // its package draws its own dialog
   OPEN = id; LOG_INST = (m.logs || [])[0] || null;
   const insts = m.instances && m.instances.length ? m.instances : [];
   openDrawer(`<h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.id)} <span class="tag">machine</span>${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}${m.mode ? ` <span class="tag k-${esc(m.mode)}">${esc(m.mode.replace("_", " "))}</span>` : ""}
@@ -261,13 +262,15 @@ async function machineDetail(refresh) {
 const Charts_num = (v) => (Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : Math.abs(v) >= 10 ? (+v).toFixed(1) : (+v).toPrecision(3).replace(/\.?0+$/, ""));
 function cards() {
   $("nm").textContent = DATA.machines.length;
-  $("cards").innerHTML = DATA.machines.map((m) => `<div class="panel" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)" title="click for details and log"><h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.id)}${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}</h3>
+  $("cards").innerHTML = DATA.machines.map((m) => { const own = Orchestra.machineCards.card(m);
+    if (own != null) return `<div class="panel ${m.unseen ? "unseen" : ""}" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)">${own}</div>`;
+    return `<div class="panel ${m.unseen ? "unseen" : ""}" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)" title="click for details and log"><h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.id)}${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}</h3>
     <div class="row"><span class="muted">engaged</span><span>${m.mode ? `<span class="tag k-${esc(m.mode)}">${esc(m.mode.replace("_", " "))}</span>` : '<span class="muted">not announced</span>'}</span></div>
     ${m.instances && m.instances.length ? `<div class="row"><span class="muted">instances</span>${m.instances.map((i) => `<span class="ty" title="last seen ${ago(Date.now() / 1000 - i.last_seen)} ago"><span class="dot ${i.active ? "" : "off"}" style="--rc:${i.active ? "#22c55e" : "#64748b"};width:7px;height:7px"></span> ${esc(i.id)}</span>`).join("")}</div>` : ""}
     <div class="row"><span class="muted">seen</span><span>${m.first_seen ? `first ${ago(Date.now() / 1000 - m.first_seen)} ago, last ${ago(Date.now() / 1000 - m.last_seen)} ago` : "no events yet"}</span></div>
     <div class="row"><span class="muted">publishes</span>${m.publishes.map((p) => `<span class="ty" title="${p.count} events, ${p.day} in 24h">${esc(p.type)} · ${p.per_min_10m}/min</span>`).join("") || '<span class="muted">nothing</span>'}</div>
     <div class="row"><span class="muted">listens for</span>${m.subscribes.map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">nothing</span>'}</div>
-    <div class="row"><span class="muted">metrics</span>${m.metrics.map((x) => `<span class="ty">${esc(x)}</span>`).join("") || `<span class="muted">none labelled machine="${esc(m.id)}"</span>`}</div></div>`).join("");
+    <div class="row"><span class="muted">metrics</span>${m.metrics.map((x) => `<span class="ty">${esc(x)}</span>`).join("") || `<span class="muted">none labelled machine="${esc(m.id)}"</span>`}</div></div>`; }).join("");
   $("note").textContent = DATA.unattributed_events ? `${DATA.unattributed_events.toLocaleString()} older events carry no source (they predate the event envelope) and are not attributed to any machine.` : "";
 }
 function render() { if (DATA) { eventMap(DATA); cards(); } }
@@ -276,10 +279,13 @@ async function load() {
     const d = await (await fetch("/api/machines")).json();
     $("conn").textContent = "live";
     if (!d.ok) { $("evmap-host").innerHTML = `<div class="empty">${esc(d.error)}</div>`; return; }
+    const first = !DATA;
     DATA = d; render();
+    if (first && location.hash.length > 1) setTimeout(() => openMachine(decodeURIComponent(location.hash.slice(1))), 300);   // /machines#<id>
   } catch (e) { $("conn").textContent = "disconnected"; }
 }
 load(); setInterval(load, 5000);
+document.addEventListener("orchestra:machinecards", () => { if (DATA) cards(); });
 </script>
 </body>
 </html>

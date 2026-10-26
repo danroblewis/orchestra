@@ -223,3 +223,6 @@ svg.netgraph { display:block; width:100%; min-height:0; font-size:11px; cursor:g
 .ng-pol.X { background:#1f2937; color:#cbd5e1 } .ng-pol.L { background:#3b2f0b; color:#fcd34d }
 .ng-kind { display:inline-block; font-size:10.5px; border:1px solid var(--border2); border-radius:999px; padding:0 7px; margin-right:6px; color:var(--text2) } .ng-kind.mat { border-color:#14532d; color:#86efac }
 .ng-edge.ev-handoff .ng-line { stroke-linecap:round }
+
+/* a machine a package declared that has not been seen on the bus yet */
+.panel.unseen { opacity:.62; border-style:dashed }

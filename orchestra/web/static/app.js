@@ -5,6 +5,30 @@ const color = (s) => `var(--${s})`;
 const ago = (sec) => (sec < 60 ? `${Math.round(sec)}s` : sec < 3600 ? `${Math.round(sec / 60)}m` : `${(sec / 3600).toFixed(1)}h`);
 const fmtBytes = (b) => (b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)} GB` : `${Math.round(b / (1 << 20))} MB`);
 
+// Machine cards a package draws for its own machines (orchestra/plugins.py). A machine belongs to
+// a package when its announcement says so, or the package declares it (``m.package``). The
+// package's every-page script registers, for its package name:
+//   card(m, {compact})  -> the inside of the machine's card (HTML), or null for Orchestra's own;
+//   open(m)             -> true when it opened the machine's dialog itself, else Orchestra opens its own.
+// ``changed()`` asks the pages to draw the cards again (its data arrived). Any machine no package
+// claims gets Orchestra's card and dialog.
+window.Orchestra = window.Orchestra || {};
+Orchestra.machineCards = (() => {
+  const by = new Map();
+  const changed = () => document.dispatchEvent(new Event("orchestra:machinecards"));
+  return {
+    register(pkg, spec) { by.set(pkg, spec); changed(); },
+    of(m) { return (m && m.package && by.get(m.package)) || null; },
+    card(m, opts = {}) { const s = this.of(m); try { return s && s.card ? s.card(m, opts) : null; } catch (e) { return null; } },
+    open(m) {
+      if (this.skip === m.id) { this.skip = null; return false; }       // "machine details": Orchestra's own dialog
+      const s = this.of(m); try { return !!(s && s.open && s.open(m)); } catch (e) { return false; }
+    },
+    openDefault(id) { this.skip = id; if (typeof openMachine === "function") openMachine(id); else location.href = "/machines#" + encodeURIComponent(id); },
+    changed,
+  };
+})();
+
 // The nav links are static HTML; this fills in the project label on every page, and adds the
 // installed plugins' pages (orchestra/plugins.py) after Orchestra's own.
 fetch("/api/project").then((r) => r.json()).then((p) => { const el = $("proj"); if (el) el.textContent = p.key; }).catch(() => {});

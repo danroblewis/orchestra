@@ -17,7 +17,15 @@ The web app mounts what it returns:
 - its ``scripts`` (files in ``static``) on every page of the web UI, after Orchestra's own
   scripts: for what a package must show wherever the viewer is (a way to reach its agents, a
   notice that something waits on the viewer). Orchestra loads them and knows nothing of them;
-- its ``router`` (a FastAPI ``APIRouter``) at ``/api/plugins/<name>``.
+- its ``router`` (a FastAPI ``APIRouter``) at ``/api/plugins/<name>``;
+- its ``machines``, optionally: the machines it provides, declared (``Declared``), so the
+  Machines page lists one before it is first seen. What is observed always wins: a declaration
+  only fills in a machine nobody has seen yet, and names the package a machine belongs to.
+
+A machine belongs to a package when its announcement says so (``package`` in
+``orchestra.machine.started``) or the package declares it. The package's every-page script may
+then draw that machine's card and its dialog (``Orchestra.machineCards`` in ``static/app.js``);
+any other machine gets Orchestra's own.
 
 A plugin that fails to load, or a page whose path Orchestra already serves, is left out and
 reported (``/api/plugins``), never fatal: the core stays up (rule 8)."""
@@ -44,12 +52,22 @@ class Page:
 
 
 @dataclass
+class Declared:
+    id: str                                   # the machine, as its events' source names it
+    kind: str = "program"                     # program | agent (an AI agent) | person | service
+    description: str = ""
+    mode: str | None = None                   # continuous | scheduled | ad hoc
+    listens_for: list[str] = field(default_factory=list)
+
+
+@dataclass
 class Plugin:
     name: str
     pages: list[Page] = field(default_factory=list)
     static: Path | None = None
     router: Any = None   # a fastapi.APIRouter, mounted at /api/plugins/<name>
     scripts: list[str] = field(default_factory=list)   # files in ``static`` loaded on every page
+    machines: list[Declared] = field(default_factory=list)
 
 
 @dataclass

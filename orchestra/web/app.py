@@ -183,6 +183,7 @@ def create_app(project: Project) -> FastAPI:
         if not bg.ready("index"):
             return {"ok": False, "error": "reading the event bus for the first time…", "warming": True}
         out = {"ok": True, **bg.index.view(bg.series)}
+        declare(out["machines"])
         # the host publishes only when it starts and stops; whether it runs is in the runtime record
         rec = runtime.read(project).get("host") or {}
         for m in out["machines"]:
@@ -294,12 +295,13 @@ def create_app(project: Project) -> FastAPI:
         except WebSocketDisconnect:
             return
 
-    mount_plugins(app, project, page)
+    declare = mount_plugins(app, project, page)
     return app
 
 
-def mount_plugins(app: FastAPI, project: Project, page) -> None:
-    """Pages, static files and API routes of the installed plugins (orchestra/plugins.py)."""
+def mount_plugins(app: FastAPI, project: Project, page):
+    """Pages, static files and API routes of the installed plugins (orchestra/plugins.py).
+    Returns what adds their declared machines to the observed ones."""
     from .. import plugins as plug
     loaded = plug.load(project)
     taken = {getattr(r, "path", None) for r in app.routes}
@@ -327,3 +329,21 @@ def mount_plugins(app: FastAPI, project: Project, page) -> None:
     def plugin_list() -> dict:
         """The installed plugins' pages (for the navigation) and any that failed to load."""
         return {"ok": True, "pages": pages, "scripts": scripts, "errors": errors}
+
+    declared = [(p.name, d) for p in loaded.plugins for d in p.machines]
+
+    def declare(machines: list[dict]) -> None:
+        """Observed machines keep what was observed; a declaration names the package of a machine
+        that announced none, and adds a machine not seen yet (marked so)."""
+        seen = {m["id"]: m for m in machines}
+        for pkg, d in declared:
+            m = seen.get(d.id)
+            if m is not None:
+                m["package"] = m.get("package") or pkg
+                m["declared"] = {"kind": d.kind, "description": d.description}
+                continue
+            machines.append({"id": d.id, "bootstrap": False, "mode": d.mode, "package": pkg, "about": {"kind": d.kind},
+                             "declared": {"kind": d.kind, "description": d.description}, "unseen": True, "publishes": [],
+                             "subscribes": list(d.listens_for), "metrics": [], "logs": [], "instances": [],
+                             "first_seen": None, "last_seen": None, "active": False})
+    return declare
