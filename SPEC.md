@@ -206,19 +206,31 @@ Conservation (`sd/discover.py`):
    coincide); it enters only to explain the residual the machine's own leave. Every counter is
    searched only when the machine's own do not balance the level. Then, with every balance
    known, the stand-ins give way (`sd/restate.py`): Orchestra's event counter to the
-   machine counters that sum to it, when one is another stock's or the level's own machine's;
-   another machine's counter that no other stock claims to the level's own counters that sum to
-   it; and two machines' counts of one flow, one leaving a stock and the other entering another,
-   to one counter in both balances. A restated balance must still fit as a stock's;
+   machine counters that sum to it, when one is another stock's or the level's own machine's
+   (among sets that sum to it alike, the level's own machine's parts before another machine's
+   copy of one of them); another machine's counter that no other stock claims to the level's
+   own counters that sum to it; and two machines' counts of one flow, one leaving a stock and
+   the other entering another, to one counter in both balances. A restated balance must still
+   fit as a stock's. Two levels that change alike in 97% of steps, or that the same counters
+   balance (two machines' counts of the same events being one counter), are one stock measured
+   twice: the machine whose counters make the balance keeps it, the other is recorded as its
+   twin. A level that only fills is a stock when its balance is exact, whatever feeds it (a
+   terminal state, where other stocks' outflows end); one the system's flows explain only
+   roughly is a tally of activity unless counters no ordinary stock uses balance it;
 3. a counter that leaves one stock and enters another is a **flow** between them; otherwise it
    comes from or goes to outside;
 4. each flow's rate is fitted by maximum likelihood, choosing by AIC among constant, proportional
    to its source, and linear in any stock or any measured gauge that is not a stock (`c + k ×
    X`; the gauges are those `sd/inputs.py` offers, recorded in the equation's inputs as
    `input:<name>`). A linear form on a stock other than the flow's source is an **influence**,
-   the link that closes feedback loops. Forms are scored with the exact point-process likelihood
-   (each event against the levels just before it), because counts per step favour spurious forms
-   when a flow drains the level it depends on;
+   the link that closes feedback loops. A stock that only fills is offered to no flow (it stands
+   in for time), nor is a stock whose balance counts the flow's own events (the same events, or
+   at least half of them either way; `sd/drivers.py`): it is one off just before each of those
+   events by construction (the free takers just before an order is placed), which beats any
+   real driver on likelihood; the flow's evidence records such stocks as `not_drivers`. Forms
+   are scored with the exact point-process likelihood (each event against the levels just
+   before it), because counts per step favour spurious forms when a flow drains the level it
+   depends on;
 5. each flow is attributed to the machine named by its counter's `machine` (or, for event
    counters, `source`) label.
 
@@ -401,8 +413,8 @@ orchestra/
   bus/       file, redis_streams, rabbitmq_streams, kafka
   metrics/   file, victoria, promql
   sd/        model, store, fit, series and live (sampling, when a series was written), balance,
-             collinear and restate (a level's balance), ends, inputs, discover (conservation),
-             rates, strategies, simulate, rediscover
+             collinear and restate (a level's balance), ends, inputs, drivers (which stocks may
+             drive a flow), discover (conservation), rates, strategies, simulate, rediscover
   sdlab/     SD Lab's discovery research: ~70 strategies (needs the sd extra)
   web/       app, core, core_explore, machines, dynamics, static/
 tests/
