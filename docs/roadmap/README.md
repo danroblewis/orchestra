@@ -23,9 +23,9 @@ charts": a model whose numbers show where they came from.
 
 | Repository | What it is | State |
 |---|---|---|
-| `~/orchestra_2` (GitHub `danroblewis/orchestra`, public) | The platform: event bus (CloudEvents), metrics store, one versioned system dynamics model discovered from metrics (`orchestra/sd`, strategies from SD Lab in `orchestra/sdlab`), bootstrap host, web UI (Core, Dashboard, Machines, Dynamics), plugin interface | Empty of machines since 2026-10-25. 68 unit tests; bus and metrics conformance suites |
+| `~/orchestra_2` (GitHub `danroblewis/orchestra`, public) | The platform: event bus (CloudEvents), metrics store, one versioned system dynamics model discovered from metrics (`orchestra/sd`, strategies from SD Lab in `orchestra/sdlab`), bootstrap host, web UI (Core, Dashboard, Machines, Dynamics), plugin interface | Empty of machines since 2026-10-25. Unit tests plus the bus and metrics conformance suites; discovery reworked in four rounds on 2026-10-26 (see use-cases.md) |
 | `~/orchestra-tasking` (private) | Task management as a plugin: tickets, milestones, a scheduler that offers work on the bus, leases, the merge gate and worktrees for code, staging, probes, requests from planners, the Tickets page and Tasks panel | Split from Orchestra 2026-10-25; the agents left it 2026-10-26 |
-| `~/orchestra-agents` (local; private GitHub pending) | AI agents as machines: Supervisor, Coordinator, worker and reviewer roles, teams, the harnesses for Pi, Claude Code and Codex, transcripts, the Agents page | New 2026-10-26 |
+| `~/orchestra-agents` (private GitHub `danroblewis/orchestra-agents`) | AI agents as machines: Supervisor, Coordinator, worker and reviewer roles, teams, the harnesses for Pi, Claude Code and Codex, transcripts, the Agents page | New 2026-10-26 |
 | `~/orchestra-bakery` (local) | A bakery built like a ticket system, to test discovery from the outside | Discovery finds its balances and main rates |
 
 The split follows one rule, from `AGENTS.md`: Orchestra knows no tickets, tasks or AI; machines
