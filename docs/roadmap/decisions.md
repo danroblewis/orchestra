@@ -18,6 +18,7 @@ around these; no agent decides them. Each has the document that raised it and wh
 | D11 | Which user stories apply ("delete the ones that don't"); the order of H3 | `docs/user-stories.md` header | H3 |
 | D12 | Team and role open questions 1–11 | `docs/proposals/teams-and-roles.md` | Stage 2 of teams |
 | D13 | Where the two plugins' every-page scripts put their nav button and banner when both are installed | session 2026-10-25 | Cosmetic; the agents' script currently takes the button, the task plugin's banner stands aside |
+| D15 | The bakery's own measurements (the owner's test system): count offers per phase (`bake`/`inspect`), count customers called (the line's outflow), stop publishing `customer_demand_per_min` (the model's formula as a gauge); and a `TAKERS=1` run so the line forms. Change the test system, or accept those gaps in its model? | model-acceptance runs 2026-10-26 | UC-1 passing |
 | D14 | Repository names and places: rename `~/orchestra_2` to `~/orchestra` once the SD Lab jobs in the old checkout finish; delete `~/orchestra-taskdemo` once the in-repo demos supersede it | session 2026-10-26 | Path references in four `pyproject.toml` files |
 
 When one is decided, record the decision and date here, state the invariant change in the commit

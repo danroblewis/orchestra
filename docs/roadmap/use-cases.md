@@ -21,17 +21,40 @@ What "meaningful" means here comes from the owner's judgement of earlier models
 
 ## UC-1: the bakery (`~/orchestra-bakery`)
 
-Run: `bin/bakery-ctl start`, 30 minutes, then `uv run orchestra sd discover --minutes 30`.
+Run: clear the bakery's runtime state (`run/board.json`, `run/yelp.json`, `run/shelf`, `run/pass`),
+`bin/bakery-ctl start`, 60 minutes, then `uv run orchestra sd discover --minutes 60`.
+(With the default two takers the customers' line empties within a second and never becomes a
+stock; a run with `TAKERS=1` is a separate case for the line.)
 
-Expected stocks: orders waiting, baking, inspecting, on the shelf, accepting; customers in line,
-customers waiting; bake queue, pass queue; the Yelp rating as a slow stock (or an auxiliary once
-auxiliaries exist).
-Expected flows: placed, assigned, baked, inspection passed and failed, picked up, accepted,
-rejected, refunded, shelf expired, lease expired, cancelled by state; customers in and out of the
-line; reviews posted.
-Expected loops: demand and service (balancing, through the rating), rework (reinforcing while it
-lasts, through remakes), leases returning work to the queue.
-Forbidden: the weather series; `*_busy` flags as flows; takers/bakers free as stocks of orders.
+Expected stocks: orders waiting, baking, inspecting, on the shelf, accepting; customers waiting.
+Expected inputs: the Yelp rating, read by the arrivals flow (it is a mean of recent reviews, not
+a conserved quantity, so it is an input until the model has auxiliaries).
+Expected flows: placed, assigned, baked (baking → inspecting), inspection passed (inspecting →
+on shelf) and failed, picked up, accepted, rejected (accepting → waiting, the board's own
+counter), refunded, lease expired, cancelled by state, once each has at least five events in the
+window.
+Expected loops: rework (failed inspections and returns remake orders) and leases (a baker who
+wanders off returns the order to the queue) representable in the structure; demand and service
+representable only as far as "rating drives arrivals" (closing it through waits and reviews is
+an SD Lab strategy's job, not conservation's).
+Forbidden: the weather series; `*_busy` flags as inputs or drivers; takers or bakers free as a
+stock in the orders network; one flow per instance; an unmeasured flow on an exactly balanced
+stock; duplicate flow ids; the same level as two stocks.
+
+Not expected after the 2026-10-26 runs (judged "expectation wrong" or "the bakery's own"):
+the expo's bake and pass queues (the board's states seen again from the dispatcher, with no
+outflow counter of their own); shelf expired (unreachable under the bakery's rules); reviews
+posted as a flow (it moves no measured level). The bakery's own measurement gaps, for the owner
+(decisions D15): one `bakery_offers_total` for both phases; no `customers_called_total`, so the
+line's outflow is only Orchestra's event count; `customer_demand_per_min` publishes the model's
+own demand formula as a gauge.
+
+Results so far: baseline 4/10 (2026-10-26 08:00, invented flows, flag inputs, duplicate ids,
+a twin stock); after the first discovery fixes 6/10 (10:30; the five board states exact, nine
+transitions right, remaining: a spurious takers-free stock from a stuck balance search, the
+rating not read by any flow, the rejected flow split through outside, stale values before a
+restart losing stocks in the host's scheduled runs). Reports under the session scratchpad
+`split/model-acceptance/`.
 
 ## UC-2: the task system with programs (`~/orchestra-tasking/demo`)
 
