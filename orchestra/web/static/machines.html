@@ -59,7 +59,7 @@ Orchestra.machineList = () => (DATA ? DATA.machines : []);
 
 // The observed machines and event types as the map's graph: machines publish event types
 // (machine → event), machines listen for event types (event → machine).
-function agentGraph(d) {
+function machineGraph(d) {
   const nodes = {}, evNodes = {}, links = {};
   for (const m of d.machines) nodes["m:" + m.id] = { id: "m:" + m.id, kind: m.bootstrap ? "program" : "machine", label: m.id, bootstrap: m.bootstrap, active: m.active, machine: true, instances: m.instances, mode: m.mode };
   const day = {};
@@ -132,7 +132,7 @@ function familyBar(d) {
 function eventMap(d0) {
   // hidden families are left out everywhere: the map, its arrows and its cycles
   const d = { ...d0, machines: d0.machines.map((m) => ({ ...m, publishes: m.publishes.filter((p) => !EV_HIDDEN.has(family(p.type))), subscribes: m.subscribes.filter((t) => !EV_HIDDEN.has(family(t))) })) };
-  const g = agentGraph(d);
+  const g = machineGraph(d);
   if (!$("evsvg-host") || window.EV_DRAWN_MODE !== EV_MODE) {      // each view has a layout of its own
     window.EV_DRAWN_MODE = EV_MODE; window.LOOPSIG = null;
     $("evmap-host").innerHTML = `<div class="evmap"><div class="evbar" id="ev-bar"></div><div id="evsvg-host"></div>
