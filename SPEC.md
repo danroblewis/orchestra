@@ -10,9 +10,10 @@ machines believed to cause it.
 Its main use case is finding the feedback loops between a project's own domain and the processes
 used to develop it: do our workflows and AI agents change the measures the project exists for?
 
-This version is an **empty Orchestra**: the bus, the metrics store, the model, the bootstrap host,
-the agent driver and the web UI, with no machines of its own beyond the host. Task management, the
-first package of machines, is being rebuilt on top of it (`docs/proposals/empty-orchestra.md`).
+This version is an **empty Orchestra**: the bus, the metrics store, the model, the bootstrap host
+and the web UI, with no machines of its own beyond the host, and no AI: an AI agent is a machine
+like any other, run by whatever runs it. Task management, with its agent harnesses, lives in its
+own repository (`~/orchestra-tasking`) and adds its pages here as a plugin (§10.1).
 The old ticket tracker, loop and merge gate were removed on 2026-10-25; their history stays on the
 bus and in model versions 1–4 of projects that used them.
 
@@ -192,69 +193,13 @@ Hosting drivers and starting the machines that packages declare come later.
 
 ---
 
-## 6. Agent harnesses (the agent driver)
+## 6. Machines that are AI agents
 
-Orchestra does not run models; a *harness* does. A harness is the product that turns a prompt
-into an agent turn with tools: Pi, Claude Code, Codex. Orchestra talks to every harness through
-one small interface (`orchestra/harness/base.py`) and knows nothing else about it:
-
-- `Harness.start(spec)` opens a named, resumable session with a system prompt, a working
-  directory, a model, and a set of Orchestra tool groups.
-- `AgentSession.prompt(text, timeout, on_event)` runs one turn to completion and returns the
-  final text. Events arrive in a **normalized vocabulary** (`turn_start`, `assistant_start`,
-  `token`, `tool_start`, `tool_end`, `assistant_end`, `settled`).
-- `AgentSession.session_file` is the harness's own transcript, the only one kept;
-  `read_transcript` parses it into a common message list.
-- `kill()` stops a turn; `close()` releases the session.
-
-The project picks its harness in `orchestra.toml` (`[agents] harness = "pi" | "claude_code" |
-"codex"`), with `model` in that harness's terms and `provider` for Pi only.
-
-### 6.1 Orchestra's tools are data
-
-Tools an agent uses to talk to Orchestra are defined once, as JSON-schema records in
-`orchestra/harness/tools.py`, grouped by tool group. The catalogue is empty in an empty
-Orchestra; the Supervisor's tools come back here. `orchestra tools --json` prints it.
-
-### 6.2 Pi
-
-One `pi --mode rpc` process per live session; the process is the session and stays resident
-between turns. Launched with `--session-dir <state>/sessions --session-id <id> --provider <p>
---model <m> --append-system-prompt <role> --extension <orchestra/harness/pi_extension.ts>`. The
-extension fetches the tool catalogue from `orchestra tools --json` at load and registers each
-tool. One JSON command per line on stdin, events on stdout; `agent_settled` ends a turn; on
-timeout Orchestra sends `abort`. Transcript: Pi's own JSONL session file.
-
-### 6.3 Claude Code
-
-No resident process: each turn is `claude -p` with the prompt on stdin, `--output-format
-stream-json --include-partial-messages`, `--append-system-prompt-file <role>`, `--model <m>`,
-`--dangerously-skip-permissions`, and `--mcp-config <per-session file> --strict-mcp-config`
-pointing at Orchestra's MCP server (`python -m orchestra.harness.mcp`), which serves the tool
-catalogue. The first turn passes `--session-id <uuid>`; later turns `--resume <uuid>`.
-Transcript: Claude Code's own JSONL under its config directory (`projects/<cwd>/<uuid>.jsonl`).
-
-### 6.4 Codex
-
-No resident process: each turn is `codex exec --json` with the prompt on stdin (`-`), `--sandbox
-danger-full-access -C <cwd> --skip-git-repo-check`, `-m <model>`, and `-c` overrides:
-`mcp_servers.orchestra={...}` (the same MCP server, `required=true`) and
-`developer_instructions="<role prompt>"`. Later turns are `codex exec ... resume <thread_id> -`.
-Transcript: Codex's rollout under `$CODEX_HOME/sessions/`. Codex streams whole items, not tokens.
-It presents MCP tools as a Responses API `namespace` tool, which only OpenAI's own API
-understands.
-
-### 6.5 Keeping context bounded
-
-A session whose transcript has grown past `session_max_bytes` since it was last compacted is
-compacted before its next turn: Pi summarises through its `compact` command; Claude Code is
-started with `--autocompact` at `compact_tokens`; Codex sessions are rotated.
-
-### 6.6 Adding a harness
-
-Implement `Harness` and `AgentSession`, register the class in `orchestra/harness/__init__.py`,
-and give the e2e suite a fake binary that speaks the harness's protocol (`tests/e2e/fake_pi.py`,
-`fake_claude.py`, `fake_codex.py`).
+Orchestra runs no AI. An AI agent is a universal machine: it is known, like every machine, by its
+`source`, its events and its series. What starts it and talks to its model (a harness for Pi,
+Claude Code or Codex) belongs to the package that runs it; the task system keeps them
+(`~/orchestra-tasking/tasking/harness/`), with their tools, transcripts and fakes. They left
+Orchestra on 2026-10-25.
 
 ---
 
@@ -269,7 +214,6 @@ and give the e2e suite a fake binary that speaks the harness's protocol (`tests/
     events.jsonl                 the event log, when [events] url = "file"
     metrics.jsonl                the metrics, when [metrics] url = "file"
     model/vNNNN.json             the model's versions
-    sessions/                    harness session files
     logs/orchestra-host.log
 ```
 
@@ -289,13 +233,10 @@ url = "file"            # or redis://, amqp://, kafka://
 url = "file"            # or http://host:8428 (VictoriaMetrics)
 [discovery]             # strategy, window, step, every, [discovery.options]
 strategy = "kalman_lna"
-[agents]                # the agent driver
-harness = "pi"
-provider = ""
-model = ""
 ```
 
-Unknown sections are ignored, so files written for older versions still load.
+Unknown sections are ignored, so files written for older versions still load, and a package of
+machines may keep its own settings here (the task system's [project], [agents], [gate], …).
 
 ---
 
@@ -400,8 +341,7 @@ orchestra/
   metrics/   file, victoria, promql
   sd/        model, store, fit, discover (conservation), strategies, rediscover
   sdlab/     SD Lab's discovery research: ~70 strategies (needs the sd extra)
-  harness/   base, pi, claude_code, codex, mcp, tools, pi_extension.ts
   web/       app, core, core_explore, machines, dynamics, static/
 tests/
-  unit/  bus/  metrics/  e2e/ (harness fakes)  acceptance/
+  unit/  bus/  metrics/  acceptance/
 ```

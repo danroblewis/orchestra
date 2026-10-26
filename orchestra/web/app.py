@@ -10,7 +10,7 @@ from pathlib import Path
 
 import psutil
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import runtime
@@ -58,10 +58,6 @@ def create_app(project: Project) -> FastAPI:
     @app.get("/machines", response_class=HTMLResponse)
     async def machines_page() -> str:
         return page("machines.html")
-
-    @app.get("/agents")
-    async def agents_redirect():
-        return RedirectResponse("/machines", status_code=308)
 
     @app.get("/api/project")
     def project_info() -> dict:

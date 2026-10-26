@@ -45,14 +45,6 @@ class Config:
     """What an empty Orchestra reads from ``orchestra.toml``. Unknown sections are ignored, so a
     file written for an older Orchestra still loads."""
 
-    harness: str = "pi"          # pi | claude_code | codex: the product the agent driver runs
-    provider: str | None = None
-    model: str | None = None
-    thinking: str | None = None
-    turn_timeout: float = 0.0          # hard cap per turn; 0 = none
-    silence_timeout: float = 1200.0    # end a turn after this long with nothing from the harness
-    session_max_bytes: int = 300_000   # transcript growth since the last compaction that triggers one
-    compact_tokens: int = 100_000      # harnesses that compact themselves (Claude Code) are told to do so past this
     events_url: str | None = None      # [events] url: file (default), redis://, amqp://, kafka://
     metrics_url: str | None = None     # [metrics] url: file (default) or http://host:port (VictoriaMetrics)
     discovery_strategy: str | None = None   # [discovery] strategy: conservation, or an SD Lab strategy (default: kalman_lna when installed)
@@ -65,16 +57,7 @@ class Config:
     @classmethod
     def from_toml(cls, text: str) -> Config:
         raw = tomllib.loads(text)
-        a = raw.get("agents", {}) or {}
         return cls(
-            harness=(a.get("harness") or "pi").replace("-", "_"),
-            provider=a.get("provider") or None,
-            model=a.get("model") or None,
-            thinking=a.get("thinking"),
-            turn_timeout=parse_duration(a.get("turn_timeout"), 0.0),
-            silence_timeout=parse_duration(a.get("silence_timeout"), 1200.0),
-            session_max_bytes=int(a.get("session_max_bytes", 300_000)),
-            compact_tokens=int(a.get("compact_tokens", 100_000)),
             events_url=(raw.get("events", {}) or {}).get("url"),
             metrics_url=(raw.get("metrics", {}) or {}).get("url"),
             discovery_strategy=(raw.get("discovery", {}) or {}).get("strategy"),
@@ -100,13 +83,6 @@ window = "60m"           # how far back each discovery looks
 step = "30s"             # the grid it samples on
 every = "5m"             # how often the host rediscovers
 # [discovery.options]    # passed to the strategy as they are
-
-[agents]                 # the agent driver, for machines that are AI agents
-harness = "pi"           # pi | claude_code | codex
-provider = "{provider}"   # Pi only; leave empty to use Pi's default provider
-model = "{model}"         # leave empty for the harness's default
-thinking = "medium"
-silence_timeout = "20m"  # a turn ends when nothing has come from the agent for this long
 """
 
 
@@ -133,15 +109,11 @@ class Project:
         return self.state_dir / ".lock"
 
     @property
-    def sessions_dir(self) -> Path:
-        return self.state_dir / "sessions"
-
-    @property
     def logs_dir(self) -> Path:
         return self.state_dir / "logs"
 
     def ensure_dirs(self) -> None:
-        for d in (self.state_dir, self.sessions_dir, self.logs_dir):
+        for d in (self.state_dir, self.logs_dir):
             d.mkdir(parents=True, exist_ok=True)
 
     def reload_config(self) -> None:
@@ -196,12 +168,12 @@ def _register(project: Project) -> None:
     index.write_text(json.dumps(data, indent=2))
 
 
-def init_project(repo: Path, *, provider: str | None = None, model: str | None = None) -> Project:
+def init_project(repo: Path) -> Project:
     """Write a starter ``orchestra.toml`` (if missing) and register the project."""
     root = find_repo_root(repo)
     toml_path = root / "orchestra.toml"
     if not toml_path.exists():
-        toml_path.write_text(STARTER_TOML.format(provider=provider or "", model=model or ""))
+        toml_path.write_text(STARTER_TOML)
     project = Project(key=project_key(root), repo_root=root, config=Config.from_toml(toml_path.read_text()))
     _register(project)
     return project

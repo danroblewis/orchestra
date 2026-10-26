@@ -6,9 +6,9 @@ and which machines drive which flows. Its aim is to find the loops between a pro
 and the processes used to develop it.
 
 This is an **empty Orchestra**: the bus, the metrics store, the model, the bootstrap host and the
-agent driver, with no task system. The old ticket tracker, agent loop and merge gate were removed
-on 2026-10-25; task management comes back as the first package of machines
-(`docs/proposals/empty-orchestra.md`).
+web UI, with no machines of its own. The task system (tickets, the agent loop, the AI agent
+harnesses, the merge gate) was removed on 2026-10-25 and lives in its own repository,
+`~/orchestra-tasking`, which adds its pages to the web UI as a plugin (`orchestra/plugins.py`).
 
 - `SPEC.md` is the design of what exists.
 - `AGENTS.md` is the list of rules that must not be broken.
@@ -45,7 +45,7 @@ from the outside.
 ## Tests
 
 ```bash
-uv run python -m pytest                     # unit, harness fakes, and the file backends
+uv run python -m pytest                     # unit, and the file backends
 ORCHESTRA_TEST_REDIS_URL=redis://127.0.0.1:6379/15 uv run python -m pytest tests/bus   # see tests/bus/README.md
 python scripts/acceptance_target.py --port 8123 &
 ORCHESTRA_TARGET_URL=http://127.0.0.1:8123 uv run python -m pytest tests/acceptance

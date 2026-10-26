@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 import time
@@ -27,7 +26,7 @@ def _when(t: float | None) -> str:
 
 
 def cmd_init(args) -> int:
-    p = init_project(Path(args.repo or os.getcwd()), provider=args.provider, model=args.model)
+    p = init_project(Path(args.repo or os.getcwd()))
     print(f"initialized {p.key}\n  repo:   {p.repo_root}\n  state:  {p.state_dir}\n  config: {p.repo_root / 'orchestra.toml'}")
     return 0
 
@@ -51,19 +50,6 @@ def cmd_web(args) -> int:
         uvicorn.run(create_app(project), host=args.host, port=args.port, log_level="warning")
     finally:
         runtime.update(project, lambda d: d.pop("web", None) if (d.get("web") or {}).get("pid") == os.getpid() else None)
-    return 0
-
-
-def cmd_tools(args) -> int:
-    from .harness.tools import TOOLS, tools_for
-
-    groups = args.groups or os.environ.get("ORCHESTRA_TOOLS")
-    tools = tools_for([g for g in groups.split(",") if g]) if groups else list(TOOLS)
-    if args.json:
-        print(json.dumps([t.to_dict() for t in tools]))
-        return 0
-    for t in tools:
-        print(f"{t.name:26} {t.group:14} {t.description[:80]}")
     return 0
 
 
@@ -186,8 +172,6 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("init", help="register this repository and write orchestra.toml")
-    s.add_argument("--provider", help="Pi provider (default: Pi's own default)")
-    s.add_argument("--model", help="agent model id (default: the harness's own default)")
     s.set_defaults(fn=cmd_init)
 
     s = sub.add_parser("run", help="run the bootstrap host: Orchestra's own machine and its event collector")
@@ -198,11 +182,6 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--port", type=int, default=8000)
     s.add_argument("--host", default="127.0.0.1")
     s.set_defaults(fn=cmd_web)
-
-    s = sub.add_parser("tools", help="the Orchestra tools agents get, as data (used by the Pi extension)")
-    s.add_argument("--json", action="store_true")
-    s.add_argument("--groups", help="comma-separated tool groups (default: ORCHESTRA_TOOLS, else all)")
-    s.set_defaults(fn=cmd_tools)
 
     s = sub.add_parser("metrics", help="the metrics store: backfill event counters from the log, list series")
     s.add_argument("action", choices=["backfill", "series"])
