@@ -10,23 +10,68 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <link rel="stylesheet" href="/static/style.css?v={{v}}">
 <style>
-  .mcard { margin-bottom:10px } .mcard .chead { display:flex; gap:8px; align-items:center; margin-bottom:6px }
-  .mrow { font-size:12px; margin:3px 0; display:flex; flex-wrap:wrap; gap:4px; align-items:center } .mrow > .muted:first-child { width:78px; flex:none }
-  .ty { background:var(--panel3); border:1px solid var(--border); border-radius:999px; padding:0 8px; font-size:11px } .ty b { font-weight:600 }
+  .dtop { display:flex; justify-content:flex-end; align-items:center; gap:8px; padding:10px 16px 0 }
+  #panels-menu { position:relative } .pmenu[hidden] { display:none } .pmenu { position:absolute; right:0; top:28px; z-index:8; background:var(--panel2); border:1px solid var(--border2); border-radius:8px; padding:6px; display:grid; gap:4px; min-width:200px; box-shadow:0 8px 24px rgba(0,0,0,.4) }
+  .pmenu button { text-align:left; background:var(--panel3); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:5px 8px; font:inherit; font-size:12px; cursor:pointer } .pmenu button:hover { border-color:var(--accent) }
+  .board { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 480px), 1fr)); gap:14px; padding:10px 16px 24px; align-items:start }
+  .dpanel { background:var(--panel); border:1px solid var(--border); border-radius:12px; min-width:0 }
+  .dpanel.wide { grid-column:span 2 } @media (max-width: 1000px) { .dpanel.wide { grid-column:auto } }
+  .dpanel.dragging { opacity:.45; outline:2px dashed var(--accent) }
+  .dpanel header { display:flex; align-items:baseline; gap:8px; padding:10px 12px 8px; border-bottom:1px solid var(--border); cursor:grab; user-select:none }
+  .dpanel header h1 { font-size:14px; margin:0 } .dpanel header .sub { font-size:11px; color:var(--muted); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .dpanel header .grip { color:var(--muted); font-size:12px } .dpanel header .acts { display:flex; gap:2px; opacity:.35 } .dpanel:hover header .acts { opacity:1 }
+  .dpanel header .acts button { background:none; border:0; color:var(--muted); cursor:pointer; font-size:12px; padding:0 4px } .dpanel header .acts button:hover { color:var(--text) }
+  .dbody { padding:10px 12px 12px; min-width:0 }
+  .mline { display:grid; grid-template-columns:10px max-content max-content minmax(0, 1fr); gap:8px; align-items:center; padding:6px 8px; border-radius:8px; cursor:pointer; font-size:12.5px }
+  .mline:hover { background:var(--panel3) } .mline + .mline { border-top:1px solid var(--border) }
+  .mline .d { width:8px; height:8px; border-radius:50% } .mline b { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .mline > span:nth-child(3) { display:flex; gap:4px; flex-wrap:nowrap } .mline .k { font-size:10px; padding:0 6px; border-radius:999px; border:1px solid var(--border2); color:var(--text2); white-space:nowrap }
+  .mline .k.agent { border-color:#7c6cf0; color:#c4b5fd } .mline .r { text-align:right; color:var(--muted); font-size:11.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 </style>
 </head>
 <body>
 <nav id="nav"><a href="/" class="on">Dashboard</a><a href="/machines">Machines</a><a href="/dynamics">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
-<div class="tabs"><button class="on" onclick="showCol(0,this)">Machines</button><button onclick="showCol(1,this)">Host</button></div>
-<div class="layout two">
-  <div class="col on">
-    <div class="col-head"><h1>Machines</h1><span class="sub" id="machines-sub"></span></div>
-    <div id="machines"></div>
-  </div>
-  <div class="col">
-    <div class="col-head"><h1>Host</h1><span class="sub" id="host-sub"></span></div>
-    <a class="panel corestrip" id="corestrip" href="/core" title="Orchestra's fundamental services: the Core page">Core …</a>
-    <div class="panel">
+<div class="dtop"><span id="panels-menu"></span></div>
+<div class="board" id="board"></div>
+<div id="tip" class="tip" hidden></div>
+<div id="overlay" class="overlay" onclick="if(event.target===this)closeMachine()"><div id="drawer" class="drawer"></div></div>
+<script src="/static/app.js?v={{v}}"></script>
+<script src="/static/machine-dialog.js?v={{v}}"></script>
+<script>
+// Orchestra's own panels: the machines running now, and the host. A package adds its own
+// (Orchestra.panels.register, from its every-page script); dashboard.js lays them all out.
+let MACHINES = null;
+Orchestra.machineList = () => (MACHINES && MACHINES.machines) || [];
+
+// ---- Machines: a short list of what runs now (continuous machines, and any other while it is
+// active); a click opens the machine's dialog. Every machine is on the Machines page.
+Orchestra.panels.register({ id: "machines", title: "Machines", mount(body, ui) {
+  async function refresh() {
+    try {
+      MACHINES = await (await fetch("/api/machines")).json();
+      $("conn").textContent = "live";
+      if (!MACHINES.ok) { body.innerHTML = `<div class="empty">${esc(MACHINES.error)}</div>`; return; }
+      const run = MACHINES.machines.filter((m) => !m.unseen && (m.mode === "continuous" || m.active));
+      ui.setSub(`${run.length} running · ${run.filter((m) => m.active).length} active now · ${MACHINES.machines.length} on the Machines page`);
+      body.innerHTML = run.length ? Orchestra.machineCards.sort(run).map((m) => {
+        const kind = (m.about && m.about.kind) || (m.declared && m.declared.kind) || (m.bootstrap ? "program" : "");
+        const own = Orchestra.machineCards.summary(m);
+        const right = own != null ? own : m.last_seen ? `${m.active ? "active" : "quiet"} · last event ${ago(Date.now() / 1000 - m.last_seen)} ago` : "";
+        return `<div class="mline" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)" title="click for its details">
+          <span class="d" style="background:${m.active ? "#22c55e" : "#64748b"}"></span><b>${esc(m.id)}</b>
+          <span>${kind ? `<span class="k ${kind === "agent" ? "agent" : ""}">${kind === "agent" ? "AI agent" : esc(kind)}</span> ` : ""}${m.mode ? `<span class="k">${esc(m.mode)}</span>` : ""}</span>
+          <span class="r">${right}</span></div>`;
+      }).join("") : `<div class="empty">Nothing is running: no continuous machine, and nothing has published in the last two minutes.</div>`;
+    } catch (e) { $("conn").textContent = "disconnected"; }
+  }
+  refresh(); setInterval(refresh, 5000);
+  document.addEventListener("orchestra:machinecards", refresh);
+} });
+
+// ---- Host: the Core services in a line, and the machine Orchestra runs on
+Orchestra.panels.register({ id: "host", title: "Host", mount(body, ui) {
+  body.innerHTML = `<a class="panel corestrip" id="corestrip" href="/core" title="Orchestra's fundamental services: the Core page">Core …</a>
+    <div class="panel" style="margin-bottom:0">
       <div class="lbl-row"><span>GPU <select id="gpu-range" class="range"><option value="60">1m</option><option value="240" selected>4m</option><option value="900">15m</option><option value="3600">1h</option></select></span><span id="gpu-lbl" class="num">—</span></div>
       <svg id="gpu" class="gpu" viewBox="0 0 300 64" preserveAspectRatio="none"><path id="gpu-area"/><path id="gpu-line"/><line id="gpu-cursor" x1="0" x2="0" y1="0" y2="64"/></svg>
       <div class="lbl-row" style="margin-top:8px"><span>CPU</span><span id="cpu-lbl" class="num"></span></div>
@@ -36,44 +81,12 @@
         <div class="meter"><div class="lbl"><span>disk</span><span id="disk-lbl" class="num"></span></div><div class="bar"><i id="disk-bar"></i></div></div>
       </div>
       <div class="muted num" id="load" style="font-size:11px;margin-top:8px"></div>
-    </div>
-  </div>
-</div>
-<div id="tip" class="tip" hidden></div>
-<div id="overlay" class="overlay" onclick="if(event.target===this)closeMachine()"><div id="drawer" class="drawer"></div></div>
-<script src="/static/app.js?v={{v}}"></script>
-<script src="/static/machine-dialog.js?v={{v}}"></script>
-<script>
-function showCol(i, btn) {
-  document.querySelectorAll(".layout > .col").forEach((c, j) => c.classList.toggle("on", j === i));
-  document.querySelectorAll(".tabs button").forEach((b, j) => b.classList.toggle("on", j === i));
-  try { localStorage.setItem("orchestra.tab", String(i)); } catch (e) {}
-}
-try { const t = Number(localStorage.getItem("orchestra.tab") || 0); if (t) showCol(t); } catch (e) {}
-let MACHINES = null;
-Orchestra.machineList = () => (MACHINES && MACHINES.machines) || [];
-
-// the machines running now (continuous ones, and any active in the last two minutes); the Machines page has all of them
-async function refresh() {
-  try {
-    MACHINES = await (await fetch("/api/machines")).json();
-    $("conn").textContent = "live";
-    if (!MACHINES.ok) { $("machines").innerHTML = `<div class="empty">${esc(MACHINES.error)}</div>`; return; }
-    // what runs now: continuously running machines, and any other that is active (published in
-    // the last two minutes); scheduled and ad hoc machines between runs are on the Machines page
-    const active = MACHINES.machines.filter((m) => !m.unseen && (m.mode === "continuous" || m.active));
-    const now = active.filter((m) => m.active).length;
-    $("machines-sub").textContent = `${active.length} running · ${now} active now · ${MACHINES.machines.length} on the Machines page`;
-    $("machines").innerHTML = active.length ? Orchestra.machineCards.sort(active).map((m) => { const own = Orchestra.machineCards.card(m, { compact: true });
-      if (own != null) return Orchestra.machineCards.wrap(m, own, "mcard");
-      return `<div class="panel mcard" style="cursor:pointer" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)" title="click for details and log"><div class="chead"><b>${esc(m.id)}</b>${m.bootstrap ? ' <span class="tag">bootstrap</span>' : ""}<span class="muted" style="margin-left:auto">last event ${ago(Date.now() / 1000 - m.last_seen)} ago</span></div>
-        <div class="mrow"><span class="muted">publishes</span> ${m.publishes.map((p) => `<span class="ty">${esc(p.type)} <b>${p.per_min_10m}</b>/min</span>`).join("") || '<span class="muted">nothing</span>'}</div>
-        <div class="mrow"><span class="muted">listens for</span> ${m.subscribes.map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">nothing</span>'}</div>
-        <div class="mrow"><span class="muted">metrics</span> ${m.metrics.map((x) => `<code>${esc(x)}</code>`).join(" ") || '<span class="muted">none</span>'}</div></div>`; }).join("")
-      : `<div class="empty">Nothing is running: no continuous machine, and nothing has published in the last two minutes.</div>`;
-  } catch (e) { $("conn").textContent = "disconnected"; }
-}
-
+    </div>`;
+  HOST_SUB = ui.setSub;
+  wireRanges(); refreshSystem(); refreshCoreStrip();
+  setInterval(refreshSystem, SYSTEM_POLL_MS); setInterval(refreshCoreStrip, 5000);
+} });
+let HOST_SUB = () => {};
 // ---- a one-line Core status; the detail is on the Core page ----
 async function refreshCoreStrip() {
   try {
@@ -86,11 +99,11 @@ async function refreshCoreStrip() {
 const SYSTEM_POLL_MS = 2000; let coreBars = [];
 const RANGE_KEYS = ["gpu-range"];
 function rangeOf(id) { return Number($(id).value); }
-RANGE_KEYS.forEach((id) => {
+function wireRanges() { RANGE_KEYS.forEach((id) => {
   try { const v = localStorage.getItem("orchestra." + id); if (v && [...$(id).options].some((o) => o.value === v)) $(id).value = v; } catch (e) {}
   $(id).addEventListener("change", () => { try { localStorage.setItem("orchestra." + id, $(id).value); } catch (e) {} ({ "gpu-range": refreshSystem })[id](); });
   $(id).addEventListener("click", (e) => e.stopPropagation());
-});
+}); }
 async function refreshSystem() {
   try {
     const d = await (await fetch(`/api/system?gpu_window=${rangeOf("gpu-range")}`)).json();
@@ -108,7 +121,7 @@ async function refreshSystem() {
     $("mem-lbl").textContent = `${d.memory.percent}% · ${fmtBytes(d.memory.used)} / ${fmtBytes(d.memory.total)}`; $("mem-bar").style.width = `${d.memory.percent}%`;
     $("disk-lbl").textContent = `${d.disk.percent}% · ${fmtBytes(d.disk.used)} / ${fmtBytes(d.disk.total)}`; $("disk-bar").style.width = `${d.disk.percent}%`;
     $("load").textContent = `${d.cpu_percent.length} cores · load ${d.load.join(" / ")}`;
-    $("host-sub").textContent = d.gpu ? `gpu ${d.gpu.utilization}% · cpu ${avg}%` : `cpu ${avg}%`;
+    HOST_SUB(d.gpu ? `gpu ${d.gpu.utilization}% · cpu ${avg}%` : `cpu ${avg}%`);
     renderGpu(d);
   } catch (e) {}
 }
@@ -123,9 +136,7 @@ function renderGpu(d) {
   $("gpu").setAttribute("title", `GPU utilization, last ${win >= 3600 ? win / 3600 + "h" : win / 60 + "m"}`);
 }
 
-refresh(); refreshSystem(); refreshCoreStrip();
-setInterval(refresh, 5000); setInterval(refreshSystem, SYSTEM_POLL_MS); setInterval(refreshCoreStrip, 5000);
-document.addEventListener("orchestra:machinecards", () => { if (MACHINES) refresh(); });
 </script>
+<script src="/static/dashboard.js?v={{v}}"></script>
 </body>
 </html>

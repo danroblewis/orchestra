@@ -258,8 +258,13 @@ machines may keep its own settings here (the task system's [project], [agents], 
 
 Read-only for humans. Navigation: Dashboard, Machines, Dynamics, Core.
 
-- **Dashboard:** the machines running now (those that announced themselves continuous, and any other that published in the last two minutes; scheduled and ad hoc machines between runs are on the Machines page); the host's CPU, GPU, memory and disk; a Core
-  status strip.
+- **Dashboard:** a board of panels (`static/dashboard.js`) the viewer arranges: drag one by its
+  title bar to move it, widen it to two columns, hide it and bring it back from Panels; the
+  arrangement is kept in the browser. Orchestra's own panels are **Machines** (a short list of
+  what runs now: the machines that announced themselves continuous, and any other that published
+  in the last two minutes; a click opens its dialog) and **Host** (a Core status strip; the
+  host's CPU, GPU, memory and disk). A package adds panels of its own (`Orchestra.panels`, from its
+  every-page script; §10.1).
 - **Machines:** every machine seen on the bus with its instances and how it is engaged, the event map (by default machines only: an
   arrow where one publishes an event type the other listens for, one line with two arrowheads where
   two talk both ways, thicker with more traffic, the event types on hover; or with the event types
@@ -326,7 +331,11 @@ its own (`orchestra/plugins.py`). It names a function in the entry-point group
 title for the navigation, an HTML file that may use `/static/app.js` and `/static/style.css`), a
 static directory (served at `/plugins/<name>/static`), a FastAPI router (at
 `/api/plugins/<name>`), and scripts from its static directory that every page loads after its own
-(for what must be visible wherever the viewer is, such as the way to reach the package's agents). `/api/plugins` lists the pages, which the navigation adds after
+(for what must be visible wherever the viewer is, such as the way to reach the package's agents).
+From those scripts a package may register Dashboard panels (`Orchestra.panels`) and draw the cards
+of the machines it claims (`Orchestra.machineCards`: what is inside Orchestra's machine-card
+frame, a few words for the Dashboard's machine list, and the machine's dialog). Its look is in its
+own stylesheet: Orchestra's has no ticket states or agent roles. `/api/plugins` lists the pages, which the navigation adds after
 Orchestra's own, and any plugin that failed to load. A plugin that fails, or a page at a path
 Orchestra serves, is left out, never fatal. A plugin is the package's, not Orchestra's: its
 routes are its own, and Orchestra knows nothing of what they mean.

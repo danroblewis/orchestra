@@ -2,7 +2,7 @@
 volumes and emitters.
 
 Like the rest of Core (web/core.py), this reads only the metrics store and the event bus, never
-the model, the ticket store or the machines, and every call runs under Core's time limit, so a
+the model or the machines, and every call runs under Core's time limit, so a
 slow or broken backend shows as an error on its panel instead of hanging the page."""
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ from ..metrics import promql
 
 MAX_LINES = 30
 NICE_STEPS = [15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400]
-RESIDENT = {"supervisor": "supervisor", "coordinator": "coordinator", "pipeline-manager": "pipeline-manager"}
 CACHE_S = 8.0
 
 
@@ -40,22 +39,9 @@ def _label(lab: dict, hide: set) -> str:
 
 
 def emitter(ev: dict) -> str:
-    """Which machine an event came from. CloudEvents name it (``source``). Older events, from
-    before the envelope, are attributed as the old loop wrote them: an agent's tool call names it
-    (``by``); a session event names its session; everything else the loop emitted, so it belongs
-    to the bootstrap host."""
-    if ev.get("source"):
-        return str(ev["source"])
-    who = ev.get("by") or ev.get("author")
-    if who and who != "orchestra":
-        return str(who).replace("_", "-")
-    sess = ev.get("session") or ""
-    if sess in RESIDENT:
-        return RESIDENT[sess]
-    for prefix in ("worker", "reviewer"):
-        if sess.startswith(prefix + "-") and ev["type"] not in ("session_started", "session_settled"):
-            return prefix
-    return "orchestra-host"
+    """Which machine an event came from: its CloudEvents ``source``. Events from before the
+    envelope name none, and are not attributed (as on the Machines page)."""
+    return str(ev.get("source") or "(no source)")
 
 
 class Explorer:

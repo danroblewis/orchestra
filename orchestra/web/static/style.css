@@ -1,12 +1,8 @@
-/* Orchestra dashboard. Three columns, three identities:
-   agents (people), the merge gate (a pipeline), the host (instrumentation).
-   One hue per ticket phase, one hue per agent role, used everywhere. */
+/* Orchestra's web UI. A package's own look (the task system's ticket states, agent roles, cards and
+   drawers) is in the package's stylesheet, not here. */
 :root {
   --bg:#0b0d12; --panel:#12151c; --panel2:#181c25; --panel3:#1f2430; --border:#262b37; --border2:#333a49;
   --text:#e7eaf0; --text2:#aeb6c4; --muted:#6f7889; --accent:#6ea8fe;
-  --OPEN:#6b7280; --BLOCKED:#f0883e; --IN_PROGRESS:#3b82f6; --READY_FOR_REVIEW:#7c3aed; --IN_REVIEW:#a855f7; --REJECTED:#ef4444;
-  --APPROVED:#d97706; --MERGING:#f59e0b; --DONE:#16a34a; --CANCELLED:#374151;
-  --r-supervisor:#c084fc; --r-coordinator:#38bdf8; --r-pipeline:#fbbf24; --r-worker:#60a5fa; --r-reviewer:#e879f9;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 * { box-sizing:border-box }
@@ -21,48 +17,11 @@ nav a { color:var(--muted); text-decoration:none; font-weight:600; padding:12px 
 .col-head h1 { font-size:14px; margin:0; letter-spacing:.01em } .col-head .sub { font-size:11px; color:var(--muted) }
 h2 { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:16px 0 8px; display:flex; justify-content:space-between }
 h2 .count { color:var(--text2); font-family:var(--mono); font-weight:500 }
-.msg.inprogress { border:1px dashed #1d4ed8; opacity:.9 }
-.msg.marker { background:#1a1a22; border:1px dashed var(--border2); color:var(--text2); font-size:12px } .msg.marker.turn_timed_out, .msg.marker.turn_error { border-color:#92400e; color:#fcd34d } .msg.marker.agent_killed, .msg.marker.turn_interrupted, .msg.marker.agent_crashed, .msg.marker.agent_crash_loop { border-color:#7f1d1d; color:#fca5a5 }
-details.started { margin:10px 0 } details.started summary { cursor:pointer; font-size:12px; color:var(--text2) } details.started .prompt { border:1px solid var(--border); border-radius:8px; padding:10px 14px; background:#0b0e14; max-height:50vh; overflow:auto; margin-top:6px }
 h2 .hctl { display:flex; gap:8px; align-items:center; text-transform:none; letter-spacing:0; font-weight:400; white-space:nowrap } h2 .hctl .ctl { margin:0; white-space:nowrap }
 .empty { color:var(--muted); font-size:12px; padding:10px 12px; border:1px dashed var(--border); border-radius:8px }
 .page { padding:10px; height:calc(100vh - 44px); overflow:auto }
 
-/* ---- agents ---- */
-.agent { display:grid; grid-template-columns:22px auto 1fr auto; gap:8px; align-items:center; background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:5px 10px; margin-bottom:4px; cursor:pointer }
-.agent:hover { border-color:var(--border2); background:var(--panel3) }
-.agent .av { width:22px; height:22px; border-radius:6px; display:grid; place-items:center; font-weight:800; font-size:11px; color:#0b0d12; background:var(--rc) }
-.agent .name { font-weight:700; font-size:12.5px; white-space:nowrap }
-.agent .say { font-size:11.5px; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-style:italic }
-.chip { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; padding:3px 8px; border-radius:999px; background:var(--panel3); color:var(--text2); border:1px solid var(--border); white-space:nowrap }
-.chip .dot { width:7px; height:7px; border-radius:50%; background:#5b6473; margin:0 }
-.chip.working { color:#bfdbfe; border-color:#1d4ed8 } .chip.working .dot { background:#3b82f6; animation:pulse 1.4s infinite }
-.chip.resident { color:#bbf7d0; border-color:#166534 } .chip.resident .dot { background:#22c55e }
-.chip.down { color:#fecaca; border-color:#7f1d1d } .chip.down .dot { background:#ef4444 }
-@keyframes pulse { 50% { opacity:.3 } }
-.work { background:var(--panel2); border:1px solid var(--border); border-left:4px solid var(--c); border-radius:10px; padding:10px 12px; margin-bottom:8px; cursor:pointer }
-.work:hover { background:var(--panel3) } .work .top { display:flex; justify-content:space-between; gap:8px; align-items:center; min-width:0 }
-.work .top > span:first-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-.work .id { font-family:var(--mono); font-weight:700; color:var(--c); text-decoration:underline dotted; text-underline-offset:3px } .work .title { font-weight:600 }
-.work .right { display:flex; align-items:center; gap:8px; flex:none; white-space:nowrap }
-.work .turns { font-family:var(--mono); font-size:11px; color:#fcd34d; background:#3a2e0a; border:1px solid #6b5313; border-radius:999px; padding:1px 7px; cursor:help; white-space:nowrap; flex:none }
-.work .top > span:first-child { flex:1 1 auto }
-.work .lane { display:grid; grid-template-columns:62px 1fr auto; gap:8px; align-items:center; margin-top:6px; font-size:12px; color:var(--text2) }
-.work .lane .who { color:var(--muted); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em } .work .lane .msg { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
-.pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:10.5px; font-weight:700; letter-spacing:.04em; color:#0b0d12; background:var(--c); white-space:nowrap }
 
-/* ---- merge gate ---- */
-.banner { background:#2a1215; border:1px solid #7f1d1d; color:#fecaca; border-radius:10px; padding:10px 12px; margin-bottom:12px; font-weight:600 }
-.run { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:8px }
-.run .hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px } .run .hdr b { font-family:var(--mono) }
-.steps { display:grid; gap:4px; margin:8px 0 }
-.step { display:grid; grid-template-columns:18px 1fr auto; gap:8px; align-items:center; font-size:12px; padding:5px 8px; border-radius:6px; background:var(--panel) }
-.step .ic { width:14px; height:14px; border-radius:50%; border:2px solid var(--border2) } .step.pass .ic { background:#16a34a; border-color:#16a34a }
-.step.fail .ic { background:#ef4444; border-color:#ef4444 } .step.run .ic { border-color:#f59e0b; border-top-color:transparent; animation:spin 1s linear infinite } .step .t { color:var(--muted); font-family:var(--mono); font-size:11px }
-@keyframes spin { to { transform:rotate(360deg) } }
-.qitem { display:grid; grid-template-columns:28px 1fr; gap:10px; align-items:center; background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:6px; cursor:pointer }
-.qitem:hover { background:var(--panel3) } .qitem .n { font-family:var(--mono); color:var(--muted); text-align:center } .qitem .id { font-family:var(--mono); font-weight:700; color:var(--APPROVED) }
-.qitem .m { font-size:11px; color:var(--muted) }
 
 /* ---- host ---- */
 .panel { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:12px }
@@ -85,46 +44,20 @@ h2 .hctl { display:flex; gap:8px; align-items:center; text-transform:none; lette
 /* ---- log highlighting ---- */
 .lg-ts { color:#8b949e } .lg-tag { color:#79c0ff } .lg-err { color:#ff7b72; font-weight:600 } .lg-warn { color:#d29922 }
 .lg-ok { color:#3fb950 } .lg-method { color:#d2a8ff; font-weight:600 } .lg-url { color:#58a6ff; text-decoration:underline dotted }
-.lg-str { color:#a5d6ff } .lg-path { color:#ffa657 } .lg-key { color:#e3b341 } .lg-num { color:#f2cc60 } .lg-ticket { color:#bc8cff; font-weight:600 }
+.lg-str { color:#a5d6ff } .lg-path { color:#ffa657 } .lg-key { color:#e3b341 } .lg-num { color:#f2cc60 }
 
 /* ---- drawers ---- */
 .overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:9 }
 .overlay.open { display:flex } .drawer { width:min(940px,94vw); max-height:88vh; overflow:auto; background:var(--panel2); border:1px solid var(--border2); border-radius:12px; padding:18px 20px }
 .drawer h3 { margin:0 0 10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap }
 pre { background:#07090d; border:1px solid var(--border); border-radius:8px; padding:8px 10px; white-space:pre-wrap; font-size:12px; max-height:50vh; overflow:auto }
-.msg { border-left:3px solid var(--border); padding:4px 10px; margin:8px 0 } .msg.user { border-color:var(--accent) } .msg.assistant { border-color:#22c55e } .msg.toolResult { border-color:#4b5563; color:var(--text2) }
-.msg .r { font-size:11px; color:var(--muted) } .note { border-top:1px solid var(--border); padding:8px 0; font-size:12px } .note b { color:var(--muted) }
-.tc { margin:6px 0 } .tc .r { color:var(--muted); font-size:11px } .tc pre { margin:2px 0 } .msg.toolResult.err { border-color:#ef4444 } .msg pre.term { max-height:40vh; min-height:0 }
-.alert { border-radius:10px; padding:12px 14px; margin:0 0 14px; border:1px solid } .alert h4 { margin:0 0 6px; font-size:11px; text-transform:uppercase; letter-spacing:.08em }
-.alert.blocked { background:#2a1a0e; border-color:#c2410c; color:#fed7aa } .alert.rejected { background:#2a1215; border-color:#b91c1c; color:#fecaca }
-.alert.waiting { background:#141a26; border-color:#1e3a8a; color:#bfdbfe } .alert .md { color:inherit }
+.note { border-top:1px solid var(--border); padding:8px 0; font-size:12px } .note b { color:var(--muted) }
 .md { font-size:13px; line-height:1.5 } .md p { margin:6px 0 } .md h1,.md h2,.md h3 { font-size:13px; text-transform:none; letter-spacing:0; color:var(--text); margin:10px 0 4px; display:block }
 .md ul,.md ol { padding-left:20px; margin:4px 0 } .md li { margin:2px 0 } .md code { background:#07090d; border:1px solid var(--border); border-radius:4px; padding:0 4px; font-size:12px }
 .md pre { padding:0; border:1px solid var(--border); background:#07090d } .md pre code { display:block; padding:8px; border:0; background:#0d1117; font-size:12px; overflow:auto }
 .md blockquote { border-left:3px solid var(--border); margin:6px 0; padding:2px 10px; color:var(--muted) } .md table { border-collapse:collapse } .md td,.md th { border:1px solid var(--border); padding:3px 8px }
 .md strong { color:#fff }
-.chat { position:sticky; bottom:-18px; background:var(--panel2); padding:10px 0 4px; margin-top:12px; border-top:1px solid var(--border); display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap }
-.chat textarea { flex:1; min-width:0; background:var(--bg); color:var(--text); border:1px solid var(--border2); border-radius:8px; padding:8px; font:13px/1.4 inherit; resize:vertical }
-.chat button { background:var(--accent); color:#000; border:0; border-radius:8px; padding:8px 14px; font-weight:700; cursor:pointer } .chat button:disabled,.chat textarea:disabled { opacity:.5 }
-.chat .empty { flex-basis:100% }
 
-/* ---- ticket graph ---- */
-svg { width:100%; height:100%; min-height:600px } .node { cursor:pointer }
-.node .card-bg { fill:#1b1f2a; stroke:#2a2f3d; stroke-width:1.2; rx:7 } .node .bar { rx:7 } .node .pill { font-size:10px; font-weight:700; letter-spacing:.03em }
-.node.done .card-bg { fill:#161b1f; opacity:.85 } .node.done text.title { fill:#9aa4b2 }
-.node.waiting .card-bg { stroke-dasharray:5 3 } .node.waiting text.title { fill:#9aa4b2 }
-@keyframes glow { 0%,100% { stroke-opacity:.35; stroke-width:1.5 } 50% { stroke-opacity:1; stroke-width:3 } }
-@keyframes march { to { stroke-dashoffset:-20 } }
-.node.active .card-bg { stroke:var(--c); animation:glow 2.2s ease-in-out infinite }
-.node.queued .card-bg { stroke:var(--c); stroke-dasharray:6 4; animation:march 1.6s linear infinite }
-.edge { fill:none; stroke:#4b5368; stroke-width:1.4; marker-end:url(#arrow) } .edge.into-active { stroke:#4b6ea8; stroke-dasharray:6 4; animation:march 1.2s linear infinite }
-.group text { fill:var(--muted); font-size:12px; font-weight:600 } .group rect { fill:none; stroke:var(--border); stroke-dasharray:4 3; rx:10 }
-.filter { width:100%; max-width:480px; background:var(--panel); border:1px solid var(--border); color:var(--text); padding:6px 8px; border-radius:6px; margin-bottom:8px }
-.badge { display:inline-block; padding:1px 6px; border-radius:10px; font-size:11px; color:#000; font-weight:600 }
-/* landings per hour */
-.landings { width:100%; height:90px; display:block; background:var(--panel); border:1px solid var(--border); border-radius:8px; min-height:0 }
-.landings .lbar { fill:var(--DONE) } .landings .lbar.bad { fill:var(--REJECTED); fill-opacity:.7 } .landings .grid { stroke:var(--border); stroke-width:.5; vector-effect:non-scaling-stroke }
-.landings .tick { fill:var(--muted); font-size:9px; font-family:var(--mono) }
 /* ---- mobile ---- */
 .tabs { display:none }
 @media (max-width: 900px) {
@@ -137,44 +70,22 @@ svg { width:100%; height:100%; min-height:600px } .node { cursor:pointer }
   .page { padding:6px; height:auto }
   .overlay { align-items:stretch } .drawer { width:100vw; max-height:100vh; height:100vh; border-radius:0; padding:14px }
   .chat { bottom:-14px } .kv { grid-template-columns:auto 1fr }
-  .toolbar { gap:8px } .toolbar .filter { width:100% } .toolbar .hint { display:none }
-  #stage { height:calc(100vh - 120px); touch-action:none }
 }
 nav #proj { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 @media (max-width: 900px) { html, body { overflow-x:hidden; max-width:100vw } nav { flex-wrap:nowrap } nav #proj { font-size:11px } }
 /* Grid and flex children default to min-width:auto, so a nowrap line would widen
    the whole page on a phone; let them shrink and ellipsize instead. */
-.agent, .agent > *, .work, .work > *, .work .lane > *, .qitem, .qitem > *, .col-head > *, .step > * { min-width:0 }
-/* burndown */
-#burndown { height:100px } #burndown .total { fill:none; stroke:#6f7889; stroke-width:1.2; vector-effect:non-scaling-stroke; stroke-dasharray:3 3 }
-#burndown .remain { fill:none; stroke:#6ea8fe; stroke-width:1.8; vector-effect:non-scaling-stroke } #burndown .remain-area { fill:#6ea8fe; fill-opacity:.12 }
+.col-head > * { min-width:0 }
 /* range selectors in chart headers */
 select.range { background:var(--panel3); color:var(--text2); border:1px solid var(--border); border-radius:5px; font:inherit; font-size:10.5px; padding:1px 4px; margin-left:4px; text-transform:none; letter-spacing:0; cursor:pointer }
 /* operator controls */
 button.ctl { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:11px; padding:2px 8px; cursor:pointer; margin-left:6px }
 button.ctl:hover { color:var(--text); border-color:var(--accent) } button.ctl.paused { color:#fde68a; border-color:#92400e; background:#2a1f0e }
 button.ctl.kill { color:#fca5a5; border-color:#7f1d1d; padding:3px 10px; font-weight:600 } button.ctl.kill:hover { background:#2a1215 }
-.chat.top { position:static; border-top:0; border-bottom:1px solid var(--border); padding:4px 0 10px; margin:10px 0 }
 /* chart hover */
 .tip { position:fixed; z-index:20; pointer-events:none; background:#0b0d12; border:1px solid var(--border2); border-radius:6px; padding:6px 9px; font-size:11.5px; color:var(--text2); box-shadow:0 4px 16px rgba(0,0,0,.5); font-family:var(--mono) } .tip b { color:var(--text) }
 .xhair { stroke:#6ea8fe; stroke-opacity:.6; stroke-dasharray:3 3; vector-effect:non-scaling-stroke } .xdot { fill:#6ea8fe; stroke:#0b0d12; stroke-width:1 }
-.landings .lbar.hover { fill:#4ade80 } .landings .lbar.bad.hover { fill:#f87171 }
-.landings, #burndown { cursor:crosshair }
-.chip.waiting { color:#fde68a; border-color:#92400e } .chip.waiting .dot { background:#f59e0b; animation:pulse 2.4s infinite }
-.chip.archived { color:var(--muted) }
 
-/* machines */
-.machine { background:var(--panel2); border:1px solid var(--border); border-left:3px solid var(--rc); border-radius:10px; padding:8px 10px; margin-bottom:8px }
-.machine .mhead { display:grid; grid-template-columns:24px 1fr auto; gap:8px; align-items:center }
-.machine .av { width:24px; height:24px; border-radius:6px; display:grid; place-items:center; font-weight:800; font-size:11.5px; color:#0b0d12; background:var(--rc) }
-.machine .av.prog { background:var(--panel3); color:var(--rc); border:1px solid var(--rc) }
-.machine .mname { font-weight:700; font-size:12.5px; min-width:0 } .machine .msub { font-weight:400; font-size:11px; color:var(--muted) }
-.machine .tag { font-size:9.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:#fde68a; border:1px solid #92400e; border-radius:4px; padding:0 4px; margin-left:4px }
-.machine .job { display:grid; grid-template-columns:auto 1fr; gap:8px; font-size:11.5px; margin-top:6px; padding:3px 6px; border-radius:6px; background:var(--panel3); cursor:pointer }
-.machine .job .id { font-family:var(--mono); font-weight:700; color:var(--rc) } .machine .job .msg { color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-style:italic }
-.machine .mflows { margin-top:6px; font-size:11px; display:grid; gap:1px }
-.machine .mflows > div { display:flex; justify-content:space-between; gap:8px; color:var(--text2) } .machine .mflows .fl { color:var(--muted) }
-.machine .mctl { margin-top:6px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:11px; color:var(--text2) }
 /* core services */
 .core .chead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px }
 .core .types { display:flex; flex-wrap:wrap; gap:4px; margin:8px 0 2px } .core .ty { font-size:10.5px; color:var(--text2); background:var(--panel3); border:1px solid var(--border); border-radius:999px; padding:1px 7px }
@@ -183,11 +94,6 @@ svg.spark { width:100%; height:34px; min-height:0; display:block; margin-top:3px
 svg.spark.blue .l { stroke:#6ea8fe } svg.spark.blue .a { fill:#6ea8fe22 } svg.spark.amber .l { stroke:#fbbf24 } svg.spark.amber .a { fill:#fbbf2422 }
 .spark.empty { font-size:11px; color:var(--muted); padding:8px 0 }
 .core .probe { margin-top:10px; font-size:11.5px; padding:6px 8px; border-radius:6px } .core .probe.ok { background:#0f2a1a; color:#bbf7d0; border:1px solid #166534 } .core .probe.bad { background:#2a0f0f; color:#fecaca; border:1px solid #7f1d1d }
-.machine .mdesc { font-size:12px; color:var(--text2); margin-top:6px }
-.machine .mfh { font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:2px }
-.machine.detail .mflows > div:not(.mfh) { display:grid; grid-template-columns:170px 1fr; gap:8px; align-items:baseline } .machine.detail .mflows .num { text-align:left }
-.mgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(420px, 1fr)); gap:8px; margin-bottom:8px } .mgrid .machine { margin-bottom:0 }
-h3.subh { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:12px 0 6px; font-weight:700 }
 .corestrip { display:flex; gap:8px; align-items:center; font-size:12px; color:var(--text2); text-decoration:none; padding:8px 12px } .corestrip:hover { border-color:var(--accent) }
 .corestrip .cled { display:inline-block; width:8px; height:8px; border-radius:50%; margin-left:6px }
 .layout.two { grid-template-columns:repeat(2, minmax(0, 1fr)) }
@@ -236,5 +142,3 @@ svg.netgraph { display:block; width:100%; min-height:0; font-size:11px; cursor:g
 .mdlg .ty { background:var(--panel3); border:1px solid var(--border); border-radius:999px; padding:0 8px; font-size:11px; font-family:var(--mono) }
 .mdlg h3 .tag { font-size:9.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:#fde68a; border:1px solid #92400e; border-radius:4px; padding:0 4px; margin-left:4px }
 
-/* a machine card a package draws itself, without Orchestra's panel (Orchestra.machineCards bare) */
-.claimed { cursor:pointer; margin-bottom:6px } .claimed:empty { display:none }
