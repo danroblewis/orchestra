@@ -10,6 +10,7 @@ export const meta = {
 }
 
 // args: { brief, repo, scope, out, rounds?, lenses?, demo?, fixExtra?, fix? }
+const MODEL = (args && args.model) || 'opus'      // the owner's choice for agents (2026-10-26)
 const a = args || {}
 if (!a.brief || !a.repo || !a.scope || !a.out) throw new Error('layered-review needs args.brief, args.repo, args.scope, args.out')
 const PRE = `Read ${a.brief} first, all of it; every constraint in it binds you.\n\n`
@@ -37,17 +38,17 @@ for (let round = 1; round <= ROUNDS; round++) {
   const reviews = (await parallel(lenses.map((l) => () =>
     agent(PRE + LENSES[l] + `\n\nRound ${round}.` + (history.length ? ` Earlier rounds fixed: ${JSON.stringify(history[history.length - 1].work.map((w) => w.title))}; check those landed, look for what was missed.` : '') +
       `\nYou are read-only on the repositories; write only under ${a.out}/. Return findings in the schema ("must": violates the brief or breaks the system; "should": a careful owner would insist; "nice": taste).`,
-      { label: `${l} r${round}`, phase: 'Review', schema: FINDINGS, effort: 'high' })))).filter(Boolean)
+      { model: MODEL, label: `${l} r${round}`, phase: 'Review', schema: FINDINGS, effort: 'high' })))).filter(Boolean)
   const all = reviews.flatMap((r, i) => r.findings.map((f) => ({ ...f, lens: lenses[i] })))
   log(`round ${round}: ${all.length} findings`)
   const triage = await agent(PRE + `You are the triage judge for ${a.repo} (${a.scope}). Merge duplicates, drop findings that contradict the brief or touch the owner's reserved decisions, drop "nice" unless trivial beside another fix, confirm each remaining finding against the code yourself. Produce a self-contained work list. clean = true only if nothing must/should remains.\n\nFINDINGS:\n${JSON.stringify(all, null, 1)}`,
-    { label: `triage r${round}`, phase: 'Triage', schema: TRIAGE, effort: 'high' })
+    { model: MODEL, label: `triage r${round}`, phase: 'Triage', schema: TRIAGE, effort: 'high' })
   if (!triage) break
   history.push(triage)
   if (triage.clean || !triage.work.length) { log(`clean after round ${round}`); break }
   if (a.fix === false) break
   const fix = await agent(PRE + `You are the implementor for ${a.repo} (${a.scope}). Apply this work list item by item. ${a.fixExtra || ''}\n\nWORK LIST:\n${JSON.stringify(triage.work, null, 1)}\n\nKeep every change inside this repo's scope (skip and explain otherwise); delete rather than comment out; update docs and tests with the code; run the full suites and ruff and check the results; commit locally (Co-Authored-By line from the brief); do not push; stop any process you start.`,
-    { label: `fix r${round}`, phase: 'Fix', schema: REPORT, effort: 'high' })
+    { model: MODEL, label: `fix r${round}`, phase: 'Fix', schema: REPORT, effort: 'high' })
   if (fix) log(`fix r${round}: ${fix.commits.length} commit(s), ${fix.skipped.length} skipped`)
 }
 return { rounds: history.length, clean: !!(history.length && history[history.length - 1].clean), last: history[history.length - 1] || null }

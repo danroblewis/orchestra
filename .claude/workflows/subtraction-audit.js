@@ -10,6 +10,7 @@ export const meta = {
 }
 
 // args: { brief, out, repos: [{ path, scope, forbidden: 'a regex of words that must not appear except generically', exclude?: 'paths to skip' }], contracts?: [{ a, b, what }], fix? }
+const MODEL = (args && args.model) || 'opus'      // the owner's choice for agents (2026-10-26)
 const a = args || {}
 if (!a.brief || !a.out || !a.repos || !a.repos.length) throw new Error('subtraction-audit needs args.brief, args.out, args.repos[]')
 const PRE = `Read ${a.brief} first, all of it; every constraint in it binds you.\n\n`
@@ -29,14 +30,14 @@ const jobs = [
 ]
 const audits = (await parallel(jobs.map((j) => () =>
   agent(PRE + `You are an auditor whose only question is "should this exist here?". ${j.prompt}\n\nRead-only on the repositories; write only under ${a.out}/audit/. Return exhaustive, exact findings (file, line) in the schema.`,
-    { label: `audit ${j.key}`, phase: 'Audit', schema: FINDINGS, effort: 'high' })))).filter(Boolean)
+    { model: MODEL, label: `audit ${j.key}`, phase: 'Audit', schema: FINDINGS, effort: 'high' })))).filter(Boolean)
 const all = audits.flatMap((r, i) => r.findings.map((f) => ({ ...f, audit: jobs[i].key })))
 log(`subtraction-audit: ${all.length} findings`)
 const triage = await agent(PRE + `You are the judge for a subtraction audit. Confirm each finding against the code (read it), merge duplicates, drop what the brief puts out of scope or reserves for the owner. Removal is the default answer; keeping needs a reason the brief supports. Each work item names the repository.\n\nFINDINGS:\n${JSON.stringify(all, null, 1)}`,
-  { label: 'judge', phase: 'Judge', schema: TRIAGE, effort: 'high' })
+  { model: MODEL, label: 'judge', phase: 'Judge', schema: TRIAGE, effort: 'high' })
 let fix = null
 if (a.fix !== false && triage && triage.work.length) {
   fix = await agent(PRE + `You are the implementor for the subtraction audit. Apply this work list: delete what should not exist, each repository in its own commits, full suites run and checked before each commit. If a removal breaks a test, decide against the brief whether the test or the removal is wrong, and say which. Docs describe only what remains.\n\nWORK LIST:\n${JSON.stringify(triage.work, null, 1)}`,
-    { label: 'remove', phase: 'Remove', schema: REPORT, effort: 'high' })
+    { model: MODEL, label: 'remove', phase: 'Remove', schema: REPORT, effort: 'high' })
 }
 return { findings: all.length, triage, fix }

@@ -21,6 +21,7 @@ export const meta = {
 //   fix: whether to run the implementor (default true)
 //   personas: override the persona list
 // }
+const MODEL = (args && args.model) || 'opus'      // the owner's choice for agents (2026-10-26)
 const a = args || {}
 if (!a.brief || !a.repo || !a.start || !a.out) throw new Error('ux-review needs args.brief, args.repo, args.start, args.out')
 const PRE = `Read ${a.brief} first, all of it; every constraint in it binds you.\n\n`
@@ -78,7 +79,7 @@ for (let round = 1; round <= ROUNDS; round++) {
     agent(PRE + `You are ${p.who}. Use the running UI as that person would, without reading the code first: go to ${PAGES.join(', ')}; click what looks clickable; try to answer your questions. Keep a journey log in ${a.out}/${p.key}/round${round}/journey.md: every step, what you expected, what you saw, how long it took you to understand, what you misunderstood, what you could not find. Then read enough of the code (${a.repo}, static/ and the API it reads) to say where each problem comes from. ${HYGIENE}` +
       (history.length ? `\n\nEarlier rounds fixed: ${JSON.stringify(history[history.length - 1].work.map((w) => w.title))}. Check those are fixed for you as a user; look for what remains.` : '') +
       `\n\nReturn findings in the schema: "must" means a user would be misled or stuck; "should" means a careful product owner would insist; "nice" is taste.`,
-      { label: `${p.key} r${round}`, phase: 'Walk', schema: FINDINGS, effort: 'high' })))).filter(Boolean)
+      { model: MODEL, label: `${p.key} r${round}`, phase: 'Walk', schema: FINDINGS, effort: 'high' })))).filter(Boolean)
   const EXPERTS = [
     { key: 'information-design', who: 'an information-design expert (Tufte, Few): hierarchy, density, labels, units, colour used for meaning only, state readable at a glance, nothing decorative, nothing truncated that matters, consistent names for the same thing on every page' },
     { key: 'honesty', who: 'an expert in operator tools whose only question is "does the UI lie?": stale data shown as live, "running" for a process that is gone, a count that excludes something, a chart whose axis hides the shape, a badge whose meaning the user cannot discover, an empty state that does not say why it is empty' },
@@ -87,17 +88,17 @@ for (let round = 1; round <= ROUNDS; round++) {
   log(`ux-review round ${round}: experts judge ${walks.length} journeys`)
   const judged = (await parallel(EXPERTS.map((e) => () =>
     agent(PRE + `You are ${e.who}. Read every journey log and screenshot under ${a.out}/*/round${round}/ (the personas' walks), then look yourself where you need to (${HYGIENE}). Return findings in the schema with the screenshot that shows each.`,
-      { label: `${e.key} r${round}`, phase: 'Judge', schema: FINDINGS, effort: 'high' })))).filter(Boolean)
+      { model: MODEL, label: `${e.key} r${round}`, phase: 'Judge', schema: FINDINGS, effort: 'high' })))).filter(Boolean)
   const all = [...walks, ...judged].flatMap((r) => r.findings)
   log(`ux-review round ${round}: ${all.length} findings`)
   const triage = await agent(PRE + `You are the triage judge for a UX review of ${a.repo}. Merge duplicates (the same problem seen by several personas is one item, with their count as evidence of weight), confirm each against the code and the screenshot, drop taste and anything the brief puts out of scope or reserves for the owner. The work list must be executable by an implementor who did not see the reviews: name the file, the element, the change.\n\nFINDINGS:\n${JSON.stringify(all, null, 1)}`,
-    { label: `triage r${round}`, phase: 'Triage', schema: TRIAGE, effort: 'high' })
+    { model: MODEL, label: `triage r${round}`, phase: 'Triage', schema: TRIAGE, effort: 'high' })
   if (!triage) break
   history.push(triage)
   if (triage.clean || !triage.work.length) { log(`ux-review: clean after round ${round}`); break }
   if (a.fix === false) break
   const fix = await agent(PRE + `You are the implementor for ${a.repo}. Apply this UX work list, item by item, then start the demo (${a.start}) and check each fix in the headless browser yourself with a before/after screenshot into ${a.out}/fix/round${round}/. Keep each change in this repository's scope; if a fix belongs in another repository (Orchestra's own page versus a plugin's), say so in skipped. Run the test suites and ruff, check the results, commit locally (message ends with the Co-Authored-By line from the brief). Do not push. Stop what you started; kill your Chrome.\n\nWORK LIST:\n${JSON.stringify(triage.work, null, 1)}`,
-    { label: `fix r${round}`, phase: 'Fix', schema: REPORT, effort: 'high' })
+    { model: MODEL, label: `fix r${round}`, phase: 'Fix', schema: REPORT, effort: 'high' })
   if (fix) log(`ux-review fix r${round}: ${fix.commits.length} commit(s), ${fix.skipped.length} skipped`)
 }
 return { rounds: history.length, last: history[history.length - 1] || null, clean: !!(history.length && history[history.length - 1].clean) }

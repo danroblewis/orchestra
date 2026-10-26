@@ -12,6 +12,7 @@ export const meta = {
 }
 
 // args: { brief, out, repos: [{path, scope, forbidden, exclude?}], contracts: [...], demos: [{repo, start, stop?, pages?}], cases: [...model-acceptance cases], skip?: ['audit'|'ux'|'models'|'review'] }
+const MODEL = (args && args.model) || 'opus'      // the owner's choice for agents (2026-10-26)
 const a = args || {}
 if (!a.brief || !a.out || !a.repos) throw new Error('release-gate needs args.brief, args.out, args.repos')
 const W = '/Users/daniellewis/orchestra_2/.claude/workflows/'
@@ -47,5 +48,5 @@ if (!skip.has('review')) {
 }
 phase('Verify')
 out.final = await agent(`Read ${a.brief} first. You are the final verifier for these repositories: ${JSON.stringify(a.repos.map((r) => r.path))}. For each: git status (clean?), branch, git log --oneline -12; run the full test suite (uv run python -m pytest -q) and ruff; git grep -niE "${a.repos.map((r) => r.forbidden).join('|')}" and classify every hit against each repo's scope (${a.repos.map((r) => r.path.split('/').pop() + ': ' + r.scope).join('; ')}). For each demo (${JSON.stringify((a.demos || []).map((d) => d.start))}) run the one command for two minutes, confirm the URL serves and work moves, and stop it. Confirm the READMEs point at each other correctly. Return a plain-text report: a results table, every problem, then "ready to push: yes/no" with reasons. Stop every process you start.`,
-  { label: 'final verifier', phase: 'Verify', effort: 'medium' })
+  { model: MODEL, label: 'final verifier', phase: 'Verify', effort: 'medium' })
 return out
