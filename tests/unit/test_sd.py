@@ -31,6 +31,9 @@ def test_model_round_trips(tmp_path):
     store = ModelStore(tmp_path)
     assert store.save(m, note="declared") == 1
     assert store.load().to_json() == m.to_json()
+    # a past version's machines carry "engagement": [], a field nothing ever filled: read, ignored
+    past = {**m.to_json(), "machines": [{**mc, "engagement": []} for mc in m.to_json()["machines"]]}
+    assert Model.from_json(past).to_json() == m.to_json()
 
 
 def test_check_catches_bad_structure():

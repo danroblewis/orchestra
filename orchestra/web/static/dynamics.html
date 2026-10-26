@@ -228,8 +228,8 @@ function tables() {
       <td>${f.machine ? `<span class="mdot" style="--c:${mcolor(f.machine)}"></span>${esc((byMachine[f.machine] || {}).name || f.machine)}` : '<span class="muted">none</span>'}</td></tr>`; }).join("");
   $("stocks").innerHTML = `<tr><th>stock</th><th>now</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr><td>${stockHead(s.id)}</td><td class="num">${m.levels[s.id] ? m.levels[s.id].v + " " + esc(s.unit) : "—"}</td>
       <td class="num muted">${s.series ? esc(s.series.name + "{" + Object.entries(s.series.labels).filter(([k]) => k !== "project").map(([k, v]) => `${k}="${v}"`).join(",") + "}") : "not measured"}</td></tr>`).join("");
-  $("machines").innerHTML = `<tr><th>machine</th><th>kind</th><th>engaged</th><th>flows</th></tr>` + m.machines.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span>${esc(x.name)}${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
-      <td>${kindWord(x.id, x.kind)}</td><td class="muted">${esc(x.engagement.map((e) => e.mode.replace("_", " ") + " · " + e.driver).join(", ") || "observed only")}</td><td class="num">${x.attributed.length}</td></tr>`).join("");
+  $("machines").innerHTML = `<tr><th>machine</th><th>kind</th><th>flows</th></tr>` + m.machines.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span>${esc(x.name)}${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
+      <td>${kindWord(x.id, x.kind)}</td><td class="num">${x.attributed.length}</td></tr>`).join("");
   const fitted = m.flows.filter((f) => f.current && f.current.origin === "fitted").length;
   const d = m.discovery || {};
   $("found").innerHTML = d.left_out ? `<div class="muted" style="font-size:12px;margin-bottom:6px">Discovered from ${d.series} series over ${ago(d.end - d.start)}, in ${d.step} s steps. A level is a stock when counters balance it (R² ≥ ${d.min_r2}).</div>`

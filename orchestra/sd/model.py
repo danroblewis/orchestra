@@ -8,8 +8,8 @@ Principles (docs/proposals/system-dynamics-core.md, docs/proposals/orchestra-ker
   equation records its **origin**: ``fitted`` (with method, window and quality), ``discovered``,
   or ``declared`` (an assumption, labelled as one until it is fitted).
 - A **machine** is a record of something outside Orchestra and outside the model (an agent, a
-  program, a team, a device). It is attributed to flows as a hypothesis, observed through series,
-  and may be engaged through drivers. A machine never defines a flow's equation.
+  program, a team, a device). It is attributed to flows as a hypothesis and observed through
+  series. A machine never defines a flow's equation.
 - An **era** is a stretch of time with one configuration; fits are per era.
 
 The JSON form follows SD Lab's model format (MODEL.md) where the concepts coincide (stocks, flows
@@ -67,12 +67,6 @@ class Flow:
 
 
 @dataclass
-class Engagement:
-    mode: str                           # continuous | ad_hoc | scheduled
-    driver: str                         # e.g. process, ssh, container, k8s_job, http, slack, outbox, bus
-
-
-@dataclass
 class Machine:
     id: str
     name: str
@@ -80,8 +74,7 @@ class Machine:
     description: str = ""
     attributed: list[str] = field(default_factory=list)       # flow ids: hypotheses, validated by fits across eras
     observed_by: list[SeriesRef] = field(default_factory=list)
-    engagement: list[Engagement] = field(default_factory=list)  # empty: observed only, never invoked
-    bootstrap: bool = False             # Orchestra's own host: runs the dispatcher, hosts the drivers
+    bootstrap: bool = False             # Orchestra's own host
 
 
 @dataclass
@@ -130,9 +123,8 @@ class Model:
                         dict(f.get("evidence") or {}))
                    for f in d.get("flows", [])],
             machines=[Machine(m["id"], m["name"], m["kind"], m.get("description", ""), list(m.get("attributed", [])),
-                              [SeriesRef(**r) for r in m.get("observed_by", [])],
-                              [Engagement(**e) for e in m.get("engagement", [])], bool(m.get("bootstrap", False)))
-                      for m in d.get("machines", [])],
+                              [SeriesRef(**r) for r in m.get("observed_by", [])], bool(m.get("bootstrap", False)))
+                      for m in d.get("machines", [])],      # past versions carry "engagement": [] too, which nothing fills: ignored
             eras=[Era(**e) for e in d.get("eras", [])],
             discovery=dict(d.get("discovery") or {}),
         )
