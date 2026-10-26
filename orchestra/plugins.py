@@ -15,7 +15,7 @@ The web app mounts what it returns:
   to cache-bust them;
 - its ``static`` directory at ``/plugins/<name>/static``;
 - its ``scripts`` (files in ``static``) on every page of the web UI, after Orchestra's own
-  scripts: for what a package must show wherever the viewer is (a way to reach its agents, a
+  scripts: for what a package must show wherever the viewer is (a button to its own page, a
   notice that something waits on the viewer). Orchestra loads them and knows nothing of them;
 - its ``router`` (a FastAPI ``APIRouter``) at ``/api/plugins/<name>``;
 - its ``machines``, optionally: the machines it provides, declared (``Declared``), so the

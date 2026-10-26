@@ -245,7 +245,8 @@ strategy = "kalman_lna"
 ```
 
 Unknown sections are ignored, so files written for older versions still load, and a package of
-machines may keep its own settings here (the task system's [project], [agents], [gate], …).
+machines may keep its own settings here (the task system's [project], [tasks], [gate], …; the
+agents' [agents]).
 
 ---
 
@@ -259,7 +260,6 @@ machines may keep its own settings here (the task system's [project], [agents], 
 | `orchestra events info\|copy --to URL` | The event log |
 | `orchestra metrics backfill\|series` | Replay the log into event counters; list series |
 | `orchestra sd discover [--strategy S] [--minutes N] [--step-s S]\|show\|fit\|versions` | The model: discover it from the metrics, show, refit, list versions |
-| `orchestra tools [--json]` | The agent tool catalogue |
 
 ---
 

@@ -69,7 +69,7 @@ class Flow:
 @dataclass
 class Engagement:
     mode: str                           # continuous | ad_hoc | scheduled
-    driver: str                         # e.g. harness, process, ssh, container, k8s_job, http, slack, outbox, bus
+    driver: str                         # e.g. process, ssh, container, k8s_job, http, slack, outbox, bus
 
 
 @dataclass
