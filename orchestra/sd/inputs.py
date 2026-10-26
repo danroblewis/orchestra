@@ -14,9 +14,7 @@ import re
 from collections import defaultdict
 
 from .live import regular
-from .series import Series, series_key
-
-PLUMBING = re.compile(r"^orchestra_(core_|host_up)")   # Orchestra's own: measured, but never a driver of anyone's flows
+from .series import PLUMBING, Series, series_key
 
 
 def _group(s: Series) -> tuple[str, tuple]:

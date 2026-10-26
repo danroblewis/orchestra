@@ -215,3 +215,18 @@ def test_counters_of_a_machines_instances_are_summed_into_one_flow(tmp_path):
     assert m.discovery["summed"], m.discovery.get("summed")
     if summed:                                           # when the sold flow is the summed one, it reads all three instances
         assert len(summed[0].measured_by) == 3 and summed[0].counter is None
+
+
+def test_orchestras_own_series_are_plumbing(tmp_path):
+    # the Core page's probes and the host's heartbeat land in the project's metrics store while
+    # a browser is open; they measure Orchestra, not the system, and are no candidates. Its event
+    # counters are: they count what the machines did.
+    store = FileMetrics(tmp_path / "m.jsonl")
+    start, end = simulate(store, minutes=60)
+    store.write([Point("orchestra_core_bus_read_ms", 2.0 + (i % 3), start + 30 * i, {"project": "p"}) for i in range(120)]
+                + [Point("orchestra_host_up", 1.0, start + 15 * i, {"project": "p", "machine": "orchestra-host"}) for i in range(240)])
+    m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
+    why = m.discovery["left_out"]
+    assert why["orchestra_core_bus_read_ms"].startswith("Orchestra's own"), why
+    assert why['orchestra_host_up{machine="orchestra-host"}'].startswith("Orchestra's own"), why
+    assert {s.id for s in m.stocks} == {"bakery_shelf_loaves", "bakery_oven_orders_pending"}

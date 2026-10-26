@@ -4,22 +4,26 @@ Given every series of a project over a window, it finds stocks, the flows betwee
 equation of each flow, and the machine behind each flow:
 
 1. **Sample** every series onto a grid of steps (the last value at or before each step), and mark
-   when each was being written (``sd.series``, ``sd.live``): a scheduled series' silence is its
-   machine down or not yet started, and its last value before the silence is not a measurement
-   of the silence.
+   when each was live (``sd.series``, ``sd.live``): liveness is the machine's, so a gauge not
+   re-written because nothing changed holds its value while its machine is alive, and a
+   machine's silence is it down or not yet started, not a measurement of the silence. Orchestra's
+   own series (``PLUMBING``: the host's, the Core page's probes) are no candidates.
 2. **Find stocks by conservation.** A level whose changes are explained by counters, added or
    subtracted, is a stock, and those counters are its inflows and outflows:
-   ``Δlevel ≈ Σ inflows − Σ outflows`` in every step the level and the counters were written in.
+   ``Δlevel ≈ Σ inflows − Σ outflows`` in every step the level and the counters were live in.
    The counters (each with a coefficient of +1 or −1) are found by a local search from many
-   starts that keeps a counter only if it explains a real share (``sd.balance``), the level's own
-   machine's counters first (its record of its transitions) and every counter only when those
-   do not balance it exactly. A level is kept only if the balance fits (R² ≥ ``MIN_R2``);
-   everything else is left out, with the reason. With every balance known, a counter that stands
-   in for others gives way to them (``sd.restate``: Orchestra's event counter to the machine
-   counters it sums, another machine's copy to the machine's own, two machines' counts of one
-   flow to one). Two levels that change alike in nearly every step, or that the same counters
-   balance, are one stock measured twice: the machine whose counters make the balance keeps it,
-   the other is recorded as its twin.
+   starts that keeps a counter only if it explains a real share, searching only counters that
+   counted enough events, for a level that changed in enough steps (``sd.balance``: fewer
+   coincide by chance). The level's own machine's counters come first (its record of its
+   transitions): when they balance it within the tolerance, another machine's counter never
+   replaces one of them, and enters only to explain the residual they leave; every counter is
+   searched only when the machine's own do not balance it. A level is kept only if the balance
+   fits (R² ≥ ``MIN_R2``); everything else is left out, with the reason. With every balance
+   known, a counter that stands in for others gives way to them (``sd.restate``: Orchestra's
+   event counter to the machine counters it sums, another machine's copy to the machine's own,
+   two machines' counts of one flow to one). Two levels that change alike in nearly every step,
+   or that the same counters balance, are one stock measured twice: the machine whose counters
+   make the balance keeps it, the other is recorded as its twin.
 3. **Connect flows.** A counter that is an outflow of one stock and an inflow of another is a flow
    between them; otherwise it comes from or goes to outside (``sd.ends``: when two stocks claim the
    same end, the one the counter explains most keeps it and the other claim is evidence; stocks of
@@ -52,24 +56,22 @@ import re
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from dataclasses import dataclass
-from itertools import pairwise
+from itertools import accumulate, pairwise
 
-from .balance import MIN_GAIN, LeastSquares, balance
+from .balance import MIN_EVENTS, MIN_GAIN, LeastSquares, balance, fit_of
 from .ends import claims, moves
 from .inputs import offered_inputs
-from .live import balance_steps, intersect, within
+from .live import balance_steps, held_for, intersect, within
 from .model import Equation, Flow, Machine, Model, SeriesRef, Stock
 from .restate import split_event_counters, split_foreign_counters, unify_same_flows
-from .series import EVENT_COUNTER, Series, sample, sum_instances
+from .series import EVENT_COUNTER, PLUMBING, Series, machine_of, sample, sum_instances
 
 MIN_R2 = 0.9            # how well a balance must fit for a level to count as a stock
 FLAG_EXACT = 0.97         # a two-valued level is a stock only if its balance is exact in this share of steps
 SAME_STEPS = 0.03          # counters that differ in no more than this share of steps are one
 TWIN_STEPS = 0.97          # levels whose changes are equal in this share of steps are one stock measured twice
-MIN_EVENTS = 5             # a flow with fewer events than this in the window gets the constant form only
-MIN_STEPS = 5              # a level written in fewer steps than this (while every counter was) cannot be balanced
+MIN_STEPS = 5              # a level live in fewer steps than this (while every counter was) cannot be balanced
 UNITS = {"second": 1.0, "minute": 60.0, "hour": 3600.0}
-
 
 
 def _slug(s: Series) -> str:
@@ -114,15 +116,6 @@ def same_flow(a: Series, b: Series, n: int) -> bool:
         return True
     return (b.name == EVENT_COUNTER and a.name != EVENT_COUNTER and behind(da, db)) or \
         (a.name == EVENT_COUNTER and b.name != EVENT_COUNTER and behind(db, da))
-
-
-def machine_of(s: Series) -> str | None:
-    """The machine a series belongs to: its ``machine`` label, or, for Orchestra's event counters,
-    the ``source`` that emitted the events (``unknown`` is no machine)."""
-    who = s.labels.get("machine") or (s.labels.get("source") or "").partition("/")[0]   # baker/2 is the machine baker
-    return who if who and who != "unknown" else None
-
-
 
 
 def _average(points: list[tuple[float, float]], a: float, b: float) -> float:
@@ -312,6 +305,30 @@ def _owns(s: Series, terms: list) -> int:
     return sum(1 for c, _ in terms if machine_of(c) is not None and machine_of(c) == machine_of(s))
 
 
+def own_balance(s: Series, counters: list[Series], steps: list[int], fits) -> tuple[list | None, float, float]:
+    """The level's balance made of its own machine's counters (its record of its transitions, and
+    Orchestra's counts of its events), when they balance it within the tolerance: that is its
+    balance, whatever another machine's counts of the same events would say in fewer terms or a
+    step more exactly (a reviewer's turns are not the scheduler's transitions). Another machine's
+    counter enters only to explain the residual the machine's own leave, when there is one. None
+    when the machine's own do not balance it: then every counter is searched."""
+    own = [c for c in counters if machine_of(s) is not None and machine_of(c) == machine_of(s)]
+    terms, r2, exact = balance(s, own, None, steps) if own else ([], 0.0, 0.0)
+    if not (terms and fits(s, r2, exact)):
+        return None, 0.0, 0.0
+    foreign = [c for c in counters if not any(c is o for o in own)]
+    if exact >= FLAG_EXACT or not foreign:
+        return terms, r2, exact
+    left = [d - sum(sign * c.deltas[i] for c, sign in terms) for i, d in enumerate(s.deltas)]
+    residual = Series(s.name, s.labels, [], [0.0, *accumulate(left)], False)
+    more, _, _ = balance(residual, foreign, None, steps)
+    if more:
+        r2b, exact2 = fit_of(s, terms + more, steps)
+        if r2b > r2 + MIN_GAIN:
+            return terms + more, r2b, exact2
+    return terms, r2, exact
+
+
 def twin_levels(found: list, left_out: dict[str, str]) -> tuple[list, dict[str, list[dict]]]:
     """One stock measured twice (a shelf counted by the shelf and by the board): two levels that
     change alike in at least ``TWIN_STEPS`` of the steps, or that the same counters balance. The
@@ -346,17 +363,22 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     dt = step / UNITS[time_unit]
     series, summed = sum_instances(sample(dump, start, step, n))
     left_out: dict[str, str] = {}
-    # a series written on a schedule that is no longer written at the end of the window (its
-    # machine is gone, or was replaced) is not measured now: left out, or its silence would leave no
-    # time when every series involved was being written, and nothing could be fitted
+    end = start + n * step
+    # Orchestra's own series are plumbing, not a measure of the system; and a series not live at the
+    # end of the window (its machine silent past its live limit: gone, or replaced) is not measured
+    # now: left out, or its silence would leave no time when every series involved was live, and
+    # nothing could be fitted
     current = []
     for ser in series:
         ivs = ser.intervals if ser.intervals is not None else [(start, end)]
-        if ivs and ivs[-1][1] >= start + n * step:
+        if PLUMBING.match(ser.name):
+            left_out[ser.key] = "Orchestra's own (the host's and the Core page's plumbing), not a measure of the system"
+        elif ivs and ivs[-1][1] >= end:
             current.append(ser)
         else:
-            last = max((t for t, _ in ser.points), default=start)
-            left_out[ser.key] = f"no longer written: its last point is {round((end - last) / 60)} min before the end of the window"
+            since = round((end - (ivs[-1][1] if ivs else max((t for t, _ in ser.points), default=start))) / 60)
+            who = f"its machine {machine_of(ser)} has been silent" if machine_of(ser) else "its last point is"
+            left_out[ser.key] = f"no longer written: {who} {since} min before the end of the window"
     series = current
     counters = [s for s in series if s.counter and any(s.deltas)]
     # counters that moved together in (almost) every step measure the same thing (a machine's own
@@ -381,37 +403,39 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     found: list[tuple[Series, list[tuple[Series, int]], float, float]] = []
     masks: dict[str, list[int]] = {}              # the steps each level's balance was found on
     solvers: dict[tuple, LeastSquares] = {}       # least squares over all counters, per set of steps
+
+    def fits(s: Series, r2: float, exact: float) -> bool:
+        """A balance a level may be a stock on: a level that only ever takes two values is usually
+        a flag (a baker is busy or not), and least squares will balance a flag with counters that
+        merely move with it; it is a stock only when counters balance it exactly (a shelf that
+        holds nothing or one item)."""
+        return r2 >= MIN_R2 and (exact >= FLAG_EXACT or len({v for _, v in s.points}) > 2)
     for s in series:
         if s.counter:
             continue
-        # only the steps when the level and every counter were being written: a level's stale value
-        # from before a silence (its machine was down, then restarted with a cleared state) is not a
+        # only the steps when the level and every counter were live: a level's stale value from
+        # before a silence (its machine was down, then restarted with a cleared state) is not a
         # change any counter explains, and the fit below cuts the same time
         steps = balance_steps(s, counters)
         if len(steps) < MIN_STEPS:
-            left_out[s.key] = f"written in only {len(steps)} of {n} steps while every counter was: too few to balance"
+            left_out[s.key] = f"live in only {len(steps)} of {n} steps while every counter was: too few to balance"
             continue
-        if not any(s.deltas[i] for i in steps):
-            left_out[s.key] = "a level that did not change in the window" + (" while it was being written" if len(steps) < n else "")
+        moved = sum(1 for i in steps if s.deltas[i])
+        if not moved:
+            left_out[s.key] = "a level that did not change in the window" + (" while it was live" if len(steps) < n else "")
+            continue
+        if moved < MIN_EVENTS:
+            left_out[s.key] = (f"a level that changed in only {moved} step{'s' if moved != 1 else ''}: fewer than {MIN_EVENTS}, "
+                               "too few to tell a balance from coincidence")
             continue
         masks[s.key] = steps
-        # the level's own machine's counters first (its record of its transitions, and Orchestra's
-        # counts of its events): when they balance it exactly, that is its balance, whatever other
-        # machines' counts of the same events would say in fewer terms. Otherwise every counter is
-        # searched, and that balance replaces the machine's own only when it explains more.
-        own = [c for c in counters if machine_of(s) is not None and machine_of(c) == machine_of(s)]
-        terms, r2, exact = balance(s, own, None, steps) if own else ([], 0.0, 0.0)
-        if not (terms and r2 >= MIN_R2 and exact >= FLAG_EXACT):
+        terms, r2, exact = own_balance(s, counters, steps, fits)
+        if terms is None:
             key = tuple(steps)
             if key not in solvers and counters:
                 solvers[key] = LeastSquares([[c.deltas[i] for i in steps] for c in counters])
-            terms2, r2b, exact2 = balance(s, counters, solvers.get(key), steps)
-            if not terms or r2b > r2 + MIN_GAIN:
-                terms, r2, exact = terms2, r2b, exact2
-        # a level that only ever takes two values is usually a flag (a baker is busy or not), and
-        # least squares will balance a flag with counters that merely move with it; it is a stock
-        # only when counters balance it exactly (a shelf that holds nothing or one item)
-        if len({v for _, v in s.points}) <= 2 and not (terms and r2 >= MIN_R2 and exact >= FLAG_EXACT):
+            terms, r2, exact = balance(s, counters, solvers.get(key), steps)
+        if len({v for _, v in s.points}) <= 2 and not (terms and fits(s, r2, exact)):
             left_out[s.key] = "a flag (it only ever takes two values, and no counters balance it exactly), not a quantity that accumulates"
             continue
         if terms and r2 >= MIN_R2:
@@ -421,8 +445,6 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             left_out[s.key] = why
     # with every balance known, the stand-ins give way (sd.restate); a counter no balance keeps
     # is recorded with why, below
-    def fits(s: Series, r2: float, exact: float) -> bool:
-        return r2 >= MIN_R2 and (exact >= FLAG_EXACT or len({v for _, v in s.points}) > 2)
     notes: dict[str, str] = {}
     for pass_ in (split_event_counters, split_foreign_counters):
         found, made = pass_(found, counters, masks, machine_of, fits, MIN_EVENTS)
@@ -449,29 +471,36 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             left_out[s.key] = f"only an accumulator of other stocks' flows (R² {r2b:.2f} with counters of its own)"
     found, twins = twin_levels(kept, left_out)
     stocks, sid_of, ids = [], {}, set()
+    held: dict[str, dict] = {}       # the levels whose value was carried on their machine's word, and for how long
     for s, terms, r2, exact in found:
         sid = unique_id(_slug(s), machine_of(s), ids)
         sid_of[s.key] = sid
+        carried, at_end = held_for(s.points, s.intervals if s.intervals is not None else [(start, end)])
+        if carried:
+            held[sid] = {"minutes": round(carried / 60, 2), "at_end_minutes": round(at_end / 60, 2)}
         stocks.append(Stock(sid, _title(s), "items", SeriesRef(s.name, s.labels),
                             {"balance_r2": round(r2, 4), "exact_steps": round(exact, 4), "steps": n, "balance_steps": len(masks[s.key]),
                              "machine": machine_of(s), "accumulator": all(sign > 0 for _, sign in terms),
                              "balance": [{"series": c.key, "sign": sign} for c, sign in terms],
+                             "held_minutes": round(carried / 60, 2),
                              **({"twins": twins[s.key]} if s.key in twins else {})}))
     # a counter in two balances connects those stocks (sd.ends: contested ends and co-flows)
     fid_of = {c.key: unique_id(_slug(c), machine_of(c), ids) for c in counters}
     by_counter = claims(found, sid_of, machine_of)
     flow_moves = moves(counters, by_counter, fid_of, machine_of)
     for c in counters:
-        if c.key not in by_counter:
-            left_out[c.key] = notes.get(c.key, "a counter no stock's balance needed")
+        if c.key in by_counter:
+            continue
+        events = sum(c.deltas)
+        rare = f"a counter of only {events:g} event{'s' if events != 1 else ''}: fewer than {MIN_EVENTS}, too few to carry a balance; it completed none"
+        left_out[c.key] = notes.get(c.key, rare if events < MIN_EVENTS else "a counter no stock's balance needed")
 
-    end = start + n * step
     unit_s = UNITS[time_unit]
-    # fit only over the time every series involved was being written: before a machine started,
-    # or while it was down, its silence is not a rate of zero
+    # fit only over the time every series involved was live: before a machine started, or while it
+    # was down, its silence is not a rate of zero
     live = [(start, end)]
     for ser in [s for s, _, _, _ in found] + [c for c in counters if c.key in by_counter]:
-        if ser.intervals is not None:     # only a scheduled series' silence means its machine was down
+        if ser.intervals is not None:
             live = intersect(live, ser.intervals)
     live_s = sum(b - a for a, b in live)
     steps_live = [i for i in range(n) if any(a <= start + i * step and start + (i + 1) * step <= b for a, b in live)]
@@ -521,7 +550,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                   time_unit, stocks, flows, machines)
     model.discovery = {"summed": summed, "start": start, "end": end, "fit_start": fit_start, "live_minutes": round(live_s / 60, 2) if found else 0,
                        "gaps": [[a, b] for (_, a), (b, _) in pairwise(live)] if found else [],
-                       "step": step, "series": len(series), "inputs": input_refs,
+                       "step": step, "series": len(series), "inputs": input_refs, "held": held,
                        "stocks": len(stocks), "flows": len(flows), "min_r2": MIN_R2,
                        "left_out": dict(sorted(left_out.items()))}
     return model

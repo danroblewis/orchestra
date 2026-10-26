@@ -1,17 +1,20 @@
 """The series discovery works on: every series of a project sampled onto a grid of steps, told
 apart as a counter or a level, a machine's instances summed into one counter, and each marked
-with when it was being written (``sd.live``)."""
+with when it was live (``sd.live``: its machine alive, and a gauge written since the machine's
+last silence)."""
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from itertools import pairwise
 
 from ..metrics import step_sample
-from .live import live_intervals, regular, steps_within, union
+from .live import held, live_intervals, live_limit, steps_within, stretches, union, usual_interval
 
 EVENT_COUNTER = "orchestra_events_total"   # Orchestra's own count of each event type, by source
+PLUMBING = re.compile(r"^orchestra_(?!events_total)")   # Orchestra's own other series (the host's, the Core page's probes): never a measure of the system
 
 
 def series_key(name: str, labels: dict[str, str]) -> str:
@@ -29,7 +32,7 @@ class Series:
     values: list[float]                     # at each grid time
     counter: bool
     members: list = field(default_factory=list)   # the instances' series, when this one sums them (sum_instances)
-    intervals: list[tuple[float, float]] | None = None   # when it was being written; None: not on a schedule, so always
+    intervals: list[tuple[float, float]] | None = None   # when it was live; None: a machine-less series written as things happen, so always
     live: list[int] | None = None                        # the grid steps inside those intervals; None: every step
 
     @property
@@ -43,6 +46,13 @@ class Series:
         if self.counter:
             return [(b - a) if b >= a else b for a, b in pairwise(self.values)]
         return [b - a for a, b in pairwise(self.values)]
+
+
+def machine_of(s: Series) -> str | None:
+    """The machine a series belongs to: its ``machine`` label, or, for Orchestra's event counters,
+    the ``source`` that emitted the events (``unknown`` is no machine)."""
+    who = s.labels.get("machine") or (s.labels.get("source") or "").partition("/")[0]   # baker/2 is the machine baker
+    return who if who and who != "unknown" else None
 
 
 def _is_counter(name: str, values: list[float]) -> bool:
@@ -59,31 +69,55 @@ def on_events(points: list[tuple[float, float]]) -> bool:
     return bool(pairs) and sum(1 for a, b in pairs if a == b) <= 0.05 * len(pairs)
 
 
-def mark_live(ser: Series, start: float, step: float, n: int) -> Series:
-    """Record when the series was being written: only a scheduled series' silence means its
-    machine was down. A counter written on events is silent when nothing happened, even when the
-    events come steadily enough to look like a schedule."""
-    if regular(ser.points) and not (ser.counter and on_events(ser.points)):
-        ser.intervals = live_intervals(ser.points, start, start + n * step)
+def alive(series: list[Series], start: float, end: float) -> dict[str, list[tuple[float, float]]]:
+    """When each machine was alive: between any of its writes no further apart than its live limit
+    (ten times the interval of its fastest series written on a schedule, at least a minute), and
+    from its first write to the end when none of its series is on a schedule. A counter written
+    only when it moves is no schedule, even when its events come steadily enough to look like one."""
+    by_machine: dict[str, list[Series]] = defaultdict(list)
+    for s in series:
+        if (m := machine_of(s)) is not None:
+            by_machine[m].append(s)
+    out = {}
+    for m, group in by_machine.items():
+        times = sorted({t for s in group for t, _ in s.points})
+        limits = [live_limit(u) for s in group if not (s.counter and on_events(s.points)) and (u := usual_interval(s.points))]
+        out[m] = stretches(times, min(limits) if limits else None, start, end)
+    return out
+
+
+def mark_live(ser: Series, machine_alive: list[tuple[float, float]] | None, start: float, step: float, n: int) -> Series:
+    """Record when the series was live: whenever its machine was, for a counter; from its first
+    write in each of the machine's stretches, for a gauge. A machine-less series is live on its
+    own schedule, if it has one, else always."""
+    end = start + n * step
+    if machine_alive is not None:
+        ser.intervals = machine_alive if ser.counter else held(ser.points, machine_alive, start, end)
+    elif usual_interval(ser.points) and not (ser.counter and on_events(ser.points)):
+        ser.intervals = live_intervals(ser.points, start, end)
+    if ser.intervals is not None:
         ser.live = steps_within(ser.intervals, start, step, n)
     return ser
 
 
 def sample(dump, start: float, step: float, n: int) -> list[Series]:
-    """Every series on the grid; leading steps before its first point take its first value."""
+    """Every series on the grid. Leading steps before a gauge's first point take its first value;
+    before a counter's first point nothing had been counted (a counter written when it moves
+    starts at its first event, and that event moved the gauges written beside it)."""
     out = []
     times = [start + i * step for i in range(n + 1)]
     for name, labels, pts in dump:
         if not pts:
             continue
         got = dict(step_sample(pts, start, times[-1], step))
-        first = next((v for t, v in pts if t >= start), pts[-1][1])
+        first = 0.0 if name.endswith("_total") else next((v for t, v in pts if t >= start), pts[-1][1])
         vals, last = [], None
         for t in times:
             last = got.get(t, last)
             vals.append(first if last is None else last)
-        out.append(mark_live(Series(name, dict(labels), pts, vals, _is_counter(name, vals)), start, step, n))
-    return out
+        out.append(Series(name, dict(labels), pts, vals, _is_counter(name, vals)))
+    machines = alive(out, start, times[-1])
+    return [mark_live(ser, machines.get(machine_of(ser)), start, step, n) for ser in out]
 
 
 def sum_instances(series: list[Series]) -> tuple[list[Series], dict[str, str]]:
@@ -94,7 +128,7 @@ def sum_instances(series: list[Series]) -> tuple[list[Series], dict[str, str]]:
     system, past the number of steps, where least squares can no longer tell them apart). An
     instance is an ``instance`` label, or the instance part of a ``source`` (``worker/3``).
     Increments are summed, so one instance's reset does not read as the total going back. The sum
-    was being written whenever any instance was. Returns the series, and what each summed series
+    was live whenever any instance was. Returns the series, and what each summed series
     was made from (for the record)."""
     groups: dict[tuple, list[Series]] = defaultdict(list)
     out: list[Series] = []

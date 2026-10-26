@@ -162,35 +162,50 @@ deadline below `[discovery] every`, and one discovery runs at a time per project
 processes (the host skips a scheduled run while the CLI or the web page is discovering).
 
 Conservation (`sd/discover.py`):
-1. every series is sampled onto a grid of steps, and marked with when it was being written
-   (`sd/series.py`, `sd/live.py`). A series written on a schedule is live between writes no
-   further apart than ten times its usual interval; a longer silence is its machine down or not
-   yet started, and its last value before the silence is not carried into it: a level's balance
-   and a flow's fit use only the steps in which the level and the counters involved were all
-   being written, and the stock records how many steps that was. A counter written only when it
-   moves (Orchestra's event counters) has no silences. A scheduled series no longer written at
-   the end of the window (its machine is gone or was replaced) is left out. Counters that move
-   together in all but 3% of steps are one when one is Orchestra's count of the other's events, or
-   both are one machine's: the machine's own, then the shorter name, is kept; two machines'
-   counts of the same events both stay (each machine's stocks take their own) and become one
-   afterwards where they join two stocks (step 2). Counters that differ only by instance (an
-   ``instance`` label, or ``source`` ``worker/3``) are summed into one per machine, and a flow
-   from such a sum is measured by every instance's series;
+1. every series is sampled onto a grid of steps, and marked with when it was live
+   (`sd/series.py`, `sd/live.py`). Liveness is the machine's, not the series': a machine is
+   alive between writes (any of its series, or Orchestra's count of an event it published) no
+   further apart than ten times the interval of its fastest series written on a schedule (at
+   least a minute); a longer silence is it down or not yet started. A machine none of whose
+   series is on a schedule writes only when something happens, so its silence says nothing, and
+   it is alive from its first write to the end of the window. A gauge that is not re-written
+   because nothing changed holds its value while its machine is alive (a count of tickets by
+   state in a quiet quarter of an hour), and goes stale only when the machine goes silent: its
+   value from before the silence is not carried past it, so it is live from its first write in
+   each stretch its machine was alive. A counter is live whenever its machine is, and before its
+   first point it had counted nothing. A level's balance and a flow's fit use only the steps in
+   which the level and the counters involved were all live; the stock records how many steps
+   that was, and how long its value was held on its machine's word (`held`, in the stock's
+   evidence and the discovery notes). A series whose machine is silent at the end of the window
+   (gone, or replaced) is left out, and so are Orchestra's own series but its event counters
+   (`orchestra_core_*`, `orchestra_host_up`: plumbing, not a measure of the system). Counters
+   that move together in all but 3% of steps are one when one is Orchestra's count of the
+   other's events, or both are one machine's: the machine's own, then the shorter name, is kept;
+   two machines' counts of the same events both stay (each machine's stocks take their own) and
+   become one afterwards where they join two stocks (step 2). Counters that differ only by
+   instance (an ``instance`` label, or ``source`` ``worker/3``) are summed into one per machine,
+   and a flow from such a sum is measured by every instance's series;
 2. a level is a **stock** when counters, added or subtracted, balance its changes
    (`Δlevel ≈ Σ inflows − Σ outflows`, R² ≥ 0.9). A level that only takes two values is
    usually a flag (busy or not) and is a stock only when its balance is exact in 97% of steps (a
-   shelf that holds nothing or one item). The counters are found by a local search on an
-   objective of squared error plus a penalty per counter (change one coefficient, or swap one
-   counter for another), run from many starts (least squares on all counters rounded to ±1,
-   nothing, each counter alone, the best pairs) with the best kept, on the counters' Gram matrix
-   so each candidate move is cheap (`sd/balance.py`). A balance exact in every step earns back
-   most of one penalty, so the one-event counter that completes it (a refund among a hundred
-   orders) is kept. A small set of chosen counters that cancels to nothing is dropped, and one
-   that equals an unchosen counter is replaced by it (`sd/collinear.py`). The level's own
-   machine's counters are searched first (its record of its transitions, with Orchestra's counts
-   of its events): when they balance it exactly, that is its balance; otherwise every counter is
-   searched, and that balance replaces the machine's own only when it explains more. Then, with
-   every balance known, the stand-ins give way (`sd/restate.py`): Orchestra's event counter to the
+   shelf that holds nothing or one item). A level that changed in fewer than 5 steps is no
+   stock, and a counter that counted fewer than 5 events carries no balance (on three steps a
+   level and a counter coincide by chance as readily as a stock and its flow): such a counter
+   may only complete a balance that counters above the bar carry, and only to exact. The
+   counters are found by a local search on an objective of squared error plus a penalty per
+   counter (change one coefficient, or swap one counter for another), run from many starts
+   (least squares on all counters rounded to ±1, nothing, each counter alone, the best pairs)
+   with the best kept, on the counters' Gram matrix so each candidate move is cheap
+   (`sd/balance.py`). A balance exact in every step earns back most of one penalty, so the rare
+   counter that completes it (a refund among a hundred orders) is kept. A small set of chosen
+   counters that cancels to nothing is dropped, and one that equals an unchosen counter is
+   replaced by it (`sd/collinear.py`). The level's own machine's counters are searched first
+   (its record of its transitions, with Orchestra's counts of its events): when they balance it
+   within the tolerance, that is its balance, and another machine's counter never replaces one
+   of them (a reviewer's turns are not the scheduler's transitions, however exactly they
+   coincide); it enters only to explain the residual the machine's own leave. Every counter is
+   searched only when the machine's own do not balance the level. Then, with every balance
+   known, the stand-ins give way (`sd/restate.py`): Orchestra's event counter to the
    machine counters that sum to it, when one is another stock's or the level's own machine's;
    another machine's counter that no other stock claims to the level's own counters that sum to
    it; and two machines' counts of one flow, one leaving a stock and the other entering another,

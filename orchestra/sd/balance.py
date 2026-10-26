@@ -5,8 +5,12 @@ objective of squared error plus a penalty per counter used, so a counter must ex
 to be kept: at least ``MIN_GAIN`` of the level's variance, and at least one event's worth of
 squared change (``EVENT_FLOOR``), because on a level that barely moves one per cent of its variance
 is less than the noise of a single step at the edge of the window. A balance that is exact in every
-step earns back most of one penalty (``COMPLETION``): the one-event counter that makes it exact
-(a refund among a hundred orders) is then worth keeping, where alone it could never pay its way.
+step earns back most of one penalty (``COMPLETION``): the rare counter that makes it exact (a
+refund among a hundred orders) is then worth keeping, where alone it could never pay its way. A
+counter that counted fewer than ``MIN_EVENTS`` events is not searched: on three events a level
+and a counter coincide by chance as readily as a stock and its flow. It may only complete a
+balance that counters above the bar carry (``complete``), and counters below the bar alone are
+no balance.
 
 The search is cheap because it runs on the counters' Gram matrix (every pair's dot product): the
 error after any one change is a few multiplications, not a pass over the steps. That pays for
@@ -22,6 +26,7 @@ from .collinear import cancel, merge
 
 MIN_GAIN = 0.01         # each counter must explain at least this share of the level's variance
 EVENT_FLOOR = 1.0       # ... and at least one event's worth of squared change
+MIN_EVENTS = 5          # ... and must have counted this many events over the steps: fewer coincide by chance (a level: changed in this many steps)
 MAX_TERMS = 8
 COMPLETION = 0.5        # an exact balance earns back a penalty less this many events' worth
 EXACT_SSE = 0.5         # a balance with less squared error than this is exact in every step (levels are counts)
@@ -64,6 +69,40 @@ class LeastSquares:
         for i in reversed(range(m)):
             c[i] = (z[i] - sum(L[k][i] * c[k] for k in range(i + 1, m))) / L[i][i]
         return c
+
+
+def enough_events(deltas: list[float]) -> bool:
+    """Whether a counter counted enough over these steps to carry a balance: a level and a counter
+    that coincide on three events are a coincidence as often as a stock and its flow. The bar is
+    on events, not steps: the oven's four orders of twenty loaves are eighty events whose size is
+    what matches."""
+    return sum(deltas) >= MIN_EVENTS
+
+
+def complete(coef: dict[int, int], resid: list[float], sse: float, xs: list[list[float]], rare: list[int]
+             ) -> tuple[dict[int, int], list[float], float]:
+    """Finish a balance with the counters that counted too few events to be searched: added one at
+    a time, the one that lowers the squared error most first, and kept only when the balance ends
+    exact in every step (the oven's four orders of twenty loaves; a refund among a hundred
+    orders). Short of exact, a rare counter explains a coincidence as readily as a flow."""
+    if sse < EXACT_SSE or not rare:
+        return coef, resid, sse
+    trial, r, e = dict(coef), list(resid), sse
+    pool = [j for j in rare if j not in trial]
+    while e >= EXACT_SSE and pool:
+        best = None
+        for j in pool:
+            for sign in (1, -1):
+                r2 = [v - sign * x for v, x in zip(r, xs[j])]
+                e2 = sum(v * v for v in r2)
+                if e2 < e - 1e-9 and (best is None or e2 < best[0]):
+                    best = (e2, j, sign, r2)
+        if best is None:
+            break
+        e, j, sign, r = best
+        trial[j] = sign
+        pool.remove(j)
+    return (trial, r, e) if e < EXACT_SSE else (coef, resid, sse)
 
 
 def penalty(sst: float) -> float:
@@ -173,7 +212,8 @@ def balance(level, counters: list, ls: LeastSquares | None = None, steps: list[i
 
     if ls is None:
         ls = LeastSquares(xs)
-    live = [j for j, x in enumerate(xs) if any(x)]
+    live = [j for j, x in enumerate(xs) if enough_events(x)]
+    rare = [j for j, x in enumerate(xs) if any(x) and j not in live]
     b = ls.against(y)
     yy = sum(v * v for v in y)
     best = None
@@ -191,6 +231,9 @@ def balance(level, counters: list, ls: LeastSquares | None = None, steps: list[i
         coef, resid, sse = merge(coef, resid, sse, xs, ls.g, cost, objective)
         if (len(coef), sorted(coef.items())) == before:
             break
+    coef, resid, sse = complete(coef, resid, sse, xs, rare)
+    if not any(j in live for j in coef):              # rare counters alone carry no balance
+        coef, resid, sse = {}, list(y), yy
     chosen = [(counters[j], sign) for j, sign in sorted(coef.items())]
     exact = sum(1 for r in resid if abs(r) <= 0.5) / len(resid)
     return chosen, 1 - sse / sst, exact

@@ -175,3 +175,58 @@ def test_one_flow_counted_by_two_machines_joins_the_stocks(tmp_path):
     joins = [x for x in m.flows if x.src and x.dst and x.dst == "accepting"]
     assert len(joins) == 1 and joins[0].src in ("on_shelf", "shelf_items"), [(x.id, x.src, x.dst) for x in m.flows]
     assert not [x for x in m.flows if x.src is None and x.dst == "accepting"], f.keys()
+
+
+def test_another_machines_counter_never_replaces_the_machines_own_balance(tmp_path):
+    # the board's waiting count is balanced by its own arrivals and departures, which it stamps a
+    # second after the count (the few at a step's edge land in the next step: the balance is
+    # within tolerance, not exact). The reviewer counts every departure too, stamped with the
+    # count, so it would balance the count exactly, in as few terms. The count is the board's to
+    # account for: its own counters keep it, and another machine's enters only to explain what
+    # they leave, which here is noise at the edges.
+    rng = random.Random(4)
+    lab = lambda m: {"project": "p", "machine": m}
+    waiting = arrived = served = 0
+    pts = []
+    for i in range(60 * 60):
+        t = T0 + i
+        if rng.random() < 0.1:
+            arrived, waiting = arrived + 1, waiting + 1
+            pts += [Point("arrived_total", arrived, t, lab("board")), Point("waiting", waiting, t, lab("board"))]
+        if waiting and rng.random() < 0.09:
+            served, waiting = served + 1, waiting - 1
+            pts += [Point("waiting", waiting, t, lab("board")), Point("served_total", served, t + 1, lab("board")),
+                    Point("reviews_total", served, t, lab("reviewer"))]
+    store = FileMetrics(tmp_path / "m.jsonl")
+    store.write(sorted(pts, key=lambda p: p.ts))
+    m = discover(store.dump("", {"project": "p"}), start=T0, end=T0 + 3600, step=30)
+    assert [s.id for s in m.stocks] == ["waiting"], m.discovery["left_out"]
+    ev = m.stock("waiting").evidence
+    assert balance_of(m, "waiting") == {("arrived_total", 1), ("served_total", -1)}, ev["balance"]
+    assert 0.9 <= ev["balance_r2"] < 1.0 and ev["exact_steps"] < 0.97, "within tolerance, not exact"
+    assert 'reviews_total{machine="reviewer"}' in m.discovery["left_out"]
+
+
+def test_a_level_and_a_counter_that_coincide_on_a_few_steps_are_no_stock_and_flow(tmp_path):
+    # a planner woken three times, each wake counted: the level changes on three steps and the
+    # counter moves on the same three. Three coincidences are no conservation law. Nor is a level
+    # that moves six times balanced by two counters of three events each: counters that counted
+    # too few events may complete a balance, never carry one.
+    lab = lambda m: {"project": "p", "machine": m}
+    pts = []
+    for i in range(60 * 60):
+        t = T0 + i
+        wakes = sum(1 for w in (600, 1500, 2400) if i >= w)
+        ups, downs = sum(1 for w in (300, 600, 900) if i >= w), sum(1 for w in (1500, 2100, 2700) if i >= w)
+        pts += [Point("planner_awake", wakes, t, lab("planner")), Point("planner_wakes_total", wakes, t, lab("planner")),
+                Point("shelf_items", ups - downs, t, lab("shelf")), Point("shelf_put_total", ups, t, lab("shelf")),
+                Point("shelf_taken_total", downs, t, lab("shelf"))]
+    store = FileMetrics(tmp_path / "m.jsonl")
+    store.write(pts)
+    m = discover(store.dump("", {"project": "p"}), start=T0, end=T0 + 3600, step=30)
+    assert m.stocks == [] and m.flows == [], [(s.id, s.evidence) for s in m.stocks]
+    why = m.discovery["left_out"]
+    assert "changed in only 3 steps" in why['planner_awake{machine="planner"}'], why
+    assert "only 3 events" in why['planner_wakes_total{machine="planner"}'], why
+    assert why['shelf_items{machine="shelf"}'].startswith("no counters balance it"), why
+    assert "only 3 events" in why['shelf_put_total{machine="shelf"}'] and "only 3 events" in why['shelf_taken_total{machine="shelf"}']
