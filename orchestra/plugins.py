@@ -18,9 +18,11 @@ The web app mounts what it returns:
   scripts: for what a package must show wherever the viewer is (a button to its own page, a
   notice that something waits on the viewer). Orchestra loads them and knows nothing of them;
 - its ``router`` (a FastAPI ``APIRouter``) at ``/api/plugins/<name>``;
-- its ``machines``, optionally: the machines it provides, declared (``Declared``), so the
-  Machines page lists one before it is first seen. What is observed always wins: a declaration
-  only fills in a machine nobody has seen yet, and names the package a machine belongs to.
+- its ``machines``, optionally: the machines it provides, declared (``Declared``: the id, the
+  kind of thing it is, how it is engaged and what it listens for, the same as an announcement
+  says), so the Machines page lists one before it is first seen. What is observed always wins: a
+  declaration only fills in a machine nobody has seen yet, and names the package a machine
+  belongs to.
 
 A machine belongs to a package when its announcement says so (``package`` in
 ``orchestra.machine.started``) or the package declares it. The package's every-page script may
@@ -55,7 +57,6 @@ class Page:
 class Declared:
     id: str                                   # the machine, as its events' source names it
     kind: str = "program"                     # program | agent (an AI agent) | person | service
-    description: str = ""
     mode: str | None = None                   # continuous | scheduled | ad hoc
     listens_for: list[str] = field(default_factory=list)
 
