@@ -4,12 +4,12 @@
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const HERE = dirname(fileURLToPath(import.meta.url));
-export const SDLAB = process.env.SDLAB || join(homedir(), "orchestra", "sdlab");
+export const SDLAB = process.env.SDLAB;      // an SD Lab checkout; this repository has none it can use
+if (!SDLAB) throw new Error("set SDLAB to the path of an SD Lab checkout (its sdlab/static/sim.js is needed)");
 const require = createRequire(import.meta.url);
 export const { simulate, leverage } = require(join(SDLAB, "sdlab", "static", "sim.js"));
 

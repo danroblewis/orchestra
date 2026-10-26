@@ -54,8 +54,10 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
 9. **Humans talk only to the Supervisor.** The web UI and CLI are read-only
    for humans, except for observations: rediscovering the model (the Dynamics
    page's button, `orchestra sd discover`) re-reads the metrics and may save a
-   model version, and changes no machine. The Supervisor is being rebuilt;
-   until it returns, there is no human path that changes the system.
+   model version, and changes no machine. Any human path that changes the
+   system belongs to a plugin (the Supervisor in `~/orchestra-agents`; the
+   task plugin's operator controls, `docs/roadmap/decisions.md` D1), never to
+   this repository.
 10. **One package, no path hacks.** Everything importable is under
     `orchestra/`. No `sys.path` manipulation. `orchestra/sdlab` is SD Lab's
     discovery research brought in as it was benchmarked (imports rewritten,

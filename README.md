@@ -10,20 +10,18 @@ web UI, with no machines of its own. Machines come from other packages. A **plug
 installed in the same environment as `orchestra web` that registers itself in the entry-point
 group `orchestra.plugins` (`orchestra/plugins.py`, `SPEC.md` §10.1): it adds its pages, API routes
 and machine cards to the web UI. Two exist: the task system `orchestra-tasking` (package
-`tasking`, plugin `tasks`: tickets, a scheduler that offers work over the bus, the merge gate;
+`tasking`, plugin `tasks`: tickets and a scheduler that offers work over the bus;
 [github.com/danroblewis/orchestra-tasking](https://github.com/danroblewis/orchestra-tasking),
 private) and the AI agents that fill its roles, `orchestra-agents` (package `orchestra_agents`,
-plugin `agents`: the Supervisor, Coordinator, worker and reviewer roles on Pi, Claude Code or
-Codex; private). How the task system left this repository is in `docs/proposals/empty-orchestra.md`.
+plugin `agents`; private). Each repository's README says what it holds. How the task system left
+this repository is in `docs/proposals/empty-orchestra.md`.
 
-Each plugin has a demo, one command from its checkout. `uv run demo/run.py` in
-`orchestra-tasking` runs the task system with programs only (a shell worker and a program
-reviewer on four tickets), and shows the pages the plugin adds and the hand-offs on the Machines
-page. The same command in `orchestra-agents` is the sample: a Haiku reviewer, Coordinator and
-Supervisor beside a program worker on one queue of fifteen tickets, with a system dynamics model
-discovered from the run. The sample models the task pipeline itself; it has no domain of its own,
-so no loop between a domain and its process appears there yet (`docs/roadmap/use-cases.md`,
-UC-3b, is the sample that will).
+Each plugin has a demo, one command from its checkout (`uv run demo/run.py`; each demo's README
+says what runs). The task system's runs programs only, and shows the pages the plugin adds and the
+hand-offs on the Machines page. The agents' is the sample: AI agents beside a program worker on one
+queue of tickets, with a system dynamics model discovered from the run. The sample models the task
+pipeline itself; it has no domain of its own, so no loop between a domain and its process appears
+there yet (`docs/roadmap/use-cases.md`, UC-3b, is the sample that will).
 
 - `SPEC.md` is the design of what exists.
 - `AGENTS.md` is the list of rules that must not be broken.

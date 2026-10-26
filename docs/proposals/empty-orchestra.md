@@ -1,9 +1,11 @@
 # Proposal: an empty Orchestra, and the task package as its first machines
 
-Status: proposal, 2026-10-25 (revised the same day after the user's review). Nothing here is
-built. It supersedes §4a of `orchestra-kernel.md` (the first slice) and settles that document's
-open question about an item store: **there is none**. Read with `orchestra-kernel.md` §2a (what a
-machine is), which still holds.
+Status: proposal, 2026-10-25 (revised the same day after the user's review). Done the same day: the
+old ticket tracker, loop and merge gate were removed from Orchestra on 2026-10-25; their history
+stays on the bus and in model versions 1–4 of projects that used them. It supersedes §4a of
+`orchestra-kernel.md` (the first slice) and settles that document's open question about an item
+store: **there is none**. Read with `orchestra-kernel.md` §2a (what a machine is), which still
+holds.
 
 ## 1. The goal
 

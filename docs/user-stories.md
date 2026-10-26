@@ -1,6 +1,10 @@
 # User stories
 
-Status: draft, 2026-10-24. Stories from my work, modelled as system dynamics processes.
+Status: draft, 2026-10-24; the 2026-10-24 planning set, kept as examples
+(`docs/roadmap/decisions.md` D11). The models are planning estimates. The toolchain in
+`docs/models/` (lib.mjs, check.mjs, render.mjs, build.py) targets a separate SD Lab checkout named
+by `SDLAB` and is not run by this repository (the vendored `orchestra/sdlab` has no `static/sim.js`,
+so it cannot be re-pointed). Stories from my work, modelled as system dynamics processes.
 
 - **Stories 1–3** are mine, as I described them.
 - **Story 4 onward** are invented: what probably happens in an engineering department like mine,
@@ -10,7 +14,7 @@ Each story becomes acceptance tests of two kinds:
 
 - **Functional tests**, written Given/When/Then, to run against fakes of each company system
   (GitHub, Slack, Jira, SAIL, PagerDuty, flags, docs). Every outside system gets a fake that
-  speaks its real protocol, as AGENTS.md already requires for harnesses. These are for the
+  speaks its real protocol. These are for the
   Orchestra implementation, which lives on another branch.
 - **Model tests**, which run now against the SD models in `models/` (`node docs/models/check.mjs`).
   They check that a model reproduces what I know today (validity), and whether the design meets its

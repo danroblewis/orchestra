@@ -1,13 +1,18 @@
 # User-story models
 
+Status: the 2026-10-24 planning set, kept as examples (`docs/roadmap/decisions.md` D11). The models
+are planning estimates. The toolchain in `docs/models/` (lib.mjs, check.mjs, render.mjs, build.py)
+targets a separate SD Lab checkout named by `SDLAB` and is not run by this repository (the vendored
+`orchestra/sdlab` has no `static/sim.js`, so it cannot be re-pointed).
+
 System dynamics models of the user stories in `../user-stories.md`. They are written in SD Lab's
-editor format (`~/orchestra/sdlab/MODEL.md`), checked with SD Lab's own validator, and simulated
+editor format (`MODEL.md` in an SD Lab checkout), checked with SD Lab's own validator, and simulated
 with SD Lab's own simulator. They are planning estimates, not measurements: every number is an
 assumption (listed below) until it's fitted from history.
 
 ```
 python3 docs/models/build.py      # regenerate the model files (build.py is their source)
-node docs/models/check.mjs        # SD Lab at ~/orchestra/sdlab, or SDLAB=<path>
+SDLAB=<path> node docs/models/check.mjs   # an SD Lab checkout
 node docs/models/render.mjs       # diagrams and charts: docs/user-story-diagrams.md
 ```
 
@@ -16,7 +21,7 @@ node docs/models/render.mjs       # diagrams and charts: docs/user-story-diagram
 ```
 mkdir -p /tmp/sdlab-stories/models
 EXPORT=/tmp/sdlab-stories/models node docs/models/check.mjs
-cd ~/orchestra/sdlab && SDLAB_HOME=/tmp/sdlab-stories uv run sdlab --port 8031
+cd $SDLAB && SDLAB_HOME=/tmp/sdlab-stories uv run sdlab --port 8031
 # open http://127.0.0.1:8031/?model=story-1-simple-task-designed
 ```
 

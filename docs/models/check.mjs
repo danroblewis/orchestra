@@ -1,6 +1,6 @@
 // Model-level acceptance tests for the user-story models.
 //
-//   node docs/models/check.mjs            (SD Lab at ~/orchestra/sdlab, or set SDLAB=<path>)
+//   SDLAB=<path> node docs/models/check.mjs            (SDLAB: an SD Lab checkout)
 //
 // Validates every model with SD Lab's own validator (sdlab.server.validate), simulates each
 // variant with SD Lab's own simulator (sdlab/static/sim.js), assembles the desk model from the

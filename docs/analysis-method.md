@@ -1,8 +1,12 @@
 # Analysis method: inventing meaningful simulations from a model
 
-Status: draft, 2026-10-24. Documents the method used to produce the user-story simulations
-(`user-story-diagrams.md`). The goal is that the same analysis can be run again: on larger models
-of my work, from new perspectives, for new asks, by an agent or a person, and the result can be
+Status: draft, 2026-10-24; the 2026-10-24 planning set, kept as examples
+(`docs/roadmap/decisions.md` D11). The models are planning estimates. The toolchain in
+`docs/models/` (lib.mjs, check.mjs, render.mjs, build.py) targets a separate SD Lab checkout named
+by `SDLAB` and is not run by this repository (the vendored `orchestra/sdlab` has no `static/sim.js`,
+so it cannot be re-pointed). Documents the method used to produce the user-story simulations
+(`user-story-diagrams.md`). The goal is that the same analysis can be run again: on larger models of
+my work, from new perspectives, for new asks, by an agent or a person, and the result can be
 inspected, reviewed and compared.
 
 Companions:

@@ -13,10 +13,9 @@ used to develop it: do our workflows and AI agents change the measures the proje
 This version is an **empty Orchestra**: the bus, the metrics store, the model, the bootstrap host
 and the web UI, with no machines of its own beyond the host, and no AI: an AI agent is a machine
 like any other, run by whatever runs it. Task management lives in its own repository
-(`~/orchestra-tasking`), the AI agents and their harnesses in another (`~/orchestra-agents`);
-each adds its pages here as a plugin (§10.1).
-The old ticket tracker, loop and merge gate were removed on 2026-10-25; their history stays on the
-bus and in model versions 1–4 of projects that used them.
+(`~/orchestra-tasking`), the AI agents in another (`~/orchestra-agents`);
+each adds its pages here as a plugin (§10.1). How they left is in
+`docs/proposals/empty-orchestra.md`.
 
 This document is the design of what exists. `AGENTS.md` lists the rules that must not be broken;
 `docs/proposals/` holds what is proposed and not yet built.
@@ -170,8 +169,8 @@ Conservation (`sd/discover.py`):
    least a minute); a longer silence is it down or not yet started. A machine none of whose
    series is on a schedule writes only when something happens, so its silence says nothing, and
    it is alive from its first write to the end of the window. A gauge that is not re-written
-   because nothing changed holds its value while its machine is alive (a count of tickets by
-   state in a quiet quarter of an hour), and goes stale only when the machine goes silent: its
+   because nothing changed holds its value while its machine is alive (a count of loaves on the shelf in
+   a quiet quarter of an hour), and goes stale only when the machine goes silent: its
    value from before the silence is not carried past it, so it is live from its first write in
    each stretch its machine was alive. A counter is live whenever its machine is, and before its
    first point it had counted nothing. A level's balance and a flow's fit use only the steps in
@@ -184,7 +183,7 @@ Conservation (`sd/discover.py`):
    other's events, or both are one machine's: the machine's own, then the shorter name, is kept;
    two machines' counts of the same events both stay (each machine's stocks take their own) and
    become one afterwards where they join two stocks (step 2). Counters that differ only by
-   instance (an ``instance`` label, or ``source`` ``worker/3``) are summed into one per machine,
+   instance (an ``instance`` label, or ``source`` ``baker/3``) are summed into one per machine,
    and a flow from such a sum is measured by every instance's series;
 2. a level is a **stock** when counters, added or subtracted, balance its changes
    (`Δlevel ≈ Σ inflows − Σ outflows`, R² ≥ 0.9). A level that only takes two values is
@@ -203,7 +202,7 @@ Conservation (`sd/discover.py`):
    replaced by it (`sd/collinear.py`). The level's own machine's counters are searched first
    (its record of its transitions, with Orchestra's counts of its events): when they balance it
    within the tolerance, that is its balance, and another machine's counter never replaces one
-   of them (a reviewer's turns are not the scheduler's transitions, however exactly they
+   of them (an oven's own counters come before the board's, however exactly they
    coincide); it enters only to explain the residual the machine's own leave. Every counter is
    searched only when the machine's own do not balance the level. Then, with every balance
    known, the stand-ins give way (`sd/restate.py`): Orchestra's event counter to the
@@ -257,11 +256,9 @@ Hosting drivers and starting the machines that packages declare come later.
 
 ## 6. Machines that are AI agents
 
-Orchestra runs no AI. An AI agent is a universal machine: it is known, like every machine, by its
-`source`, its events and its series. What starts it and talks to its model (a harness for Pi,
-Claude Code or Codex) belongs to the package that runs it: orchestra-agents keeps them
-(`~/orchestra-agents/orchestra_agents/harness/`), with their tools, transcripts and fakes. They
-left Orchestra on 2026-10-25, and the task system on 2026-10-26.
+Orchestra runs no AI. An AI agent is a machine like any other, known by its `source`, its events
+and its series; what starts it and talks to its model belongs to the package that runs it, which
+keeps its own harness (`~/orchestra-agents/SPEC.md`).
 
 ---
 
@@ -298,8 +295,7 @@ strategy = "kalman_lna"
 ```
 
 Unknown sections are ignored, so files written for older versions still load, and a package of
-machines may keep its own settings here (the task system's [project], [tasks], [gate], …; the
-agents' [agents]).
+machines may keep its own settings here (other packages' sections).
 
 ---
 
@@ -395,14 +391,14 @@ its own (`orchestra/plugins.py`). It names a function in the entry-point group
 title for the navigation, an HTML file that may use `/static/app.js` and `/static/style.css`), a
 static directory (served at `/plugins/<name>/static`), a FastAPI router (at
 `/api/plugins/<name>`), and scripts from its static directory that every page loads after its own
-(for what must be visible wherever the viewer is, such as the way to reach the package's agents).
+(for what must be visible wherever the viewer is, such as the way to reach the package's own pages).
 From those scripts a package may register Dashboard panels (`Orchestra.panels`) and draw the cards
 of the machines it claims (`Orchestra.machineCards`: what is inside Orchestra's machine-card
 frame, a few words for the Dashboard's machine list, and the machine's dialog). Its look is in its
-own stylesheet: Orchestra's has no ticket states or agent roles. `/api/plugins` lists the pages, which the navigation adds after
-Orchestra's own, and any plugin that failed to load. A plugin that fails, or a page at a path
-Orchestra serves, is left out, never fatal. A plugin is the package's, not Orchestra's: its
-routes are its own, and Orchestra knows nothing of what they mean.
+own stylesheet: Orchestra's has nothing of any package's domain. `/api/plugins` lists the pages,
+which the navigation adds after Orchestra's own, and any plugin that failed to load. A plugin that
+fails, or a page at a path Orchestra serves, is left out, never fatal. A plugin is the package's,
+not Orchestra's: its routes are its own, and Orchestra knows nothing of what they mean.
 
 ---
 
