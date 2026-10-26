@@ -336,3 +336,126 @@ def test_a_terminal_level_fed_only_by_another_stocks_outflow_is_a_stock(tmp_path
     assert m.stock("done").evidence["accumulator"] and balance_of(m, "done") == {("approved_total", 1)}
     f = m.flow("approved_total")
     assert (f.src, f.dst) == ("in_review", "done")
+
+
+def events_each_second(seconds, step, *, seed=1):
+    """A toy run written as things happen: ``step(rng, t) -> [Point]`` each second."""
+    rng = random.Random(seed)
+    pts = []
+    for i in range(seconds):
+        pts += step(rng, T0 + i)
+    return sorted(pts, key=lambda p: p.ts)
+
+
+def test_one_event_counted_by_two_machines_is_one_flow_and_a_co_flow(tmp_path):
+    # the board starts an order (its waiting drops, its baking rises) and the oven counts the same
+    # loaf loaded (its loaves rise): one event, counted by two machines, moving each one's own
+    # material. One counter is kept in every balance: the board's, which moves material between
+    # its own stocks; so there is one flow, waiting -> baking, and a co-flow of the same events
+    # into the oven's loaves, with one equation (one event has one rate), proportional to the
+    # waiting orders, which none of the stocks the event moves is kept from driving
+    lab = lambda m: {"project": "p", "machine": m}
+    st = {"waiting": 0, "baking": 0, "loaves": 0, "placed": 0, "started": 0, "baked": 0, "loaded": 0, "cooled": 0}
+
+    def tick(rng, t):
+        out = []
+        if rng.random() < 0.1:
+            st["placed"] += 1; st["waiting"] += 1
+            out += [Point("placed_total", st["placed"], t, lab("board")), Point("waiting", st["waiting"], t, lab("board"))]
+        if st["waiting"] and rng.random() < 0.04 * st["waiting"]:
+            st["started"] += 1; st["loaded"] += 1; st["waiting"] -= 1; st["baking"] += 1; st["loaves"] += 1
+            out += [Point("started_total", st["started"], t, lab("board")), Point("waiting", st["waiting"], t, lab("board")),
+                    Point("baking", st["baking"], t, lab("board")), Point("loaded_total", st["loaded"], t, lab("oven")),
+                    Point("oven_loaves", st["loaves"], t, lab("oven"))]
+        if st["baking"] and rng.random() < 0.05 * st["baking"]:
+            st["baked"] += 1; st["baking"] -= 1
+            out += [Point("baked_total", st["baked"], t, lab("board")), Point("baking", st["baking"], t, lab("board"))]
+        if st["loaves"] and rng.random() < 0.05 * st["loaves"]:
+            st["cooled"] += 1; st["loaves"] -= 1
+            out += [Point("cooled_total", st["cooled"], t, lab("oven")), Point("oven_loaves", st["loaves"], t, lab("oven"))]
+        return out
+    store = FileMetrics(tmp_path / "m.jsonl")
+    store.write(events_each_second(3600, tick, seed=9))
+    m = discover(store.dump("", {"project": "p"}), start=T0, end=T0 + 3600, step=30)
+    assert m.check() == []
+    assert {s.id for s in m.stocks} == {"waiting", "baking", "oven_loaves"}, m.discovery["left_out"]
+    f = {x.id: x for x in m.flows}
+    assert (f["started_total"].src, f["started_total"].dst) == ("waiting", "baking"), [(x.id, x.src, x.dst) for x in m.flows]
+    co = f["started_total@oven"]
+    assert (co.src, co.dst) == (None, "oven_loaves") and co.evidence["co_flow_of"] == "started_total"
+    assert f["started_total"].evidence["co_flows"] == ["started_total@oven"]
+    assert not any(x.src is None and x.dst == "oven_loaves" and x.id != co.id for x in m.flows)
+    assert 'loaded_total{machine="oven"}' in m.discovery["left_out"]
+    assert [o["name"] for o in f["started_total"].evidence["same_as"]] == ["loaded_total"]
+    assert not ({"baking", "oven_loaves"} & set(f["started_total"].evidence.get("not_drivers", {}))), f["started_total"].evidence
+    eq = f["started_total"].current()
+    assert eq.form == "proportional" and eq.inputs == ["waiting"], (eq.form, eq.inputs, eq.quality)
+    assert abs(eq.params["k"] - 2.4) < 0.5, eq.params
+    assert co.current() == eq, "the co-flow is the same events: one equation"
+
+
+def test_a_counter_stamped_a_moment_after_another_of_the_same_events_joins_the_stocks(tmp_path):
+    # the board moves an order from waiting to the pass and, a second later when the kitchen takes
+    # it, from the pass to cooking: the same events counted twice, a few of them across a step's
+    # edge, and the pass never seen held on the grid (no stock between the two). They are one flow
+    # from waiting to cooking, not one out to outside and another in from it; the counter stamped
+    # first is kept and the other is recorded on it
+    lab = lambda m: {"project": "p", "machine": m}
+    st = {"waiting": 0, "cooking": 0, "placed": 0, "handed": 0, "received": 0, "cooked": 0}
+
+    def tick(rng, t):
+        out = []
+        if rng.random() < 0.1:
+            st["placed"] += 1; st["waiting"] += 1
+            out += [Point("placed_total", st["placed"], t, lab("board")), Point("waiting", st["waiting"], t, lab("board"))]
+        if st["cooking"] and rng.random() < 0.05 * st["cooking"]:
+            st["cooked"] += 1; st["cooking"] -= 1
+            out += [Point("cooked_total", st["cooked"], t, lab("board")), Point("cooking", st["cooking"], t, lab("board"))]
+        if st["waiting"] and rng.random() < 0.04 * st["waiting"]:
+            st["handed"] += 1; st["waiting"] -= 1; st["received"] += 1; st["cooking"] += 1
+            out += [Point("handed_total", st["handed"], t, lab("board")), Point("waiting", st["waiting"], t, lab("board")),
+                    Point("received_total", st["received"], t + 1, lab("board")), Point("cooking", st["cooking"], t + 1, lab("board"))]
+        return out
+    store = FileMetrics(tmp_path / "m.jsonl")
+    store.write(events_each_second(3600, tick, seed=10))
+    m = discover(store.dump("", {"project": "p"}), start=T0, end=T0 + 3600, step=30)
+    assert m.check() == []
+    assert {s.id for s in m.stocks} == {"waiting", "cooking"}, m.discovery["left_out"]
+    [f] = [x for x in m.flows if x.src == "waiting"]
+    assert (f.id, f.dst) == ("handed_total", "cooking"), [(x.id, x.src, x.dst) for x in m.flows]
+    assert [o["name"] for o in f.evidence["same_as"]] == ["received_total"]
+    assert not [x for x in m.flows if x.src is None and x.dst == "cooking"]
+    assert m.discovery["left_out"]['received_total{machine="board"}'].startswith("the same as")
+
+
+def test_two_lagged_counters_with_a_stock_between_them_stay_its_inflow_and_outflow():
+    # on the grid, y counts x's events, a few of them a step later. With nothing between them
+    # measured, the balances take one counter (the one stamped first); with a stock whose balance
+    # is +x -y (the pass: handed over, picked up a moment later), x and y are its inflow and
+    # outflow and both stay, so the flows run A -> B -> C
+    from orchestra.sd.drivers import behind
+    from orchestra.sd.restate import unify_same_flows
+    n = 100
+    cum = lambda xs: [0.0, *accumulate(xs)]
+    mk = lambda name, m, xs, counter=True: Series(name, {"machine": m}, [], cum(xs), counter)
+    dx = [1.0 if i % 2 == 0 else 0.0 for i in range(n)]
+    dy = list(dx)
+    for i in (20, 60):                                    # two events recorded a step late
+        dy[i], dy[i + 1] = 0.0, 1.0
+    din = [1.0 if i % 2 == 1 else 0.0 for i in range(n)]
+    dout = [1.0 if i % 4 == 1 else 0.0 for i in range(n)]
+    x, y, inn, out = mk("handed_total", "board", dx), mk("received_total", "kitchen", dy), mk("placed_total", "board", din), mk("cooked_total", "kitchen", dout)
+    a = mk("waiting", "board", [i - o for i, o in zip(din, dx)], False)
+    c = mk("cooking", "kitchen", [i - o for i, o in zip(dy, dout)], False)
+    b = mk("pass", "board", [i - o for i, o in zip(dx, dy)], False)
+    masks = {s.key: list(range(n)) for s in (a, b, c)}
+    same = lambda p, q: behind(p.deltas, q.deltas) or behind(q.deltas, p.deltas)
+    first = lambda p, q: p is x
+    fits = lambda s, r2, exact: r2 >= 0.9
+    found = [(a, [(inn, 1), (x, -1)], 1.0, 1.0), (c, [(y, 1), (out, -1)], 1.0, 1.0)]
+    got, notes, joined = unify_same_flows(found, masks, same, first, lambda s: s.labels["machine"], fits)
+    assert joined == [(x, y)] and y.key in notes
+    assert [(k.name, sg) for k, sg in got[1][1]] == [("handed_total", 1), ("cooked_total", -1)] and 0.9 <= got[1][2] < 1.0
+    found = [*found, (b, [(x, 1), (y, -1)], 1.0, 1.0)]
+    got, notes, joined = unify_same_flows(found, masks, same, first, lambda s: s.labels["machine"], fits)
+    assert joined == [] and notes == {} and got == found

@@ -94,9 +94,42 @@ def test_a_stock_whose_counter_records_the_flows_events_afterwards_may_drive_it(
     before = series("left_queue_total", [1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0], "scheduler")   # the second a step earlier
     queue = Series("queue", {"machine": "scheduler"}, [], [0.0] * 21, False)
     same_flow = lambda a, b: False
-    assert co_counting(flow, None, "working", [(queue, [(after, -1)], 1.0, 1.0)], {queue.key: "queue"}, steps, same_flow) == {}
-    barred = co_counting(flow, None, "working", [(queue, [(before, -1)], 1.0, 1.0)], {queue.key: "queue"}, steps, same_flow)
+    assert co_counting(flow, {"working"}, [(queue, [(after, -1)], 1.0, 1.0)], {queue.key: "queue"}, steps, same_flow) == {}
+    barred = co_counting(flow, {"working"}, [(queue, [(before, -1)], 1.0, 1.0)], {queue.key: "queue"}, steps, same_flow)
     assert "leads them" in barred["queue"]
+
+
+def test_a_move_recorded_in_two_hops_is_judged_at_the_first_hop(tmp_path):
+    # the shelf counts an order taken off it and, two milliseconds later, the same order handed
+    # over: one move, two counters of one machine. The shelf's count drops at the first stamp and
+    # the delivered count rises at the second. A flow's events are judged against the levels just
+    # before them, so the hop stamped first is kept (whatever its name's length): at the second
+    # the shelf is already one lower, and a flow proportional to it (one taken per item every
+    # twenty seconds) would be seen taking from an empty shelf and read as a constant
+    rng = random.Random(8)
+    lab = {"project": "p", "machine": "shelf"}
+    on_shelf = delivered = put = taken = handed = 0
+    pts = []
+    for i in range(3600):
+        t = T0 + i + 0.5
+        if rng.random() < 0.1:
+            put, on_shelf = put + 1, on_shelf + 1
+            pts += [Point("shelf_put_total", put, t - 0.25, lab), Point("shelf_orders", on_shelf, t - 0.25, lab)]
+        if on_shelf and rng.random() < 0.05 * on_shelf:
+            taken, on_shelf = taken + 1, on_shelf - 1
+            handed, delivered = handed + 1, delivered + 1
+            pts += [Point("shelf_taken_off_total", taken, t, lab), Point("shelf_orders", on_shelf, t, lab),
+                    Point("shelf_handed_total", handed, t + 0.002, lab), Point("shelf_delivered", delivered, t + 0.002, lab)]
+    store = FileMetrics(tmp_path / "m.jsonl")
+    store.write(pts)
+    m = discover(store.dump("", {"project": "p"}), start=T0, end=T0 + 3600, step=30)
+    assert {s.id for s in m.stocks} == {"shelf_orders", "shelf_delivered"}, m.discovery["left_out"]
+    [f] = [f for f in m.flows if f.src == "shelf_orders"]
+    assert f.id == "shelf_taken_off_total" and f.dst == "shelf_delivered", [(x.id, x.src, x.dst) for x in m.flows]
+    assert [o["name"] for o in f.evidence["same_as"]] == ["shelf_handed_total"]
+    eq = f.current()
+    assert eq.form == "proportional" and eq.inputs == ["shelf_orders"], (eq.form, eq.inputs, eq.quality)
+    assert abs(eq.params["k"] - 3.0) < 0.5, eq.params
 
 
 def test_a_counter_of_the_same_events_is_recorded_on_the_flow_that_stands_for_it(tmp_path):

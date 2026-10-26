@@ -72,15 +72,16 @@ def part_of(a: Series, b: Series, steps: list[int]) -> bool:
     return sum(1 for i in moved if da[i] > db[i]) <= CANCEL_STEPS * len(moved)
 
 
-def co_counting(counter: Series, src: str | None, dst: str | None, found: list, sid_of: dict[str, str],
+def co_counting(counter: Series, ends: set[str], found: list, sid_of: dict[str, str],
                 steps: list[int], same_flow) -> dict[str, str]:
     """The stocks, by id, whose balance counts this flow's events, each with why; the flow's own
-    ends excepted. ``found``: (level, terms, r2, exact) per stock; ``steps``: the grid steps the
-    counters are compared on (those every series involved was live in)."""
+    ``ends`` excepted (those of its co-flows too: one event, every stock it moves). ``found``:
+    (level, terms, r2, exact) per stock; ``steps``: the grid steps the counters are compared on
+    (those every series involved was live in)."""
     out: dict[str, str] = {}
     for s, terms, _, _ in found:
         sid = sid_of[s.key]
-        if sid in (src, dst):
+        if sid in ends:
             continue
         for k, _ in terms:
             if k is counter:

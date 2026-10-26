@@ -5,7 +5,8 @@ end only, and it comes from or goes to outside. When two stocks claim the same e
 balance the counter explains most keeps it (an ordinary stock before an accumulator), and the
 other's claim is recorded in the flow's evidence rather than silently lost. When the stocks that
 claim a counter belong to different machines, it is a **co-flow**: one event that moves two
-materials (an order baked leaves the board's baking stock and frees one of the expo's bakers).
+materials (an order baked leaves the board's baking stock and frees one of the expo's bakers;
+where each machine counted the event itself, ``sd.restate`` has made the two counters one).
 That is recorded as one flow per machine with the same counter: the counter's own machine (or the
 machine whose stocks it explains most) has the plain flow, the others ``<flow>@<machine>``, each
 naming the other in its evidence. The Dynamics page draws flows as edges between stocks, so every

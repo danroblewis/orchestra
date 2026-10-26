@@ -13,8 +13,10 @@ joins two stocks (each took its own machine's copy). Three passes, in this order
 - ``split_foreign_counters``: another machine's counter that no other stock claims gives way to the
   level's own machine's counters that sum to it (the machine's record of its transitions, which
   the other only mirrors). A counter two stocks claim is the flow between them and stays;
-- ``unify_same_flows``: two machines' counters of the same events (``same_flow``) become one in
-  every balance, the one that fits the balances best.
+- ``unify_same_flows``: two counters of the same events, each in a balance (two machines' counts
+  of one event; a move recorded in two hops, a moment apart, through a state the grid never sees
+  held), become one in every balance, so the one flow runs between the stocks and, where the
+  event moves two machines' stocks, is a co-flow (``sd.ends``).
 
 A restated balance must still fit as a stock's (the caller's ``fits``), or the level keeps what it
 had. Each pass returns the balances and, per counter replaced, why (for the record, when no
@@ -91,20 +93,35 @@ def split_foreign_counters(found: list, counters: list[Series], masks: dict[str,
     return out, notes
 
 
-def unify_same_flows(found: list, masks: dict[str, list[int]], same_flow, machine_of, fits) -> tuple[list, dict[str, str]]:
-    """Two machines' counters of the same events, one leaving a stock and the other entering
-    another, become one counter in every balance: whichever leaves the balances fitting best, when
-    every one still fits (``fits``). The flow then joins the stocks instead of leaving one and
-    entering the other from outside. Two such counters with the same sign are left alone: one event
-    moving each machine's own material (an order accepted leaves the board's accepting and the
-    customers' waiting at once), which ``sd.ends`` draws as a co-flow."""
+def _held_together(found: list, a: Series, b: Series) -> bool:
+    """Whether one balance holds both counters: with opposite signs, that stock is the buffer
+    between them (put on a shelf and taken a moment later), and they are its inflow and outflow,
+    not one flow."""
+    return any(any(c is a for c, _ in terms) and any(c is b for c, _ in terms) for _, terms, _, _ in found)
+
+
+def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamped, machine_of, fits
+                     ) -> tuple[list, dict[str, str], list[tuple[Series, Series]]]:
+    """Two counters of the same events (``same``: in the same steps, or one stamped up to a step
+    after the other), each in a balance, become one counter in every balance, unless a balance
+    holds both (``_held_together``). Within a machine the flow then runs between its stocks
+    instead of leaving one and entering the other from outside; where the two counters are two
+    machines' records of one event moving each one's own material (an order accepted leaves the
+    board's waiting and takes one of the kitchen's cooks), the one counter is claimed by both
+    machines' stocks and ``sd.ends`` makes it a flow and a co-flow. The counter kept is the one every balance still
+    fits with (``fits``); between two, the one that moves material between its own machine's
+    stocks (its flow is the move, the other's the co-flow), then the one stamped first (the
+    flow's events are judged against the levels just before them, which the later stamp has
+    already moved), then the one that leaves the balances fitting best. Returns the balances,
+    why each counter dropped was (by key), and the pairs joined (kept, dropped)."""
     found = list(found)
     notes: dict[str, str] = {}
+    joined: list[tuple[Series, Series]] = []
     used = {c.key: c for _, terms, _, _ in found for c, _ in terms}
-    signs = {c.key: {sg for _, terms, _, _ in found for k, sg in terms if k is c} for c in used.values()}
+    gone: set[str] = set()
     for a, b in combinations(sorted(used), 2):
         ca, cb = used[a], used[b]
-        if machine_of(ca) == machine_of(cb) or signs[a] & signs[b] or not same_flow(ca, cb):
+        if a in gone or b in gone or _held_together(found, ca, cb) or not same(ca, cb):
             continue
         best = None
         for keep, drop in ((ca, cb), (cb, ca)):
@@ -116,9 +133,15 @@ def unify_same_flows(found: list, masks: dict[str, list[int]], same_flow, machin
                     ok = ok and fits(s, r2, exact)
                 trial.append((s, terms, r2, exact))
                 total += r2
-            if ok and (best is None or total > best[0]):
-                best = (total, trial, keep, drop)
+            if not ok:
+                continue
+            own = {sg for s, terms, _, _ in trial for c, sg in terms if c is keep and machine_of(s) == machine_of(keep)}
+            rank = (len(own) == 2, first_stamped(keep, drop), total)
+            if best is None or rank > best[0]:
+                best = (rank, trial, keep, drop)
         if best is not None:
-            found = best[1]
-            notes[best[3].key] = f"the same as {best[2].key} (counts the same events)"
-    return found, notes
+            _, found, keep, drop = best
+            notes[drop.key] = f"the same as {keep.key} (counts the same events)"
+            joined.append((keep, drop))
+            gone.add(drop.key)
+    return found, notes, joined

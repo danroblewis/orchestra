@@ -89,28 +89,53 @@ def _title(s: Series) -> str:
     return base + (f" ({', '.join(extra)})" if extra else "")
 
 
+def _same_total(a: Series, b: Series) -> bool:
+    """Whether two counters could count the same events: their totals agree, and Orchestra's count
+    of a machine's events is only compared with a counter that machine writes (a few rare events,
+    a host restart or an operator's note, otherwise match anything as rare)."""
+    total_a, total_b = sum(a.deltas), sum(b.deltas)
+    if not total_a or abs(total_a - total_b) > max(1.0, SAME_STEPS * total_b):
+        return False
+    return not (EVENT_COUNTER in (a.name, b.name) and (machine_of(a) is None or machine_of(a) != machine_of(b)))
+
+
 def same_flow(a: Series, b: Series, n: int) -> bool:
     """Two counters that count the same events: equal in all but a few steps, or the same events
     stamped a moment apart, so some fall in the next step: one counter's running total is always
     between the other's at the step before and at this step (never more than a step behind). The
     same activity is often measured twice: Orchestra counts every event (orchestra_events_total)
     and the machine counts what it did (an order's moves, a run's turns); they are one flow,
-    not two that share a balance. The lag is allowed only to Orchestra's own count, which is
-    stamped after the machine's: two machines' counters a step apart may be a quick buffer's
-    inflow and outflow (put on a shelf and taken within seconds), which are not one flow."""
+    not two that share a balance. Here the lag is allowed only to Orchestra's own count, which is
+    stamped after the machine's: two other counters a step apart may be a quick buffer's inflow
+    and outflow (put on a shelf and taken within seconds), which are one flow only when nothing
+    measured lies between them; that is known once the balances are (``lagged_flow``,
+    ``restate.unify_same_flows``)."""
+    if not _same_total(a, b):
+        return False
     da, db = a.deltas, b.deltas
-    total_a, total_b = sum(da), sum(db)
-    if not total_a or abs(total_a - total_b) > max(1.0, SAME_STEPS * total_b):
-        return False
-    # Orchestra's count of a machine's events can only be a copy of a counter that machine writes:
-    # a few rare events (a host restart, an operator's note) otherwise match anything as rare
-    if EVENT_COUNTER in (a.name, b.name) and (machine_of(a) is None or machine_of(a) != machine_of(b)):
-        return False
     moved = sum(1 for x, y in zip(da, db) if x or y)                   # steps where either counted something
     if sum(1 for x, y in zip(da, db) if x != y) <= SAME_STEPS * moved:  # (of all steps, two rare counters always "agree")
         return True
     return (b.name == EVENT_COUNTER and a.name != EVENT_COUNTER and behind(da, db)) or \
         (a.name == EVENT_COUNTER and b.name != EVENT_COUNTER and behind(db, da))
+
+
+def lagged_flow(a: Series, b: Series) -> bool:
+    """Two counters of the same events stamped up to a step apart, either way (``drivers.behind``):
+    a transition recorded in two hops through a state the grid never sees held."""
+    return _same_total(a, b) and (behind(a.deltas, b.deltas) or behind(b.deltas, a.deltas))
+
+
+EVER = [(-math.inf, math.inf)]
+
+
+def first_stamped(a: Series, b: Series) -> bool:
+    """Whether ``a``'s events are stamped before ``b``'s, for two counters of the same events (the
+    i-th increment of each is the i-th event): more of ``a``'s stamps come earlier than later. On
+    the grid both land in the same step; only the raw stamps say which was recorded first."""
+    ta = [t for t, _ in events_of(a.points, EVER)]
+    tb = [t for t, _ in events_of(b.points, EVER)]
+    return sum(1 for x, y in zip(ta, tb) if x < y) > sum(1 for x, y in zip(ta, tb) if x > y)
 
 
 def _loglik(y: list[float], mu: list[float]) -> float:
@@ -432,6 +457,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # count and Orchestra's count of the event it publishes for it; they may differ by a step at the
     # edge, where one was collected later): balances could not tell them apart, and two stocks
     # choosing different ones would lose the flow that joins them. One is kept: the machine's own,
+    # then, of a machine's two counts of one move made in two hops (an item approved and at the
+    # same instant moved on), the hop stamped first: a flow's events are judged against the levels
+    # just before them, and the level the first hop drained is already one lower at the second;
     # then the shortest name. Two machines' counts of the same events both stay: each machine's
     # stocks take their own, and the balances say which fits (restate.unify_same_flows).
     counters.sort(key=lambda c: (c.name.startswith(EVENT_COUNTER), len(c.key), c.key))
@@ -442,9 +470,13 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                      and (EVENT_COUNTER in (c.name, k.name) or machine_of(c) == machine_of(k))), None)
         if twin is None:
             kept_counters.append(c)
-        else:
-            left_out[c.key] = f"the same as {twin.key} (counts the same events)"
-            same_as[twin.key].append({"name": c.name, "labels": c.labels})
+            continue
+        if EVENT_COUNTER not in (c.name, twin.name) and first_stamped(c, twin):
+            kept_counters[kept_counters.index(twin)] = c
+            same_as[c.key] = same_as.pop(twin.key, [])
+            c, twin = twin, c
+        left_out[c.key] = f"the same as {twin.key} (counts the same events)"
+        same_as[twin.key].append({"name": c.name, "labels": c.labels})
     counters = kept_counters
     for s in series:
         if s.counter and not any(s.deltas):
@@ -498,8 +530,14 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     for pass_ in (split_event_counters, split_foreign_counters):
         found, made = pass_(found, counters, masks, machine_of, fits, MIN_EVENTS)
         notes.update(made)
-    found, made = unify_same_flows(found, masks, lambda a, b: same_flow(a, b, n), machine_of, fits)
+    found, made, joined = unify_same_flows(found, masks, lambda a, b: same_flow(a, b, n) or lagged_flow(a, b),
+                                           first_stamped, machine_of, fits)
     notes.update(made)
+    for keep, drop in joined:              # a counter joined to another stands for nothing on its own
+        same_as[keep.key] += [{"name": drop.name, "labels": drop.labels}, *same_as.pop(drop.key, [])]
+        left_out[drop.key] = made[drop.key]
+    dropped = {drop.key for _, drop in joined}
+    counters = [c for c in counters if c.key not in dropped]
 
     # A level that only fills (its balance only adds) is a stock when its balance is exact,
     # whatever feeds it: a terminal state, where other stocks' outflows end (the orders delivered).
@@ -569,21 +607,24 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # balance counts the flow's own events, one off just before each of them (sd.drivers).
     accumulators = {sid_of[s.key] for s, terms, _, _ in found if all(sign > 0 for _, sign in terms)}
     flows, by_machine = [], defaultdict(list)
+    grouped: dict[str, list] = defaultdict(list)       # per counter: its flow, then its co-flows (ends.moves's order)
     for mv in flow_moves:
-        c = mv.counter
+        grouped[mv.counter.key].append(mv)
+    for mvs in grouped.values():
+        c = mvs[0].counter
         if live_s <= 0:
             continue
         dl = c.deltas
         y = [dl[i] for i in steps_live]
-        barred = co_counting(c, mv.src, mv.dst, found, sid_of, steps_live, lambda a, b: same_flow(a, b, n))
-        if barred:
-            mv.evidence["not_drivers"] = barred
-        if c.key in same_as:                 # the counters of the same events this one stands for (one flow, measured twice)
-            mv.evidence["same_as"] = same_as[c.key]
+        # one event has one rate: a counter is fitted once, against its flow's source, and its
+        # co-flows (the same events moving another machine's stock) get the same equation; no end
+        # of any of them is kept from driving it
+        ends = {e for mv in mvs for e in (mv.src, mv.dst) if e}
+        barred = co_counting(c, ends, found, sid_of, steps_live, lambda a, b: same_flow(a, b, n))
         events = events_of(c.points, live)
-        best, *rest = fit_flow(events, live_s / unit_s, paths, mv.src, set(paths) - accumulators - set(barred))
+        src = mvs[0].src
+        best, *rest = fit_flow(events, live_s / unit_s, paths, src, set(paths) - accumulators - set(barred))
         best["dispersion"] = dispersion(events, live, best, paths, unit_s)
-        src = mv.src
         other = lambda x, src=src: f"_{x['inputs'][0]}" if x["inputs"] and x["inputs"] != [src] else ""   # a form in another stock says which
         alt = {f"aic_{x['form']}{other(x)}": round(x["aic"], 2) for x in rest[:4]}
         alt.update({f"proportional_k{other(x)}": round(x["params"]["k"], 6) for x in [best, *rest] if x["form"] == "proportional"})
@@ -591,14 +632,19 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             alt["rejected"] = rejected
         q = {"events": float(sum(y)), "loglik": round(best["loglik"], 3), "aic": round(best["aic"], 3),
              "dispersion": round(best["dispersion"], 3), "steps": float(len(steps_live)), "live_minutes": round(live_s / 60, 2), **alt}
-        # a counter summed over instances is not a series in the store: the flow is measured by each of them
-        flows.append(Flow(mv.id, _title(c), mv.src, mv.dst, None if c.members else SeriesRef(c.name, c.labels),
-                          [Equation(best["form"], {k: round(v, 6) for k, v in best["params"].items()}, "fitted", "poisson-mle",
-                                    (fit_start, end), None, q, best["inputs"])],
-                          [SeriesRef(m.name, m.labels) for m in c.members], mv.evidence))
-        who = machine_of(c)
-        if who:
-            by_machine[who].append(mv.id)
+        for mv in mvs:
+            if barred:
+                mv.evidence["not_drivers"] = barred
+            if c.key in same_as:             # the counters of the same events this one stands for (one flow, measured twice)
+                mv.evidence["same_as"] = same_as[c.key]
+            # a counter summed over instances is not a series in the store: the flow is measured by each of them
+            flows.append(Flow(mv.id, _title(c), mv.src, mv.dst, None if c.members else SeriesRef(c.name, c.labels),
+                              [Equation(best["form"], {k: round(v, 6) for k, v in best["params"].items()}, "fitted", "poisson-mle",
+                                        (fit_start, end), None, dict(q), list(best["inputs"]))],
+                              [SeriesRef(m.name, m.labels) for m in c.members], mv.evidence))
+            who = machine_of(c)
+            if who:
+                by_machine[who].append(mv.id)
     owners = {st.evidence.get("machine") for st in stocks} - {None}
     # what a machine is (a program, an AI agent) is not in the metrics: the model says "machine"
     machines = [Machine(m, m, "machine", "Seen in the metrics store: it writes the series these flows are bound to.",
