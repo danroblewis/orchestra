@@ -19,6 +19,14 @@ them moved (and in none, when a counter that counted fewer than ``MIN_EVENTS`` c
 The fewest counters win, then the most of the first in's machine, then the fewest
 steps out of step.
 
+The drain must have counted ``MIN_EVENTS``; the fill is judged with the rest of the passage. A
+rare fill (the few orders a customer sends back) is taken when the passage closes exactly and
+something more than the fill vouches for it: a free counter of the fill's machine that counted
+``MIN_EVENTS`` is among the outs (the orders accepted, the other way out of the same state), or
+a measured level's raw points rise at the ins' events and fall at the outs'. Otherwise a
+passage would come and go with the one event that takes the fill over the floor at the edge of
+a window.
+
 The state between is the measured level whose raw points rise at the ins' events and fall at
 the outs' (``sd.between``): the grid misses it, its raw points do not. With no such level (none
 is written, or it never reads above zero), the state is a stock measured by no series, with the
@@ -92,13 +100,19 @@ def out_of_step(ins: list[float], outs: list[float]) -> tuple[int, int]:
     return bad, moved
 
 
+def _vouched(p: Series, outs: list[Series], total: dict[str, float], claims: dict, floor: float, machine_of) -> bool:
+    """Whether a free counter of the fill ``p``'s machine with ``floor`` events is among the outs."""
+    return any(c is not p and c.key not in claims and total[c.key] >= floor and machine_of(c) == machine_of(p) for c in outs)
+
+
 def _best(o: Series, fills: list[Series], pool: list[tuple[Series, int]], total: dict[str, float], claims: dict, floor: float,
-          machine_of) -> tuple | None:
+          machine_of, seen) -> tuple | None:
     """The best passage that starts with the drain ``o``: one fill from ``fills``, and up to
     ``MAX_COUNTERS`` counters in all with what ``pool`` offers (each with its role, +1 in, −1 out).
     No stock is both drained by an in and filled by an out: an item that leaves a stock and is
     back within a step went nowhere the model needs (a taker busy for a moment is a free taker
-    less, which its own balance already says)."""
+    less, which its own balance already says). A fill under ``floor`` needs the passage exact and
+    vouched for (``_vouched``, or ``seen(ins, outs)``: a measured level is the state between)."""
     stocks = lambda cs: {k for c in cs for k, _ in claims.get(c.key, ())}
     best = None
     for size in range(MAX_COUNTERS - 1):
@@ -114,9 +128,11 @@ def _best(o: Series, fills: list[Series], pool: list[tuple[Series, int]], total:
                 if abs(ti - to) > max(1.0, SAME_TOTAL * max(ti, to)) or stocks(ins) & stocks(outs):
                     continue
                 bad, moved = out_of_step(_summed(ins), _summed(outs))
-                if not moved or bad > CANCEL_STEPS * moved or (bad and any(total[c.key] < floor for c, _ in extra)):
+                if not moved or bad > CANCEL_STEPS * moved or (bad and any(total[c.key] < floor for c in [p, *(c for c, _ in extra)])):
                     continue
                 if any(same_events(a.deltas, b.deltas) for a in ins for b in outs if (a, b) != (o, p)):
+                    continue
+                if total[p.key] < floor and not (_vouched(p, outs, total, claims, floor, machine_of) or seen(ins, outs)):
                     continue
                 every = ins + outs
                 rank = (sum(1 for c in every if machine_of(c) != machine_of(o)), bad, sorted(c.key for c in every))
@@ -130,31 +146,33 @@ def _best(o: Series, fills: list[Series], pool: list[tuple[Series, int]], total:
 def passages(found: list, counters: list[Series], levels: list[Series], *, start: float, end: float, step: float,
              machine_of, copies: dict[str, list[Series]] | None = None, floor: float = MIN_EVENTS) -> list[Passage]:
     """Every passage, in turn (``found``: the balances, as (level, terms, r², exact); ``levels``:
-    the measured levels that are no stock, any of which may be the state between). The drain and
-    the fill it starts from must each have counted ``floor`` events, as a balance's counters must:
-    a few events coincide by chance; a rarer counter may only complete a passage, exactly.
-    ``copies``: per counter key, the counters of the same events it stands for, whose instants a
-    measured state's rises and falls may match as well."""
+    the measured levels that are no stock, any of which may be the state between). The drain it
+    starts from must have counted ``floor`` events, as a balance's counters must: a few events
+    coincide by chance. A rarer counter may only complete a passage, exactly, and a rarer fill
+    must be vouched for besides (``_best``). ``copies``: per counter key, the counters of the same
+    events it stands for, whose instants a measured state's rises and falls may match as well."""
     found, levels, made, copies = list(found), list(levels), [], copies or {}
     total = {c.key: sum(c.deltas) for c in counters}
+    also = lambda cs: [*cs, *(d for c in cs for d in copies.get(c.key, ()))]     # the same events, counted again
+    where = {"start": start, "end": end, "step": step, "machine_of": machine_of}
+    seen = lambda ins, outs: state_level(levels, also(ins), also(outs), **where) is not None
     while True:
         claims = _claims(found)
         alone = {k: next(iter(v))[1] for k, v in claims.items() if len(v) == 1}       # claimed by one stock, with its sign
         own = [c for c in counters if c.name != EVENT_COUNTER]
         drains = [c for c in own if alone.get(c.key) == -1]
-        fills = [c for c in own if alone.get(c.key) == 1 and total[c.key] >= floor]
+        fills = [c for c in own if alone.get(c.key) == 1 and total[c.key] > 0]
         free = [c for c in own if c.key not in claims and total[c.key] > 0]
         pool = [(c, 1) for c in drains + free] + [(c, -1) for c in fills + free]
         got = None
         for o in sorted((c for c in drains if total[c.key] >= floor), key=lambda c: (-total[c.key], c.key)):
-            got = _best(o, fills, pool, total, claims, floor, machine_of)
+            got = _best(o, fills, pool, total, claims, floor, machine_of, seen)
             if got:
                 break
         if got is None:
             return made
         _, ins, outs, bad, moved = got
-        also = lambda cs: [*cs, *(d for c in cs for d in copies.get(c.key, ()))]     # the same events, counted again
-        state = state_level(levels, also(ins), also(outs), start=start, end=end, step=step, machine_of=machine_of)
+        state = state_level(levels, also(ins), also(outs), **where)
         if state:
             level, up, down = state
             levels.remove(level)

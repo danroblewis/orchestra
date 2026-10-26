@@ -236,8 +236,11 @@ Conservation (`sd/discover.py`):
    machine's two counts of one move (kept as one, being the same events within a step) are
    split back into its two hops, and a drain to outside and fills from outside of other stocks
    whose counts are the same items, the fills never ahead of the drain nor more than a step
-   behind (each counter of at least 5 events, a rarer one only completing it exactly), become a
-   flow into the state and flows out of it. The state is the measured level whose raw points
+   behind (the drain of at least 5 events; a rarer counter only completing it exactly, and a
+   rarer fill, the few orders sent back, only when a free counter of its machine with 5 events
+   is the other way out or the measured state below vouches for it: the passage is judged on
+   all its evidence, so it does not come and go with the one event that takes the fill over the
+   bar at the edge of a window), become a flow into the state and flows out of it. The state is the measured level whose raw points
    rise at the inflow's events and fall at the outflows' (`sd/between.py`: the grid misses it,
    the raw points do not); with none (no level is written, or one never reads above zero), a
    stock measured by no series, drawn as hidden. The drain and the fill are each claimed by one
