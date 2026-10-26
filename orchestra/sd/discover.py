@@ -132,6 +132,39 @@ def _title(s: Series) -> str:
     return base + (f" ({', '.join(extra)})" if extra else "")
 
 
+def same_flow(a: Series, b: Series, n: int) -> bool:
+    """Two counters that count the same events: equal in all but a few steps, or the same events
+    stamped a moment apart, so some fall in the next step: one counter's running total is always
+    between the other's at the step before and at this step (never more than a step behind). The
+    same activity is often measured twice: Orchestra counts every event (orchestra_events_total)
+    and the machine counts what it did (a ticket's transitions, an agent's turns); they are one flow,
+    not two that share a balance. The lag is allowed only to Orchestra's own count, which is
+    stamped after the machine's: two machines' counters a step apart may be a quick buffer's
+    inflow and outflow (put on a shelf and taken within seconds), which are not one flow."""
+    da, db = a.deltas, b.deltas
+    total_a, total_b = sum(da), sum(db)
+    if not total_a or abs(total_a - total_b) > max(1.0, SAME_STEPS * total_b):
+        return False
+    # Orchestra's count of a machine's events can only be a copy of a counter that machine writes:
+    # a few rare events (a host restart, an operator's note) otherwise match anything as rare
+    if EVENT_COUNTER in (a.name, b.name) and (machine_of(a) is None or machine_of(a) != machine_of(b)):
+        return False
+    moved = sum(1 for x, y in zip(da, db) if x or y)                   # steps where either counted something
+    if sum(1 for x, y in zip(da, db) if x != y) <= SAME_STEPS * moved:  # (of all steps, two rare counters always "agree")
+        return True
+
+    def behind(lead: list[float], lag: list[float]) -> bool:
+        cl = cg = before = 0.0
+        for x, y in zip(lead, lag):
+            cl, cg = cl + x, cg + y
+            if not before - 1e-9 <= cg <= cl + 1e-9:
+                return False
+            before = cl
+        return True
+    return (b.name == EVENT_COUNTER and a.name != EVENT_COUNTER and behind(da, db)) or \
+        (a.name == EVENT_COUNTER and b.name != EVENT_COUNTER and behind(db, da))
+
+
 def machine_of(s: Series) -> str | None:
     """The machine a series belongs to: its ``machine`` label, or, for Orchestra's event counters,
     the ``source`` that emitted the events (``unknown`` is no machine)."""
@@ -525,12 +558,11 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     counters.sort(key=lambda c: (c.name.startswith(EVENT_COUNTER), len(c.key), c.key))
     kept_counters: list[Series] = []
     for c in counters:
-        twin = next((k for k in kept_counters if sum(1 for x, y in zip(c.deltas, k.deltas) if x != y) <= SAME_STEPS * n
-                     and abs(sum(c.deltas) - sum(k.deltas)) <= max(1.0, SAME_STEPS * sum(k.deltas))), None)
+        twin = next((k for k in kept_counters if same_flow(c, k, n)), None)
         if twin is None:
             kept_counters.append(c)
         else:
-            left_out[c.key] = f"the same as {twin.key} (in all but a few steps)"
+            left_out[c.key] = f"the same as {twin.key} (counts the same events)"
     counters = kept_counters
     for s in series:
         if s.counter and not any(s.deltas):

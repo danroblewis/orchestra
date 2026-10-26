@@ -182,6 +182,20 @@ def test_two_counters_of_the_same_thing_are_one_flow(tmp_path):
     assert not any(f.counter and f.counter.name == "orchestra_events_total" for f in m.flows)
 
 
+def test_the_same_events_stamped_a_moment_later_are_still_one_flow(tmp_path):
+    # Orchestra's count of an event is stamped a moment after the machine's own count, so near
+    # a step's end it lands in the next step: many steps differ, the running totals never by more
+    # than one event. Without this, discovery shares one flow's balance between the two.
+    store = FileMetrics(tmp_path / "m.jsonl")
+    start, end = simulate(store, minutes=60)
+    own = store.raw("bakery_loaves_baked_total", {"project": "p", "machine": "oven"}, start=start, end=end)
+    changes = [(t, v) for i, (t, v) in enumerate(own) if i == 0 or v != own[i - 1][1]]
+    store.write([Point("orchestra_events_total", v, t + 29, {"project": "p", "source": "oven", "type": "loaf.baked"}) for t, v in changes])
+    m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
+    assert any(why.startswith("the same as bakery_loaves_baked_total") for k, why in m.discovery["left_out"].items() if k.startswith("orchestra_events_total"))
+    assert not any(f.counter and f.counter.name == "orchestra_events_total" for f in m.flows)
+
+
 def test_counters_of_a_machines_instances_are_summed_into_one_flow(tmp_path):
     # the shelf's loaves sold, counted by three instances of the shop (source shop/1..3) instead of one
     store = FileMetrics(tmp_path / "m.jsonl")
