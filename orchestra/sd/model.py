@@ -18,6 +18,7 @@ records, eras)."""
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -59,6 +60,7 @@ class Flow:
     counter: SeriesRef | None = None    # cumulative count of what moved
     equations: list[Equation] = field(default_factory=list)   # one per era once fitted
     measured_by: list[SeriesRef] = field(default_factory=list)  # every counter it sums, when several flows look like one from the levels
+    evidence: dict[str, Any] = field(default_factory=dict)      # how its ends were chosen, when discovered: other stocks' claims, co-flows
 
     def current(self) -> Equation | None:
         return self.equations[-1] if self.equations else None
@@ -124,7 +126,8 @@ class Model:
             flows=[Flow(f["id"], f["name"], f.get("from"), f.get("to"), ref(f.get("counter")),
                         [Equation(**{**e, "window": tuple(e["window"]) if e.get("window") else None,
                                      "inputs": list(e.get("inputs") or []), "spec": dict(e.get("spec") or {})})
-                         for e in f.get("equations", [])], [SeriesRef(**r) for r in f.get("measured_by") or []])
+                         for e in f.get("equations", [])], [SeriesRef(**r) for r in f.get("measured_by") or []],
+                        dict(f.get("evidence") or {}))
                    for f in d.get("flows", [])],
             machines=[Machine(m["id"], m["name"], m["kind"], m.get("description", ""), list(m.get("attributed", [])),
                               [SeriesRef(**r) for r in m.get("observed_by", [])],
@@ -135,10 +138,14 @@ class Model:
         )
 
     def check(self) -> list[str]:
-        """Structural problems: flows naming unknown stocks, machines attributed to unknown flows."""
+        """Structural problems: ids used twice, flows naming unknown stocks, machines attributed to
+        unknown flows. Everything keyed by id (the graph, the machines' lists, the simulator) needs
+        each id once."""
         ids = {s.id for s in self.stocks}
         fids = {f.id for f in self.flows}
-        errs = [f"flow {f.id}: unknown stock {end}" for f in self.flows for end in (f.src, f.dst) if end and end not in ids]
+        errs = [f"stock id {sid} is used {n} times" for sid, n in Counter(s.id for s in self.stocks).items() if n > 1]
+        errs += [f"flow id {fid} is used {n} times" for fid, n in Counter(f.id for f in self.flows).items() if n > 1]
+        errs += [f"flow {f.id}: unknown stock {end}" for f in self.flows for end in (f.src, f.dst) if end and end not in ids]
         errs += [f"machine {m.id}: attributed to unknown flow {a}" for m in self.machines for a in m.attributed if a not in fids]
         errs += [f"flow {f.id} connects nothing" for f in self.flows if not f.src and not f.dst]
         if sum(m.bootstrap for m in self.machines) > 1:

@@ -66,7 +66,7 @@ def test_discovers_the_bakery(tmp_path):
     m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
     assert m.check() == []
     assert {s.id for s in m.stocks} == {"bakery_shelf_loaves", "bakery_oven_orders_pending"}
-    assert "weather_temperature_celsius" in m.discovery["left_out"], "the unrelated series is left out"
+    assert 'weather_temperature_celsius{machine="weather"}' in m.discovery["left_out"], "the unrelated series is left out"
     f = {x.id: x for x in m.flows}
     assert (f["bakery_loaves_baked_total"].src, f["bakery_loaves_baked_total"].dst) == (None, "bakery_shelf_loaves")
     assert f["bakery_loaves_sold_total"].src == "bakery_shelf_loaves" and f["bakery_loaves_sold_total"].dst is None

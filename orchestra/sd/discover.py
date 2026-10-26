@@ -7,10 +7,15 @@ equation of each flow, and the machine behind each flow:
 2. **Find stocks by conservation.** A level whose changes are explained by counters, added or
    subtracted, is a stock, and those counters are its inflows and outflows:
    ``Δlevel ≈ Σ inflows − Σ outflows`` in every step. The counters (each with a coefficient of +1
-   or −1) are found by a local search that keeps a counter only if it explains a real share. A level is
-   kept only if the balance fits (R² ≥ ``MIN_R2``); everything else is left out, with the reason.
+   or −1) are found by a local search that keeps a counter only if it explains a real share
+   (``sd.balance``). A level is kept only if the balance fits (R² ≥ ``MIN_R2``); everything else is
+   left out, with the reason. Two levels that change alike in nearly every step, or that the same
+   counters balance, are one stock measured twice: the machine whose counters make the balance
+   keeps it, the other is recorded as its twin.
 3. **Connect flows.** A counter that is an outflow of one stock and an inflow of another is a flow
-   between them; otherwise it comes from or goes to outside.
+   between them; otherwise it comes from or goes to outside (``sd.ends``: when two stocks claim the
+   same end, the one the counter explains most keeps it and the other claim is evidence; stocks of
+   different machines claiming one counter make it a co-flow, one flow per machine).
 4. **Fit each flow's equation** by maximum likelihood, choosing by AIC among:
    - ``constant``: rate = c;
    - ``proportional``: rate = k × the source stock (its exact time-average over the step);
@@ -19,7 +24,9 @@ equation of each flow, and the machine behind each flow:
      closes feedback loops.
 
    Forms are scored with the exact point-process likelihood (each event against the levels just
-   before it), not counts per step, which favour spurious forms (see ``fit_flow``).
+   before it), not counts per step, which favour spurious forms (see ``fit_flow``). A flow with
+   fewer than ``MIN_EVENTS`` events in the window gets the constant form only: an influence fitted
+   on one event is noise.
 5. **Attribute** each flow to the machine named by its counter's ``machine`` label, and each stock
    to the machine that writes it.
 
@@ -39,15 +46,24 @@ from dataclasses import dataclass, field
 from itertools import pairwise
 
 from ..metrics import step_sample
+from .balance import LeastSquares, balance
+from .ends import claims, moves
 from .model import Equation, Flow, Machine, Model, SeriesRef, Stock
 
 MIN_R2 = 0.9            # how well a balance must fit for a level to count as a stock
 FLAG_EXACT = 0.97         # a two-valued level is a stock only if its balance is exact in this share of steps
 SAME_STEPS = 0.03          # counters that differ in no more than this share of steps are one
+TWIN_STEPS = 0.97          # levels whose changes are equal in this share of steps are one stock measured twice
+MIN_EVENTS = 5             # a flow with fewer events than this in the window gets the constant form only
 EVENT_COUNTER = "orchestra_events_total"   # Orchestra's own count of each event type
-MIN_GAIN = 0.01         # each added counter must explain at least this share of the level's variance
-MAX_TERMS = 8
 UNITS = {"second": 1.0, "minute": 60.0, "hour": 3600.0}
+
+
+def series_key(name: str, labels: dict[str, str]) -> str:
+    """A series' identity in a discovery: its name and every label but the project (the machine
+    included: two machines' series of one name are two series)."""
+    inner = ",".join(f'{k}="{v}"' for k, v in sorted(labels.items()) if k != "project")
+    return f"{name}{{{inner}}}" if inner else name
 
 
 @dataclass
@@ -61,8 +77,7 @@ class Series:
 
     @property
     def key(self) -> str:
-        inner = ",".join(f'{k}="{v}"' for k, v in sorted(self.labels.items()) if k not in ("project", "machine"))
-        return f"{self.name}{{{inner}}}" if inner else self.name
+        return series_key(self.name, self.labels)
 
     @property
     def deltas(self) -> list[float]:
@@ -254,121 +269,6 @@ def sample(dump, start: float, step: float, n: int) -> list[Series]:
     return out
 
 
-class LeastSquares:
-    """Ordinary least squares of any level's changes on every counter's changes at once. The
-    normal matrix is the same for every level, so it is factored once (Cholesky, lightly
-    regularised so collinear counters don't break it)."""
-
-    def __init__(self, xs: list[list[float]]):
-        self.xs = xs
-        m = len(xs)
-        g = [[sum(a * b for a, b in zip(xs[i], xs[j])) for j in range(m)] for i in range(m)]
-        ridge = 1e-6 * (sum(g[i][i] for i in range(m)) / max(1, m)) + 1e-12
-        for i in range(m):
-            g[i][i] += ridge
-        self.L = [[0.0] * m for _ in range(m)]
-        for i in range(m):
-            for j in range(i + 1):
-                v = g[i][j] - sum(self.L[i][k] * self.L[j][k] for k in range(j))
-                self.L[i][j] = math.sqrt(max(v, 1e-18)) if i == j else v / self.L[j][j]
-
-    def solve(self, y: list[float]) -> list[float]:
-        m, L = len(self.xs), self.L
-        b = [sum(a * v for a, v in zip(x, y)) for x in self.xs]
-        z = [0.0] * m
-        for i in range(m):
-            z[i] = (b[i] - sum(L[i][k] * z[k] for k in range(i))) / L[i][i]
-        c = [0.0] * m
-        for i in reversed(range(m)):
-            c[i] = (z[i] - sum(L[k][i] * c[k] for k in range(i + 1, m))) / L[i][i]
-        return c
-
-
-def balance(level: Series, counters: list[Series], ls: LeastSquares | None = None
-            ) -> tuple[list[tuple[Series, int]], float, float]:
-    """The counters (each +1 or −1) that best explain the level's changes; and the balance's R²
-    and the share of steps it explains exactly.
-
-    The objective is the squared error plus a penalty of ``MIN_GAIN`` × the level's variance per
-    counter used, so a counter must explain a real share to be kept. The search starts from least
-    squares on all counters, each coefficient rounded to +1, −1 or 0, and then repeatedly applies
-    the change that lowers the objective most (any counter to +1, −1 or 0, or one chosen counter
-    swapped for another), until none does. Starting from least squares matters: one term of a balance alone often makes the fit
-    worse (inflow without its outflows), so a search that adds terms one at a time misses it."""
-    y = level.deltas
-    mean = sum(y) / len(y)
-    sst = sum((v - mean) ** 2 for v in y) or 1e-12
-    pen = MIN_GAIN * sst
-    # a machine's own measurement (labelled machine=…) is preferred over Orchestra's generic event
-    # count of the same thing when the two fit about equally: it costs a little less to use
-    cost = [pen * (1.0 if c.labels.get("machine") else 1.1) for c in counters]
-    xs = [c.deltas for c in counters]
-    live = [j for j, x in enumerate(xs) if any(x)]
-    coef: dict[int, int] = {}
-    if ls is not None:
-        for j, v in enumerate(ls.solve(y)):
-            if abs(v) >= 0.5 and j in live:
-                coef[j] = 1 if v > 0 else -1
-        if len(coef) > MAX_TERMS:
-            coef = {}
-    resid = [v - sum(sign * xs[j][i] for j, sign in coef.items()) for i, v in enumerate(y)]
-    sse = sum(r * r for r in resid)
-    for _ in range(4 * MAX_TERMS):
-        best = None                                   # (gain, changes {j: new coefficient}, sse after)
-        for j in live:                                # change one counter's coefficient
-            old = coef.get(j, 0)
-            for new in (-1, 0, 1):
-                if new == old or (new and not old and len(coef) >= MAX_TERMS):
-                    continue
-                d = new - old
-                e = sum((r - d * v) ** 2 for r, v in zip(resid, xs[j]))
-                gain = (sse - e) - cost[j] * ((new != 0) - (old != 0))
-                if gain > 1e-9 and (best is None or gain > best[0]):
-                    best = (gain, {j: new}, e)
-        for j, sign in list(coef.items()):            # swap a chosen counter for another, same sign:
-            for k in live:                            # near-identical counters can't be swapped one step at a time
-                if k in coef:
-                    continue
-                e = sum((r + sign * a - sign * b) ** 2 for r, a, b in zip(resid, xs[j], xs[k]))
-                gain = (sse - e) - (cost[k] - cost[j])
-                if gain > 1e-9 and (best is None or gain > best[0]):
-                    best = (gain, {j: 0, k: sign}, e)
-        if best is None:
-            break
-        _, changes, e = best
-        for j, new in changes.items():
-            d = new - coef.get(j, 0)
-            resid = [r - d * v for r, v in zip(resid, xs[j])]
-            if new:
-                coef[j] = new
-            else:
-                coef.pop(j, None)
-        sse = e
-    # Two near-identical counters with opposite signs cancel to almost nothing and only soak up
-    # noise: drop such a pair when the balance barely needs it.
-    def corr(a: list[float], b: list[float]) -> float:
-        ma, mb = sum(a) / len(a), sum(b) / len(b)
-        num = sum((x - ma) * (y - mb) for x, y in zip(a, b, strict=True))
-        den = math.sqrt(sum((x - ma) ** 2 for x in a) * sum((y - mb) ** 2 for y in b)) or 1e-12
-        return num / den
-    changed = True
-    while changed:
-        changed = False
-        for j in list(coef):
-            for k in list(coef):
-                if j < k and j in coef and k in coef and coef[j] == -coef[k] and corr(xs[j], xs[k]) > 0.9:
-                    r2 = [r + coef[j] * a + coef[k] * b for r, a, b in zip(resid, xs[j], xs[k], strict=True)]
-                    e = sum(r * r for r in r2)
-                    if e - sse < 0.05 * sst:
-                        resid, sse = r2, e
-                        coef.pop(j)
-                        coef.pop(k)
-                        changed = True
-    chosen = [(counters[j], sign) for j, sign in sorted(coef.items())]
-    exact = sum(1 for r in resid if abs(r) <= 0.5) / len(resid)
-    return chosen, 1 - sse / sst, exact
-
-
 def _average(points: list[tuple[float, float]], a: float, b: float) -> float:
     """Time-average of a step-function series over [a, b)."""
     before = [v for t, v in points if t <= a]
@@ -487,6 +387,8 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
     spurious intercept. The estimates of the constant and proportional forms are the same either
     way (events ÷ time, events ÷ level × time)."""
     total = sum(d for _, d in events)
+    if total < MIN_EVENTS:                 # too few events to tell a form from noise: the rate alone
+        paths, src = {}, None
     at = {sid: [p.before(t) for t, _ in events] for sid, p in paths.items()}
 
     def ll(c: float, k: float, sid: str | None) -> float:
@@ -529,6 +431,57 @@ def dispersion(y: list[float], dt: float, form: dict, levels: dict[str, list[flo
     p, xs = form["params"], (levels[form["inputs"][0]] if form["inputs"] else [0.0] * len(y))
     mu = [max(1e-9, (p.get("c", 0.0) + p.get("k", 0.0) * x) * dt) for x in xs]
     return sum((v - m) ** 2 / m for v, m in zip(y, mu)) / max(1, len(y) - form["k"])
+
+
+def unique_id(slug: str, machine: str | None, taken: set[str]) -> str:
+    """``slug``, or with the machine's name when another series already has it (two machines'
+    series of one name): everything keyed by id needs each id once."""
+    sid, i = slug, 1
+    while sid in taken:
+        i += 1
+        sid = f"{slug}_{machine or 'other'}" + (f"_{i}" if i > 2 else "")
+    taken.add(sid)
+    return sid
+
+
+def _equal_steps(a: Series, b: Series) -> float:
+    """The share of steps in which two levels changed by the same amount."""
+    da, db = a.deltas, b.deltas
+    return sum(1 for x, y in zip(da, db) if abs(x - y) <= 1e-6) / max(1, len(da))
+
+
+def _owns(s: Series, terms: list) -> int:
+    """How many of the balance's counters the level's own machine writes: that machine owns the
+    transitions, and the level is its record of them."""
+    return sum(1 for c, _ in terms if machine_of(c) is not None and machine_of(c) == machine_of(s))
+
+
+def twin_levels(found: list, left_out: dict[str, str]) -> tuple[list, dict[str, list[dict]]]:
+    """One stock measured twice (a shelf counted by the shelf and by the board): two levels that
+    change alike in at least ``TWIN_STEPS`` of the steps, or that the same counters balance. The
+    one kept is the machine's whose counters make the balance, then the better balance; the other
+    is left out and recorded as its twin, in the kept stock's evidence."""
+    kept: list = []
+    twins: dict[str, list[dict]] = defaultdict(list)
+    for s, terms, r2, exact in found:
+        bal = {(c.key, sign) for c, sign in terms}
+        other = next((k for k in kept if _equal_steps(s, k[0]) >= TWIN_STEPS or {(c.key, sg) for c, sg in k[1]} == bal), None)
+        if other is None:
+            kept.append((s, terms, r2, exact))
+            continue
+        o, oterms, or2, oexact = other
+        if (_owns(s, terms), exact, r2) > (_owns(o, oterms), oexact, or2):
+            kept[kept.index(other)] = (s, terms, r2, exact)
+            win, lose = s, o
+            twins[s.key] = twins.pop(o.key, [])
+        else:
+            win, lose = o, s
+        share = _equal_steps(win, lose)
+        twins[win.key].append({"series": lose.key, "machine": machine_of(lose), "equal_steps": round(share, 4)})
+        for rec in twins[win.key]:
+            left_out[rec["series"]] = (f"the same as {win.key} (one stock measured twice: their changes are equal in "
+                                       f"{rec['equal_steps']:.0%} of steps)")
+    return kept, dict(twins)
 
 
 def discover(dump, *, start: float, end: float, step: float, time_unit: str = "minute") -> Model:
@@ -605,26 +558,22 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             kept.append((s, terms2, r2b, exact2))
         else:
             left_out[s.key] = f"only an accumulator of other stocks' flows (R² {r2b:.2f} with counters of its own)"
-    found = kept
-    stocks, sid_of = [], {}
+    found, twins = twin_levels(kept, left_out)
+    stocks, sid_of, ids = [], {}, set()
     for s, terms, r2, exact in found:
-        sid = _slug(s)
+        sid = unique_id(_slug(s), machine_of(s), ids)
         sid_of[s.key] = sid
         stocks.append(Stock(sid, _title(s), "items", SeriesRef(s.name, s.labels),
                             {"balance_r2": round(r2, 4), "exact_steps": round(exact, 4), "steps": n,
                              "machine": machine_of(s), "accumulator": all(sign > 0 for _, sign in terms),
-                             "balance": [{"series": c.key, "sign": sign} for c, sign in terms]}))
-    ends: dict[str, dict] = defaultdict(lambda: {"src": None, "dst": None, "series": None})
-    # a counter in two balances connects those stocks; when an accumulator (a stock that only
-    # fills) and an ordinary stock both claim the same end of it, the ordinary stock keeps it
-    for s, terms, _, _ in sorted(found, key=lambda x: not all(sign > 0 for _, sign in x[1])):
-        for c, sign in terms:
-            e = ends[c.key]
-            e["series"] = c
-            e["dst" if sign > 0 else "src"] = sid_of[s.key]
-    used = set(ends)
+                             "balance": [{"series": c.key, "sign": sign} for c, sign in terms],
+                             **({"twins": twins[s.key]} if s.key in twins else {})}))
+    # a counter in two balances connects those stocks (sd.ends: contested ends and co-flows)
+    fid_of = {c.key: unique_id(_slug(c), machine_of(c), ids) for c in counters}
+    by_counter = claims(found, sid_of, machine_of)
+    flow_moves = moves(counters, by_counter, fid_of, machine_of)
     for c in counters:
-        if c.key not in used:
+        if c.key not in by_counter:
             left_out[c.key] = "a counter no stock's balance needed"
 
     end = start + n * step
@@ -632,7 +581,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # fit only over the time every series involved was being written: before a machine started,
     # or while it was down, its silence is not a rate of zero
     live = [(start, end)]
-    for ser in [s for s, _, _, _ in found] + [e["series"] for e in ends.values()]:
+    for ser in [s for s, _, _, _ in found] + [c for c in counters if c.key in by_counter]:
         if regular(ser.points):           # only a scheduled series' silence means its machine was down
             live = intersect(live, live_intervals(ser.points, start, end))
     live_s = sum(b - a for a, b in live)
@@ -647,27 +596,26 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     accumulators = {sid_of[s.key] for s, terms, _, _ in found if all(sign > 0 for _, sign in terms)}
     drivers = set(paths) - accumulators
     flows, by_machine = [], defaultdict(list)
-    for e in ends.values():
-        c = e["series"]
+    for mv in flow_moves:
+        c = mv.counter
         if live_s <= 0:
             continue
         dl = c.deltas
         y = [dl[i] for i in steps_live]
-        best, *rest = fit_flow(events_of(c.points, live), live_s / unit_s, paths, e["src"], drivers)
+        best, *rest = fit_flow(events_of(c.points, live), live_s / unit_s, paths, mv.src, drivers)
         best["dispersion"] = dispersion(y, dt, best, levels)
         alt = {f"aic_{x['form']}" + (f"_{x['inputs'][0]}" if x["form"] == "linear" else ""): round(x["aic"], 2) for x in rest[:4]}
         alt.update({f"{x['form']}_k": round(x["params"]["k"], 6) for x in [best, *rest] if x["form"] == "proportional"})
         q = {"events": float(sum(y)), "loglik": round(best["loglik"], 3), "aic": round(best["aic"], 3),
              "dispersion": round(best["dispersion"], 3), "steps": float(len(steps_live)), "live_minutes": round(live_s / 60, 2), **alt}
-        fid = _slug(c)
         # a counter summed over instances is not a series in the store: the flow is measured by each of them
-        flows.append(Flow(fid, _title(c), e["src"], e["dst"], None if c.members else SeriesRef(c.name, c.labels),
+        flows.append(Flow(mv.id, _title(c), mv.src, mv.dst, None if c.members else SeriesRef(c.name, c.labels),
                           [Equation(best["form"], {k: round(v, 6) for k, v in best["params"].items()}, "fitted", "poisson-mle",
                                     (fit_start, end), None, q, best["inputs"])],
-                          [SeriesRef(m.name, m.labels) for m in c.members]))
+                          [SeriesRef(m.name, m.labels) for m in c.members], mv.evidence))
         who = machine_of(c)
         if who:
-            by_machine[who].append(fid)
+            by_machine[who].append(mv.id)
     owners = {st.evidence.get("machine") for st in stocks} - {None}
     machines = [Machine(m, m, "program", "Seen in the metrics store: it writes the series these flows are bound to.",
                         sorted(by_machine.get(m, [])), [SeriesRef(s.name, s.labels) for s in series if machine_of(s) == m])
