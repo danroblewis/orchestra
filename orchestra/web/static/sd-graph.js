@@ -12,7 +12,68 @@
 })(typeof self !== "undefined" ? self : this, function () {
   const nice = (s) => (s || "outside").toLowerCase().replace(/_/g, " ");
   const num = (v, short) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(short ? 2 : 3));
-  const stockName = (m, id) => { const s = m && m.stocks.find((x) => x.id === id); return s ? s.name : nice(id); };
+  // What to call each stock and flow. A series' name says what kind of thing it counts ("beads
+  // issues"); its labels say which ones ("status: in_progress"). So a stock is named by the label
+  // values that tell it apart from the other stocks of the same series, with the series' name as
+  // its family, said apart (a caption): "in progress", family "beads issues".
+  // - only labels whose values differ within the family are said; the one with the most values
+  //   first and always, the others only where they are not the family's usual value ("open" and
+  //   "open · epic" beside "closed", not "open · task");
+  // - a series alone in its family is named by the series;
+  // - a series alone in its family whose first word other stocks' series share (a namespace, by
+  //   Prometheus' convention: bakery_orders_baking, bakery_shelf_items) has that word as its family;
+  // - a flow is named by its series (it is a kind of event), with only what its two ends do not
+  //   already say: label values its stocks carry are left out.
+  // Names are {name, family}; ``label`` is the name, with the family only where the name alone is
+  // not unique in the model. The model's own ``name`` stays the full record.
+  const IGNORE = new Set(["project", "machine", "instance", "source"]);
+  const words = (v) => String(v).replace(/_/g, " ");
+  const seriesOf = (x) => x.series || x.counter || (x.measured_by && x.measured_by[0]) || null;
+  const familyName = (n) => words(n.replace(/_total$/, ""));
+  function nameFamily(items, drop = null) {
+    const out = {}, fams = new Map();
+    for (const x of items) { const s = seriesOf(x); if (!s) continue; const k = s.name; fams.set(k, [...(fams.get(k) || []), x]); }
+    for (const [fname, xs] of fams) {
+      const labels = (x) => Object.fromEntries(Object.entries(seriesOf(x).labels || {}).filter(([k]) => !IGNORE.has(k)));
+      const keys = [...new Set(xs.flatMap((x) => Object.keys(labels(x))))].map((k) => {
+        const counts = new Map(); for (const x of xs) { const v = labels(x)[k] ?? ""; counts.set(v, (counts.get(v) || 0) + 1); }
+        const top = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+        return { k, n: counts.size, usual: top.length > 1 && top[0][1] > top[1][1] ? top[0][0] : null };
+      }).filter((c) => c.n > 1).sort((a, b) => b.n - a.n || a.k.localeCompare(b.k));
+      const said = (x, all) => { const l = labels(x), gone = drop ? drop(x) : new Set();
+        return keys.filter((c, i) => l[c.k] != null && !gone.has(l[c.k]) && (all || drop || i === 0 || l[c.k] !== c.usual)).map((c) => words(l[c.k])); };
+      const fam = familyName(fname);
+      let names = xs.map((x) => said(x, false).join(" · "));
+      // leaving a usual value out must never make two names the same
+      names = names.map((nm, i) => (names.filter((o) => o === nm).length > 1 ? said(xs[i], true).join(" · ") : nm));
+      xs.forEach((x, i) => { out[x.id] = drop ? { name: fam + (names[i] ? " · " + names[i] : ""), family: "" }
+        : names[i] ? { name: names[i], family: fam } : { name: fam, family: "" }; });
+    }
+    // what no series measures: a stock by its own name; a flow is a balance's remainder, named by
+    // what it does (its ends are always shown beside it)
+    for (const x of items) if (!out[x.id]) out[x.id] = drop ? { name: `unmeasured ${x.from && x.to ? "flow" : x.from ? "outflow" : "inflow"}`, family: "" } : { name: x.name || nice(x.id), family: "" };
+    if (!drop) {
+      const first = (n) => n.split(" ")[0], alone = Object.values(out).filter((v) => !v.family && v.name.includes(" "));
+      const shared = alone.map((v) => alone.filter((o) => first(o.name) === first(v.name)).length > 1);
+      alone.forEach((v, i) => { if (shared[i]) { v.family = first(v.name); v.name = v.name.slice(v.family.length + 1); } });
+    }
+    return out;
+  }
+  const NAMES = new WeakMap();
+  function names(m) {
+    if (!m) return { stocks: {}, flows: {} };
+    if (NAMES.has(m)) return NAMES.get(m);
+    const stocks = nameFamily(m.stocks || []);
+    const valuesOf = (id) => { const s = (m.stocks || []).find((x) => x.id === id), r = s && seriesOf(s); return r ? Object.values(r.labels || {}) : []; };
+    const flows = nameFamily(m.flows || [], (f) => new Set([...valuesOf(f.from), ...valuesOf(f.to)]));
+    for (const group of [stocks, flows]) {
+      const seen = new Map(); for (const v of Object.values(group)) seen.set(v.name, (seen.get(v.name) || 0) + 1);
+      for (const v of Object.values(group)) v.label = v.family && seen.get(v.name) > 1 ? `${v.name} · ${v.family}` : v.name;
+    }
+    const out = { stocks, flows }; NAMES.set(m, out); return out;
+  }
+  const stockName = (m, id) => { const n = names(m).stocks[id]; return n ? n.label : nice(id); };
+  const flowName = (m, f) => { if (!f) return null; const n = names(m).flows[f.id]; return n ? n.label : f.name; };
   // what an equation reads, by name: a stock, or a measured input (input:<name>)
   const readName = (m, x) => { if (!x) return "?"; const n = x.startsWith("input:") ? x.slice(6) : x;
     return m && m.stocks.some((s) => s.id === n) ? stockName(m, n) : n.replace(/_/g, " "); };
@@ -70,9 +131,13 @@
       && !hiddenStock(f.from) && !hiddenStock(f.to));
     const nodes = [], edges = [], causal = [], flowEdge = {};
     const has = (id) => nodes.some((n) => n.id === id);
-    for (const s of m.stocks.filter((s) => !hiddenStock(s.id))) nodes.push({ id: "s:" + s.id, kind: "box", sid: s.id, label: s.name, lines: [s.name],
+    const nm = names(m).stocks;
+    for (const s of m.stocks.filter((s) => !hiddenStock(s.id))) { const { name, family } = nm[s.id] || { name: s.name, family: "" };
+      nodes.push({ id: "s:" + s.id, kind: "box", sid: s.id, label: name, lines: [name], caption: family,
+      // sized by the full name, as before the short names: the layout search is sensitive to box
+      // sizes (narrower boxes break the layout tests' fixtures), which is its own open problem
       w: Math.max(180, s.name.length * 7 + 30), h: 92, dashed: !!(s.evidence && s.evidence.hidden), color: stockColor(s.id),
-      fill: "#0b0e14", charge: -1600, sub: " " });
+      fill: "#0b0e14", charge: -1600, sub: " " }); }
     for (const f of flows) {
       // in the causal graph used for loops, a flow is a node between its ends ("f:<id>")
       const col = mcolor(f.machine), v = "f:" + f.id, e = f.current || {};
@@ -107,5 +172,5 @@
     return { nodes, edges, causal, flowEdge, flows, acc };
   }
 
-  return { build, eqText, readsWithSign, readName, refOf, stockName, nice, num };
+  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, nice, num };
 });

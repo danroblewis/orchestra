@@ -48,7 +48,7 @@ const Live = (() => {
     const frac = v == null ? 0 : Math.max(0, Math.min(1, (v - min) / (max - min || 1)));
     const x0 = -sz.w / 2, y0 = -sz.h / 2;
     g.append("rect").attr("x", x0 + 1.5).attr("y", y0 + 1.5 + (sz.h - 3) * (1 - frac)).attr("width", sz.w - 3).attr("height", (sz.h - 3) * frac).attr("rx", 3).attr("fill", col).attr("opacity", 0.16);
-    g.append("text").attr("class", "ng-sub").attr("text-anchor", "middle").attr("y", y0 + 32).attr("fill", col).text(v == null ? "no data" : `${fmt(v)} now · max ${fmt(max)}`);
+    g.append("text").attr("class", "ng-sub").attr("text-anchor", "middle").attr("y", y0 + (n.caption ? 44 : 32)).attr("fill", col).text(v == null ? "no data" : `${fmt(v)} now · max ${fmt(max)}`);
     // the machines that change this stock: one dot per machine whose flows fill or drain it
     const io = flowsOf(id), ms = [...new Set([...io.in, ...io.out].map((f) => f.machine).filter(Boolean))];
     ms.forEach((m, k) => g.append("circle").attr("cx", -x0 - 9 - k * 11).attr("cy", y0 + 10).attr("r", 4).attr("fill", mcolor(m)).append("title").text(m));
@@ -74,16 +74,16 @@ const Live = (() => {
   // ---- hover and click ----
   function stockSummary(id) {
     const s = MODEL.stocks.find((x) => x.id === id), h = stockHist(id).map((p) => p[1]), v = now(id), io = flowsOf(id);
-    const rows = [...io.in.map((f) => ["+", f]), ...io.out.map((f) => ["−", f])].map(([sg, f]) => `<div class="tr"><span>${sg} ${esc(f.name)}</span><b>${fmt(recentRate(f.id))}${per()}</b></div>`).join("");
+    const rows = [...io.in.map((f) => ["+", f]), ...io.out.map((f) => ["−", f])].map(([sg, f]) => `<div class="tr"><span>${sg} ${esc(flowName(f))}</span><b>${fmt(recentRate(f.id))}${per()}</b></div>`).join("");
     const changers = [...new Set([...io.in, ...io.out].map((f) => f.machine).filter(Boolean))];
-    return `<div class="tt">${esc(s.name)}</div><div class="tr"><span>now</span><b>${fmt(v)}</b></div>
+    return `<div class="tt">${stockHead(s.id)}</div><div class="tr"><span>now</span><b>${fmt(v)}</b></div>
       <div class="tr"><span>changed by</span><b>${changers.map((m) => `<span style="color:${mcolor(m)}">${esc(m)}</span>`).join(", ") || "—"}</b></div>
       <div class="tr"><span>measured by</span><b>${esc((s.evidence && s.evidence.machine) || "—")}</b></div><div class="tr"><span>range, last hour</span><b>${fmt(h.length ? Math.min(...h) : null)} – ${fmt(h.length ? Math.max(...h) : null)}</b></div>${rows}<div class="hint">click for history and details</div>`;
   }
   function flowSummary(fid) {
     const f = MODEL.flows.find((x) => x.id === fid); if (!f) return "";
     const r = recentRate(f.id), pr = predicted(f, Date.now() / 1000);
-    return `<div class="tt">${esc(f.name)}</div><div class="muted">${esc(f.from ? stockName(f.from) : "outside")} → ${esc(f.to ? stockName(f.to) : "outside")}</div>
+    return `<div class="tt">${esc(flowName(f))}</div><div class="muted">${esc(f.from ? stockName(f.from) : "outside")} → ${esc(f.to ? stockName(f.to) : "outside")}</div>
       <div class="tr"><span>observed, last 2 min</span><b>${fmt(r)}${per()}</b></div><div class="tr"><span>equation says now</span><b>${fmt(pr)}${per()}</b></div>
       <div class="tr"><span>equation</span><b>${esc(eqText(f))}</b></div>${f.machine ? `<div class="tr"><span>machine</span><b>${esc(f.machine)}</b></div>` : ""}<div class="hint">click for history and fit</div>`;
   }
@@ -93,14 +93,14 @@ const Live = (() => {
   function openStock(id) {
     const s = MODEL.stocks.find((x) => x.id === id), io = flowsOf(id), ev = s.evidence || {};
     const rate = (f) => `${fmt(recentRate(f.id))}${per()}`;
-    const flowRow = (f, sg) => `<div class="tr"><span>${sg} <span class="mdot" style="--c:${mcolor(f.machine)}"></span>${esc(f.name)} <span class="muted">${esc(sg === "+" ? "from " + (f.from ? stockName(f.from) : "outside") : "to " + (f.to ? stockName(f.to) : "outside"))}</span></span> <b style="margin-left:10px">${rate(f)}</b></div>`;
+    const flowRow = (f, sg) => `<div class="tr"><span>${sg} <span class="mdot" style="--c:${mcolor(f.machine)}"></span>${esc(flowName(f))} <span class="muted">${esc(sg === "+" ? "from " + (f.from ? stockName(f.from) : "outside") : "to " + (f.to ? stockName(f.to) : "outside"))}</span></span> <b style="margin-left:10px">${rate(f)}</b></div>`;
     // outflows are drawn below zero, so what fills and what drains it read apart at a glance
-    const lines = [...io.in.map((f) => ({ label: "in: " + f.name, points: flowHist(f.id), color: mcolor(f.machine) })),
-      ...io.out.map((f) => ({ label: "out: " + f.name, points: flowHist(f.id).map(([t, v]) => [t, -v]), color: mcolor(f.machine), dash: "5 3" }))].filter((l) => l.points.length);
+    const lines = [...io.in.map((f) => ({ label: "in: " + flowName(f), points: flowHist(f.id), color: mcolor(f.machine) })),
+      ...io.out.map((f) => ({ label: "out: " + flowName(f), points: flowHist(f.id).map(([t, v]) => [t, -v]), color: mcolor(f.machine), dash: "5 3" }))].filter((l) => l.points.length);
     const net = new Map();
     for (const l of lines) for (const [t, v] of l.points) net.set(t, (net.get(t) || 0) + v);
     if (lines.length > 1) lines.push({ label: "net (in − out)", points: [...net.entries()].sort((a, b) => a[0] - b[0]), color: "#e5e7eb" });
-    openDrawer(`<h3>${esc(s.name)} <span class="tag">stock</span>${ev.hidden ? ' <span class="tag">hidden: found from the levels, not measured</span>' : ""}</h3>
+    openDrawer(`<h3>${stockHead(s.id)} <span class="tag">stock</span>${ev.hidden ? ' <span class="tag">hidden: found from the levels, not measured</span>' : ""}</h3>
       <div class="def"><div>now</div><div class="num">${fmt(now(id))}</div>
       <div>changed by</div><div>${[...new Set([...io.in, ...io.out].map((f) => f.machine).filter(Boolean))].map((m) => `<span class="mdot" style="--c:${mcolor(m)}"></span>${esc(m)}`).join(" ") || "—"}</div>
       <div>measured by</div><div>${esc(ev.machine || "—")} <span class="muted">(writes the series)</span></div><div>bound to</div><div class="num">${esc(s.series ? s.series.name + JSON.stringify(Object.fromEntries(Object.entries(s.series.labels).filter(([k]) => k !== "project"))) : "—")}</div>
@@ -127,7 +127,7 @@ const Live = (() => {
       { label: `the equations, from ${new Date(d.start * 1000).toTimeString().slice(0, 5)}`, points: era, color: "#e5e7eb", dash: "6 4" },
       { label: `projected, next ${horizon()} min`, points: proj, color: stockColor(id), dash: "2 3" }],
       { W: 700, H: 240, marks: [{ t: d.now, label: "now" }, ...(era.length ? [{ t: d.start, label: "era began" }] : [])] });
-    const rep = (d.replayed || []).map((fid) => (MODEL.flows.find((f) => f.id === fid) || {}).name || fid);
+    const rep = (d.replayed || []).map((fid) => flowName(MODEL.flows.find((f) => f.id === fid)) || fid);
     note.innerHTML = `The equations start from the measured levels when the era began (the start of the window the model was fitted on, when every series was being written), and run with nothing else but the measured inputs; the projection starts from the levels now, with each input held at its last value. Nothing leaves a stock that is not there.`
       + (rep.length ? ` <b>Replayed, not simulated</b> (no equation the simulator steps): ${rep.map(esc).join(", ")}: their observed rate, then their mean over the last 10 minutes.` : " Every flow was simulated from its equation.")
       + (VERSION !== null ? " These are the latest discovery's equations, not this past version's." : "");
@@ -136,7 +136,7 @@ const Live = (() => {
     const f = MODEL.flows.find((x) => x.id === fid), e = f.current || {}, q = e.quality || {};
     const obs = flowHist(fid), model = obs.map(([t]) => [t, predicted(f, t)]).filter((p) => p[1] != null);
     const alts = Object.entries(q).filter(([k]) => k.startsWith("aic_")).map(([k, v]) => `<tr><td>${esc(k.slice(4).replace(/_/g, " "))}</td><td class="num">${fmt(v)}</td><td class="num">${fmt(v - q.aic)}</td></tr>`).join("");
-    openDrawer(`<h3>${esc(f.name)} <span class="tag">flow</span></h3>
+    openDrawer(`<h3>${esc(flowName(f))} <span class="tag">flow</span></h3>
       <div class="def"><div>moves</div><div>${esc(f.from ? stockName(f.from) : "outside")} → ${esc(f.to ? stockName(f.to) : "outside")}</div>
       <div>equation</div><div class="num">${esc(eqText(f))}</div><div>machine</div><div>${esc(f.machine || "none")}</div>
       <div>fit</div><div class="num">${esc(e.origin || "")} by ${esc(e.method || "")} · ${esc(e.form || "")} · ${q.events ?? 0} events${q.live_minutes ? ` over ${q.live_minutes} min` : ""}${q.dispersion != null ? ` · dispersion ${fmt(q.dispersion)}` : ""}</div>

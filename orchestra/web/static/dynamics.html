@@ -92,7 +92,9 @@ const MPAL = ["#60a5fa", "#f59e0b", "#e879f9", "#22c55e", "#f87171", "#38bdf8", 
 const mcolor = (id) => { if (!id || id === "none") return "#94a3b8"; let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return MPAL[h % MPAL.length]; };
 let MODEL = null, VERSION = null;   // null: follow the current version
 const nice = (s) => (s || "outside").toLowerCase().replace(/_/g, " ");
-const stockName = (id) => { const s = MODEL && MODEL.stocks.find((x) => x.id === id); return s ? s.name : nice(id); };
+// stocks and flows by what tells them apart (SDGraph.names); the model's ``name`` is the full record
+const stockName = (id) => SDGraph.stockName(MODEL, id), flowName = (f) => SDGraph.flowName(MODEL, f);
+const stockHead = (id) => { const n = SDGraph.names(MODEL).stocks[id]; return n ? esc(n.name) + (n.family ? ` <span class="muted">${esc(n.family)}</span>` : "") : esc(nice(id)); };
 const num = (v, short) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(short ? 2 : 3));
 // the model's text and graph come from sd-graph.js (shared with the layout tests)
 const readName = (x) => SDGraph.readName(MODEL, x);
@@ -155,7 +157,7 @@ function draw() {
 // from the stock before it and filling the stock after it); otherwise it is information feedback
 // (a level steering a rate). A loop of one stock (its outflow depends on itself) is first order.
 function loops(nodes, causal) {
-  const name = (id) => id.startsWith("s:") ? stockName(id.slice(2)) : id.startsWith("i:") ? id.slice(2).replace(/_/g, " ") : (MODEL.flows.find((f) => "f:" + f.id === id) || {}).name || id;
+  const name = (id) => id.startsWith("s:") ? stockName(id.slice(2)) : id.startsWith("i:") ? id.slice(2).replace(/_/g, " ") : flowName(MODEL.flows.find((f) => "f:" + f.id === id)) || id;
   const flowOf = (id) => MODEL.flows.find((f) => "f:" + f.id === id);
   const ids = [...new Set(causal.flatMap((c) => [c.source, c.target]))];
   const r = Loops.analyse(ids, causal);
@@ -174,7 +176,9 @@ function loops(nodes, causal) {
       return f && before === "s:" + f.from && after === "s:" + f.to;
     });
     const signOf = (a, b) => (l.links[pairs.findIndex(([x, y]) => x === a && y === b)] || [{}])[0].sign;
-    const steps = pairs.map(([a, b]) => `${esc(name(a))} <span class="muted">${signOf(a, b) < 0 ? "(−)" : "(+)"}</span>`).join(" → ") + " → " + esc(name(c[0]));
+    // stocks read as the loop; the flows between them are said quietly (their ends say the rest)
+    const say = (id) => (id.startsWith("f:") ? `<span class="muted">${esc(name(id))}</span>` : esc(name(id)));
+    const steps = pairs.map(([a, b]) => `${say(a)} <span class="muted">${signOf(a, b) < 0 ? "(−)" : "(+)"}</span>`).join(" → ") + " → " + say(c[0]);
     all.push({ nodes: c, edges: es, stocks: stocks.length, pol: l.polarity, structure: st,
       html: `<span class="ng-pol ${l.polarity}" title="${l.polarity === "B" ? "balancing" : "reinforcing"}">${l.polarity}</span><span class="ng-kind ${material ? "mat" : "inf"}" title="${material ? "every link is material moving along a flow" : "at least one link is a level steering a rate"}">${material ? "items circulate" : "information"}</span><b>${esc(stocks.map(name).join(" → "))}</b>: ${steps}` });
   }
@@ -207,17 +211,17 @@ function tables() {
   $("nflows").textContent = m.flows.length; $("nstocks").textContent = m.stocks.length; $("nmachines").textContent = m.machines.length;
   $("flows").innerHTML = `<tr><th>flow</th><th>equation</th><th>fit</th><th>machine</th></tr>` + m.flows.map((f) => { const e = f.current, q = (e && e.quality) || {};
     const end = (id) => (id ? stockName(id) : "outside");
-    return `<tr><td>${esc(f.name)}<div class="muted" style="font-size:11px">${esc(end(f.from))} → ${esc(end(f.to))}</div></td><td class="num">${esc(eqText(f))}${e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}</td>
+    return `<tr><td>${esc(flowName(f))}<div class="muted" style="font-size:11px">${esc(end(f.from))} → ${esc(end(f.to))}</div></td><td class="num">${esc(eqText(f))}${e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}</td>
       <td>${e ? `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span> <span class="muted num">${esc(e.form)} · ${q.events ?? 0} ev · disp ${(q.dispersion ?? 0).toFixed(1)}</span>` : '<span class="muted">—</span>'}</td>
       <td>${f.machine ? `<span class="mdot" style="--c:${mcolor(f.machine)}"></span>${esc((byMachine[f.machine] || {}).name || f.machine)}` : '<span class="muted">none</span>'}</td></tr>`; }).join("");
-  $("stocks").innerHTML = `<tr><th>stock</th><th>now</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr><td>${esc(s.name)}</td><td class="num">${m.levels[s.id] ? m.levels[s.id].v + " " + esc(s.unit) : "—"}</td>
+  $("stocks").innerHTML = `<tr><th>stock</th><th>now</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr><td>${stockHead(s.id)}</td><td class="num">${m.levels[s.id] ? m.levels[s.id].v + " " + esc(s.unit) : "—"}</td>
       <td class="num muted">${s.series ? esc(s.series.name + "{" + Object.entries(s.series.labels).filter(([k]) => k !== "project").map(([k, v]) => `${k}="${v}"`).join(",") + "}") : "not measured"}</td></tr>`).join("");
   $("machines").innerHTML = `<tr><th>machine</th><th>kind</th><th>engaged</th><th>flows</th></tr>` + m.machines.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span>${esc(x.name)}${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
       <td>${x.kind === "agent" ? "AI agent" : "program"}</td><td class="muted">${esc(x.engagement.map((e) => e.mode.replace("_", " ") + " · " + e.driver).join(", ") || "observed only")}</td><td class="num">${x.attributed.length}</td></tr>`).join("");
   const fitted = m.flows.filter((f) => f.current && f.current.origin === "fitted").length;
   const d = m.discovery || {};
   $("found").innerHTML = d.left_out ? `<div class="muted" style="font-size:12px;margin-bottom:6px">Discovered from ${d.series} series over ${ago(d.end - d.start)}, in ${d.step} s steps. A level is a stock when counters balance it (R² ≥ ${d.min_r2}).</div>`
-    + m.stocks.map((s) => s.evidence && s.evidence.balance ? `<div class="bal"><b>${esc(s.name)}</b> <span class="muted">changes by</span> ${s.evidence.balance.map((b) => `<span class="ty">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join(" ")} <span class="muted">R² ${s.evidence.balance_r2.toFixed(3)} · exact in ${Math.round(100 * s.evidence.exact_steps)}% of steps</span></div>` : "").join("")
+    + m.stocks.map((s) => s.evidence && s.evidence.balance ? `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">changes by</span> ${s.evidence.balance.map((b) => `<span class="ty">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join(" ")} <span class="muted">R² ${s.evidence.balance_r2.toFixed(3)} · exact in ${Math.round(100 * s.evidence.exact_steps)}% of steps</span></div>` : "").join("")
     + `<h3>Left out <span class="count">${Object.keys(d.left_out).length}</span></h3>` + leftOut(d.left_out) : '<div class="muted">This version was declared, not discovered.</div>';
   $("sum").innerHTML = `${m.stocks.length} stocks · ${m.flows.length} flows (${fitted} fitted) · ${m.machines.length} machines${m.stored ? "" : ' · <span class="stale">not stored yet: <code>orchestra sd declare</code></span>'}${m.levels_error ? ` · <span class="stale">levels: ${esc(m.levels_error)}</span>` : ""}`;
 }

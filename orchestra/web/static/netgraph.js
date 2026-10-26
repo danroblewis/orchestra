@@ -315,8 +315,10 @@ const NetGraph = (() => {
         g.append("rect").attr("class", "ng-box").attr("x", -s.w / 2).attr("y", -s.h / 2).attr("width", s.w).attr("height", s.h).attr("rx", n.rx ?? 5)
           .attr("stroke", n.color || "#6b5313").attr("fill", n.fill || "#0b0e14").attr("stroke-dasharray", n.dashed ? "6 4" : null);
         if (n.decorate) n.decorate(g, n, s);
-        const lines = n.lines || [n.label], top = -s.h / 2 + 15;
-        g.append("text").attr("class", "ng-boxtext").attr("text-anchor", "middle").attr("fill", n.textColor || "var(--text)")
+        // a caption above the name: what kind of thing it is (a stock's family)
+        const lines = n.lines || [n.label], top = -s.h / 2 + (n.caption ? 28 : 15);
+        if (n.caption) g.append("text").attr("class", "ng-caption").attr("text-anchor", "middle").attr("y", -s.h / 2 + 13).text(n.caption);
+        g.append("text").attr("class", "ng-boxtext" + (n.caption ? " ng-named" : "")).attr("text-anchor", "middle").attr("fill", n.textColor || "var(--text)")
           .selectAll("tspan").data(lines).join("tspan").attr("x", 0).attr("y", (l, i) => top + i * 14).text((l) => l);
         if (n.sub) g.append("text").attr("class", "ng-sub").attr("text-anchor", "middle").attr("y", top + lines.length * 14).text(n.sub);
       }

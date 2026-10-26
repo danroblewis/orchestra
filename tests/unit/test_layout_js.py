@@ -1,4 +1,4 @@
-"""The Node tests (tests/layout: the Dynamics layout; tests/loops: feedback loops), run here so the suite covers them.
+"""The Node tests (tests/layout: the Dynamics layout; tests/loops: feedback loops; tests/names: what stocks and flows are called), run here so the suite covers them.
 
 They need Node and elkjs (``npm ci`` in tests/layout); without them they are skipped, with how to
 get them."""
@@ -23,4 +23,11 @@ def test_the_dynamics_layout():
 def test_the_feedback_loops():
     loops = LAYOUT.parent / "loops"
     r = subprocess.run(["node", "--test", "loops.test.mjs"], cwd=loops, capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs Node")
+def test_the_names_of_stocks_and_flows():
+    names = LAYOUT.parent / "names"
+    r = subprocess.run(["node", "--test", "names.test.mjs"], cwd=names, capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
