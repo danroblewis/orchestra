@@ -17,6 +17,9 @@ The web app mounts what it returns:
 - its ``scripts`` (files in ``static``) on every page of the web UI, after Orchestra's own
   scripts: for what a package must show wherever the viewer is (a button to its own page, a
   notice that something waits on the viewer). Orchestra loads them and knows nothing of them;
+- its ``stylesheets`` (CSS files in ``static``), linked in the head of every page Orchestra
+  serves, its own and every plugin's, after Orchestra's stylesheet: the look of what the
+  package's pages and every-page scripts draw;
 - its ``router`` (a FastAPI ``APIRouter``) at ``/api/plugins/<name>``;
 - its ``machines``, optionally: the machines it provides, declared (``Declared``: the id, the
   kind of thing it is, how it is engaged and what it listens for, the same as an announcement
@@ -68,6 +71,7 @@ class Plugin:
     static: Path | None = None
     router: Any = None   # a fastapi.APIRouter, mounted at /api/plugins/<name>
     scripts: list[str] = field(default_factory=list)   # files in ``static`` loaded on every page
+    stylesheets: list[str] = field(default_factory=list)   # files in ``static`` every page links
     machines: list[Declared] = field(default_factory=list)
 
 

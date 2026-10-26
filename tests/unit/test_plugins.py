@@ -34,13 +34,14 @@ def a_plugin(tmp_path):
         (tmp_path / "s").mkdir(exist_ok=True)
         (tmp_path / "s" / "graph.js").write_text("// graph")
         (tmp_path / "s" / "everywhere.js").write_text("// on every page")
+        (tmp_path / "s" / "look.css").write_text("/* the bakery's look */")
         r = APIRouter()
 
         @r.get("/hello")
         def hello() -> dict:
             return {"project": project.key}
         return plugins.Plugin("bakery", [plugins.Page("/bakery", "Bakery", page), plugins.Page("/machines", "Mine", page)], tmp_path / "s", r,
-                              scripts=["everywhere.js", "missing.js"])
+                              scripts=["everywhere.js", "missing.js"], stylesheets=["look.css", "missing.css"])
     return make
 
 
@@ -59,3 +60,8 @@ def test_a_plugin_adds_pages_static_files_and_routes_and_a_broken_one_is_reporte
     assert d["scripts"] == ["/plugins/bakery/static/everywhere.js"]                         # a missing file is left out
     assert {e["plugin"] for e in d["errors"]} == {"bad", "bakery"}
     assert "bakery of" not in c.get("/machines").text                                       # still Orchestra's page
+    link = '<link rel="stylesheet" href="/plugins/bakery/static/look.css">'
+    machines = c.get("/machines").text                                                      # every page links it in its head,
+    assert link in machines and machines.index(link) < machines.index("</head>")            # after Orchestra's own
+    assert machines.index("/static/style.css") < machines.index(link)
+    assert link in c.get("/bakery").text and "missing.css" not in machines                  # a missing file is left out

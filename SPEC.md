@@ -397,10 +397,12 @@ static directory (served at `/plugins/<name>/static`), a FastAPI router (at
 From those scripts a package may register Dashboard panels (`Orchestra.panels`) and draw the cards
 of the machines it claims (`Orchestra.machineCards`: what is inside Orchestra's machine-card
 frame, a few words for the Dashboard's machine list, and the machine's dialog). Its look is in its
-own stylesheet: Orchestra's has nothing of any package's domain. `/api/plugins` lists the pages,
-which the navigation adds after Orchestra's own, and any plugin that failed to load. A plugin that
-fails, or a page at a path Orchestra serves, is left out, never fatal. A plugin is the package's,
-not Orchestra's: its routes are its own, and Orchestra knows nothing of what they mean.
+own stylesheets, files from its static directory that every page links in its head after
+Orchestra's (`stylesheets`): Orchestra's has nothing of any package's domain. `/api/plugins` lists
+the pages, which the navigation adds after Orchestra's own, and any plugin that failed to load.
+A plugin that fails, or a page at a path Orchestra serves, is left out, never fatal. A plugin is
+the package's, not Orchestra's: its routes are its own, and Orchestra knows nothing of what they
+mean.
 
 ---
 

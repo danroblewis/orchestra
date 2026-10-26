@@ -24,6 +24,17 @@ from .dynamics import model_view
 STATIC = Path(__file__).parent / "static"
 
 
+def render(file: Path, stylesheets: list[str]) -> str:
+    """An HTML page as served: ``{{v}}`` is the newest asset's mtime, so a browser never keeps a
+    stale stylesheet or script after an upgrade, and the plugins' stylesheets are linked at the
+    end of its head (after Orchestra's own) unless the page links them already."""
+    v = str(int(max(p.stat().st_mtime for p in STATIC.glob("*"))))
+    html = file.read_text(encoding="utf-8").replace("{{v}}", v)
+    links = "".join(f'<link rel="stylesheet" href="{s}">\n' for s in stylesheets if s not in html)
+    at = html.find("</head>")
+    return html[:at] + links + html[at:] if at >= 0 else links + html
+
+
 def create_app(project: Project) -> FastAPI:
     app = FastAPI(title="Orchestra")
     events = Events.for_project(project)
@@ -38,11 +49,10 @@ def create_app(project: Project) -> FastAPI:
         resp.headers["Cache-Control"] = "no-store"
         return resp
 
+    stylesheets: list[str] = []   # the plugins', filled in by mount_plugins
+
     def page(name: str) -> str:
-        # Cache-bust static assets with the newest asset mtime so browsers never
-        # keep a stale stylesheet or script after an upgrade.
-        v = str(int(max(p.stat().st_mtime for p in STATIC.glob("*"))))
-        return (STATIC / name).read_text(encoding="utf-8").replace("{{v}}", v)
+        return render(STATIC / name, stylesheets)
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> str:
@@ -288,13 +298,14 @@ def create_app(project: Project) -> FastAPI:
         except WebSocketDisconnect:
             return
 
-    declare = mount_plugins(app, project, page)
+    declare = mount_plugins(app, project, stylesheets)
     return app
 
 
-def mount_plugins(app: FastAPI, project: Project, page):
+def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
     """Pages, static files and API routes of the installed plugins (orchestra/plugins.py).
-    Returns what adds their declared machines to the observed ones."""
+    Adds their every-page stylesheets to ``stylesheets``; returns what adds their declared
+    machines to the observed ones."""
     from .. import plugins as plug
     loaded = plug.load(project)
     taken = {getattr(r, "path", None) for r in app.routes}
@@ -302,7 +313,7 @@ def mount_plugins(app: FastAPI, project: Project, page):
     for p in loaded.plugins:
         if p.static:
             scripts += [f"/plugins/{p.name}/static/{s}" for s in p.scripts if (p.static / s).is_file()]
-        if p.static:
+            stylesheets.extend(f"/plugins/{p.name}/static/{s}" for s in p.stylesheets if (p.static / s).is_file())
             app.mount(f"/plugins/{p.name}/static", StaticFiles(directory=str(p.static)), name=f"plugin-{p.name}")
         if p.router is not None:
             app.include_router(p.router, prefix=f"/api/plugins/{p.name}")
@@ -314,8 +325,7 @@ def mount_plugins(app: FastAPI, project: Project, page):
             pages.append({"plugin": p.name, "path": pg.path, "title": pg.title})
 
             def serve(f=pg.file) -> str:
-                v = str(int(max(x.stat().st_mtime for x in STATIC.glob("*"))))
-                return Path(f).read_text(encoding="utf-8").replace("{{v}}", v)
+                return render(Path(f), stylesheets)
             app.add_api_route(pg.path, serve, methods=["GET"], response_class=HTMLResponse, include_in_schema=False)
 
     @app.get("/api/plugins")
