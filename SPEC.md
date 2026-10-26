@@ -258,7 +258,7 @@ machines may keep its own settings here (the task system's [project], [agents], 
 
 Read-only for humans. Navigation: Dashboard, Machines, Dynamics, Core.
 
-- **Dashboard:** the machines active on the bus; the host's CPU, GPU, memory and disk; a Core
+- **Dashboard:** the machines running now (those that announced themselves continuous, and any other that published in the last two minutes; scheduled and ad hoc machines between runs are on the Machines page); the host's CPU, GPU, memory and disk; a Core
   status strip.
 - **Machines:** every machine seen on the bus with its instances and how it is engaged, the event map (by default machines only: an
   arrow where one publishes an event type the other listens for, one line with two arrowheads where
