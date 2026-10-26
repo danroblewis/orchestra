@@ -16,6 +16,15 @@ private) and the AI agents that fill its roles, `orchestra-agents` (package `orc
 plugin `agents`: the Supervisor, Coordinator, worker and reviewer roles on Pi, Claude Code or
 Codex; private). How the task system left this repository is in `docs/proposals/empty-orchestra.md`.
 
+Each plugin has a demo, one command from its checkout. `uv run demo/run.py` in
+`orchestra-tasking` runs the task system with programs only (a shell worker and a program
+reviewer on four tickets), and shows the pages the plugin adds and the hand-offs on the Machines
+page. The same command in `orchestra-agents` is the sample: a Haiku reviewer, Coordinator and
+Supervisor beside a program worker on one queue of fifteen tickets, with a system dynamics model
+discovered from the run. The sample models the task pipeline itself; it has no domain of its own,
+so no loop between a domain and its process appears there yet (`docs/roadmap/use-cases.md`,
+UC-3b, is the sample that will).
+
 - `SPEC.md` is the design of what exists.
 - `AGENTS.md` is the list of rules that must not be broken.
 
@@ -44,7 +53,10 @@ them locally.
 
 Machines are your programs. Publish events with the CloudEvents envelope
 (`orchestra.events.Events.publish`) and write metrics labelled `machine=<id>`
-(`orchestra.metrics`); they appear on the Machines page and in the Core explorers.
+(`orchestra.metrics`); they appear on the Machines page and in the Core explorers. A machine
+announces itself when it starts with `orchestra.machine.started`, carrying how it is engaged
+(`mode`), what kind of thing it is (`kind`), what it listens for (`listens_for`) and where its
+log is (`log`); the rest is observed (`SPEC.md` §1).
 The bakery, a separate repository, is a toy system of machines used to test Orchestra from the
 outside (`docs/roadmap/use-cases.md`).
 
