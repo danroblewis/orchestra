@@ -113,22 +113,6 @@ def same_flow(a: Series, b: Series, n: int) -> bool:
         (a.name == EVENT_COUNTER and b.name != EVENT_COUNTER and behind(db, da))
 
 
-def _average(points: list[tuple[float, float]], a: float, b: float) -> float:
-    """Time-average of a step-function series over [a, b)."""
-    before = [v for t, v in points if t <= a]
-    level = before[-1] if before else (points[0][1] if points else 0.0)
-    total, t0 = 0.0, a
-    for t, v in points:
-        if t <= a:
-            continue
-        if t >= b:
-            break
-        total += level * (t - t0)
-        t0, level = t, v
-    total += level * (b - t0)
-    return total / (b - a)
-
-
 def _loglik(y: list[float], mu: list[float]) -> float:
     ll = 0.0
     for c, m in zip(y, mu):
@@ -178,6 +162,8 @@ class Path:
     times: list[float]
     values: list[float]
     time_at: dict[float, float]
+    live: list[tuple[float, float]]
+    unit_s: float
 
     @classmethod
     def of(cls, points: list[tuple[float, float]], live: list[tuple[float, float]], unit_s: float) -> Path:
@@ -194,7 +180,7 @@ class Path:
                 time_at[level] += (t - t0) / unit_s
                 t0, level = t, v
             time_at[level] += (end - t0) / unit_s
-        return cls(times, values, dict(time_at))
+        return cls(times, values, dict(time_at), list(live), unit_s)
 
     def before(self, t: float) -> float:
         """The level just before ``t``: what an event at ``t`` saw."""
@@ -205,6 +191,24 @@ class Path:
         """∫ max(0, c + k × level) dt over the window: a rate stops at zero (``fit_flow`` says
         when the data have shown that floor and when they have not)."""
         return sum(d * max(0.0, c + k * x) for x, d in self.time_at.items())
+
+    def expected(self, a: float, b: float, c: float, k: float) -> float:
+        """∫ max(0, c + k × level) dt over [a, b) within the live time: the events due between two
+        instants, following the level between them."""
+        total = 0.0
+        for start, end in self.live:
+            lo, hi = max(a, start), min(b, end)
+            if hi <= lo:
+                continue
+            i = bisect_right(self.times, lo) - 1
+            level, t0 = (self.values[i] if i >= 0 else (self.values[0] if self.values else 0.0)), lo
+            for t, v in zip(self.times[i + 1:], self.values[i + 1:]):
+                if t >= hi:
+                    break
+                total += (t - t0) * max(0.0, c + k * level)
+                t0, level = t, v
+            total += (hi - t0) * max(0.0, c + k * level)
+        return total / self.unit_s
 
     def below_zero(self, c: float, k: float) -> tuple[float | None, float]:
         """The lowest level the stock held at which c + k × level is below zero, and how long it
@@ -298,12 +302,24 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
     return [best, *sorted((c for c in cands if c is not best), key=lambda c: ("rejected" in c, c["aic"]))]
 
 
-def dispersion(y: list[float], dt: float, form: dict, levels: dict[str, list[float]]) -> float:
-    """Pearson χ² per degree of freedom of the counts per step against the chosen form: near 1
-    when the form explains the variation, well above 1 when something it lacks drives the flow."""
-    p, xs = form["params"], (levels[form["inputs"][0]] if form["inputs"] else [0.0] * len(y))
-    mu = [max(1e-9, (p.get("c", 0.0) + p.get("k", 0.0) * x) * dt) for x in xs]
-    return sum((v - m) ** 2 / m for v, m in zip(y, mu)) / max(1, len(y) - form["k"])
+def dispersion(events: list[tuple[float, float]], live: list[tuple[float, float]], form: dict, paths: dict[str, Path], unit_s: float) -> float:
+    """How far the events are from a Poisson process at the chosen form's rate: the rate
+    integrated from each event to the next (``Path.expected``: the events the form expected in
+    between) is, for a Poisson process, exponential with mean 1, so the variance of those
+    intervals over their mean squared is near 1 when the form explains the variation, well above
+    1 when events bunch where the form expected few (something it lacks drives the flow), and
+    well below 1 when they come more regularly than chance (a machine's fixed service time). Judged
+    between events rather than on counts per step, which for a rate tied to the stock's own
+    changes (a start that ends the idle time it depends on) is wrong at every step's edge."""
+    p, x = form["params"], (form["inputs"][0] if form["inputs"] else None)
+    c, k = p.get("c", 0.0), p.get("k", 0.0)
+    times = [t for t, d in events for _ in range(int(d))]
+    if len(times) < 2:
+        return 1.0
+    between = lambda a, b: paths[x].expected(a, b, c, k) if x else max(0.0, c) * sum(max(0.0, min(b, hi) - max(a, lo)) for lo, hi in live) / unit_s
+    gaps = [between(a, b) for a, b in pairwise(times)]
+    mean = sum(gaps) / len(gaps)
+    return sum((g - mean) ** 2 for g in gaps) / max(1, len(gaps) - 1) / max(mean * mean, 1e-12)
 
 
 def unique_id(slug: str, machine: str | None, taken: set[str]) -> str:
@@ -392,7 +408,6 @@ def twin_levels(found: list, left_out: dict[str, str], same_flow) -> tuple[list,
 def discover(dump, *, start: float, end: float, step: float, time_unit: str = "minute") -> Model:
     """The model the metrics imply over [start, end], with how it was found in ``model.discovery``."""
     n = max(2, int((end - start) // step))
-    dt = step / UNITS[time_unit]
     series, summed = sum_instances(sample(dump, start, step, n))
     left_out: dict[str, str] = {}
     end = start + n * step
@@ -542,14 +557,11 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     live_s = sum(b - a for a, b in live)
     steps_live = [i for i in range(n) if any(a <= start + i * step and start + (i + 1) * step <= b for a, b in live)]
     fit_start = live[0][0] if live else end
-    levels = {sid_of[s.key]: [_average(s.points, start + i * step, start + (i + 1) * step) for i in steps_live]
-              for s, _, _, _ in found}
     paths = {sid_of[s.key]: Path.of(s.points, live, unit_s) for s, _, _, _ in found}
     # the measured gauges that are not stocks (a rating, a demand; sd.inputs) may drive a flow's
     # rate like a stock may, as input:<name>
     inputs, input_refs = offered_inputs(series, {s.key for s, _, _, _ in found}, left_out)
     for name, vals in inputs.items():
-        levels[f"input:{name}"] = [vals[i] for i in steps_live]
         paths[f"input:{name}"] = Path.of([(start + i * step, v) for i, v in enumerate(vals)], live, unit_s)
     # A stock that only fills (no outflow in its balance) grows with time whatever else happens,
     # so as a driver of another flow's rate it stands in for time itself and finds spurious
@@ -568,8 +580,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             mv.evidence["not_drivers"] = barred
         if c.key in same_as:                 # the counters of the same events this one stands for (one flow, measured twice)
             mv.evidence["same_as"] = same_as[c.key]
-        best, *rest = fit_flow(events_of(c.points, live), live_s / unit_s, paths, mv.src, set(paths) - accumulators - set(barred))
-        best["dispersion"] = dispersion(y, dt, best, levels)
+        events = events_of(c.points, live)
+        best, *rest = fit_flow(events, live_s / unit_s, paths, mv.src, set(paths) - accumulators - set(barred))
+        best["dispersion"] = dispersion(events, live, best, paths, unit_s)
         src = mv.src
         other = lambda x, src=src: f"_{x['inputs'][0]}" if x["inputs"] and x["inputs"] != [src] else ""   # a form in another stock says which
         alt = {f"aic_{x['form']}{other(x)}": round(x["aic"], 2) for x in rest[:4]}

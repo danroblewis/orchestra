@@ -125,3 +125,25 @@ def test_a_counter_of_the_same_events_is_recorded_on_the_flow_that_stands_for_it
     assert {other["labels"]["from"], f.counter.labels["from"]} == {"review", "approved"}
     assert any(v.startswith("the same as") for v in m.discovery["left_out"].values())
     assert math.isfinite(f.current().quality["aic"])
+
+
+def test_dispersion_is_judged_between_events_at_the_forms_rate():
+    # one reviewer: a turn starts at 9/min while it is idle and never while it works; it is busy
+    # most of the time. Counts per 5 s step judged at the step's average level would be impossible
+    # (a dispersion of millions, where the level flipped inside the step); the rate integrated
+    # from each start to the next is exponential with mean 1, as a Poisson process should be
+    from orchestra.sd.discover import dispersion
+    rng = random.Random(7)
+    pts, events, level, t = [], [], 0.0, 0
+    while t < 3600:
+        if level == 0.0 and rng.random() < 9.0 / 60:
+            events.append((T0 + t, 1.0)); level = 1.0; pts.append((T0 + t, 1.0))
+        elif level == 1.0 and rng.random() < 1 / 8:
+            level = 0.0; pts.append((T0 + t, 0.0))
+        t += 1
+    stock = Path.of([(T0, 0.0), *pts], LIVE, 60.0)
+    form = {"form": "linear", "params": {"c": 9.0, "k": -9.0}, "inputs": ["s"], "k": 2}
+    assert 0.6 < dispersion(events, LIVE, form, {"s": stock}, 60.0) < 1.5
+    # events on the clock, every ten seconds, at a constant form: more regular than chance
+    clock = [(T0 + i * 10, 1.0) for i in range(360)]
+    assert dispersion(clock, LIVE, {"form": "constant", "params": {"c": 6.0}, "inputs": [], "k": 1}, {}, 60.0) < 0.1
