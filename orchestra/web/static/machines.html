@@ -61,7 +61,8 @@ Orchestra.machineList = () => (DATA ? DATA.machines : []);
 // (machine → event), machines listen for event types (event → machine).
 function machineGraph(d) {
   const nodes = {}, evNodes = {}, links = {};
-  for (const m of d.machines) nodes["m:" + m.id] = { id: "m:" + m.id, kind: m.bootstrap ? "program" : "machine", label: m.id, bootstrap: m.bootstrap, active: m.active, machine: true, instances: m.instances, mode: m.mode };
+  for (const m of d.machines) nodes["m:" + m.id] = { id: "m:" + m.id, kind: m.bootstrap ? "program" : "machine", label: m.name || m.id, mid: m.id, group: m.group,
+                                                     bootstrap: m.bootstrap, active: m.active, machine: true, instances: m.instances, mode: m.mode };
   const day = {};
   for (const m of d.machines) for (const p of m.publishes) day[p.type] = (day[p.type] || 0) + p.day;
   const evNode = (type) => { const id = "ev:" + type; evNodes[id] = evNodes[id] || { id, kind: "event", label: type, cnt: day[type] || 0 }; return id; };
@@ -135,7 +136,14 @@ function countedGraph(d, nodeColor) {
 }
 let GRAPH = null;
 // under a machine's name: how many instances run it and how it is engaged
-const machineSub = (m) => [m.bootstrap ? "bootstrap" : "", m.instances && m.instances.length ? `×${m.instances.length}` : "", m.mode || ""].filter(Boolean).join(" · ");
+const machineSub = (m) => [m.group || "", m.bootstrap ? "bootstrap" : "", m.instances && m.instances.length ? `×${m.instances.length}` : "", m.mode || ""].filter(Boolean).join(" · ");
+// machines that announced a group (a team) are drawn near each other: each group is pulled toward
+// its own spot on a ring around the middle. A grouping, never a separation: one map, every machine
+function groupAnchors(machines) {
+  const groups = [...new Set(machines.map((m) => m.group).filter(Boolean))].sort();
+  if (groups.length < 2) return {};
+  return Object.fromEntries(groups.map((g, i) => { const a = 2 * Math.PI * i / groups.length; return [g, [0.5 + 0.3 * Math.cos(a), 0.5 + 0.3 * Math.sin(a)]]; }));
+}
 // What the map shows: machines only (each machine-to-machine link one arrow, standing for every
 // event type between them), or machines and event types; and which event families are hidden. A
 // family is an event type's name up to its first dot (order.placed: order). Both remembered.
@@ -162,7 +170,7 @@ function eventMap(d0) {
       <div class="legend">${EV_MODE === "machines" ? "" : '<span><i style="border-color:#4b5563"></i>publishes / listens for</span><span><span style="color:#fcd34d">▭</span> event type</span>'}${(d0.channels || []).length ? '<span><i style="border-top:5px double #94a3b8"></i>counted: a producer\'s or consumer\'s count on another system\'s bus, with its rate (no events)</span><span><span style="color:#67e8f9">▭</span> channel, with what waits in it</span>' : ""}<span>○ machine</span><span>halo: active in the last two minutes</span>${EV_MODE === "machines" ? "<span>an arrow: the machine publishes something the other listens for (hover a line for which); arrowheads at both ends: they talk both ways; thicker: more in the last 24 h; grey: not seen in 24 h</span>" : "<span>lines take their machine's colour: solid, it publishes; dashed, it listens; grey, not seen in 24 h</span>"}<span>dotted: inferred, not announced: the machine acted on something (an event's subject) right after this event about it</span><label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_ALL ? "checked" : ""} onchange="window.EV_SHOW_ALL=this.checked;window.LOOPSIG=null;render()"> show events nobody listens for</label><span>· drag nodes (they stay where dropped; double-click to release), scroll to zoom, hover to isolate, click a machine for its details and log</span></div>
       <div class="ng-loops" id="loops"></div></div>`;
     GRAPH = NetGraph.create($("evsvg-host"), { key: "machines." + EV_MODE, height: 600, isolateHops: EV_MODE === "machines" ? 1 : 2,
-      onClick: (x, kind) => { if (kind === "node" && x.machine) openMachine(x.label); },
+      onClick: (x, kind) => { if (kind === "node" && x.machine) openMachine(x.mid || x.label); },
       tip: (x, kind) => kind === "node" ? (x.machine ? `<div class="tt">${esc(x.label)}</div><div class="hint">${x.active ? "active in the last few minutes" : "quiet"} · click for its details and log</div>`
           : x.channel ? `<div class="tt">${esc(x.label)}</div><div class="hint">a channel on another system's bus, known by counts</div><div class="tr"><span>produced</span><b>${perMin(x.channel.out_per_min)}/min</b></div><div class="tr"><span>consumed</span><b>${perMin(x.channel.in_per_min)}/min</b></div>${x.channel.backlog != null ? `<div class="tr"><span>waiting</span><b>${Math.round(x.channel.backlog).toLocaleString()}</b></div>` : ""}`
           : x.unattributed ? `<div class="tt">unattributed</div><div class="hint">counted traffic no source names a machine for</div>`
@@ -170,10 +178,11 @@ function eventMap(d0) {
         : `<div>${esc(x.source.label)} → ${esc(x.target.label)}</div>${x.vias ? `<div class="muted">${x.vias.map(esc).join("<br>")}</div>` : ""}${x.seen ? `<div class="tr"><span>last 24h</span><b>${x.seen}</b></div>` : ""}` });
   }
   familyBar(d0);
+  const anchors = groupAnchors(d0.machines);
   const nodes = g.nodes.map((n) => n.kind === "event"
     ? { id: n.id, kind: "box", cls: "ng-event", label: n.label, lines: n.labels || [n.label], sub: n.cnt ? n.cnt + "/24h" : "", color: "#6b5313", hop: true, cnt: n.cnt, labels: n.labels }
-    : { id: n.id, kind: "circle", label: n.label, machine: true, active: n.active, halo: n.active, color: n.bootstrap ? "var(--panel3)" : mcolor(n.label),
-        stroke: n.bootstrap ? "#fbbf24" : null, strokeWidth: n.bootstrap ? 2 : null, sub: machineSub(n) });
+    : { id: n.id, kind: "circle", label: n.label, mid: n.mid, machine: true, active: n.active, halo: n.active, color: n.bootstrap ? "var(--panel3)" : mcolor(n.mid || n.label),
+        stroke: n.bootstrap ? "#fbbf24" : null, strokeWidth: n.bootstrap ? 2 : null, sub: machineSub(n), anchor: anchors[n.group] });
   // an edge takes the colour of its machine (the publisher's, or the listener's: dashed), toned
   // down so the machines stand out (edge-color.js); unseen in 24 h: near-grey and fainter
   const nodeColor = (id) => { const n = nodes.find((x) => x.id === id); return !n ? "#94a3b8" : n.stroke === "#fbbf24" ? "#fbbf24" : n.color; };
@@ -248,7 +257,7 @@ function cards() {
   $("nm").textContent = DATA.machines.length;
   // a package draws the inside of its own machines' cards; what Orchestra observed is under it on every card
   $("cards").innerHTML = Orchestra.machineCards.sort(DATA.machines).map((m) => { const own = Orchestra.machineCards.card(m);
-    const head = own != null ? own : `<h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.id)}${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}${m.counted ? ' <span class="tag" title="known by counts a source read from another system\'s bus">counted</span>' : ""}${m.from_source ? ` <span class="tag" title="known from the series of another store ([[sources]]) the model is bound to">from ${esc(m.from_source)}</span>` : ""}</h3>`;
+    const head = own != null ? own : `<h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.name || m.id)}${m.name ? ` <span class="muted" style="font-size:12px">${esc(m.id)}</span>` : ""}${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}${m.counted ? ' <span class="tag" title="known by counts a source read from another system\'s bus">counted</span>' : ""}${m.from_source ? ` <span class="tag" title="known from the series of another store ([[sources]]) the model is bound to">from ${esc(m.from_source)}</span>` : ""}</h3>`;
     return Orchestra.machineCards.wrap(m, head + Orchestra.machineCards.rows(m)); }).join("");
   $("note").textContent = [DATA.unattributed_events ? `${DATA.unattributed_events.toLocaleString()} older events carry no source (they predate the event envelope) and are not attributed to any machine.` : "",
     ...Object.entries(DATA.counted_failed || {}).map(([k, v]) => `Counted traffic from ${k} could not be read: ${v}`)].filter(Boolean).join(" ");

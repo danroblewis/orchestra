@@ -6,12 +6,14 @@ Everything here is observed, or announced by the machine itself:
   is one **instance** of it (``baker/1``, ``baker/2``: one machine, two instances). Orchestra's own
   host is a machine too;
 - **how it is engaged** (continuous, scheduled or ad hoc), **what it listens for**, **what kind
-  of thing it is** (a program, a service, a person) and **which package** it belongs
-  to: until the bus adapters provide subscriptions the backend can list
-  (docs/proposals/empty-orchestra.md §3), an instance announces these when it starts, with
-  ``orchestra.machine.started`` (``data.mode``, ``data.listens_for``, ``data.kind``,
-  ``data.package``; ``orchestra.machine.subscribed`` with ``data.types`` is read too). The latest
-  announcement stands; the rest of it is passed to the package's card unread;
+  of thing it is** (a program, a service, a person), **which package** it belongs to, the **name**
+  to show it by and the **group** it belongs to (a team): until the bus adapters provide
+  subscriptions the backend can list (docs/proposals/empty-orchestra.md §3), an instance announces
+  these when it starts, with ``orchestra.machine.started`` (``data.mode``, ``data.listens_for``,
+  ``data.kind``, ``data.package``, ``data.name``, ``data.group`` or else ``data.team``;
+  ``orchestra.machine.subscribed`` with ``data.types`` is read too). A group labels machines and
+  groups them on the page, never separates them (AGENTS.md rule 4). The latest announcement
+  stands; the rest of it is passed to the package's card unread;
 - **publishes**: the event types its instances emitted, with counts (all time and the last day);
 - **metrics**: the series in the metrics store labelled ``machine=<id>``, and the series read from
   another store (``[[sources]]``) that the latest discovery found labelled with it: such a
@@ -65,6 +67,8 @@ class MachineIndex:
         self.mode: dict[str, str] = {}
         self.kind: dict[str, str] = {}                                   # machine -> what it announced it is (program, person, service, ...)
         self.package: dict[str, str] = {}                                # machine -> the package it announced it belongs to
+        self.name: dict[str, str] = {}                                   # machine -> the name it announced, to show it by
+        self.group: dict[str, str] = {}                                  # machine -> the group it announced (group, or else team)
         self.about: dict[str, dict] = {}                                 # machine -> the rest of its last announcement (opaque)
         self.instances: dict[str, dict[str, dict]] = defaultdict(dict)  # machine -> instance -> first/last seen
         self.logs: dict[str, dict[str, str]] = defaultdict(dict)        # machine -> instance -> announced log path
@@ -103,7 +107,15 @@ class MachineIndex:
             for field, into in (("kind", self.kind), ("package", self.package)):
                 if isinstance(d.get(field), str) and d[field]:
                     into[machine] = d[field]
-            self.about[machine] = {k: v for k, v in d.items() if k not in ("mode", "listens_for", "types", "log", "package", "kind")
+            if ev["type"] == "orchestra.machine.started":       # the latest says the name and group, or that there are none
+                name = d.get("name") if isinstance(d.get("name"), str) and d["name"] else None
+                group = next((d[k] for k in ("group", "team") if isinstance(d.get(k), str) and d[k]), None)
+                for value, into in ((name, self.name), (group, self.group)):
+                    if value:
+                        into[machine] = value
+                    else:
+                        into.pop(machine, None)
+            self.about[machine] = {k: v for k, v in d.items() if k not in ("mode", "listens_for", "types", "log", "package", "kind", "name", "group")
                                    and isinstance(v, str | int | float | bool | type(None) | list)}
             if isinstance(d.get("log"), str) and d["log"]:
                 self.logs[machine][instance or ""] = d["log"]
@@ -172,7 +184,8 @@ class MachineIndex:
                 last = max([v["last"] for v in self.instances[m].values()] + wrote, default=None)
                 first = min((v["first"] for v in self.instances[m].values()), default=None)
                 machines.append({"id": m, "bootstrap": m == HOST, "mode": self.mode.get(m), "kind": self.kind.get(m) or ("program" if m == HOST else None),
-                                 "package": self.package.get(m), "about": self.about.get(m, {}), "publishes": pubs,
+                                 "package": self.package.get(m), "name": self.name.get(m), "group": self.group.get(m),
+                                 "about": self.about.get(m, {}), "publishes": pubs,
                                  "subscribes": sorted(self.subs.get(m, ())), "metrics": sorted(metrics.get(m, [])),
                                  "logs": sorted(i or m for i in self.logs.get(m, {})),
                                  "instances": [i for i in insts if i["id"] != m] if any(k for k in self.instances[m]) else [],

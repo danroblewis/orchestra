@@ -51,9 +51,12 @@ others write is still a machine). Orchestra's own machine is the **bootstrap hos
 **How a machine is engaged** is one of three modes, a property of how it is run, not of what it
 is: **continuous** (long-running instances that take work as it comes), **scheduled** (run by
 the clock) or **ad hoc** (a fresh instance per piece of work). An instance announces its mode,
-what it listens for, what kind of thing it is (`data.kind`: program, agent, person or service)
-and which package it belongs to (`data.package`) when it starts (`orchestra.machine.started`,
-`data.mode`, `data.listens_for`), and may say where its log is (`data.log`, a file path). These
+what it listens for, what kind of thing it is (`data.kind`: program, agent, person or service),
+which package it belongs to (`data.package`), the name to show it by (`data.name`) and its group
+(`data.group`, or else `data.team`) when it starts (`orchestra.machine.started`, `data.mode`,
+`data.listens_for`), and may say where its log is (`data.log`, a file path). A group is a label:
+the Machines page shows it on each card and draws a group's machines near each other on the map,
+but every machine stays on the one page and the one map (AGENTS.md rule 4). These
 announcements are Orchestra's own event type, so Orchestra reads their `data`. The web server
 shows an announced log only when its real path is a regular file inside the project's repository
 or state directory (`web/machine_logs.py`), because anything that can publish could name any
