@@ -104,9 +104,14 @@ NOT_IDENTITY = {"machine", "source", "project", "instance"}   # who wrote a seri
 
 
 def _said(s: Series) -> list[str]:
-    """The label values that say which series it is: not the project's or machine's, and not a
-    value with nothing to say (RabbitMQ's vhost ``/``, which would end an id in ``__``)."""
-    return [v for k, v in sorted(s.labels.items()) if k not in ("project", "machine") and re.sub(r"\W+", "", v)]
+    """The label values that say which series it is: not the project's or machine's, not a value
+    with nothing to say (RabbitMQ's vhost ``/``, which would end an id in ``__``), and not one
+    another value already says (a queue ``analytics.clicks`` says its consumer ``analytics`` and its
+    exchange ``clicks``: the id is ``…_analytics_clicks``, not ``…_analytics_clicks_analytics_clicks``)."""
+    vals = [v for k, v in sorted(s.labels.items()) if k not in ("project", "machine") and re.sub(r"\W+", "", v)]
+    words = [set(filter(None, re.split(r"\W+", v))) for v in vals]
+    return [v for i, v in enumerate(vals)
+            if not any(j != i and (words[i] < words[j] or (words[i] == words[j] and j < i)) for j in range(len(vals)))]
 
 
 def _slug(s: Series) -> str:

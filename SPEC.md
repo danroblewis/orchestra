@@ -691,7 +691,10 @@ minutes, which allows for the store's scrape interval and the minute between rea
   levels at the start of the era to now, and from now a horizon the viewer chooses; flows with no
   form the simulator steps are replayed from their observed rates, and named. Its flows are split
   into what fills it and what drains it (drawn below zero). It shows the host's latest discovery
-  and steps through saved versions.
+  and steps through saved versions. It says in plain words what the window and the step are and
+  what each decides, shows each series' resolution and read (held or linear) beside it in the
+  stocks table and the list of what was left out, and a stock's drawer its resolution, its balance
+  or, for a stock no counters balance, its fitted net flow.
 
 The model's graph frames **the system**. There is one system: every stock and auxiliary is
 inside it, and only the environment (the clouds flows come from and go to) is outside, so what

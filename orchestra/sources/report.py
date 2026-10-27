@@ -64,8 +64,9 @@ def infer(cat: Catalogue, project, only: str | None = None) -> list[str]:
                    + (f"; query script {inf.script}" if inf.script else ""))
         for f in inf.families:
             labels = ", ".join(_label(c, i) for c, i in f["labels"].items())
-            out.append(f"  family {f['name']} [{f['kind']}{', ' + '/'.join(f['stats']) if f['stats'] else ''}] every "
-                       f"{f['resolution_s'] or '?'} s: {labels}")
+            every = (f"every {f['resolution_s']:g} s" if f["resolution_s"]
+                     else "its reporting interval not measured: fewer than three samples of it in the window")
+            out.append(f"  family {f['name']} [{f['kind']}{', ' + '/'.join(f['stats']) if f['stats'] else ''}] {every}: {labels}")
         for n in inf.notes:
             out.append(f"  note: {n}")
         out.append("  kept:")

@@ -123,6 +123,6 @@ svg.netgraph { display:block; width:100%; min-height:0; font-size:11px; cursor:g
 .mdlg .num { font-family:var(--mono) } .mdlg h4 { margin:14px 0 6px; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted) }
 .tag.k-continuous { color:#93c5fd; border-color:#1d4ed8 } .tag.k-scheduled { color:#fcd34d; border-color:#92400e } .tag.k-ad_hoc { color:#c4b5fd; border-color:#5b21b6 }
 .mdlg .row { font-size:12px; margin:4px 0; display:flex; gap:6px; flex-wrap:wrap; align-items:baseline } .mdlg .row > .muted:first-child { width:84px; flex:none }
-.mdlg .ty { background:var(--panel3); border:1px solid var(--border); border-radius:999px; padding:0 8px; font-size:11px; font-family:var(--mono) }
+.mdlg .ty { background:var(--panel3); border:1px solid var(--border); border-radius:999px; padding:0 8px; font-size:11px; font-family:var(--mono); max-width:100%; overflow-wrap:anywhere }
 .mdlg h3 .tag { font-size:9.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:#fde68a; border:1px solid #92400e; border-radius:4px; padding:0 4px; margin-left:4px }
 

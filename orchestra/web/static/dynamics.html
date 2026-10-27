@@ -20,6 +20,8 @@
   .legend .lg { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text2); background:var(--panel2); border:1px solid var(--border); border-radius:999px; padding:2px 9px; cursor:pointer }
   .legend .lg i { width:14px; height:3px; border-radius:2px; background:var(--c) } .legend .lg.prog i { height:3px; outline:1px dashed var(--c) }
   .tables { display:grid; grid-template-columns:repeat(auto-fit, minmax(460px, 1fr)); gap:12px; margin-top:14px }
+  .tables > div { min-width:0 } .tables .panel { overflow-x:auto } #flows td.num, #stocks td.num { white-space:normal; overflow-wrap:break-word }
+  #found .ty { overflow-wrap:anywhere } #found table.dt { table-layout:fixed } #found td.num { white-space:normal; overflow-wrap:anywhere; width:55% }
   table.dt { width:100%; border-collapse:collapse; font-size:12px } table.dt th { text-align:left; color:var(--muted); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; padding:4px 6px; border-bottom:1px solid var(--border) }
   table.dt td { padding:4px 6px; border-bottom:1px solid var(--border); vertical-align:top } table.dt td.num { font-family:var(--mono); white-space:nowrap }
   table.dt tr:hover td { background:var(--panel3) } .mdot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--c); margin-right:5px }
@@ -60,6 +62,7 @@
       <label>step <input id="d-step" type="number" min="5" step="5"> s</label>
       <label class="wide">options (JSON, passed to the strategy) <textarea id="d-options" rows="2" spellcheck="false"></textarea></label>
       <div class="wide muted" id="d-desc"></div>
+      <div class="wide muted" id="d-plain"></div>
       <div class="wide muted">These apply to "rediscover now" only. The host rediscovers every <span id="d-every"></span> with <code>[discovery]</code> in orchestra.toml.</div>
     </div></details>
   <div class="diagram" id="diagram"></div>
@@ -211,6 +214,24 @@ function lookedAt(d) {
   const n = d.looked_at ?? d.series, early = n - (d.series ?? n);
   return `Looked at ${n} series over ${ago(d.end - d.start)}, in ${d.step} s steps` + (early > 0 ? `: ${early} left out at once (Orchestra's own, or no longer written), ${d.series} considered.` : ".");
 }
+// the window and the step, said plainly: what they are and what they decide
+function plainWindow(windowS, stepS) {
+  return `The <b>window</b> is how far back discovery reads: the last ${ago(windowS)} of every series. A stock has to change, and a flow `
+    + `has to count, often enough inside it to be told from chance, so a slow system needs a long window. The <b>step</b> is how finely it `
+    + `compares them: every ${stepS} s it asks how much each level changed and how much each counter counted. A state an item passes `
+    + `through faster than one step is never seen holding it, so a fast system needs a short step. A series is never read finer than it `
+    + `was written: one written every few minutes is compared over the stretches between its own points, and it explains nothing faster `
+    + `than that (its resolution, beside each series below).`;
+}
+// a series' resolution and how discovery read it between its points (sd.resolution)
+function resText(r) {
+  if (!r) return "";
+  const every = r.resolution_s ? `every ${r.resolution_s < 90 ? Math.round(r.resolution_s) + " s" : ago(r.resolution_s)}` : "as things happen";
+  return `${every} · ${r.read === "linear" ? "linear between points" : "last value held"}`;
+}
+const resOf = (d, key) => resText(((d || {}).resolution || {})[key]);
+const keyOf = (ref) => ref.name + (Object.keys(ref.labels || {}).filter((k) => k !== "project").length
+  ? "{" + Object.entries(ref.labels).filter(([k]) => k !== "project").sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}="${v}"`).join(",") + "}" : "");
 // the stores the series were read from (orchestra.toml's [[sources]]), when there are others than
 // the project's own: each one's state, and why a discovery with one missing was not saved
 function sourcesNote(d) {
@@ -231,7 +252,8 @@ function leftOut(lo) {
   }
   const order = Object.keys(groups).sort((a, b) => (a.startsWith("changed") ? -1 : b.startsWith("changed") ? 1 : groups[b].length - groups[a].length));
   return order.map((g) => {
-    const rows = groups[g].map(([k, why]) => `<tr><td class="num">${esc(k)}</td>${g.startsWith("changed") ? `<td class="muted">${esc(why.replace(/^no counters balance it /, ""))}</td>` : ""}</tr>`).join("");
+    const res = (k) => resOf(MODEL && MODEL.discovery, k);
+    const rows = groups[g].map(([k, why]) => `<tr><td class="num">${esc(k)}${res(k) ? `<div class="muted" style="font-family:inherit">${esc(res(k))}</div>` : ""}</td>${g.startsWith("changed") ? `<td class="muted">${esc(why.replace(/^no counters balance it /, ""))}</td>` : ""}</tr>`).join("");
     return `<details ${g.startsWith("changed") ? "open" : ""}><summary>${esc(g)} <span class="count">${groups[g].length}</span></summary><table class="dt">${rows}</table></details>`;
   }).join("");
 }
@@ -244,13 +266,17 @@ function tables() {
       <td>${e ? `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span> <span class="muted num">${esc(e.form)} · ${q.events ?? 0} ev · disp ${(q.dispersion ?? 0).toFixed(1)}</span>` : '<span class="muted">—</span>'}</td>
       <td>${f.machine ? `<span class="mdot" style="--c:${mcolor(f.machine)}"></span>${esc((byMachine[f.machine] || {}).name || f.machine)}` : '<span class="muted">unattributed</span>'}</td></tr>`; }).join("");
   $("stocks").innerHTML = `<tr><th>stock</th><th>now</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr><td>${stockHead(s.id)}</td><td class="num">${m.levels[s.id] ? m.levels[s.id].v + " " + esc(s.unit) : "—"}</td>
-      <td class="num muted">${s.series ? esc(s.series.name + "{" + Object.entries(s.series.labels).filter(([k]) => k !== "project").map(([k, v]) => `${k}="${v}"`).join(",") + "}") : "not measured"}</td></tr>`).join("");
+      <td class="num muted">${s.series ? esc(keyOf(s.series)) + `<div style="font-family:inherit">${esc(resOf(m.discovery, keyOf(s.series)))}</div>` : "not measured"}</td></tr>`).join("");
   $("machines").innerHTML = `<tr><th>machine</th><th>kind</th><th>flows</th></tr>` + m.machines.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span>${esc(x.name)}${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
       <td>${kindWord(x.id, x.kind)}</td><td class="num">${x.attributed.length}</td></tr>`).join("");
   const fitted = m.flows.filter((f) => f.current && f.current.origin === "fitted").length;
   const d = m.discovery || {};
-  $("found").innerHTML = d.left_out ? `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d))} A level is a stock when counters balance it (R² ≥ ${d.min_r2}).</div>` + sourcesNote(d)
-    + m.stocks.map((s) => s.evidence && s.evidence.balance ? `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">changes by</span> ${s.evidence.balance.map((b) => `<span class="ty">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join(" ")} <span class="muted">R² ${s.evidence.balance_r2.toFixed(3)} · exact in ${Math.round(100 * s.evidence.exact_steps)}% of steps</span></div>` : "").join("")
+  $("found").innerHTML = d.left_out ? `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d))} A level is a stock when counters balance it (R² ≥ ${d.min_r2}), or, with no counters, when the other series explain how it changes better than a steady drift does.</div>`
+    + (d.end && d.step ? `<div class="muted" style="font-size:12px;margin-bottom:6px">${plainWindow(d.end - d.start, d.step)}</div>` : "") + sourcesNote(d)
+    + m.stocks.map((s) => { const ev = s.evidence || {};
+      if (ev.balance) return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">changes by</span> ${ev.balance.map((b) => `<span class="ty">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join(" ")} <span class="muted">R² ${ev.balance_r2.toFixed(3)} · exact in ${Math.round(100 * ev.exact_steps)}% of steps</span></div>`;
+      if (ev.net_flow) return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">no counters; its net flow fitted as</span> <span class="ty">${esc(ev.net_flow.form)}</span> <span class="muted">R² ${ev.net_flow.r2.toFixed(2)} over ${ev.net_flow.stretches} stretches of ${ago(ev.net_flow.stretch_s)}</span></div>`;
+      return ""; }).join("")
     + `<h3>Left out <span class="count">${Object.keys(d.left_out).length} of ${d.looked_at ?? "?"}</span></h3>` + leftOut(d.left_out) : '<div class="muted">This version was declared, not discovered.</div>';
   $("sum").innerHTML = `${m.stocks.length} stocks · ${m.flows.length} flows (${fitted} fitted) · ${m.machines.length} machines${m.stored ? "" : ' · <span class="stale">not stored yet: <code>orchestra sd declare</code></span>'}${m.levels_error ? ` · <span class="stale">levels: ${esc(m.levels_error)}</span>` : ""}`;
 }
@@ -289,7 +315,8 @@ async function loadStrategies() {
     $("d-strategy").innerHTML = d.strategies.map((s) => `<option value="${esc(s.name)}" ${s.name === c.strategy ? "selected" : ""} title="${esc(s.description)}">${esc(s.name)}</option>`).join("");
     $("d-window").value = Math.round(c.window_s / 60); $("d-step").value = Math.round(c.step_s); $("d-every").textContent = ago(c.every_s);
     $("d-options").value = Object.keys(c.options || {}).length ? JSON.stringify(c.options) : "";
-    const desc = () => { const s = d.strategies.find((x) => x.name === $("d-strategy").value); $("d-desc").textContent = s ? s.description : ""; $("dset-sum").textContent = `${$("d-strategy").value} · ${$("d-window").value} min · ${$("d-step").value} s steps`; };
+    const desc = () => { const s = d.strategies.find((x) => x.name === $("d-strategy").value); $("d-desc").textContent = s ? s.description : ""; $("dset-sum").textContent = `${$("d-strategy").value} · ${$("d-window").value} min · ${$("d-step").value} s steps`;
+      $("d-plain").innerHTML = plainWindow(+$("d-window").value * 60, +$("d-step").value); };
     ["d-strategy", "d-window", "d-step"].forEach((id) => $(id).addEventListener("change", desc)); desc();
     if (!d.sd_installed) $("d-desc").textContent += " · SD Lab's strategies need orchestra[sd] installed";
   } catch (e) {}

@@ -101,6 +101,8 @@ def merge(view: dict, summary: dict | None, now: float) -> None:
                  "subscribes": [], "metrics": [], "logs": [], "instances": [], "first_seen": None, "last_seen": None,
                  "active": False, "counted_only": True}
             view["machines"].append(m)
+        if not m.get("first_seen") and not m.get("publishes"):
+            m["counted_only"] = True         # however else it is known (a model's series), never seen on the bus: known by counts
         m["counted"] = sorted(c["traffic"], key=lambda t: (t["channel"], t["direction"]))
         if c["last"] and c["last"] > (m.get("last_seen") or 0.0):
             m["last_seen"] = c["last"]
