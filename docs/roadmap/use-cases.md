@@ -71,6 +71,13 @@ each was refuted:
 - in the bakery, the shelf's mean age, "driven" by demand (R² 0.48) or by the Yelp rating
   (R² 0.38): an average summarises what is on the shelf and holds nothing.
 
+**That result does not hold at the live demo's 12 h window.** Two minutes after this was deployed
+(2026-10-27 05:12), the live discovery took the San Francisco tide for a stock again, "driven" by
+California's power demand, and kept it for 32 minutes (model versions 2–8) until its collector
+stopped; replayed on the same code at 12 h, it survives every refutation above (R² 0.92 ending
+05:12, 0.93 ending 05:32). The refutations were measured at 4 h and 6 h only. In production the
+layer is active and wrong, and it is a candidate for removal.
+
 A net-flow stock that does survive is still only a correlation: its driver is what fitted the
 level's changes, and nothing has moved the driver to see the level answer. The Dynamics page says
 so on every such flow ("fitted from correlation; untested"); the impulse tests of H1 are what
