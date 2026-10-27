@@ -58,7 +58,11 @@ announcements are Orchestra's own event type, so Orchestra reads their `data`. T
 shows an announced log only when its real path is a regular file inside the project's repository
 or state directory (`web/machine_logs.py`), because anything that can publish could name any
 file. The host starts and keeps running the commands a project or a plugin declares (§5.1), but
-knows them only as processes: a process becomes a machine by what it publishes. Running machines on
+knows them only as processes: a process becomes a machine by what it publishes. The collectors a
+project declares (§5.2) are the one case where the host announces a machine on its behalf, from
+`orchestra.toml`: what it announces is how the host engages the collector (on a schedule, or a
+scrape of a program that runs on its own), and the Machines page reads that announcement like
+any other. Running machines on
 a clock is not built (`docs/roadmap/decisions.md`, D7).
 
 Every event carries the **CloudEvents 1.0** envelope (`orchestra.events.envelope`):
@@ -116,10 +120,12 @@ backend; server backends need their client library (`orchestra[bus-redis]`, `[bu
 Measured series (`orchestra/metrics/`): name plus labels, like Prometheus, each carrying a
 `project` label. A JSONL file by default, or VictoriaMetrics (`[metrics] url =
 "http://host:port"`, or `ORCHESTRA_METRICS_URL`). The interface: `write`, `raw`, `range`,
-`latest`, `series`, `dump`, `delete`. A range carries the last value forward at each step. Machines
-write their own series, labelled `machine=<id>` so they can be attributed, through
-`orchestra.metrics.for_repo()`: the store the project's `orchestra.toml` configures, adding the
-`project` label every reader selects by. Names say what is measured (`bakery_shelf_loaves`,
+`latest`, `series`, `dump`, `delete`. A range carries the last value forward at each step. A
+machine's series reach the store without the machine importing Orchestra: a script collector
+prints them, or a program serves them, in the Prometheus text format, and the host writes them
+(§5.2). A Python program may instead write them through `orchestra.metrics.for_repo()`, the store
+the project's `orchestra.toml` configures. Either way every series is labelled `machine=<id>`, so
+it can be attributed, and `project`, which every reader selects by. Names say what is measured (`bakery_shelf_loaves`,
 `orchestra_events_total`); whether a series is a stock or a flow is the model's business. The
 `orchestra_` prefix is Orchestra's own: discovery leaves those series out, and says so of one a
 program wrote. How to write a machine's series is in `docs/machines.md`.
@@ -133,6 +139,9 @@ Orchestra's own collector (`orchestra/collectors.py`) counts every event on the 
 source: `orchestra_events_total{type, source}`. The host runs it live (section 5); `orchestra
 metrics backfill` replays the whole log. Only the last value of a series at an instant is written,
 because stores disagree on the order of points that share one.
+
+A project's own collectors, a command run on an interval (`[[collect]]`) or a URL read on one
+(`[[scrape]]`), are in §5.2.
 
 ### 4.3 The model
 
@@ -285,7 +294,8 @@ system it is tested on.
 - writes `orchestra_host_up{machine="orchestra-host"}` every interval;
 - runs the event collector: replays the bus once at start, then follows it;
 - rediscovers the model every `[discovery] every`;
-- keeps running the processes the project and the plugins declare (§5.1).
+- keeps running the processes the project and the plugins declare (§5.1);
+- runs the collectors the project declares (§5.2).
 
 ### 5.1 The launcher
 
@@ -329,6 +339,56 @@ The launcher starts commands and nothing more: what a process does and which mac
 learned only from what it publishes (AGENTS.md rules 1 and 2). A process's name is not a machine
 id.
 
+### 5.2 Collectors and scrapes
+
+`orchestra/collect/`. A project declares in `orchestra.toml` commands that print measurements and
+URLs that serve them:
+
+```toml
+[[collect]]
+name = "disk"                    # the machine's id: letters, digits, . _ -
+command = "machines/disk.sh"     # split like a shell would, not run by one
+every = "60s"                    # default 60 s, at least 1 s
+timeout = "20s"                  # default 10 s, never more than every
+
+[[scrape]]
+name = "app"
+url = "http://127.0.0.1:9100/metrics"
+every = "30s"
+```
+
+The host that launches (§5.1) runs each on its interval, each round in a thread of its own; a
+collector whose last round is still running skips its turn. A command runs in the repository root,
+in a process group of its own, with `ORCHESTRA_REPO` and `ORCHESTRA_MACHINE_LOG` set and its
+standard error going to its log (`<state>/logs/machines/<name>.log`); a URL is fetched with a GET.
+The text, a command's standard output or a URL's body, is read as the Prometheus text exposition
+format (`collect/exposition.py`): samples with labels and optional millisecond timestamps, `# HELP`
+and `# TYPE` lines. Counters, gauges and untyped series are kept as they are; of a histogram or a
+summary only `_count` and `_sum` are kept, its buckets and quantiles left out; a value that is not a
+number is left out; a line that cannot be read is skipped and said once in the host's log. Each
+point gets `project` and `machine = <name>`, replacing any the text gave, and the round's start
+time when it has no timestamp. A series named `orchestra_*` is refused, with a line in the host's
+log saying to rename it.
+
+A round that fails (a non-zero exit, the timeout, which kills the command's group, a command that
+cannot start, an HTTP answer other than 200, or text over 10 MB) writes nothing, adds a line to the
+host's log and the collector's, and is counted in `orchestra_collect_failures_total{collector}`,
+labelled `machine="orchestra-host"`: a failing collector's writes must not look like signs of its
+life. A round that succeeds adds a line to the collector's log.
+
+When a collector is added or changed the host publishes `orchestra.machine.started` with the
+collector's name as `source`: mode `scheduled` for a command, `continuous` for a scrape (the
+program it reads runs on its own), kind `program`, no `listens_for`, and its log; the rest
+(`collector`, `command` or `url`, `every_s`) is passed on unread. `orchestra.toml` is read again on
+the host's tick (every second) when it changed: a collector added starts at once, one removed stops
+(a round under way finishes and its points are dropped), one changed starts over. A `[[scrape]]`
+may share the name of the `[[machines]]` entry whose program it reads; a `[[collect]]` may not, and
+an entry that cannot be used is left out with a line in the host's log. Stopping the host kills a
+command under way and writes nothing more.
+
+Only the Prometheus text format is read. There is no push endpoint, and a remote Prometheus server
+as a further data source is planned (`docs/roadmap/decisions.md`, D16).
+
 ---
 
 ## 6. Machines that are AI agents
@@ -351,7 +411,7 @@ keeps its own harness (`~/orchestra-agents/SPEC.md`).
     metrics.jsonl                the metrics, when [metrics] url = "file"
     model/vNNNN.json             the model's versions
     logs/orchestra-host.log
-    logs/machines/<name>.log     each launched process's output (§5.1)
+    logs/machines/<name>.log     each launched process's output (§5.1), each collector's standard error and rounds (§5.2)
 ```
 
 The project key is the repository directory's name plus a hash of its path. Nothing is written
@@ -373,6 +433,12 @@ strategy = "kalman_lna"
 [[machines]]            # the commands `orchestra run` keeps running (§5.1)
 name = "telemetry"
 command = "python machines/telemetry.py"
+[[collect]]             # a command whose output is measurements, run on an interval (§5.2)
+name = "disk"
+command = "machines/disk.sh"
+[[scrape]]              # a URL that serves measurements, read on an interval (§5.2)
+name = "app"
+url = "http://127.0.0.1:9100/metrics"
 ```
 
 Unknown sections are ignored, so files written for older versions still load, and a package of
@@ -385,7 +451,7 @@ machines may keep its own settings here (other packages' sections).
 | Command | What it does |
 |---|---|
 | `orchestra init` | Register the repository and write `orchestra.toml` |
-| `orchestra run` | Run the bootstrap host, and the processes the project and plugins declare |
+| `orchestra run` | Run the bootstrap host, the processes the project and plugins declare, and the project's collectors |
 | `orchestra web [--port]` | Serve the web UI |
 | `orchestra events info\|copy --to URL` | The event log |
 | `orchestra metrics backfill\|series` | Replay the log into event counters; list series |
@@ -494,6 +560,8 @@ mean.
 orchestra/
   cli.py  config.py  events.py  runtime.py  host.py  launcher.py  collectors.py  plugins.py
   bus/       file, redis_streams, rabbitmq_streams, kafka
+  collect/   a project's collectors and scrapes: spec, fetch, exposition (the Prometheus text
+             format), round, runner
   metrics/   file, victoria, promql
   sd/        model, store, fit, series and live (sampling, when a series was written), balance,
              collinear and restate (a level's balance), ends, inputs, drivers (which stocks may

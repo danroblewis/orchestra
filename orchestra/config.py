@@ -94,6 +94,19 @@ every = "5m"             # how often the host rediscovers
 # name = "telemetry"
 # command = "python machines/telemetry.py"
 # restart = "always"     # always, on-failure or never
+
+# Measurements in the Prometheus text format (`disk_free_bytes 1.2e11`, one per line), written to
+# the metrics store with machine = <name> (docs/machines.md). A script run on an interval:
+# [[collect]]
+# name = "disk"
+# command = "machines/disk.sh"   # executable, named with a slash; not run by a shell
+# every = "60s"
+# timeout = "20s"
+# A URL that serves them, read on an interval:
+# [[scrape]]
+# name = "app"
+# url = "http://127.0.0.1:9100/metrics"
+# every = "30s"
 """
 
 

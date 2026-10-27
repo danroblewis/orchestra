@@ -13,7 +13,10 @@ In an empty Orchestra it does little, on purpose:
 - it keeps running the commands the project declares (``[[machines]]`` in ``orchestra.toml``) and
   the plugins declare (``Plugin.processes``), through ``orchestra.launcher``, and stops them when
   it stops. Only one host launches for a project (``launcher`` in the runtime record): a second one, started while the
-  first runs, launches nothing, says so, and leaves the first one's record alone.
+  first runs, launches nothing, says so, and leaves the first one's record alone;
+- in the host that launches, it runs the collectors the project declares (``[[collect]]``, a
+  command, and ``[[scrape]]``, a URL, in ``orchestra.toml``) on their intervals and writes what
+  they print, in the Prometheus text format, to the metrics store (``orchestra.collect``).
 
 Stopping it (SIGTERM, SIGHUP or Ctrl-C) stops what it launched."""
 
@@ -28,6 +31,7 @@ from dataclasses import replace
 from datetime import datetime
 
 from . import plugins, runtime
+from .collect.runner import Collecting
 from .collectors import EventCollector, backfill, collapse
 from .config import Project
 from .events import HOST, Events
@@ -121,8 +125,10 @@ class Host:
         return [p for procs in now.values() for p in procs]
 
     def _launch(self) -> None:
-        """Keep the declared processes running until the host stops, then stop them."""
+        """Keep the declared processes running and the declared collectors collecting until the
+        host stops, then stop them."""
         launcher = Launcher(self.project, self.events.publish, self.log, self._plugin_processes)
+        collecting = Collecting(self.project, self.events.publish, self.log)
         launcher.reap_orphans()
         try:
             while not self._stop.is_set():
@@ -130,8 +136,13 @@ class Host:
                     launcher.tick()
                 except Exception as e:  # noqa: BLE001 - keep launching; the next tick retries
                     self.log(f"launcher: {type(e).__name__}: {e}")
+                try:
+                    collecting.tick()
+                except Exception as e:  # noqa: BLE001 - keep collecting; the next tick retries
+                    self.log(f"collect: {type(e).__name__}: {e}")
                 self._stop.wait(self.launch_every)
         finally:
+            collecting.stop()
             launcher.stop_all()
 
     def _claim(self) -> int | None:
