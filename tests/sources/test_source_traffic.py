@@ -248,3 +248,4 @@ def test_settle_ends_every_read_of_a_source_together(tmp_path, monkeypatch):
     finally:
         fake.close()
     assert r.dump and max(t for _, _, pts in r.dump for t, _ in pts) <= end - 60
+    assert r.status["mq"]["gaps"] == []                    # the settled minute is not a gap in what it returned

@@ -108,7 +108,7 @@ class Catalogue:
                 n += 1
         q = min((grid_step(step, d.resolution_s) for d in inf.kept), default=step)
         st.update(series=n, requests=src.requests - before[0], points=src.points - before[1],
-                  seconds=round(time.monotonic() - began, 2), gaps=gaps(times, start, end, q) if n else [],
+                  seconds=round(time.monotonic() - began, 2), gaps=gaps(times, start, end - spec.settle, q) if n else [],
                   refused_series=refused[:20])
         if errors:
             st.update(ok=False, error=f"{len(errors)} read{'s' if len(errors) != 1 else ''} failed; the first: {errors[0]}")
