@@ -104,6 +104,16 @@ discovery fills and corrects it.
     limits and a cache. The source and query are recorded on every series and equation.
   - **Slice 1:** read the bakery's VictoriaMetrics as a remote source from the sample project.
 
+- **Event sources: buses we can only count, and bridges for things that behave like one**
+  (`docs/proposals/event-sources.md`):
+  - **Counted traffic** (producer, topic, consumer, count per interval) from buses whose messages
+    we cannot or should not read. Pub/Sub comes through Cloud Monitoring; the test case is
+    RabbitMQ's own counts. It feeds machine discovery, the event map (a separate edge style) and
+    the model: counts become flows, backlogs become stocks.
+  - **Bridges** that turn Jira, Slack, Confluence and Docs changes into metadata-only events on
+    our bus. The test cases are GitHub issues, then Bluesky.
+  - **The Slack 15-minute expectation** becomes a measurable stock of unanswered pings.
+
 ### H2: the agents are ordinary, measured machines (weeks 3–4)
 
 - Agent usage and cost are events and series (tokens, dollars, turns, wall time per role), so the

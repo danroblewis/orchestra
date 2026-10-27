@@ -1,297 +1,270 @@
-# Proposal: reading other time-series stores (sources and series definitions)
+# Proposal: reading other time-series stores (sources, inferred series, transformation scripts)
 
-Status: draft, 2026-10-26. Nothing built. `[[collect]]` and `[[scrape]]` (being built) copy data
-*into* the project's store; this reads other stores where the data lives, copying nothing. The
-owner: "we just want to query it at the right times with the right time ranges"; "the target repo
-can specify the data transformation patterns."
+Status: draft, revised 2026-10-26 with the owner's answers (§12). Nothing built. `[[collect]]`
+and `[[scrape]]` copy data *into* the project's store; this reads other stores where the data
+lives, copying nothing. The owner: "the definitions should be inferred from the time-series
+database schema, and we would have some way of writing scripts to transform the data or
+transform the queries before they go out." The sibling `event-sources.md` uses the same
+machinery for counted bus traffic.
 
-## 1. Sources and series definitions
+## 1. Sources
 
-A **source** is where series live: `own` (the project's metrics store; always there), `prometheus`
-(anything speaking the Prometheus query API: Prometheus, VictoriaMetrics, Thanos, Mimir, Grafana
-Cloud), later `sql` (§4). A **series definition** is a named query against one source in the
-source's own language. That is the transformation layer; Orchestra invents no query language.
+A **source** is where series live: `own` (the project's metrics store) and `prometheus`
+(anything answering the Prometheus HTTP query API: Prometheus, VictoriaMetrics, Thanos, Mimir,
+Grafana Cloud, Google Cloud Monitoring's PromQL endpoint, and Chronosphere, the owner's work
+store; public material puts Chronosphere in the M3 lineage rather than Mimir, but it speaks
+PromQL over that API, which is all this needs). SQL comes later (§9).
 
 ```toml
 [[sources]]
 name = "work"
 type = "prometheus"
-url = "https://prometheus.corp.example:9090"
-auth = { bearer_env = "WORK_PROM_TOKEN" }      # never the secret itself (§5)
-timeout = "30s"
-concurrency = 4
+url = "https://<tenant>.chronosphere.io/data/metrics"
+auth = { bearer_env = "WORK_PROM_TOKEN" }   # never the secret itself (§6)
+prefix = "work"                             # series work:<name>, machines work.<id>
+machine = "service"                         # the canonical label that names machines
+match = ['{__name__=~"http_.*|grpc_.*"}']   # what to infer from; default everything, capped
+max_series = 200
 
-[[series]]                                      # raw samples; counters summed per service, reset-safe
-name = "authz_requests_total"
-source = "work"
-select = 'grpc_server_handled_total{service="authz"}'
-by = ["service"]
-kind = "counter"
+[sources.labels]                            # canonical = spellings; the first a metric has wins
+service = ["service", "svc", "app", "app_kubernetes_io_name", "k8s_app", "job"]
+region  = ["region", "zone", "location", "cloud_region"]
+pod     = ["pod", "pod_name", "kubernetes_pod_name"]
 
-[[series]]                                      # any PromQL, evaluated per step; one series per label set
-name = "requests_in_flight"
-source = "work"
-query = 'sum by (service) (rate(grpc_request_latency_seconds_sum[1m]))'
-kind = "level"
-labels = { machine = "{service}" }              # label template: flows attributed to the k8s service
+[sources.transform]
+queries = "orchestra/transform/queries.py"  # any executable (§3)
+data    = "orchestra/transform/data.py"     # optional
 ```
 
-Two forms: **`select`** (a plain selector: Orchestra fetches raw samples and groups by `by`
-itself, adding increments for counters) and **`query`** (any expression, evaluated by the source).
-Definitions live in `orchestra.toml` or a file it names (`series_file = "orchestra/series.toml"`);
-company definitions can ship as configuration in that company's plugin (D10). Nobody imports
-Orchestra.
+At start Orchestra asks which endpoints answer (`query_range`, `query`, `series`, `labels`,
+`label/<n>/values`, `metadata`, `buildinfo`) and works with what it gets; `orchestra sources
+check` prints it.
 
-**Fan-out.** A result with several label sets yields one series per set (`count by (service)
-(...)` → `name{service="authz"}`, `name{service="billing"}`, ...). `name` may be a template
-(`"work_{__name__}"`) so one selector over many names fans out into many named series.
-`max_series` (default 200) refuses a definition that matches more, saying how many.
+## 2. Series are inferred from the schema
 
-**One catalogue, one model.** The catalogue is the own store's project series (as today) plus
-every series the definitions yield; a remote source enters only through what is declared. Names
-are one namespace: a definition colliding with an own series or starting with `orchestra_` is
-refused with the reason. Sources label, never separate (rule 4): a remote stock and a local
-counter can meet in one balance.
+Orchestra proposes definitions, the repository's scripts correct them, and discovery decides
+what is a stock or a flow (rule 7). Run hourly by default, and cached:
 
-**Provenance is metadata, not a label** (`source` already means the CloudEvents emitter and
-`machine_of` reads it). `SeriesRef` gains optional `source`, `query`, `kind` (with its origin)
-and `resolution_s`, defaulting to own, so every stock, flow and equation input names where its
-data came from and old versions still load.
+1. **Read the schema:** metric names under `match`; a capped sample of each metric's label sets
+   (`series`); each label's cardinality and **churn** (values that appear or vanish within the
+   window); metadata type, unit and help where kept; the reporting interval, from a short raw
+   fetch.
+2. **Group families:** names differing only by a statistic suffix (`_max`, `_min`, `_avg`,
+   `_p50`, `_p95`, `_p99`, `_count`, `_sum`, `_bucket`), or only by a label such as `stat`,
+   `quantile` or `statistic`, are one family with a statistic dimension.
+3. **Alias labels** to canonical names. Queries use each metric's real label; results are renamed
+   on arrival, so `svc="authz"` and `app="authz"` become `service="authz"`.
+4. **Classify labels:** a churning, high-cardinality label (`pod`) is an **identity** label (the
+   lowest aggregate: aggregated away or counted, never kept); a stable, low-cardinality one
+   (`service`, `region`) is a **grouping** label.
+5. **Generate views** (§4), pass them through the query script, **rank and cap** them, and hand
+   the survivors to the catalogue.
 
-## 2. Querying, not syncing
+Every definition records its origin: `inferred` (from which family and view), `rewritten` (by
+which script, with its content hash) or `declared` (a hand-written `[[series]]`, still allowed).
 
-**Window and step.** Discovery's window is already aligned on multiples of the step
-(`rediscover.aligned`). A `query` goes out as `query_range` with that aligned start, end and step:
-Prometheus evaluates at exactly `start + k·step`, so the remote grid *is* discovery's grid (and
-VictoriaMetrics, which rounds start to the step for its rollup cache, hits that cache). A `select`
-is an instant query of a range selector (`selector[window+1h]`), which returns stored samples, not
-evaluated ones. This matters: discovery needs real sample times (`events_of` for the
-point-process likelihood, `usual_interval`/`on_events` for liveness, `between.py`); evaluated
-points are stamped at grid times and carried through Prometheus' 5-minute lookback. Prefer
-`select` wherever `by` can do the aggregation.
+## 3. The transformation layer
 
-**Per-source limits:** `max_points` (Prometheus refuses over 11,000 per series; longer requests
-are split into step-aligned chunks and joined), `max_range` (Mimir/Grafana Cloud cap query
-length), `concurrency` (a semaphore), `timeout` per request plus a total deadline inside
-rediscovery's existing share of `[discovery] every`, `max_series` per definition.
+Company specifics live in the target repository, never in Orchestra (D10).
 
-**Caching.** A past range is taken as immutable once older than a settle age (default 10 min:
-late scrapes, remote-write lag). Chunks aligned on step and hour are cached by (source, query,
-step, chunk) in `<state>/sources/cache/`, dropped when a definition changes, expired after a day;
-`cache = false` per source. Each rediscovery then fetches only the unsettled tail. Honest limit:
-VictoriaMetrics accepts backfill at any time; a backfill older than the settle age is missed until
-expiry, which the Sources page states.
+- **Label aliases** (`[sources.labels]`) turn "a dozen different label names" into one table.
+- **Prefix:** series are `<prefix>:<name>` and machines `<prefix>.<id>`, so a remote `authz`
+  never merges with a local one. Collisions with own series, and `orchestra_` names, are refused.
+- **Machines from labels:** `machine = "service"` labels each series `machine=work.<value>`; the
+  label is chosen here, never guessed.
+- **The query script** runs once per inference round like a `[[collect]]` command (any
+  executable, repository root, a timeout; nobody imports Orchestra, D16). JSON in on standard
+  input:
 
-**Partial failure.** Each source is queried on its own; a dead one costs only its series.
-Discovery runs on what arrived and records `missing: {definition: reason}`. A run with anything
-missing is written as the latest discovery but **never saved as a version**, so an outage does
-not churn versions or delete stocks; the Dynamics page shows the last complete version with a
-banner ("work unreachable since 14:05; 3 stocks not re-read").
+  ```json
+  {"source": "work", "candidates": [{"id": "c17", "family": "http_latency", "stat": "p95",
+    "view": "max_by", "group_by": ["service"], "kind": "level", "unit": "seconds",
+    "resolution_s": 60, "labels": {"service": {"real": "svc", "cardinality": 41, "churn": 0.0}},
+    "query": "max by (svc) (http_latency{stat=\"p95\"})"}]}
+  ```
 
-**The live sample's 6 h at 5 s** is 4,321 steps per series, under the 11,000 cap. Against a busy
-server: `sum by (service)(rate(x[1m]))` with `x` at 30,000 series scraped every 15 s reads about
-30,000 × 4 × 4,321 ≈ half a billion samples (seconds to tens of seconds of server CPU) and
-returns 50 services × 4,321 points (~6 MB JSON). A raw select of 300 counters is 300 × 1,440
-samples (~12 MB) once. Uncached, every 5-minute rediscovery repeats that: 12 times an hour. With
-the cache, each run costs (5 min + settle)/6 h ≈ 4% of the first. And a 5 s step on a 15 s scrape
-triples the cost for no information: remote queries are evaluated at the series' own resolution
-(§3), never finer, and discovery holds values between.
+  JSON out on standard output: a list of `{"id", "queries": [{"name", "query", "kind"?, "unit"?,
+  "labels"?}], "reason"?, "pin"?}`. An empty `queries` drops the candidate (the reason is shown);
+  a candidate not mentioned is kept; `"id": null` adds a definition of the script's own. One
+  script can rename, filter (add `{env="prod"}` to every selector), join families, or substitute
+  a query the team already trusts.
+- **The data script** (optional) does what PromQL cannot: mapping pod names to services by a
+  naming rule, unit fixes. It reads fetched results as JSON lines (`name`, `labels`, `points`)
+  and writes the same; over 10 MB or a non-zero exit fails those series for the round, with the
+  reason. Rewriting queries is preferred: the server does the work.
 
-## 3. Semantics discovery needs
+## 4. Views: aggregations, and count() as a type switch
 
-**Counter or level.** Today `series.py` decides by the name (`_total`) and few drops. Remote
-series get an explicit kind, in order: the definition's `kind` (`counter`, `level`, `rate`); the
-source's `/api/v1/metadata` type (Prometheus answers; VictoriaMetrics often doesn't); the name
-(`_total`, `_count`, `_sum`); the values, as today. The kind and its origin are recorded; one
-guessed from values alone gets a "declare this" warning. Discovery honours a passed kind before
-its name rule: H1's "explicit counter/gauge typing".
+| Family | Views generated | Never |
+|---|---|---|
+| Counter | increments grouped by each grouping set (raw samples, reset-safe) | `sum(counter)` across restarting pods |
+| Per-pod statistic (the owner's max, min, avg, p50, p95, p99 per minute) | `max by (G)` of max; `min by (G)` of min; `avg by (G)` of avg (unweighted, flagged); `max by (G)` of p95 or p99 (an upper bound, flagged) | summing latencies; an average of quantiles called a quantile |
+| Histogram or summary | `_count` as a counter; `rate(_sum)` as mean in flight (Little's law); a quantile as a level | — |
+| Any family | counts (below) | — |
 
-**Cumulative counts.** Prometheus counters already are cumulative, with resets. Fetch raw samples
-from an hour before the window; increments are `b − a`, or `b` after a drop (the rule
-`Series.deltas` and `sum_instances` already use); group by `by` as increments, never
-`sum(counter)`, where one pod's restart reads as the service going backwards. One change to
-`sample()` is forced: a remote counter's **first sample is a baseline**, not events (as
-Prometheus' `increase()` treats it). Today "before a counter's first point nothing was counted",
-so a counter first seen at 1,234,567 would read as a million-event burst. `kind = "rate"` (a query
-that is already `rate(...)`) is integrated (Σ rate × step); that flow's evidence says its event
-times are smeared over the rate window, and it is fitted on counts per step, never the
-exact-event likelihood.
+**count() switches the type.** The owner: "we regularly use count() to basically switch types:
+from latency to pod count, or latency to region count." A count of series is a **level of things
+that report**, not a latency. Orchestra generates it explicitly:
 
-**The owner's examples, read honestly:** `count(grpc_request_latency{service="authz"})` counts
-*series* (pods × methods × buckets): a level that moves when pods come and go. If
-`grpc_request_latency` is a histogram, `_count` is requests completed (a flow), `rate(_sum[1m])`
-is mean requests in flight by Little's law (a real stock), and `histogram_quantile(...)` is a
-latency (an input or auxiliary, not a stock). Discovery treats each right once its kind is right.
-Native histograms are refused in slice 1.
+- `count by (G) (last_over_time(F{stat="p50"}[R]))`: pods per G. One statistic only, so a pod's
+  six statistics are not counted six times; `R` is the measured reporting interval plus half, so a
+  pod that stops reporting drops out within a minute or two instead of lingering for Prometheus'
+  five-minute lookback (remote-written data rarely carries staleness markers).
+- `count(count by (L) (last_over_time(F[R])))`: how many distinct values of a grouping label
+  (regions, clusters) report at all.
 
-**Units:** the definition's `unit`, then metadata, then the suffix (`_seconds`, `_bytes`);
-counters default to "events".
+These are `kind = "level"`, with a unit named for what is counted (`pods`) and `view = "count"`
+in their origin, so the drawer says "pods of authz, counted from http_latency". Pods per service
+is a stock that scaling and deploys move, and may sit in a loop with latency: what the owner wants
+found.
 
-**Resolution.** For `select`, measured from the raw samples (`usual_interval`: the scrape
-interval). For `query`, measured once from a short raw fetch of its selectors, or declared
-(`resolution = "30s"`). Recorded per series, it is the input to H1's per-series-resolution work:
-no slow series explains anything faster than itself, and remote queries are never evaluated
-finer.
+**Cap and ranking.** Families × statistics × groupings × views explode. Each candidate is scored,
+and the top `max_series` series (default 200 per source, at most 12 per family) go to discovery.
+Higher scores: it **moves** within the window; its label sets are **stable**; it is **small**
+(series and samples, estimated from cardinalities); coarser grouping first. Candidates are taken
+round-robin across families, so one family cannot take the cap. What is left out is listed with
+its score and reason. A script's `"pin": true` bypasses the ranking, not the cap.
 
-**Staleness and gaps.** Staleness NaNs and ±Inf are dropped. With raw samples a gap is a gap, and
-`live.py` treats it as any machine-less series (stale after ten intervals of silence). Evaluated
-points fake up to 5 minutes of holding after a series ends (the lookback): a recorded limit of
-`query`. Pod churn makes every replaced pod's series "no longer written"; definitions should
-aggregate pods away (`by = ["service"]`), as `sum_instances` already does for `instance`.
+## 5. Querying, not syncing
 
-## 4. SQL, OLTP, lakes and warehouses
+- **Grid:** a `query` goes out as `query_range` with discovery's aligned start, end and step, so
+  the remote grid is discovery's. A `select` fetches raw samples (`selector[window+1h]`), keeping
+  real sample times for the point-process likelihood and liveness. Remote queries are never
+  evaluated finer than a series' measured resolution.
+- **Limits per source:** `max_points` (chunks under 11,000 points, joined), `max_range`,
+  `concurrency`, a timeout per request and a total deadline inside rediscovery's share of
+  `[discovery] every`.
+- **Cache:** step-aligned chunks older than a settle age (default 10 minutes, per source) are
+  cached by (source, final query, step, chunk) in `<state>/sources/cache/`; each rediscovery
+  fetches only the unsettled tail. `cache = false` keeps company data off disk. A backfill older
+  than the settle age is missed until the chunk expires (a day), and the Sources page says so.
+- **Availability:** "external systems are as available as they intend to be." Each source is
+  queried alone, with backoff; discovery runs on what arrived, records what is missing and why,
+  and never saves such a run as a version, so outages neither churn versions nor delete stocks.
 
-**OLTP state tables** (open orders, queue rows) keep no history: the past value is gone, so they
-can only be polled. A `[[collect]]` script is enough and needs no code, documented as a recipe:
+## 6. Semantics and secrets
 
-```sh
-psql "$ORDERS_DB" -At -c "select 'orders_open ' || count(*) from orders where state = 'open'"
-```
+**Kinds**, in order: the script's or declaration's `kind`; metadata; suffix; values (with a
+"declare this" warning). A remote counter's first sample is a baseline, not events; increments
+are `b − a`, or `b` after a drop. `kind = "rate"` is integrated and fitted on counts per step.
+Resolution is measured and recorded per series (H1). Staleness NaNs and ±Inf are dropped.
 
-Polling once a minute is also gentler on a production database, and fits the events proposal's
-rule that models never call operational systems directly.
+**Auth: every common kind**, each from an environment variable or a file outside the repository;
+a literal secret in `orchestra.toml`, or `user:pass@` in a URL, is refused at load.
 
-**History tables, lakes and warehouses** (event tables with `created_at`/`closed_at`; Parquet;
-BigQuery, Snowflake, ClickHouse) *can* answer any past time: `count(*) where created_at <= t` is a
-counter at every `t`. That, and only that, earns a first-class **SQL source**: a template
-returning `(ts, labels…, value)` rows, with `:start`, `:end`, `:step` bound as parameters (never
-formatted into the text), behind an extra. DuckDB first (no server; reads Parquet, CSV and
-Postgres), then Postgres URLs. Warehouses bill per query, so caching and coarse steps are
-mandatory. Slice 3, after Prometheus is proven.
+| Kind | Fields | For |
+|---|---|---|
+| Bearer | `bearer_env`, `bearer_file` | Chronosphere, Grafana Cloud, most gateways |
+| Header | `header = {name, value_env}`; non-secret ones inline | `API-Token`-style headers, `X-Scope-OrgID` |
+| Basic | `basic = {user, password_env}` | Mimir behind a proxy |
+| Command | `bearer_command = ["gcloud", "auth", "print-access-token"]`, cached until it fails | Google Cloud, SSO helpers, vault CLIs |
+| OAuth2 client credentials | `oauth2 = {token_url, client_id, secret_env, scopes}` | company identity providers |
+| mTLS | `client_cert`, `client_key`, `ca_file` | internal servers |
+| AWS SigV4 | `sigv4 = {region, profile}`, extra `orchestra[aws]` | Amazon Managed Prometheus |
 
-## 5. Secrets
+`insecure = true` is allowed and always shown red. The UI and logs show scheme, host, port, auth
+kind and whether its variable or file is present; never values or headers.
 
-- **Never in `orchestra.toml`.** A literal `password`, `token`, `key` or `secret` field, or a URL
-  with `user:pass@`, is refused at load with the reason. Credentials come from environment
-  variables (`bearer_env`, `basic = {user, password_env}`), a file outside the repository
-  (`bearer_file`, `headers_file`; refused inside the repo or readable by others), later the macOS
-  keychain. Non-secret headers (Mimir's `X-Scope-OrgID`) may be inline.
-- **TLS:** `ca_file` for a company CA; `client_cert`/`client_key` for mTLS; `insecure = true`
-  allowed but always shown red.
-- **The UI and logs** show scheme, host and port, the kind of auth, and whether its variable or
-  file is present; never values, headers, or a failing URL's query string. Error bodies are
-  truncated.
-- **Remote data on disk:** the cache and model versions (label values, fitted rates) hold company
-  data in `~/.orchestrator/<key>/`; `cache = false` is for data that must not rest here (D10).
+## 7. Reproducibility: queries in the model, not data
 
-## 6. The UI
+A model version records per series the source, the final query, the scripts' hashes, window,
+step, the server's build info, fetch time and a **fingerprint** (a hash of the returned points,
+rounded). `orchestra sd verify vNNNN` re-runs the queries and says per series *same*, *changed*
+(a backfill, a rewritten recording rule) or *gone* (past retention, D3). No remote data is
+snapshotted; the first draft's snapshot item is dropped.
 
-- **Sources page** (its own page: rule 8 keeps Core to the bus, store and runtime record; Core's
-  metrics panel links to it). Per source: health, last error, server version, query latency
-  p50/p95, series yielded, points fetched in the last discovery and the cached share, retention
-  when the server says (warning when the window exceeds it). Per definition: query, kind and its
-  origin, unit, resolution, series count, refusal and reason. The catalogue lists own and remote
-  series together with a provenance column.
-- **Dynamics:** each stock's and flow's drawer names its data ("work · `sum by (service)(rate(…))`
-  · 15 s"); remote nodes carry a badge; nodes whose source was missing in the latest run are
-  dimmed with the reason.
-- **Preview:** pick a source, type a query, see the fan-out (label sets), a sparkline per series
-  over the last hour (at most 50, within the source's timeout), the guessed kind and resolution,
-  and the `[[series]]` TOML to paste. A read; it changes no configuration (rule 9). Same in the
-  CLI: `orchestra sources preview --source work '<query>'`, `orchestra sources check`.
+## 8. The UI
 
-## 7. Where the code lives
+- **Sources page** (its own; rule 8 keeps Core to the bus, store and runtime record): per source,
+  health, capabilities, last error, latency, points fetched and cached; the families, aliases,
+  identity and grouping labels; every candidate with its view, score, fate and reason, and what
+  the script did to it.
+- **Dynamics:** each node's drawer names its source, final query, origin chain (inferred →
+  rewritten by `queries.py@a1b2`) and resolution; nodes whose source was missing are dimmed.
+- **Preview** (page and CLI): a query's fan-out and sparklines; a read (rule 9).
+
+## 9. SQL (later)
+
+Unchanged from the first draft: OLTP tables are polled by a `[[collect]]` recipe; history tables
+and warehouses earn a SQL source (bound parameters, DuckDB first) after Prometheus is proven.
+
+## 10. Code and tests
 
 ```
 orchestra/sources/
-  __init__.py    Source protocol, Result (labels, points), Health, open_source()
-  spec.py        [[sources]] / [[series]] / series_file parsing; refusals with reasons
-  auth.py        credentials (env, file, keychain); the TLS context
-  prometheus.py  query_range, raw samples, series, metadata, buildinfo; chunking, limits
-  own.py         the project's MetricsStore as a Source
-  kinds.py       kind, unit, resolution, each with its origin
-  catalogue.py   own + definitions: fan-out, by, names, collisions, provenance, routing
-  cache.py       settled chunks on disk
+  __init__.py   Source protocol, Result, Health, Capabilities
+  spec.py       [[sources]], labels, transform, [[series]]; refusals with reasons
+  auth.py       the kinds of §6
+  prometheus.py query_range, raw samples, series, labels, metadata; chunks, limits
+  own.py        the project's MetricsStore as a source
+  schema.py     families, aliases, identity and grouping labels, reporting interval
+  views.py      candidate views; count views
+  transform.py  the query and data scripts
+  rank.py       scores, cap, reasons
+  catalogue.py  own + inferred + declared: names, prefix, provenance, routing
+  cache.py      settled chunks
 ```
 
-```python
-class Source(Protocol):
-    name: str
-    def health(self, timeout: float) -> Health: ...
-    def evaluate(self, query: str, start: float, end: float, step: float) -> list[Result]: ...  # query_range
-    def samples(self, selector: str, start: float, end: float) -> list[Result]: ...             # raw points
-    def series(self, match: str, start: float, end: float) -> list[dict[str, str]]: ...         # for preview
-    def metadata(self, name: str) -> dict | None: ...
-```
+Rule 5 gains, stated in the commit: *other stores are read only through `orchestra.sources`,
+never written; their cache lives in the state directory.* `rediscover` reads the catalogue
+instead of the own store alone; `SeriesRef` gains optional `source`, `query`, `kind`, `origin`,
+`resolution_s` and `fingerprint`, defaulting to own, so old versions load.
 
-`MetricsStore` stays as it is, the write side and the own backend; `own.py` adapts it as the
-first source. Rule 5 gains a sentence, stated in the commit: *other stores are read only through
-`orchestra.sources`, never written; their cache lives in the state directory.*
+**Fakes and conformance:** a stdlib fake Prometheus (evaluating with `metrics/promql.py`;
+injectable latency, errors, 401, resets, NaNs, missing endpoints); one suite over every source,
+real servers by opt-in variable as in `tests/bus`; unit tests, including **querying equals
+copying** (a fake remote yields the model the same points in the own store yield).
 
-**Discovery's read path:** `rediscover` calls `catalogue.dump(start − 1h, end)` (same tuple shape)
-instead of `metrics.dump("", {"project": key})`, which also stops reading the own store's whole
-history every run. The catalogue hands over `kinds`, `provenance` and `missing`; `discover()` and
-`sample()` take `kinds` (and the counter baseline) and write provenance into `SeriesRef`.
-`web/background.py`'s `history()` and `latest()` go through `catalogue.raw(ref, …)`, routed by
-`ref.source`; the pages still read only background caches.
+**The test rig** stands in for Chronosphere, since this Mac cannot reach work:
+- **VictoriaMetrics** on its own port and data directory (never the bakery's 8428), behind a small
+  proxy that demands a bearer token (or, in another mode, an `API-Token` header). **Mimir**
+  monolithic in Docker is the opt-in second target: tenant header, query-length and series limits.
+- **A generator** shaped like the owner's metric: per pod, once a minute, max, min, avg, p50, p95
+  and p99 of latency over that minute. Three services spelled three ways: `service`/`region`/`pod`
+  with a `stat` label; `app`/`zone`/`pod_name` with suffixes; `k8s_app`/`location`/
+  `kubernetes_pod_name`. A daily load curve; latency from a queue (load per pod); pods scaled on
+  p95 after a delay (a real loop); rolling deploys renaming pods; one region down for an hour.
+  It backfills six hours through VictoriaMetrics' import API, then writes live (for Mimir, vmagent
+  scrapes and remote-writes it), and writes a **ground-truth** file: pods per service and region
+  per minute, requests, the scaling rule.
+- **Acceptance:** the three spellings group under `service`, `region`, `pod`; `pod` is identity;
+  pods per service equals the ground truth within one reporting interval; no latency view is a
+  sum; the cap holds; a script adding `{env="prod"}` changes every final query; killing the proxy
+  keeps the last version and records why; no secret in TOML, logs or API.
 
-## 8. Tests
+## 11. Phased plan
 
-- **A fake Prometheus** (`tests/sources/fake_prometheus.py`): a stdlib HTTP server speaking
-  `query_range`, instant `query` with range selectors (raw-sample matrices), `series`,
-  `metadata`, `buildinfo` and Prometheus' error JSON, evaluating with `orchestra/metrics/promql.py`
-  (which already does selectors, `rate`, `increase`, `sum`/`count by`). Injectable: latency, 5xx,
-  401 without the bearer, the 11,000-points error, resets, staleness NaNs, Thanos `warnings`.
-- **Conformance** (`tests/sources/`, like `tests/bus`): one suite against every source; own file
-  and the fake always, own VictoriaMetrics and a real Prometheus by opt-in variable
-  (`ORCHESTRA_TEST_PROM_URL`). It holds each to: the remote grid equals discovery's; raw samples
-  equal what was written; fan-out label sets; resets; chunked equals unchunked; a timeout is a
-  reasoned failure, not a hang.
-- **Unit:** secret refusal, kinds and their origins, cache settle and invalidation, collisions,
-  no version saved on partial failure; and the property that matters, **querying equals
-  copying**: discovery over a fake remote yields the model that the same points written to the
-  own store yield.
-- **Live:** the bakery's VictoriaMetrics (127.0.0.1:8428) as a remote source of
-  `~/orchestra-sample-live`: `select = '{__name__=~"bakery_.*", project="orchestra-bakery-5ba3c6da"}'`,
-  `name = "{__name__}"`.
+**Slice 1 (4–5 days): inferred series from a Prometheus source feed discovery.** `spec`, `auth`
+(bearer, header, basic), `prometheus`, `own`, `schema`, `views`, the query script, `rank`,
+`catalogue`; declared kind and counter baseline in `series.py`; `rediscover` through the
+catalogue; `orchestra sources check|preview|infer`; the fake, the VictoriaMetrics rig, the tests.
+*Done when* the rig's acceptance passes and the sample project's one model holds the rig's
+pods-per-service levels beside its own stocks.
 
-## 9. Phased plan
+**Slice 2 (3 days): cheap, explained, reproducible.** Cache; resolution honoured; the data
+script; fingerprints and `verify`; command, OAuth2 and mTLS auth; the Sources page and Dynamics
+badges. *Done when* a second rediscovery fetches under 10% of the first's points and `verify`
+reports *changed* after the generator rewrites an old hour.
 
-**Slice 1 (3–4 days): Prometheus-compatible sources feed discovery.** `spec`, `auth` (env vars,
-`ca_file`), `prometheus` (raw samples, `query_range`, chunking, timeouts, concurrency), `own`,
-`catalogue` (fan-out, `by`, templates, collisions, provenance); declared kind and counter baseline
-in `series.py`; `rediscover` and `background` through the catalogue; `missing` recorded, no
-version on a partial run; `orchestra sources check|preview`; the fake, conformance and
-querying-equals-copying tests.
-*Done when:* with the bakery run for an hour, the live sample's one model holds the bakery's
-stocks and flows with `source = "bakery-vm"` beside the sample's own, matching what UC-1 finds
-from the bakery's own store; stopping VictoriaMetrics mid-run keeps the last version and records
-why; no secret appears in TOML, logs or API.
+**Slice 3 (3 days):** the Mimir rig, SigV4, the DuckDB SQL source.
 
-**Slice 2 (2–3 days): cheap, honest, visible.** The cache with incremental refresh; measured
-resolution recorded, remote queries no finer than it (handed to H1's resolution work); kinds from
-metadata and suffix with warnings; `kind = "rate"`; staleness; `series_file`; the Sources page,
-Dynamics badges and dimming, preview in the UI.
-*Done when:* a second rediscovery of the 6 h window fetches under 10% of the first's points; every
-node's drawer names its source and query; a preview of `count by (job) (up)` against the bakery's
-store shows the fan-out and the TOML.
+**Limits that stay:** evaluated queries lose exact event times; inferred views are guesses;
+per-pod quantiles never combine into a true service quantile; fits cannot be re-derived past
+remote retention.
 
-**Slice 3 (about 3 days): beyond Prometheus, real company access.** DuckDB SQL source (bound
-parameters), then Postgres history tables; file and keychain credentials, mTLS, tenant headers;
-retention detection; an optional snapshot of a version's data for reproducibility after remote
-retention expires; the SQL `[[collect]]` recipe documented.
-*Done when:* a Parquet event table discovers as counters beside Prometheus series, and a Mimir or
-Grafana Cloud tenant passes the opt-in conformance suite.
+## 12. The owner's answers (2026-10-26), and what is open
 
-**Limits that stay:** evaluated queries lose exact event times; the cache can miss late
-backfills; a model fitted on remote data cannot be re-derived past the remote's retention unless
-snapshotted (D3: retention is the user's); Amazon Managed Prometheus needs SigV4, not planned.
+Answered: bearer token at work, support all kinds (§6); test locally with a generator (§10);
+Chronosphere (§1); definitions inferred, scripts transform queries or data (§2–3); prefix
+remote metrics and machines, labels interpreted in the transformation layer (§3); per-pod
+per-minute statistics and count() as a type switch (§4); queries in the model, not data (§7).
 
-## 10. Questions only the owner can answer
-
-1. **Auth at work:** bearer token, basic, mTLS, an OAuth/OIDC proxy that wants a browser login, or
-   only Grafana (then Orchestra queries through Grafana's datasource proxy with a service-account
-   token: a different client)?
-2. **Network and policy:** can this machine reach those servers (VPN, Tailscale, jump host)? May
-   query results and fitted models of company data rest on a personal machine (D10)?
-3. **Size and product:** Prometheus, Thanos, Mimir or Amazon Managed Prometheus? Their scrape
-   intervals, retention and query limits? How many series does `grpc_request_latency` have?
-4. **Shared definitions:** one company plugin carrying `[[series]]` for many repositories
-   (`Plugin.series`), or always per repository?
-5. **Machines from labels:** may a definition name machines (`machine = "{service}"`, k8s services
-   as machines)? Should remote machines be prefixed (`work.authz`) so they never merge with a
-   local machine of the same name?
-6. **"The stock of request latency":** requests in flight (a stock, by Little's law) or latency
-   as a driver of other flows (an input)? The definition's `kind` differs.
-7. **Reproducibility:** should a model version keep the remote data it was fitted on, or only the
-   queries and window, accepting that old fits may become unreproducible?
+**Still open:**
+1. **The metric's exact shape:** is the statistic a label or a suffix, and is there a request
+   count beside it (so avg can be weighted)? A redacted `series` listing for one service settles it.
+2. **What Chronosphere keeps:** do aggregation or drop rules roll pods up before storage? Does
+   your tenant answer `series`, `labels` and `metadata`? Its query limits, and the token's header
+   form (`Authorization: Bearer` or `API-Token`)?
+3. **Where it runs at work:** which machine can reach Chronosphere, and may the cache and model
+   versions of company data rest there, or is `cache = false` required (D10)?
+4. **Starting scope:** a `match` list of families that matter, or everything under the cap?
