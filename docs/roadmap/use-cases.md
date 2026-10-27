@@ -50,10 +50,31 @@ from fitted rates, leverage points, shadow-and-swap, distilling an agent into a 
 many flows one machine should own), is `docs/proposals/environment-and-ghost-machines.md`.
 
 Built for it on 2026-10-27: each series' real resolution respected by discovery, and levels no
-counters balance taken for stocks when the other series explain their net flow (on the live
-telemetry over 6 h: the machine's load relaxing toward its CPU use, its processes, Claude's
-processes, a repository's disk use, the San Francisco tide; everything else stays an input with
-its reason). What it needs that is not built: an impulse-injection machine and the tests that read it
+counters balance taken for stocks when the other series explain their net flow and the form
+survives its refutations (`sd/netflow.py`: it must beat a steady trend in time as well as a
+constant, predict the held-out half of the window, explain at least 40% of the level's changes,
+and lose most of its fit when its driver is read a quarter of the window earlier or later). On the
+live telemetry, replayed over 4 h and 6 h at 5 s, **no level survives as a stock by its net
+flow**; every one stays an input with its reason. The first version took five for stocks, and
+each was refuted:
+
+- the San Francisco tide, "driven" by California's power demand (R² 0.81 over 4 h, 0.87 over
+  6 h): a steady trend in time explains its changes as well (R² 0.79, 0.87); the demand stands in
+  for the clock, and read two hours off it fits about as well;
+- Claude's processes, "driven" by the host's processes: they may be a part of that total (counts
+  in one unit, never above it, swinging no wider), so neither may drive the other; its best other
+  form (CPU use, R² 0.19) predicted the held-out half no better than a simpler one;
+- the machine's load relaxing toward its CPU use: it explains only 12% of the load's changes;
+- a repository's disk use relaxing toward a level (R² 0.43 over 6 h): read at its real
+  resolution (it changes about every five minutes, though polled every minute), nothing explains
+  its changes better than a constant;
+- in the bakery, the shelf's mean age, "driven" by demand (R² 0.48) or by the Yelp rating
+  (R² 0.38): an average summarises what is on the shelf and holds nothing.
+
+A net-flow stock that does survive is still only a correlation: its driver is what fitted the
+level's changes, and nothing has moved the driver to see the level answer. The Dynamics page says
+so on every such flow ("fitted from correlation; untested"); the impulse tests of H1 are what
+would test it. What it needs that is not built: an impulse-injection machine and the tests that read it
 (H1–H2), the recurring agent loop as a machine any user can declare (H2), the model readable by
 agents (H2).
 
