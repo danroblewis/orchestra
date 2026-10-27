@@ -1,35 +1,29 @@
-"""The Machines page sees a machine by its writes as well as its events."""
+"""The Machines page sees a machine by its events alone, never by series labelled with it."""
 
 import time
 from datetime import UTC, datetime
 
 from orchestra.metrics import Point
 from orchestra.metrics.file import FileMetrics
-from orchestra.web.machines import last_writes, machines_view, write_cadence
+from orchestra.web.machines import machines_view
 
 T0 = 1_790_000_000.0
 
 
-def test_a_collector_that_only_writes_after_announcing_stays_active(tmp_path):
-    started = [{"type": "orchestra.machine.started", "source": "telemetry", "time": "2026-09-21T13:46:40Z",
-                "data": {"mode": "continuous", "listens_for": []}},
-               {"type": "orchestra.machine.started", "source": "sampler/2", "time": "2026-09-21T13:46:40Z",
-                "data": {"mode": "continuous", "listens_for": []}}]
+def test_series_labelled_with_a_machine_make_no_machine_and_keep_none_alive(tmp_path):
+    """A machine does not produce metrics (AGENTS.md rules 2 and 7): series labelled ``machine=``
+    neither make a machine nor keep one active. Only its events do."""
     store = FileMetrics(tmp_path / "metrics.jsonl")
-    store.write([Point("disk_free_bytes", 1.0, T0 + t, {"project": "p", "machine": "telemetry"}) for t in (5, 300)])
-    store.write([Point("repo_files", 3.0, T0 + 290, {"project": "p", "machine": "sampler", "instance": "2"}),
-                 Point("other", 1.0, T0 + 999, {"project": "p"})])
-    written = last_writes(store.dump("", {"project": "p"}))
-    assert written == {("telemetry", ""): T0 + 300, ("sampler", "2"): T0 + 290}
+    store.write([Point("disk_free_bytes", 1.0, T0 + t, {"project": "p", "machine": "telemetry"}) for t in range(0, 600, 30)])
+    store.write([Point("repo_files", 3.0, T0 + 590, {"project": "p", "machine": "sampler", "instance": "2"})])
+    assert len(store.dump("", {"project": "p"})) == 2
+    alone = {m["id"] for m in machines_view([], now=T0 + 600)["machines"]}
+    assert alone == {"orchestra-host"}                         # written for, never seen on the bus
 
-    now = T0 + 310                                            # five minutes after the announcement
-    seen = {m["id"]: m for m in machines_view(started, now=now, written=written)["machines"]}
-    assert seen["telemetry"]["active"] and seen["telemetry"]["last_seen"] == T0 + 300
-    assert seen["sampler"]["active"] and seen["sampler"]["instances"][0]["active"]
-    assert seen["sampler"]["instances"][0]["last_seen"] == T0 + 290
-
-    unseen = {m["id"]: m for m in machines_view(started, now=now)["machines"]}
-    assert not unseen["telemetry"]["active"]                  # by its events alone, it looks stopped
+    started = [announce("telemetry", T0, mode="continuous")]
+    seen = {m["id"]: m for m in machines_view(started, now=T0 + 600)["machines"]}
+    assert not seen["telemetry"]["active"] and seen["telemetry"]["last_seen"] == T0   # its writes do not count
+    assert "sampler" not in seen
 
 
 def test_an_announced_name_and_group_are_read_and_the_latest_announcement_stands():
@@ -55,48 +49,52 @@ def announce(src: str, t: float, **d) -> dict:
     return {"type": "orchestra.machine.started", "source": src, "time": iso(t), "data": {"listens_for": [], **d}}
 
 
-def test_a_machine_is_active_within_its_own_cadence_fast_or_slow(tmp_path):
-    evs = [announce("tides", T0, mode="scheduled", kind="program"),       # a collector, every 6 min
-           announce("bitcoin", T0, mode="scheduled", kind="program"),      # one every minute
-           announce("tides", T0 + 2, mode="scheduled", kind="program")]    # announced again at a restart: not a beat
-    store = FileMetrics(tmp_path / "metrics.jsonl")
-    store.write([Point("tide_m", 1.0, T0 + t, {"project": "p", "machine": "tides"}) for t in (0, 360, 720)])
-    store.write([Point("btc_usd", 1.0, T0 + t, {"project": "p", "machine": "bitcoin"}) for t in range(0, 721, 60)])
-    dumped = store.dump("", {"project": "p"})
-    written, beats = last_writes(dumped, T0 + 720), write_cadence(dumped, T0 + 720)
+def test_a_machine_is_active_within_its_own_event_cadence_fast_or_slow():
+    evs = [announce("tides", T0, mode="scheduled", kind="program"),
+           announce("tides", T0 + 2, mode="scheduled", kind="program"),       # announced again in the same burst: not a beat
+           *[{"type": "tide.read", "source": "tides", "time": iso(T0 + t)} for t in (360, 720)],             # every 6 min
+           *[{"type": "btc.priced", "source": "bitcoin", "time": iso(T0 + t)} for t in range(0, 721, 60)]]   # every minute
 
-    def active(now):
-        return {m["id"]: m["active"] for m in machines_view(evs, now=now, written=written, write_beats=beats)["machines"]}
+    def view(now):
+        return {m["id"]: m for m in machines_view(evs, now=now)["machines"]}
 
-    assert active(T0 + 720 + 300) == {"orchestra-host": False, "tides": True, "bitcoin": False}     # 5 min into a 6 min round
-    assert active(T0 + 720 + 100)["bitcoin"]
-    assert not active(T0 + 720 + 360 * 3)["tides"]                                                 # three rounds missed
-    # the cadence is observed, not announced: a collector's writes say how often it runs
-    # nothing announced: the cadence it is observed at, by its writes or its events
-    # a machine that announced itself once and then only writes its own series stays active while
-    # they keep coming; a series alone, with nothing on the bus, makes no machine
-    seen = machines_view([announce("creek", T0, mode="scheduled")], now=T0 + 720 + 1200,
-                         written={("creek", ""): T0 + 720}, write_beats={("creek", ""): 900.0})
-    assert {m["id"]: m["active"] for m in seen["machines"]}["creek"]
-    alone = machines_view([], now=T0, written={("river", ""): T0}, write_beats={("river", ""): 900.0})
-    assert "river" not in {m["id"] for m in alone["machines"]}
+    assert view(T0 + 720)["tides"]["instances"] == [] and {m: v["active"] for m, v in view(T0 + 720 + 300).items()} \
+        == {"orchestra-host": False, "tides": True, "bitcoin": False}                    # 5 min into a 6 min round
+    assert view(T0 + 720 + 100)["bitcoin"]["active"]                                     # the 120 s floor
+    assert not view(T0 + 720 + 360 * 3)["tides"]["active"]                               # three rounds missed
     talk = [{"type": "work.done", "source": "worker/1", "time": iso(T0 + 300 * k)} for k in range(4)]
     seen = {m["id"]: m for m in machines_view(talk, now=T0 + 900 + 600)["machines"]}
-    assert seen["worker"]["active"] and seen["worker"]["instances"][0]["cadence_s"] == {"events": 300, "writes": None}
+    assert seen["worker"]["active"] and seen["worker"]["instances"][0]["cadence_s"] == 300
     assert not machines_view(talk, now=T0 + 900 + 900)["machines"][1]["active"]
 
 
-def test_nothing_stamped_in_the_future_makes_a_machine_look_alive(tmp_path):
+def test_a_scheduled_job_that_publishes_rarely_is_active_by_its_own_rhythm():
+    """A job run every hour, which announces itself at each run (a fresh process) and publishes
+    half a minute later: each run is one burst, one beat, so its cadence is the hour (not the
+    half minute between a run's own events),
+    and it is active between runs and quiet after a few missed ones. A cadence over a day counts
+    as a day."""
+    HOUR = 3600.0
+    evs = []
+    for k in range(4):
+        t = T0 + k * HOUR
+        evs += [announce("nightly", t, mode="scheduled"), announce("nightly", t + 1, mode="scheduled"),
+                {"type": "report.made", "source": "nightly", "time": iso(t + 30)}]
+    [inst] = [m for m in machines_view(evs, now=T0 + 3 * HOUR + 30)["machines"] if m["id"] == "nightly"]
+    assert inst["active"]
+
+    def active(now):
+        return {m["id"]: m["active"] for m in machines_view(evs, now=now)["machines"]}["nightly"]
+
+    assert active(T0 + 3 * HOUR + 30 + 2 * HOUR)                    # an hour or two late is still within its rhythm
+    assert not active(T0 + 3 * HOUR + 30 + 3 * HOUR)                # three runs missed: quiet
+    weekly = [{"type": "report.made", "source": "weekly", "time": iso(T0 + k * 7 * 86400)} for k in range(3)]
+    assert {m["id"]: m["active"] for m in machines_view(weekly, now=T0 + 14 * 86400 + 2 * 86400)["machines"]}["weekly"]
+    assert not {m["id"]: m["active"] for m in machines_view(weekly, now=T0 + 14 * 86400 + 3 * 86400)["machines"]}["weekly"]
+
+
+def test_nothing_stamped_in_the_future_makes_a_machine_look_alive():
     now = time.time()
-    store = FileMetrics(tmp_path / "metrics.jsonl")          # made directly: it refuses nothing, like a store written before the refusal
-    store.write([Point("caiso_demand_mw", 1.0, now - 7200 + t, {"project": "p", "machine": "telemetry"}) for t in (0, 30, 60)])
-    store.write([Point("caiso_demand_mw", 2.0, now + 13 * 3600, {"project": "p", "machine": "telemetry"})])
-    dumped = store.dump("", {"project": "p"})
-    written = last_writes(dumped, now)
-    assert written == {("telemetry", ""): now - 7200 + 60}
-    seen = {m["id"]: m for m in machines_view([announce("telemetry", now - 7200)], now=now, written=written,
-                                                       write_beats=write_cadence(dumped, now))["machines"]}
-    assert not seen["telemetry"]["active"]
     ahead = [{"type": "work.done", "source": "clock_ahead", "time": iso(now + 13 * 3600)}]
     m = {m["id"]: m for m in machines_view(ahead, now=now + 1)["machines"]}["clock_ahead"]
     assert m["last_seen"] <= now + 1

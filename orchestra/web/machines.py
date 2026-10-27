@@ -28,18 +28,23 @@ Everything here is observed, or announced by the machine itself:
   (``sd.attribute``: its events match a flow's counter in time), each with its confidence and
   why. A hypothesis, never a fact; a series, whoever wrote it or whatever it is labelled, never
   belongs to a machine and is not listed (AGENTS.md rule 7);
-- **when it was last seen**: its latest event or its latest write to a series labelled with it
-  (``instance=<n>`` too, for an instance), whichever is later, so a machine that announces itself
-  once and then only writes measurements stays active while its writes keep coming. Never in the
-  future: an event stamped ahead counts as seen when it was read, and a point stamped more than
-  ``FUTURE_SKEW_S`` ahead is not counted (the stores refuse such points now; older ones remain);
+- **when it was last seen**: its latest event on the bus (an announcement, a publication, a
+  heartbeat: any event with its ``source``), and nothing else. A machine does not produce metrics
+  (AGENTS.md rules 2 and 7): a write to a series labelled ``machine=<id>`` says nothing of whether
+  the machine is there, and a series so labelled makes no machine and no instance. Never in the
+  future: an event stamped ahead counts as seen when it was read;
 - **whether it is active**: an instance is active while its last event is within ``ACTIVE_MARGIN``
-  times the **cadence** of its events, or its last write within that many of its writes', and
-  never less than ``ACTIVE_FLOOR_S``. A cadence is observed, never taken from what a machine says
-  of itself (AGENTS.md rule 2): the median gap between its last few events (announcements, which
-  come in bursts at a restart, left out) or its last few writes. So a collector run every 15
-  minutes is active between its rounds, and a machine that stops is quiet after a few of its own
-  beats. A machine is active while any of its instances is;
+  times the **cadence** of its events (a cadence over a day counts as a day), and never less than
+  ``ACTIVE_FLOOR_S``. A cadence is observed, never taken from what a machine says of itself
+  (AGENTS.md rule 2): the median gap between its last ``BEATS`` **beats**. A beat is an event
+  (an announcement, a publication, a heartbeat) that comes more than ``BURST_S`` after the
+  instance's previous event: the events of one burst (``started`` and ``subscribed`` at a restart,
+  the few events of one run of a job) are one beat, so they never shrink the cadence. ``BURST_S``
+  is ``ACTIVE_FLOOR_S / ACTIVE_MARGIN``, below which a cadence would not change the answer anyway:
+  a machine whose events come faster has no cadence and is active within the floor. So a machine
+  that publishes rarely (a scheduled job run every hour, which announces itself and publishes a
+  few events each run) is active between its runs by its own rhythm, and a machine that stops is
+  quiet after a few of its own beats. A machine is active while any of its instances is;
 - **recent events**: the last ``RECENT`` events of each machine, by their envelope only (time,
   type, instance, subject, id; never the ``data``, which is the machines' own);
 - **logs**: where an instance says its log is (``data.log`` in its announcement). The web server
@@ -68,13 +73,13 @@ from itertools import pairwise
 from statistics import median
 
 from ..events import HOST, event_time, for_an_instrument, machine_and_instance
-from ..metrics import FUTURE_SKEW_S
 
 ANNOUNCE = ("orchestra.machine.started", "orchestra.machine.subscribed")
 DAY = 86400.0
 ACTIVE_FLOOR_S = 120.0     # active within at least this, however fast its cadence
 ACTIVE_MARGIN = 2.5        # ... and within this many beats of its cadence: a round may be late, or one missed
 BEATS = 9                  # the last times kept to observe a cadence
+BURST_S = ACTIVE_FLOOR_S / ACTIVE_MARGIN   # an event this soon after the instance's previous one is in the same burst, not a new beat
 RECENT = 60
 SUBJECTS = 50_000
 TRAIL = 4            # a machine's last event types about a subject, kept for crediting the hand-off
@@ -125,12 +130,13 @@ class MachineIndex:
         t = event_time(ev) or 0.0
         seen = min(t, time.time())          # stamped ahead: seen when read, never in the future
         key = instance or ""
+        inst = self.instances[machine].get(key)
+        burst = inst is not None and seen - inst["last"] <= BURST_S    # the rest of a burst: a restart, or one run's events
         inst = self.instances[machine].setdefault(key, {"first": seen, "last": seen})
         inst["last"] = max(inst["last"], seen)
-        if ev.get("type") not in ANNOUNCE:           # announcements come in bursts at a restart: not a beat
-            beats = self.beats[machine].setdefault(key, deque(maxlen=BEATS))
-            if not beats or seen > beats[-1]:
-                beats.append(seen)
+        beats = self.beats[machine].setdefault(key, deque(maxlen=BEATS))
+        if not burst and (not beats or seen > beats[-1]):
+            beats.append(seen)
         if ev.get("type") in ANNOUNCE:
             d = ev.get("data") or {}
             self.subs[machine].update(d.get("listens_for") or d.get("types") or [])
@@ -182,14 +188,10 @@ class MachineIndex:
             logs = self.logs.get(machine) or {}
             return logs.get(instance or "") if instance is not None else next(iter(logs.values()), None)
 
-    def view(self, now: float | None = None, written: dict[tuple[str, str], float] | None = None,
-             write_beats: dict[tuple[str, str], float] | None = None, flows: dict[str, list[dict]] | None = None) -> dict:
-        """``written``: the latest write of each (machine, instance) (``last_writes``);
-        ``write_beats``: the gap each (machine, instance) is observed to write at (``write_cadence``);
-        ``flows``: each machine's hypothesised flows (``flow_hypotheses``)."""
+    def view(self, now: float | None = None, flows: dict[str, list[dict]] | None = None) -> dict:
+        """``flows``: each machine's hypothesised flows (``flow_hypotheses``). Everything else is
+        from the bus alone."""
         now = now or time.time()
-        written = written or {}
-        write_beats = write_beats or {}
         flows = flows or {}
         with self._lock:
             for q in [*self.recent.values(), *self.recent_handoffs.values()]:
@@ -205,20 +207,13 @@ class MachineIndex:
                     pubs.append({"type": ty, "count": n, "day": len(q),
                                  "per_min_10m": round(sum(1 for t in q if t >= now - 600) / 10, 2)})
                 insts, alive = [], False
-                keys = set(self.instances[m]) | {i for (wm, i) in written if wm == m}
-                for i in sorted(keys):
-                    v = self.instances[m].get(i)
-                    said, wrote_at = (v["last"] if v else 0.0), written.get((m, i), 0.0)
-                    by_events, by_writes = gaps(self.beats[m].get(i, ())), write_beats.get((m, i))
-                    # each rhythm judged by its own cadence: events every few seconds and a write an hour
-                    active = (bool(v) and now - said < active_within(by_events)) or (wrote_at > 0 and now - wrote_at < active_within(by_writes))
+                for i, v in sorted(self.instances[m].items()):
+                    cadence = gaps(self.beats[m].get(i, ()))
+                    active = now - v["last"] < active_within(cadence)
                     alive = alive or active
-                    if v:
-                        insts.append({"id": i or m, "first_seen": v["first"], "last_seen": max(said, wrote_at), "active": active,
-                                      "cadence_s": {"events": by_events, "writes": by_writes},
-                                      "kind": self.kind[m].get(i), "mode": self.mode[m].get(i)})
-                wrote = [t for (wm, _), t in written.items() if wm == m]
-                last = max([v["last"] for v in self.instances[m].values()] + wrote, default=None)
+                    insts.append({"id": i or m, "first_seen": v["first"], "last_seen": v["last"], "active": active,
+                                  "cadence_s": cadence, "kind": self.kind[m].get(i), "mode": self.mode[m].get(i)})
+                last = max((v["last"] for v in self.instances[m].values()), default=None)
                 first = min((v["first"] for v in self.instances[m].values()), default=None)
                 kinds = Counter(self.kind[m].values())
                 machines.append({"id": m, "bootstrap": m == HOST, "mode": of_instances(Counter(self.mode[m].values())),
@@ -272,34 +267,6 @@ def flow_hypotheses(model) -> dict[str, list[dict]]:
     return {m: sorted(hs, key=lambda h: (-(h["confidence"] or 0), h["flow"])) for m, hs in out.items()}
 
 
-def _writes(dumped, now: float | None):
-    """Each dumped series' (machine, instance) and its points' times, without those stamped more
-    than ``FUTURE_SKEW_S`` past ``now``."""
-    limit = (now or time.time()) + FUTURE_SKEW_S
-    for _, labels, pts in dumped:
-        if labels.get("machine") and pts:
-            yield (labels["machine"], labels.get("instance") or ""), [t for t, _ in pts[-BEATS * 4:] if t <= limit]
-
-
-def last_writes(dumped: list[tuple[str, dict, list[tuple[float, float]]]], now: float | None = None) -> dict[tuple[str, str], float]:
-    """The latest write of each (machine, instance) among dumped series (``MetricsStore.dump``),
-    from their ``machine`` and ``instance`` labels; a point stamped in the future is not a write."""
-    out: dict[tuple[str, str], float] = {}
-    for key, ts in _writes(dumped, now):
-        if ts:
-            out[key] = max(out.get(key, 0.0), ts[-1])
-    return out
-
-
-def write_cadence(dumped: list[tuple[str, dict, list[tuple[float, float]]]], now: float | None = None) -> dict[tuple[str, str], float]:
-    """The gap each (machine, instance) is observed to write at: the median gap between the last
-    times any of its series was written (``gaps``)."""
-    times: dict[tuple[str, str], set] = defaultdict(set)
-    for key, ts in _writes(dumped, now):
-        times[key].update(ts)
-    return {key: g for key, ts in times.items() if (g := gaps(ts))}
-
-
 class _ListBus:
     def __init__(self, evs: list[dict]):
         self.evs = evs
@@ -311,9 +278,8 @@ class _ListBus:
         return self.evs[since:][-limit:], len(self.evs)
 
 
-def machines_view(events: list[dict], now: float | None = None, written: dict[tuple[str, str], float] | None = None,
-                  write_beats: dict[tuple[str, str], float] | None = None, flows: dict[str, list[dict]] | None = None) -> dict:
+def machines_view(events: list[dict], now: float | None = None, flows: dict[str, list[dict]] | None = None) -> dict:
     """The view over a given list of events (for tests and one-off use)."""
     idx = MachineIndex(_ListBus(events))
     idx.update()
-    return idx.view(now, written, write_beats, flows)
+    return idx.view(now, flows)

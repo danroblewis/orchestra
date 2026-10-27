@@ -2,12 +2,11 @@
 
 Two threads keep these caches warm: one the bus, the own store and the levels read from it, the
 other everything read from another store (counted traffic, the levels of stocks bound to a
-remote series, and the history, which may read remotes), so the index, the series and the own
-store's levels never wait on a remote source, which may take up to its timeout:
+remote series, and the history, which may read remotes), so the index and the own store's
+levels never wait on a remote source, which may take up to its timeout:
 - the **machine index** (``machines.MachineIndex``), following the bus every few seconds;
-- the project's **series list** from the metrics store (an export on VictoriaMetrics), every
-  minute, with the latest write of each machine's series, which the Machines page counts as
-  seeing the machine, the gap it writes at, which tells how long it stays active after, and the other stores' series the latest discovery bound (from its record);
+- each machine's **flow hypotheses** from the latest discovery, every minute. The Machines page
+  reads no metrics: a machine is seen, and active, by its events alone (``machines.py``);
 - the **current levels** of the model's stocks, every few seconds;
 - the model's **recent history**: each stock's level and each flow's rate over the last
   ``HISTORY_S``, for the Dynamics page's sparklines, charts and flow animation. Levels are
@@ -38,11 +37,11 @@ from ..metrics import step_sample
 from ..sd.model import SeriesRef
 from ..sd.store import ModelStore
 from ..sources.catalogue import Catalogue
-from .machines import MachineIndex, flow_hypotheses, last_writes, write_cadence
+from .machines import MachineIndex, flow_hypotheses
 from .traffic import READ_S, READ_STEP_S, summarise
 
 INDEX_EVERY_S = 5.0
-SERIES_EVERY_S = 60.0
+FLOWS_EVERY_S = 60.0
 COUNTED_EVERY_S = 60.0
 LEVELS_EVERY_S = 15.0
 HISTORY_EVERY_S = 15.0
@@ -57,8 +56,6 @@ class Refresher:
         self.metrics = metrics
         self.index = MachineIndex(events)
         self.models = ModelStore.for_state(project.state_dir)
-        self.written: dict[tuple[str, str], float] = {}     # (machine, instance) -> its latest write
-        self.write_beats: dict[tuple[str, str], float] = {}  # (machine, instance) -> the gap it writes at
         self.flows: dict[str, list[dict]] = {}   # each machine's hypothesised flows in the latest discovery
         self.own_levels: dict[str, dict] = {}
         self.remote_levels: dict[str, dict] = {}
@@ -91,11 +88,7 @@ class Refresher:
             self.errors[name] = f"{type(e).__name__}: {e}"
         self.at[name] = time.time()
 
-    def _series(self) -> None:
-        if self.metrics is not None:
-            dumped = self.metrics.dump("", {"project": self.project.key})
-            now = time.time()
-            self.written, self.write_beats = last_writes(dumped, now), write_cadence(dumped, now)
+    def _flows(self) -> None:
         latest = self.models.latest_discovery()
         self.flows = flow_hypotheses(latest[1] if latest else None)
 
@@ -169,7 +162,7 @@ class Refresher:
     def _run(self) -> None:
         while not self._stop.is_set():
             self._do("index", INDEX_EVERY_S, self.index.update)
-            self._do("series", SERIES_EVERY_S, self._series)
+            self._do("flows", FLOWS_EVERY_S, self._flows)
             self._do("levels", LEVELS_EVERY_S, self._levels)
             self._stop.wait(1.0)
 

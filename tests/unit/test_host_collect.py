@@ -14,7 +14,7 @@ from orchestra.config import init_project
 from orchestra.events import Events
 from orchestra.metrics import for_project
 from orchestra.web.app import create_app
-from orchestra.web.machines import last_writes, machines_view
+from orchestra.web.machines import machines_view
 
 
 @pytest.fixture
@@ -60,8 +60,7 @@ def test_a_detector_is_an_instrument_not_a_machine(project, tmp_path):
         host.wait(timeout=30)
     evs, _ = Events.for_project(project).read(0, limit=10_000)
     assert not any(e.get("source") == "goes_protons" for e in evs)          # nothing announced for it
-    dumped = store.dump("", {"project": project.key})
-    view = machines_view(evs, written=last_writes(dumped))
+    view = machines_view(evs)
     assert {m["id"] for m in view["machines"]} == {"orchestra-host"}        # not the detector, nor the satellite it names
 
     log = web.get("/api/instruments/goes_protons/log").json()

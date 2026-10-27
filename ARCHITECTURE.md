@@ -279,8 +279,8 @@ What the Machines page knows about a machine, and where it comes from (`orchestr
 | The machine and its instances | The envelope's `source`: `baker/2` is instance `2` of machine `baker`. |
 | What it publishes | The `type` of the events it emitted, counted over all time and the last day. |
 | What it listens for, its mode, kind, package, name and group | Its own announcement, `orchestra.machine.started` (or the older `orchestra.machine.subscribed`). This is the one event type whose `data` Orchestra reads, because it is Orchestra's own. Mode and kind are kept per instance. |
-| Its series | Series in the metrics store labelled `machine=<id>`, and remote series that the latest discovery bound to it, listed on the card of a machine seen on the bus. A series labelled `machine=X` never makes a machine X. |
-| Last seen, and whether it is active | Its latest event or its latest write, whichever is later, never in the future. It is active while that is within 2.5 times its own observed cadence (the median gap between its recent events or writes), and never less than 2 minutes. |
+| Its flows | The flows of the latest discovery its events are hypothesised to be associated with (`sd.attribute`). No series is listed: a machine does not produce metrics, and a series labelled `machine=X` never makes a machine X, an instance of it, or keeps it active. |
+| Last seen, and whether it is active | Its latest event (an announcement, a publication, a heartbeat), never in the future; never a write to a series. It is active while that is within 2.5 times its own observed cadence, and never less than 2 minutes. The cadence is the median gap between its recent beats: an event is a beat when it comes more than 48 s (the floor over the margin) after the instance's previous event, so a restart's announcements or one run's few events are one beat, and a job that publishes rarely is judged by its own rhythm (a cadence over a day counts as a day). |
 | Hand-offs (dotted edges) | Inferred from envelopes alone: one machine acted on a `subject`, then another machine acted on the same subject. |
 | Its log | The `data.log` path it announced, read only if it resolves to a regular file inside the repository or the state directory (`web/machine_logs.py`). |
 | Counted machines and channels | Counted traffic from other systems' buses (below), merged in by `web/traffic.py`. |
@@ -658,7 +658,7 @@ so most page requests do no expensive work:
 | Cache | Refreshed | Source |
 |---|---|---|
 | Machine index | every 5 s | The bus, read after the last offset (`MachineIndex.update`). |
-| Series list, last writes, write cadence | every 60 s | `metrics.dump` of the project's series. |
+| Machines' flow hypotheses | every 60 s | The latest discovery (`flow_hypotheses`). The Machines page reads no metrics. |
 | Stock levels | every 15 s | `metrics.latest` for stocks in the own store; the catalogue for remote ones. |
 | History (last hour) | every 15 s | Stock levels and flow rates, own and remote. |
 | Counted traffic | every 60 s | `Catalogue.counted` over the last hour. |
@@ -739,7 +739,7 @@ divided.
 | # | Rule, in short | Where it is held |
 |---|---|---|
 | 1 | No tickets, tasks or AI in the core | The core modules handle only envelopes, series, processes and models. `collectors.py` counts events by `type` and `source` and nothing else. Agents' harnesses live in `~/orchestra-agents`. |
-| 2 | Machines are outside, known by their events | `web/machines.py` builds machines from envelopes only; a series' `machine` label lists the series on a machine's card but never makes a machine. Of `data`, it reads only `orchestra.machine.started` announcements, and ignores the host's old ones for instruments. Plugin declarations fill in only unseen machines (`web/app.py:declare`). `web/machine_logs.py` reads a log only inside the repository or the state directory. `launcher.py` knows processes, not machines. Counted machines come only from `sources/traffic.py`. |
+| 2 | Machines are outside, known by their events | `web/machines.py` builds machines, and their liveness, from envelopes only; a series' `machine` label never makes a machine, an instance, or a machine active, and the Machines page reads no metrics. Of `data`, it reads only `orchestra.machine.started` announcements, and ignores the host's old ones for instruments. Plugin declarations fill in only unseen machines (`web/app.py:declare`). `web/machine_logs.py` reads a log only inside the repository or the state directory. `launcher.py` knows processes, not machines. Counted machines come only from `sources/traffic.py`. |
 | 3 | Every event carries the CloudEvents envelope | `events.envelope` is the only place events are built. `Events.publish` always uses it, and the events endpoint publishes only through it, passing `data` on unread. `event_time` and `event_source` read older flat events too. Counted traffic is read as series and never turned into events. |
 | 4 | One system, one model | One `ModelStore` per state directory, with one sequence of versions. Discovery runs over every series of the project at once. Package and group are labels on the Machines page, never separate views. |
 | 5 | State in `~/.orchestrator/<key>/`; bus and metrics in their stores | `config.Project` names every state path. Events go through `Events` over an `EventBus`, metrics through `MetricsStore`, the model through `ModelStore`, process records through `runtime`. `bus.stream_name` keeps Orchestra's own namespace. The `Source` protocol (`sources/__init__.py`) has only read methods. |

@@ -173,7 +173,8 @@ lists what the program needs.
 - Labels split one measurement into several series (`disk="/"`, `city="Denver"`, `instance="2"`).
   Keep their values few: each value is a series of its own.
 - A `machine` label is kept like any other. A series labelled `machine=X` never makes a machine
-  X, is not listed on X's card, and never associates X with a flow: a card lists the flows its
+  X (nor an instance of it), never keeps X active, is not listed on X's card, and never
+  associates X with a flow: a card lists the flows its
   events are hypothesised to be associated with.
 
 ## How often
@@ -215,6 +216,17 @@ curl -sf "$ORCHESTRA_EVENTS_ENDPOINT/events?after=0&types=disk.full&wait=30" \
 (its log file, `$ORCHESTRA_MACHINE_LOG` for a launched process, shown in its dialog when it is
 inside the repository or the state directory). Instruments are not announced: they are not
 machines.
+
+### Being seen
+
+A machine is seen, and active, by its own events alone: its announcements, what it publishes and
+any heartbeat it sends (a plain event of its own type). Writing series does not count. It is
+active while its last event is within two and a half beats of its own cadence, and at least two
+minutes. The cadence is observed, never announced: the median gap between its recent beats, where
+events less than 48 s apart are one beat (a restart's announcements, one run's events). So a job
+that runs every hour and publishes once a run is active between runs and quiet after a few missed
+ones (a cadence over a day counts as a day). A continuous machine that has nothing to publish for
+long stretches should send a heartbeat now and then, or it shows as quiet.
 
 ## How a machine is associated with flows
 
