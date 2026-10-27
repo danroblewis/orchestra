@@ -93,6 +93,17 @@ Stop rule: if discovery cannot pass UC-1 (the bakery) and UC-2 (the task system 
 after the listed follow-ups, priors come first: the model is built from a declared prior and
 discovery fills and corrects it.
 
+- **Reading other time-series stores without copying them**
+  (`docs/proposals/time-series-sources.md`):
+  - **Sources:** the project's own store, Prometheus-compatible servers, and later SQL
+    tables, lakes and warehouses.
+  - **Series definitions:** named queries in each source's own language, declared in the target
+    repository. This is the transformation layer: one PromQL `count by (service)` gives one
+    series per service.
+  - **How data is read:** discovery queries each source over exactly its window and step, with
+    limits and a cache. The source and query are recorded on every series and equation.
+  - **Slice 1:** read the bakery's VictoriaMetrics as a remote source from the sample project.
+
 ### H2: the agents are ordinary, measured machines (weeks 3–4)
 
 - Agent usage and cost are events and series (tokens, dollars, turns, wall time per role), so the
