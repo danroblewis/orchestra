@@ -7,7 +7,7 @@ store's levels never wait on a remote source, which may take up to its timeout:
 - the **machine index** (``machines.MachineIndex``), following the bus every few seconds;
 - the project's **series list** from the metrics store (an export on VictoriaMetrics), every
   minute, with the latest write of each machine's series, which the Machines page counts as
-  seeing the machine;
+  seeing the machine, and the other stores' series the latest discovery bound (from its record);
 - the **current levels** of the model's stocks, every few seconds;
 - the model's **recent history**: each stock's level and each flow's rate over the last
   ``HISTORY_S``, for the Dynamics page's sparklines, charts and flow animation. Levels are
@@ -38,7 +38,7 @@ from ..metrics import step_sample
 from ..sd.model import SeriesRef
 from ..sd.store import ModelStore
 from ..sources.catalogue import Catalogue
-from .machines import MachineIndex, last_writes
+from .machines import MachineIndex, last_writes, remote_series
 from .traffic import READ_S, READ_STEP_S, summarise
 
 INDEX_EVERY_S = 5.0
@@ -59,6 +59,7 @@ class Refresher:
         self.models = ModelStore.for_state(project.state_dir)
         self.series: list[tuple[str, dict]] = []
         self.written: dict[tuple[str, str], float] = {}     # (machine, instance) -> its latest write
+        self.remote_series: list[tuple[str, dict, str]] = []  # series of other stores the latest discovery bound, with their source
         self.own_levels: dict[str, dict] = {}
         self.remote_levels: dict[str, dict] = {}
         self.history: dict = {}
@@ -95,6 +96,8 @@ class Refresher:
             dumped = self.metrics.dump("", {"project": self.project.key})
             self.series = [(name, labels) for name, labels, _ in dumped]
             self.written = last_writes(dumped)
+        latest = self.models.latest_discovery()
+        self.remote_series = remote_series(latest[1] if latest else None)
 
     def _counted(self) -> None:
         if not self.catalogue.specs.sources:

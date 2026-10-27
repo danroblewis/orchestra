@@ -187,7 +187,7 @@ def create_app(project: Project) -> FastAPI:
         reads, never a read of the bus or a source on request."""
         if not bg.ready("index"):
             return {"ok": False, "error": "reading the event bus for the first time…", "warming": True}
-        out = {"ok": True, **bg.index.view(bg.series, written=bg.written)}
+        out = {"ok": True, **bg.index.view(bg.series, written=bg.written, remote=bg.remote_series)}
         merge_counted(out, bg.counted, time.time())
         if bg.counted and bg.counted.get("failed"):
             out["counted_failed"] = bg.counted["failed"]

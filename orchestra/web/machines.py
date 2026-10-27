@@ -13,7 +13,10 @@ Everything here is observed, or announced by the machine itself:
   ``data.package``; ``orchestra.machine.subscribed`` with ``data.types`` is read too). The latest
   announcement stands; the rest of it is passed to the package's card unread;
 - **publishes**: the event types its instances emitted, with counts (all time and the last day);
-- **metrics**: the series in the metrics store labelled ``machine=<id>``;
+- **metrics**: the series in the metrics store labelled ``machine=<id>``, and the series read from
+  another store (``[[sources]]``) that the latest discovery found labelled with it: such a
+  machine is marked ``from_source`` (the source's name), read from the discovery record, never by
+  querying the source from the page;
 - **when it was last seen**: its latest event or its latest write to a series labelled with it
   (``instance=<n>`` too, for an instance), whichever is later, so a machine that announces itself
   once and then only writes measurements stays active while its writes keep coming;
@@ -136,8 +139,9 @@ class MachineIndex:
             return logs.get(instance or "") if instance is not None else next(iter(logs.values()), None)
 
     def view(self, series: list[tuple[str, dict]], now: float | None = None,
-             written: dict[tuple[str, str], float] | None = None) -> dict:
-        """``written``: the latest write of each (machine, instance) (``last_writes``)."""
+             written: dict[tuple[str, str], float] | None = None, remote: list[tuple[str, dict, str]] | None = None) -> dict:
+        """``written``: the latest write of each (machine, instance) (``last_writes``);
+        ``remote``: series read from other stores, with their source (``remote_series``)."""
         now = now or time.time()
         written = written or {}
         with self._lock:
@@ -145,10 +149,13 @@ class MachineIndex:
                 while q and q[0] < now - DAY:
                     q.popleft()
             metrics: dict[str, set] = defaultdict(set)
-            for name, labels in series:
+            from_source: dict[str, str] = {}
+            for name, labels, source in [*((n, lab, None) for n, lab in series), *(remote or [])]:
                 if labels.get("machine"):
                     extra = ",".join(f'{k}="{v}"' for k, v in sorted(labels.items()) if k not in ("project", "machine", "instance"))
                     metrics[labels["machine"]].add(name + (f"{{{extra}}}" if extra else ""))
+                    if source:
+                        from_source.setdefault(labels["machine"], source)
             ids = sorted(set(self.total) | set(self.subs) | set(metrics) | set(self.instances) | {HOST}, key=lambda m: (m != HOST, m))
             machines = []
             for m in ids:
@@ -169,7 +176,8 @@ class MachineIndex:
                                  "subscribes": sorted(self.subs.get(m, ())), "metrics": sorted(metrics.get(m, [])),
                                  "logs": sorted(i or m for i in self.logs.get(m, {})),
                                  "instances": [i for i in insts if i["id"] != m] if any(k for k in self.instances[m]) else [],
-                                 "first_seen": first, "last_seen": last, "active": bool(last and now - last < ACTIVE_S)})
+                                 "first_seen": first, "last_seen": last, "active": bool(last and now - last < ACTIVE_S),
+                                 **({"from_source": from_source[m]} if m in from_source else {})})
             types = sorted({p["type"] for x in machines for p in x["publishes"]} | {t for x in machines for t in x["subscribes"]})
             edges = [{"from": x["id"], "to": p["type"], "kind": "publishes", "count": p["count"], "day": p["day"]}
                      for x in machines for p in x["publishes"]]
@@ -177,6 +185,24 @@ class MachineIndex:
             handoffs = [{"from": a, "via": ty, "to": b, "count": n, "day": len(self.recent_handoffs.get((a, ty, b), ()))}
                         for (a, ty, b), n in self.handoffs.most_common()]
             return {"machines": machines, "types": types, "edges": edges, "handoffs": handoffs, "unattributed_events": self.unattributed}
+
+
+def remote_series(model) -> list[tuple[str, dict, str]]:
+    """The series of another store (``[[sources]]``) a discovered model is bound to and that name
+    a machine (its stocks', its flows' and its machines' series), with their source: what the
+    Machines page knows of remote machines, read from the discovery record."""
+    if model is None:
+        return []
+    refs = [s.series for s in model.stocks] + [r for f in model.flows for r in [f.counter, *f.measured_by]]
+    refs += [r for m in model.machines for r in m.observed_by]
+    seen, out = set(), []
+    for r in refs:
+        if r is not None and r.source not in (None, "own") and r.labels.get("machine"):
+            key = (r.name, tuple(sorted(r.labels.items())))
+            if key not in seen:
+                seen.add(key)
+                out.append((r.name, dict(r.labels), r.source))
+    return out
 
 
 def last_writes(dumped: list[tuple[str, dict, list[tuple[float, float]]]]) -> dict[tuple[str, str], float]:
@@ -202,8 +228,8 @@ class _ListBus:
 
 
 def machines_view(events: list[dict], series: list[tuple[str, dict]], now: float | None = None,
-                  written: dict[tuple[str, str], float] | None = None) -> dict:
+                  written: dict[tuple[str, str], float] | None = None, remote: list[tuple[str, dict, str]] | None = None) -> dict:
     """The view over a given list of events (for tests and one-off use)."""
     idx = MachineIndex(_ListBus(events))
     idx.update()
-    return idx.view(series, now, written)
+    return idx.view(series, now, written, remote)

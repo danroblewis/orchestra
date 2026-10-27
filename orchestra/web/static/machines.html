@@ -248,7 +248,7 @@ function cards() {
   $("nm").textContent = DATA.machines.length;
   // a package draws the inside of its own machines' cards; what Orchestra observed is under it on every card
   $("cards").innerHTML = Orchestra.machineCards.sort(DATA.machines).map((m) => { const own = Orchestra.machineCards.card(m);
-    const head = own != null ? own : `<h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.id)}${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}${m.counted ? ' <span class="tag" title="known by counts a source read from another system\'s bus">counted</span>' : ""}</h3>`;
+    const head = own != null ? own : `<h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.id)}${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}${m.counted ? ' <span class="tag" title="known by counts a source read from another system\'s bus">counted</span>' : ""}${m.from_source ? ` <span class="tag" title="known from the series of another store ([[sources]]) the model is bound to">from ${esc(m.from_source)}</span>` : ""}</h3>`;
     return Orchestra.machineCards.wrap(m, head + Orchestra.machineCards.rows(m)); }).join("");
   $("note").textContent = [DATA.unattributed_events ? `${DATA.unattributed_events.toLocaleString()} older events carry no source (they predate the event envelope) and are not attributed to any machine.` : "",
     ...Object.entries(DATA.counted_failed || {}).map(([k, v]) => `Counted traffic from ${k} could not be read: ${v}`)].filter(Boolean).join(" ");

@@ -156,8 +156,9 @@ function draw() {
     loops(nodes, causal);
   } else GRAPH.render(nodes, edges);
   Live.drawn(GRAPH);
-  const used = [...new Set(flows.map((f) => f.machine || "none"))];
-  $("legend").innerHTML = used.map((id) => { const mc = byMachine[id] || { name: id, kind: "?" };
+  const used = [...new Set(flows.map((f) => f.machine || ""))];
+  $("legend").innerHTML = used.map((id) => { if (!id) return `<span class="lg prog" style="--c:${mcolor(id)}"><i></i>unattributed <span class="muted">no machine</span></span>`;
+    const mc = byMachine[id] || { name: id, kind: "?" };
     return `<span class="lg prog" style="--c:${mcolor(id)}"><i></i>${esc(mc.name)} <span class="muted">${kindWord(id, mc.kind)}</span></span>`; }).join("")
     + `<label class="lg" style="cursor:pointer"><input type="checkbox" ${window.SHOW_ALL ? "checked" : ""} onchange="window.SHOW_ALL=this.checked;draw()" style="margin:0"> flows with no events</label>`
     + (acc.size ? `<label class="lg" style="cursor:pointer" title="stocks that only fill and that no flow shown feeds, such as the event bus's length"><input type="checkbox" ${window.SHOW_ACC ? "checked" : ""} onchange="window.SHOW_ACC=this.checked;draw()" style="margin:0"> stocks that only fill, fed by nothing shown (${acc.size})</label>` : "")
@@ -241,7 +242,7 @@ function tables() {
     const end = (id) => (id ? stockName(id) : "outside");
     return `<tr><td>${esc(flowName(f))}<div class="muted" style="font-size:11px">${esc(end(f.from))} → ${esc(end(f.to))}</div></td><td class="num">${esc(eqText(f))}${e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}</td>
       <td>${e ? `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span> <span class="muted num">${esc(e.form)} · ${q.events ?? 0} ev · disp ${(q.dispersion ?? 0).toFixed(1)}</span>` : '<span class="muted">—</span>'}</td>
-      <td>${f.machine ? `<span class="mdot" style="--c:${mcolor(f.machine)}"></span>${esc((byMachine[f.machine] || {}).name || f.machine)}` : '<span class="muted">none</span>'}</td></tr>`; }).join("");
+      <td>${f.machine ? `<span class="mdot" style="--c:${mcolor(f.machine)}"></span>${esc((byMachine[f.machine] || {}).name || f.machine)}` : '<span class="muted">unattributed</span>'}</td></tr>`; }).join("");
   $("stocks").innerHTML = `<tr><th>stock</th><th>now</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr><td>${stockHead(s.id)}</td><td class="num">${m.levels[s.id] ? m.levels[s.id].v + " " + esc(s.unit) : "—"}</td>
       <td class="num muted">${s.series ? esc(s.series.name + "{" + Object.entries(s.series.labels).filter(([k]) => k !== "project").map(([k, v]) => `${k}="${v}"`).join(",") + "}") : "not measured"}</td></tr>`).join("");
   $("machines").innerHTML = `<tr><th>machine</th><th>kind</th><th>flows</th></tr>` + m.machines.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span>${esc(x.name)}${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
