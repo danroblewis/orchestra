@@ -54,7 +54,8 @@ the clock) or **ad hoc** (a fresh instance per piece of work). An instance annou
 what it listens for, what kind of thing it is (`data.kind`: program, agent, person or service),
 which package it belongs to (`data.package`), the name to show it by (`data.name`) and its group
 (`data.group`, or else `data.team`) when it starts (`orchestra.machine.started`, `data.mode`,
-`data.listens_for`), and may say where its log is (`data.log`, a file path). A group is a label:
+`data.listens_for`), and may say where its log is (`data.log`, a file path). The announcement is a
+plain event: a machine sends it over HTTP like any other (§3.1), from its own `source`. A group is a label:
 the Machines page shows it on each card and draws a group's machines near each other on the map,
 but every machine stays on the one page and the one map (AGENTS.md rule 4). These
 announcements are Orchestra's own event type, so Orchestra reads their `data`. The web server
@@ -122,6 +123,69 @@ topic with anyone else's.
 `ORCHESTRA_EVENTS_URL` overrides the file. One conformance suite (`tests/bus/`) runs against every
 backend; server backends need their client library (`orchestra[bus-redis]`, `[bus-rabbitmq]`,
 `[bus-kafka]`). `orchestra events copy --to URL` moves a log between backends.
+
+A machine reaches the bus in one of two ways: through Orchestra's Python helper
+(`orchestra.events.Events`), or over HTTP through the events endpoint (§3.1), which needs nothing
+of Orchestra's. No one ever needs to import Orchestra's library (`docs/roadmap/decisions.md`
+D16). Writing to a backend directly is not supported: the stream's offsets and the envelope are
+Orchestra's to keep.
+
+### 3.1 The events endpoint
+
+`orchestra/endpoint/`. The host that launches (§5.1) serves a small HTTP interface to the bus, so
+a machine in any language publishes and reads events with an HTTP client (`curl`, the standard
+library of any language).
+
+**Where it lives.** In the host, not the web server: machines are launched by `orchestra run`,
+and `orchestra web` may not be running, so a machine can publish whenever the host is up. Only
+the host that launches serves it (one per project); it starts before the launched processes and
+stops after them, so a machine can publish until it is stopped. It listens on `[events] listen`,
+`127.0.0.1:0` unless given (port 0: one the system picks); `"off"` serves none. Its address is in
+the runtime record (`events_endpoint`: `url`, `pid`, `since`) and is handed to every launched
+process in `ORCHESTRA_EVENTS_ENDPOINT`, with the token in `ORCHESTRA_EVENTS_TOKEN` (§5.1). A
+machine the host did not launch runs `orchestra events endpoint` (or `eval "$(orchestra events
+endpoint --env)"`), which prints both from the record and the state directory; a project that
+wants a fixed address sets `listen = "127.0.0.1:<port>"`. If it cannot bind, the host says so in
+its log and runs on without it (the core stays up).
+
+**Publishing.** `POST /events` with one JSON object: `type` and `source` (required), `data` (any
+JSON), `subject`, `time` (RFC 3339 with a timezone; normalised to UTC milliseconds), `id`,
+`correlationid`, `causationid`. A structured-mode CloudEvent is the same object with `specversion`
+`"1.0"` and `datacontenttype` `"application/json"`. The endpoint checks the fields and writes the
+event through `orchestra.events.Events.publish`, which makes the envelope (AGENTS.md rules 3 and
+5): it never reads `data`, and never touches a backend. It refuses, with a reason: an unknown
+field; a missing or malformed `type` or `source` (`<machine>` or `<machine>/<instance>`); a type
+starting `orchestra.` other than a machine's own announcements, `orchestra.machine.started` and
+`orchestra.machine.subscribed` (403); the source `orchestra-host` (403); text fields over their
+limits (type and source 256 characters, subject and the extensions 1024, id 256); a body over
+1 MB (413). The answer is `201 {"ok": true, "id", "duplicate": false, "event"}`. **Idempotency:**
+no backend refuses a repeated id, so the endpoint keeps the ids of the bus's last 10,000 events
+when it starts and of everything posted to it since; a post whose `id` is among them is answered
+`200 {"ok": true, "id", "duplicate": true}` and not written again. A machine that retries with
+the same `id` after a lost answer therefore writes once. A bus that fails answers 503.
+
+**Reading.** `GET /events?after=<offset>&types=<a,b>&wait=<s>&limit=<n>` answers
+`{"ok": true, "events": [...], "next": <offset>}`: the events after `after` (default 0; `end` for
+the current end), at most `limit` (default 1000, at most 10,000), only of the listed types if
+`types` is given, and the offset to read from next, which moves past what was read even when no
+event matched. With `wait` (seconds, at most 30) it holds the request until a matching event
+arrives or the time is up: a long poll. Offsets are the bus's own (§3). On the file bus a line
+that cannot be read is skipped, so a page cut at `limit` there may repeat an event; a reader
+de-duplicates by `id`.
+
+**Security.** It binds to 127.0.0.1 unless told otherwise, and every request but `GET /health`
+carries `Authorization: Bearer <token>`. The token is the project's: made the first time it is
+needed, kept in `<state>/events.token` readable by its owner only, and the same across the host's
+restarts, so a machine the host did not launch keeps working. Another local user's process cannot
+read the token, so can neither publish nor read. Anyone who can read the state directory can
+already write the file bus or the runtime record; the token adds no power beyond the Python
+helper's.
+
+**How this fits rule 9.** Publishing is a machine's normal job, not a human's control of the
+system: the endpoint is the bus, reached over HTTP, exactly as the Python helper is the bus reached
+from Python. The web UI and the CLI gain no write: `orchestra events endpoint` only prints where
+the endpoint is. A person who posts by hand is, to Orchestra, a machine named by the `source` they
+give (kind `person`, if they announce it), as with the helper.
 
 ---
 
@@ -490,6 +554,7 @@ and `sd verify`, the Sources page, command/OAuth2/SigV4 auth, SQL sources.
 - runs the event collector: replays the bus once at start, then follows it;
 - rediscovers the model every `[discovery] every`;
 - keeps running the processes the project and the plugins declare (§5.1);
+- serves the events endpoint (§3.1) while it launches;
 - runs the collectors the project declares (§5.2).
 
 ### 5.1 The launcher
@@ -506,7 +571,8 @@ stop_grace = 10                                     # seconds from SIGTERM to SI
 
 and a plugin in `Plugin.processes` (§10.1). The host starts each in the repository root, in a
 process group of its own, with `ORCHESTRA_REPO` (the root) and `ORCHESTRA_MACHINE_LOG` (its log,
-`<state>/logs/machines/<name>.log`, which receives its output) set. A plugin's processes are named
+`<state>/logs/machines/<name>.log`, which receives its output) set, and, while the events
+endpoint serves (§3.1), `ORCHESTRA_EVENTS_ENDPOINT` (its URL) and `ORCHESTRA_EVENTS_TOKEN`. A plugin's processes are named
 `<plugin>.<name>` (in the runtime record, on the Core page and in their logs' names), so a
 project's `[[machines]]` entry never takes a plugin process's place; a project entry named
 `<plugin>.<something>` for a plugin with processes is refused, with a line in the host's log. One that exits is started again
@@ -581,7 +647,7 @@ may share the name of the `[[machines]]` entry whose program it reads; a `[[coll
 an entry that cannot be used is left out with a line in the host's log. Stopping the host kills a
 command under way and writes nothing more.
 
-Only the Prometheus text format is read. There is no push endpoint. A remote Prometheus server is
+Only the Prometheus text format is read. There is no push endpoint for measurements (D16; events have one, §3.1). A remote Prometheus server is
 read where its data lives, not copied (§4.4).
 
 ---
@@ -601,7 +667,8 @@ keeps its own harness (`~/orchestra-agents/SPEC.md`).
   projects.json                  repository root → project key
   <key>/
     project.json
-    runtime.json                 the hosts', the launcher's, the web server's and the launched processes' records
+    runtime.json                 the hosts', the launcher's, the events endpoint's, the web server's and the launched processes' records
+    events.token                 the events endpoint's token (§3.1), readable by its owner only
     events.jsonl                 the event log, when [events] url = "file"
     metrics.jsonl                the metrics, when [metrics] url = "file"
     model/vNNNN.json             the model's versions
@@ -622,6 +689,7 @@ inside the repository except `orchestra.toml`.
 ```toml
 [events]
 url = "file"            # or redis://, amqp://, kafka://
+listen = "127.0.0.1:0"  # the events endpoint (§3.1): host:port, port 0 picked by the system; "off"
 [metrics]
 url = "file"            # or http://host:8428 (VictoriaMetrics)
 [discovery]             # strategy, window, step, every, [discovery.options]
@@ -658,7 +726,7 @@ machines may keep its own settings here (other packages' sections).
 | `orchestra init` | Register the repository and write `orchestra.toml` |
 | `orchestra run` | Run the bootstrap host, the processes the project and plugins declare, and the project's collectors |
 | `orchestra web [--port]` | Serve the web UI |
-| `orchestra events info\|copy --to URL` | The event log |
+| `orchestra events info\|endpoint [--env]\|copy --to URL` | The event log; where the events endpoint is, and its token (§3.1) |
 | `orchestra metrics backfill\|series` | Replay the log into event counters; list series |
 | `orchestra sd discover [--strategy S] [--minutes N] [--step-s S]\|show\|fit\|versions` | The model: discover it from the metrics, show, refit, list versions |
 | `orchestra sources check\|infer\|preview QUERY` | Other stores (§4.4): probe them, infer what to read, read a query's fan-out |
@@ -778,6 +846,7 @@ mean.
 orchestra/
   cli.py  config.py  events.py  runtime.py  host.py  launcher.py  collectors.py  plugins.py
   bus/       file, redis_streams, rabbitmq_streams, kafka
+  endpoint/  the events endpoint (§3.1): the token and the record, validate, server
   collect/   a project's collectors and scrapes: spec, fetch, exposition (the Prometheus text
              format), round, runner
   metrics/   file, victoria, promql

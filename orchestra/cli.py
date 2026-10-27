@@ -169,13 +169,31 @@ def cmd_sources(args) -> int:
 
 
 def cmd_events(args) -> int:
-    """The event log: where it lives, how much it holds, and copying it to another backend."""
+    """The event log: where it lives, how much it holds, where machines reach it over HTTP, and
+    copying it to another backend."""
+    import shlex
+
+    from . import endpoint
     from .bus import open_bus
 
     project = _project(args)
+    if args.action == "endpoint":
+        rec = endpoint.recorded(project)
+        if rec is None:
+            print("no events endpoint: `orchestra run` is not running for this project, or [events] listen is off",
+                  file=sys.stderr)
+            return 1
+        if args.env:
+            print(f"export {endpoint.ENV_URL}={shlex.quote(rec['url'])}")
+            print(f"export {endpoint.ENV_TOKEN}={shlex.quote(endpoint.token(project))}")
+        else:
+            print(f"url:   {rec['url']}  (POST /events, GET /events?after=<offset>)\ntoken: {endpoint.token_file(project)}")
+        return 0
     events = Events.for_project(project)
     if args.action == "info":
         print(f"{events.bus.name}: {events.end()} events")
+        if rec := endpoint.recorded(project):
+            print(f"endpoint: {rec['url']}")
         return 0
     if not args.to:
         print("copy needs --to URL (redis://, amqp://, kafka://, or file)")
@@ -240,8 +258,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--step-s", dest="step_s", type=float, help="for preview: seconds per step (default: [discovery] step)")
     s.set_defaults(fn=cmd_sources)
 
-    s = sub.add_parser("events", help="the event log: info, or copy it to another bus backend")
-    s.add_argument("action", choices=["info", "copy"])
+    s = sub.add_parser("events", help="the event log: info, the HTTP endpoint machines use, or copy it to another bus backend")
+    s.add_argument("action", choices=["info", "endpoint", "copy"])
+    s.add_argument("--env", action="store_true", help="for endpoint: print export lines for a shell "
+                   "(eval \"$(orchestra events endpoint --env)\")")
     s.add_argument("--to", help="for copy: the target bus URL")
     s.add_argument("--force", action="store_true", help="for copy: append even if the target already has events")
     s.set_defaults(fn=cmd_events)
