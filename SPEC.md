@@ -221,7 +221,13 @@ Conservation (`sd/discover.py`):
    first point it had counted nothing. A level's balance and a flow's fit use only the steps in
    which the level and the counters involved were all live; the stock records how many steps
    that was, and how long its value was held on its machine's word (`held`, in the stock's
-   evidence and the discovery notes). A series whose machine is silent at the end of the window
+   evidence and the discovery notes). Each flow is fitted on its own window: when its counter
+   and its stocks were live, cut further only by the stocks live for 95% of that time, which
+   alone may drive it. A series that started late, or a machine that was down, cuts its own
+   flows' windows, never the rest of the model's. A level live for less than half of the
+   window's data (from the first time any series was live in the window) is too new to be a
+   stock and stays an input, with the reason, until it covers enough: a collector started ten
+   minutes ago would otherwise be balanced on whatever counters moved in those ten minutes. A series whose machine is silent at the end of the window
    (gone, or replaced) is left out, and so are Orchestra's own series but its event counters
    (`orchestra_core_*`, `orchestra_host_up`: plumbing, not a measure of the system). Counters
    that move together in all but 3% of steps are one when one is Orchestra's count of the

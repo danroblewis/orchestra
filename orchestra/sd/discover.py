@@ -7,7 +7,8 @@ equation of each flow, and the machine behind each flow:
    when each was live (``sd.series``, ``sd.live``): liveness is the machine's, so a gauge not
    re-written because nothing changed holds its value while its machine is alive, and a
    machine's silence is it down or not yet started, not a measurement of the silence. Orchestra's
-   own series (``PLUMBING``: the host's, the Core page's probes) are no candidates.
+   own series (``PLUMBING``: the host's, the Core page's probes) are no candidates, nor is a level
+   live for less than ``MIN_COVER`` of the window's data (``too_short``): it stays an input.
 2. **Find stocks by conservation.** A level whose changes are explained by counters, added or
    subtracted, is a stock, and those counters are its inflows and outflows:
    ``Δlevel ≈ Σ inflows − Σ outflows`` in every step the level and the counters were live in.
@@ -35,7 +36,8 @@ equation of each flow, and the machine behind each flow:
    item leaves within a step is empty at almost every step, so the chain through it runs past it
    or splits through outside; it is joined through again (``sd.hops``, ``sd.passing``), on the
    measured level whose raw points show it (``sd.between``) or on a hidden stock.
-4. **Fit each flow's equation** by maximum likelihood, choosing by AIC among:
+4. **Fit each flow's equation** on its own window (``flow_window``: when its counter and its
+   stocks were live) by maximum likelihood, choosing by AIC among:
    - ``constant``: rate = c;
    - ``proportional``: rate = k × X, for X the source stock (its exact time-average over the
      step) or another stock that held something whenever the flow's events came;
@@ -75,7 +77,16 @@ from .drivers import AIC_MARGIN, EVENTS_PER_PARAM, behind, co_counting
 from .ends import claims, moves
 from .hops import split_hops
 from .inputs import offered_inputs
-from .live import balance_steps, held_for, intersect, within
+from .live import (
+    balance_steps,
+    held_for,
+    intersect,
+    length,
+    live_span,
+    observed_from,
+    union,
+    within,
+)
 from .model import Equation, Flow, Machine, Model, SeriesRef, Stock
 from .netflow import stocks as net_flow_stocks
 from .parsimony import fewer_counters
@@ -98,6 +109,9 @@ SAME_STEPS = 0.03          # counters that differ in no more than this share of 
 TWIN_STEPS = 0.97          # levels whose changes are equal in this share of steps are one stock measured twice
 TWIN_CORR = 0.9            # ... or whose changes correlate this well (one a moment behind the other)
 MIN_STEPS = 5              # a level live in fewer steps than this (while every counter was) cannot be balanced
+MIN_COVER = 0.5            # a level live for less than this share of the window's data is too new (or too broken) to be a stock yet
+DRIVER_COVER = 0.95        # a stock may drive a flow only if it was live for this share of the time the flow is fitted on
+SHORT = "written for only"  # the start of the reason a level too new to be a stock is left out (it stays an input)
 UNITS = {"second": 1.0, "minute": 60.0, "hour": 3600.0}
 LEAD_S = 60.0              # a driver's level is compared this long before and after a flow's events (_follows)
 NOT_IDENTITY = {"machine", "source", "project", "instance"}   # who wrote a series, not which thing it measures
@@ -457,6 +471,45 @@ def dispersion(events: list[tuple[float, float]], live: list[tuple[float, float]
     return sum((g - mean) ** 2 for g in gaps) / max(1, len(gaps) - 1) / max(mean * mean, 1e-12)
 
 
+def too_short(s: Series, since: float, end: float) -> str:
+    """Why a level is too new to be a stock yet, or nothing: it was live for less than
+    ``MIN_COVER`` of the window's data (from ``since``, when the first series was live in the
+    window). A collector started ten minutes ago has ten minutes of a level: balanced on those, a
+    weather series fits whatever counters moved in them, and fitted with the rest it would cut every
+    other flow's window to its own. It stays an input until it covers enough. Its changes are also
+    counted by each layer's own minimum (``MIN_EVENTS`` for a balance, ``EVENTS_PER_PARAM`` per
+    parameter for a net flow), over the time it covers."""
+    span = end - since
+    got = length(intersect(live_span(s, end), [(since, end)]))
+    if span <= 0 or got >= MIN_COVER * span:
+        return ""
+    return (f"{SHORT} {got / 60:.0f} min of the {span / 60:.0f} min the window holds data for ({got / span:.0%}, less than "
+            f"the {MIN_COVER:.0%} a stock must cover): too new to be a stock yet, an input until it covers enough")
+
+
+def flow_window(own: list[Series], sources: dict[str, tuple[list, list | None]], start: float, end: float, unit_s: float,
+                cache: dict) -> tuple[list[tuple[float, float]], dict[str, Path]]:
+    """The time a flow is fitted on, and the paths its rate may read over it. The time is when the
+    flow's own series (its counter, its stocks) were live, cut further only by the stocks live for
+    at least ``DRIVER_COVER`` of it, which may drive it; a stock live for less of it (a machine
+    started later, or down for a while) is not offered as a driver, and does not cut the flow's
+    window. ``sources``: each path's points and when it was live (None: always)."""
+    live = [(start, end)]
+    for ser in own:
+        if ser.intervals is not None:
+            live = intersect(live, ser.intervals)
+    total = length(live)
+    usable = {pid: iv for pid, (_, iv) in sources.items()
+              if iv is None or (total > 0 and length(intersect(live, iv)) >= DRIVER_COVER * total)}
+    for iv in usable.values():
+        if iv is not None:
+            live = intersect(live, iv)
+    key = (tuple(live), tuple(sorted(usable)))
+    if key not in cache:
+        cache[key] = {pid: Path.of(sources[pid][0], live, unit_s) for pid in usable}
+    return live, cache[key]
+
+
 def ref(s: Series) -> SeriesRef:
     """The model's reference to a series, with its resolution and how it was read (``sd.resolution``)."""
     r = s.resolution
@@ -708,6 +761,10 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             who = f"its machine {machine_of(ser)} has been silent" if machine_of(ser) else "its last point is"
             left_out[ser.key] = f"no longer written: {who} {since} min before the end of the window"
     series = current
+    # the window's data begin when the first series was live in it; a level is judged on how much
+    # of that it covers (MIN_COVER), so a collector started a few minutes ago is an input, not a
+    # stock fitted on its few minutes
+    since = observed_from(series, start, end)
     counters = [s for s in series if s.counter and any(s.deltas)]
     # counters that moved together in (almost) every step measure the same thing (a machine's own
     # count and Orchestra's count of the event it publishes for it; they may differ by a step at the
@@ -755,6 +812,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         return r2 >= MIN_R2 and (exact >= FLAG_EXACT or len({v for _, v in s.points}) > 2)
     for s in series:
         if s.counter:
+            continue
+        if why := too_short(s, since, end):
+            left_out[s.key] = why
             continue
         # only the steps when the level and every counter were live: a level's stale value from
         # before a silence (its machine was down, then restarted with a cleared state) is not a
@@ -854,7 +914,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # (sd.passing); joined through it
     where = {"start": start, "end": end, "step": step, "machine_of": machine_of}
     stock_keys = {s.key for s, _, _, _ in found}
-    levels = [s for s in series if not s.counter and s.key not in stock_keys and not left_out.get(s.key, "").startswith("the same as")]
+    levels = [s for s in series if not s.counter and s.key not in stock_keys and not left_out.get(s.key, "").startswith(("the same as", SHORT))]
     found, hopped, revived = split_hops(found, counters, copies, levels, first_stamped=first_stamped, **where)
     for d in revived:                      # a copy that came back as a hop of its own stands for itself
         counters.append(d)
@@ -905,33 +965,26 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         left_out[c.key] = notes.get(c.key, rare if events < MIN_EVENTS else "a counter no stock's balance needed")
 
     unit_s = UNITS[time_unit]
-    # fit only over the time every series involved was live: before a machine started, or while it
-    # was down, its silence is not a rate of zero
-    live = [(start, end)]
-    for ser in [s for s, _, _, _ in found] + [c for c in counters if c.key in by_counter]:
-        if ser.intervals is not None:
-            live = intersect(live, ser.intervals)
-    live_s = sum(b - a for a, b in live)
-    steps_live = [i for i in range(n) if any(a <= start + i * step and start + (i + 1) * step <= b for a, b in live)]
-    fit_start = live[0][0] if live else end
-    paths = {sid_of[s.key]: Path.of(s.points, live, unit_s) for s, _, _, _ in found}
-    # the measured gauges that are not stocks (a rating, a demand; sd.inputs) may drive a flow's
-    # rate like a stock may, as input:<name>
+    # what a flow's rate may read, by path id: each stock's points and when it was live, and the
+    # measured gauges that are not stocks (a rating, a demand; sd.inputs) as input:<name>, read on
+    # the grid; each flow is fitted on its own window (flow_window)
+    grid = lambda vals: [(start + i * step, v) for i, v in enumerate(vals)]
+    sources: dict[str, tuple[list, list | None]] = {sid_of[s.key]: (s.points, s.intervals) for s, _, _, _ in found}
     inputs, input_refs = offered_inputs(series, {s.key for s, _, _, _ in found}, left_out)
     found_net: list[Series] = []
     for name, vals in inputs.items():
-        paths[f"input:{name}"] = Path.of([(start + i * step, v) for i, v in enumerate(vals)], live, unit_s)
+        sources[f"input:{name}"] = (grid(vals), None)
     # a level no counters balance may still be a stock, its net flow fitted from the other series (sd.netflow)
     net_flows: list[Flow] = []
     for st, made, was_input, lv in net_flow_stocks(series, [s for s, _, _, _ in found], sid_of, inputs, input_refs, left_out, step,
-                                                   unit_s, (fit_start, end), lambda x: (unique_id(_slug(x), machine_of(x), ids), _title(x)),
+                                                   unit_s, (since, end), lambda x: (unique_id(_slug(x), machine_of(x), ids), _title(x)),
                                                    ref, machine_of):
         stocks.append(st)
         net_flows += made
-        paths.pop(f"input:{was_input}", None)
+        sources.pop(f"input:{was_input}", None)
         inputs.pop(was_input, None)
         input_refs.pop(was_input, None)
-        paths[st.id] = Path.of([(start + i * step, v) for i, v in enumerate(lv.values)], live, unit_s)
+        sources[st.id] = (grid(lv.values), lv.intervals)
         sid_of[lv.key] = st.id
         found_net.append(lv)
     # a driver slower than the grid explains nothing faster than its own resolution (sd.resolution)
@@ -947,10 +1000,21 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     grouped: dict[str, list] = defaultdict(list)       # per counter: its flow, then its co-flows (ends.moves's order)
     for mv in flow_moves:
         grouped[mv.counter.key].append(mv)
+    series_of = {sid_of[s.key]: s for s, _, _, _ in found}
+    windows: list[tuple[float, float]] = []
+    path_cache: dict = {}
     for mvs in grouped.values():
         c = mvs[0].counter
+        # fit only over the time the flow's counter and its stocks were live: before a machine
+        # started, or while it was down, its silence is not a rate of zero. Another series' short
+        # history or silence cuts only its own flows, never everyone's (flow_window)
+        own = [c, *(series_of[e] for mv in mvs for e in (mv.src, mv.dst) if e in series_of)]
+        live, paths = flow_window(own, sources, start, end, unit_s, path_cache)
+        live_s = length(live)
         if live_s <= 0:
             continue
+        windows += live
+        steps_live = [i for i in range(n) if any(a <= start + i * step and start + (i + 1) * step <= b for a, b in live)]
         dl = c.deltas
         y = [dl[i] for i in steps_live]
         # one event has one rate: a counter is fitted once, against its flow's source, and its
@@ -978,12 +1042,20 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             # a counter summed over instances is not a series in the store: the flow is measured by each of them
             flows.append(Flow(mv.id, _title(c), mv.src, mv.dst, None if c.members else ref(c),
                               [Equation(best["form"], {k: round(v, 6) for k, v in best["params"].items()}, "fitted", "poisson-mle",
-                                        (fit_start, end), None, dict(q), list(best["inputs"]))],
+                                        (live[0][0], end), None, dict(q), list(best["inputs"]))],
                               [ref(m) for m in c.members], mv.evidence))
             who = machine_of(c)
             if who:
                 by_machine[who].append(mv.id)
     flows += net_flows
+    # the time any flow was fitted on; with no flow, the window's data
+    live = union(windows) if windows else [(since, end)]
+    live_s = length(live)
+    fit_start = live[0][0] if live else end
+    for st in stocks:
+        ser = series_of.get(st.id) or next((x for x in found_net if sid_of.get(x.key) == st.id), None)
+        span = live_span(ser, end) if ser is not None else []
+        st.evidence["live_from"] = max(since, span[0][0]) if span else since
     owners = {st.evidence.get("machine") for st in stocks} - {None}
     # what a machine is (a program, a service, a person) is not in the metrics: the model says "machine"
     machines = [Machine(m, m, "machine", "Seen in the metrics store: it writes the series these flows are bound to.",

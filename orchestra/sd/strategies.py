@@ -214,7 +214,8 @@ def discover_with(dump, *, start: float, end: float, step: float, strategy: str 
         base.discovery.update(strategy=strategy, sdlab="not run: the counters balance every stock exactly, so nothing is left to explain")
         return base
     began = time.perf_counter()
-    fit_start = base.discovery.get("fit_start") or start
+    # from when every stock it is given was live (each flow's own window is its own, sd.discover)
+    fit_start = max([base.discovery.get("fit_start") or start, *(st.evidence.get("live_from") or start for st in given)])
     # on a grid no finer than the slowest-read of the stocks handed over allows: everything involved is that slow
     res = base.discovery.get("resolution") or {}
     k = min(steps_of(res.get(series_key(st.series.name, st.series.labels), {}).get("resolution_s"), step) for st in given)

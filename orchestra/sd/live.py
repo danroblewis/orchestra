@@ -183,3 +183,23 @@ def balance_steps(level, counters: list) -> list[int]:
         if ser.live is not None:
             steps = set(ser.live) if steps is None else steps & set(ser.live)
     return list(range(len(level.values) - 1)) if steps is None else sorted(steps)
+
+
+def length(intervals: list[tuple[float, float]]) -> float:
+    return sum(b - a for a, b in intervals)
+
+
+def live_span(ser, end: float) -> list[tuple[float, float]]:
+    """When a series was live: its intervals, or, for a series with none (written as things
+    happen, so always live), from its first point to the end."""
+    if ser.intervals is not None:
+        return ser.intervals
+    return [(ser.points[0][0], end)] if ser.points and ser.points[0][0] < end else []
+
+
+def observed_from(series: list, start: float, end: float) -> float:
+    """When the window's data begin: the first time any of these series was live in it. A window
+    of twelve hours over a system started four hours ago holds four hours of data, and a series
+    is judged on how much of those it covers."""
+    firsts = [max(start, iv[0][0]) for s in series if (iv := live_span(s, end))]
+    return min(firsts, default=start)
