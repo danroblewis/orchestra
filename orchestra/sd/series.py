@@ -21,7 +21,16 @@ from .live import (
     union,
     usual_interval,
 )
-from .resolution import LINEAR, Resolution, block_ends, interpolate, measure, real_points, steps_of
+from .resolution import (
+    LINEAR,
+    Resolution,
+    block_ends,
+    interpolate,
+    measure,
+    observed_every,
+    real_points,
+    steps_of,
+)
 
 EVENT_COUNTER = "orchestra_events_total"   # Orchestra's own count of each event type, by source
 PLUMBING = re.compile(r"^orchestra_(?!events_total)")   # Orchestra's own other series (the host's, the Core page's probes): never a measure of the system
@@ -181,7 +190,7 @@ def sample(dump, start: float, step: float, n: int, kinds: dict[str, Declared] |
         if res.read == LINEAR:
             vals = [first if v is None else v for v in interpolate(pts, times)]
         ser = Series(name, dict(labels), pts, vals, counter, resolution=res)
-        if not counter and steps_of(res.seconds, step) > 1:
+        if not counter and steps_of(observed_every(pts, res, said.resolution_s if said else None), step) > 1:
             ser.blocks = block_ends(real_points(pts, res.read), start, step, n)
         if said and said.direction and said.channel:
             ser.traffic = (said.direction, said.channel)

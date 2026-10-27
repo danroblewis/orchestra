@@ -18,9 +18,11 @@ def test_a_series_change_per_step_is_worked_out_once():
 
 
 def test_counts_are_held_and_measurements_resolved_by_their_changes():
-    # a count written every 30 s: held, its resolution the write interval
+    # a count written every 30 s that changes every 2 min: held, its resolution its changes'
     count = [(T0 + 30 * i, float(i // 4)) for i in range(100)]
-    assert measure(count, False) == measure(count, False).__class__(30.0, HOLD)
+    assert measure(count, False) == measure(count, False).__class__(120.0, HOLD)
+    # one that changes at every write: the write interval
+    assert measure([(T0 + 30 * i, float(i % 7)) for i in range(100)], False).seconds == 30.0
     # a counter written only when it moves: as fine as its events
     assert measure([(T0 + 7 * i * i, float(i)) for i in range(20)], True, on_events=True).seconds is None
     # a temperature polled every minute that its feed changes every half hour: linear, 30 min
@@ -28,7 +30,45 @@ def test_counts_are_held_and_measurements_resolved_by_their_changes():
     r = measure(feed, False)
     assert r.read == LINEAR and abs(r.seconds - 1800) < 1e-6
     # a resolution its source declared is a floor
-    assert measure(count, False, declared=60.0).seconds == 60.0
+    assert measure(count, False, declared=60.0).seconds == 120.0
+    assert measure(count, False, declared=600.0).seconds == 600.0
+
+
+def test_a_whole_valued_feed_polled_every_minute_is_as_slow_as_its_changes():
+    # a power demand in whole MW that its feed updates every half hour, polled every minute: held
+    # (whole values), but its resolution is half an hour, not the minute it is polled at
+    rng = random.Random(11)
+    demand, pts = 25000, []
+    for i in range(6 * 60):
+        if i % 30 == 0:
+            demand += rng.choice([-1, 1]) * rng.randint(50, 400)
+        pts.append((T0 + 60 * i + rng.uniform(0, 2), float(demand)))
+    r = measure(pts, False)
+    assert r.read == HOLD and abs(r.seconds - 1800) < 10, r
+
+
+def test_an_hourly_measurement_in_a_few_hours_is_resolved_by_its_changes():
+    # six hourly readings of an air quality index: too few to show a schedule, but it changed
+    # five times an hour apart
+    pts = [(T0 + 3600 * i + 40 * (i % 2), float(v)) for i, v in enumerate([42, 45, 51, 48, 39, 44])]
+    r = measure(pts, False)
+    assert r.read == HOLD and abs(r.seconds - 3600) < 60, r
+    # one reading of a smooth measurement as well
+    assert abs(measure([(T0 + 3600 * i, 10.0 + 0.1 * i * i) for i in range(6)], False).seconds - 3600) < 1e-6
+    # but a few writes of a state, in bursts and silences, are things happening
+    burst = [(T0 + t, float(i % 2)) for i, t in enumerate([0, 20, 45, 3000, 3030, 9000, 9010, 9040])]
+    assert measure(burst, False).seconds is None
+
+
+def test_a_count_written_only_when_it_moves_is_as_fine_as_its_events():
+    # a queue's length written at every arrival and departure, in bursts and silences
+    rng = random.Random(12)
+    t, n, pts = T0, 5, []
+    for _ in range(300):
+        t += rng.expovariate(1 / 20) if rng.random() < 0.3 else rng.uniform(0.01, 0.5)
+        n = max(0, n + rng.choice([-1, 1]))
+        pts.append((t, float(n)))
+    assert measure(pts, False).seconds is None
 
 
 def test_a_measurement_is_read_linearly_between_its_real_points():

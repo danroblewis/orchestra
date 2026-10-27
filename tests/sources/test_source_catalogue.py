@@ -54,7 +54,8 @@ def test_rediscovery_reads_the_remote_and_records_where_each_series_came_from(tm
     for s in pods:
         assert s.unit == "pods" and s.series.source == "rig" and s.series.name.startswith("rig:")
         assert s.series.labels["machine"] == f"rig.{s.series.labels['service']}"
-        assert s.series.query.startswith("count by (") and "counted from" in s.series.origin[0] and s.series.resolution_s == 60.0
+        # read every 60 s (the source's step, a floor), the pods' count is as fine as its changes
+        assert s.series.query.startswith("count by (") and "counted from" in s.series.origin[0] and s.series.resolution_s >= 60.0
     flows = [f for f in m.flows if f.dst in {s.id for s in pods} or f.src in {s.id for s in pods}]
     assert flows and all(f.current().sources == ["rig"] for f in flows)
     assert {mc.id for mc in m.machines} >= {"rig.checkout", "rig.search", "rig.authz"}

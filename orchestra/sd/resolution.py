@@ -3,17 +3,28 @@
 A series is known only at its real points. How often those come is its **resolution**: the usual
 gap between them. A count or a state (a counter, or a level that only takes whole values: orders
 by state, pods, people in a line) is read with its last value held, because it stays what it was
-until it is written again; its real points are all its writes, a repeat included (the shelf still
-holds three), and a count written only when it changes (no schedule) is as fine as its events. A
-smooth measurement (a temperature, a price, a load: any value that is not whole) is read linearly
-between its real points; a repeat of the value it had is the same observation polled again, not
-a new one, so its real points are those where it changed. A feed that changes every half hour,
-polled every minute, then has a resolution of half an hour, not a minute. The choice is made per
-series and recorded (``Resolution``), and a resolution a source declared (a remote store's
-reporting interval) is a floor.
+until it is written again; a smooth measurement (a temperature, a price, a load: any value that is
+not whole) is read linearly between its real points. How the series is read and how fine it is
+are separate questions.
 
-Discovery uses the resolution three ways (``sd.discover``): a level slower than the grid is
-balanced on the stretches between its writes (``blocks``), not on every step; a driver slower
+Every write is a real point only of a counter, and of a level written as things happen: no
+schedule (``sd.live.usual_interval`` finds none in at least ``ENOUGH`` writes: bursts, then
+silences) and its value changed at most of them (a write because something moved). Such a series
+is as fine as its events. A level written on a schedule, whole or not, is resolved by its
+changes: a repeat of the value it had is the same observation polled again, so its resolution is
+the usual (median) gap between the points where it changed. A feed that changes every half hour,
+polled every minute, then has a resolution of half an hour, not a minute, whether its values are
+whole (a power demand in MW, an air quality index, a count of flights) or not; a count polled every
+second that changes every few seconds keeps a resolution of a few seconds. A level with too few
+writes to show a schedule (an hourly measurement in a few hours' window) is resolved from its
+changes when it changed at least twice, and, if its values are whole, at steady gaps (``steady``):
+a few writes of a count in a burst and a silence are things happening, as fine as they are. The
+choice is made per series and recorded (``Resolution``), and a resolution a source declared (a
+remote store's reporting interval) is a floor.
+
+Discovery uses the resolution three ways (``sd.discover``): a level written less often than the
+grid is balanced on the stretches between its observations (``blocks``, ``observed_every``: a
+count's writes, a measurement's changes), not on every step; a driver slower
 than the grid needs as many of its own intervals holding a flow's events as a form needs events
 (``intervals_with``); and a level's net flow is fitted on a grid no finer than every series it
 reads (``sd.netflow``)."""
@@ -29,6 +40,7 @@ from .live import usual_interval
 
 HOLD, LINEAR = "hold", "linear"
 SLOW = 1.5          # a series is slower than the grid when its resolution is this many steps or more
+ENOUGH = 10         # writes it takes to tell a schedule from writes as things happen (``sd.live.usual_interval``)
 
 
 @dataclass(frozen=True)
@@ -43,6 +55,13 @@ class Resolution:
 def whole(points: list[tuple[float, float]]) -> bool:
     """Every value a whole number: a count or a state."""
     return all(float(v).is_integer() for _, v in points)
+
+
+def steady(gaps: list[float]) -> bool:
+    """Gaps that keep a schedule: most within half and twice the usual one (as
+    ``sd.live.usual_interval`` judges writes), not a burst and a silence."""
+    med = median(gaps)
+    return med > 0 and sum(1 for g in gaps if 0.5 * med <= g <= 2 * med) >= 0.8 * len(gaps)
 
 
 def real_points(points: list[tuple[float, float]], read: str) -> list[tuple[float, float]]:
@@ -62,16 +81,29 @@ def measure(points: list[tuple[float, float]], counter: bool, declared: float | 
     """A series' resolution and read. ``declared``: a resolution its source reported, a floor;
     ``on_events``: a counter written only when it moves (no schedule)."""
     read = HOLD if counter or whole(points) else LINEAR
+    interval = usual_interval(points)
     seconds: float | None
-    if read == HOLD:
-        seconds = None if on_events else usual_interval(points)
+    if counter:
+        seconds = None if on_events else interval
+    elif read == HOLD and interval is None and len(points) >= ENOUGH and 2 * len(real_points(points, LINEAR)) > len(points):
+        seconds = None                  # a count written as things happen: every write is one
     else:
-        real = real_points(points, read)
-        gaps = [b - a for (a, _), (b, _) in pairwise(real)]
-        seconds = median(gaps) if len(gaps) >= 2 else usual_interval(points)
+        changes = [b - a for (a, _), (b, _) in pairwise(real_points(points, LINEAR))]
+        enough = len(changes) >= 2 and (read == LINEAR or len(points) >= ENOUGH or steady(changes))
+        seconds = median(changes) if enough else interval
     if declared:
         seconds = max(seconds or 0.0, float(declared))
     return Resolution(seconds, read)
+
+
+def observed_every(points: list[tuple[float, float]], res: Resolution, declared: float | None = None) -> float | None:
+    """How far apart a level's observations are, for its balance (``blocks``): a measurement's are
+    its changes (its resolution); a count's are its writes, a repeat included (the shelf still holds
+    three), on the interval it is written on, however seldom it changes."""
+    if res.read == LINEAR:
+        return res.seconds
+    seconds = usual_interval(points)
+    return max(seconds or 0.0, float(declared)) if declared else seconds
 
 
 def interpolate(points: list[tuple[float, float]], times: list[float]) -> list[float | None]:
