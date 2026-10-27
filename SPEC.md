@@ -225,10 +225,14 @@ Conservation (`sd/discover.py`):
    and its stocks were live, cut further only by the stocks live for 95% of that time, which
    alone may drive it. A series that started late, or a machine that was down, cuts its own
    flows' windows, never the rest of the model's. A level live for less than half of the
-   window's data (from the first time any series was live in the window) is too new to be a
-   stock and stays an input, with the reason, until it covers enough: a collector started ten
-   minutes ago would otherwise be balanced on whatever counters moved in those ten minutes. A series whose machine is silent at the end of the window
-   (gone, or replaced) is left out, and so are Orchestra's own series but its event counters
+   window's data (from the first time any series was live in the window, while anything was
+   written) is too new to be a stock and stays an input, with the reason, until it covers
+   enough: a collector started ten minutes ago would otherwise be balanced on whatever counters
+   moved in those ten minutes. A series whose machine has been silent at the end of the window
+   for longer than a restart takes (five minutes of the time anything at all was written: a
+   computer asleep writes nothing, and its machines' silence then is not theirs) is gone, or
+   replaced, and is left out; one silent for less may be restarting, and keeps its stocks.
+   Orchestra's own series but its event counters are left out too
    (`orchestra_core_*`, `orchestra_host_up`: plumbing, not a measure of the system). Counters
    that move together in all but 3% of steps are one when one is Orchestra's count of the
    other's events, or both are one machine's: the machine's own, then the shorter name, is kept;

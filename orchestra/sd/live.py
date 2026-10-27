@@ -27,6 +27,7 @@ from itertools import pairwise
 
 GAP_FACTOR, MIN_GAP_S = 10.0, 60.0
 LOOKBACK_S = 3600.0        # writes this long before the window still say whether a machine was alive at its start
+RESTART_S = 300.0          # a machine silent at the end of the window for no longer than this (while anything was written) may be restarting
 
 
 def usual_interval(points: list[tuple[float, float]]) -> float | None:
@@ -203,3 +204,20 @@ def observed_from(series: list, start: float, end: float) -> float:
     is judged on how much of those it covers."""
     firsts = [max(start, iv[0][0]) for s in series if (iv := live_span(s, end))]
     return min(firsts, default=start)
+
+
+def observed(series: list, start: float, end: float) -> list[tuple[float, float]]:
+    """When anything at all was written (any series, Orchestra's own included), with no silence
+    longer than ``MIN_GAP_S``: the time the system was being watched. A computer asleep writes
+    nothing, so a machine's silence then is the watcher's absence, not the machine's."""
+    return stretches(sorted({t for s in series for t, _ in s.points}), MIN_GAP_S, start, end)
+
+
+def gone(last: float, end: float, awake: list[tuple[float, float]]) -> bool:
+    """Whether a machine live until ``last`` and silent since has stopped, rather than being
+    restarted: it has been silent for longer than ``RESTART_S`` of the time anything was written
+    (``observed``). Its silence at the end of the window is not yet a gap or an end: a machine
+    being restarted (its launcher, its host restarting) is silent for a minute or two past its
+    live limit and comes back, and one just after the computer woke has not written yet; neither
+    is gone, and leaving its series out drops its stocks from the model until it writes again."""
+    return last < end and length(intersect([(last, end)], awake)) > RESTART_S

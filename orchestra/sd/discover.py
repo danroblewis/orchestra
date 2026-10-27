@@ -79,10 +79,12 @@ from .hops import split_hops
 from .inputs import offered_inputs
 from .live import (
     balance_steps,
+    gone,
     held_for,
     intersect,
     length,
     live_span,
+    observed,
     observed_from,
     union,
     within,
@@ -471,16 +473,17 @@ def dispersion(events: list[tuple[float, float]], live: list[tuple[float, float]
     return sum((g - mean) ** 2 for g in gaps) / max(1, len(gaps) - 1) / max(mean * mean, 1e-12)
 
 
-def too_short(s: Series, since: float, end: float) -> str:
+def too_short(s: Series, since: float, end: float, awake: list[tuple[float, float]]) -> str:
     """Why a level is too new to be a stock yet, or nothing: it was live for less than
     ``MIN_COVER`` of the window's data (from ``since``, when the first series was live in the
-    window). A collector started ten minutes ago has ten minutes of a level: balanced on those, a
+    window, and while anything was written: ``awake``, sd.live.observed). A collector started ten minutes ago has ten minutes of a level: balanced on those, a
     weather series fits whatever counters moved in them, and fitted with the rest it would cut every
     other flow's window to its own. It stays an input until it covers enough. Its changes are also
     counted by each layer's own minimum (``MIN_EVENTS`` for a balance, ``EVENTS_PER_PARAM`` per
     parameter for a net flow), over the time it covers."""
-    span = end - since
-    got = length(intersect(live_span(s, end), [(since, end)]))
+    watched = intersect(awake, [(since, end)])
+    span = length(watched)
+    got = length(intersect(live_span(s, end), watched))
     if span <= 0 or got >= MIN_COVER * span:
         return ""
     return (f"{SHORT} {got / 60:.0f} min of the {span / 60:.0f} min the window holds data for ({got / span:.0%}, less than "
@@ -745,16 +748,16 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     sampled = len(series)          # every series looked at (a machine's instances summed into one)
     left_out: dict[str, str] = {}
     end = start + n * step
-    # Orchestra's own series are plumbing, not a measure of the system; and a series not live at the
-    # end of the window (its machine silent past its live limit: gone, or replaced) is not measured
-    # now: left out, or its silence would leave no time when every series involved was live, and
-    # nothing could be fitted
+    # Orchestra's own series are plumbing, not a measure of the system; and a series whose machine
+    # has been silent at the end of the window for longer than a restart takes (gone, or replaced)
+    # is not measured now: left out (sd.live.gone)
+    awake = observed(series, start, end)
     current = []
     for ser in series:
         ivs = ser.intervals if ser.intervals is not None else [(start, end)]
         if PLUMBING.match(ser.name):
             left_out[ser.key] = plumbing_reason(ser.name)
-        elif ivs and ivs[-1][1] >= end:
+        elif ivs and not gone(ivs[-1][1], end, awake):
             current.append(ser)
         else:
             since = round((end - (ivs[-1][1] if ivs else max((t for t, _ in ser.points), default=start))) / 60)
@@ -813,7 +816,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     for s in series:
         if s.counter:
             continue
-        if why := too_short(s, since, end):
+        if why := too_short(s, since, end, awake):
             left_out[s.key] = why
             continue
         # only the steps when the level and every counter were live: a level's stale value from

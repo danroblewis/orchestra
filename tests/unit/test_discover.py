@@ -172,9 +172,10 @@ def test_a_two_valued_level_is_a_stock_only_when_counters_balance_it_exactly(tmp
 def test_a_level_no_longer_written_is_left_out_not_a_reason_to_fit_nothing(tmp_path):
     store = FileMetrics(tmp_path / "m.jsonl")
     start, end = simulate(store, minutes=60)
-    # an old machine's level, balanced by the same counters, that stopped being written half way
+    # an old machine's level, balanced by the same counters, that stopped being written a quarter
+    # of an hour before the end: longer than a restart takes (a shorter silence may be one)
     pts = [Point("bakery_shelf_loaves", v, t, {"project": "p", "machine": "old_shop"})
-           for t, v in [(p_t, p_v) for p_t, p_v in store.raw("bakery_shelf_loaves", {"project": "p", "machine": "shop"}, start=start, end=start + 3420)]]
+           for t, v in [(p_t, p_v) for p_t, p_v in store.raw("bakery_shelf_loaves", {"project": "p", "machine": "shop"}, start=start, end=start + 2700)]]
     store.write(pts)
     m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
     assert m.flows and all(f.current() for f in m.flows)
