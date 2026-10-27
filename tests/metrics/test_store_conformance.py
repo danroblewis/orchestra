@@ -4,12 +4,14 @@ the demo servers). Each test uses its own project label and deletes its series a
 
 from __future__ import annotations
 
+import logging
 import os
+import time
 import uuid
 
 import pytest
 
-from orchestra.metrics import Point, open_metrics
+from orchestra.metrics import FUTURE_SKEW_S, Point, open_metrics
 
 BACKENDS = {"file": "file", "victoriametrics": os.environ.get("ORCHESTRA_TEST_VM_URL")}
 
@@ -78,3 +80,14 @@ def test_dump_returns_every_matching_series_in_one_pass(store):
     got = store.dump("orchestra_", {"project": store.project})
     assert [(n, l.get("stock") or l.get("flow"), pts) for n, l, pts in got] == [
         ("orchestra_flow_total", "a>b", [(1000, 4)]), ("orchestra_stock", "OPEN", [(1000, 1), (1010, 2)])]
+
+
+def test_a_point_stamped_in_the_future_is_refused_and_logged(store, caplog):
+    now = time.time()
+    with caplog.at_level(logging.WARNING, logger="orchestra.metrics"):
+        store.write([P(store, "caiso_demand_mw", 1, now - 30, machine="telemetry"),
+                     P(store, "caiso_demand_mw", 2, now + FUTURE_SKEW_S / 2, machine="telemetry"),     # a clock a little ahead
+                     P(store, "caiso_demand_mw", 3, now + 13 * 3600, machine="telemetry")])            # stamped tonight
+    pts = store.raw("caiso_demand_mw", {"project": store.project, "machine": "telemetry"})
+    assert [v for _, v in pts] == [1, 2]
+    assert "refused 1 point(s)" in caplog.text and "caiso_demand_mw" in caplog.text

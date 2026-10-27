@@ -678,7 +678,10 @@ Read-only for humans. Navigation: Dashboard, Machines, Dynamics, Core.
   in the last two minutes; a click opens its dialog) and **Host** (a Core status strip; the
   host's CPU, GPU, memory and disk). A package adds panels of its own (`Orchestra.panels`, from its
   every-page script; §10.1).
-- **Machines:** every machine seen on the bus with its instances and how it is engaged, the event map (by default machines only: an
+- **Machines:** every machine seen on the bus with its instances, how each is engaged and what kind
+  it is (a machine whose instances differ says so: agent ×2, program ×1), whether it is active (last
+  seen, by an event or a write, within two and a half beats of its own cadence and at least two
+  minutes, the gap its events or writes are observed at; never by anything stamped in the future), the event map (by default machines only: an
   arrow where one publishes an event type the other listens for, one line with two arrowheads where
   two talk both ways, thicker with more traffic, the event types on hover; or with the event types
   as boxes; event families, the name up to its first dot, can be hidden; dotted, the hand-offs

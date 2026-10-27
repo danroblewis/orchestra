@@ -17,7 +17,9 @@ longer than its lookback (5 minutes by default, ``-search.maxStalenessInterval``
 
 from __future__ import annotations
 
+import logging
 import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
@@ -71,13 +73,36 @@ class MetricsStore(Protocol):
     def close(self) -> None: ...
 
 
+FUTURE_SKEW_S = 60.0       # how far past now a point may be stamped (clocks drift) before it is refused
+log = logging.getLogger("orchestra.metrics")
+
+
+def refuse_future(points: list[Point], store: str, skew: float | None, now: float | None = None) -> list[Point]:
+    """The points not stamped more than ``skew`` seconds past ``now``; the rest are refused and
+    logged. ``None`` refuses nothing (a store made directly, for tests and replays on a clock of
+    their own)."""
+    if skew is None or not points:
+        return points
+    limit = (time.time() if now is None else now) + skew
+    kept = [p for p in points if p.ts <= limit]
+    if len(kept) < len(points):
+        late = [p for p in points if p.ts > limit]
+        log.warning("metrics store %s: refused %d point(s) stamped more than %g s in the future; the first: %s%s at %.0f, %.0f s ahead",
+                    store, len(late), skew, late[0].series, late[0].labels, late[0].ts, late[0].ts - limit + skew)
+    return kept
+
+
 def open_metrics(url: str | None, *, file_path: Path) -> MetricsStore:
+    """The store at ``url``. It refuses points stamped more than ``FUTURE_SKEW_S`` in the future,
+    whoever writes them (a collector, a scrape, a machine through ``for_repo``, the host): a point
+    is a measurement, and one stamped ahead would make its series, and the machine it is labelled
+    with, look alive until a time not yet come."""
     if not url or url == "file":
         from .file import FileMetrics
-        return FileMetrics(file_path)
+        return FileMetrics(file_path, future_skew=FUTURE_SKEW_S)
     if url.startswith(("http://", "https://")):
         from .victoria import VictoriaMetrics
-        return VictoriaMetrics(url)
+        return VictoriaMetrics(url, future_skew=FUTURE_SKEW_S)
     raise MetricsError(f"unknown metrics URL {url!r}: use file or http://host:port (VictoriaMetrics)")
 
 

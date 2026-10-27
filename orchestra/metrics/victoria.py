@@ -12,7 +12,7 @@ import json
 import urllib.parse
 import urllib.request
 
-from . import MetricsError, Point, step_sample
+from . import MetricsError, Point, refuse_future, step_sample
 
 
 def _selector(series: str, labels: dict[str, str] | None, prefix: bool = False) -> str:
@@ -24,8 +24,9 @@ def _selector(series: str, labels: dict[str, str] | None, prefix: bool = False) 
 class VictoriaMetrics:
     name = "victoriametrics"
 
-    def __init__(self, url: str):
+    def __init__(self, url: str, future_skew: float | None = None):
         self.base = url.rstrip("/")
+        self.future_skew = future_skew              # refuse points stamped further ahead (``refuse_future``)
 
     def _req(self, path: str, params: dict | None = None, body: bytes | None = None) -> bytes:
         url = self.base + path + ("?" + urllib.parse.urlencode(params, doseq=True) if params else "")
@@ -37,6 +38,7 @@ class VictoriaMetrics:
             raise MetricsError(f"VictoriaMetrics at {self.base}: {e}") from e
 
     def write(self, points: list[Point]) -> None:
+        points = refuse_future(points, self.name, self.future_skew)
         if not points:
             return
         groups: dict[tuple, dict] = {}
