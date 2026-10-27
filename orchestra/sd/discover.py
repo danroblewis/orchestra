@@ -333,7 +333,7 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
     interval of its resolution, so the events within one such interval (from ``start``) are one
     observation of it: it needs as many intervals holding the flow's events as a form needs events
     (``sd.resolution.intervals_with``). A space-weather index that changes every few minutes does
-    not drive a worker's turns because the worker happened to be busy while it was high.
+    not drive a machine's jobs because the machine happened to be busy while it was high.
 
     A stock the flow fills (``fills``: its destination, and every backlog a copy of it fills) may
     drive it only the other way: the fuller, the slower (a capacity: free bakers freed more slowly

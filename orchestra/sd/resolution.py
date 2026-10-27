@@ -1,7 +1,7 @@
 """Each series' real resolution, and how it is read between its points.
 
 A series is known only at its real points. How often those come is its **resolution**: the usual
-gap between them. A count or a state (a counter, or a level that only takes whole values: tickets
+gap between them. A count or a state (a counter, or a level that only takes whole values: orders
 by state, pods, people in a line) is read with its last value held, because it stays what it was
 until it is written again; its real points are all its writes, a repeat included (the shelf still
 holds three), and a count written only when it changes (no schedule) is as fine as its events. A

@@ -70,11 +70,11 @@ def test_a_level_written_every_minute_is_balanced_between_its_writes():
 
 
 def test_a_slow_series_does_not_drive_a_fast_flow():
-    # a worker busy for forty minutes of two hours; a feed that changes every half hour (polled
-    # every minute) happened to be high then. Its intervals holding the worker's events are too
-    # few to tell a driver from a coincidence: the worker's rate is a constant
+    # a press busy for forty minutes of two hours; a feed that changes every half hour (polled
+    # every minute) happened to be high then. Its intervals holding the press's jobs are too
+    # few to tell a driver from a coincidence: the press's rate is a constant
     rng = random.Random(5)
-    lab = {"machine": "worker"}
+    lab = {"machine": "press"}
     started = finished = busy = 0
     st_pts, fi_pts, b_pts = [(T0, 0.0)], [(T0, 0.0)], [(T0, 0.0)]
     for i in range(7200):
@@ -89,10 +89,10 @@ def test_a_slow_series_does_not_drive_a_fast_flow():
             fi_pts.append((t, float(finished)))
             b_pts.append((t, 0.0))
     feed = [(T0 + 60 * i, (7.3 if 40 <= i < 80 else 1.1) + 0.01 * ((i // 30) % 2)) for i in range(121)]
-    dump = [("turns_started_total", lab, st_pts), ("turns_finished_total", lab, fi_pts), ("working", lab, b_pts),
+    dump = [("jobs_started_total", lab, st_pts), ("jobs_finished_total", lab, fi_pts), ("working", lab, b_pts),
             ("space_weather_index", {"machine": "feed"}, feed)]
     m = discover(dump, start=T0, end=T0 + 7200, step=5.0)
     assert started >= 20
-    [f] = [f for f in m.flows if f.id.startswith("turns_started")]
+    [f] = [f for f in m.flows if f.id.startswith("jobs_started")]
     assert f.current().inputs == [] or f.current().inputs == ["working"], f.current()
     assert not any(x.startswith("input:space_weather") for fl in m.flows for x in fl.current().inputs)
