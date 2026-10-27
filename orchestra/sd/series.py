@@ -11,7 +11,16 @@ from dataclasses import dataclass, field
 from itertools import pairwise
 
 from ..metrics import step_sample
-from .live import held, live_intervals, live_limit, steps_within, stretches, union, usual_interval
+from .live import (
+    before_first_write,
+    held,
+    live_intervals,
+    live_limit,
+    steps_within,
+    stretches,
+    union,
+    usual_interval,
+)
 
 EVENT_COUNTER = "orchestra_events_total"   # Orchestra's own count of each event type, by source
 PLUMBING = re.compile(r"^orchestra_(?!events_total)")   # Orchestra's own other series (the host's, the Core page's probes): never a measure of the system
@@ -58,7 +67,7 @@ class Series:
     counter: bool
     members: list = field(default_factory=list)   # the instances' series, when this one sums them (sum_instances)
     intervals: list[tuple[float, float]] | None = None   # when it was live; None: a machine-less series written as things happen, so always
-    live: list[int] | None = None                        # the grid steps inside those intervals; None: every step
+    live: list[int] | None = None                        # the grid steps whose change is measured: inside those intervals, and for a counter also before its first write; None: every step
     traffic: tuple[str, str] | None = None               # counted traffic: (direction, channel), when a definition said so
 
     @property
@@ -115,7 +124,8 @@ def alive(series: list[Series], start: float, end: float) -> dict[str, list[tupl
 def mark_live(ser: Series, machine_alive: list[tuple[float, float]] | None, start: float, step: float, n: int) -> Series:
     """Record when the series was live: whenever its machine was, for a counter; from its first
     write in each of the machine's stretches, for a gauge. A machine-less series is live on its
-    own schedule, if it has one, else always."""
+    own schedule, if it has one, else always. A counter's change is also measured in the steps
+    before its first write (``before_first_write``), though its machine's time there is not."""
     end = start + n * step
     if machine_alive is not None:
         ser.intervals = machine_alive if ser.counter else held(ser.points, machine_alive, start, end)
@@ -123,6 +133,8 @@ def mark_live(ser: Series, machine_alive: list[tuple[float, float]] | None, star
         ser.intervals = live_intervals(ser.points, start, end)
     if ser.intervals is not None:
         ser.live = steps_within(ser.intervals, start, step, n)
+        if ser.counter:
+            ser.live = sorted(set(ser.live) | set(before_first_write(ser.points, start, step, n)))
     return ser
 
 

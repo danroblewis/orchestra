@@ -14,10 +14,11 @@ quarter of an hour it is still the count. It goes stale only when its machine go
 value from before a silence is not carried past it (a machine restarted with a cleared state
 re-writes its gauges), so a gauge is live from its first write in each stretch its machine was
 alive to the end of that stretch. A counter is live whenever its machine is: before its first write
-it had counted nothing. Carrying a value through a machine's silence would read as "nothing
-happened" (for a level: no change, so no flow; for a counter: no events), which is false, so the
-silence is cut: a stock's balance and a flow's fit use only the steps when the level and the
-counters involved were all live."""
+it had counted nothing (when its first value says it started there), so a balance may also use the
+steps before that write, though they are not its machine's live time. Carrying a value through a
+machine's silence would read as "nothing happened" (for a level: no change, so no flow; for a
+counter: no events), which is false, so the silence is cut: a stock's balance and a flow's fit
+use only the steps when the level and the counters involved were all live."""
 
 from __future__ import annotations
 
@@ -146,11 +147,37 @@ def steps_within(intervals: list[tuple[float, float]], start: float, step: float
     return [i for i in range(n) if any(a <= start + i * step and start + (i + 1) * step <= b for a, b in intervals)]
 
 
+def counted_from_nothing(points: list[tuple[float, float]]) -> bool:
+    """A counter started counting at its first write: its first value is no larger than its
+    largest later increase (at least one), as a counter written when it moves starts at its first
+    event. A first value larger than that was being counted before anyone saw it (a long-running
+    exporter scraped for the first time), so its time before that write is unknown."""
+    if not points:
+        return False
+    rises = [b - a for (_, a), (_, b) in pairwise(points) if b >= a]
+    return points[0][1] <= max([1.0, *rises])
+
+
+def before_first_write(points: list[tuple[float, float]], start: float, step: float, n: int) -> list[int]:
+    """The grid steps that begin before a counter's first write, when it started counting there
+    (``counted_from_nothing``): it had counted nothing before, so its change in those steps is
+    measured (none, then its first events), whether or not its machine was alive. Without this, a
+    machine that first writes late in the window (a collector that announces itself once, counted
+    by Orchestra's event counter) would cut every step before that write from every level's
+    balance (``balance_steps`` takes the steps when every counter was live), and a level that
+    moved only before it would look as if it never changed. The machine's time before its first
+    write is still not live (a flow's fit leaves it out: its silence is not a rate of zero)."""
+    if not counted_from_nothing(points):
+        return []
+    return [i for i in range(n) if start + i * step < points[0][0]]
+
+
 def balance_steps(level, counters: list) -> list[int]:
     """The steps a level's balance may use: those in which the level and every counter were live
-    (a series whose ``live`` is None is always live). The level's stale value from before a
-    silence, and a counter's jump or reset when its machine came back, fall outside, so neither
-    reads as a change the balance must explain."""
+    (a series whose ``live`` is None is always live; a counter is also live before its first
+    write, ``before_first_write``). The level's stale value from before a silence, and a counter's
+    jump or reset when its machine came back, fall outside, so neither reads as a change the
+    balance must explain."""
     steps = None
     for ser in [level, *counters]:
         if ser.live is not None:
