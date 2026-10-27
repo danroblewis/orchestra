@@ -13,10 +13,12 @@ from fake_prometheus import FakePrometheus
 from helpers import project, source_toml, world
 
 from orchestra.metrics import Point, for_project
+from orchestra.metrics.promql import PromQLError
 from orchestra.sd.rediscover import aligned, rediscover
 from orchestra.sd.series import Declared, sample
 from orchestra.sd.store import ModelStore
 from orchestra.sources.catalogue import Catalogue
+from orchestra.sources.infer import cached, save
 from orchestra.web.dynamics import model_view
 
 
@@ -139,3 +141,59 @@ def test_querying_equals_copying(tmp_path, monkeypatch):
     norm = lambda m: sorted((f.id.replace("rig:", "").replace("rig.", ""), f.current().form, tuple(round(v, 5) for v in f.current().params.values()))
                             for f in m.flows)
     assert norm(copied) == norm(queried)
+
+
+def test_a_store_that_holds_nothing_after_a_sleep_keeps_the_definitions_and_saves_no_version(tmp_path, monkeypatch):
+    dump, _ = world(now_grid(), 240, regions={"us-east": 1.0}, deploy_every=30)
+    fake = FakePrometheus(dump)
+    try:
+        p = project(tmp_path, monkeypatch, source_toml(fake.url, window="240m"))
+        first = rediscover(p, for_project(p))
+        assert first.version == 1 and any(s.series and s.series.source == "rig" for s in first.model.stocks)
+        good = cached(p.state_dir, "rig")
+        good.at -= 7200                                # the laptop slept past infer_every
+        save(p.state_dir, good)
+        fake.dump = []                                 # and the store holds nothing in the window
+        empty = rediscover(p, for_project(p))
+        assert empty.version is None and "returned no series" in empty.model.discovery["not_saved"]
+        st = empty.model.discovery["sources"]["rig"]
+        assert not st["ok"] and st["gaps"] and st["definitions"] == len(good.kept) and "kept 0 definitions" in st["inference_error"]
+        assert ModelStore.for_state(p.state_dir).load().stocks == first.model.stocks
+        kept = cached(p.state_dir, "rig")
+        assert len(kept.kept) == len(good.kept) and kept.at == good.at          # not renewed: the next discovery tries again
+        fake.dump = dump
+        back = rediscover(p, for_project(p))
+    finally:
+        fake.close()
+    assert back.model.discovery["sources"]["rig"]["ok"] and "not_saved" not in back.model.discovery
+    assert {s.id for s in back.model.stocks} == {s.id for s in first.model.stocks}
+    assert cached(p.state_dir, "rig").at > good.at
+
+
+def test_a_round_that_fails_midway_is_not_cached_and_the_old_definitions_stand(tmp_path, monkeypatch):
+    end = now_grid()
+    dump, _ = world(end, 240, regions={"us-east": 1.0}, deploy_every=30)
+    fake = FakePrometheus(dump)
+    answer = fake.answer
+
+    def probe_fails(endpoint, form):                  # the probes of the max views (the schema reads no max)
+        if endpoint == "query_range" and (form.get("query") or [""])[0].startswith("max"):
+            raise PromQLError("injected probe failure")
+        return answer(endpoint, form)
+
+    try:
+        p = project(tmp_path, monkeypatch, source_toml(fake.url, window="240m"))
+        cat = Catalogue(p, for_project(p))
+        good = cat.inference("rig", end - 7200, end)
+        before = (p.state_dir / "sources" / "rig.json").read_text()
+        fake.fail_next = 1                            # the schema listing fails
+        listing = cat.inference("rig", end - 7200, end, refresh=True)
+        fake.answer = probe_fails
+        probing = cat.inference("rig", end - 7200, end, refresh=True)
+    finally:
+        fake.close()
+    assert "inference failed" in listing.error and "injected failure" in listing.error
+    assert "inference failed" in probing.error and "probes failed" in probing.error and "injected probe failure" in probing.error
+    for again in (listing, probing):
+        assert [d.id for d in again.kept] == [d.id for d in good.kept]
+    assert (p.state_dir / "sources" / "rig.json").read_text() == before

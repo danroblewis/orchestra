@@ -1,8 +1,10 @@
 """One inference round for a remote source: read its schema, generate views, pass them through the
 query script, probe each candidate with a read of the window, rank and cap. The result is
 cached in ``<state>/sources/<name>.json`` and reused for ``infer_every`` (an hour by default)
-while the source's settings and the script are unchanged; when a round fails, the last cached
-definitions stand and the failure is recorded beside them."""
+while the source's settings and the script are unchanged. When a round fails (the schema, a
+probe or the script), or keeps fewer than half the definitions the cached round kept, the cached
+definitions stand, the reason is recorded beside them and their time is not renewed, so the next
+discovery tries again."""
 
 from __future__ import annotations
 
@@ -100,10 +102,17 @@ def infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo
         inf.left_out += dropped
     with ThreadPoolExecutor(spec.concurrency) as pool:
         probes = dict(zip([d.id for d in cands], pool.map(lambda d: probe(source, d, start, end), cands), strict=True))
+    if failed := [p["error"] for p in probes.values() if p.get("error")]:
+        raise SourceError(f"{len(failed)} of {len(probes)} probes failed; the first: {failed[0]}")
     kept, left = rank(cands, spec, probes)
     inf.kept = _declared(spec, declared) + kept
     inf.left_out += left
     return inf
+
+
+def inferred(inf: Inference) -> int:
+    """How many of its kept definitions the round inferred (the declared ones are kept anyway)."""
+    return sum(1 for d in inf.kept if not d.id.startswith("declared."))
 
 
 def cached(state_dir: Path, name: str) -> Inference | None:
@@ -134,12 +143,20 @@ def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries]
     old = cached(state_dir, spec.name)
     if old and not refresh and old.key == key and time.time() - old.at < spec.infer_every:
         return old
+    same = old is not None and old.key == key        # older definitions under other settings would not be what was asked for
+    when = time.strftime('%Y-%m-%d %H:%M', time.localtime(old.at)) if old else ""
     try:
         inf = infer(source, spec, declared, repo_root, start, end)
     except (SourceError, TransformError) as e:
-        if old is None or old.key != key:          # older definitions under other settings would not be what was asked for
+        if not same:
             raise
-        old.error = f"inference failed ({e}); using the definitions inferred at {time.strftime('%Y-%m-%d %H:%M', time.localtime(old.at))}"
+        old.error = f"inference failed ({e}); using the definitions inferred at {when}"
+        return old
+    if same and not refresh and inferred(inf) < inferred(old) / 2:
+        # A store that answered but held little in the window (a laptop that slept, a server
+        # restarted empty) must not replace what was seen; the next discovery tries again.
+        old.error = (f"the last round kept {inferred(inf)} definitions where the one at {when} kept {inferred(old)}; "
+                     "using those (`orchestra sources infer` accepts the new round)")
         return old
     save(state_dir, inf)
     return inf

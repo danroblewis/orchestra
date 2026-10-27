@@ -113,6 +113,9 @@ class Catalogue:
         if errors:
             st.update(ok=False, error=f"{len(errors)} read{'s' if len(errors) != 1 else ''} failed; the first: {errors[0]}")
             out.missing[spec.name] = st["error"]
+        elif inf.kept and not n:                    # the store answered with nothing: not a source to discover without
+            st.update(ok=False, error="returned no series in the window", gaps=[[round(start, 3), round(end - spec.settle, 3)]])
+            out.missing[spec.name] = st["error"]
         else:
             st["ok"] = True
 
