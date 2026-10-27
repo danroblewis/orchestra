@@ -11,8 +11,9 @@ const mcolor = (id) => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCo
 // what a machine announced it is (orchestra.machine.started data.kind, or its package's declaration), in words
 const kindWord = (kind) => ({ agent: "AI agent", program: "program", person: "person", service: "service" }[kind] || kind || "machine");
 
-// a machine's dialog: what it is, its instances, what it publishes and listens for, its metrics
-// now, its last events and the tail of its log (refreshed while open)
+// a machine's dialog: what it is, its instances, what it publishes and listens for, its counted
+// traffic on another system's bus, its metrics now, its last events and the tail of its log
+// (refreshed while open)
 let OPEN = null, OPEN_TIMER = null, LOG_INST = null;
 function closeMachine() { OPEN = null; clearInterval(OPEN_TIMER); $("drawer").classList.remove("mdlg"); closeDrawer(); }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && OPEN) closeMachine(); });
@@ -24,11 +25,12 @@ function openMachine(id) {
   const insts = m.instances && m.instances.length ? m.instances : [];
   openDrawer(`<h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.id)} <span class="tag">${esc(kindWord(m.kind))}</span>${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}${m.mode ? ` <span class="tag k-${esc(m.mode.replace(/ /g, "_"))}">${esc(m.mode.replace("_", " "))}</span>` : ""}${m.package ? ` <span class="tag">package: ${esc(m.package)}</span>` : ""}
       <button class="ctl" style="margin-left:auto" onclick="closeMachine()">close</button></h3>
-    <div class="row"><span class="muted">seen</span><span>${m.first_seen ? `first ${ago(Date.now() / 1000 - m.first_seen)} ago, last ${ago(Date.now() / 1000 - m.last_seen)} ago` : "no events yet"} · ${m.active ? "active" : "quiet"}</span></div>
+    <div class="row"><span class="muted">seen</span><span>${m.first_seen ? `first ${ago(Date.now() / 1000 - m.first_seen)} ago, last ${ago(Date.now() / 1000 - m.last_seen)} ago` : m.counted_only && m.last_seen ? `known by counts only; last counted ${ago(Date.now() / 1000 - m.last_seen)} ago` : "no events yet"} · ${m.active ? "active" : "quiet"}</span></div>
     ${insts.length ? `<h4>Instances</h4><table class="dt"><tr><th>instance</th><th>state</th><th>first seen</th><th>last seen</th><th>log</th></tr>${insts.map((i) => `<tr><td class="num">${esc(i.id)}</td><td>${i.active ? '<span style="color:#22c55e">active</span>' : '<span class="muted">quiet</span>'}</td><td>${ago(Date.now() / 1000 - i.first_seen)} ago</td><td>${ago(Date.now() / 1000 - i.last_seen)} ago</td><td>${(m.logs || []).includes(i.id) ? "announced" : '<span class="muted">—</span>'}</td></tr>`).join("")}</table>` : ""}
     <h4>Log</h4><div class="seg" id="m-loginst"></div><div class="muted" id="m-lognote" style="font-size:11.5px"></div><div class="term" id="m-log"></div>
     <h4>Publishes</h4>${m.publishes.length ? `<table class="dt"><tr><th>event type</th><th>all time</th><th>last 24h</th><th>last 10 min</th></tr>${m.publishes.map((p) => `<tr><td class="num">${esc(p.type)}</td><td class="num">${p.count}</td><td class="num">${p.day}</td><td class="num">${p.per_min_10m}/min</td></tr>`).join("")}</table>` : '<div class="muted">nothing</div>'}
     <h4>Listens for</h4><div class="row">${m.subscribes.map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">nothing announced</span>'}</div>
+    ${(m.counted || []).length ? `<h4>Counted traffic <span style="text-transform:none;letter-spacing:0;font-weight:400">(counts a source read from another system's bus; never events)</span></h4><table class="dt"><tr><th>channel</th><th></th><th>last 10 min</th><th>last hour</th><th>waiting</th></tr>${m.counted.map((t) => `<tr><td class="num">${esc(t.channel)}</td><td>${t.direction === "out" ? "produces into" : t.direction === "in" ? "consumes from" : "its backlog"}</td><td class="num">${t.direction === "backlog" ? "" : `${t.per_min}/min`}</td><td class="num">${t.direction === "backlog" ? "" : Math.round(t.window).toLocaleString()}</td><td class="num">${t.backlog == null ? "" : Math.round(t.backlog).toLocaleString()}</td></tr>`).join("")}</table>` : ""}
     <h4>Metrics now</h4><div id="m-metrics" class="muted">reading…</div>
     <h4>Last events <span style="text-transform:none;letter-spacing:0;font-weight:400">(envelopes; the data is the machine's own)</span></h4><div id="m-events" class="muted">reading…</div>`);
   machineDetail();

@@ -14,7 +14,8 @@ consumed; ``merge`` adds them to the Machines view:
   its rate; a count no machine is attributed to runs from or to ``unattributed`` (the producers
   a broker cannot name), so the gap shows.
 
-Rates are per minute over the last ``RECENT_S``; counts are over the window read."""
+Rates are per minute over the last ``RECENT_S`` of what was read (up to the source's last point,
+which a source's ``settle`` puts before now); counts are over the window read."""
 
 from __future__ import annotations
 
@@ -58,8 +59,9 @@ def summarise(counted: list[dict], now: float) -> dict:
                 e["backlog"] = (e["backlog"] or 0.0) + pts[-1][1]
                 ch["backlog"] = (ch["backlog"] or 0.0) + pts[-1][1]
             continue
-        recent, last = _increase(pts, now - RECENT_S)
-        span = min(RECENT_S, now - pts[0][0]) if pts else RECENT_S
+        upto = pts[-1][0] if pts else now          # the last point read: a source that settles ends before now
+        recent, last = _increase(pts, upto - RECENT_S)
+        span = min(RECENT_S, upto - pts[0][0]) if pts else RECENT_S
         e["per_min"] += recent / max(span, 60.0) * 60.0
         e["window"] += _increase(pts, float("-inf"))[0]
         if last is not None:
