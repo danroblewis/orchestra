@@ -193,7 +193,18 @@ repository. On the work repository that means either:
 So **core needs a private overlay**: a second config file (for example named by an environment
 variable or a path in the state directory) merged over `orchestra.toml`, and a way for Agents to
 read `.orchestra/` from that overlay's repository. This is generic: anyone who uses Orchestra on
-a shared repository needs it. It is small, and it is not built. See open question 1.
+a shared repository needs it. See open question 1.
+
+**Built in core (2026-10-27, SPEC §8.1):** `ORCHESTRA_CONFIG_OVERLAY`, else
+`~/.orchestrator/<key>/orchestra.local.toml`, merged over `orchestra.toml` (tables key by key,
+arrays of tables by `name`, `enabled = false` removes, `[overlay] secret` hides values on
+`/api/project` and the Core page). Still to do outside core: the Supervisor commits config
+changes to `orchestra.toml` (agents' `toml_edit.py`, `setup_tools.py`); it could write the
+owner's keys to the overlay instead. Tasking and Agents still parse `<repo>/orchestra.toml`
+themselves in places (`tasking/config.py`, `orchestra_agents/config.py`, `web.py`,
+`setup_tools.py`, `dummy_agent.py`), so their own sections set only in the overlay do not reach
+those readers until they read `project.config.raw` or `Project.read_config()`. Reading
+`.orchestra/` from the overlay's repository is not built.
 
 ---
 
