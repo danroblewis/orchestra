@@ -19,6 +19,37 @@ What "meaningful" means here comes from the owner's judgement of earlier models
 - Where the rules are ours, the fitted rates agree with the rules within the noise the window
   allows (the bakery: balances exact, main rates within ~10%).
 
+## UC-0: the curious observer (the north-star story, the owner, 2026-10-26)
+
+Someone is curious about a thing or a place. They point a handful of measurement scripts at it
+(weather, tides, a river, power, flights, their own machine, anything with numbers) and Orchestra
+gives them a system dynamics model of how it works now: what accumulates, what flows, what drives
+what. Then they act on it:
+
+1. **Observe.** Collectors only ([[collect]] scripts and [[scrape]] endpoints; no library to
+   import). Discovery proposes stocks, flows and drivers, every equation with its origin.
+2. **Find causes, not correlations.** Most of what they collect will be noise that happens to move
+   together. Discovery must say so, and the causal claims it does make should be tested by
+   **impulse injection**: a machine nudges one quantity on purpose, at known times, and the model
+   checks whether what it claims depends on that quantity responds (the intended-effect, null and
+   unexplained-change tests of `docs/rationale/lifted-models.md` §3).
+3. **Change the system.** They add machines that act on the environment. The first is a recurring
+   AI agent loop with a prompt that says what to change; it reads the metrics and the model and
+   decides what work to do or what program to write (an AI agent as a universal machine: natural
+   language turned into automation).
+4. **Verify.** The fitted equations show whether the machine's flow has the effect intended, era
+   by era; a machine whose effect does not show is a hypothesis that failed.
+
+The live sample's telemetry (58 series from 23 sources: local machine, Boulder weather and air,
+tides, space weather, earthquakes, river flow, flights, Wikipedia, Hacker News, bitcoin, power
+grids, the London Tube) is the first instance of step 1; almost all of it is noise on purpose,
+which makes it a test of whether discovery is fooled.
+
+What it needs that is not built: script and scrape collectors (being built), each series' real
+resolution respected by discovery (H1), an impulse-injection machine and the tests that read it
+(H1–H2), the recurring agent loop as a machine any user can declare (H2), the model readable by
+agents (H2).
+
 ## UC-1: the bakery (`~/orchestra-bakery`)
 
 Run: clear the bakery's runtime state (`run/board.json`, `run/yelp.json`, `run/shelf`, `run/pass`),

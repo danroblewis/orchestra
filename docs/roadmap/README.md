@@ -66,6 +66,16 @@ numbers came from." This horizon makes discovery earn trust on systems whose str
 - The model-acceptance suite ([use-cases.md](use-cases.md) §UC-1 to §UC-4) runs as a workflow
   and passes: every expected stock a stock, every expected flow one flow, instances merged,
   noise left out, origins recorded.
+- **Each series' real resolution.** A collector writes only real observations, stamped with
+  the source's own time (no repeats, nothing interpolated into the store). Discovery measures
+  each series' usual gap between points, reads it at that resolution (the last value held for
+  counts and states, linear between points for smooth measurements, chosen per series and
+  recorded), never lets a slow series explain anything faster than its own resolution, and the
+  Dynamics page shows each series' resolution. Without this a feed that changes every 30 minutes,
+  polled every minute, looks like a fast driver.
+- **Impulse injection** (UC-0): a machine that nudges a quantity at known times, and the
+  intended-effect and null tests that read the response, so causal claims are tested, not
+  inferred from correlation.
 - Discovery follow-ups in the owner's order (`docs/HANDOFF-2026-10-25.md`): eras; auxiliaries;
   explicit counter/gauge typing; one stock measured by two series; a flow-aware layout; then
   capacity-limited forms.
