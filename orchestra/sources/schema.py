@@ -5,8 +5,9 @@ labels name a reporting thing (identity) and which group (grouping), and how oft
    family with a statistic dimension, and so is a metric whose statistic is a label (``stat``,
    ``statistic``, ``quantile``). A histogram's ``_bucket``/``_count``/``_sum`` are one family (its
    ``_count`` is read as a counter). A recording rule (``level:metric:sum``, ``metric:avg``,
-   ``…:sum_rate5m``) is a view of its base metric by that aggregate function, not a family of its
-   own kind.
+   ``…:sum_rate5m``, ``job:metric:rate5m``) is a view of its base metric by that function: it
+   joins the base's family when the base is there (and is preferred to the base's own view of
+   the same function), else the rules of one base make one family of their own.
 2. **Aliases.** Each family's real labels are renamed to canonical names by ``[sources.labels]``:
    the first spelling a metric has wins. Queries use the real label; results are renamed.
 3. **Roles.** A label is **identity** (a pod: aggregated away or counted, never kept) when its
@@ -33,7 +34,8 @@ from .spec import SourceSpec
 STAT_SUFFIX = re.compile(r"^(?P<base>.+)_(?P<stat>max|min|avg|mean|median|p\d{2,3})$")
 STAT_LABELS = ("stat", "statistic", "quantile")
 HIST_PART = re.compile(r"^(?P<base>.+)_(?P<part>bucket|count|sum)$")
-ROLLUP = re.compile(r"^(?:(?P<level>[a-zA-Z_][a-zA-Z0-9_]*):)?(?P<base>[a-zA-Z_][a-zA-Z0-9_]*):(?P<ops>(?P<fn>sum|avg|max|min|count)(?:_[a-zA-Z0-9_]+)?)$")
+ROLLUP = re.compile(r"^(?:(?P<level>[a-zA-Z_][a-zA-Z0-9_]*):)?(?P<base>[a-zA-Z_][a-zA-Z0-9_]*):"
+                    r"(?P<ops>(?P<fn>sum|avg|max|min|count)(?:_(?:rate|irate|increase)[a-zA-Z0-9_]*)?|(?P<rfn>rate|irate|increase)[a-zA-Z0-9_]*)$")
 SKIP_LABELS = {"__name__", "le"}
 HIGH_CARDINALITY = 50
 CHURN = 0.2
@@ -73,7 +75,8 @@ class Family:
     resolution_s: float | None = None
     unit: str | None = None
     help: str | None = None
-    rollup: dict | None = None   # {"of", "fn", "rate", "level"} for a recording rule
+    rollup: dict | None = None   # {"of", "fn", "rate", "level"}: a family made of recording rules, its first one
+    rollups: dict[str, dict] = field(default_factory=dict)      # function -> {"metric", "of", "fn", "rate", "level", "labels"}: its rules
     constants: dict[str, str] = field(default_factory=dict)     # canonical -> the one value of a constant label
 
     @property
@@ -101,19 +104,46 @@ class Schema:
     notes: list[str] = field(default_factory=list)
 
 
+def rule_of(name: str) -> dict | None:
+    """A recording rule's name read: its base metric, the function it applies, and whether it is
+    a rate; None when the name is not ``[level:]metric:operations`` with a known function."""
+    m = ROLLUP.match(name)
+    if not m:
+        return None
+    fn = m["fn"] or "rate"                       # rate, irate and increase: a rate, summed across series
+    return {"metric": name, "of": m["base"], "fn": fn, "rate": fn == "rate" or "rate" in m["ops"] or "increase" in m["ops"],
+            "level": m["level"]}
+
+
+def _join_rules(out: list[Family], rules: dict[str, list[dict]]) -> None:
+    """Each base's recording rules into its family when the base is there (as ``rollups``, one
+    per function), else into one family of the rules of that base."""
+    by_name = {f.name: f for f in out}
+    for base, rs in sorted(rules.items()):
+        fam = by_name.get(base) or by_name.get(f"{base}_total")
+        for r in rs:
+            if fam is None:
+                fam = Family(r["metric"], "rollup", {r["metric"]: None}, rollup={k: r[k] for k in ("of", "fn", "rate", "level")})
+                out.append(fam)
+            if r["fn"] in fam.rollups:               # the same function at another level: a family of its own
+                out.append(Family(r["metric"], "rollup", {r["metric"]: None}, rollup={k: r[k] for k in ("of", "fn", "rate", "level")},
+                                  rollups={r["fn"]: r}))
+            else:
+                fam.rollups[r["fn"]] = r
+
+
 def _group(names: dict[str, list[Labels]], meta: dict[str, dict]) -> list[Family]:
     """Metric names into families (step 1)."""
     out: list[Family] = []
     taken: set[str] = set()
+    rules: dict[str, list[dict]] = {}
     for n in sorted(names):
         if ":" in n:
-            m = ROLLUP.match(n)
-            fam = Family(n, "rollup", {n: None})
-            if m:
-                fam.rollup = {"of": m["base"], "fn": m["fn"], "rate": "rate" in m["ops"], "level": m["level"]}
+            if r := rule_of(n):
+                r["labels"] = sorted({k for lab in names[n] for k in lab} - SKIP_LABELS)
+                rules.setdefault(r["of"], []).append(r)
             else:
-                fam.kind = "gauge"
-            out.append(fam)
+                out.append(Family(n, "gauge", {n: None}))
             taken.add(n)
     hist = {}
     for n in names:
@@ -145,6 +175,7 @@ def _group(names: dict[str, list[Labels]], meta: dict[str, dict]) -> list[Family
         if stat_label:
             fam.stat_values = {stat_name(lab[stat_label]): lab[stat_label] for lab in names[n] if stat_label in lab}
         out.append(fam)
+    _join_rules(out, rules)
     for fam in out:
         md = meta.get(fam.first_metric()) or {}
         fam.unit = fam.unit or md.get("unit") or None

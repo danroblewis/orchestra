@@ -6,7 +6,7 @@ counts, which switch its type.
 | a per-pod statistic (max, min, avg, p50, p95, p99) | ``max by (G)`` of max; ``min by (G)`` of min; ``avg by (G)`` of avg (unweighted, flagged); ``max by (G)`` of p90/p95/p99 (an upper bound, flagged); never a sum, never an average of quantiles |
 | a gauge with no statistic | an intensive one (latency, ratio, utilisation) ``max`` and ``avg by (G)``; any other ``sum by (G)`` |
 | a counter | increments by G, from raw samples, reset-safe (``catalogue.py``) |
-| a recording rule ``…:fn`` | ``fn by (G)`` of it (a sum of sums, a max of maxes), as a rate when its name says rate |
+| a recording rule ``…:fn`` | ``fn by (G)`` of it (a sum of sums, a max of maxes; a sum of rates), as a rate when its name says rate; in its base's family, it replaces the base's own view of that function |
 | any family with an identity label | ``count by (G)`` of one statistic: the pods reporting, a level; and its turnover, the pods that started and stopped reporting, as two counters that balance it exactly |
 | any family | how many values of each grouping label report: ``count(count by (L) (…))`` |
 
@@ -95,8 +95,9 @@ def views(fam: Family, spec: SourceSpec) -> list[Definition]:
     r = f"{count_window(fam.resolution_s)}s"
     out: list[Definition] = []
 
-    def add(name: str, view: str, kind: str, query: str, group: list[str], *, stat=None, unit=None, flags=(), origin="", counts=""):
-        canon = kept + group
+    def add(name: str, view: str, kind: str, query: str, group: list[str], *, stat=None, unit=None, flags=(), origin="", counts="",
+            constants: bool = True):
+        canon = (kept if constants else []) + group
         out.append(Definition(counts=counts,
             id="", source=spec.name, name=_slug(name), family=fam.name, view=view, kind=kind, query=query,
             group_by=canon, by_real=[fam.labels[c].real for c in canon], rename=rename, stat=stat,
@@ -104,20 +105,35 @@ def views(fam: Family, spec: SourceSpec) -> list[Definition]:
             est_series=prod(fam.labels[c].cardinality for c in group) if group else 1, flags=list(flags),
             origin=[f"inferred from {fam.name}: {origin}"], labels_info=info))
 
+    rules = fam.rollups or ({fam.rollup["fn"]: {**fam.rollup, "metric": fam.name}} if fam.rollup else {})
+    covered = set(rules)                            # the base's own views of these functions give way to the rules
+
+    def rule_view(fn: str, rule: dict, by: list[str], group: list[str], gtext: str, constants: bool = True) -> None:
+        outer = {"count": "sum", "avg": "avg", "rate": "sum"}.get(fn, fn)
+        flags = ["an unweighted average of the rule's averages"] if fn == "avg" else []
+        if rule["rate"] and "increase" in rule["metric"].rpartition(":")[2]:
+            flags.append("an increase over the rule's window read as a per-second rate: its size is off by that window")
+        add(f"{rule['of']}_{fn}", "rollup", "rate" if rule["rate"] else "level", _by(outer, by, f"last_over_time({rule['metric']}[{r}])"),
+            group, flags=flags, origin=f"a recording rule ({rule['metric']}), {fn} of {rule['of']}; {outer}{gtext}", constants=constants)
+
+    served: set[str] = set()
     for group in groupings(fam):
         by = [fam.labels[c].real for c in kept + group]
         gtext = f" by {', '.join(group)}" if group else ""
-        if fam.kind == "rollup" and fam.rollup:
-            fn, of = fam.rollup["fn"], fam.rollup["of"]
-            outer = {"count": "sum", "avg": "avg"}.get(fn, fn)
-            add(f"{of}_{fn}", "rollup", "rate" if fam.rollup["rate"] else "level", _by(outer, by, f"last_over_time({fam.name}[{r}])"), group,
-                flags=["an unweighted average of the rule's averages"] if fn == "avg" else [],
-                origin=f"a recording rule, {fn} of {of}; {outer}{gtext}")
+        for fn, rule in sorted(rules.items()):
+            if "labels" in rule and not set(by) <= set(rule["labels"]):
+                continue                            # the rule keeps fewer labels than this grouping needs
+            rule_view(fn, rule, by, group, gtext)
+            served.add(fn)
+        if fam.kind == "rollup":
+            pass                                    # a family of rules only: its views are the rules'
         elif fam.kind == "counter":
             add(fam.name, "increments", "counter", fam.selector(), group, origin=f"increments{gtext}, from raw samples")
         elif fam.stats:
             for stat in fam.stats:
                 sel = f"last_over_time({fam.selector(stat)}[{r}])"
+                if stat in covered:
+                    continue
                 if stat in ("max", "min"):
                     add(f"{fam.name}_{stat}", f"{stat}_by", "level", _by(stat, by, sel), group, stat=stat, origin=f"{stat} of {stat}{gtext}")
                 elif stat == "avg":
@@ -129,10 +145,12 @@ def views(fam: Family, spec: SourceSpec) -> list[Definition]:
                         origin=f"max of {stat}{gtext}")
         elif INTENSIVE.search(fam.name):
             sel = f"last_over_time({fam.selector()}[{r}])"
-            add(f"{fam.name}_max", "max_by", "level", _by("max", by, sel), group, origin=f"max{gtext}")
-            add(f"{fam.name}_avg", "avg_by", "level", _by("avg", by, sel), group,
-                flags=["an unweighted average"] if identity else [], origin=f"avg{gtext}")
-        else:
+            if "max" not in covered:
+                add(f"{fam.name}_max", "max_by", "level", _by("max", by, sel), group, origin=f"max{gtext}")
+            if "avg" not in covered:
+                add(f"{fam.name}_avg", "avg_by", "level", _by("avg", by, sel), group,
+                    flags=["an unweighted average"] if identity else [], origin=f"avg{gtext}")
+        elif "sum" not in covered:
             add(fam.name, "sum_by", "level", _by("sum", by, f"last_over_time({fam.selector()}[{r}])"), group, origin=f"sum{gtext}")
         if identity and fam.kind != "rollup":
             stat = "p50" if "p50" in fam.stats else (fam.stats[0] if fam.stats else None)
@@ -143,6 +161,9 @@ def views(fam: Family, spec: SourceSpec) -> list[Definition]:
             for view, verb in (("starts", "started"), ("stops", "stopped")):
                 add(f"{base}_{who}s_{verb}_total", view, "counter", fam.selector(stat), group, stat=stat, unit=f"{who}s",
                     origin=f"{who}s that {verb} reporting{gtext}, from {fam.name}'s raw samples", counts=thing)
+    for fn, rule in sorted(rules.items()):
+        if fn not in served:                        # a rule at another level (job:…) than any grouping of its base: its total
+            rule_view(fn, rule, [], [], "", constants=False)
     kept_real = [fam.labels[c].real for c in kept]
     for c in fam.role("grouping"):
         inner = _by("count", [fam.labels[c].real, *kept_real], f"last_over_time({fam.selector(fam.stats[0] if fam.stats else None)}[{r}])")

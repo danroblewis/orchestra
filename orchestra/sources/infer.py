@@ -94,7 +94,7 @@ def infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo
     schema = read_schema(source, spec, start, end)
     inf.notes = list(schema.notes)
     inf.families = [{"name": f.name, "kind": f.kind, "metrics": list(f.metrics), "stats": f.stats, "series": f.series,
-                     "resolution_s": f.resolution_s, "rollup": f.rollup,
+                     "resolution_s": f.resolution_s, "rollup": f.rollup, "rollups": sorted(r["metric"] for r in f.rollups.values()),
                      "labels": {c: asdict(i) for c, i in f.labels.items()}} for f in schema.families]
     cands = one_count_per_thing([d for fam in schema.families for d in views(fam, spec)], schema.families)
     for i, d in enumerate(cands):

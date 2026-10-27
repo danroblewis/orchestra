@@ -187,3 +187,57 @@ print(json.dumps([{"id": None, "queries": [{"name": "a_total", "query": "sum(app
     src = PrometheusSource(spec)
     for d in added.values():
         assert read_definition(src, d, "rig", "service", END - 3600, END, 60.0), d.id
+
+
+def _rules_fake(names: list[str]) -> FakePrometheus:
+    t0 = END - 7200
+    dump = []
+    for n in names:
+        for region in ("a", "b"):
+            lab = {"service": "checkout", "region": region} if ":" not in n or n.count(":") == 1 else {"job": "checkout"}
+            if region == "b" and "job" in lab:
+                continue
+            dump.append((n, {**lab, **({"pod": f"{region}-1"} if ":" not in n else {})},
+                         [(t0 + 60 * k, float(k if n.endswith("_total") else (k * 7 + len(n)) % 5)) for k in range(121)]))
+    return FakePrometheus(dump)
+
+
+@pytest.mark.parametrize("names, family, rules", [
+    (["request_latency", "request_latency:avg", "request_latency:max"], "request_latency", {"avg", "max"}),
+    (["request_latency:avg", "request_latency:max"], "request_latency:avg", {"avg", "max"}),
+    (["job:http_requests:rate5m"], "job:http_requests:rate5m", {"rate"}),
+    (["http_requests_total", "job:http_requests:rate5m"], "http_requests_total", {"rate"}),
+])
+def test_recording_rules_are_views_of_their_base_in_one_family(tmp_path, names, family, rules):
+    f = _rules_fake(names)
+    try:
+        spec = spec_for(f.url, tmp_path)
+        fams = read(PrometheusSource(spec), spec, END - 7200, END).families
+    finally:
+        f.close()
+    assert [x.name for x in fams] == [family]
+    fam = fams[0]
+    assert set(fam.rollups) == rules
+    defs = views(fam, spec)
+    rolled = [d for d in defs if d.view == "rollup"]
+    assert {d.name.rpartition("_")[2] for d in rolled} == rules
+    if "rate" in rules:
+        assert all(d.kind == "rate" and d.query.startswith("sum") for d in rolled)
+    if fam.name == "request_latency":                     # the rules replace the base's own max and avg
+        assert not any(d.view in ("max_by", "avg_by") for d in defs)
+
+
+def test_a_count_and_its_turnover_are_kept_or_left_out_together(tmp_path):
+    from orchestra.sources.views import Definition
+    spec = spec_for("http://127.0.0.1:9", tmp_path, max_series=5)
+    defs, probes = [], {}
+    for group, n in (([], 2), (["region"], 1)):
+        for view in ("count", "starts", "stops"):
+            d = Definition(id=f"{view}{len(group)}", source="rig", name=f"pods_{view}_{len(group)}", family="lat", view=view,
+                           kind="level" if view == "count" else "counter", query="x", group_by=group, counts="pod|" + "|".join(group))
+            defs.append(d)
+            probes[d.id] = {"series": n, "moves": True}
+    kept, left = rank(defs, spec, probes)
+    assert len(kept) + len(left) == 6
+    assert {d.view for d in kept} == {"count", "starts", "stops"} and len({tuple(d.group_by) for d in kept}) == 1
+    assert {d.view for d in left} == {"count", "starts", "stops"} and len({tuple(d.group_by) for d in left}) == 1
