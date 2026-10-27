@@ -67,7 +67,7 @@ from collections import Counter, OrderedDict, defaultdict, deque
 from itertools import pairwise
 from statistics import median
 
-from ..events import HOST, event_time, machine_and_instance
+from ..events import HOST, event_time, for_an_instrument, machine_and_instance
 from ..metrics import FUTURE_SKEW_S
 
 ANNOUNCE = ("orchestra.machine.started", "orchestra.machine.subscribed")
@@ -120,7 +120,7 @@ class MachineIndex:
         if not machine:
             self.unattributed += 1
             return
-        if ev.get("type") == "orchestra.machine.started" and "collector" in (ev.get("data") or {}):
+        if for_an_instrument(ev):
             return                    # the host announcing an instrument, before instruments were told apart
         t = event_time(ev) or 0.0
         seen = min(t, time.time())          # stamped ahead: seen when read, never in the future

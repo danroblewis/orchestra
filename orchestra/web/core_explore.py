@@ -14,7 +14,7 @@ import urllib.parse
 import urllib.request
 from collections import Counter, defaultdict
 
-from ..events import event_time
+from ..events import event_time, for_an_instrument
 from ..metrics import promql
 
 MAX_LINES = 30
@@ -166,6 +166,7 @@ class Explorer:
             since = now - hours * 3600 if hours > 0 else 0
             types: dict[str, dict] = {}
             by_machine: dict[str, Counter] = defaultdict(Counter)
+            instruments: set[str] = set()       # announced for instruments before 2026-10-27: no machine's events
             evs = self._events()
             stamps = [_ts(e) for e in evs]
             first = min((t for t in stamps if t), default=now)
@@ -183,13 +184,16 @@ class Explorer:
                 if t and t >= t0:
                     d["in_range"] += 1
                     who = emitter(e)
-                    d["machines"][who] += 1
-                    by_machine[who][ty] += 1
+                    if for_an_instrument(e):
+                        instruments.add(who)
+                    else:
+                        d["machines"][who] += 1
+                        by_machine[who][ty] += 1
                     buckets[ty][min(nb - 1, int((t - t0) // width))] += 1
             top = [ty for ty, _ in sorted(((k, v["in_range"]) for k, v in types.items()), key=lambda x: -x[1])[:6] if types[ty]["in_range"]]
             series = [{"label": ty, "points": [[t0 + i * width, buckets[ty].get(i, 0)] for i in range(nb)]} for ty in top]
             rows = [{**d, "machines": d["machines"].most_common(4)} for d in sorted(types.values(), key=lambda x: (-x["in_range"], -x["total"]))]
             machines = [{"machine": m, "events": sum(c.values()), "types": c.most_common(5)} for m, c in sorted(by_machine.items(), key=lambda x: -sum(x[1].values()))]
             return {"ok": True, "backend": self.core.events.bus.name, "total": len(evs), "in_range": sum(d["in_range"] for d in types.values()),
-                    "types": rows, "machines": machines, "volume": series, "bucket_s": width, "from": t0}
+                    "types": rows, "machines": machines, "instruments": sorted(instruments), "volume": series, "bucket_s": width, "from": t0}
         return self._guard(go)

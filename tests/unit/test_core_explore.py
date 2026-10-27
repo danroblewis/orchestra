@@ -52,3 +52,22 @@ def test_a_missing_metrics_store_shows_as_an_error(tmp_path):
     core.metrics = None
     out = Explorer(core).catalog()
     assert out["ok"] is False and "could not be opened" in out["error"]
+
+
+def test_emitters_leave_out_instruments_the_host_announced_as_the_machines_page_does(tmp_path):
+    from orchestra.web.machines import machines_view
+
+    core = _core(tmp_path)
+    ts = datetime.now(UTC).isoformat()
+    evs = [{"type": "orchestra.machine.started", "source": "weather", "data": {"collector": "weather", "mode": "scheduled"}},
+           {"type": "orchestra.machine.started", "source": "baker/1", "data": {"mode": "continuous"}},
+           {"type": "order.baked", "source": "baker/1"}]
+    for ev in evs:
+        core.events.bus.append({**ev, "time": ts})
+    d = Explorer(core).events(1)
+    assert {m["machine"] for m in d["machines"]} == {"baker/1"} and d["instruments"] == ["weather"]
+    assert d["total"] == 3                                                # still events on the bus, counted by type
+    started = next(t for t in d["types"] if t["type"] == "orchestra.machine.started")
+    assert started["in_range"] == 2 and [m for m, _ in started["machines"]] == ["baker/1"]
+    on_page = {m["id"] for m in machines_view([{**e, "time": ts} for e in evs])["machines"]}
+    assert "weather" not in on_page and "baker" in on_page

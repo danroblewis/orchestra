@@ -69,6 +69,13 @@ def event_source(ev: dict) -> str | None:
     return ev.get("source")
 
 
+def for_an_instrument(ev: dict) -> bool:
+    """An announcement the host made on an instrument's behalf before 2026-10-27
+    (``orchestra.machine.started`` with ``data.collector``): an instrument is not a machine
+    (AGENTS.md rules 2 and 7), so this is no machine's event, wherever machines are listed."""
+    return ev.get("type") == "orchestra.machine.started" and isinstance(ev.get("data"), dict) and "collector" in ev["data"]
+
+
 def machine_and_instance(source: str | None) -> tuple[str | None, str | None]:
     """A source names a machine, or one instance of it as ``<machine>/<instance>`` (``baker/2``:
     the second of several bakers, all one machine)."""
