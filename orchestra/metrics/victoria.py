@@ -77,14 +77,14 @@ class VictoriaMetrics:
         pts = self.raw(series, labels)
         return pts[-1] if pts else None
 
-    def series(self, prefix="orchestra_"):
+    def series(self, prefix="", labels=None):
         # /api/v1/series truncates when asked for all time (start=0), so list from the export, which
         # is reliable over any range and small at Orchestra's volumes
         out = [(dict(r["metric"]).pop("__name__"), {k: v for k, v in r["metric"].items() if k != "__name__"})
-               for r in self._export(f'{{__name__=~"{prefix}.*"}}', 0)]
+               for r in self._export(_selector(prefix, labels, prefix=True), 0)]
         return sorted(out, key=lambda x: (x[0], sorted(x[1].items())))
 
-    def dump(self, prefix="orchestra_", labels=None):
+    def dump(self, prefix="", labels=None):
         out = []
         for r in self._export(_selector(prefix, labels, prefix=True), 0):
             lab = {k: v for k, v in r["metric"].items() if k != "__name__"}

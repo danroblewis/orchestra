@@ -15,6 +15,16 @@ from .live import held, live_intervals, live_limit, steps_within, stretches, uni
 
 EVENT_COUNTER = "orchestra_events_total"   # Orchestra's own count of each event type, by source
 PLUMBING = re.compile(r"^orchestra_(?!events_total)")   # Orchestra's own other series (the host's, the Core page's probes): never a measure of the system
+OWN = re.compile(r"^orchestra_(host_|core_)|^orchestra_(stock|stock_sampled|flow_total)$")   # the ones Orchestra writes, or wrote before 2026-10-25
+
+
+def plumbing_reason(name: str) -> str:
+    """Why discovery leaves out a series named ``orchestra_*``: Orchestra's own, or a program's
+    that took Orchestra's prefix."""
+    if OWN.match(name):
+        return "Orchestra's own (the host's and the Core page's plumbing), not a measure of the system"
+    return ("named orchestra_*: the orchestra_ prefix is Orchestra's own, so discovery ignores this series; "
+            "rename it for what it measures (docs/machines.md)")
 
 
 def series_key(name: str, labels: dict[str, str]) -> str:

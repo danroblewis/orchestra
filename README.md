@@ -41,7 +41,7 @@ SD Lab's discovery strategies (`orchestra/sdlab`) need `--extra sd`.
 ```bash
 cd my_project                # any git repository
 orchestra init               # writes orchestra.toml and registers the project (once)
-orchestra run &              # the bootstrap host: Orchestra's own machine and its event collector
+orchestra run &              # the bootstrap host: its event collector, discovery, and your [[machines]]
 orchestra web                # the UI on http://127.0.0.1:8000
 ```
 
@@ -50,11 +50,14 @@ metrics store (`[metrics] url`: file or VictoriaMetrics). `deploy/dev/compose.ya
 them locally.
 
 Machines are your programs. Publish events with the CloudEvents envelope
-(`orchestra.events.Events.publish`) and write metrics labelled `machine=<id>`
-(`orchestra.metrics`); they appear on the Machines page and in the Core explorers. A machine
-announces itself when it starts with `orchestra.machine.started`, carrying how it is engaged
-(`mode`), what kind of thing it is (`kind`), what it listens for (`listens_for`) and where its
-log is (`log`); the rest is observed (`SPEC.md` §1).
+(`orchestra.events.Events.publish`) and write metrics labelled `machine=<id>` through
+`orchestra.metrics.for_repo()` (the project's configured store); they appear on the Machines page
+and in the Core explorers, and discovery reads them. A machine announces itself when it starts
+with `orchestra.machine.started`, carrying how it is engaged (`mode`), what kind of thing it is
+(`kind`), what it listens for (`listens_for`) and where its log is (`log`); the rest is observed
+(`SPEC.md` §1). Declare it under `[[machines]]` in `orchestra.toml` and `orchestra run` keeps it
+running. **[docs/machines.md](docs/machines.md)** is the guide: a whole machine,
+naming, counters and levels, labels, and the launcher.
 The bakery, a separate repository, is a toy system of machines used to test Orchestra from the
 outside (`docs/roadmap/use-cases.md`).
 

@@ -1,8 +1,10 @@
 """The metrics store: the history of every measured series. Stocks' current values are queries.
 
-A series is a name plus labels, like Prometheus. Orchestra's series all start with ``orchestra_``
-and carry a ``project`` label, so they never collide with anyone else's in a shared store.
-Collectors (``orchestra.collectors``) write points; models and fitting read ranges.
+A series is a name plus labels, like Prometheus. Every series carries a ``project`` label, so
+projects never collide in a shared store, and readers select a project's series by it.
+Orchestra's own series start with ``orchestra_``; a project's programs name theirs for what they
+measure and write them through ``for_repo`` (docs/machines.md), which adds the label. Collectors
+(``orchestra.collectors``) write points; models and fitting read ranges.
 
 Backends, chosen by ``[metrics] url`` in ``orchestra.toml`` or ``ORCHESTRA_METRICS_URL``:
 ``file`` (the default: ``<state>/metrics.jsonl``) and ``http://host:port`` (VictoriaMetrics, or
@@ -55,9 +57,10 @@ class MetricsStore(Protocol):
 
     def latest(self, series: str, labels: dict[str, str] | None = None) -> tuple[float, float] | None: ...
 
-    def series(self, prefix: str = "orchestra_") -> list[tuple[str, dict[str, str]]]: ...
+    def series(self, prefix: str = "", labels: dict[str, str] | None = None) -> list[tuple[str, dict[str, str]]]:
+        """Every series whose name starts with ``prefix`` (and matches ``labels``): names and labels."""
 
-    def dump(self, prefix: str = "orchestra_", labels: dict[str, str] | None = None
+    def dump(self, prefix: str = "", labels: dict[str, str] | None = None
              ) -> list[tuple[str, dict[str, str], list[tuple[float, float]]]]:
         """Every series whose name starts with ``prefix`` (and matches ``labels``), with all its
         points in time order, in one pass: for catalogues and exploration."""
@@ -81,6 +84,31 @@ def open_metrics(url: str | None, *, file_path: Path) -> MetricsStore:
 def for_project(project: Project) -> MetricsStore:
     url = os.environ.get("ORCHESTRA_METRICS_URL") or project.config.metrics_url
     return open_metrics(url, file_path=project.state_dir / "metrics.jsonl")
+
+
+class ProjectStore:
+    """A project's store that labels every point it writes with the project, unless the point
+    names one; everything else is the store's own."""
+
+    def __init__(self, store: MetricsStore, project: str):
+        self.store, self.project = store, project
+
+    def write(self, points: list[Point]) -> None:
+        self.store.write([p if "project" in p.labels else Point(p.series, p.value, p.ts, {**p.labels, "project": self.project})
+                          for p in points])
+
+    def __getattr__(self, name):
+        return getattr(self.store, name)
+
+
+def for_repo(repo: Path | str | None = None) -> ProjectStore:
+    """The metrics store of the project at ``repo`` (default: ``ORCHESTRA_REPO``, which the
+    launcher sets, else the working directory), as its ``orchestra.toml`` configures it: the store
+    the web UI and discovery read. What is written through it carries the project's label."""
+    from ..config import load_project
+
+    project = load_project(repo)
+    return ProjectStore(for_project(project), project.key)
 
 
 def step_sample(points: list[tuple[float, float]], start: float, end: float, step: float) -> list[tuple[float, float]]:

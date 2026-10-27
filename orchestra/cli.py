@@ -66,9 +66,8 @@ def cmd_metrics(args) -> int:
         print(f"{rep.events} events ({_when(rep.first)} → {_when(rep.last)}) → {rep.points} points in {store.name}")
         print("types: " + ", ".join(f"{t} {n}" for t, n in sorted(rep.types.items(), key=lambda x: -x[1])[:20]))
         return 0
-    for name, labels in store.series(""):
-        if labels.get("project") == project.key:
-            print(name, " ".join(f"{k}={v}" for k, v in sorted(labels.items()) if k != "project"))
+    for name, labels in store.series("", {"project": project.key}):
+        print(name, " ".join(f"{k}={v}" for k, v in sorted(labels.items()) if k != "project"))
     return 0
 
 
@@ -174,7 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("init", help="register this repository and write orchestra.toml")
     s.set_defaults(fn=cmd_init)
 
-    s = sub.add_parser("run", help="run the bootstrap host: Orchestra's own machine and its event collector")
+    s = sub.add_parser("run", help="run the bootstrap host: its event collector, discovery, and the processes the project and plugins declare")
     s.add_argument("--once", action="store_true", help="start, record one heartbeat, stop")
     s.set_defaults(fn=cmd_run)
 

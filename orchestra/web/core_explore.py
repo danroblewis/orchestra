@@ -98,7 +98,12 @@ class Explorer:
                             d["last_hour"] += 1
             rows = [{**d, "labels": {k: {"arity": len(v), "values": sorted(v)[:200]} for k, v in sorted(d["labels"].items())}}
                     for d in sorted(names.values(), key=lambda x: x["name"])]
+            # the file is this project's alone, so a series in it without the project's label was
+            # meant for it, and is shown nowhere: say so (orchestra.metrics.for_repo adds the label)
+            unlabelled = (sorted({n for n, lab in self.core.metrics.series("") if "project" not in lab})
+                          if self.core.metrics.name == "file" else [])
             return {"ok": True, "backend": self.core.metrics.name, "project": self.core.project.key, "metrics": rows, "series": sum(r["series"] for r in rows),
+                    "unlabelled": unlabelled,
                     "points": sum(r["points"] for r in rows),
                     "writes_per_hour_24h": [[now - 86400 + h * 3600, hourly.get(h, 0)] for h in range(24)]}
         return self._guard(go)

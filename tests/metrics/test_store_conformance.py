@@ -23,7 +23,7 @@ def store(request, tmp_path):
     project = f"test-{uuid.uuid4().hex[:10]}"
     s.project = project
     yield s
-    s.delete("orchestra_", {"project": project})
+    s.delete("", {"project": project})
     s.close()
 
 
@@ -55,6 +55,14 @@ def test_latest_and_labels_keep_series_apart(store):
     assert store.latest("orchestra_stock", {"project": store.project, "stock": "DONE"}) == (1000, 9)
     names = [(n, l["stock"]) for n, l in store.series() if l.get("project") == store.project]
     assert names == [("orchestra_stock", "DONE"), ("orchestra_stock", "OPEN")]
+
+
+def test_series_lists_every_name_a_machine_writes_and_filters_by_labels(store):
+    store.write([P(store, "disk_free_bytes", 5e9, 1000, machine="telemetry"), P(store, "orchestra_stock", 1, 1000, stock="OPEN")])
+    assert [n for n, _ in store.series("", {"project": store.project})] == ["disk_free_bytes", "orchestra_stock"]
+    assert store.series("", {"project": store.project, "machine": "telemetry"}) == [
+        ("disk_free_bytes", {"project": store.project, "machine": "telemetry"})]
+    assert [n for n, _, _ in store.dump("", {"project": store.project})] == ["disk_free_bytes", "orchestra_stock"]
 
 
 def test_delete_by_prefix_and_label(store):

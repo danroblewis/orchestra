@@ -57,8 +57,9 @@ and which package it belongs to (`data.package`) when it starts (`orchestra.mach
 announcements are Orchestra's own event type, so Orchestra reads their `data`. The web server
 shows an announced log only when its real path is a regular file inside the project's repository
 or state directory (`web/machine_logs.py`), because anything that can publish could name any
-file. Running scheduled and ad hoc machines is the host's job (its clock and
-process driver); neither is built yet.
+file. The host starts and keeps running the commands a project or a plugin declares (§5.1), but
+knows them only as processes: a process becomes a machine by what it publishes. Running machines on
+a clock is not built (`docs/roadmap/decisions.md`, D7).
 
 Every event carries the **CloudEvents 1.0** envelope (`orchestra.events.envelope`):
 
@@ -116,9 +117,12 @@ Measured series (`orchestra/metrics/`): name plus labels, like Prometheus, each 
 `project` label. A JSONL file by default, or VictoriaMetrics (`[metrics] url =
 "http://host:port"`, or `ORCHESTRA_METRICS_URL`). The interface: `write`, `raw`, `range`,
 `latest`, `series`, `dump`, `delete`. A range carries the last value forward at each step. Machines
-write their own series, labelled `machine=<id>` so they can be attributed. Names say what is
-measured (`bakery_shelf_loaves`, `orchestra_events_total`); whether a series is a stock or a flow
-is the model's business.
+write their own series, labelled `machine=<id>` so they can be attributed, through
+`orchestra.metrics.for_repo()`: the store the project's `orchestra.toml` configures, adding the
+`project` label every reader selects by. Names say what is measured (`bakery_shelf_loaves`,
+`orchestra_events_total`); whether a series is a stock or a flow is the model's business. The
+`orchestra_` prefix is Orchestra's own: discovery leaves those series out, and says so of one a
+program wrote. How to write a machine's series is in `docs/machines.md`.
 
 Queries are PromQL: VictoriaMetrics answers them itself (scoped with `extra_label=project=<key>`);
 the file store uses `orchestra/metrics/promql.py`, a tested subset.
@@ -279,9 +283,38 @@ system it is tested on.
 - registers itself in `<state>/runtime.json` and logs to `<state>/logs/orchestra-host.log`;
 - publishes `orchestra.host.started` and `orchestra.host.stopped`;
 - writes `orchestra_host_up{machine="orchestra-host"}` every interval;
-- runs the event collector: replays the bus once at start, then follows it.
+- runs the event collector: replays the bus once at start, then follows it;
+- rediscovers the model every `[discovery] every`;
+- keeps running the processes the project and the plugins declare (§5.1).
 
-Hosting drivers and starting the machines that packages declare come later.
+### 5.1 The launcher
+
+`orchestra/launcher.py`. A project declares the commands it wants kept running in `orchestra.toml`:
+
+```toml
+[[machines]]
+name = "telemetry"                                  # letters, digits, . _ -
+command = "uv run python machines/telemetry.py"     # split like a shell would, not run by one
+restart = "always"                                  # always (default) | on-failure | never
+```
+
+and a plugin in `Plugin.processes` (§10.1). The host starts each in the repository root, in a
+process group of its own, with `ORCHESTRA_REPO` (the root) and `ORCHESTRA_MACHINE_LOG` (its log,
+`<state>/logs/machines/<name>.log`, which receives its output) set. One that exits is started again
+after a pause that doubles with each exit within a minute of starting (1 s up to 60 s); after five
+failures (non-zero exits) in a row, each within a minute of starting, it is given up on, which the
+host's log, the process's log and the bus (`orchestra.process.gave_up`) say. It is tried again when
+its entry changes or the host restarts. The host also publishes `orchestra.process.started` and
+`orchestra.process.exited`. It re-reads `orchestra.toml` whenever the file changes (checked every
+second): a new entry starts, a removed one stops, a changed one restarts; a file that does not
+parse leaves what runs alone. Stopping the host stops every process group it started (SIGTERM, then
+SIGKILL after 10 s); a host started again after being killed first stops what the previous one left
+running. Only one host launches for a project: a second, started while one runs, launches nothing.
+Every process is in the runtime record (`processes`), which the Core page shows.
+
+The launcher starts commands and nothing more: what a process does and which machine it is are
+learned only from what it publishes (AGENTS.md rules 1 and 2). A process's name is not a machine
+id.
 
 ---
 
@@ -300,11 +333,12 @@ keeps its own harness (`~/orchestra-agents/SPEC.md`).
   projects.json                  repository root → project key
   <key>/
     project.json
-    runtime.json                 the host's and the web server's process records
+    runtime.json                 the host's, the web server's and the launched processes' records
     events.jsonl                 the event log, when [events] url = "file"
     metrics.jsonl                the metrics, when [metrics] url = "file"
     model/vNNNN.json             the model's versions
     logs/orchestra-host.log
+    logs/machines/<name>.log     each launched process's output (§5.1)
 ```
 
 The project key is the repository directory's name plus a hash of its path. Nothing is written
@@ -323,6 +357,9 @@ url = "file"            # or redis://, amqp://, kafka://
 url = "file"            # or http://host:8428 (VictoriaMetrics)
 [discovery]             # strategy, window, step, every, [discovery.options]
 strategy = "kalman_lna"
+[[machines]]            # the commands `orchestra run` keeps running (§5.1)
+name = "telemetry"
+command = "uv run python machines/telemetry.py"
 ```
 
 Unknown sections are ignored, so files written for older versions still load, and a package of
@@ -335,7 +372,7 @@ machines may keep its own settings here (other packages' sections).
 | Command | What it does |
 |---|---|
 | `orchestra init` | Register the repository and write `orchestra.toml` |
-| `orchestra run` | Run the bootstrap host |
+| `orchestra run` | Run the bootstrap host, and the processes the project and plugins declare |
 | `orchestra web [--port]` | Serve the web UI |
 | `orchestra events info\|copy --to URL` | The event log |
 | `orchestra metrics backfill\|series` | Replay the log into event counters; list series |
@@ -410,9 +447,11 @@ Dynamics page each loop is balancing or reinforcing and either "items circulate"
 material moving along a flow) or "information" (a level steering a rate). Clicking one highlights
 it. Pages read only the web server's background caches
 (`web/background.py`) and the host's cached discovery, never the stores on request.
-- **Core:** the host, the bus and the metrics store, each probed against its real backend within
-  a time limit; explorers for the metrics (a catalogue and a PromQL editor) and the events (types,
-  volumes, sources); logs. It imports only the bus, the metrics store and the runtime record.
+- **Core:** the host (with the processes it keeps running: state, restarts, command), the bus and
+  the metrics store, each probed against its real backend within a time limit; explorers for the
+  metrics (a catalogue of every series with the project's label, naming any series in the file
+  store that lacks it, and a PromQL editor) and the events (types, volumes, sources); logs (the
+  host's, Core's, the event stream and each launched process's). It imports only the bus, the metrics store and the runtime record.
 
 ### 10.1 Plugins
 
@@ -421,7 +460,8 @@ its own (`orchestra/plugins.py`). It names a function in the entry-point group
 `orchestra.plugins`; the function takes the project and returns a `Plugin`: its pages (a path, a
 title for the navigation, an HTML file that may use `/static/app.js` and `/static/style.css`), a
 static directory (served at `/plugins/<name>/static`), a FastAPI router (at
-`/api/plugins/<name>`), and scripts from its static directory that every page loads after its own
+`/api/plugins/<name>`), the processes `orchestra run` should keep running for it (`processes`:
+`orchestra.launcher.Process`, §5.1), and scripts from its static directory that every page loads after its own
 (for what must be visible wherever the viewer is, such as the way to reach the package's own pages).
 From those scripts a package may register Dashboard panels (`Orchestra.panels`) and draw the cards
 of the machines it claims (`Orchestra.machineCards`: what is inside Orchestra's machine-card
@@ -439,7 +479,7 @@ mean.
 
 ```
 orchestra/
-  cli.py  config.py  events.py  runtime.py  host.py  collectors.py  plugins.py
+  cli.py  config.py  events.py  runtime.py  host.py  launcher.py  collectors.py  plugins.py
   bus/       file, redis_streams, rabbitmq_streams, kafka
   metrics/   file, victoria, promql
   sd/        model, store, fit, series and live (sampling, when a series was written), balance,

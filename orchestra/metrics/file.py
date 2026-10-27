@@ -52,14 +52,14 @@ class FileMetrics:
         pts = self.raw(series, labels)
         return pts[-1] if pts else None
 
-    def series(self, prefix="orchestra_"):
+    def series(self, prefix="", labels=None):
         seen: dict[tuple, tuple[str, dict]] = {}
         for r in self._records():
-            if r["s"].startswith(prefix):
+            if r["s"].startswith(prefix) and all(r["l"].get(k) == v for k, v in (labels or {}).items()):
                 seen.setdefault((r["s"], tuple(sorted(r["l"].items()))), (r["s"], r["l"]))
         return sorted(seen.values(), key=lambda x: (x[0], sorted(x[1].items())))
 
-    def dump(self, prefix="orchestra_", labels=None):
+    def dump(self, prefix="", labels=None):
         groups: dict[tuple, tuple[str, dict, list]] = {}
         for r in self._records():
             if r["s"].startswith(prefix) and all(r["l"].get(k) == v for k, v in (labels or {}).items()):

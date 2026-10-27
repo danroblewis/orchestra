@@ -25,7 +25,11 @@ The web app mounts what it returns:
   kind of thing it is, how it is engaged and what it listens for, the same as an announcement
   says), so the Machines page lists one before it is first seen. What is observed always wins: a
   declaration only fills in a machine nobody has seen yet, and names the package a machine
-  belongs to.
+  belongs to;
+- its ``processes``, optionally: the commands ``orchestra run`` keeps running for it
+  (``orchestra.launcher.Process``: a name, a command, a restart policy), such as a scheduler or
+  the host of the programs it runs. Orchestra starts them as it starts the project's own
+  ``[[machines]]`` and knows nothing else of them.
 
 A machine belongs to a package when its announcement says so (``package`` in
 ``orchestra.machine.started``) or the package declares it. The package's every-page script may
@@ -44,6 +48,8 @@ from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Any
+
+from .launcher import Process
 
 GROUP = "orchestra.plugins"
 log = logging.getLogger("orchestra.plugins")
@@ -73,6 +79,7 @@ class Plugin:
     scripts: list[str] = field(default_factory=list)   # files in ``static`` loaded on every page
     stylesheets: list[str] = field(default_factory=list)   # files in ``static`` every page links
     machines: list[Declared] = field(default_factory=list)
+    processes: list[Process] = field(default_factory=list)   # what `orchestra run` starts for it
 
 
 @dataclass

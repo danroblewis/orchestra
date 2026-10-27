@@ -230,3 +230,14 @@ def test_orchestras_own_series_are_plumbing(tmp_path):
     assert why["orchestra_core_bus_read_ms"].startswith("Orchestra's own"), why
     assert why['orchestra_host_up{machine="orchestra-host"}'].startswith("Orchestra's own"), why
     assert {s.id for s in m.stocks} == {"bakery_shelf_loaves", "bakery_oven_orders_pending"}
+
+
+def test_a_series_named_with_orchestras_prefix_is_left_out_with_why(tmp_path):
+    store = FileMetrics(tmp_path / "m.jsonl")
+    start, end = simulate(store, minutes=30)
+    store.write([Point("orchestra_disk_free_bytes", 5e9 - i, start + 60 * i, {"project": "p", "machine": "telemetry"}) for i in range(30)]
+                + [Point("orchestra_host_up", 1, start + 60 * i, {"project": "p", "machine": "orchestra-host"}) for i in range(30)])
+    left_out = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30).discovery["left_out"]
+    assert "the orchestra_ prefix is Orchestra's own" in left_out['orchestra_disk_free_bytes{machine="telemetry"}']
+    assert "rename it" in left_out['orchestra_disk_free_bytes{machine="telemetry"}']
+    assert left_out['orchestra_host_up{machine="orchestra-host"}'].startswith("Orchestra's own")

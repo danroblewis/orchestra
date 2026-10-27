@@ -59,7 +59,7 @@ class Refresher:
 
     def _series(self) -> None:
         if self.metrics is not None:
-            self.series = [(n, lab) for n, lab in self.metrics.series("") if lab.get("project") == self.project.key]
+            self.series = self.metrics.series("", {"project": self.project.key})
 
     def model(self):
         cached = self.models.latest_discovery()

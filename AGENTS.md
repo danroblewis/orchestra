@@ -9,8 +9,9 @@ These replaced the old task system's invariants on 2026-10-25, when the ticket
 tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
 
 1. **Orchestra knows no tickets and no tasks, and runs no AI.** It has an
-   event bus, a metrics store, a system dynamics model, a bootstrap host and
-   the interfaces machines use (the bus, the metrics store, plugins). What
+   event bus, a metrics store, a system dynamics model, a bootstrap host (with
+   a launcher that keeps declared commands running) and the interfaces
+   machines use (the bus, the metrics store, plugins). What
    machines do and what their events mean is theirs. An AI agent is a
    universal machine like any other: its harnesses live with the machines
    that run it (the agents: `~/orchestra-agents`), never here. Never add
@@ -27,6 +28,10 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    a plugin declares, which only fill in machines not seen yet and never
    override what is observed. A log is read only
    within the project's repository or state directory (`web/machine_logs.py`).
+   The launcher (`orchestra/launcher.py`) starts the commands a project
+   (`[[machines]]` in `orchestra.toml`) or a plugin (`Plugin.processes`)
+   declares and knows them only as processes (a name, a command, a pid, an
+   exit code): a process is a machine only by what it publishes.
 3. **Every event carries the CloudEvents envelope.** `orchestra.events`
    writes it; Orchestra reads the envelope and never the `data` payload, which
    belongs to the machines that use it.

@@ -14,7 +14,8 @@ Components:
   them back until they are visible, so every probe proves the write and the read path.
 
 Logs: the bootstrap host's log file, a core log kept in this process (component state changes,
-errors, probe writes), the event stream's tail, and the logs machines announce."""
+errors, probe writes), the event stream's tail, and the logs of the processes the host launches
+(`orchestra/launcher.py`)."""
 
 from __future__ import annotations
 
@@ -114,8 +115,18 @@ class CoreProbe:
         return {"project": self.project.key, **kw}
 
     # ---- components ----
+    def _processes(self, record: dict) -> list[dict]:
+        """What the host's launcher keeps running (orchestra/launcher.py), as it recorded them."""
+        out = []
+        for name, r in sorted((record.get("processes") or {}).items()):
+            out.append({"name": name, "state": r.get("state"), "owner": r.get("owner"), "restarts": r.get("restarts", 0),
+                        "code": r.get("code"), "command": r.get("command") or [],
+                        **(_proc(r["pid"]) if r.get("pid") else {"alive": False}), "since": r.get("since")})
+        return out
+
     def _host(self) -> dict:
-        rec = runtime.read(self.project).get("host") or {}
+        record = runtime.read(self.project)
+        rec = record.get("host") or {}
         loop = _proc(rec.get("pid")) if rec.get("pid") else {"alive": False}
         loop["since"] = rec.get("since", loop.get("since"))
         log = self.project.logs_dir / "orchestra-host.log"
@@ -131,7 +142,8 @@ class CoreProbe:
         return {"ok": True, "loop": loop, "web": {**me, "since": STARTED}, "version": __version__, "commit": commit,
                 "python": f"{platform.python_implementation()} {sys.version.split()[0]}",
                 "project": self.project.key, "repo": str(self.project.repo_root), "state": str(self.project.state_dir),
-                "host_log": str(log), "host_log_last": last[0] if last else None}
+                "host_log": str(log), "host_log_last": last[0] if last else None,
+                "processes": self._processes(record) if loop.get("alive") else []}
 
     def _bus(self) -> dict:
         bus = self.events.bus
@@ -184,7 +196,7 @@ class CoreProbe:
         m.write([Point(f"{CORE}_metrics_write_ms", out["write_ms"], now, self._labels()),
                  Point(f"{CORE}_metrics_read_ms", out["read_ms"], now, self._labels()),
                  Point(f"{CORE}_metrics_visible_ms", out["visible_ms"], now, self._labels())])
-        mine = [s for s in m.series() if s[1].get("project") == self.project.key]
+        mine = m.series("", {"project": self.project.key})
         out["series"] = len(mine)
         spark = {}
         for key in ("bus_read_ms", "bus_events", "metrics_write_ms", "metrics_read_ms", "metrics_visible_ms"):
@@ -238,6 +250,8 @@ class CoreProbe:
     def log_sources(self) -> list[dict]:
         out = [{"id": "host", "name": "Orchestra host (bootstrap)"}, {"id": "core", "name": "Core"},
                {"id": "events", "name": "Event stream"}]
+        out += [{"id": f"process:{name}", "name": f"{name} (started by the host)"}
+                for name in sorted(runtime.read(self.project).get("processes") or {})]
         return out
 
     def logs(self, source: str, lines: int = 200) -> dict:
@@ -259,4 +273,11 @@ class CoreProbe:
                 return {"source": source, "lines": self._pool.submit(go).result(timeout=TIMEOUT)}
             except Exception as e:  # noqa: BLE001
                 return {"source": source, "lines": [], "note": f"the event bus did not answer: {type(e).__name__}: {e}"}
+        if source.startswith("process:"):
+            rec = (runtime.read(self.project).get("processes") or {}).get(source.partition(":")[2])
+            if rec is None:
+                return {"source": source, "lines": [], "note": "no such process: the host is not running it now"}
+            # the path the launcher writes, not the record's, so the record cannot name any file
+            path = self.project.logs_dir / "machines" / f"{Path(source.partition(':')[2]).name}.log"
+            return {"source": source, "lines": _tail(path, lines)}
         return {"source": source, "lines": [], "note": "unknown log source"}

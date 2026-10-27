@@ -95,6 +95,17 @@ function card(title, c, html, right = "", warn = false) {
 }
 const age = (sec) => (sec >= 2 * 86400 ? `${(sec / 86400).toFixed(1)}d` : ago(sec));
 const since = (t) => t ? ago(Date.now() / 1000 - t) : "—";
+// what the host keeps running: the [[machines]] in orchestra.toml and the plugins' processes
+const PROC_STATE = { running: "running", waiting: "restarting", exited: "exited", gave_up: "gave up" };
+function processesHtml(ps) {
+  if (!ps.length) return "";
+  const row = (p) => `<tr><td><b>${esc(p.name)}</b>${p.owner && p.owner !== "project" ? ` <span class="muted">(${esc(p.owner)})</span>` : ""}</td>
+    <td>${p.state === "running" ? "running" : `<span class="stale">${esc(PROC_STATE[p.state] || p.state)}${p.code != null ? ` · exit ${p.code}` : ""}</span>`}</td>
+    <td class="num">${p.alive ? `pid ${p.pid} · up ${since(p.since)} · ${fmtBytes(p.rss || 0)}` : "—"}</td>
+    <td class="num">${p.restarts ? `${p.restarts} restart${p.restarts > 1 ? "s" : ""}` : ""}</td>
+    <td class="num" style="text-align:left;max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(p.command.join(" "))}">${esc(p.command.join(" "))}</td></tr>`;
+  return `<div class="sl">processes the host keeps running</div><table class="ct">${ps.map(row).join("")}</table>`;
+}
 function renderCore() {
   const { host: h, bus: b, metrics: m } = CORE, sp = (m && m.spark) || {};
   $("core-sub").textContent = `Probed ${since(CORE.probed_at)} ago, every ${CORE.interval}s, each component within ${CORE.timeout}s.`;
@@ -105,7 +116,7 @@ function renderCore() {
       <div>version</div><div class="num">${esc(h.version)}${h.commit ? " · " + esc(h.commit) : ""} · ${esc(h.python)}</div>
       <div>project</div><div class="num">${esc(h.project)}</div>
       <div>state</div><div class="num">${esc(h.state)}</div>
-      <div>last log</div><div class="num" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(h.host_log_last || "—")}</div></div>`;
+      <div>last log</div><div class="num" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(h.host_log_last || "—")}</div></div>${processesHtml(h.processes || [])}`;
   const types = ((b && b.recent_types) || []).map(([t, n]) => `<span class="ty">${esc(t)} <b>${n}</b></span>`).join("");
   const probe = PROBE ? (PROBE.ok ? `<div class="probe ok">✓ appended at offset ${PROBE.offset.toLocaleString()} in ${PROBE.append_ms} ms · read back by offset in ${PROBE.read_back_ms} ms</div>`
       : `<div class="probe bad">✗ ${esc(PROBE.error || "the probe event was not read back")}</div>`) : "";
@@ -123,7 +134,7 @@ function renderCore() {
       <div>round trip</div><div class="num">${m.round_trip_ok ? "✓" : "✗"} write ${m.write_ms ?? "—"} ms · readable after ${m.visible_ms ?? "—"} ms · read ${m.read_ms ?? "—"} ms</div></div>
       <div class="sl">write latency</div>${spark(sp.metrics_write_ms, { unit: " ms", label: "write latency" })}<div class="sl">write → readable</div>${spark(sp.metrics_visible_ms, { unit: " ms", cls: "amber", label: "write → readable" })}
       <div class="muted" style="font-size:11px;margin-top:6px">Every probe writes its own measurements into the store; these lines are read back from it.</div>` : "";
-  $("host-card").innerHTML = card("Bootstrap host", h, hostHtml, "", !(h.loop && h.loop.alive));
+  $("host-card").innerHTML = card("Bootstrap host", h, hostHtml, "", !(h.loop && h.loop.alive) || (h.processes || []).some((p) => p.state === "gave_up"));
   $("bus-card").innerHTML = card("Event bus", b, busHtml, `<button class="ctl" onclick="probeBus()" title="Append a bus_probe event to the stream and read it back by its offset">test write</button>`);
   $("met-card").innerHTML = card("Metrics store", m, metHtml);
 }
@@ -157,6 +168,8 @@ async function loadCatalog() {
     CAT = await (await fetch("/api/core/metrics/catalog")).json();
     if (!CAT.ok) { $("mx-cat").innerHTML = `<div class="probe bad">${esc(CAT.error)}</div>`; $("mx-note").textContent = ""; return; }
     $("mx-note").textContent = `${CAT.backend} · project ${CAT.project} · ${CAT.metrics.length} metrics · ${CAT.series} series · ${CAT.points.toLocaleString()} points`;
+    const un = CAT.unlabelled || [];
+    if (un.length) $("mx-note").textContent += ` · not shown: ${un.length} metric${un.length > 1 ? "s" : ""} in the store with no project label (${un.slice(0, 5).join(", ")}${un.length > 5 ? ", …" : ""}); write them through orchestra.metrics.for_repo`;
     $("mx-cat").innerHTML = `<div class="sl">points written per hour, last 24 h</div>${spark(CAT.writes_per_hour_24h, { w: 520, note: "per hour, last 24 h", label: "points written" })}
       <table class="ct"><tr><th>metric</th><th>labels (unique values)</th><th>series</th><th>points</th><th>last 1 h</th><th>last write</th></tr>${CAT.metrics.map((m) =>
         `<tr class="pick" onclick="pickMetric('${esc(m.name)}')" title="click to query · first written ${m.first ? age(Date.now() / 1000 - m.first) + " ago" : "—"}"><td class="mono">${esc(m.name)}</td>

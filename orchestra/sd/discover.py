@@ -74,7 +74,15 @@ from .model import Equation, Flow, Machine, Model, SeriesRef, Stock
 from .parsimony import fewer_counters
 from .passing import passages
 from .restate import split_event_counters, split_foreign_counters, unify_same_flows
-from .series import EVENT_COUNTER, PLUMBING, Series, machine_of, sample, sum_instances
+from .series import (
+    EVENT_COUNTER,
+    PLUMBING,
+    Series,
+    machine_of,
+    plumbing_reason,
+    sample,
+    sum_instances,
+)
 
 MIN_R2 = 0.9            # how well a balance must fit for a level to count as a stock
 FLAG_EXACT = 0.97         # a two-valued level is a stock only if its balance is exact in this share of steps
@@ -486,7 +494,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     for ser in series:
         ivs = ser.intervals if ser.intervals is not None else [(start, end)]
         if PLUMBING.match(ser.name):
-            left_out[ser.key] = "Orchestra's own (the host's and the Core page's plumbing), not a measure of the system"
+            left_out[ser.key] = plumbing_reason(ser.name)
         elif ivs and ivs[-1][1] >= end:
             current.append(ser)
         else:

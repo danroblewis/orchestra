@@ -83,6 +83,12 @@ window = "60m"           # how far back each discovery looks
 step = "30s"             # the grid it samples on
 every = "5m"             # how often the host rediscovers
 # [discovery.options]    # passed to the strategy as they are
+
+# The programs `orchestra run` keeps running (docs/machines.md in Orchestra's repository):
+# [[machines]]
+# name = "telemetry"
+# command = "uv run python machines/telemetry.py"
+# restart = "always"     # always, on-failure or never
 """
 
 
