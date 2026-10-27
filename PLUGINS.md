@@ -699,32 +699,43 @@ def plugin(orchestra_project) -> Plugin:
     """The plugin for the repository Orchestra serves (its entry point, in pyproject.toml)."""
     project = Project.from_orchestra(orchestra_project)
     return Plugin("tasks", [Page("/tickets", "Tickets", STATIC / "tickets.html")],
-                  STATIC, router(project), scripts=["tasks-boot.js"], stylesheets=["tasks.css"], machines=declared(),
-                  processes=processes(project))
+                  STATIC, router(project), scripts=["tasks-boot.js"], stylesheets=["tasks.css"],
+                  processes=processes(project), collectors=collectors(project))
 
 
 def processes(project: Project) -> list[Process]:
-    if not ({"project", "tasks"} & set(project.config.raw)):
+    if not set_up(project):
         return []
     return [Process("scheduler", [sys.executable, "-m", "tasking", "run", "--wait"])]
 
 
-def declared() -> list[Declared]:
-    return [Declared(SCHEDULER, "program", "continuous")]
+def collectors(project: Project) -> list[Collector]:
+    if not set_up(project):
+        return []
+    step = max(1.0, float(project.orchestra.config.discovery_step))
+    return [Collector.collect("tickets", f"{shlex.quote(sys.executable)} -m tasking metrics", every_s=step, timeout_s=min(step, 10.0))]
+
 ```
 
 | Field | What it registers |
 |---|---|
 | `pages` | `/tickets` ("Tickets"): the ticket graph |
-| `static`, `scripts` | one loader, `tasks-boot.js`, which loads `tasks.js`, then `attention.js` (the blocked-ticket banner), `machine-cards.js` (the scheduler's card, `register("tasks", ...)`) and `tasks-panel.js` (the Tasks panel, `Orchestra.panels.register({id: "tasks", ...})`) |
+| `static`, `scripts` | one loader, `tasks-boot.js`, which loads `tasks.js`, then `attention.js` (the blocked-ticket banner) and `tasks-panel.js` (the Tasks panel, `Orchestra.panels.register({id: "tasks", ...})`) |
 | `stylesheets` | `tasks.css` |
-| `router` | `/api/plugins/tasks/state`, `/board`, `/attention`, `/tickets/{id}`, and `POST /control` (operator controls, published as the machine `task_web`). A router dependency re-reads `orchestra.toml` on every request, so the capacity ceiling is live |
-| `machines` | `task_scheduler` (program, continuous). `task_web` is not declared; it appears once used |
+| `router` | `/api/plugins/tasks/state`, `/board`, `/attention`, `/tickets/{id}`, `/metrics` (the measurements as Prometheus text), and `POST /control` (operator controls, published as the machine `task_web`). A router dependency re-reads `orchestra.toml` on every request, so the capacity ceiling is live |
+| `machines` | none. The scheduler is no machine (below); `task_web` and `merge_gate` appear once seen |
 | `processes` | `tasks.scheduler`, only when `orchestra.toml` has `[project]` or `[tasks]` |
+| `collectors` | `tasks.tickets`: `tasking metrics` every discovery step, printing `tasks_tickets{state}`, `tasks_tickets_created_total{by}`, `tasks_ticket_transitions_total{from,to,by}` and `tasks_worktrees{state}` from the task system's record. A command rather than a scrape of `/metrics`, because `orchestra run` does not know the web server's port; the text is the same |
 
 Its config sections: `[project]`, `[tasks]`, `[gate]`, `[staging]`. State:
-`~/.orchestrator/<key>/tasks/`. The scheduler announces itself with
-`{"package": "tasks", "mode": "continuous", "kind": "program", "listens_for": [...], "log": ...}`.
+`~/.orchestrator/<key>/tasks/`. The scheduler is an implementation detail of the plugin, not a
+machine: one daemon standing in for each machine's own scheduler (the worker's queue, the
+reviewer's, the merge gate, the answers to a planner's requests). It never announces itself and
+never publishes as `task_scheduler`: its offers and releases go out as `worker` or `reviewer`,
+its answers and what a request made as the asker, the gate's acts as `merge_gate` (which announces
+itself, `listens_for: ["review.approved"]`), and it publishes nothing that restates another
+machine's act (no `ticket.transitioned`). So it is on no page but the Core page's process list.
+The table of who publishes what is in orchestra-tasking's SPEC.md section 3.
 
 ### 8.2 The AI agents: `orchestra-agents`, plugin `agents`
 
@@ -766,7 +777,8 @@ def declared(project) -> list[Declared]:
 | `processes` | `agents.host`, only when `orchestra.toml` has `[agents]`; `stop_grace_s=30`, longer than the host's worst-case shutdown (20 s), so Orchestra never kills it halfway and orphans its sessions |
 
 The host announces itself (`package: "agents"`, `kind: "program"`, `listens_for:
-["ticket.transitioned"]`), and announces each agent instance it starts as `worker/1`,
+["gate.landed", "request.done", "review.approved", "ticket.created"]`: a ticket's end, by which it
+archives the ticket's sessions, and the human's tickets), and announces each agent instance it starts as `worker/1`,
 `reviewer/1`, ... with `kind: "agent"` and extra fields (`role`, `harness`, `model`) that reach
 the card as `m.about`. State: `~/.orchestrator/<key>/agents/`; the organisation's records are in
 the repository under `.orchestra/`.
