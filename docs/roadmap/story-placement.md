@@ -230,7 +230,7 @@ Status words in the "Built?" column:
 | 18 | Draft the Jira comment, status and message | Agents + Outbox | Drafter woken by `github.pr.merged` | No |
 | 19 | Approve and send | Human + Outbox | The Outbox page | No |
 | — | BLOCKED, in the morning brief (test 12) | Tasking + Desk | BLOCKED is Tasking's (Built); the brief is the Desk's | Partial |
-| — | Agent playbook (R-learning, B-decay) | Target + Agents + Tasking | Playbook files in the Target; a `librarian` agent woken by `ticket.transitioned:REJECTED` and gate rejections; its tickets land like any change. Protect capture (gap 1.4): Tasking reserves capacity per worker kind (G3 extension) | No |
+| — | Agent playbook (R-learning, B-decay) | Target + Agents + Tasking | Playbook files in the Target; a `librarian` agent woken by `changes.requested` and gate rejections; its tickets land like any change. Protect capture (gap 1.4): Tasking reserves capacity per worker kind (G3 extension) | No |
 | — | Trust, autonomy | Outbox | The edit rate per action kind is the measured stand-in for "my trust" | No |
 | — | Budget | Agents | Usage and cost series per role and ticket (H2), and a brake | No |
 | — | The model's stocks | Core + each layer's instruments | Asks (bridges' levels), tickets (Tasking), PRs (`github_prs_awaiting_*`), outbox waiting (Outbox `/metrics`), playbook size (a Target `[[collect]]`) | Partial |
@@ -647,7 +647,8 @@ Reported, not changed.
    bridge (`github/measures.py`) write points through `orchestra.metrics` from the machine's own
    process. `PLUGINS.md` §6.4 says this "also works". The Slack and PR bridges already serve
    `/metrics` for an instrument the plugin declares. The rule and the docs disagree; the owner
-   should say which wins.
+   should say which wins. Tasking no longer does (2026-10-27): its measurements come from the
+   instrument `tasks.tickets` its plugin declares; the Agents host and the GitHub bridge still do.
 4. **Tasking's staging** (`tasking/staging.py`, with a cloudflared tunnel) deploys the target's
    build. That is the target's or a deployment plugin's job more than a task system's. Low
    confidence; it serves personal projects where the gate lands.

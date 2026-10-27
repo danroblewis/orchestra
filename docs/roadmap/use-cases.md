@@ -147,10 +147,11 @@ BLOCKED ticket.
 Expected: everything in UC-2, plus stocks of agents at work by role (`agents_working{role}`) and
 flows of turns started and finished (`agent_turns_*_total{role}`); the reviewer's turns move
 IN_REVIEW to APPROVED/REJECTED; the Coordinator's attention turns follow BLOCKED.
-Expected event map: `task_scheduler` publishes `task.assigned`/`task.released` and listens for
-`task.accepted`/`task.working`/`task.reported` and the requests; `worker/1` (package tasks' demo
-program) and `reviewer/1` (package agents) answer; `agents` (the host) listens for
-`task.assigned`, `task.released`, `task.attention_needed`; supervisor and coordinator are
+Expected event map: no `task_scheduler` (the task system's scheduler is no machine and publishes
+nothing as itself, D17); the worker's queue publishes `task.assigned`/`task.released` as `worker`;
+hand-offs read planner → worker → reviewer → worker → reviewer → merge_gate; `worker/1` (package
+tasks' demo program) and `reviewer/1` (package agents) answer; `agents` (the host) listens for
+`gate.landed`, `review.approved`, `request.done`, `ticket.created`; supervisor and coordinator are
 continuous/scheduled machines of package agents.
 Forbidden: agent sessions as stocks of tickets; the host's heartbeat as a flow.
 
