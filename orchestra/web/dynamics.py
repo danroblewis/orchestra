@@ -14,7 +14,9 @@ from ..sd.store import ModelStore
 def model_view(project, version: int | None = None, levels: dict | None = None, levels_error: str | None = None) -> dict:
     """The model to show: a past version when asked; otherwise the host's latest discovery (cached
     by ``orchestra run``; nothing is discovered here), else the current version. ``levels`` are the
-    stocks' current levels, read in the background by the web server."""
+    stocks' current levels, read in the background by the web server. With no model yet, the
+    error comes with the latest discovery's ``discovery`` block, so the page can say which series
+    it looked at and why each was left out."""
     store = ModelStore.for_state(project.state_dir)
     versions = store.versions()
     current = versions[-1]["version"] if versions else None
@@ -26,10 +28,12 @@ def model_view(project, version: int | None = None, levels: dict | None = None, 
     else:
         cached = store.latest_discovery()
         if cached and not cached[1].stocks and not versions:
-            n = len(cached[1].discovery.get("left_out", {}))
+            d = cached[1].discovery
+            n = len(d.get("left_out", {}))
             return {"ok": False, "error": f"There is no model yet: the host's last discovery found no stocks among "
                                           f"{n} series (nothing balances yet). It looks again every few minutes; "
-                                          "`orchestra sd discover` does it now."}
+                                          "`orchestra sd discover` does it now.",
+                    "discovery": {k: d[k] for k in ("left_out", "series", "step", "start", "end", "min_r2") if k in d}}
         if cached:
             as_of, model = cached
             live = True
