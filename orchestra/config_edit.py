@@ -2,8 +2,8 @@
 changes a setting, in the repository's ``orchestra.toml`` or in the private overlay
 (``orchestra/overlay.py``), so that no plugin opens or edits either file itself.
 
-``project.config_edit`` (a ``ConfigEdit``) has ``set``, ``unset``, ``add_entry`` and
-``remove_entry``, each with ``target="repo"`` (the shared ``orchestra.toml``) or ``"overlay"``
+``project.config_edit`` (a ``ConfigEdit``) has ``set`` (and ``set_many``), ``unset``,
+``add_entry`` and ``remove_entry``, each with ``target="repo"`` (the shared ``orchestra.toml``) or ``"overlay"``
 (the owner's private file, created on its first change). Each one:
 
 - edits the target file's text through ``tomlkit``, so its comments and layout are kept and only
@@ -143,11 +143,20 @@ class ConfigEdit:
 
     def set(self, key, value: Any, *, target: str = REPO, check: Check | None = None, dry_run: bool = False) -> Change:
         """Set ``key`` (``"tasks.workers"``, or a list of parts) to ``value``."""
-        parts = tt.split(key)
+        return self.set_many({key if isinstance(key, str) else ".".join(key): value}, target=target, check=check,
+                             dry_run=dry_run)
+
+    def set_many(self, values: dict[str, Any], *, target: str = REPO, check: Check | None = None,
+                 dry_run: bool = False) -> Change:
+        """Set several keys (``{"tasks.workers": 3, "tasks.reviewers": 2}``) in one change."""
+        if not values:
+            raise ConfigError("nothing to set")
+        keys = {k: tt.split(k) for k in values}
 
         def edit(doc, merged):
-            tt.set_key(tt.table(doc, parts[:-1], create=True), parts[-1], value)
-            return f"{'.'.join(parts)} = {_shown(value)}"
+            for k, parts in keys.items():
+                tt.set_key(tt.table(doc, parts[:-1], create=True), parts[-1], values[k])
+            return ", ".join(f"{k} = {_shown(v)}" for k, v in values.items())
         return self._change(target, edit, check, dry_run)
 
     def unset(self, key, *, target: str = REPO, check: Check | None = None, dry_run: bool = False) -> Change:
@@ -257,7 +266,7 @@ class ConfigEdit:
             what = edit(doc, merged)
             after = tomlkit.dumps(doc)
         if target == OVERLAY:
-            what = what.split(" = ")[0] + " in the private overlay"     # the overlay's values are not repeated
+            what = ", ".join(w.split(" = ")[0] for w in what.split(", ")) + " in the private overlay"   # no values
         change = Change(target, str(path), what, before, after)
         if not change.changed:
             return change

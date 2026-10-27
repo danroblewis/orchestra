@@ -62,6 +62,10 @@ def test_set_in_the_repository_keeps_comments_and_reloads(project):
     assert project.config.raw["tasks"]["workers"] == 3                       # reloaded
     again = project.config_edit.set("tasks.workers", 3)
     assert not again.changed and again.keys == []
+    both = project.config_edit.set_many({"tasks.workers": 4, "tasks.reviewers": 2})
+    assert both.keys == ["tasks.reviewers", "tasks.workers"] and both.what == "tasks.workers = 4, tasks.reviewers = 2"
+    assert project.config_edit.set_many({"tasks.workers": 5, "desk.me": "U1"}, target="overlay").what == (
+        "tasks.workers, desk.me in the private overlay")
 
 
 def test_set_in_the_overlay_creates_it_privately_and_wins(project):

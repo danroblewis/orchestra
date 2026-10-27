@@ -845,7 +845,8 @@ Plugins never open, parse or edit `orchestra.toml` or the overlay themselves. Th
 `project.config_stamp()` and `project.reload_config()`, and change a setting through
 `project.config_edit` (`orchestra/config_edit.py`; Python objects, no web API):
 
-- `set(key, value, target=...)` and `unset(key, target=...)`, with `key` dotted (`tasks.workers`);
+- `set(key, value, target=...)`, `set_many({key: value, ...}, target=...)` and
+  `unset(key, target=...)`, with `key` dotted (`tasks.workers`);
 - `add_entry(array, entry, target=...)`: adds the entry named `entry["name"]` to an array of
   tables (`machines`, `gate.unit`), or sets the given fields on it;
 - `remove_entry(array, name, target=...)`.
