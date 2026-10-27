@@ -1,7 +1,7 @@
 """The bootstrap host: Orchestra's own machine, started by ``orchestra run``.
 
 In an empty Orchestra it does little, on purpose:
-- it registers itself in the runtime record and writes its log (``<state>/logs/orchestra-host.log``);
+- it registers itself in the runtime record (``hosts``) and writes its log (``<state>/logs/orchestra-host.log``);
 - it publishes ``orchestra.host.started`` and ``orchestra.host.stopped``, and writes
   ``orchestra_host_up`` to the metrics store, so the host is observed like any machine;
 - it runs Orchestra's event collector: every event on the bus, from any machine, counted by type
@@ -12,8 +12,8 @@ In an empty Orchestra it does little, on purpose:
   version when the structure changed;
 - it keeps running the commands the project declares (``[[machines]]`` in ``orchestra.toml``) and
   the plugins declare (``Plugin.processes``), through ``orchestra.launcher``, and stops them when
-  it stops. Only one host launches for a project: a second one, started while the first runs,
-  launches nothing and says so."""
+  it stops. Only one host launches for a project (``launcher`` in the runtime record): a second one, started while the
+  first runs, launches nothing, says so, and leaves the first one's record alone."""
 
 from __future__ import annotations
 
@@ -121,17 +121,35 @@ class Host:
         finally:
             launcher.stop_all()
 
-    def _other_host(self) -> int | None:
-        """The pid of another live host of this project, if one runs."""
-        pid = (runtime.read(self.project).get("host") or {}).get("pid")
-        return pid if pid and pid != os.getpid() and runtime.alive(pid) else None
+    def _claim(self) -> int | None:
+        """Take the launch for this project, unless a live host holds it; returns that host's pid,
+        or None when this host now launches. Checked and set under the lock, so two hosts
+        starting together cannot both take it."""
+        mine = runtime.me()
+
+        def take(d: dict) -> int | None:
+            held = runtime.launcher(d)
+            if held and held["pid"] != mine["pid"]:
+                return held["pid"]
+            d["launcher"] = mine
+            return None
+        return runtime.update(self.project, take)
+
+    def _register(self, d: dict) -> None:
+        d["hosts"] = {k: r for k, r in (d.get("hosts") or {}).items() if runtime.holds(r)}
+        d["hosts"][str(os.getpid())] = runtime.me()
+        d.pop("host", None)                       # the record before hosts and launcher were kept apart
+
+    def _unregister(self, d: dict) -> None:
+        (d.get("hosts") or {}).pop(str(os.getpid()), None)
+        if (d.get("launcher") or {}).get("pid") == os.getpid():
+            d.pop("launcher")
 
     def stop(self, *_):
         self._stop.set()
 
     def run(self, once: bool = False) -> None:
-        other = self._other_host()
-        runtime.update(self.project, lambda d: d.__setitem__("host", {"pid": os.getpid(), "since": time.time()}))
+        runtime.update(self.project, self._register)
         if threading.current_thread() is threading.main_thread():
             signal.signal(signal.SIGTERM, self.stop)
         self.events.publish("orchestra.host.started", {"pid": os.getpid()})
@@ -141,11 +159,12 @@ class Host:
             threading.Thread(target=self._collect, name="collector", daemon=True).start()
             threading.Thread(target=self._discover, name="discovery", daemon=True).start()
         launching = None
-        if other:
-            self.log(f"launcher: another orchestra run (pid {other}) runs this project and keeps its processes; this one starts none")
-        elif not once:
-            launching = threading.Thread(target=self._launch, name="launcher")
-            launching.start()
+        if not once:
+            if other := self._claim():
+                self.log(f"launcher: another orchestra run (pid {other}) runs this project and keeps its processes; this one starts none")
+            else:
+                launching = threading.Thread(target=self._launch, name="launcher")
+                launching.start()
         try:
             while not self._stop.is_set():
                 self._beat(1.0)
@@ -160,5 +179,5 @@ class Host:
                 launching.join()
             self._beat(0.0)
             self.events.publish("orchestra.host.stopped", {"pid": os.getpid()})
-            runtime.update(self.project, lambda d: d.pop("host", None) if (d.get("host") or {}).get("pid") == os.getpid() else None)
+            runtime.update(self.project, self._unregister)
             self.log("host stopped")

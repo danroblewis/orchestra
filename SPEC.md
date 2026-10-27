@@ -280,7 +280,7 @@ system it is tested on.
 ## 5. The bootstrap host
 
 `orchestra run` starts Orchestra's own machine (`orchestra/host.py`). In an empty Orchestra it:
-- registers itself in `<state>/runtime.json` and logs to `<state>/logs/orchestra-host.log`;
+- registers itself in `<state>/runtime.json` (`hosts`, by pid) and logs to `<state>/logs/orchestra-host.log`;
 - publishes `orchestra.host.started` and `orchestra.host.stopped`;
 - writes `orchestra_host_up{machine="orchestra-host"}` every interval;
 - runs the event collector: replays the bus once at start, then follows it;
@@ -309,8 +309,13 @@ its entry changes or the host restarts. The host also publishes `orchestra.proce
 second): a new entry starts, a removed one stops, a changed one restarts; a file that does not
 parse leaves what runs alone. Stopping the host stops every process group it started (SIGTERM, then
 SIGKILL after 10 s); a host started again after being killed first stops what the previous one left
-running. Only one host launches for a project: a second, started while one runs, launches nothing.
-Every process is in the runtime record (`processes`), which the Core page shows.
+running. Only one host launches for a project. It holds `launcher` in the runtime record (its
+pid and its process's create time, so a reused pid is not taken for it), taken under the record's
+lock only when nobody holds it or its holder is dead, and cleared only by that holder when it
+stops. A second host, started while one runs, launches nothing and writes nothing of the
+launcher's; one that takes the launch from a dead holder first stops what that holder left
+running. Every process is in the runtime record (`processes`), which the Core page shows while
+the launching host runs.
 
 The launcher starts commands and nothing more: what a process does and which machine it is are
 learned only from what it publishes (AGENTS.md rules 1 and 2). A process's name is not a machine
@@ -333,7 +338,7 @@ keeps its own harness (`~/orchestra-agents/SPEC.md`).
   projects.json                  repository root → project key
   <key>/
     project.json
-    runtime.json                 the host's, the web server's and the launched processes' records
+    runtime.json                 the hosts', the launcher's, the web server's and the launched processes' records
     events.jsonl                 the event log, when [events] url = "file"
     metrics.jsonl                the metrics, when [metrics] url = "file"
     model/vNNNN.json             the model's versions

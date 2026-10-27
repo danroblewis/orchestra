@@ -188,10 +188,10 @@ def create_app(project: Project) -> FastAPI:
         out = {"ok": True, **bg.index.view(bg.series)}
         declare(out["machines"])
         # the host publishes only when it starts and stops; whether it runs is in the runtime record
-        rec = runtime.read(project).get("host") or {}
+        up = bool(runtime.hosts(runtime.read(project)))
         for m in out["machines"]:
             if m["bootstrap"]:
-                m["active"] = runtime.alive(rec.get("pid"))
+                m["active"] = up
         if bg.errors:
             out["errors"] = bg.errors
         return out
