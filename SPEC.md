@@ -333,7 +333,10 @@ Conservation (`sd/discover.py`):
    shelf that holds nothing or one item). A level that changed in fewer than 5 steps is no
    stock, and a counter that counted fewer than 5 events carries no balance (on three steps a
    level and a counter coincide by chance as readily as a stock and its flow): such a counter
-   may only complete a balance that counters above the bar carry, and only to exact. The
+   may only complete a balance, and only to exact. The bar is on the balance's evidence, not on
+   each counter: rarer counters alone carry a balance only when together they make it exact in
+   every step and counted at least 5 events between them (a state work is sent back to: three
+   rejections from review, one from the merge and four returns to work). The
    counters are found by a local search on an objective of squared error plus a penalty per
    counter (change one coefficient, or swap one counter for another), run from many starts
    (least squares on all counters rounded to ±1, nothing, each counter alone, the best pairs)

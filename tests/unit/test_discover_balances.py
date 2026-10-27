@@ -213,27 +213,32 @@ def test_another_machines_counter_never_replaces_the_machines_own_balance(tmp_pa
 def test_a_level_and_a_counter_that_coincide_on_a_few_steps_are_no_stock_and_flow(tmp_path):
     # a planner woken three times, each wake counted: the level changes on three steps and the
     # counter moves on the same three. Three coincidences are no conservation law. Nor is a level
-    # that moves six times balanced by two counters of three events each: counters that counted
-    # too few events may complete a balance, never carry one.
+    # that moves four times balanced by two counters of two events each. The bar is on the
+    # balance's evidence, not each counter's (sd.balance): a level that moves six times, balanced
+    # exactly by two counters of three events each, is a stock (six changes, each explained).
     lab = lambda m: {"project": "p", "machine": m}
     pts = []
     for i in range(60 * 60):
         t = T0 + i
         wakes = sum(1 for w in (600, 1500, 2400) if i >= w)
         ups, downs = sum(1 for w in (300, 600, 900) if i >= w), sum(1 for w in (1500, 2100, 2700) if i >= w)
+        few_ups, few_downs = sum(1 for w in (450, 1200) if i >= w), sum(1 for w in (1800, 3000) if i >= w)
         pts += [Point("planner_awake", wakes, t, lab("planner")), Point("planner_wakes_total", wakes, t, lab("planner")),
                 Point("shelf_items", ups - downs, t, lab("shelf")), Point("shelf_put_total", ups, t, lab("shelf")),
-                Point("shelf_taken_total", downs, t, lab("shelf"))]
+                Point("shelf_taken_total", downs, t, lab("shelf")),
+                Point("rack_items", few_ups - few_downs, t, lab("rack")), Point("rack_put_total", few_ups, t, lab("rack")),
+                Point("rack_taken_total", few_downs, t, lab("rack"))]
     store = FileMetrics(tmp_path / "m.jsonl")
     store.write(pts)
     m = discover(store.dump("", {"project": "p"}), start=T0, end=T0 + 3600, step=30)
-    assert m.stocks == [] and m.flows == [], [(s.id, s.evidence) for s in m.stocks]
+    assert [s.id for s in m.stocks] == ["shelf_items"], [(s.id, s.evidence) for s in m.stocks]
+    assert {(f.id, f.src, f.dst) for f in m.flows} == {("shelf_put_total", None, "shelf_items"), ("shelf_taken_total", "shelf_items", None)}
+    assert m.stock("shelf_items").evidence["exact_steps"] == 1.0
     why = m.discovery["left_out"]
     assert "changed in only 3 steps" in why['planner_awake{machine="planner"}'], why
     assert "only 3 events" in why['planner_wakes_total{machine="planner"}'], why
-    assert why['shelf_items{machine="shelf"}'].startswith("no counters balance it"), why
-    assert "too few to fit a net flow" in why['shelf_items{machine="shelf"}'], why
-    assert "only 3 events" in why['shelf_put_total{machine="shelf"}'] and "only 3 events" in why['shelf_taken_total{machine="shelf"}']
+    assert "changed in only 4 steps" in why['rack_items{machine="rack"}'], why
+    assert "only 2 events" in why['rack_put_total{machine="rack"}'] and "only 2 events" in why['rack_taken_total{machine="rack"}']
 
 
 def test_an_event_counter_splits_into_the_levels_own_machines_counters_first(tmp_path):

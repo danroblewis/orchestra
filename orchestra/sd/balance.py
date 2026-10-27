@@ -9,8 +9,11 @@ step earns back most of one penalty (``COMPLETION``): the rare counter that make
 refund among a hundred orders) is then worth keeping, where alone it could never pay its way. A
 counter that counted fewer than ``MIN_EVENTS`` events is not searched: on three events a level
 and a counter coincide by chance as readily as a stock and its flow. It may only complete a
-balance that counters above the bar carry (``complete``), and counters below the bar alone are
-no balance.
+balance (``complete``), exactly. The bar is on the evidence for the balance, not on each counter:
+counters below the bar alone carry a balance only when together they make it exact in every step
+and counted at least ``MIN_EVENTS`` between them (a state work is sent back to, three rejections
+from review and one from the merge, four returns to work: eight changes, each explained, and no
+counter moving when the level did not). Short of exact, they are no balance.
 
 The search is cheap because it runs on the counters' Gram matrix (every pair's dot product): the
 error after any one change is a few multiplications, not a pass over the steps. That pays for
@@ -239,8 +242,8 @@ def balance(level, counters: list, ls: LeastSquares | None = None, steps: list[i
         if (len(coef), sorted(coef.items())) == before:
             break
     coef, resid, sse = complete(coef, resid, sse, xs, rare)
-    if not any(j in live for j in coef):              # rare counters alone carry no balance
-        coef, resid, sse = {}, list(y), yy
+    if not any(j in live for j in coef) and not (sse < EXACT_SSE and sum(sum(abs(v) for v in xs[j]) for j in coef) >= MIN_EVENTS):
+        coef, resid, sse = {}, list(y), yy            # rare counters alone: a balance only when exact on enough events between them
     chosen = [(counters[j], sign) for j, sign in sorted(coef.items())]
     exact = sum(1 for r in resid if abs(r) <= 0.5) / len(resid)
     return chosen, 1 - sse / sst, exact
