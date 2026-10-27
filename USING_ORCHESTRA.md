@@ -1186,6 +1186,7 @@ orchestra sd show [--version N]                                                #
 orchestra sd versions                                                          # every saved version
 orchestra sd fit [--step 1]                                                    # refit the current model's flows
 orchestra sd observability [--json]                                            # which stocks what is measured determines
+orchestra sd whatif --flow F --scale 1.5 [--horizon 1h] [--stocks A,B]         # what a change would do (read only; below)
 ```
 
 `orchestra sd observability` (and `/api/dynamics/observability`) answers, for the latest model:
@@ -1210,6 +1211,25 @@ observed rate against its equation, each machine hypothesis with why, and a simu
 says what the window and step are, lists what was left out and why, and steps through the saved
 versions. **Rediscover now** reruns discovery in the background, optionally with another
 strategy for that run.
+
+**What if.** Ask the model what a change would do before making it:
+
+```bash
+orchestra sd whatif --flow bakery_orders_assigned_total --scale 1.5 --horizon 30m \
+    --stocks bakery_orders_waiting,bakery_shelf_items --bound bakery_orders_waiting=:12
+```
+
+It runs the model forward from the levels now, as it is and with the change, and prints each
+stock now and at the horizon: baseline, with the change, and the difference, each with a band
+(the 10th–90th percentile of 24 runs with every flow's rate perturbed by the error its fit
+records). Below the table: the flows' rates now against what was seen, where a stock reaches 0 or
+leaves a `--bound`, and what is **not trusted here** and why (a declared or net-flow equation, few
+events, low R², a stock the model's own run misses, a run outside the observed range). Other
+changes: `--add C` (per the model's time unit) on a flow, `--set-stock S=LEVEL`,
+`--input NAME=VALUE`, `--input-scale NAME=FACTOR`, `--param FLOW.k=VALUE`; `--version N` asks a
+saved version instead of the latest discovery; `--json` prints what `POST /api/dynamics/whatif`
+returns for the same question (body: `{"interventions": [{"kind": "scale_flow", "flow": "…",
+"factor": 1.5}], "stocks": […], "horizon_s": 1800}`). It only reads: nothing is saved or written.
 
 The other pages: **Machines** (section 5.6, with the event map and each machine's dialog),
 **Instruments** (section 3: each instrument's health and log), **Core** (the host and its processes, the bus and the store probed live, a series catalogue, a

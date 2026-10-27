@@ -102,6 +102,8 @@ def cmd_sd(args) -> int:
             print(f"  {k}: {why}")
         print(f"saved as version {r.version}" if r.version else "structure unchanged: no new version")
         args.version = None
+    if args.action == "whatif":
+        return cmd_whatif(args, project, models)
     if args.action == "observability":
         return _observability(project, models, args)
     if args.action == "versions":
@@ -186,6 +188,53 @@ def _observability(project: Project, models, args) -> int:
         return 0
     print(f"{m.name} ({which})")
     print("\n".join(lines(r)))
+    return 0
+
+
+def cmd_whatif(args, project, models) -> int:
+    """What the model says a change would do (sd/whatif.py): read only; nothing is saved or written."""
+    import json
+
+    from .config import parse_duration
+    from .metrics import for_project as metrics_for
+    from .sd import whatif_report as report
+    from .sd.strategies import sd_installed
+    from .sd.whatif import load, what_if
+    from .sources.catalogue import Catalogue
+    from .web.background import history, stock_step
+
+    if not sd_installed():
+        print("whatif needs orchestra[sd] installed", file=sys.stderr)
+        return 2
+    try:
+        ivs = report.interventions(args.flow, args.scale, args.add, args.set_stock, args.input, args.input_scale, args.param)
+        bounds = report.bounds(args.bound)
+        horizon_s = parse_duration(args.horizon, 3600.0)
+    except (ValueError, ConfigError) as e:
+        print(f"orchestra sd whatif: {e}", file=sys.stderr)
+        return 2
+    model, label = load(models, args.version)
+    if model is None:
+        print("no model yet")
+        return 1
+    store = metrics_for(project)
+    cat = Catalogue(project, store)
+    step = stock_step(project.config.discovery_step)
+
+    def raw(ref, start, end):
+        if ref.source and ref.source != "own":
+            return cat.reader(start, end, step)(ref)
+        return store.raw(ref.name, ref.labels, start=start, end=end)
+
+    h = history(model, raw, time.time(), step)
+    try:
+        r = what_if(model, h, ivs, stocks=[s for s in (args.stocks or "").split(",") if s] or None,
+                    horizon_s=horizon_s, step_s=args.step_s, members=args.members, seed=args.seed,
+                    bounds=bounds, label=label)
+    except ValueError as e:
+        print(f"orchestra sd whatif: {e}", file=sys.stderr)
+        return 2
+    print(json.dumps(r) if args.json else "\n".join(report.table(r)))
     return 0
 
 
@@ -285,14 +334,30 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(fn=cmd_metrics)
 
     s = sub.add_parser("sd", help="the system dynamics model: discover it from the metrics, show it, fit it, list its versions, "
-                       "say which stocks what is measured determines")
-    s.add_argument("action", choices=["show", "fit", "versions", "discover", "observability"])
+                       "say which stocks what is measured determines, ask what a change would do (whatif)")
+    s.add_argument("action", choices=["show", "fit", "versions", "discover", "observability", "whatif"])
     s.add_argument("--minutes", type=float, help="for discover: the window, in minutes back from now (default: [discovery] window)")
-    s.add_argument("--step-s", dest="step_s", type=float, help="for discover: seconds per step (default: [discovery] step)")
+    s.add_argument("--step-s", dest="step_s", type=float, help="for discover: seconds per step (default: [discovery] step); "
+                   "for whatif: the simulation's step (default 15 s, longer for long horizons)")
     s.add_argument("--strategy", help="for discover: conservation or an SD Lab strategy (default: [discovery] strategy)")
-    s.add_argument("--version", type=int, help="for show, fit and observability: this past version (default: the current one; for observability, the latest discovery)")
+    s.add_argument("--version", type=int, help="for show, fit, observability and whatif: this past version (default: the current one; "
+                   "for observability and whatif, the latest discovery)")
     s.add_argument("--step", type=float, default=1.0, help="for fit: hours per step (default 1)")
-    s.add_argument("--json", action="store_true", help="for observability: the report as JSON")
+    s.add_argument("--json", action="store_true", help="for observability and whatif: the answer as JSON, as the web API returns it")
+    w = s.add_argument_group("whatif", "what the model says a change would do, against no change (read only)")
+    w.add_argument("--flow", help="the flow --scale and --add change")
+    w.add_argument("--scale", type=float, help="multiply the flow's rate by this")
+    w.add_argument("--add", type=float, help="add this much per time unit to the flow's rate")
+    w.add_argument("--set-stock", dest="set_stock", action="append", default=[], metavar="STOCK=LEVEL", help="start a stock at this level")
+    w.add_argument("--input", action="append", default=[], metavar="NAME=VALUE", help="hold a measured input at this value")
+    w.add_argument("--input-scale", dest="input_scale", action="append", default=[], metavar="NAME=FACTOR",
+                   help="hold a measured input at its last value times this")
+    w.add_argument("--param", action="append", default=[], metavar="FLOW.PARAM=VALUE", help="set one number of a flow's rate")
+    w.add_argument("--horizon", default="1h", help="how far ahead (a duration: 30m, 2h; default 1h)")
+    w.add_argument("--stocks", help="comma-separated stock ids to report (default: all)")
+    w.add_argument("--bound", action="append", default=[], metavar="STOCK=LO:HI", help="report where a stock leaves these bounds")
+    w.add_argument("--members", type=int, default=24, help="runs in the uncertainty band (default 24)")
+    w.add_argument("--seed", type=int, default=0, help="the band's random seed (default 0)")
     s.set_defaults(fn=cmd_sd)
 
     s = sub.add_parser("sources", help="other time-series stores ([[sources]]): check them, infer what to read, preview a query")

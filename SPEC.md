@@ -492,6 +492,25 @@ are named, and so is every flow taken as an outside input because it has no equa
 stock determined through a counter is determined only as far as that flow's equation, a hypothesis,
 is right.
 
+**What if** (`sd/whatif.py`, goal G5): the model asked about a change. From the measured levels
+now, the model is run `horizon` ahead twice, stepped as the Dynamics page's projection is: as it
+is (the baseline) and with **interventions** applied from now: a flow's rate scaled or added to, a
+stock's level set, a measured input set or scaled, one number of a flow's rate set. The answer
+gives, per stock, both trajectories and their difference, each as the run with the fitted numbers
+and a **band** (10th–90th percentile of runs with every flow's rate multiplied by `exp(z · rel)`,
+`rel` the relative error its fit records: `sqrt(dispersion / events)` for a Poisson fit, the slope's
+relative error at its R² for a least-squares net flow, `1/sqrt(events)` but at least 0.1 for an SD
+Lab rate, 0.5 assumed for a declared equation; the same draws for both runs; `sd/trust.py`). The
+band is the parameters' uncertainty only. **Limits:** where a stock reaches 0 (the floor: its
+outflows are cut to what it holds) or leaves bounds the caller gives, in the central run and in
+what share of the runs, and whether the change brings it. **Not trusted here**, with the reason:
+a flow that is declared, a net flow, replayed, fitted on few events (a stock is not condemned by a
+flow carrying under a tenth of its busiest one), over a short time or at low R²; a stock touched
+by one, hidden, without a level now, or whose model run since the era began misses its measured
+level by more than the level's own spread (the stand-in for a validation bar); and a run that
+leaves the observed range (extrapolation). It is a reading of the model: it saves no version and
+writes no metric. `orchestra sd whatif` and `POST /api/dynamics/whatif` (§10) give the same answer.
+
 ### 4.4 Other stores (sources)
 
 `orchestra/sources/`. A project may read series that live in other time-series stores without
@@ -799,6 +818,7 @@ machines may keep its own settings here (other packages' sections).
 | `orchestra events info\|endpoint [--env]\|copy --to URL` | The event log; where the events endpoint is, and its token (§3.1) |
 | `orchestra metrics backfill\|series` | Replay the log into event counters; list series |
 | `orchestra sd discover [--strategy S] [--minutes N] [--step-s S]\|show\|fit\|versions` | The model: discover it from the metrics, show, refit, list versions |
+| `orchestra sd whatif --flow F --scale X [--horizon 2h] [--stocks A,B] [--json]` | What the model says a change would do (§4.3, "What if"); read only |
 | `orchestra sources check\|infer\|preview QUERY` | Other stores (§4.4): probe them, infer what to read, read a query's fan-out |
 
 ---
@@ -856,7 +876,11 @@ The model's graph frames **the system**. There is one system: every stock and au
 inside it, and only the environment (the clouds flows come from and go to) is outside, so what
 crosses the frame is what the model does not explain. Subsystems (perhaps feedback loops in boxes
 of their own) are a later question. A **rediscover now** button reruns discovery in the background (an observation: it
-re-reads the metrics and may save a version, as the host does every 5 minutes).
+re-reads the metrics and may save a version, as the host does every 5 minutes). **What if** (`POST /api/dynamics/whatif`,
+§4.3) is an API, not a page: a JSON question (interventions, stocks, horizon) answered from the
+web server's cached history with the same JSON `orchestra sd whatif --json` prints. It is an
+observation, not a change (AGENTS.md rule 9): it changes no machine, saves no version and writes
+no metric.
 
 Both graphs are drawn by one renderer (`static/netgraph.js`). The Dynamics graph is laid out by
 ELK's layered algorithm (`static/sd-layout.js`: the system as a box of its own, in layers along
@@ -934,7 +958,8 @@ orchestra/
   sd/        model, store, fit, series and live (sampling, when a series was written), balance,
              collinear and restate (a level's balance), ends, inputs, drivers (which stocks may
              drive a flow), discover (conservation), attribute (machines associated with flows,
-             as hypotheses), rates, strategies, simulate, rediscover,
+             as hypotheses), rates, strategies, simulate, rediscover, whatif (and trust,
+             whatif_report: a change's prediction, its band and what is not trusted),
              provenance (where each series in a model came from), linearise and observability
              (which stocks what is measured determines)
   sdlab/     SD Lab's discovery research: ~70 strategies (needs the sd extra)

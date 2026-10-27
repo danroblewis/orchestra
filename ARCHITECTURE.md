@@ -645,7 +645,7 @@ Both backends refuse points stamped more than 60 s in the future. The conformanc
 | Extra | What it adds |
 |---|---|
 | `bus-redis`, `bus-rabbitmq`, `bus-kafka`, `bus` | Client libraries for the server buses. |
-| `sd` | numpy, scipy, numba, highspy, sympy: SD Lab's strategies, the Dynamics page's simulation (`sd/simulate.py`) and the observability report (`sd/observability.py`, numpy only). |
+| `sd` | numpy, scipy, numba, highspy, sympy: SD Lab's strategies, the Dynamics page's simulation (`sd/simulate.py`) the observability report (`sd/observability.py`, numpy only) and "what if" (`sd/whatif.py`). |
 | `sd-research` | More libraries for a few research strategies. |
 | `dev` | pytest, httpx, ruff. |
 
@@ -671,6 +671,15 @@ so most page requests do no expensive work:
 | **Instruments** (`/instruments`) | What measures the system, apart from the machines: each `[[collect]]`, `[[scrape]]` and `[[sources]]` entry (and a plugin's), with its kind (script, URL, source), target, interval, last write and points, failures, last error and log. Read from the runtime record's `instruments` and `orchestra.toml`, never by running an instrument. `/api/instruments`, `/api/instruments/<name>/log`. | `web/instruments.py`, `static/instruments.html` |
 | **Dynamics** (`/dynamics`) | The model as a stock-and-flow graph, with feedback loops marked balancing or reinforcing, history charts, each stock's and flow's drawer (a flow's lists each machine hypothesis with its why, or "no machine associated yet"), a flows table with "machines (hypotheses)" and their confidence, a simulation from the start of the era and a projection forward, and stepping through saved versions. "Rediscover now" runs discovery in the background. | `web/dynamics.py`, `sd/simulate.py`, `static/sd-graph.js`, `static/sd-layout.js`, `static/layout-worker.js` |
 
+**What if** (`POST /api/dynamics/whatif`, `sd/whatif.py`, `sd/trust.py`) answers "if this
+changed, what would these stocks do?" from the same cached history: the model run forward from the
+measured levels now, as it is and with the interventions (a flow scaled or added to, a stock's
+level, an input, a parameter), with a band from the fitted equations' recorded error, the floors
+and bounds the runs meet, and what is not trusted. It is an observation, not a change (rule 9):
+a POST only because the question is a JSON body; it saves no version and writes no metric. Its
+callers are machines' tools (the agents' comes later, in `~/orchestra-agents`) and
+`orchestra sd whatif`.
+
 The Dynamics page reads the host's cached discovery (`model/discovered.json`) or a saved version.
 It never discovers on request, except when the "rediscover now" button is pressed. The Core page
 is built to keep working when the rest of Orchestra does not: `web/core.py` and
@@ -692,6 +701,7 @@ configuration, and every probe runs in a thread pool with a time limit.
 | `orchestra sd discover [--strategy --minutes --step-s]` | Runs discovery now (same code path as the host). | `model/` |
 | `orchestra sd show [--version]` | Prints the model with current levels. | nothing |
 | `orchestra sd versions` | Lists the saved versions. | nothing |
+| `orchestra sd whatif [--flow --scale --add --set-stock --input --input-scale --param --horizon --stocks --bound --version --json]` | What the model says a change would do, against no change: a table (or the endpoint's JSON) with each stock's band, the limits met and what is not trusted (`sd/whatif.py`, `sd/whatif_report.py`). | nothing |
 | `orchestra sd fit [--version --step]` | Refits every counted flow over the whole history and saves a version. | `model/` |
 | `orchestra sd observability [--version --json]` | Which stocks what is measured determines, which need another instrument, and why (`sd/observability.py`). | nothing |
 | `orchestra sources check\|infer\|preview QUERY` | Probes the sources, runs an inference round, previews a query's fan-out. | `sources/` cache on infer |
@@ -736,7 +746,7 @@ divided.
 | 6 | Every equation records its origin | `Equation.origin` is a required field (`sd/model.py`). Conservation writes `fitted`/`poisson-mle`, the net-flow layer `fitted`/`least-squares`, and SD Lab `discovered`/`sdlab:<strategy>`. `sd/attribute.py` associates machines with flows only as inferred hypotheses with evidence and confidence (`flow.evidence["machines"]`), never from a label or a declaration; `Machine.attributed` holds flow ids as hypotheses. |
 | 7 | Stocks are discovered, not configured; measurements are not machines | `Config` has no stock or flow bindings. `sd/discover.py` decides from the data alone. A series' declared kind (counter or level, from a `[[series]]` definition) is the only hint it takes. Instruments label points `instrument=<name>` (`collect/round.py`), announce nothing, and are shown on the Instruments page. A writer label is provenance only (`sd.series.written_by`). |
 | 8 | The core stays up | `web/core.py` and `web/core_explore.py` import only the bus, the metrics store, the runtime record and the configuration. Every probe runs under `TIMEOUT` (4 s). Plugins that fail are left out. |
-| 9 | Humans talk only to the Supervisor; UI and CLI read-only except observations | The web app has two POST routes: "rediscover" (an observation) and the Core page's bus probe. Any path that changes machines belongs to a plugin. The events endpoint is the bus reached over HTTP, for machines, as the Python helper is; the web UI and CLI gain no write from it (`events endpoint` only prints where it is). |
+| 9 | Humans talk only to the Supervisor; UI and CLI read-only except observations | The web app has three POST routes: "rediscover" and "what if" (observations: what if changes nothing at all) and the Core page's bus probe. Any path that changes machines belongs to a plugin. The events endpoint is the bus reached over HTTP, for machines, as the Python helper is; the web UI and CLI gain no write from it (`events endpoint` only prints where it is). |
 | 10 | One package, no path hacks | `pyproject.toml` packages only `orchestra`. No module changes `sys.path`. `orchestra/sdlab` is excluded from ruff (`extend-exclude`) and its README records its source commit. |
 
 **Known departures** (as of `828da6d0`). These are places where the code goes further than the
