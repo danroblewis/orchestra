@@ -34,8 +34,10 @@ without. Its flows are then merged with the counters:
   or out of it is dropped and recorded (a strategy that ignores ``known`` invents them).
 
 Its flows into or out of a stock with a fitted net flow take the place of conservation's (whose
-ids stay in the stock's evidence, ``conservation_fit``), as SD Lab's richer forms of the same net
-flow. Rates are per the model's time unit; SD Lab's are per step, and are scaled (``sd.rates``).
+ids stay in the stock's evidence, ``conservation_fit``) only when they predict the level's changes
+better than the fitted net flow on held-out halves of the window (``sd.rival``); otherwise they are
+dropped, the net flow's flows stay, and the stock's evidence says why (``sdlab_rejected``). Rates
+are per the model's time unit; SD Lab's are per step, and are scaled (``sd.rates``).
 
 Strategies are named in ``[discovery] strategy`` in ``orchestra.toml``, with ``[discovery.options]``
 passed to the strategy as they are. A ``deadline`` (seconds) becomes the time budget the
@@ -154,6 +156,40 @@ def read_by(base: Model, ids: list[str], inputs: dict[str, list[float]]) -> dict
     return {k: v for k, v in inputs.items() if k in names}
 
 
+def _judged(base: Model, net: set[str], sd_flows: list[dict], parts: list, coarse: float, inputs: dict, by_key: dict,
+            dropped: list[dict]) -> list[dict]:
+    """SD Lab's flows less those into or out of a stock with a fitted net flow that predict its
+    level worse than that net flow on held-out data (``sd.rival``); each dropped flow is recorded
+    in ``dropped``, and the stock's evidence says why (``sdlab_rejected``)."""
+    from .rival import judge
+
+    def values_of(ref: str | None) -> list[float] | None:
+        if ref is None:
+            return None
+        if ref.startswith("input:"):
+            if ref[6:] in inputs:
+                return inputs[ref[6:]]
+            r = (base.discovery.get("inputs") or {}).get(ref[6:])
+            key = series_key(r["name"], r.get("labels") or {}) if r else None
+        else:
+            st = next((x for x in base.stocks if x.id == ref and x.series), None)
+            key = series_key(st.series.name, st.series.labels) if st else None
+        return by_key[key].values if key in by_key else None
+    group_of = {sid: (ids, run_g, inputs_g) for ids, _, run_g, _, inputs_g in parts for sid in ids}
+    for sid in sorted(net):
+        mine = [sf for sf in sd_flows if sid in (sf.get("from"), sf.get("to"))]
+        if not mine or sid not in group_of:
+            continue
+        ids, run_g, inputs_g = group_of[sid]
+        st = base.stock(sid)
+        why = judge(st, mine, ids, run_g, inputs_g, coarse, values_of(st.evidence["net_flow"].get("driver")))
+        if why:
+            st.evidence["sdlab_rejected"] = why
+            dropped += [{"from": sf.get("from"), "to": sf.get("to"), "why": f"{sid}: {why}"} for sf in mine]
+            sd_flows = [sf for sf in sd_flows if sf not in mine]
+    return sd_flows
+
+
 def discover_with(dump, *, start: float, end: float, step: float, strategy: str = CONSERVATION,
                   options: dict | None = None, time_unit: str = "minute", deadline: float | None = None,
                   kinds: dict | None = None) -> Model:
@@ -233,6 +269,7 @@ def discover_with(dump, *, start: float, end: float, step: float, strategy: str 
         if "net_flow_of" not in bf.evidence:                   # a counter's flow, which SD Lab's may be matched to
             by_ends.setdefault((bf.src, bf.dst), []).append(bf)
     net = {st.id for st in given if "net_flow" in st.evidence}
+    sd_flows = _judged(base, net, sd_flows, parts, coarse, inputs, by_key, across)
     replaced = {e for sf in sd_flows for e in (sf.get("from"), sf.get("to")) if e in net}
     sd_by_ends: dict[tuple, list[dict]] = {}
     for sf in sd_flows:

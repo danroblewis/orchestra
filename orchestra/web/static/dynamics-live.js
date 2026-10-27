@@ -93,6 +93,20 @@ const Live = (() => {
   // the stock's drawer: what it is, its level measured and as the equations run it (since the era
   // began, and projected ahead), and the flows that fill and drain it
   const horizon = () => { try { return +localStorage.getItem("orchestra.dyn.horizon") || 30; } catch (e) { return 30; } };
+  // a stock no counters balance: the equation the model runs (SD Lab's flows when they predicted
+  // the level better on held-out data, else the fitted net flow), the other as the alternative,
+  // and every driver said to be a correlation no experiment has tested
+  function netFlowRows(s, ev, io) {
+    const nf = ev.net_flow, fit = `R² ${nf.r2} over ${nf.stretches} stretches of ${ago(nf.stretch_s)} · AIC ${nf.aic} against ${nf.aic_constant} for a steady drift · ${nf.forms_tried} forms tried`;
+    const untested = [...io.in, ...io.out].some((f) => SDGraph.correlational(MODEL, f)) ? `<br><span class="muted">${esc(SDGraph.UNTESTED)}</span>` : "";
+    if (ev.conservation_fit) {
+      const eqs = [...io.in.map((f) => "+ " + eqText(f)), ...io.out.map((f) => "− " + eqText(f))].map((x) => `<span class="num">${esc(x)}</span>`).join("<br>");
+      return `<div>equation</div><div>SD Lab's flows, which predicted it better on held-out data:<br>${eqs}${untested}</div>
+        <div>alternative</div><div class="muted">least squares alone fitted <span class="num">${esc(nf.form)}</span> (${fit}), not used</div>`;
+    }
+    return `<div>net flow</div><div>no counters measure it: fitted as <span class="num">${esc(nf.form)}</span><br><span class="muted">${fit}</span>${untested}
+      ${ev.sdlab_rejected ? `<br><span class="muted">SD Lab's flows not used: ${esc(ev.sdlab_rejected)}</span>` : ""}</div>`;
+  }
   function openStock(id) {
     const s = MODEL.stocks.find((x) => x.id === id), io = flowsOf(id), ev = s.evidence || {};
     const rate = (f) => `${fmt(recentRate(f.id))}${per()}`;
@@ -111,7 +125,7 @@ const Live = (() => {
       ${s.series && s.series.traffic ? `<div>counted</div><div>${esc(trafficText(s.series.traffic))}</div>` : ""}
       ${s.series && resOf(MODEL.discovery, keyOf(s.series)) ? `<div>resolution</div><div>${esc(resOf(MODEL.discovery, keyOf(s.series)))} <span class="muted">(its usual gap between real points, and how it was read between them)</span></div>` : ""}
       ${ev.balance ? `<div>balance</div><div class="num">Δ = ${ev.balance.map((b) => `${b.sign > 0 ? "+" : "−"} ${esc(b.series)}`).join(" ")}<br><span class="muted">R² ${ev.balance_r2} · exact in ${Math.round(100 * ev.exact_steps)}% of steps${ev.balance_r2_level != null ? ` · judged on the traffic through it (R² on the level itself ${ev.balance_r2_level})` : ""}</span></div>` : ""}
-      ${ev.net_flow ? `<div>net flow</div><div>no counters measure it: fitted as <span class="num">${esc(ev.net_flow.form)}</span><br><span class="muted">R² ${ev.net_flow.r2} over ${ev.net_flow.stretches} stretches of ${ago(ev.net_flow.stretch_s)} · AIC ${ev.net_flow.aic} against ${ev.net_flow.aic_constant} for a steady drift · ${ev.net_flow.forms_tried} forms tried</span></div>` : ""}</div>
+      ${ev.net_flow ? netFlowRows(s, ev, io) : ""}</div>
       <h4 style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">Level: measured, as the equations run it, and projected
         <label class="muted" style="font-weight:400;font-size:11.5px">project <input id="sim-h" type="number" min="1" max="1440" value="${horizon()}" style="width:58px"> min ahead</label></h4>
       <div id="sim-chart"><div class="muted">running the equations…</div></div><div id="sim-note" class="muted" style="font-size:11.5px"></div>
@@ -145,7 +159,7 @@ const Live = (() => {
     const alts = Object.entries(q).filter(([k]) => k.startsWith("aic_")).map(([k, v]) => `<tr><td>${esc(k.slice(4).replace(/_/g, " "))}</td><td class="num">${fmt(v)}</td><td class="num">${fmt(v - q.aic)}</td></tr>`).join("");
     openDrawer(`<h3>${esc(flowName(f))} <span class="tag">flow</span></h3>
       <div class="def"><div>moves</div><div>${esc(f.from ? stockName(f.from) : "outside")} → ${esc(f.to ? stockName(f.to) : "outside")}</div>
-      <div>equation</div><div class="num">${esc(eqText(f))}</div><div>machine</div><div>${esc(f.machine || "none")}</div>
+      <div>equation</div><div class="num">${esc(eqText(f))}${SDGraph.correlational(MODEL, f) ? `<div class="muted" style="font-family:inherit">${esc(SDGraph.UNTESTED)}</div>` : ""}</div><div>machine</div><div>${esc(f.machine || "none")}</div>
       <div>fit</div><div class="num">${esc(e.origin || "")} by ${esc(e.method || "")} · ${esc(e.form || "")} · ${q.events ?? 0} events${q.live_minutes ? ` over ${q.live_minutes} min` : ""}${q.dispersion != null ? ` · dispersion ${fmt(q.dispersion)}` : ""}</div>
       ${(f.measured_by || []).length > 1 ? `<div>measured by</div><div class="num">${f.measured_by.map((c) => esc(c.name)).join(" + ")}</div>` : ""}
       <div>counter</div><div class="num">${esc(f.counter ? f.counter.name : "—")}</div>

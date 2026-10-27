@@ -257,12 +257,26 @@ function leftOut(lo) {
     return `<details ${g.startsWith("changed") ? "open" : ""}><summary>${esc(g)} <span class="count">${groups[g].length}</span></summary><table class="dt">${rows}</table></details>`;
   }).join("");
 }
+// a stock no counters balance: its net flow fitted by least squares, or SD Lab's flows where they
+// predicted the level better on held-out data (conservation_fit names the fit they replaced)
+function netFlowLine(s, ev) {
+  const nf = ev.net_flow, fit = `R² ${nf.r2.toFixed(2)} over ${nf.stretches} stretches of ${ago(nf.stretch_s)}`;
+  const driver = nf.driver ? `<div class="muted">driven by ${esc(SDGraph.readName(MODEL, nf.driver))}: ${esc(SDGraph.UNTESTED)}</div>` : "";
+  if (ev.conservation_fit) {
+    const mine = MODEL.flows.filter((f) => f.to === s.id || f.from === s.id)
+      .map((f) => `<span class="ty">${f.to === s.id ? "+" : "−"} ${esc(eqText(f))}</span>`).join(" ");
+    return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">no counters; SD Lab's flows, which predicted it better on held-out data:</span> ${mine}
+      <div class="muted">least squares alone fitted ${esc(nf.form)} (${fit}), not used</div>${MODEL.flows.some((f) => (f.to === s.id || f.from === s.id) && SDGraph.correlational(MODEL, f)) ? `<div class="muted">${esc(SDGraph.UNTESTED)}</div>` : ""}</div>`;
+  }
+  return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">no counters; its net flow fitted as</span> <span class="ty">${esc(nf.form)}</span> <span class="muted">${fit}</span>${driver}
+    ${ev.sdlab_rejected ? `<div class="muted">SD Lab's flows not used: ${esc(ev.sdlab_rejected)}</div>` : ""}</div>`;
+}
 function tables() {
   const m = MODEL, byMachine = Object.fromEntries(m.machines.map((x) => [x.id, x]));
   $("nflows").textContent = m.flows.length; $("nstocks").textContent = m.stocks.length; $("nmachines").textContent = m.machines.length;
   $("flows").innerHTML = `<tr><th>flow</th><th>equation</th><th>fit</th><th>machine</th></tr>` + m.flows.map((f) => { const e = f.current, q = (e && e.quality) || {};
     const end = (id) => (id ? stockName(id) : "outside");
-    return `<tr><td>${esc(flowName(f))}<div class="muted" style="font-size:11px">${esc(end(f.from))} → ${esc(end(f.to))}</div></td><td class="num">${esc(eqText(f))}${e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}</td>
+    return `<tr><td>${esc(flowName(f))}<div class="muted" style="font-size:11px">${esc(end(f.from))} → ${esc(end(f.to))}</div></td><td class="num">${esc(eqText(f))}${e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}${SDGraph.correlational(m, f) ? `<div class="muted" style="font-family:inherit;font-size:11px">${esc(SDGraph.UNTESTED)}</div>` : ""}</td>
       <td>${e ? `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span> <span class="muted num">${esc(e.form)} · ${q.events ?? 0} ev · disp ${(q.dispersion ?? 0).toFixed(1)}</span>` : '<span class="muted">—</span>'}</td>
       <td>${f.machine ? `<span class="mdot" style="--c:${mcolor(f.machine)}"></span>${esc((byMachine[f.machine] || {}).name || f.machine)}` : '<span class="muted">unattributed</span>'}</td></tr>`; }).join("");
   $("stocks").innerHTML = `<tr><th>stock</th><th>now</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr><td>${stockHead(s.id)}</td><td class="num">${m.levels[s.id] ? m.levels[s.id].v + " " + esc(s.unit) : "—"}</td>
@@ -275,7 +289,7 @@ function tables() {
     + (d.end && d.step ? `<div class="muted" style="font-size:12px;margin-bottom:6px">${plainWindow(d.end - d.start, d.step)}</div>` : "") + sourcesNote(d)
     + m.stocks.map((s) => { const ev = s.evidence || {};
       if (ev.balance) return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">changes by</span> ${ev.balance.map((b) => `<span class="ty">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join(" ")} <span class="muted">R² ${ev.balance_r2.toFixed(3)} · exact in ${Math.round(100 * ev.exact_steps)}% of steps</span></div>`;
-      if (ev.net_flow) return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">no counters; its net flow fitted as</span> <span class="ty">${esc(ev.net_flow.form)}</span> <span class="muted">R² ${ev.net_flow.r2.toFixed(2)} over ${ev.net_flow.stretches} stretches of ${ago(ev.net_flow.stretch_s)}</span></div>`;
+      if (ev.net_flow) return netFlowLine(s, ev);
       return ""; }).join("")
     + `<h3>Left out <span class="count">${Object.keys(d.left_out).length} of ${d.looked_at ?? "?"}</span></h3>` + leftOut(d.left_out) : '<div class="muted">This version was declared, not discovered.</div>';
   $("sum").innerHTML = `${m.stocks.length} stocks · ${m.flows.length} flows (${fitted} fitted) · ${m.machines.length} machines${m.stored ? "" : ' · <span class="stale">not stored yet: <code>orchestra sd declare</code></span>'}${m.levels_error ? ` · <span class="stale">levels: ${esc(m.levels_error)}</span>` : ""}`;

@@ -123,6 +123,15 @@
     return JSON.stringify(p);
   }
 
+  // a flow into or out of a stock no counters balance, whose rate reads another series: its driver
+  // was found by fitting the level's changes, a correlation that no experiment has tested
+  const UNTESTED = "fitted from correlation; untested: no experiment has moved its driver";
+  function correlational(m, f) {
+    const e = f && f.current; if (!e || !(e.inputs || []).some((x) => x !== f.from && x !== f.to)) return false;
+    const net = (id) => id && m.stocks.some((s) => s.id === id && s.evidence && s.evidence.net_flow);
+    return !!((f.evidence && f.evidence.net_flow_of) || net(f.from) || net(f.to));
+  }
+
   // the sign of each thing a rate reads: + more of it, more flow; − more of it, less flow; ~ unknown
   function readsWithSign(m, f) {
     const e = f.current; if (!e) return [];
@@ -200,5 +209,5 @@
     return { nodes, edges, causal, flowEdge, flows, acc };
   }
 
-  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, nice, num };
+  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, nice, num, correlational, UNTESTED };
 });

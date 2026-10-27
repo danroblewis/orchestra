@@ -67,13 +67,20 @@ def _bakery_with_gauges(tmp_path, minutes=60):
 
 
 def _with_a_cooling_kiln(store, start, end):
-    """A kiln cooling toward the room after a firing, its temperature written every 30 s and no
-    counter of it: a stock by its fitted net flow (it loses heat in proportion to how hot it is)."""
+    """A kiln cooling after a firing, its temperature written every 30 s and no counter of it: a
+    stock by its fitted net flow. It loses heat faster the hotter it is (2e-5 × temp² a step), which
+    the net flow's straight line in the level follows only roughly."""
     rng, temp, pts = random.Random(9), 900.0, []
     for i in range(int((end - start) // 30) + 1):
         pts.append(Point("kiln_temperature_celsius", round(temp, 2), start + 30 * i, {"project": "p", "machine": "kiln"}))
-        temp += 0.03 * (20 - temp) + rng.gauss(0, 0.5)
+        temp += -2e-5 * temp * temp + rng.gauss(0, 0.5)
     store.write(pts)
+
+
+# what an SD Lab strategy that found the kiln's law would answer: an outflow in proportion to the
+# temperature, times the temperature (a linear effect of the kiln on its own outflow)
+KILN_LAW = {"from": "kiln_temperature_celsius", "to": None, "rate": {"form": "proportional", "stock": "kiln_temperature_celsius", "k": 0.02},
+            "effects": [{"stock": "kiln_temperature_celsius", "shape": "linear", "normal": 1000, "min": 0, "max": 10}]}
 
 
 def _every_measured_stock(monkeypatch):
@@ -102,15 +109,32 @@ def test_sdlab_is_given_the_stocks_no_counters_balance(tmp_path, monkeypatch):
     start, end = simulate(store, minutes=60)
     _with_a_cooling_kiln(store, start, end)
     seen = {}
-    flows = [{"from": "kiln_temperature_celsius", "to": None, "rate": {"form": "proportional", "stock": "kiln_temperature_celsius", "k": 0.3}}]
-    monkeypatch.setattr("orchestra.sd.strategies.run_strategy", _fake(seen, flows))
+    monkeypatch.setattr("orchestra.sd.strategies.run_strategy", _fake(seen, [KILN_LAW]))
     m = discover_with(store.dump("", {"project": "p"}), start=start, end=end, step=30, strategy="fake")
     assert [s["id"] for s in seen["stocks"]] == ["kiln_temperature_celsius"], seen.get("stocks")
     assert m.check() == []
     [sd] = [f for f in m.flows if f.src == "kiln_temperature_celsius" or f.dst == "kiln_temperature_celsius"]
     assert sd.current().method == "sdlab:fake" and sd.current().quality["events"] > 0
     assert m.stock("kiln_temperature_celsius").evidence["conservation_fit"]
+    assert "sdlab_rejected" not in m.stock("kiln_temperature_celsius").evidence
     assert m.flow("bakery_loaves_baked_total").current().method == "poisson-mle"
+
+
+def test_sdlab_flows_that_predict_a_net_flow_stock_worse_are_dropped(tmp_path, monkeypatch):
+    # an SD Lab answer of a steady inflow into the cooling kiln predicts its held-out half worse
+    # than the fitted net flow: the net flow's flows stay, and the stock says why
+    store = FileMetrics(tmp_path / "m.jsonl")
+    start, end = simulate(store, minutes=60)
+    _with_a_cooling_kiln(store, start, end)
+    flows = [{"from": None, "to": "kiln_temperature_celsius", "rate": {"form": "constant", "value": 1.0}}]
+    monkeypatch.setattr("orchestra.sd.strategies.run_strategy", _fake({}, flows))
+    m = discover_with(store.dump("", {"project": "p"}), start=start, end=end, step=30, strategy="fake")
+    kiln = m.stock("kiln_temperature_celsius")
+    assert "worse than the fitted net flow" in kiln.evidence["sdlab_rejected"]
+    assert "conservation_fit" not in kiln.evidence
+    mine = [f for f in m.flows if "kiln_temperature_celsius" in (f.src, f.dst)]
+    assert mine and all(f.current().method == "least-squares" for f in mine)
+    assert {"from": None, "to": "kiln_temperature_celsius"}.items() <= m.discovery["dropped"][0].items()
 
 
 def test_the_measured_moves_are_known_to_sdlab_and_its_invented_flows_are_dropped_where_nothing_remains(tmp_path, monkeypatch):
