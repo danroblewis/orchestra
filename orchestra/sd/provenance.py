@@ -24,7 +24,9 @@ def _tell(ref: SeriesRef | None, provenance: dict[str, dict]) -> str | None:
         ref.source = OWN
         return OWN
     ref.source, ref.query, ref.kind = p["source"], p.get("query"), p.get("kind")
-    ref.origin, ref.resolution_s, ref.unit = list(p.get("origin") or []), p.get("resolution_s"), p.get("unit")
+    ref.origin, ref.unit = list(p.get("origin") or []), p.get("unit")
+    if ref.resolution_s is None:              # discovery's measure (sd.resolution) has the source's as its floor
+        ref.resolution_s = p.get("resolution_s")
     ref.traffic = p.get("traffic")
     return ref.source
 

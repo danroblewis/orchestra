@@ -28,7 +28,8 @@ class SeriesRef:
     """A series a stock, flow or machine is bound to, and where it came from: ``source`` is
     ``own`` (the project's metrics store) or a ``[[sources]]`` name, with the final ``query`` that
     reads it there, its ``kind``, its ``origin`` (inferred from which family and view, rewritten by
-    which script, or declared) and its measured ``resolution_s``. Versions saved before sources
+    which script, or declared) and its measured ``resolution_s`` (the usual gap between its real
+points; none for one written as things happen), with how it was ``read`` between them. Versions saved before sources
     carry only the name and labels: their series are the own store's."""
 
     name: str
@@ -40,6 +41,7 @@ class SeriesRef:
     resolution_s: float | None = None
     unit: str | None = None
     traffic: dict | None = None         # counted traffic: direction, channel and machine (orchestra.sources.traffic)
+    read: str | None = None             # how discovery read it between its points: hold (counts, states) or linear (measurements)
 
 
 @dataclass

@@ -68,7 +68,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from itertools import accumulate, pairwise
 
-from .balance import MIN_EVENTS, MIN_GAIN, LeastSquares, balance, fit_of
+from .balance import MIN_EVENTS, MIN_GAIN, LeastSquares, balance, columns, fit_of
 from .drivers import behind, co_counting
 from .ends import claims, moves
 from .hops import split_hops
@@ -77,6 +77,7 @@ from .live import balance_steps, held_for, intersect, within
 from .model import Equation, Flow, Machine, Model, SeriesRef, Stock
 from .parsimony import fewer_counters
 from .passing import passages
+from .resolution import intervals_with, steps_of
 from .restate import split_event_counters, split_foreign_counters, unify_same_flows
 from .series import (
     EVENT_COUNTER,
@@ -284,7 +285,7 @@ def events_of(points: list[tuple[float, float]], live: list[tuple[float, float]]
 
 
 def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, Path], src: str | None,
-             drivers: set[str] | None = None) -> list[dict]:
+             drivers: set[str] | None = None, slow: dict[str, float] | None = None, start: float = 0.0) -> list[dict]:
     """Every candidate form for one flow, the chosen one first, scored with the exact
     point-process likelihood: each event against the rate just before it, the rate integrated
     over the stocks' actual paths:
@@ -299,7 +300,12 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
     A form must have the events to be told from chance: ``EVENTS_PER_PARAM`` per parameter for
     one that reads another stock or an input (on eight events a level that happened to be high
     beats the constant on likelihood alone), twice that for a line ``c + k × X``; below that, the
-    constant and the form proportional to the flow's own source are all it is offered.
+    constant and the form proportional to the flow's own source are all it is offered. A driver
+    slower than the grid (``slow``: its resolution in seconds, by path) is known only once per
+    interval of its resolution, so the events within one such interval (from ``start``) are one
+    observation of it: it needs as many intervals holding the flow's events as a form needs events
+    (``sd.resolution.intervals_with``). A space-weather index that changes every few minutes does
+    not drive a worker's turns because the worker happened to be busy while it was high.
 
     The chosen form is the plain one (constant, or proportional to the flow's own source) with the
     lowest AIC, unless another beats it by at least ``AIC_MARGIN``: a second parameter, or a
@@ -335,10 +341,11 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
         # proportional to the flow's own source, or to another stock when every event came while
         # that stock held something (what waits is taken: the rate is nothing when nothing waits)
         expo = p.integral(0.0, 1.0)
-        if expo > 0 and (sid == src or total >= EVENTS_PER_PARAM):
+        seen = intervals_with(events, start, slow[sid]) if slow and sid in slow else total   # observations of this driver
+        if expo > 0 and (sid == src or seen >= EVENTS_PER_PARAM):
             k = total / expo
             cands.append({"form": "proportional", "params": {"k": k}, "inputs": [sid], "loglik": ll(0.0, k, sid), "k": 1})
-        if total < 2 * EVENTS_PER_PARAM:
+        if seen < 2 * EVENTS_PER_PARAM:
             continue
         span = max(xs) - min(xs)
 
@@ -379,6 +386,13 @@ def dispersion(events: list[tuple[float, float]], live: list[tuple[float, float]
     gaps = [between(a, b) for a, b in pairwise(times)]
     mean = sum(gaps) / len(gaps)
     return sum((g - mean) ** 2 for g in gaps) / max(1, len(gaps) - 1) / max(mean * mean, 1e-12)
+
+
+def ref(s: Series) -> SeriesRef:
+    """The model's reference to a series, with its resolution and how it was read (``sd.resolution``)."""
+    r = s.resolution
+    return SeriesRef(s.name, s.labels, resolution_s=None if r is None or r.seconds is None else round(r.seconds, 3),
+                     read=r.read if r else None)
 
 
 def unique_id(slug: str, machine: str | None, taken: set[str]) -> str:
@@ -505,7 +519,7 @@ def own_balance(s: Series, counters: list[Series], steps: list[int], fits) -> tu
     if exact >= FLAG_EXACT or not foreign:
         return terms, r2, exact
     left = [d - sum(sign * c.deltas[i] for c, sign in terms) for i, d in enumerate(s.deltas)]
-    residual = Series(s.name, s.labels, [], [0.0, *accumulate(left)], False)
+    residual = Series(s.name, s.labels, [], [0.0, *accumulate(left)], False, blocks=s.blocks)
     more, _, _ = balance(residual, foreign, None, steps)
     if more:
         r2b, exact2 = fit_of(s, terms + more, steps)
@@ -660,9 +674,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         if terms is None:
             terms, r2, exact = own_balance(s, mine, steps, fits)
         if terms is None:
-            key = (tuple(steps), tuple(sorted(barred.get(s.key, ()))))
+            key = (tuple(steps), tuple(sorted(barred.get(s.key, ()))), tuple(s.blocks or ()))
             if key not in solvers and mine:
-                solvers[key] = LeastSquares([[c.deltas[i] for i in steps] for c in mine])
+                solvers[key] = LeastSquares(columns(s, mine, steps))
             terms, r2, exact = balance(s, mine, solvers.get(key), steps)
         if len({v for _, v in s.points}) <= 2 and not (terms and fits(s, r2, exact)):
             left_out[s.key] = "a flag (it only ever takes two values, and no counters balance it exactly), not a quantity that accumulates"
@@ -753,7 +767,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         if carried:
             held[sid] = {"minutes": round(carried / 60, 2), "at_end_minutes": round(at_end / 60, 2)}
         p = passed.get(s.key)
-        stocks.append(Stock(sid, _title(s), "items", SeriesRef(s.name, s.labels) if not p or p.measured else None,
+        stocks.append(Stock(sid, _title(s), "items", ref(s) if not p or p.measured else None,
                             {"balance_r2": round(r2, 4), "exact_steps": round(exact, 4), "steps": n, "balance_steps": len(masks[s.key]),
                              "machine": machine_of(s), "accumulator": all(sign > 0 for _, sign in terms),
                              "balance": [{"series": c.key, "sign": sign} for c, sign in terms],
@@ -790,6 +804,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     inputs, input_refs = offered_inputs(series, {s.key for s, _, _, _ in found}, left_out)
     for name, vals in inputs.items():
         paths[f"input:{name}"] = Path.of([(start + i * step, v) for i, v in enumerate(vals)], live, unit_s)
+    # a driver slower than the grid explains nothing faster than its own resolution (sd.resolution)
+    slow = {sid_of[s.key]: s.resolution.seconds for s, _, _, _ in found if s.resolution and steps_of(s.resolution.seconds, step) > 1}
+    slow.update({f"input:{k}": r["resolution_s"] for k, r in input_refs.items() if steps_of(r.get("resolution_s"), step) > 1})
     # A stock that only fills (no outflow in its balance) grows with time whatever else happens,
     # so as a driver of another flow's rate it stands in for time itself and finds spurious
     # influences. It stays a stock; it just may not explain other flows. Nor may a stock whose
@@ -812,7 +829,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         barred = co_counting(c, ends, found, sid_of, steps_live, lambda a, b: same_flow(a, b, n))
         events = events_of(c.points, live)
         src = mvs[0].src
-        best, *rest = fit_flow(events, live_s / unit_s, paths, src, set(paths) - accumulators - set(barred))
+        best, *rest = fit_flow(events, live_s / unit_s, paths, src, set(paths) - accumulators - set(barred), slow, start)
         best["dispersion"] = dispersion(events, live, best, paths, unit_s)
         other = lambda x, src=src: f"_{x['inputs'][0]}" if x["inputs"] and x["inputs"] != [src] else ""   # a form in another stock says which
         alt = {f"aic_{x['form']}{other(x)}": round(x["aic"], 2) for x in rest[:4]}
@@ -827,17 +844,17 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             if c.key in same_as:             # the counters of the same events this one stands for (one flow, measured twice)
                 mv.evidence["same_as"] = same_as[c.key]
             # a counter summed over instances is not a series in the store: the flow is measured by each of them
-            flows.append(Flow(mv.id, _title(c), mv.src, mv.dst, None if c.members else SeriesRef(c.name, c.labels),
+            flows.append(Flow(mv.id, _title(c), mv.src, mv.dst, None if c.members else ref(c),
                               [Equation(best["form"], {k: round(v, 6) for k, v in best["params"].items()}, "fitted", "poisson-mle",
                                         (fit_start, end), None, dict(q), list(best["inputs"]))],
-                              [SeriesRef(m.name, m.labels) for m in c.members], mv.evidence))
+                              [ref(m) for m in c.members], mv.evidence))
             who = machine_of(c)
             if who:
                 by_machine[who].append(mv.id)
     owners = {st.evidence.get("machine") for st in stocks} - {None}
     # what a machine is (a program, a service, a person) is not in the metrics: the model says "machine"
     machines = [Machine(m, m, "machine", "Seen in the metrics store: it writes the series these flows are bound to.",
-                        sorted(by_machine.get(m, [])), [SeriesRef(s.name, s.labels) for s in series if machine_of(s) == m])
+                        sorted(by_machine.get(m, [])), [ref(s) for s in series if machine_of(s) == m])
                 for m in sorted(set(by_machine) | owners)]
     model = Model("system", "The system",
                   "Discovered from the metrics store: stocks are levels that counters balance; flows are those "
@@ -846,6 +863,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     model.discovery = {"summed": summed, "start": start, "end": end, "fit_start": fit_start, "live_minutes": round(live_s / 60, 2) if found else 0,
                        "gaps": [[a, b] for (_, a), (b, _) in pairwise(live)] if found else [],
                        "step": step, "sampled": sampled, "series": len(series), "inputs": input_refs, "held": held,
+                       "resolution": {x.key: x.resolution.record() for x in series if x.resolution},
                        "stocks": len(stocks), "flows": len(flows), "min_r2": MIN_R2,
                        "left_out": dict(sorted(left_out.items()))}
     return model

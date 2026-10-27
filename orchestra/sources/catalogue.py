@@ -108,7 +108,8 @@ class Catalogue:
                 out.dump.append((name, labels, pts))
                 out.kinds[key] = Declared("counter" if d.kind in ("counter", "rate") else "level",
                                           baseline=d.kind == "counter" and d.view != "increments",
-                                          direction=(counted or {}).get("direction"), channel=(counted or {}).get("channel"))
+                                          direction=(counted or {}).get("direction"), channel=(counted or {}).get("channel"),
+                                          resolution_s=d.resolution_s)
                 out.provenance[key] = provenance(spec, d, counted)
                 if counted:
                     out.traffic[key] = counted

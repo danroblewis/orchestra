@@ -191,8 +191,17 @@ run's window starts and ends on multiples of the step (`sd/rediscover.py`), so r
 seconds apart sample the same grid and agree.
 
 Conservation (`sd/discover.py`):
-1. every series is sampled onto a grid of steps, and marked with when it was live
-   (`sd/series.py`, `sd/live.py`). Liveness is the machine's, not the series': a machine is
+1. every series is sampled onto a grid of steps, read at its own resolution, and marked with when
+   it was live (`sd/series.py`, `sd/resolution.py`, `sd/live.py`). A series' **resolution** is the
+   usual gap between its real points: a count or a state (a counter, or a level of whole values)
+   is read with its last value held, every write a real point, and one written only when it
+   changes is as fine as its events; a smooth measurement (any value not whole) is read linearly
+   between its real points, a repeat of the value it had being the same observation polled again
+   (a feed that changes every half hour, polled every minute, has a resolution of half an hour).
+   The choice is made per series and recorded (`discovery.resolution`, and `resolution_s` and
+   `read` on every `SeriesRef`); a source's reporting interval is a floor. A level slower than the
+   grid is balanced on the stretches between its writes, each compared with what the counters
+   counted between those two instants, not on single steps (`units`, `Block`); Liveness is the machine's, not the series': a machine is
    alive between writes (any of its series, or Orchestra's count of an event it published) no
    further apart than ten times the interval of its fastest series written on a schedule (at
    least a minute); a longer silence is it down or not yet started. A machine none of whose
@@ -288,7 +297,9 @@ Conservation (`sd/discover.py`):
    `input:<name>`). A form that reads another stock or an input is offered only with 10 events
    per parameter (20 for `c + k × X`, on any X): below that a level that happened to be high
    beats the constant on likelihood alone, and the constant or the source's proportion is all a
-   flow gets. A linear form on a stock other than the flow's source is an **influence**,
+   flow gets. A driver slower than the grid is known once per interval of its resolution, so the
+   flow's events within one such interval are one observation of it, and the rule counts those
+   intervals instead of events: a slow series never explains a fast flow at the fine grid. A linear form on a stock other than the flow's source is an **influence**,
    the link that closes feedback loops. A stock that only fills is offered to no flow (it stands
    in for time), nor is a stock whose balance counts the flow's own events (the same events, or
    at least half of them either way; `sd/drivers.py`): it is one off just before each of those

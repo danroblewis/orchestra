@@ -46,10 +46,12 @@ def offered_inputs(series: list[Series], stocks: set[str], left_out: dict[str, s
         labels = dict(labels)
         key = _name(name, labels)
         one = members[0]
+        res = [m.resolution for m in members if m.resolution is not None]
+        how = {"resolution_s": max((r.seconds for r in res if r.seconds), default=None), "read": res[0].read} if res else {}
         if len(members) == 1 and "instance" not in one.labels and "/" not in (one.labels.get("source") or ""):
             inputs[key] = one.values
-            refs[key] = {"name": name, "labels": one.labels}
+            refs[key] = {"name": name, "labels": one.labels, **how}
             continue
         inputs[key] = [sum(vs) for vs in zip(*[m.values for m in members], strict=True)]
-        refs[key] = {"name": name, "labels": labels, "summed": f"summed over {len(members)} instance{'s' if len(members) != 1 else ''}"}
+        refs[key] = {"name": name, "labels": labels, "summed": f"summed over {len(members)} instance{'s' if len(members) != 1 else ''}", **how}
     return inputs, refs

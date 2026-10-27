@@ -21,6 +21,7 @@ from .live import (
     union,
     usual_interval,
 )
+from .resolution import LINEAR, Resolution, block_ends, interpolate, measure, real_points, steps_of
 
 EVENT_COUNTER = "orchestra_events_total"   # Orchestra's own count of each event type, by source
 PLUMBING = re.compile(r"^orchestra_(?!events_total)")   # Orchestra's own other series (the host's, the Core page's probes): never a measure of the system
@@ -43,12 +44,14 @@ class Declared:
     (``baseline``) was counting before the window began: its first sample is where it stood, not
     events, so steps before it take its value instead of zero. Counted traffic (a source's
     definition said so: ``orchestra.sources.traffic``) also says its ``direction`` (out, in,
-    backlog) and ``channel``."""
+    backlog) and ``channel``. ``resolution_s`` is the reporting interval its source measured: no
+    series is finer than that (``sd.resolution``)."""
 
     kind: str
     baseline: bool = False
     direction: str | None = None
     channel: str | None = None
+    resolution_s: float | None = None
 
 
 def series_key(name: str, labels: dict[str, str]) -> str:
@@ -69,6 +72,8 @@ class Series:
     intervals: list[tuple[float, float]] | None = None   # when it was live; None: a machine-less series written as things happen, so always
     live: list[int] | None = None                        # the grid steps whose change is measured: inside those intervals, and for a counter also before its first write; None: every step
     traffic: tuple[str, str] | None = None               # counted traffic: (direction, channel), when a definition said so
+    resolution: Resolution | None = None                 # its real resolution and how it is read between points (sd.resolution)
+    blocks: list[tuple[int, float]] | None = None        # a level slower than the grid: the steps it was written in, and when (sd.resolution.units)
 
     @property
     def key(self) -> str:
@@ -77,10 +82,17 @@ class Series:
     @property
     def deltas(self) -> list[float]:
         """Change per step; for a counter, a drop is a reset (as in Prometheus): the new value is
-        what was counted since."""
+        what was counted since. Worked out once per list of values (discovery reads it in every
+        balance and comparison; the values are never changed in place)."""
+        cached = self.__dict__.get("_deltas")
+        if cached is not None and cached[0] is self.values and cached[1] == self.counter:
+            return cached[2]
         if self.counter:
-            return [(b - a) if b >= a else b for a, b in pairwise(self.values)]
-        return [b - a for a, b in pairwise(self.values)]
+            out = [(b - a) if b >= a else b for a, b in pairwise(self.values)]
+        else:
+            out = [b - a for a, b in pairwise(self.values)]
+        self.__dict__["_deltas"] = (self.values, self.counter, out)
+        return out
 
 
 def machine_of(s: Series) -> str | None:
@@ -139,11 +151,14 @@ def mark_live(ser: Series, machine_alive: list[tuple[float, float]] | None, star
 
 
 def sample(dump, start: float, step: float, n: int, kinds: dict[str, Declared] | None = None) -> list[Series]:
-    """Every series on the grid. Leading steps before a gauge's first point take its first value;
-    before a counter's first point nothing had been counted (a counter written when it moves
-    starts at its first event, and that event moved the gauges written beside it), unless it is
-    a counter read from elsewhere, whose first sample is a baseline. ``kinds`` (by series key)
-    says what a series is when its definition said so; others are told by name and values."""
+    """Every series on the grid, each read at its own resolution (``sd.resolution``): a count or a
+    state with its last value held, a smooth measurement linearly between its real points. Leading
+    steps before a gauge's first point take its first value; before a counter's first point nothing
+    had been counted (a counter written when it moves starts at its first event, and that event
+    moved the gauges written beside it), unless it is a counter read from elsewhere, whose first
+    sample is a baseline. ``kinds`` (by series key) says what a series is when its definition said
+    so; others are told by name and values. A level slower than the grid records the steps it was
+    written in (``blocks``), so its balance is judged between its writes."""
     out = []
     times = [start + i * step for i in range(n + 1)]
     for name, labels, pts in dump:
@@ -159,7 +174,12 @@ def sample(dump, start: float, step: float, n: int, kinds: dict[str, Declared] |
             last = got.get(t, last)
             vals.append(first if last is None else last)
         counter = said.kind == "counter" if said else _is_counter(name, vals)
-        ser = Series(name, dict(labels), pts, vals, counter)
+        res = measure(pts, counter, said.resolution_s if said else None, counter and on_events(pts))
+        if res.read == LINEAR:
+            vals = [first if v is None else v for v in interpolate(pts, times)]
+        ser = Series(name, dict(labels), pts, vals, counter, resolution=res)
+        if not counter and steps_of(res.seconds, step) > 1:
+            ser.blocks = block_ends(real_points(pts, res.read), start, step, n)
         if said and said.direction and said.channel:
             ser.traffic = (said.direction, said.channel)
         out.append(ser)
@@ -210,7 +230,7 @@ def sum_instances(series: list[Series]) -> tuple[list[Series], dict[str, str]]:
         for t, d in incs:
             total += d
             points.append((t, total))
-        merged = Series(name, dict(labels), points, values, True, members)
+        merged = Series(name, dict(labels), points, values, True, members, resolution=members[0].resolution)
         if all(m.intervals is not None for m in members):
             merged.intervals = union([iv for m in members for iv in m.intervals])
             merged.live = sorted({i for m in members for i in m.live})

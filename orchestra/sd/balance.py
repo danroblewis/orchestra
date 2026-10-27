@@ -16,13 +16,18 @@ The search is cheap because it runs on the counters' Gram matrix (every pair's d
 error after any one change is a few multiplications, not a pass over the steps. That pays for
 starting it from many places and keeping the best, which a search from one start needs: one term
 of a balance alone often makes the fit worse (inflow without its outflows), and which local
-optimum a single start reaches depends on noise."""
+optimum a single start reaches depends on noise.
+
+A level slower than the grid (``sd.resolution``) is judged on the stretches between its writes,
+not on single steps: ``units`` turns the steps into those stretches, and every function here that
+takes a level does so, so a balance found on them is checked on them again wherever it is."""
 
 from __future__ import annotations
 
 import math
 
 from .collinear import cancel, merge
+from .resolution import pick, units
 
 MIN_GAIN = 0.01         # each counter must explain at least this share of the level's variance
 EVENT_FLOOR = 1.0       # ... and at least one event's worth of squared change
@@ -193,9 +198,10 @@ def balance(level, counters: list, ls: LeastSquares | None = None, steps: list[i
     over the same steps, when the caller has it (it is the same for every level)."""
     y = level.deltas
     xs = [c.deltas for c in counters]
-    if steps is not None:
-        y = [y[i] for i in steps]
-        xs = [[x[i] for i in steps] for x in xs]
+    if steps is not None or level.blocks is not None:
+        us = units(level.blocks, list(range(len(y))) if steps is None else steps)
+        y = [pick(level, u) for u in us]
+        xs = [[pick(c, u) for u in us] for c in counters]
     mean = sum(y) / max(1, len(y))
     sst = sum((v - mean) ** 2 for v in y) or 1e-12
     if not counters or not y:
@@ -239,24 +245,31 @@ def balance(level, counters: list, ls: LeastSquares | None = None, steps: list[i
     return chosen, 1 - sse / sst, exact
 
 
+def columns(level, series: list, steps: list[int]) -> list[list[float]]:
+    """Each series' change over each unit the level's balance is judged on (``units``): what
+    ``LeastSquares`` is built from."""
+    us = units(level.blocks, steps)
+    return [[pick(s, u) for u in us] for s in series]
+
+
 def fit_of(level, terms: list[tuple], steps: list[int] | None = None) -> tuple[float, float]:
     """A given balance's R² and share of exact steps, over ``steps``."""
-    y = level.deltas
-    idx = range(len(y)) if steps is None else steps
-    resid = [y[i] - sum(sign * c.deltas[i] for c, sign in terms) for i in idx]
-    mean = sum(y[i] for i in idx) / max(1, len(resid))
-    sst = sum((y[i] - mean) ** 2 for i in idx) or 1e-12
+    idx = units(level.blocks, list(range(len(level.deltas))) if steps is None else steps)
+    y = [pick(level, u) for u in idx]
+    resid = [v - sum(sign * pick(c, u) for c, sign in terms) for v, u in zip(y, idx)]
+    mean = sum(y) / max(1, len(y))
+    sst = sum((v - mean) ** 2 for v in y) or 1e-12
     return 1 - sum(r * r for r in resid) / sst, sum(1 for r in resid if abs(r) <= 0.5) / max(1, len(resid))
 
 
 def explained_share(level, terms: list[tuple], counter, steps: list[int] | None = None) -> float:
     """How much of the level's variance this counter of its balance explains: the rise in the
     balance's squared error when the counter is taken out, as a share of the variance."""
-    y = level.deltas
-    idx = range(len(y)) if steps is None else steps
-    mean = sum(y[i] for i in idx) / max(1, len(idx))
-    sst = sum((y[i] - mean) ** 2 for i in idx) or 1e-12
-    resid = [y[i] - sum(sign * c.deltas[i] for c, sign in terms) for i in idx]
+    idx = units(level.blocks, list(range(len(level.deltas))) if steps is None else steps)
+    y = [pick(level, u) for u in idx]
+    mean = sum(y) / max(1, len(y))
+    sst = sum((v - mean) ** 2 for v in y) or 1e-12
+    resid = [v - sum(sign * pick(c, u) for c, sign in terms) for v, u in zip(y, idx)]
     sign = next((sg for c, sg in terms if c is counter), 0)
-    without = [r + sign * counter.deltas[i] for r, i in zip(resid, idx)]
+    without = [r + sign * pick(counter, u) for r, u in zip(resid, idx)]
     return (sum(r * r for r in without) - sum(r * r for r in resid)) / sst
