@@ -185,7 +185,7 @@ def create_app(project: Project) -> FastAPI:
         server's background index, never a read of the bus on request."""
         if not bg.ready("index"):
             return {"ok": False, "error": "reading the event bus for the first time…", "warming": True}
-        out = {"ok": True, **bg.index.view(bg.series)}
+        out = {"ok": True, **bg.index.view(bg.series, written=bg.written)}
         declare(out["machines"])
         # the host publishes only when it starts and stops; whether it runs is in the runtime record
         up = bool(runtime.hosts(runtime.read(project)))

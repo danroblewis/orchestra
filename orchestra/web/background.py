@@ -3,7 +3,8 @@
 One thread keeps three caches warm:
 - the **machine index** (``machines.MachineIndex``), following the bus every few seconds;
 - the project's **series list** from the metrics store (an export on VictoriaMetrics), every
-  minute;
+  minute, with the latest write of each machine's series, which the Machines page counts as
+  seeing the machine;
 - the **current levels** of the model's stocks, every few seconds;
 - the model's **recent history**: each stock's level and each flow's rate over the last
   ``HISTORY_S``, for the Dynamics page's sparklines, charts and flow animation. Levels are
@@ -22,7 +23,7 @@ from itertools import pairwise
 
 from ..metrics import step_sample
 from ..sd.store import ModelStore
-from .machines import MachineIndex
+from .machines import MachineIndex, last_writes
 
 INDEX_EVERY_S = 5.0
 SERIES_EVERY_S = 60.0
@@ -40,6 +41,7 @@ class Refresher:
         self.index = MachineIndex(events)
         self.models = ModelStore.for_state(project.state_dir)
         self.series: list[tuple[str, dict]] = []
+        self.written: dict[tuple[str, str], float] = {}     # (machine, instance) -> its latest write
         self.levels: dict[str, dict] = {}
         self.history: dict = {}
         self.at: dict[str, float] = {}
@@ -59,7 +61,9 @@ class Refresher:
 
     def _series(self) -> None:
         if self.metrics is not None:
-            self.series = self.metrics.series("", {"project": self.project.key})
+            dumped = self.metrics.dump("", {"project": self.project.key})
+            self.series = [(name, labels) for name, labels, _ in dumped]
+            self.written = last_writes(dumped)
 
     def model(self):
         cached = self.models.latest_discovery()

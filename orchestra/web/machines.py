@@ -14,6 +14,9 @@ Everything here is observed, or announced by the machine itself:
   announcement stands; the rest of it is passed to the package's card unread;
 - **publishes**: the event types its instances emitted, with counts (all time and the last day);
 - **metrics**: the series in the metrics store labelled ``machine=<id>``;
+- **when it was last seen**: its latest event or its latest write to a series labelled with it
+  (``instance=<n>`` too, for an instance), whichever is later, so a machine that announces itself
+  once and then only writes measurements stays active while its writes keep coming;
 - **recent events**: the last ``RECENT`` events of each machine, by their envelope only (time,
   type, instance, subject, id; never the ``data``, which is the machines' own);
 - **logs**: where an instance says its log is (``data.log`` in its announcement). The web server
@@ -132,8 +135,11 @@ class MachineIndex:
             logs = self.logs.get(machine) or {}
             return logs.get(instance or "") if instance is not None else next(iter(logs.values()), None)
 
-    def view(self, series: list[tuple[str, dict]], now: float | None = None) -> dict:
+    def view(self, series: list[tuple[str, dict]], now: float | None = None,
+             written: dict[tuple[str, str], float] | None = None) -> dict:
+        """``written``: the latest write of each (machine, instance) (``last_writes``)."""
         now = now or time.time()
+        written = written or {}
         with self._lock:
             for q in [*self.recent.values(), *self.recent_handoffs.values()]:
                 while q and q[0] < now - DAY:
@@ -151,9 +157,12 @@ class MachineIndex:
                     q = self.recent.get((m, ty), ())
                     pubs.append({"type": ty, "count": n, "day": len(q),
                                  "per_min_10m": round(sum(1 for t in q if t >= now - 600) / 10, 2)})
-                insts = [{"id": i or m, "first_seen": v["first"], "last_seen": v["last"], "active": now - v["last"] < ACTIVE_S}
-                         for i, v in sorted(self.instances[m].items())]
-                last = max((v["last"] for v in self.instances[m].values()), default=None)
+                insts = []
+                for i, v in sorted(self.instances[m].items()):
+                    seen = max(v["last"], written.get((m, i), 0.0))
+                    insts.append({"id": i or m, "first_seen": v["first"], "last_seen": seen, "active": now - seen < ACTIVE_S})
+                wrote = [t for (wm, _), t in written.items() if wm == m]
+                last = max([v["last"] for v in self.instances[m].values()] + wrote, default=None)
                 first = min((v["first"] for v in self.instances[m].values()), default=None)
                 machines.append({"id": m, "bootstrap": m == HOST, "mode": self.mode.get(m), "kind": self.kind.get(m) or ("program" if m == HOST else None),
                                  "package": self.package.get(m), "about": self.about.get(m, {}), "publishes": pubs,
@@ -170,6 +179,17 @@ class MachineIndex:
             return {"machines": machines, "types": types, "edges": edges, "handoffs": handoffs, "unattributed_events": self.unattributed}
 
 
+def last_writes(dumped: list[tuple[str, dict, list[tuple[float, float]]]]) -> dict[tuple[str, str], float]:
+    """The latest write of each (machine, instance) among dumped series (``MetricsStore.dump``),
+    from their ``machine`` and ``instance`` labels."""
+    out: dict[tuple[str, str], float] = {}
+    for _, labels, pts in dumped:
+        if labels.get("machine") and pts:
+            key = (labels["machine"], labels.get("instance") or "")
+            out[key] = max(out.get(key, 0.0), pts[-1][0])
+    return out
+
+
 class _ListBus:
     def __init__(self, evs: list[dict]):
         self.evs = evs
@@ -181,8 +201,9 @@ class _ListBus:
         return self.evs[since:][-limit:], len(self.evs)
 
 
-def machines_view(events: list[dict], series: list[tuple[str, dict]], now: float | None = None) -> dict:
+def machines_view(events: list[dict], series: list[tuple[str, dict]], now: float | None = None,
+                  written: dict[tuple[str, str], float] | None = None) -> dict:
     """The view over a given list of events (for tests and one-off use)."""
     idx = MachineIndex(_ListBus(events))
     idx.update()
-    return idx.view(series, now)
+    return idx.view(series, now, written)
