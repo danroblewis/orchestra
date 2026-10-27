@@ -69,7 +69,7 @@ def _declared(spec: SourceSpec, declared: list[DeclaredSeries]) -> list[Definiti
             for i, x in enumerate(declared) if x.source == spec.name]
 
 
-def probe(source: Source, d: Definition, start: float, end: float) -> dict:
+def probe(source: Source, d: Definition, start: float, end: float, until: float | None = None) -> dict:
     """A read of the window at the series' resolution (coarser only past PROBE_POINTS): how many
     series a candidate yields, and whether any moves."""
     step = max(d.resolution_s or 60.0, (end - start) / PROBE_POINTS)
@@ -79,15 +79,17 @@ def probe(source: Source, d: Definition, start: float, end: float) -> dict:
     elif d.view == "increments":
         q = f"sum by ({', '.join(d.by_real)}) ({d.query})" if d.by_real else f"sum({d.query})"
     try:
-        got = source.query_range(q, start, end, step)
+        got = source.query_range(q, start, end, step, until=until)
     except SourceError as e:
         return {"series": 0, "moves": False, "error": str(e)}
     return {"series": len(got), "moves": any(len({v for _, v in pts}) > 1 for _, pts in got)}
 
 
 def infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path,
-          start: float, end: float) -> Inference:
-    """A fresh round. Raises ``SourceError`` or ``TransformError`` when it cannot finish."""
+          start: float, end: float, until: float | None = None) -> Inference:
+    """A fresh round. Raises ``SourceError`` or ``TransformError`` when it cannot finish; a probe
+    not made by ``until`` (the source's deadline, ``time.monotonic()``) is a failed one."""
+    until = time.monotonic() + spec.deadline if until is None else until
     inf = Inference(spec.name, time.time(), settings_key(spec, declared, repo_root))
     schema = read_schema(source, spec, start, end)
     inf.notes = list(schema.notes)
@@ -101,7 +103,7 @@ def infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo
         cands, dropped, inf.script = apply(spec, repo_root, cands)
         inf.left_out += dropped
     with ThreadPoolExecutor(spec.concurrency) as pool:
-        probes = dict(zip([d.id for d in cands], pool.map(lambda d: probe(source, d, start, end), cands), strict=True))
+        probes = dict(zip([d.id for d in cands], pool.map(lambda d: probe(source, d, start, end, until), cands), strict=True))
     if failed := [p["error"] for p in probes.values() if p.get("error")]:
         raise SourceError(f"{len(failed)} of {len(probes)} probes failed; the first: {failed[0]}")
     kept, left = rank(cands, spec, probes)
@@ -132,7 +134,7 @@ def save(state_dir: Path, inf: Inference) -> None:
 
 
 def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path, state_dir: Path,
-                start: float, end: float, *, refresh: bool = False) -> Inference:
+                start: float, end: float, *, refresh: bool = False, until: float | None = None) -> Inference:
     """The source's definitions: cached while fresh and inferred under the same settings, else a
     new round; when the round fails, the cached ones inferred under the same settings, with the
     failure noted. Raises when there are none."""
@@ -146,7 +148,7 @@ def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries]
     same = old is not None and old.key == key        # older definitions under other settings would not be what was asked for
     when = time.strftime('%Y-%m-%d %H:%M', time.localtime(old.at)) if old else ""
     try:
-        inf = infer(source, spec, declared, repo_root, start, end)
+        inf = infer(source, spec, declared, repo_root, start, end, until)
     except Exception as e:
         if not same:
             raise

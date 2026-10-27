@@ -131,17 +131,18 @@ def integrate(pts: Points) -> Points:
 
 
 def read(source: Source, d: Definition, prefix: str, machine: str | None, start: float, end: float,
-         step: float, producers: dict[str, str] | None = None) -> list[tuple[str, Labels, Points, dict | None]]:
-    """Each result series: its name, labels, points, and what it counts when it is traffic."""
+         step: float, producers: dict[str, str] | None = None, until: float | None = None) -> list[tuple[str, Labels, Points, dict | None]]:
+    """Each result series: its name, labels, points, and what it counts when it is traffic.
+    ``until``: the source's deadline (``time.monotonic()``), past which no request is made."""
     if d.view == "increments":
         res = d.resolution_s or 0.0
-        got = increments(source.select(d.query, start - res, end), d.by_real, start)
+        got = increments(source.select(d.query, start - res, end, until=until), d.by_real, start)
     elif d.view in ("starts", "stops"):
         w = count_window(d.resolution_s)
-        got = turnover(source.select(d.query, start - w, end), d.by_real, w, start, end, d.view == "stops")
+        got = turnover(source.select(d.query, start - w, end, until=until), d.by_real, w, start, end, d.view == "stops")
     else:
         q = grid_step(step, d.resolution_s)
-        got = source.query_range(d.query, math.floor(start / q) * q, end, q)
+        got = source.query_range(d.query, math.floor(start / q) * q, end, q, until=until)
         if d.kind == "rate":
             got = [(labels, integrate(pts)) for labels, pts in got]
     out = []

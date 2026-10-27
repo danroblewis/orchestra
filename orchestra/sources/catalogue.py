@@ -24,7 +24,7 @@ from pathlib import Path
 
 from ..metrics import MetricsStore
 from ..sd.series import Declared, series_key
-from . import SourceError
+from . import PastDeadline, SourceError
 from .fetch import grid_step
 from .fetch import read as read_definition
 from .infer import Inference, definitions
@@ -76,24 +76,25 @@ class Catalogue:
     def spec(self, name: str) -> SourceSpec:
         return next(s for s in self.specs.sources if s.name == name)
 
-    def inference(self, name: str, start: float, end: float, *, refresh: bool = False) -> Inference:
+    def inference(self, name: str, start: float, end: float, *, refresh: bool = False, until: float | None = None) -> Inference:
         return definitions(self.remotes[name], self.spec(name), self.specs.declared, Path(self.project.repo_root),
-                           Path(self.project.state_dir), start, end, refresh=refresh)
+                           Path(self.project.state_dir), start, end, refresh=refresh, until=until)
 
     def _remote(self, spec: SourceSpec, start: float, end: float, step: float, own_names: set[str], out: Reading) -> None:
         src = self.remotes[spec.name]
         began, before = time.monotonic(), (src.requests, src.points)
+        until = began + spec.deadline                   # for the inference and the reads, all told
         st: dict = {"where": spec.where(), "auth": src.auth.describe(), "prefix": spec.prefix}
         out.status[spec.name] = st
         try:
-            inf = self.inference(spec.name, start, end)
+            inf = self.inference(spec.name, start, end, until=until)
         except Exception as e:  # noqa: BLE001 - one source's failure never ends the discovery of the others
             st.update(ok=False, error=f"inference failed: {why(e)}")
             out.missing[spec.name] = st["error"]
             return
         st.update(inferred_at=inf.at, definitions=len(inf.kept), left_out=len(inf.left_out), script=inf.script,
                   inference_error=inf.error)
-        results, errors = self._read_all(spec, inf.kept, start, end, step)
+        results, errors = self._read_all(spec, inf.kept, start, end, step, until)
         times: list[float] = []
         n = 0
         refused: list[str] = []
@@ -117,7 +118,7 @@ class Catalogue:
                   seconds=round(time.monotonic() - began, 2), gaps=gaps(times, start, end - spec.settle, q) if n else [],
                   refused_series=refused[:20])
         if errors:
-            st.update(ok=False, error=f"{len(errors)} read{'s' if len(errors) != 1 else ''} failed; the first: {errors[0]}")
+            st.update(ok=False, error="; ".join(errors))
             out.missing[spec.name] = st["error"]
         elif inf.kept and not n:                    # the store answered with nothing: not a source to discover without
             st.update(ok=False, error="returned no series in the window", gaps=[[round(start, 3), round(end - spec.settle, 3)]])
@@ -125,25 +126,32 @@ class Catalogue:
         else:
             st["ok"] = True
 
-    def _read_all(self, spec: SourceSpec, defs: list[Definition], start: float, end: float,
-                  step: float) -> tuple[dict[str, list], list[str]]:
-        """Every definition read from its source at once, within the source's deadline, all of
-        them ending ``settle`` before ``end``: the results by definition id, and what failed."""
-        src, errors, results = self.remotes[spec.name], [], {}
+    def _read_all(self, spec: SourceSpec, defs: list[Definition], start: float, end: float, step: float,
+                  until: float | None = None) -> tuple[dict[str, list], list[str]]:
+        """Every definition read from its source at once, by ``until`` (the source's deadline from
+        now when not given), all of them ending ``settle`` before ``end``: the results by
+        definition id, and what went wrong (the reads not done in time, then the reads that
+        failed). A read still running at the deadline is left to stop at its next request."""
+        src, failed, results, late = self.remotes[spec.name], [], {}, 0
+        until = time.monotonic() + spec.deadline if until is None else until
         end = end - spec.settle
-        with ThreadPoolExecutor(spec.concurrency) as pool:
-            futs = {pool.submit(read_definition, src, d, spec.prefix, spec.machine, start, end, step, spec.producers): d for d in defs}
-            done, late = wait(futs, timeout=spec.deadline)
-            for f in late:
-                f.cancel()
-            for f in done:
-                d = futs[f]
-                try:
-                    results[d.id] = f.result()
-                except Exception as e:  # noqa: BLE001 - that source is missing, with why
-                    errors.append(f"{d.name}: {why(e)}")
-        if late:
-            errors.append(f"{len(late)} of {len(defs)} reads were not done within the deadline of {spec.deadline:g} s")
+        pool = ThreadPoolExecutor(spec.concurrency)
+        futs = {pool.submit(read_definition, src, d, spec.prefix, spec.machine, start, end, step, spec.producers, until): d
+                for d in defs}
+        done, pending = wait(futs, timeout=max(0.0, until - time.monotonic()))
+        pool.shutdown(wait=False, cancel_futures=True)
+        late += len(pending)
+        for f in done:
+            d = futs[f]
+            try:
+                results[d.id] = f.result()
+            except PastDeadline:
+                late += 1
+            except Exception as e:  # noqa: BLE001 - that source is missing, with why
+                failed.append(f"{d.name}: {why(e)}")
+        errors = [f"{late} of {len(defs)} reads were not done within the deadline of {spec.deadline:g} s"] if late else []
+        if failed:
+            errors.append(f"{len(failed)} read{'s' if len(failed) != 1 else ''} failed; the first: {failed[0]}")
         return results, errors
 
     def counted(self, start: float, end: float, step: float) -> tuple[list[dict], dict[str, str]]:
@@ -151,14 +159,15 @@ class Catalogue:
         direction, channel and machine; and the sources that failed, with why."""
         out, failed = [], {}
         for spec in self.specs.sources:
+            until = time.monotonic() + spec.deadline
             try:
-                defs = [d for d in self.inference(spec.name, start, end).kept if d.traffic]
+                defs = [d for d in self.inference(spec.name, start, end, until=until).kept if d.traffic]
             except Exception as e:  # noqa: BLE001 - that source is missing, with why
                 failed[spec.name] = why(e)
                 continue
-            results, errors = self._read_all(spec, defs, start, end, step) if defs else ({}, [])
+            results, errors = self._read_all(spec, defs, start, end, step, until) if defs else ({}, [])
             if errors:
-                failed[spec.name] = errors[0]
+                failed[spec.name] = "; ".join(errors)
             for d in defs:
                 for name, labels, pts, counted in results.get(d.id, []):
                     out.append({"source": spec.name, "name": name, "labels": labels, "points": pts, "kind": d.kind, **counted})

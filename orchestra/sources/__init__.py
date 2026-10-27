@@ -25,6 +25,10 @@ class SourceError(Exception):
     message names the server (scheme, host, port) and never a credential."""
 
 
+class PastDeadline(SourceError):
+    """A read stopped (between its requests) because the source's deadline had passed."""
+
+
 @dataclass
 class Health:
     ok: bool
@@ -37,13 +41,15 @@ class Health:
 class Source(Protocol):
     name: str
 
-    def query_range(self, query: str, start: float, end: float, step: float) -> list[tuple[Labels, Points]]:
+    def query_range(self, query: str, start: float, end: float, step: float,
+                    until: float | None = None) -> list[tuple[Labels, Points]]:
         """``query`` evaluated at every step from ``start`` to ``end``: labels (without
-        ``__name__``) and points per result series. NaN and ±Inf are dropped."""
+        ``__name__``) and points per result series. NaN and ±Inf are dropped. Past ``until`` (a
+        ``time.monotonic()``), no further request is made: ``PastDeadline``."""
 
-    def select(self, selector: str, start: float, end: float) -> list[tuple[Labels, Points]]:
+    def select(self, selector: str, start: float, end: float, until: float | None = None) -> list[tuple[Labels, Points]]:
         """The raw samples of every series ``selector`` matches in [start, end], at their real
-        times; labels include ``__name__``."""
+        times; labels include ``__name__``. ``until`` as for ``query_range``."""
 
     def series(self, match: list[str], start: float, end: float, limit: int = 0) -> list[Labels]:
         """The label sets (with ``__name__``) of the series matching any of ``match`` that have

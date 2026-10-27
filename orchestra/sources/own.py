@@ -22,14 +22,15 @@ class OwnSource:
     def dump(self) -> list[tuple[str, Labels, Points]]:
         return self.metrics.dump("", {"project": self.project})
 
-    def query_range(self, query: str, start: float, end: float, step: float) -> list[tuple[Labels, Points]]:
+    def query_range(self, query: str, start: float, end: float, step: float,
+                    until: float | None = None) -> list[tuple[Labels, Points]]:
         try:
             return [({k: v for k, v in lab.items() if k not in ("__name__", "project")}, pts)
                     for lab, pts in promql.query_range(self.dump(), query, start, end, step)]
         except promql.PromQLError as e:
             raise SourceError(f"own store: {e}") from None
 
-    def select(self, selector: str, start: float, end: float) -> list[tuple[Labels, Points]]:
+    def select(self, selector: str, start: float, end: float, until: float | None = None) -> list[tuple[Labels, Points]]:
         try:
             return [({k: v for k, v in lab.items() if k != "project"}, pts)
                     for lab, pts in promql.select(self.dump(), selector, start, end)]

@@ -17,7 +17,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import Health, Labels, Points, SourceError
+from . import Health, Labels, PastDeadline, Points, SourceError
 from .auth import Auth
 from .spec import SourceSpec
 
@@ -128,11 +128,17 @@ class PrometheusSource:
             err = None
         return f"HTTP {e.code}" + (f": {err}" if err else "")
 
-    def query_range(self, query: str, start: float, end: float, step: float) -> list[tuple[Labels, Points]]:
+    def _in_time(self, until: float | None) -> None:
+        if until is not None and time.monotonic() > until:
+            raise PastDeadline(f"{self.spec.where()}: past the deadline")
+
+    def query_range(self, query: str, start: float, end: float, step: float,
+                    until: float | None = None) -> list[tuple[Labels, Points]]:
         span = (self.spec.max_points - 1) * step
         merged: dict[tuple, tuple[Labels, dict[float, float]]] = {}
         t = start
         while t <= end:
+            self._in_time(until)                    # between chunks: a long read stops once the deadline passed
             hi = min(end, t + span)
             for r in self._results("/api/v1/query_range", {"query": query, "start": f"{t:.3f}", "end": f"{hi:.3f}", "step": f"{step:g}"}):
                 labels = {k: v for k, v in (r.get("metric") or {}).items() if k != "__name__"}
@@ -143,7 +149,8 @@ class PrometheusSource:
         self.points += sum(len(p) for _, p in out)
         return out
 
-    def select(self, selector: str, start: float, end: float) -> list[tuple[Labels, Points]]:
+    def select(self, selector: str, start: float, end: float, until: float | None = None) -> list[tuple[Labels, Points]]:
+        self._in_time(until)
         out = []
         for r in self._results("/api/v1/query", {"query": f"{selector}[{_dur(end - start)}]", "time": f"{end:.3f}"}):
             pts = [(t, v) for t, v in _points(r.get("values") or []) if start <= t <= end]

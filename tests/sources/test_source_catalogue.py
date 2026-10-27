@@ -220,3 +220,22 @@ def test_a_source_answering_in_another_shape_is_only_that_source_missing(tmp_pat
         st = r.model.discovery["sources"]["rig"]
         assert not st["ok"] and "not a Prometheus answer" in st["error"] and "rig" in r.model.discovery["not_saved"]
         assert [s.series.name for s in r.model.stocks] == ["queue_depth"]
+
+
+def test_a_source_past_its_deadline_is_cut_short_and_missing(tmp_path, monkeypatch):
+    end = now_grid()
+    dump, _ = world(end, 120, regions={"us-east": 1.0}, deploy_every=30)
+    fake = FakePrometheus(dump)
+    try:
+        p = project(tmp_path, monkeypatch, source_toml(fake.url, extra='deadline = "2s"\ntimeout = "3s"\nmax_points = 5'))
+        cat = Catalogue(p, for_project(p))
+        cat.inference("rig", end - 7200, end)                 # cached while the store is fast
+        fake.latency = 1.5                                     # every request now takes 1.5 s, and a read takes many
+        began = time.monotonic()
+        reading = cat.read(end - 7200, end, 60.0)
+        took = time.monotonic() - began
+    finally:
+        fake.close()
+    assert took < 2 + 3 + 1, took
+    why = reading.missing["rig"]
+    assert "reads were not done within the deadline of 2 s" in why and "failed" not in why, why
