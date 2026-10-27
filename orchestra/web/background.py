@@ -7,7 +7,7 @@ store's levels never wait on a remote source, which may take up to its timeout:
 - the **machine index** (``machines.MachineIndex``), following the bus every few seconds;
 - the project's **series list** from the metrics store (an export on VictoriaMetrics), every
   minute, with the latest write of each machine's series, which the Machines page counts as
-  seeing the machine, and the other stores' series the latest discovery bound (from its record);
+  seeing the machine, the gap it writes at, which tells how long it stays active after, and the other stores' series the latest discovery bound (from its record);
 - the **current levels** of the model's stocks, every few seconds;
 - the model's **recent history**: each stock's level and each flow's rate over the last
   ``HISTORY_S``, for the Dynamics page's sparklines, charts and flow animation. Levels are
@@ -38,7 +38,7 @@ from ..metrics import step_sample
 from ..sd.model import SeriesRef
 from ..sd.store import ModelStore
 from ..sources.catalogue import Catalogue
-from .machines import MachineIndex, last_writes, remote_series
+from .machines import MachineIndex, last_writes, remote_series, write_cadence
 from .traffic import READ_S, READ_STEP_S, summarise
 
 INDEX_EVERY_S = 5.0
@@ -59,6 +59,7 @@ class Refresher:
         self.models = ModelStore.for_state(project.state_dir)
         self.series: list[tuple[str, dict]] = []
         self.written: dict[tuple[str, str], float] = {}     # (machine, instance) -> its latest write
+        self.write_beats: dict[tuple[str, str], float] = {}  # (machine, instance) -> the gap it writes at
         self.remote_series: list[tuple[str, dict, str]] = []  # series of other stores the latest discovery bound, with their source
         self.own_levels: dict[str, dict] = {}
         self.remote_levels: dict[str, dict] = {}
@@ -95,7 +96,8 @@ class Refresher:
         if self.metrics is not None:
             dumped = self.metrics.dump("", {"project": self.project.key})
             self.series = [(name, labels) for name, labels, _ in dumped]
-            self.written = last_writes(dumped)
+            now = time.time()
+            self.written, self.write_beats = last_writes(dumped, now), write_cadence(dumped, now)
         latest = self.models.latest_discovery()
         self.remote_series = remote_series(latest[1] if latest else None)
 

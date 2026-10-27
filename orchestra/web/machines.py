@@ -6,14 +6,17 @@ Everything here is observed, or announced by the machine itself:
   is one **instance** of it (``baker/1``, ``baker/2``: one machine, two instances). Orchestra's own
   host is a machine too;
 - **how it is engaged** (continuous, scheduled or ad hoc), **what it listens for**, **what kind
-  of thing it is** (a program, a service, a person), **which package** it belongs to, the **name**
+  of thing it is** (a program, an agent, a service, a person), **which package** it belongs to, the **name**
   to show it by and the **group** it belongs to (a team): until the bus adapters provide
   subscriptions the backend can list (docs/proposals/empty-orchestra.md §3), an instance announces
   these when it starts, with ``orchestra.machine.started`` (``data.mode``, ``data.listens_for``,
   ``data.kind``, ``data.package``, ``data.name``, ``data.group`` or else ``data.team``;
   ``orchestra.machine.subscribed`` with ``data.types`` is read too). A group labels machines and
-  groups them on the page, never separates them (AGENTS.md rule 4). The latest announcement
-  stands; the rest of it is passed to the package's card unread;
+  groups them on the page, never separates them (AGENTS.md rule 4). How it is engaged and what
+  kind it is belong to each **instance** (its latest announcement stands): a machine whose
+  instances differ says so (``agent ×2, program ×1``), never just the last one to announce. For the
+  rest the machine's latest announcement stands, and what is left of it is passed to the
+  package's card unread;
 - **publishes**: the event types its instances emitted, with counts (all time and the last day);
 - **metrics**: the series in the metrics store labelled ``machine=<id>``, and the series read from
   another store (``[[sources]]``) that the latest discovery found labelled with it: such a
@@ -21,7 +24,16 @@ Everything here is observed, or announced by the machine itself:
   querying the source from the page;
 - **when it was last seen**: its latest event or its latest write to a series labelled with it
   (``instance=<n>`` too, for an instance), whichever is later, so a machine that announces itself
-  once and then only writes measurements stays active while its writes keep coming;
+  once and then only writes measurements stays active while its writes keep coming. Never in the
+  future: an event stamped ahead counts as seen when it was read, and a point stamped more than
+  ``FUTURE_SKEW_S`` ahead is not counted (the stores refuse such points now; older ones remain);
+- **whether it is active**: an instance is active while its last event is within ``ACTIVE_MARGIN``
+  times the **cadence** of its events, or its last write within that many of its writes', and
+  never less than ``ACTIVE_FLOOR_S``. A cadence is observed, never taken from what a machine says
+  of itself (AGENTS.md rule 2): the median gap between its last few events (announcements, which
+  come in bursts at a restart, left out) or its last few writes. So a collector run every 15
+  minutes is active between its rounds, and a machine that stops is quiet after a few of its own
+  beats. A machine is active while any of its instances is;
 - **recent events**: the last ``RECENT`` events of each machine, by their envelope only (time,
   type, instance, subject, id; never the ``data``, which is the machines' own);
 - **logs**: where an instance says its log is (``data.log`` in its announcement). The web server
@@ -46,12 +58,17 @@ from __future__ import annotations
 import threading
 import time
 from collections import Counter, OrderedDict, defaultdict, deque
+from itertools import pairwise
+from statistics import median
 
 from ..events import HOST, event_time, machine_and_instance
+from ..metrics import FUTURE_SKEW_S
 
 ANNOUNCE = ("orchestra.machine.started", "orchestra.machine.subscribed")
 DAY = 86400.0
-ACTIVE_S = 120.0
+ACTIVE_FLOOR_S = 120.0     # active within at least this, however fast its cadence
+ACTIVE_MARGIN = 2.5        # ... and within this many beats of its cadence: a round may be late, or one missed
+BEATS = 9                  # the last times kept to observe a cadence
 RECENT = 60
 SUBJECTS = 50_000
 TRAIL = 4            # a machine's last event types about a subject, kept for crediting the hand-off
@@ -64,8 +81,9 @@ class MachineIndex:
         self.total: dict[str, Counter] = defaultdict(Counter)            # machine -> type -> count
         self.recent: dict[tuple[str, str], deque] = defaultdict(deque)   # (machine, type) -> times in the last day
         self.subs: dict[str, set] = defaultdict(set)                     # machine -> types its instances listen for
-        self.mode: dict[str, str] = {}
-        self.kind: dict[str, str] = {}                                   # machine -> what it announced it is (program, person, service, ...)
+        self.mode: dict[str, dict[str, str]] = defaultdict(dict)        # machine -> instance -> how it said it is engaged
+        self.kind: dict[str, dict[str, str]] = defaultdict(dict)        # machine -> instance -> what it said it is (program, agent, person, ...)
+        self.beats: dict[str, dict[str, deque]] = defaultdict(dict)     # machine -> instance -> its last event times
         self.package: dict[str, str] = {}                                # machine -> the package it announced it belongs to
         self.name: dict[str, str] = {}                                   # machine -> the name it announced, to show it by
         self.group: dict[str, str] = {}                                  # machine -> the group it announced (group, or else team)
@@ -97,16 +115,22 @@ class MachineIndex:
             self.unattributed += 1
             return
         t = event_time(ev) or 0.0
-        inst = self.instances[machine].setdefault(instance or "", {"first": t, "last": t})
-        inst["last"] = max(inst["last"], t)
+        seen = min(t, time.time())          # stamped ahead: seen when read, never in the future
+        key = instance or ""
+        inst = self.instances[machine].setdefault(key, {"first": seen, "last": seen})
+        inst["last"] = max(inst["last"], seen)
+        if ev.get("type") not in ANNOUNCE:           # announcements come in bursts at a restart: not a beat
+            beats = self.beats[machine].setdefault(key, deque(maxlen=BEATS))
+            if not beats or seen > beats[-1]:
+                beats.append(seen)
         if ev.get("type") in ANNOUNCE:
             d = ev.get("data") or {}
             self.subs[machine].update(d.get("listens_for") or d.get("types") or [])
-            if d.get("mode"):
-                self.mode[machine] = d["mode"]
-            for field, into in (("kind", self.kind), ("package", self.package)):
+            for field, into in (("mode", self.mode), ("kind", self.kind)):
                 if isinstance(d.get(field), str) and d[field]:
-                    into[machine] = d[field]
+                    into[machine][key] = d[field]
+            if isinstance(d.get("package"), str) and d["package"]:
+                self.package[machine] = d["package"]
             if ev["type"] == "orchestra.machine.started":       # the latest says the name and group, or that there are none
                 name = d.get("name") if isinstance(d.get("name"), str) and d["name"] else None
                 group = next((d[k] for k in ("group", "team") if isinstance(d.get(k), str) and d[k]), None)
@@ -151,11 +175,14 @@ class MachineIndex:
             return logs.get(instance or "") if instance is not None else next(iter(logs.values()), None)
 
     def view(self, series: list[tuple[str, dict]], now: float | None = None,
-             written: dict[tuple[str, str], float] | None = None, remote: list[tuple[str, dict, str]] | None = None) -> dict:
+             written: dict[tuple[str, str], float] | None = None, remote: list[tuple[str, dict, str]] | None = None,
+             write_beats: dict[tuple[str, str], float] | None = None) -> dict:
         """``written``: the latest write of each (machine, instance) (``last_writes``);
-        ``remote``: series read from other stores, with their source (``remote_series``)."""
+        ``remote``: series read from other stores, with their source (``remote_series``);
+        ``write_beats``: the gap each (machine, instance) is observed to write at (``write_cadence``)."""
         now = now or time.time()
         written = written or {}
+        write_beats = write_beats or {}
         with self._lock:
             for q in [*self.recent.values(), *self.recent_handoffs.values()]:
                 while q and q[0] < now - DAY:
@@ -176,20 +203,31 @@ class MachineIndex:
                     q = self.recent.get((m, ty), ())
                     pubs.append({"type": ty, "count": n, "day": len(q),
                                  "per_min_10m": round(sum(1 for t in q if t >= now - 600) / 10, 2)})
-                insts = []
-                for i, v in sorted(self.instances[m].items()):
-                    seen = max(v["last"], written.get((m, i), 0.0))
-                    insts.append({"id": i or m, "first_seen": v["first"], "last_seen": seen, "active": now - seen < ACTIVE_S})
+                insts, alive = [], False
+                keys = set(self.instances[m]) | {i for (wm, i) in written if wm == m}
+                for i in sorted(keys):
+                    v = self.instances[m].get(i)
+                    said, wrote_at = (v["last"] if v else 0.0), written.get((m, i), 0.0)
+                    by_events, by_writes = gaps(self.beats[m].get(i, ())), write_beats.get((m, i))
+                    # each rhythm judged by its own cadence: events every few seconds and a write an hour
+                    active = (bool(v) and now - said < active_within(by_events)) or (wrote_at > 0 and now - wrote_at < active_within(by_writes))
+                    alive = alive or active
+                    if v:
+                        insts.append({"id": i or m, "first_seen": v["first"], "last_seen": max(said, wrote_at), "active": active,
+                                      "cadence_s": {"events": by_events, "writes": by_writes},
+                                      "kind": self.kind[m].get(i), "mode": self.mode[m].get(i)})
                 wrote = [t for (wm, _), t in written.items() if wm == m]
                 last = max([v["last"] for v in self.instances[m].values()] + wrote, default=None)
                 first = min((v["first"] for v in self.instances[m].values()), default=None)
-                machines.append({"id": m, "bootstrap": m == HOST, "mode": self.mode.get(m), "kind": self.kind.get(m) or ("program" if m == HOST else None),
+                kinds = Counter(self.kind[m].values())
+                machines.append({"id": m, "bootstrap": m == HOST, "mode": of_instances(Counter(self.mode[m].values())),
+                                 "kind": of_instances(kinds) or ("program" if m == HOST else None), "kinds": dict(kinds),
                                  "package": self.package.get(m), "name": self.name.get(m), "group": self.group.get(m),
                                  "about": self.about.get(m, {}), "publishes": pubs,
                                  "subscribes": sorted(self.subs.get(m, ())), "metrics": sorted(metrics.get(m, [])),
                                  "logs": sorted(i or m for i in self.logs.get(m, {})),
                                  "instances": [i for i in insts if i["id"] != m] if any(k for k in self.instances[m]) else [],
-                                 "first_seen": first, "last_seen": last, "active": bool(last and now - last < ACTIVE_S),
+                                 "first_seen": first, "last_seen": last, "active": alive,
                                  **({"from_source": from_source[m]} if m in from_source else {})})
             types = sorted({p["type"] for x in machines for p in x["publishes"]} | {t for x in machines for t in x["subscribes"]})
             edges = [{"from": x["id"], "to": p["type"], "kind": "publishes", "count": p["count"], "day": p["day"]}
@@ -198,6 +236,26 @@ class MachineIndex:
             handoffs = [{"from": a, "via": ty, "to": b, "count": n, "day": len(self.recent_handoffs.get((a, ty, b), ()))}
                         for (a, ty, b), n in self.handoffs.most_common()]
             return {"machines": machines, "types": types, "edges": edges, "handoffs": handoffs, "unattributed_events": self.unattributed}
+
+
+def active_within(cadence: float | None) -> float:
+    """How long after it was last seen an instance with this cadence is still active (a cadence
+    longer than a day counts as a day)."""
+    return max(ACTIVE_FLOOR_S, ACTIVE_MARGIN * min(cadence, DAY)) if cadence else ACTIVE_FLOOR_S
+
+
+def gaps(times) -> float | None:
+    """The median gap between the last ``BEATS`` distinct times, or ``None`` with fewer than two."""
+    ts = sorted(set(times))[-BEATS:]
+    return median(b - a for a, b in pairwise(ts)) if len(ts) > 1 else None
+
+
+def of_instances(counts: Counter) -> str | None:
+    """What instances announced (their kind, or how they are engaged), in one phrase: the one
+    value when they agree, else each with how many say it (``agent ×2, program ×1``)."""
+    if len(counts) <= 1:
+        return next(iter(counts), None)
+    return ", ".join(f"{v} ×{n}" for v, n in sorted(counts.items(), key=lambda x: (-x[1], x[0])))
 
 
 def remote_series(model) -> list[tuple[str, dict, str]]:
@@ -218,15 +276,32 @@ def remote_series(model) -> list[tuple[str, dict, str]]:
     return out
 
 
-def last_writes(dumped: list[tuple[str, dict, list[tuple[float, float]]]]) -> dict[tuple[str, str], float]:
-    """The latest write of each (machine, instance) among dumped series (``MetricsStore.dump``),
-    from their ``machine`` and ``instance`` labels."""
-    out: dict[tuple[str, str], float] = {}
+def _writes(dumped, now: float | None):
+    """Each dumped series' (machine, instance) and its points' times, without those stamped more
+    than ``FUTURE_SKEW_S`` past ``now``."""
+    limit = (now or time.time()) + FUTURE_SKEW_S
     for _, labels, pts in dumped:
         if labels.get("machine") and pts:
-            key = (labels["machine"], labels.get("instance") or "")
-            out[key] = max(out.get(key, 0.0), pts[-1][0])
+            yield (labels["machine"], labels.get("instance") or ""), [t for t, _ in pts[-BEATS * 4:] if t <= limit]
+
+
+def last_writes(dumped: list[tuple[str, dict, list[tuple[float, float]]]], now: float | None = None) -> dict[tuple[str, str], float]:
+    """The latest write of each (machine, instance) among dumped series (``MetricsStore.dump``),
+    from their ``machine`` and ``instance`` labels; a point stamped in the future is not a write."""
+    out: dict[tuple[str, str], float] = {}
+    for key, ts in _writes(dumped, now):
+        if ts:
+            out[key] = max(out.get(key, 0.0), ts[-1])
     return out
+
+
+def write_cadence(dumped: list[tuple[str, dict, list[tuple[float, float]]]], now: float | None = None) -> dict[tuple[str, str], float]:
+    """The gap each (machine, instance) is observed to write at: the median gap between the last
+    times any of its series was written (``gaps``)."""
+    times: dict[tuple[str, str], set] = defaultdict(set)
+    for key, ts in _writes(dumped, now):
+        times[key].update(ts)
+    return {key: g for key, ts in times.items() if (g := gaps(ts))}
 
 
 class _ListBus:
@@ -241,8 +316,9 @@ class _ListBus:
 
 
 def machines_view(events: list[dict], series: list[tuple[str, dict]], now: float | None = None,
-                  written: dict[tuple[str, str], float] | None = None, remote: list[tuple[str, dict, str]] | None = None) -> dict:
+                  written: dict[tuple[str, str], float] | None = None, remote: list[tuple[str, dict, str]] | None = None,
+                  write_beats: dict[tuple[str, str], float] | None = None) -> dict:
     """The view over a given list of events (for tests and one-off use)."""
     idx = MachineIndex(_ListBus(events))
     idx.update()
-    return idx.view(series, now, written, remote)
+    return idx.view(series, now, written, remote, write_beats)
