@@ -301,7 +301,10 @@ stop_grace = 10                                     # seconds from SIGTERM to SI
 
 and a plugin in `Plugin.processes` (§10.1). The host starts each in the repository root, in a
 process group of its own, with `ORCHESTRA_REPO` (the root) and `ORCHESTRA_MACHINE_LOG` (its log,
-`<state>/logs/machines/<name>.log`, which receives its output) set. One that exits is started again
+`<state>/logs/machines/<name>.log`, which receives its output) set. A plugin's processes are named
+`<plugin>.<name>` (in the runtime record, on the Core page and in their logs' names), so a
+project's `[[machines]]` entry never takes a plugin process's place; a project entry named
+`<plugin>.<something>` for a plugin with processes is refused, with a line in the host's log. One that exits is started again
 after a pause that doubles with each exit within a minute of starting (1 s up to 60 s); after five
 failures (non-zero exits) in a row, each within a minute of starting, it is given up on, which the
 host's log, the process's log and the bus (`orchestra.process.gave_up`) say. It is tried again when

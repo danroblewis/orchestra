@@ -176,9 +176,8 @@ def test_bad_entries_are_reported_and_the_rest_run(project):
         until(lambda: "good" in la.runs and la.runs["good"].state == "running", la)
         text = "\n".join(lines)
         assert "bad name 'has space'" in text and "nocmd: empty command" in text and "restart must be one of" in text
-        assert "tools declares 'good', which project declared first" in text
-        until(lambda: la.runs["missing"].state == "gave_up", la)            # a command that cannot start is a failure
-        assert "cannot start" in (project.logs_dir / "machines" / "missing.log").read_text()
+        until(lambda: la.runs["tools.missing"].state == "gave_up", la)      # a command that cannot start is a failure
+        assert "cannot start" in (project.logs_dir / "machines" / "tools.missing.log").read_text()
         assert sum("bad name" in ln for ln in lines) == 1                   # said once, not every tick
     finally:
         la.stop_all()
@@ -236,14 +235,14 @@ def test_the_host_launches_the_project_and_plugin_processes_and_stops_them(proje
     t = threading.Thread(target=host.run)
     t.start()
     try:
-        until(lambda: set(runtime.read(project).get("processes") or {}) == {"telemetry", "helper"}
+        until(lambda: set(runtime.read(project).get("processes") or {}) == {"telemetry", "tools.helper"}
               and all(r["state"] == "running" for r in runtime.read(project)["processes"].values()))
         procs = runtime.read(project)["processes"]
-        assert procs["helper"]["owner"] == "tools"
+        assert procs["tools.helper"]["owner"] == "tools"
         pids = [r["pid"] for r in procs.values()]
         c = TestClient(create_app(project))                         # the Core page shows them and their logs
-        assert {p["name"]: p["alive"] for p in c.get("/api/core").json()["host"]["processes"]} == {"helper": True, "telemetry": True}
-        assert {"process:helper", "process:telemetry"} <= {s["id"] for s in c.get("/api/core/logs/sources").json()["sources"]}
+        assert {p["name"]: p["alive"] for p in c.get("/api/core").json()["host"]["processes"]} == {"tools.helper": True, "telemetry": True}
+        assert {"process:tools.helper", "process:telemetry"} <= {s["id"] for s in c.get("/api/core/logs/sources").json()["sources"]}
         assert any("started" in ln for ln in c.get("/api/core/logs", params={"source": "process:telemetry"}).json()["lines"])
     finally:
         host.stop()
@@ -290,3 +289,16 @@ def test_each_process_has_its_own_stop_grace(project):
     assert time.time() - t0 >= 1.9
     assert check(Process("x", "true", stop_grace_s="soon")) and check(Process("x", "true", stop_grace_s=-1))
     assert from_toml({"machines": [{"name": "x", "command": "true", "stop_grace": 30}]})[0].stop_grace_s == 30
+
+
+def test_a_project_machine_never_takes_a_plugin_process_s_place(project):
+    declare(project, ("agents", SLEEPER, "always"), ("tools.helper", SLEEPER, "always"))
+    la, _, lines = launcher(project, plugin_processes=[Process("agents", [PY, "-c", SLEEPER], owner="tools"),
+                                                       Process("helper", [PY, "-c", SLEEPER], owner="tools")])
+    try:
+        until(lambda: len(la.runs) == 3 and all(r.state == "running" for r in la.runs.values()), la)
+        assert {n: r.spec.owner for n, r in la.runs.items()} == {"agents": "project", "tools.agents": "tools", "tools.helper": "tools"}
+        assert sum("'tools.helper' has the form tools.<name>, kept for the plugin tools's processes" in ln for ln in lines) == 1
+        assert (project.logs_dir / "machines" / "tools.agents.log").exists()
+    finally:
+        la.stop_all()

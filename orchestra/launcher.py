@@ -18,7 +18,9 @@ within ``STABLE_S`` of starting, is given up on, in the host's log, the process'
 bus (``orchestra.process.gave_up``). ``orchestra.toml`` is read again whenever it changes, so a
 machine added by a merged commit starts without restarting the host, one removed stops, and one
 whose command or restart changed is restarted (and a given-up one tried again). Every process is
-in the runtime record under ``processes`` for the Core page.
+in the runtime record under ``processes`` for the Core page. A plugin's processes are named
+``<plugin>.<name>`` there and in their logs' names, so a project's ``[[machines]]`` never collide
+with them.
 
 Orchestra starts commands and knows nothing else of them: a process is not a machine to it until
 it publishes (AGENTS.md rules 1 and 2)."""
@@ -33,7 +35,7 @@ import subprocess
 import time
 import tomllib
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -145,8 +147,16 @@ class Launcher:
         return self._toml[1] if self._toml else []
 
     def wanted(self) -> dict[str, Process]:
+        """What should run, by name. A plugin's processes are named ``<plugin>.<name>``, so a
+        project's never takes their place; a project name in a plugin's ``<plugin>.`` is refused."""
         out: dict[str, Process] = {}
+        plugins = {p.owner for p in self.plugin_processes}
         for p in [*self._project_processes(), *self.plugin_processes]:
+            if p.owner != "project":
+                p = replace(p, name=f"{p.owner}.{p.name}")
+            elif isinstance(p.name, str) and (taken := next((o for o in plugins if p.name.startswith(f"{o}.")), None)):
+                self._say_once(f"project: {p.name!r} has the form {taken}.<name>, kept for the plugin {taken}'s processes; not started")
+                continue
             if (why := check(p)) is not None:
                 self._say_once(f"{p.owner}: {why}; not started")
             elif p.name in out:
