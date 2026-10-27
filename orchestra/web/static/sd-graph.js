@@ -31,7 +31,7 @@
   //   look alike. A remote machine's source prefix is left out (rig.search: "search").
   // Names are {name, family}; ``label`` is the name, with the family only where the name alone is
   // not unique in the model. The model's own ``name`` stays the full record.
-  const IGNORE = new Set(["project", "machine", "instance", "source"]);
+  const IGNORE = new Set(["project", "machine", "instrument", "instance", "source"]);
   const words = (v) => String(v).replace(/_/g, " ");
   const seriesOf = (x) => x.series || x.counter || (x.measured_by && x.measured_by[0]) || null;
   const familyName = (n) => words(n.replace(/_total$/, ""));

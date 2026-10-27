@@ -56,7 +56,7 @@ def test_a_counter_three_stocks_claim_is_a_move_and_a_co_flow(tmp_path):
     assert (f["x_total@expo"].src, f["x_total@expo"].dst) == (None, "c")
     assert f["x_total@expo"].evidence["co_flow_of"] == "x_total" and f["x_total"].evidence["co_flows"] == ["x_total@expo"]
     assert f["x_total@expo"].counter and f["x_total@expo"].counter.name == "x_total"
-    assert "x_total@expo" in {fid for mc in m.machines if mc.id == "board" for fid in mc.attributed}
+    assert m.machines == []                                   # a label is not an association (sd.attribute)
 
 
 def test_two_stocks_of_one_machine_claiming_an_end_keep_the_one_the_counter_explains_most(tmp_path):
@@ -87,7 +87,7 @@ def test_twin_levels_are_one_stock_measured_twice(tmp_path):
     m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
     assert [s.id for s in m.stocks] == ["on_shelf"]
     [twin] = m.stock("on_shelf").evidence["twins"]
-    assert twin["series"] == 'shelf_items{machine="shelf"}' and twin["machine"] == "shelf" and twin["equal_steps"] == 1.0
+    assert twin["series"] == 'shelf_items{machine="shelf"}' and twin["written_by"] == "shelf" and twin["equal_steps"] == 1.0
     assert m.discovery["left_out"]['shelf_items{machine="shelf"}'].startswith('the same as on_shelf{machine="board"} (one stock measured twice')
 
 

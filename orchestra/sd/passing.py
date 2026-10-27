@@ -100,13 +100,13 @@ def out_of_step(ins: list[float], outs: list[float]) -> tuple[int, int]:
     return bad, moved
 
 
-def _vouched(p: Series, outs: list[Series], total: dict[str, float], claims: dict, floor: float, machine_of) -> bool:
+def _vouched(p: Series, outs: list[Series], total: dict[str, float], claims: dict, floor: float, writer_of) -> bool:
     """Whether a free counter of the fill ``p``'s machine with ``floor`` events is among the outs."""
-    return any(c is not p and c.key not in claims and total[c.key] >= floor and machine_of(c) == machine_of(p) for c in outs)
+    return any(c is not p and c.key not in claims and total[c.key] >= floor and writer_of(c) == writer_of(p) for c in outs)
 
 
 def _best(o: Series, fills: list[Series], pool: list[tuple[Series, int]], total: dict[str, float], claims: dict, floor: float,
-          machine_of, seen, apart=lambda a, b: False) -> tuple | None:
+          writer_of, seen, apart=lambda a, b: False) -> tuple | None:
     """The best passage that starts with the drain ``o``: one fill from ``fills``, and up to
     ``MAX_COUNTERS`` counters in all with what ``pool`` offers (each with its role, +1 in, −1 out).
     No stock is both drained by an in and filled by an out: an item that leaves a stock and is
@@ -122,7 +122,7 @@ def _best(o: Series, fills: list[Series], pool: list[tuple[Series, int]], total:
             if p is o or apart(o, p):
                 continue
             for extra in combinations([(c, r) for c, r in pool if c is not o and c is not p], size):
-                if len({c.key for c, _ in extra}) < size or any(machine_of(c) not in (machine_of(o), machine_of(p)) for c, _ in extra) \
+                if len({c.key for c, _ in extra}) < size or any(writer_of(c) not in (writer_of(o), writer_of(p)) for c, _ in extra) \
                         or any(apart(c, x) for c, _ in extra for x in (o, p)):
                     continue
                 ins = [o, *(c for c, r in extra if r > 0)]
@@ -135,10 +135,10 @@ def _best(o: Series, fills: list[Series], pool: list[tuple[Series, int]], total:
                     continue
                 if any(same_events(a.deltas, b.deltas) for a in ins for b in outs if (a, b) != (o, p)):
                     continue
-                if total[p.key] < floor and not (_vouched(p, outs, total, claims, floor, machine_of) or seen(ins, outs)):
+                if total[p.key] < floor and not (_vouched(p, outs, total, claims, floor, writer_of) or seen(ins, outs)):
                     continue
                 every = ins + outs
-                rank = (sum(1 for c in every if machine_of(c) != machine_of(o)), bad, sorted(c.key for c in every))
+                rank = (sum(1 for c in every if writer_of(c) != writer_of(o)), bad, sorted(c.key for c in every))
                 if best is None or rank < best[0]:
                     best = (rank, ins, outs, bad, moved)
         if best is not None:
@@ -147,7 +147,7 @@ def _best(o: Series, fills: list[Series], pool: list[tuple[Series, int]], total:
 
 
 def passages(found: list, counters: list[Series], levels: list[Series], *, start: float, end: float, step: float,
-             machine_of, copies: dict[str, list[Series]] | None = None, floor: float = MIN_EVENTS,
+             writer_of, copies: dict[str, list[Series]] | None = None, floor: float = MIN_EVENTS,
              apart=lambda a, b: False) -> list[Passage]:
     """Every passage, in turn (``found``: the balances, as (level, terms, r², exact); ``levels``:
     the measured levels that are no stock, any of which may be the state between). The drain it
@@ -158,7 +158,7 @@ def passages(found: list, counters: list[Series], levels: list[Series], *, start
     found, levels, made, copies = list(found), list(levels), [], copies or {}
     total = {c.key: sum(c.deltas) for c in counters}
     also = lambda cs: [*cs, *(d for c in cs for d in copies.get(c.key, ()))]     # the same events, counted again
-    where = {"start": start, "end": end, "step": step, "machine_of": machine_of}
+    where = {"start": start, "end": end, "step": step, "writer_of": writer_of}
     seen = lambda ins, outs: state_level(levels, also(ins), also(outs), **where) is not None
     while True:
         claims = _claims(found)
@@ -170,7 +170,7 @@ def passages(found: list, counters: list[Series], levels: list[Series], *, start
         pool = [(c, 1) for c in drains + free] + [(c, -1) for c in fills + free]
         got = None
         for o in sorted((c for c in drains if total[c.key] >= floor), key=lambda c: (-total[c.key], c.key)):
-            got = _best(o, fills, pool, total, claims, floor, machine_of, seen, apart)
+            got = _best(o, fills, pool, total, claims, floor, writer_of, seen, apart)
             if got:
                 break
         if got is None:

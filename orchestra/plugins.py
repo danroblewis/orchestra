@@ -25,20 +25,28 @@ The web app mounts what it returns:
   kind of thing it is, how it is engaged and what it listens for, the same as an announcement
   says), so the Machines page lists one before it is first seen. What is observed always wins: a
   declaration only fills in a machine nobody has seen yet, and names the package a machine
-  belongs to;
+  belongs to. It says nothing about flows: which flows a machine's work relates to is only ever
+  inferred (``sd.attribute``);
 - its ``processes``, optionally: the commands ``orchestra run`` keeps running for it
   (``orchestra.launcher.Process``: a name, a command, a restart policy, and how long it may take
   to stop), such as a scheduler or
   the host of the programs it runs. Orchestra starts them as it starts the project's own
-  ``[[machines]]`` and knows nothing else of them.
+  ``[[machines]]`` and knows nothing else of them;
+- its ``collectors``, optionally: the instruments ``orchestra run`` reads measurements from for
+  it (instruments, not machines: their series are labelled ``instrument=<name>`` and nothing is
+  announced for them) (``orchestra.collect.spec.Collector``: ``Collector.scrape(name, url, ...)`` or
+  ``Collector.collect(name, command, ...)``), run like the project's ``[[scrape]]`` and
+  ``[[collect]]`` entries and named ``<plugin>.<name>``; a project entry of that name takes the
+  place of the plugin's.
 
 A machine belongs to a package when its announcement says so (``package`` in
 ``orchestra.machine.started``) or the package declares it. The package's every-page script may
 then draw that machine's card and its dialog (``Orchestra.machineCards`` in ``static/app.js``);
 any other machine gets Orchestra's own.
 
-A plugin that fails to load, or a page whose path Orchestra already serves, is left out and
-reported (``/api/plugins``), never fatal: the core stays up (rule 8)."""
+A plugin that fails to load, one whose name an earlier plugin took, a page whose path Orchestra
+already serves, or a script or stylesheet not in its ``static``, is left out and reported
+(``Loaded.errors``, ``/api/plugins``), never fatal: the core stays up (rule 8)."""
 
 from __future__ import annotations
 
@@ -50,6 +58,7 @@ from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Any
 
+from .collect.spec import Collector
 from .launcher import Process
 
 GROUP = "orchestra.plugins"
@@ -81,6 +90,7 @@ class Plugin:
     stylesheets: list[str] = field(default_factory=list)   # files in ``static`` every page links
     machines: list[Declared] = field(default_factory=list)
     processes: list[Process] = field(default_factory=list)   # what `orchestra run` starts for it
+    collectors: list[Collector] = field(default_factory=list)   # what `orchestra run` scrapes or runs for measurements
 
 
 @dataclass
@@ -91,13 +101,20 @@ class Loaded:
 
 def load(project, found: Callable[[], list] | None = None) -> Loaded:
     """Every plugin installed with Orchestra, made for ``project``. ``found`` stands in for the
-    installed entry points (tests)."""
-    plugins, errors = [], []
+    installed entry points (tests). Of two plugins with one name, the first is kept and the second
+    reported."""
+    plugins, errors, by = [], [], {}
     for ep in (found or (lambda: list(entry_points(group=GROUP))))():
         try:
             p = ep.load()(project)
             if not isinstance(p, Plugin):
                 raise TypeError(f"returned {type(p).__name__}, not a Plugin")
+            if p.name in by:
+                log.warning("plugin %s is named %s, as %s is; left out", ep.name, p.name, by[p.name])
+                errors.append({"plugin": ep.name, "error": f"its name {p.name!r} is taken by the plugin of entry point "
+                                                           f"{by[p.name]!r}; left out", "trace": ""})
+                continue
+            by[p.name] = ep.name
             plugins.append(p)
         except Exception as e:  # noqa: BLE001 - one broken plugin must not take the web app down
             log.warning("plugin %s failed to load: %s", ep.name, e)

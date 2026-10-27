@@ -1,5 +1,6 @@
-"""A machine the model knows from another store's series (``[[sources]]``) is on the Machines page,
-marked with its source, read from the latest discovery and never by querying the source."""
+"""A series read from another store (``[[sources]]``) whose labels name a machine makes no machine
+on the Machines page: a machine exists by its events (AGENTS.md rules 2 and 7). A model saved
+before 2026-10-27 that lists one is not read for it either."""
 
 import subprocess
 import time
@@ -11,7 +12,7 @@ from orchestra.sd.model import Flow, Machine, Model, SeriesRef, Stock
 from orchestra.sd.store import ModelStore
 
 
-def test_a_discovered_remote_series_with_a_machine_label_lists_that_machine(tmp_path, monkeypatch):
+def test_a_discovered_remote_series_with_a_machine_label_makes_no_machine(tmp_path, monkeypatch):
     from orchestra.web.app import create_app
 
     monkeypatch.setenv("ORCHESTRATOR_HOME", str(tmp_path / "home"))
@@ -28,9 +29,7 @@ def test_a_discovered_remote_series_with_a_machine_label_lists_that_machine(tmp_
     deadline = time.time() + 15
     while time.time() < deadline:
         got = c.get("/api/machines").json()
-        if got.get("ok") and any(m["id"] == "rig.search" for m in got["machines"]):
+        if got.get("ok"):
             break
         time.sleep(0.2)
-    m = next(m for m in got["machines"] if m["id"] == "rig.search")
-    assert m["from_source"] == "rig"
-    assert 'rig:app_latency_seconds_pods{service="search"}' in m["metrics"]
+    assert got["ok"] and not any(m["id"] == "rig.search" for m in got["machines"])

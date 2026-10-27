@@ -51,11 +51,11 @@ def at_events(level: Series, ins: list[Series], outs: list[Series], start: float
 
 
 def state_level(levels: list[Series], ins: list[Series], outs: list[Series], *, start: float, end: float, step: float,
-                machine_of) -> tuple[Series, list[int], list[int]] | None:
+                writer_of) -> tuple[Series, list[int], list[int]] | None:
     """The level that is the state between ``ins`` and ``outs``: of those that qualify, the one
     with the most rises at the ins' events, then the ins' machine's."""
     scored = [(m, lv) for lv in levels if (m := at_events(lv, ins, outs, start, end, step))]
     if not scored:
         return None
-    (up, down), level = max(scored, key=lambda x: (x[0][0][0], machine_of(x[1]) == machine_of(ins[0]), x[1].key))
+    (up, down), level = max(scored, key=lambda x: (x[0][0][0], writer_of(x[1]) == writer_of(ins[0]), x[1].key))
     return level, up, down

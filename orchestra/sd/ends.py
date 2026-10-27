@@ -49,14 +49,14 @@ class Move:
     evidence: dict = field(default_factory=dict)
 
 
-def claims(found: list, sid_of: dict, machine_of) -> dict[str, list[Claim]]:
+def claims(found: list, sid_of: dict, writer_of) -> dict[str, list[Claim]]:
     """Per counter key, every stock's claim on it (``found``: (level, terms, r2, exact))."""
     out: dict[str, list[Claim]] = defaultdict(list)
     for s, terms, _, _ in found:
         acc = all(sign > 0 for _, sign in terms)
         steps = balance_steps(s, [c for c, _ in terms])      # the steps the balance was found on
         for c, sign in terms:
-            out[c.key].append(Claim(sid_of[s.key], sign, explained_share(s, terms, c, steps), machine_of(s), acc))
+            out[c.key].append(Claim(sid_of[s.key], sign, explained_share(s, terms, c, steps), writer_of(s), acc))
     return out
 
 
@@ -86,7 +86,7 @@ def copies(c, cs: list[Claim], fid: str) -> list[Move] | None:
     return made
 
 
-def moves(counters: list, by_counter: dict[str, list[Claim]], fid_of: dict[str, str], machine_of) -> list[Move]:
+def moves(counters: list, by_counter: dict[str, list[Claim]], fid_of: dict[str, str], writer_of) -> list[Move]:
     """The flows the claims make, in the counters' order: one per counter and claiming machine,
     or one per stock a copy fills."""
     out: list[Move] = []
@@ -100,7 +100,7 @@ def moves(counters: list, by_counter: dict[str, list[Claim]], fid_of: dict[str, 
         groups: dict[str | None, list[Claim]] = defaultdict(list)
         for cl in cs:
             groups[cl.machine].append(cl)
-        own = machine_of(c)
+        own = writer_of(c)
         main = own if own in groups else max(groups, key=lambda m: sum(cl.share for cl in groups[m]))
         fid = fid_of[c.key]
         made = []
@@ -114,7 +114,7 @@ def moves(counters: list, by_counter: dict[str, list[Claim]], fid_of: dict[str, 
                 ev["conflicts"] = conflicts
             if machine != main:
                 ev["co_flow_of"] = fid
-                ev["note"] = (f"the same events as {fid}, which also move {machine or 'another machine'}'s stock: "
+                ev["note"] = (f"the same events as {fid}, which also move a stock {machine or 'another writer'} measures: "
                               "one event, two materials")
             made.append(Move(fid if machine == main else f"{fid}@{machine or 'other'}", c, src, dst, ev))
         if len(made) > 1:

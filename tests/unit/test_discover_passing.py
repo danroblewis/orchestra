@@ -91,11 +91,11 @@ def test_a_drain_and_a_fill_of_one_stock_are_no_passage():
     free = Series("free_level", lab, [], [3.0] * 121, False)
     other = Series("other_level", lab, [], cum([0.0] * 120), False)
     found = [(free, [(called, -1), (freed, 1)], 1.0, 1.0)]
-    assert passages(found, [called, freed], [other], start=T0, end=T0 + 3600, step=30, machine_of=lambda s: "m") == []
+    assert passages(found, [called, freed], [other], start=T0, end=T0 + 3600, step=30, writer_of=lambda s: "m") == []
     # the same two counters, one draining A and the other filling B, are a passage
     a, b = Series("a_level", lab, [], [3.0] * 121, False), Series("b_level", lab, [], [3.0] * 121, False)
     got = passages([(a, [(called, -1)], 1.0, 1.0), (b, [(freed, 1)], 1.0, 1.0)], [called, freed], [other],
-                   start=T0, end=T0 + 3600, step=30, machine_of=lambda s: "m")
+                   start=T0, end=T0 + 3600, step=30, writer_of=lambda s: "m")
     assert [([c.name for c in p.ins], [c.name for c in p.outs], p.measured) for p in got] == [(["called_total"], ["freed_total"], False)]
 
 
@@ -109,7 +109,7 @@ def test_a_drain_two_stocks_claim_and_a_cancelling_pair_are_no_passage():
     called, ordered = mk("called_total", d), mk("ordered_total", d)
     lv = lambda name, m="m": Series(name, {"machine": m}, [], [3.0] * 121, False)
     a, b, line = lv("a_level"), lv("b_level"), lv("line_level", "customers")
-    where = {"start": T0, "end": T0 + 3600, "step": 30, "machine_of": lambda s: s.labels["machine"]}
+    where = {"start": T0, "end": T0 + 3600, "step": 30, "writer_of": lambda s: s.labels["machine"]}
     two = [(a, [(called, -1)], 1.0, 1.0), (line, [(called, -1)], 1.0, 1.0), (b, [(ordered, 1)], 1.0, 1.0)]
     assert passages(two, [called, ordered], [], **where) == []
     # called drains A and other (different events) fills B: two free counters, a copy of each,

@@ -58,7 +58,9 @@ def test_rediscovery_reads_the_remote_and_records_where_each_series_came_from(tm
         assert s.series.query.startswith("count by (") and "counted from" in s.series.origin[0] and s.series.resolution_s >= 60.0
     flows = [f for f in m.flows if f.dst in {s.id for s in pods} or f.src in {s.id for s in pods}]
     assert flows and all(f.current().sources == ["rig"] for f in flows)
-    assert {mc.id for mc in m.machines} >= {"rig.checkout", "rig.search", "rig.authz"}
+    # the remote store's machine label is its own dimension of the data, kept; it makes no machine
+    # and associates none with a flow (AGENTS.md rule 7): the rig has no events on this bus
+    assert m.machines == [] and all(f.evidence["machines"]["hypotheses"] == [] for f in flows)
     stored = (p.state_dir / "model" / "discovered.json").read_text() + (p.state_dir / "sources" / "rig.json").read_text()
     assert "s3cret-rig-token" not in stored and "s3cret-rig-token" not in json.dumps(model_view(p))
 

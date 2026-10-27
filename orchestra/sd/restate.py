@@ -28,7 +28,7 @@ from itertools import combinations
 
 from .balance import fit_of
 from .collinear import decompose
-from .series import EVENT_COUNTER, Series
+from .series import EVENT_COUNTER, Series, written_by
 
 
 def _replace(s: Series, terms: list, c: Series, parts: list, steps: list[int], fits) -> tuple[list, float, float] | None:
@@ -43,20 +43,20 @@ def _claimed_by_others(found: list, s: Series) -> set[str]:
     return {k.key for o, oterms, _, _ in found if o is not s for k, _ in oterms}
 
 
-def split_event_counters(found: list, counters: list[Series], masks: dict[str, list[int]], machine_of, fits, floor: float
+def split_event_counters(found: list, counters: list[Series], masks: dict[str, list[int]], writer_of, fits, floor: float
                          ) -> tuple[list, dict[str, str]]:
     """Orchestra's event counters in the balances, each replaced by the machine counters that sum
     to it (``floor``: the events a sum of parts needs). ``order.queued`` is ``placed + returns +
     failed + leases``: four flows into the waiting orders, two of them from other stocks. Where
     two sets sum to it alike, the level's own machine's parts win over another machine's copy."""
     out, notes = [], {}
-    machine = [c for c in counters if c.labels.get("machine")]
+    machine = [c for c in counters if written_by(c)]
     for s, terms, r2, exact in found:
         for c, _ in list(terms):
             if c.name != EVENT_COUNTER:
                 continue
             used = {k.key for k, _ in terms}
-            own = {k.key for k in machine if machine_of(k) == machine_of(s)}
+            own = {k.key for k in machine if writer_of(k) == writer_of(s)}
             parts = decompose(c, [k for k in machine if k.key not in used], masks[s.key], sizes=(1, 2, 3, 4),
                               required=_claimed_by_others(found, s) | own, floor=floor, own=own)
             got = _replace(s, terms, c, parts, masks[s.key], fits) if parts else None
@@ -67,15 +67,15 @@ def split_event_counters(found: list, counters: list[Series], masks: dict[str, l
     return out, notes
 
 
-def split_foreign_counters(found: list, counters: list[Series], masks: dict[str, list[int]], machine_of, fits, floor: float
+def split_foreign_counters(found: list, counters: list[Series], masks: dict[str, list[int]], writer_of, fits, floor: float
                            ) -> tuple[list, dict[str, str]]:
     """Another machine's counters in a balance that no other stock claims, each replaced by the
     level's own machine's counters that sum to it: yelp's reviews are the customers served plus
     those who gave up, and the customers' waiting is the customers' to account for."""
     out, notes = [], {}
-    machine = [c for c in counters if c.labels.get("machine")]
+    machine = [c for c in counters if written_by(c)]
     for s, terms, r2, exact in found:
-        own = [c for c in machine if machine_of(c) == machine_of(s)]
+        own = [c for c in machine if writer_of(c) == writer_of(s)]
         if not own:
             out.append((s, terms, r2, exact))
             continue
@@ -100,7 +100,7 @@ def _held_together(found: list, a: Series, b: Series) -> bool:
     return any(any(c is a for c, _ in terms) and any(c is b for c, _ in terms) for _, terms, _, _ in found)
 
 
-def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamped, machine_of, fits
+def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamped, writer_of, fits
                      ) -> tuple[list, dict[str, str], list[tuple[Series, Series]]]:
     """Two counters of the same events (``same``: in the same steps, or one stamped up to a step
     after the other), each in a balance, become one counter in every balance, unless a balance
@@ -137,7 +137,7 @@ def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamp
                 total += r2
             if not ok:
                 continue
-            own = {sg for s, terms, _, _ in trial for c, sg in terms if c is keep and machine_of(s) == machine_of(keep)}
+            own = {sg for s, terms, _, _ in trial for c, sg in terms if c is keep and writer_of(s) == writer_of(keep)}
             rank = (len(own) == 2, len(own) >= 1, first_stamped(keep, drop), total)
             if best is None or rank > best[0]:
                 best = (rank, trial, keep, drop)

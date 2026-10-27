@@ -28,7 +28,7 @@ def test_a_command_that_prints_two_series(tmp_path):
     r = collect(Collector("disk", "collect", cmd, 60, 5), tmp_path, "proj", log)
     assert r.error is None
     by = {p.series: p for p in r.points}
-    assert by["disk_free_bytes"].labels == {"volume": "/", "project": "proj", "machine": "disk"}
+    assert by["disk_free_bytes"].labels == {"volume": "/", "project": "proj", "instrument": "disk"}
     assert by["disk_free_bytes"].value == 100.0 and abs(by["disk_free_bytes"].ts - time.time()) < 5
     assert by["files_total"].ts == 1761500000.0
     assert len(r.bad) == 1
@@ -73,10 +73,13 @@ def test_orchestra_series_are_refused_and_the_rest_kept(tmp_path):
     assert r.refused == ["orchestra_disk_bytes"]
 
 
-def test_the_collector_sets_project_and_machine_over_the_text():
-    r = points_of(Collector("disk", "collect", "x"), 'a{machine="other",project="p2",k="v"} 1\na{machine="other",project="p2",k="v"} 2\n',
-                  "proj", 100.0)
-    assert [(p.value, p.labels) for p in r.points] == [(2.0, {"machine": "disk", "project": "proj", "k": "v"})]
+def test_the_instrument_adds_its_provenance_and_keeps_the_targets_own_labels():
+    # the target's own `machine` label is the measured system's dimension of the data: kept as it
+    # was; a label Orchestra sets is never overwritten, it is kept as exported_<name>
+    r = points_of(Collector("disk", "collect", "x"), 'a{machine="other",project="p2",instrument="i",k="v"} 1\n'
+                  'a{machine="other",project="p2",instrument="i",k="v"} 2\n', "proj", 100.0)
+    assert [(p.value, p.labels) for p in r.points] == [(2.0, {"machine": "other", "exported_project": "p2", "exported_instrument": "i",
+                                                              "k": "v", "project": "proj", "instrument": "disk"})]
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
@@ -108,7 +111,7 @@ def test_a_scrape_round(server, tmp_path):
     r = collect(Collector("app", "scrape", url, 30, 5), tmp_path, "proj", tmp_path / "app.log")
     assert r.error is None
     assert {(p.series, p.value) for p in r.points} == {("queue_depth", 4.0), ("jobs_done_total", 9.0)}
-    assert all(p.labels["machine"] == "app" and p.labels["project"] == "proj" for p in r.points)
+    assert all(p.labels["instrument"] == "app" and p.labels["project"] == "proj" for p in r.points)
 
     _Handler.status = 500
     r = collect(Collector("app", "scrape", url, 30, 5), tmp_path, "proj", tmp_path / "app.log")

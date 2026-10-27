@@ -207,9 +207,10 @@ def balance(level, counters: list, ls: LeastSquares | None = None, steps: list[i
     if not counters or not y:
         return [], 0.0, sum(1 for v in y if abs(v) <= 0.5) / max(1, len(y))
     pen = penalty(sst)
-    # a machine's own measurement (labelled machine=…) is preferred over Orchestra's generic event
-    # count of the same thing when the two fit about equally: it costs a little less to use
-    cost = [pen * (1.0 if c.labels.get("machine") else 1.1) for c in counters]
+    # a measurement (labelled with the instrument or the machine that wrote it) is preferred over
+    # Orchestra's generic event count of the same thing when the two fit about equally: it costs a
+    # little less to use
+    cost = [pen * (1.0 if (c.labels.get("instrument") or c.labels.get("machine")) else 1.1) for c in counters]
     bonus = max(0.0, pen - COMPLETION * EVENT_FLOOR)
 
     def objective(e: float, charge: float) -> float:

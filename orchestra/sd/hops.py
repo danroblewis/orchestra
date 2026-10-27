@@ -17,7 +17,7 @@ from .series import EVENT_COUNTER, Series
 
 
 def split_hops(found: list, counters: list[Series], copies: dict[str, list[Series]], levels: list[Series], *,
-               start: float, end: float, step: float, first_stamped, machine_of) -> tuple[list, list[Passage], list[Series]]:
+               start: float, end: float, step: float, first_stamped, writer_of) -> tuple[list, list[Passage], list[Series]]:
     """The balances with each two-hop move that a measured state lies on split in two, the
     passages through those states, and the copies that came back as counters of their own.
     ``copies``: per counter key, the same machine's counters of the same events it stands for."""
@@ -29,10 +29,10 @@ def split_hops(found: list, counters: list[Series], copies: dict[str, list[Serie
         if sorted(sign for _, sign in held) != [-1, 1]:
             continue                    # a hop is a move between two stocks, one draining and one filling
         for d in copies.get(k.key, []):
-            if d.name == EVENT_COUNTER or k.name == EVENT_COUNTER or machine_of(d) != machine_of(k):
+            if d.name == EVENT_COUNTER or k.name == EVENT_COUNTER or writer_of(d) != writer_of(k):
                 continue
             first, second = (k, d) if first_stamped(k, d) else (d, k)
-            state = state_level(levels, [first], [second], start=start, end=end, step=step, machine_of=machine_of)
+            state = state_level(levels, [first], [second], start=start, end=end, step=step, writer_of=writer_of)
             if not state:
                 continue
             level, up, down = state

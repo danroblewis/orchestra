@@ -9,8 +9,10 @@ event on the bus by its type and the machine that emitted it:
 
 Whether a counter is a flow, and of what, is the model generator's business, not the
 collector's: collectors expose plain series, and the generator relates them (docs/proposals/
-empty-orchestra.md §8). Machines publish their own measurements (levels, counters) to the
-metrics store directly.
+empty-orchestra.md §8). The metrics store is filled by instruments directly (``orchestra.collect``:
+scripts and scrapes, which measure the system); this count of the bus is the one series derived
+from the event log, and is secondary. Discovery reads it to associate machines with flows, as
+hypotheses (``sd.attribute``).
 
 Events carry millisecond timestamps, but older ones have one-second timestamps, and several events
 can share an instant. Stores don't agree on the order of points that share one (the file keeps

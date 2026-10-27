@@ -7,9 +7,11 @@ Principles (docs/proposals/system-dynamics-core.md, docs/proposals/orchestra-ker
   counter series when one exists; its **equation** is observed (fitted or discovered), and every
   equation records its **origin**: ``fitted`` (with method, window and quality), ``discovered``,
   or ``declared`` (an assumption, labelled as one until it is fitted).
-- A **machine** is a record of something outside Orchestra and outside the model (an agent, a
-  program, a team, a device). It is attributed to flows as a hypothesis and observed through
-  series. A machine never defines a flow's equation.
+- A **machine** is a record of something outside Orchestra and outside the model that does actual
+  work (a program, an AI agent, a person), known by its events on the bus. System dynamics has no
+  machines: a machine is associated with flows only as hypotheses, inferred from its events
+  (``sd.attribute``), with their evidence; it may be associated with none, and several with one
+  flow. A machine never defines a flow's equation.
 - An **era** is a stretch of time with one configuration; fits are per era.
 
 The JSON form follows SD Lab's model format (MODEL.md) where the concepts coincide (stocks, flows
@@ -88,8 +90,8 @@ class Machine:
     name: str
     kind: str                           # machine (discovered: the metrics do not say what it is) | agent | program | person | team | device | external
     description: str = ""
-    attributed: list[str] = field(default_factory=list)       # flow ids: hypotheses, validated by fits across eras
-    observed_by: list[SeriesRef] = field(default_factory=list)
+    attributed: list[str] = field(default_factory=list)       # flow ids it may be associated with: hypotheses (flow.evidence["machines"])
+    observed_by: list[SeriesRef] = field(default_factory=list)   # its event counts the hypotheses rest on
     bootstrap: bool = False             # Orchestra's own host
 
 

@@ -1,6 +1,12 @@
 """The Machines page's data: the machines seen on the event bus, their instances and how they are
 engaged, and the network of which machine publishes and which listens for which event types.
 
+A machine exists because it shows up on the bus (AGENTS.md rule 2): never because a series names
+it. An instrument (``[[collect]]``, ``[[scrape]]``, ``[[sources]]``) measures the system and is not
+a machine (rule 7): it is on the Instruments page, not here. Announcements the host made on an
+instrument's behalf before 2026-10-27 (``orchestra.machine.started`` with ``data.collector``) are
+left out, so a detector seen then is not a machine now.
+
 Everything here is observed, or announced by the machine itself:
 - a **machine** is the machine part of a CloudEvents ``source``; a source ``<machine>/<instance>``
   is one **instance** of it (``baker/1``, ``baker/2``: one machine, two instances). Orchestra's own
@@ -18,7 +24,8 @@ Everything here is observed, or announced by the machine itself:
   rest the machine's latest announcement stands, and what is left of it is passed to the
   package's card unread;
 - **publishes**: the event types its instances emitted, with counts (all time and the last day);
-- **metrics**: the series in the metrics store labelled ``machine=<id>``, and the series read from
+- **metrics**: the series in the metrics store labelled ``machine=<id>`` (shown on a machine's card
+  when it is a machine; a series alone never makes one), and the series read from
   another store (``[[sources]]``) that the latest discovery found labelled with it: such a
   machine is marked ``from_source`` (the source's name), read from the discovery record, never by
   querying the source from the page;
@@ -114,6 +121,8 @@ class MachineIndex:
         if not machine:
             self.unattributed += 1
             return
+        if ev.get("type") == "orchestra.machine.started" and "collector" in (ev.get("data") or {}):
+            return                    # the host announcing an instrument, before instruments were told apart
         t = event_time(ev) or 0.0
         seen = min(t, time.time())          # stamped ahead: seen when read, never in the future
         key = instance or ""
@@ -195,7 +204,8 @@ class MachineIndex:
                     metrics[labels["machine"]].add(name + (f"{{{extra}}}" if extra else ""))
                     if source:
                         from_source.setdefault(labels["machine"], source)
-            ids = sorted(set(self.total) | set(self.subs) | set(metrics) | set(self.instances) | {HOST}, key=lambda m: (m != HOST, m))
+            # machines are what the bus shows; a series labelled with a name makes no machine
+            ids = sorted(set(self.total) | set(self.subs) | set(self.instances) | {HOST}, key=lambda m: (m != HOST, m))
             machines = []
             for m in ids:
                 pubs = []

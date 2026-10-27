@@ -1,7 +1,11 @@
 """One round of a collector: its text fetched, parsed, and turned into the points to write.
 
-Every point gets the ``project`` label and ``machine = <the collector's name>``, replacing any the
-text gave (the collector is the machine that measured it). A point without a timestamp takes the
+Every point gets the ``project`` label and ``instrument = <the collector's name>``: its provenance,
+which instrument measured it. A collector is an instrument, not a machine (AGENTS.md rule 7): it
+measures the system and never acts on it. Every other label the text gave is kept as it was,
+``machine`` included, which is the measured system's own dimension of the data. A label of the
+text that Orchestra sets (``project``, ``instrument``) is kept as ``exported_<name>`` (as
+Prometheus does), never overwritten. A point without a timestamp takes the
 time the round began. A series whose name starts with ``orchestra_`` is refused: the prefix is
 Orchestra's own. Several values of one series in one round keep only the last."""
 
@@ -30,6 +34,16 @@ class Round:
     error: str | None = None                                      # why the round wrote nothing
 
 
+OWN = ("project", "instrument")     # the labels Orchestra sets on every collected point
+
+
+def labelled(labels: dict[str, str], project: str, instrument: str) -> dict[str, str]:
+    """The text's labels, with the project and the instrument added; a label of the text that
+    either would replace is kept as ``exported_<name>``."""
+    out = {(f"exported_{k}" if k in OWN else k): v for k, v in labels.items()}
+    return {**out, "project": project, "instrument": instrument}
+
+
 def points_of(c: Collector, text: str, project: str, now: float) -> Round:
     parsed = parse(text)
     out = Round(bad=parsed.bad, left_out=parsed.left_out)
@@ -40,7 +54,7 @@ def points_of(c: Collector, text: str, project: str, now: float) -> Round:
                 out.refused.append(s.name)
             continue
         ts = s.ts_ms / 1000 if s.ts_ms is not None else now
-        points.append(Point(s.name, s.value, ts, {**s.labels, "project": project, "machine": c.name}))
+        points.append(Point(s.name, s.value, ts, labelled(s.labels, project, c.name)))
     out.points = collapse(points)
     return out
 

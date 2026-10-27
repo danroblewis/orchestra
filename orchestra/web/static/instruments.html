@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orchestra · Instruments</title>
+<link rel="stylesheet" href="/static/style.css?v={{v}}">
+<style>
+  .iwrap { max-width:1400px; margin:0 auto; padding:16px 20px }
+  .iwrap .intro { font-size:12.5px; color:var(--text2); margin-bottom:12px; max-width:1050px }
+  .itable { width:100%; border-collapse:collapse; font-size:12.5px } .itable th { text-align:left; color:var(--muted); font-weight:600; padding:6px 8px; border-bottom:1px solid var(--border) }
+  .itable td { padding:6px 8px; border-bottom:1px solid var(--border); vertical-align:top; overflow-wrap:anywhere } .itable tr.click { cursor:pointer } .itable tr.click:hover td { background:var(--panel2) }
+  .itable .num { font-family:var(--mono); font-size:11.5px } .bad { color:#f87171 } .scroll-x { overflow-x:auto }
+  .logs { font-family:var(--mono); font-size:11.5px; white-space:pre-wrap; max-height:60vh; overflow:auto }
+</style>
+</head>
+<body>
+<nav id="nav"><a href="/">Dashboard</a><a href="/machines">Machines</a><a href="/instruments" class="on">Instruments</a><a href="/dynamics">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
+<div class="iwrap">
+  <div class="intro">An instrument measures the running system and never acts on it: a script Orchestra runs (<code>[[collect]]</code>), a URL it reads (<code>[[scrape]]</code>), or another store it reads at each discovery (<code>[[sources]]</code>). Instruments are not machines: their series are labelled <code>instrument=&lt;name&gt;</code>, which says who measured them, never who did the work. Machines are on the Machines page, known by their events on the bus. Click an instrument for its log.</div>
+  <div id="state" class="muted" style="font-size:12px;margin-bottom:8px"></div>
+  <div class="scroll-x"><table class="itable" id="list"></table></div>
+  <div id="errors" class="muted" style="font-size:12px;margin-top:10px"></div>
+</div>
+<div id="overlay" class="overlay" onclick="if(event.target===this)this.classList.remove('open')"><div id="drawer" class="drawer"></div></div>
+<script src="/static/app.js?v={{v}}"></script>
+<script>
+const every = (s) => (s == null ? "at each discovery" : s >= 60 ? `${+(s / 60).toFixed(1)} min` : `${s} s`);
+async function load() {
+  let d;
+  try { d = await (await fetch("/api/instruments")).json(); } catch (e) { $("state").textContent = "cannot reach the web server: " + e; return; }
+  const now = Date.now() / 1000;
+  $("state").textContent = d.host_running ? `${d.instruments.length} instruments` : `${d.instruments.length} instruments · no orchestra run is running, so the scripts and URLs are not being read`;
+  $("list").innerHTML = `<tr><th>instrument</th><th>kind</th><th>target</th><th>every</th><th>last write</th><th>failures</th><th>last error</th></tr>`
+    + d.instruments.map((x) => `<tr class="${x.kind === "source" ? "" : "click"}" data-name="${esc(x.name)}">
+      <td><b>${esc(x.name)}</b>${x.owner && x.owner !== "project" ? ` <span class="muted">(${esc(x.owner)})</span>` : ""}</td><td>${esc(x.kind)}</td>
+      <td class="num">${esc(x.target)}</td><td>${esc(every(x.every_s))}</td>
+      <td>${x.last_write ? `${ago(now - x.last_write)} ago · ${x.points} points` : x.kind === "source" ? (x.status ? (x.status.ok === false ? "" : "read at the last discovery") : "not read yet") : '<span class="muted">none yet</span>'}</td>
+      <td class="${x.failures ? "bad" : ""}">${x.failures ?? ""}</td><td class="bad">${esc(x.last_error || "")}</td></tr>`).join("");
+  $("errors").innerHTML = (d.errors || []).map((e) => `<div>left out: ${esc(e)}</div>`).join("");
+  document.querySelectorAll("#list tr.click").forEach((tr) => (tr.onclick = () => openLog(tr.dataset.name)));
+}
+async function openLog(name) {
+  const d = await (await fetch(`/api/instruments/${encodeURIComponent(name)}/log`)).json();
+  $("drawer").innerHTML = `<h3>${esc(name)} <span class="tag">instrument</span></h3>` + (d.ok ? `<div class="muted" style="font-size:11.5px">${esc(d.path)}</div><div class="logs">${esc(d.lines.join("\n"))}</div>` : `<div class="muted">${esc(d.error)}</div>`);
+  $("overlay").classList.add("open");
+}
+load(); setInterval(load, 10000);
+</script>
+</body>
+</html>

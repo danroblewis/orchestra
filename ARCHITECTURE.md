@@ -11,27 +11,31 @@ document and the code disagree, the code is right and this document is out of da
 ## What Orchestra is
 
 Orchestra watches a system of **machines** from the outside and keeps one **system dynamics
-model** of it. A machine is anything outside Orchestra that does something: a program, an AI
+model** of it. A machine is anything outside Orchestra that does actual work: a program, an AI
 agent, a service, a person. Orchestra never runs a machine's logic and never asks a machine what
-it is. It learns about machines from two things: the **events** they publish on an event bus, and
-the **measurements** (time series) they write, or that Orchestra collects for them, in a metrics
-store. From the measurements it discovers a model of **stocks** (quantities that accumulate, such
-as items waiting in a queue) and **flows** (rates that fill or drain stocks, such as items
-finished per minute), fits an equation to every flow, and says which machine it thinks drives
-each flow. It shows all of this in a read-only web UI. Orchestra itself holds no machines, no
-tickets, no tasks and no AI: those live in other packages, which plug in.
+it is. It knows a machine by the **events** it publishes on an event bus. Separately,
+**instruments** measure the running system and write **measurements** (time series) to a metrics
+store; an instrument measures and never acts, and is not a machine. From the measurements it
+discovers a model of **stocks** (quantities that accumulate, such as items waiting in a queue)
+and **flows** (rates that fill or drain stocks, such as items finished per minute) and fits an
+equation to every flow. System dynamics has no machines: how a machine's work relates to the
+flows is not known, and Orchestra infers it, as hypotheses with their evidence, from the
+machines' events. It shows all of this in a read-only web UI. Orchestra itself holds no machines,
+no tickets, no tasks and no AI: those live in other packages, which plug in.
 
 Some terms used throughout:
 
 | Term | Meaning |
 |---|---|
-| **Machine** | Something outside Orchestra, known by the CloudEvents `source` it publishes under and the `machine` label on its series. Several instances publish as `<machine>/<instance>`. |
+| **Machine** | Something outside Orchestra that does work, known by the CloudEvents `source` it publishes under (or as the producer or consumer of counted traffic). Several instances publish as `<machine>/<instance>`. A series never makes a machine. |
+| **Instrument** | What measures the system and never acts: a `[[collect]]` script, a `[[scrape]]` URL, a `[[sources]]` store, a plugin's `Plugin.collectors`. Not a machine. Its points carry `instrument=<name>`. |
 | **CloudEvents** | A standard envelope for events (`specversion`, `id`, `type`, `source`, `time`, optional `subject`, `data`). Orchestra reads the envelope; the `data` payload belongs to the machines. |
 | **Series** | A metric name plus labels, with timestamped values, as in Prometheus. |
 | **Counter** | A series that only goes up (apart from resets), named `..._total`. Discovery reads counters as flows. |
 | **Level** | Any other series (a gauge): how much there is now. Discovery may find that a level is a stock. |
 | **Stock** | A level whose changes are explained by flows. In system dynamics: an accumulation. |
 | **Flow** | A rate that moves material into or out of a stock, or between two stocks. |
+| **Association** | A hypothesis that a machine's work is measured by a flow, inferred from its events matching the flow's counter, with evidence and a confidence. Never declared. |
 | **Model version** | A saved copy of the model. Past versions stay readable. |
 | **State directory** | `~/.orchestrator/<key>/`, where Orchestra keeps a project's files. |
 
@@ -41,13 +45,14 @@ Some terms used throughout:
 flowchart LR
   subgraph outside["Outside Orchestra"]
     M["Machines: programs, agents, services, people"]
+    T["Measured targets: scripts, /metrics URLs"]
     R["Other stores: Prometheus API"]
   end
   subgraph host["orchestra run (host.py)"]
     EC["Event collector"]
     DI["Discovery thread"]
     LA["Launcher"]
-    CO["Collectors and scrapes"]
+    CO["Instruments: collectors and scrapes"]
     EP["Events endpoint (HTTP)"]
   end
   subgraph stores["Backends"]
@@ -60,7 +65,7 @@ flowchart LR
   end
   subgraph web["orchestra web (web/)"]
     BG["Background reads"]
-    UI["Core, Machines, Dynamics"]
+    UI["Core, Machines, Instruments, Dynamics"]
   end
   PL["Plugins"]
   CLI["CLI (cli.py)"]
@@ -68,12 +73,12 @@ flowchart LR
   M -- "POST /events, GET /events" --> EP
   EP -- "Events.publish, Events.after" --> BUS
   M -. "or the Python helper (Events.publish)" .-> BUS
-  M -- "for_repo().write" --> MET
   LA -- "starts, restarts" --> M
-  CO -- "run or scrape" --> M
-  CO -- "points" --> MET
+  CO -- "run or scrape" --> T
+  CO -- "points, instrument=#lt;name#gt;" --> MET
+  CO -- "health" --> RT
   EC -- "follows" --> BUS
-  EC -- "orchestra_events_total" --> MET
+  EC -- "orchestra_events_total (secondary)" --> MET
   DI -- "reads via catalogue" --> MET
   DI -- "reads, never writes" --> R
   DI -- "versions" --> MS
@@ -86,6 +91,7 @@ flowchart LR
   UI --> BG
   PL -- "pages, routes" --> UI
   PL -- "processes" --> LA
+  PL -- "collectors" --> CO
   CLI --> MS
   CLI --> BUS
   CLI --> MET
@@ -100,16 +106,16 @@ Each component, its module, and what it depends on:
 | **Metrics store** | `orchestra/metrics/` (`file.py`, `victoria.py`, `promql.py`) | Stores series: `write`, `raw`, `range`, `latest`, `series`, `dump`, `delete`. Every point carries a `project` label. Refuses points stamped more than 60 s in the future (`refuse_future`). `promql.py` is a tested PromQL subset for the file store. | config |
 | **Runtime record** | `orchestra/runtime.py` | `<state>/runtime.json`: the running hosts, the one host that launches, the web server, and the launched processes. Every write takes a file lock. A record holds a pid and the process's create time, so a reused pid is not mistaken for it. | config, `psutil`, `fcntl` |
 | **Event collector** | `orchestra/collectors.py` | Counts every event by type and source into `orchestra_events_total{type, source}`. Knows nothing about what events mean. | bus, metrics |
-| **Bootstrap host** | `orchestra/host.py` | `orchestra run`: Orchestra's own machine, `orchestra-host`. Registers itself, publishes `orchestra.host.started`/`stopped`, writes `orchestra_host_up`, runs the event collector, rediscovers the model on a timer, and (in the one host that launches) runs the launcher and the collectors. | everything below |
+| **Bootstrap host** | `orchestra/host.py` | `orchestra run`: Orchestra's own machine, `orchestra-host`. Registers itself, publishes `orchestra.host.started`/`stopped`, writes `orchestra_host_up`, runs the event collector, rediscovers the model on a timer, and (in the one host that launches) runs the launcher and the instruments. | everything below |
 | **Events endpoint** | `orchestra/endpoint/` (`__init__`, `validate`, `server`) | HTTP for machines in any language: `POST /events` checks one event's fields and publishes it through `Events.publish`; `GET /events?after=&types=&wait=&limit=` reads by offset, with a long poll. Served by the host that launches on `[events] listen` (127.0.0.1 and a port the system picks, by default), behind the project's token (`<state>/events.token`). Remembers recent ids, so a retried post is written once. | events (`Events`), runtime, the stdlib's `http.server` |
 | **Launcher** | `orchestra/launcher.py` | Keeps running the commands that `[[machines]]` and plugins (`Plugin.processes`) declare. Knows them only as processes: a name, a command, a pid, an exit code. | config, runtime, the host's `publish` |
-| **Collectors and scrapes** | `orchestra/collect/` (`spec`, `fetch`, `exposition`, `round`, `runner`) | Runs `[[collect]]` commands and reads `[[scrape]]` URLs on intervals, parses the Prometheus text format, and writes the points labelled `machine=<name>`. | metrics, launcher (name rule, log size), the host's `publish` |
+| **Instruments: collectors and scrapes** | `orchestra/collect/` (`spec`, `fetch`, `exposition`, `round`, `runner`) | Runs `[[collect]]` commands and reads `[[scrape]]` URLs (the project's and the plugins' `Plugin.collectors`) on intervals, parses the Prometheus text format, and writes the points labelled `project` and `instrument=<name>`, keeping the target's own labels (`machine` included; a target's `project` or `instrument` becomes `exported_project`, `exported_instrument`). Announces nothing on the bus. Keeps each instrument's health in the runtime record under `instruments`, and its log in `<state>/logs/instruments/<name>.log`. | metrics, runtime, launcher (log size) |
 | **Sources** | `orchestra/sources/` | Reads other time-series stores in place (`[[sources]]`), never writes to them. Infers what to read from a store's schema, reads it for discovery's exact window, and records where every series came from. Also reads **counted traffic** (`sources/traffic.py`). | metrics (the own store), `sd/series.py`, HTTP |
-| **Discovery** | `orchestra/sd/` (`rediscover.py`, `discover.py`, `strategies.py`, `netflow.py`, and helpers), `orchestra/sdlab/` | Builds the model from the series without being told what anything is. `sd/discover.py` is Orchestra's own "conservation" step; `sd/strategies.py` can add one of SD Lab's strategies on top. | sources (the catalogue), model store; `numpy` and friends for SD Lab (`sd` extra) |
+| **Discovery** | `orchestra/sd/` (`rediscover.py`, `discover.py`, `strategies.py`, `netflow.py`, `attribute.py`, and helpers), `orchestra/sdlab/` | Builds the model from the series without being told what anything is. `sd/discover.py` is Orchestra's own "conservation" step; `sd/strategies.py` can add one of SD Lab's strategies on top. `sd/attribute.py` infers which machines may be associated with each flow, as hypotheses from their event counts. | sources (the catalogue), model store; `numpy` and friends for SD Lab (`sd` extra) |
 | **Model store** | `orchestra/sd/store.py`, `orchestra/sd/model.py` | The one model and its versions: `<state>/model/vNNNN.json`, plus the latest discovery cached in `model/discovered.json`. | the state directory |
-| **Web** | `orchestra/web/` | `orchestra web`: a FastAPI app with the Dashboard, Core, Machines and Dynamics pages, and plugin pages. Background threads keep caches warm so page requests stay cheap. | bus, metrics, runtime, model store, sources, plugins |
+| **Web** | `orchestra/web/` | `orchestra web`: a FastAPI app with the Dashboard, Core, Machines, Instruments and Dynamics pages, and plugin pages. Background threads keep caches warm so page requests stay cheap. | bus, metrics, runtime, model store, sources, plugins |
 | **CLI** | `orchestra/cli.py` | `init`, `run`, `web`, `events info\|endpoint\|copy`, `metrics backfill\|series`, `sd discover\|show\|fit\|versions`, `sources check\|infer\|preview`. | the rest, imported on use |
-| **Plugins** | `orchestra/plugins.py` | Loads packages registered in the entry-point group `orchestra.plugins`. A plugin adds pages, a static directory, an API router, every-page scripts and stylesheets, declared machines and processes. One that fails to load is reported and left out. | launcher (`Process`) |
+| **Plugins** | `orchestra/plugins.py` | Loads packages registered in the entry-point group `orchestra.plugins`. A plugin adds pages, a static directory, an API router, every-page scripts and stylesheets, declared machines, processes and instruments (`collectors`). One that fails to load, or whose name another plugin took, is reported and left out. | launcher (`Process`), collect (`Collector`) |
 
 ### Inside the host
 
@@ -125,7 +131,7 @@ Each component, its module, and what it depends on:
 
 Only one host launches per project. `Host._claim` takes `launcher` in the runtime record under the
 lock, and only when no live process holds it. A second `orchestra run` still runs the event
-collector and discovery, but starts no processes and no collectors. A host that takes over from a
+collector and discovery, but starts no processes and no instruments. A host that takes over from a
 dead one first stops whatever the dead one left running (`Launcher.reap_orphans`).
 
 ### The launcher
@@ -150,21 +156,27 @@ own, with `ORCHESTRA_REPO`, `ORCHESTRA_MACHINE_LOG`, and the events endpoint's
   Core page.
 
 The launcher never decides that a process is a machine. A process becomes a machine only by what
-it publishes or writes.
+it publishes on the bus; what it writes or serves as metrics makes it no machine.
 
 ## Data flows end to end
 
-### A measurement, from a machine to the model
+### A measurement, from an instrument to the model
 
-A machine's measurement reaches the metrics store in one of three ways:
+Machines do not produce metrics. The metrics store is filled by instruments directly, kept apart
+from the machines so the measurements can test what we believe about them:
 
 1. A `[[collect]]` script that Orchestra runs on an interval and that prints the Prometheus text
    format.
 2. A `[[scrape]]` URL that serves the Prometheus text format.
-3. A Python program that writes points itself through `orchestra.metrics.for_repo()`.
+3. A plugin's `Plugin.collectors`, run like the project's and named `<plugin>.<name>` (a project
+   entry of the same name wins).
+4. A Python program that writes points itself through `orchestra.metrics.for_repo()`.
 
-The first two need no Orchestra code in the machine. `docs/machines.md` is the guide for writing
-one. Here is the path for a script collector:
+A `[[sources]]` store is an instrument too, read in place at each discovery and never copied
+([below](#other-stores-and-counted-traffic)). The one series derived from the event log is
+`orchestra_events_total{type, source}`, the event collector's count of the bus; it is secondary,
+a count of what the machines said, not a measurement of the system. `docs/machines.md` is the
+guide for writing machines and instruments. Here is the path for a script collector:
 
 ```mermaid
 sequenceDiagram
@@ -173,18 +185,17 @@ sequenceDiagram
   participant R as Collecting (collect/runner.py)
   participant S as Script machines/disk.sh
   participant P as round.py and exposition.py
-  participant B as Event bus
   participant M as Metrics store
   participant D as Discovery (sd/rediscover.py)
   participant W as Web (web/background.py)
   R->>T: re-read when the file changed
-  R->>B: orchestra.machine.started, source disk, mode scheduled
   loop every "every" seconds
     R->>S: run in repo root, in its own process group
     S-->>R: stdout in Prometheus text format
-    R->>P: parse, add project and machine=disk labels
+    R->>P: parse, add project and instrument=disk labels
     P-->>R: points, or the error that left none
     R->>M: write points (refuses points stamped in the future)
+    R->>R: health to runtime.json (instruments), a line to logs/instruments/disk.log
   end
   Note over R,M: a failed round writes nothing and counts orchestra_collect_failures_total
   D->>M: read the window through the catalogue
@@ -201,13 +212,17 @@ What happens at each stage:
   10 MB, a non-zero exit, a timeout, or an HTTP answer other than 200 fails the round. A failed
   round writes nothing, logs why, and increments
   `orchestra_collect_failures_total{collector=<name>}` labelled `machine="orchestra-host"`, so a
-  failing collector does not look alive.
-- **Parse** (`collect/exposition.py`, `collect/round.py`). Counters, gauges and untyped series are
-  kept. Of a histogram or summary only `_count` and `_sum` are kept. Non-numbers are dropped. A
+  failing instrument does not look alive. The Instruments page shows the failure and the last
+  error.
+- **Parse** (`collect/exposition.py`, `collect/round.py`). Each point gets `project` and
+  `instrument=<name>`, its provenance; every other label the target served is kept as it is,
+  `machine` included (the measured system's own dimension), and a target label Orchestra would
+  overwrite is kept as `exported_project` or `exported_instrument`, as Prometheus does. Counters,
+  gauges and untyped series are kept. Of a histogram or summary only `_count` and `_sum` are kept. Non-numbers are dropped. A
   series named `orchestra_*` is refused, because that prefix is Orchestra's own. A point with no
   timestamp gets the time the round began.
 - **Store** (`orchestra/metrics/`). The store adds nothing but refuses points stamped more than
-  60 s in the future. A point like that would make its machine look alive until a time that has
+  60 s in the future. A point like that would make its writer look alive until a time that has
   not come yet.
 - **Discover** (`orchestra/sd/`). Every `[discovery] every`, the host reads the window and builds
   the model. See [A discovery run](#a-discovery-run-step-by-step).
@@ -263,15 +278,20 @@ What the Machines page knows about a machine, and where it comes from (`orchestr
 | The machine and its instances | The envelope's `source`: `baker/2` is instance `2` of machine `baker`. |
 | What it publishes | The `type` of the events it emitted, counted over all time and the last day. |
 | What it listens for, its mode, kind, package, name and group | Its own announcement, `orchestra.machine.started` (or the older `orchestra.machine.subscribed`). This is the one event type whose `data` Orchestra reads, because it is Orchestra's own. Mode and kind are kept per instance. |
-| Its series | Series in the metrics store labelled `machine=<id>`, and remote series that the latest discovery bound to it. |
+| Its series | Series in the metrics store labelled `machine=<id>`, and remote series that the latest discovery bound to it, listed on the card of a machine seen on the bus. A series labelled `machine=X` never makes a machine X. |
 | Last seen, and whether it is active | Its latest event or its latest write, whichever is later, never in the future. It is active while that is within 2.5 times its own observed cadence (the median gap between its recent events or writes), and never less than 2 minutes. |
 | Hand-offs (dotted edges) | Inferred from envelopes alone: one machine acted on a `subject`, then another machine acted on the same subject. |
 | Its log | The `data.log` path it announced, read only if it resolves to a regular file inside the repository or the state directory (`web/machine_logs.py`). |
 | Counted machines and channels | Counted traffic from other systems' buses (below), merged in by `web/traffic.py`. |
 
-A plugin may declare machines (`Plugin.machines`). A declaration only adds a machine nobody has
-seen yet, and fills in the package and kind of one that did not announce them. What is observed
-always wins (`mount_plugins.declare` in `web/app.py`).
+Only machines seen on the bus are listed, with counted-traffic machines and plugin placeholders.
+Instruments are not machines and are not listed; they have the Instruments page. Announcements
+the host made on an instrument's behalf before 2026-10-27 (`orchestra.machine.started` with
+`data.collector`) are ignored.
+
+A plugin may declare machines (`Plugin.machines`). A declaration is a placeholder: it only adds a
+machine nobody has seen yet, fills in the package and kind of one that did not announce them, and
+says nothing about flows. What is observed always wins (`mount_plugins.declare` in `web/app.py`).
 
 The event map is drawn in the browser. `static/netgraph.js` draws it, `static/loops.js` finds its
 feedback loops (an independent set of cycles through each strongly connected part of the graph),
@@ -319,7 +339,9 @@ into a channel), `in` (consumed from it), or `backlog` (what waits in it). These
 known by counts, never by events. No envelope is ever made from a count. The web server reads
 every traffic series over the last hour, once a minute (`Catalogue.counted`, `web/traffic.py`).
 The Machines page draws each channel as a box and each producer or consumer edge as a double
-line. A count with no machine attributed goes to a grey "unattributed" stub. In discovery, a
+line. A count with no producer or consumer named goes to a grey "unattributed" stub. That name
+places the count on the Machines page only; discovery never reads it to associate a machine with
+a flow. In discovery, a
 channel's backlog is balanced first by its own traffic, and a count that fills several backlogs
 becomes a copy flow (`sd/ends.py`).
 
@@ -352,7 +374,8 @@ sequenceDiagram
   CS->>CS: stocks by counters, flows, restatements, passages
   CS->>NF: levels no counters balance
   NF-->>CS: stocks by fitted net flow, or reasons
-  CS->>CS: fit each flow by Poisson MLE, attribute to machines
+  CS->>CS: fit each flow by Poisson MLE
+  CS->>CS: associate machines by their event counts (attribute.py)
   CS-->>ST: conservation model
   alt SD Lab strategy and stocks left to explain
     ST->>BD: jobs as JSON on stdin, killed at the deadline
@@ -385,38 +408,40 @@ The steps in detail. Constants are named so they can be found in the code.
      every `SeriesRef`).
    - A level slower than the grid is balanced on the stretches between its writes, not on single
      steps.
-4. **Liveness** (`sd/live.py`). Liveness belongs to the machine, not to the series:
-   - A machine is alive while its writes (any of its series, or Orchestra's count of its events)
+4. **Liveness** (`sd/live.py`). Liveness belongs to the writer, not to the series. The writer is
+   provenance only (`sd.series.writer_of`: a series' `instrument` label, else its `machine` label,
+   else, for Orchestra's event counters, the `source`); it is never read for association:
+   - A writer is alive while its writes (any of its series, or Orchestra's count of its events)
      come no further apart than ten times the interval of its fastest scheduled series (and at
      least a minute).
-   - A machine with no scheduled series is taken to be alive from its first write to the end of
+   - A writer with no scheduled series is taken to be alive from its first write to the end of
      the window.
-   - A gauge holds its value while its machine is alive and goes stale when the machine goes
+   - A gauge holds its value while its writer is alive and goes stale when the writer goes
      silent.
-   - Balances and fits use only the steps where everything involved was live. A machine that was
-     down cuts only its own flows' windows.
+   - Balances and fits use only the steps where everything involved was live. A writer that was
+     down cuts only its own series' windows.
 5. **Leaving out.** These are set aside, each with a reason recorded in `left_out`:
    - Orchestra's own plumbing series (`orchestra_*`, except `orchestra_events_total`).
-   - Series whose machine has been silent at the end of the window for more than five minutes
+   - Series whose writer has been silent at the end of the window for more than five minutes
      (`live.RESTART_S`, counted only over time when anything at all was written, so a computer
      asleep does not count): gone or replaced.
    - Levels live for less than half of the window's data (`MIN_COVER`): too new to be a stock
      yet, so they stay inputs.
-   - Counters that move together in all but 3% of steps (`SAME_STEPS`) and are one machine's, or
+   - Counters that move together in all but 3% of steps (`SAME_STEPS`) and have one writer, or
      one of which is Orchestra's count of the other's events, become one counter.
-   - Counters that differ only by instance are summed into one per machine.
+   - Counters that differ only by instance are summed into one per writer.
 6. **Stocks by counters** (`sd/discover.py`, `sd/balance.py`). A level is a stock when signed
    counters balance its changes: `Δlevel ≈ Σ inflows − Σ outflows` with R² ≥ 0.9 (`MIN_R2`). The
    search order is:
    1. A channel's backlog by its own counted traffic.
-   2. The level's own machine's counters.
+   2. The level's own writer's counters (a stock records its writer as `written_by`).
    3. Every counter.
 
    The search itself is a penalised local search from many starts. Further rules:
    - A level that changed in fewer than 5 steps (`MIN_EVENTS`) is no stock.
    - A level with only two values is a flag unless its balance is exact in 97% of steps
      (`FLAG_EXACT`).
-   - After every balance is known, stand-in counters give way to the machine's own counters
+   - After every balance is known, stand-in counters give way to the writer's own counters
      (`sd/restate.py`, `sd/parsimony.py`, `sd/collinear.py`).
    - Two levels that change alike are one stock measured twice: one keeps it, the other is
      recorded as its twin.
@@ -425,7 +450,8 @@ The steps in detail. Constants are named so they can be found in the code.
      comes from, or goes to, outside.
    - A counter that fills several stocks is a copy: one flow from outside into each.
    - A state that items leave within one step is joined back into the chain. It is bound to the
-     level whose raw points show it, or kept as a hidden stock if no series measures it.
+     level whose raw points show it, or kept as a hidden stock if no series measures it: a
+     question about the system (something in it is not measured or not understood yet).
 8. **The net-flow layer** (`sd/netflow.py`). A level no counters balance may still be a stock.
    Its change per unit of time is fitted by least squares among four forms: a constant drift,
    `c + b × level`, `c + a × X`, and `c + a × X + b × level`, where X is another stock or
@@ -439,7 +465,7 @@ The steps in detail. Constants are named so they can be found in the code.
      quarter of the window explaining clearly less (`SHIFTED`).
 
    An accepted stock gets an inflow and an outflow with origin `fitted`, method `least-squares`,
-   and no counter or machine. A refuted level stays an input, with the reason. Every accepted
+   and no counter. A refuted level stays an input, with the reason. Every accepted
    driver is a correlation, not a tested cause.
 9. **Fitting flow rates** (`sd/discover.py:fit_flow`, `sd/drivers.py`). Each counted flow's
    rate is fitted by maximum likelihood on its own live window, using the exact point-process
@@ -451,8 +477,30 @@ The steps in detail. Constants are named so they can be found in the code.
      the flow's own events.
 
    A linear form on another stock is an **influence**: the link that closes feedback loops.
-10. **Attribution.** Each flow is attributed to the machine named by its counter's `machine`
-    label (or, for event counters, `source`). An attribution is a hypothesis.
+10. **Association with machines** (`sd/attribute.py`). Which machines may be associated with
+    each flow, only as hypotheses inferred with evidence, stored in
+    `flow.evidence["machines"]` (`hypotheses`, best first, and `why`). Each hypothesis names the
+    machine, origin `inferred`, `by`, the event type and source, the counts, `equal_steps`,
+    `corr`, `lag`, a `why` sentence and a `confidence` from 0 to 1. `by` is one of:
+    - **its own events**: the flow's counter is itself one machine's event count
+      (`orchestra_events_total` of one type and source);
+    - **events on the bus**: a machine's events of one type (its instances summed), counted in
+      `orchestra_events_total`, match the counter's increments step by step, at lag 0 or one step
+      either way: equal in at least 90% of the steps either moved (`EQUAL_STEPS`; confidence
+      that share), or correlated at least 0.9 (`MIN_CORR`) with totals within a factor 2
+      (`RATIO`; confidence the correlation times the smaller ratio of the totals).
+
+    Several machines may be hypotheses for one flow. Orchestra's own `orchestra.*` event types are
+    never candidates. Hypotheses come only from event counts on Orchestra's bus. Who wrote a
+    series (its `instrument` or `machine` label) is never read for this, nor is a counted-traffic
+    counter's `machine` (from a definition or `[sources.producers]`: a label, so a declaration);
+    counted-traffic producers and consumers are still machines on the Machines page, known by
+    counts. Nothing declares an association: not configuration, not a plugin. It never changes
+    a flow's equation or the model's stocks and flows. A flow with none reads "no machine
+    associated yet". `Machine.attributed` lists the flows a machine is a hypothesis for, and
+    `observed_by` its event counts. Limits: a match is a correlation in time, not a cause; two
+    machines reacting to the same events both match; and discovery may not tell apart two similar
+    flows between the same stocks, so a hypothesis may belong to a flow's twin.
 11. **SD Lab, under a deadline** (`sd/strategies.py`, `sd/bounded.py`). With an SD Lab
     strategy (the default is `kalman_lna` when the `sd` extra is installed, otherwise
     `conservation`):
@@ -464,7 +512,8 @@ The steps in detail. Constants are named so they can be found in the code.
       session. The whole process group is killed at the deadline, which is 0.8 ×
       `[discovery] every` (`DEADLINE_SHARE`).
     - If it is late or fails, conservation's fits are kept and the model says so.
-    - Otherwise SD Lab's flows are matched back to counters and machines. A flow no counter
+    - Otherwise SD Lab's flows are matched back to counters (and so to the machines associated
+      with them). A flow no counter
       measures is kept as "unmeasured" only where a stock's balance is not exact. For a net-flow
       stock, SD Lab's flows replace the fitted net flow only if they predict held-out halves
       better (`sd/rival.py`).
@@ -480,7 +529,7 @@ The steps in detail. Constants are named so they can be found in the code.
 flowchart TD
   A["Series in the window"] --> B{"orchestra_* plumbing?"}
   B -- yes --> LO["Left out, with reason"]
-  B -- no --> C{"Machine silent at end over 5 min?"}
+  B -- no --> C{"Writer silent at end over 5 min?"}
   C -- yes --> LO
   C -- no --> D{"Counter?"}
   D -- yes --> D1{"Same events as a kept counter?"}
@@ -505,7 +554,8 @@ flowchart TD
   SDQ -- yes --> SDL["SD Lab job, deadline 0.8 x every"]
   SDQ -- no --> MOD["Model"]
   SDL --> MOD
-  FIT --> MOD
+  FIT --> AS["Associate machines: hypotheses from event counts"]
+  AS --> MOD
   MOD --> V{"Structure changed and no source missing?"}
   V -- yes --> SAVE["Save model/vNNNN.json"]
   V -- no --> CACHE["discovered.json only"]
@@ -521,7 +571,7 @@ flowchart TD
   HOME["~/.orchestrator/ or ORCHESTRATOR_HOME"] --> PJ["projects.json: repo root to key"]
   HOME --> KEY["#lt;key#gt;/ : repo name plus 8 hex of its path hash"]
   KEY --> P1["project.json"]
-  KEY --> P2["runtime.json: hosts, launcher, events_endpoint, web, processes"]
+  KEY --> P2["runtime.json: hosts, launcher, events_endpoint, web, processes, instruments"]
   KEY --> P9["events.token: the events endpoint's token, owner-only"]
   KEY --> P3[".lock and discovery.lock"]
   KEY --> P4["events.jsonl, when events url is file"]
@@ -532,7 +582,8 @@ flowchart TD
   KEY --> P7["sources/#lt;name#gt;.json: inferred definitions"]
   KEY --> P8["logs/"]
   P8 --> P81["orchestra-host.log"]
-  P8 --> P82["machines/#lt;name#gt;.log"]
+  P8 --> P82["machines/#lt;name#gt;.log: launched processes"]
+  P8 --> P83["instruments/#lt;name#gt;.log"]
   EXT1[("Server bus: stream orchestra.#lt;key#gt;.events")] -.-> KEY
   EXT2[("VictoriaMetrics: series with project label")] -.-> KEY
 ```
@@ -599,7 +650,7 @@ Both backends refuse points stamped more than 60 s in the future. The conformanc
 
 ## The web UI
 
-`orchestra web` (`orchestra/web/app.py`) serves four pages of its own, plus any plugin pages. The
+`orchestra web` (`orchestra/web/app.py`) serves five pages of its own, plus any plugin pages. The
 pages are read-only for humans. Two background threads (`web/background.py`) keep caches warm,
 so most page requests do no expensive work:
 
@@ -615,8 +666,9 @@ so most page requests do no expensive work:
 |---|---|---|
 | **Dashboard** (`/`) | Movable panels: Machines (what runs now) and Host (a Core status strip, CPU, GPU, memory, disk). Plugins may add panels. | `static/dashboard.js` |
 | **Core** (`/core`) | The host and its processes, the bus and the metrics store, each probed against its real backend under a 4 s limit; a metrics catalogue and PromQL editor; an event explorer; logs. | `web/core.py`, `web/core_explore.py` |
-| **Machines** (`/machines`) | Every machine seen, its instances, mode and kind, whether it is active, the event map with hand-offs and counted traffic, communication loops, and a dialog per machine with its series, last events (envelopes only) and log tail. | `web/machines.py`, `web/traffic.py`, `web/machine_logs.py`, `static/netgraph.js`, `static/loops.js` |
-| **Dynamics** (`/dynamics`) | The model as a stock-and-flow graph, with feedback loops marked balancing or reinforcing, history charts, each stock's and flow's drawer, a simulation from the start of the era and a projection forward, and stepping through saved versions. "Rediscover now" runs discovery in the background. | `web/dynamics.py`, `sd/simulate.py`, `static/sd-graph.js`, `static/sd-layout.js`, `static/layout-worker.js` |
+| **Machines** (`/machines`) | Every machine seen on the bus (and counted-traffic machines and plugin placeholders), its instances, mode and kind, whether it is active, the event map with hand-offs and counted traffic, communication loops, and a dialog per machine with its series, last events (envelopes only) and log tail. | `web/machines.py`, `web/traffic.py`, `web/machine_logs.py`, `static/netgraph.js`, `static/loops.js` |
+| **Instruments** (`/instruments`) | What measures the system, apart from the machines: each `[[collect]]`, `[[scrape]]` and `[[sources]]` entry (and a plugin's), with its kind (script, URL, source), target, interval, last write and points, failures, last error and log. Read from the runtime record's `instruments` and `orchestra.toml`, never by running an instrument. `/api/instruments`, `/api/instruments/<name>/log`. | `web/instruments.py`, `static/instruments.html` |
+| **Dynamics** (`/dynamics`) | The model as a stock-and-flow graph, with feedback loops marked balancing or reinforcing, history charts, each stock's and flow's drawer (a flow's lists each machine hypothesis with its why, or "no machine associated yet"), a flows table with "machines (hypotheses)" and their confidence, a simulation from the start of the era and a projection forward, and stepping through saved versions. "Rediscover now" runs discovery in the background. | `web/dynamics.py`, `sd/simulate.py`, `static/sd-graph.js`, `static/sd-layout.js`, `static/layout-worker.js` |
 
 The Dynamics page reads the host's cached discovery (`model/discovered.json`) or a saved version.
 It never discovers on request, except when the "rediscover now" button is pressed. The Core page
@@ -656,10 +708,12 @@ the entry-point group `orchestra.plugins`. The function takes the project and re
 | `scripts`, `stylesheets` | Loaded on every page, after Orchestra's own. Scripts may register Dashboard panels (`Orchestra.panels`) and draw the cards of machines the package claims (`Orchestra.machineCards`). |
 | `machines` | Declared machines (`Declared`). They fill in only machines not yet seen. |
 | `processes` | `launcher.Process` entries that `orchestra run` keeps running as `<plugin>.<name>`. |
+| `collectors` | Instruments (`collect.spec.Collector`: `Collector.scrape(name, url, ...)`, `Collector.collect(name, command, ...)`) that `orchestra run` reads like the project's own, named `<plugin>.<name>`. A project entry of the same name wins, and the host logs that. Not machines. |
 
 Plugins are loaded in two places. The web app loads them once at start (`web/app.py:mount_plugins`).
 The host loads them again each time `orchestra.toml` changes, to ask for their processes
-(`Host._plugin_processes`). A plugin that raises is reported (`/api/plugins`, the host's log) and
+(`Host._plugin_processes`) and instruments. A plugin that raises, one whose name an earlier plugin
+took, and a script or stylesheet missing from a plugin's static directory are reported (`/api/plugins`, the host's log) and
 left out, and it never takes the web app or the host down. Orchestra knows nothing of what a
 plugin's routes or pages mean. The two plugins today are the task system (`~/orchestra-tasking`)
 and the AI agents (`~/orchestra-agents`), both in their own repositories.
@@ -673,12 +727,12 @@ divided.
 | # | Rule, in short | Where it is held |
 |---|---|---|
 | 1 | No tickets, tasks or AI in the core | The core modules handle only envelopes, series, processes and models. `collectors.py` counts events by `type` and `source` and nothing else. Agents' harnesses live in `~/orchestra-agents`. |
-| 2 | Machines are outside, known by observation | `web/machines.py` builds machines from envelopes and the `machine` label. Of `data`, it reads only `orchestra.machine.started` announcements. Plugin declarations fill in only unseen machines (`web/app.py:declare`). `web/machine_logs.py` reads a log only inside the repository or the state directory. `launcher.py` knows processes, not machines. Counted machines come only from `sources/traffic.py`. |
+| 2 | Machines are outside, known by their events | `web/machines.py` builds machines from envelopes only; a series' `machine` label lists the series on a machine's card but never makes a machine. Of `data`, it reads only `orchestra.machine.started` announcements, and ignores the host's old ones for instruments. Plugin declarations fill in only unseen machines (`web/app.py:declare`). `web/machine_logs.py` reads a log only inside the repository or the state directory. `launcher.py` knows processes, not machines. Counted machines come only from `sources/traffic.py`. |
 | 3 | Every event carries the CloudEvents envelope | `events.envelope` is the only place events are built. `Events.publish` always uses it, and the events endpoint publishes only through it, passing `data` on unread. `event_time` and `event_source` read older flat events too. Counted traffic is read as series and never turned into events. |
 | 4 | One system, one model | One `ModelStore` per state directory, with one sequence of versions. Discovery runs over every series of the project at once. Package and group are labels on the Machines page, never separate views. |
 | 5 | State in `~/.orchestrator/<key>/`; bus and metrics in their stores | `config.Project` names every state path. Events go through `Events` over an `EventBus`, metrics through `MetricsStore`, the model through `ModelStore`, process records through `runtime`. `bus.stream_name` keeps Orchestra's own namespace. The `Source` protocol (`sources/__init__.py`) has only read methods. |
-| 6 | Every equation records its origin | `Equation.origin` is a required field (`sd/model.py`). Conservation writes `fitted`/`poisson-mle`, the net-flow layer `fitted`/`least-squares`, and SD Lab `discovered`/`sdlab:<strategy>`. `Machine.attributed` holds flow ids as hypotheses. |
-| 7 | Stocks are discovered, not configured | `Config` has no stock or flow bindings. `sd/discover.py` decides from the data alone. A series' declared kind (counter or level, from a `[[series]]` definition) is the only hint it takes. |
+| 6 | Every equation records its origin | `Equation.origin` is a required field (`sd/model.py`). Conservation writes `fitted`/`poisson-mle`, the net-flow layer `fitted`/`least-squares`, and SD Lab `discovered`/`sdlab:<strategy>`. `sd/attribute.py` associates machines with flows only as inferred hypotheses with evidence and confidence (`flow.evidence["machines"]`), never from a label or a declaration; `Machine.attributed` holds flow ids as hypotheses. |
+| 7 | Stocks are discovered, not configured; measurements are not machines | `Config` has no stock or flow bindings. `sd/discover.py` decides from the data alone. A series' declared kind (counter or level, from a `[[series]]` definition) is the only hint it takes. Instruments label points `instrument=<name>` (`collect/round.py`), announce nothing, and are shown on the Instruments page. A writer label is provenance only (`sd.series.written_by`). |
 | 8 | The core stays up | `web/core.py` and `web/core_explore.py` import only the bus, the metrics store, the runtime record and the configuration. Every probe runs under `TIMEOUT` (4 s). Plugins that fail are left out. |
 | 9 | Humans talk only to the Supervisor; UI and CLI read-only except observations | The web app has two POST routes: "rediscover" (an observation) and the Core page's bus probe. Any path that changes machines belongs to a plugin. The events endpoint is the bus reached over HTTP, for machines, as the Python helper is; the web UI and CLI gain no write from it (`events endpoint` only prints where it is). |
 | 10 | One package, no path hacks | `pyproject.toml` packages only `orchestra`. No module changes `sys.path`. `orchestra/sdlab` is excluded from ruff (`extend-exclude`) and its README records its source commit. |
@@ -718,8 +772,8 @@ These are plans, not features. Each is described in `docs/proposals/` or `docs/r
 
 - [USING_ORCHESTRA.md](USING_ORCHESTRA.md): running Orchestra on a project.
 - [PLUGINS.md](PLUGINS.md): writing a plugin.
-- [docs/machines.md](docs/machines.md): writing a machine (collectors, scrapes, long-running programs,
-  naming).
+- [docs/machines.md](docs/machines.md): writing a machine (events, long-running programs) and its
+  measurements (instruments: collectors, scrapes; naming).
 - `SPEC.md`: the full design, with every rule of discovery.
 - `AGENTS.md`: the rules that must not be broken.
 - `docs/roadmap/README.md`: what comes next, and how it is judged.

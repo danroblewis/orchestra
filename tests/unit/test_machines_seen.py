@@ -73,8 +73,13 @@ def test_a_machine_is_active_within_its_own_cadence_fast_or_slow(tmp_path):
     assert not active(T0 + 720 + 360 * 3)["tides"]                                                 # three rounds missed
     # the cadence is observed, not announced: a collector's writes say how often it runs
     # nothing announced: the cadence it is observed at, by its writes or its events
-    seen = machines_view([], [("creek_cfs", {"machine": "creek"})], now=T0 + 720 + 1200, written={("creek", ""): T0 + 720}, write_beats={("creek", ""): 900.0})
+    # a machine that announced itself once and then only writes its own series stays active while
+    # they keep coming; a series alone, with nothing on the bus, makes no machine
+    seen = machines_view([announce("creek", T0, mode="scheduled")], [("creek_cfs", {"machine": "creek"})], now=T0 + 720 + 1200,
+                         written={("creek", ""): T0 + 720}, write_beats={("creek", ""): 900.0})
     assert {m["id"]: m["active"] for m in seen["machines"]}["creek"]
+    alone = machines_view([], [("river_cfs", {"machine": "river"})], now=T0, written={("river", ""): T0}, write_beats={("river", ""): 900.0})
+    assert "river" not in {m["id"] for m in alone["machines"]}
     talk = [{"type": "work.done", "source": "worker/1", "time": iso(T0 + 300 * k)} for k in range(4)]
     seen = {m["id"]: m for m in machines_view(talk, [], now=T0 + 900 + 600)["machines"]}
     assert seen["worker"]["active"] and seen["worker"]["instances"][0]["cadence_s"] == {"events": 300, "writes": None}
@@ -89,7 +94,7 @@ def test_nothing_stamped_in_the_future_makes_a_machine_look_alive(tmp_path):
     dumped = store.dump("", {"project": "p"})
     written = last_writes(dumped, now)
     assert written == {("telemetry", ""): now - 7200 + 60}
-    seen = {m["id"]: m for m in machines_view([], [(n, lab) for n, lab, _ in dumped], now=now, written=written,
+    seen = {m["id"]: m for m in machines_view([announce("telemetry", now - 7200)], [(n, lab) for n, lab, _ in dumped], now=now, written=written,
                                                        write_beats=write_cadence(dumped, now))["machines"]}
     assert not seen["telemetry"]["active"]
     ahead = [{"type": "work.done", "source": "clock_ahead", "time": iso(now + 13 * 3600)}]

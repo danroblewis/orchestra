@@ -65,7 +65,8 @@ driver and watched the level answer.
 An accepted stock's net flow becomes an inflow (``c + a × X``, or its negative as an outflow when
 it is mostly below zero) and an outflow proportional to the stock (``−b × level``), each with
 origin ``fitted`` and method ``least-squares``; growth on itself is an inflow proportional to it.
-The flows have no counter and no machine: the environment moves them."""
+The flows have no counter and no machine: the environment moves them, or a machine not yet
+instrumented (``sd.attribute``)."""
 
 from __future__ import annotations
 
@@ -429,7 +430,7 @@ def _r2_alone(x: list[float], y: list[float]) -> float:
     return 1 - got[1] / sst if sst > 0 else 0.0
 
 
-def build(f: Fit, sid: str, title: str, machine: str | None, window: tuple[float, float], ref) -> tuple[Stock, list[Flow]]:
+def build(f: Fit, sid: str, title: str, writer: str | None, window: tuple[float, float], ref) -> tuple[Stock, list[Flow]]:
     """The stock and its fitted flows. ``ref``: the model's reference to the level's series."""
     p = f.params
     q = {"r2": round(f.r2, 4), "stretches": float(f.blocks), "stretch_s": f.block_s, "aic": round(f.aic, 3),
@@ -449,7 +450,7 @@ def build(f: Fit, sid: str, title: str, machine: str | None, window: tuple[float
         fid, src, dst = (f"{sid}_outflow", sid, None) if b < 0 else (f"{sid}_growth", None, sid)
         flows.append(Flow(fid, (f"out of {title}, in proportion to it" if b < 0 else f"into {title}, in proportion to it"),
                           src, dst, None, [eq], [], dict(note)))
-    evidence = {"machine": machine, "net_flow": {"form": f.form, "params": {k: round(v, 6) for k, v in p.items()},
+    evidence = {"written_by": writer, "net_flow": {"form": f.form, "params": {k: round(v, 6) for k, v in p.items()},
                                                  "driver": f.driver.ref if f.driver else None, "r2": round(f.r2, 4),
                                                  "stretch_s": f.block_s, "stretches": f.blocks, "changes": f.changes,
                                                  "aic": round(f.aic, 3), "aic_constant": round(f.aic_constant, 3),
@@ -458,7 +459,7 @@ def build(f: Fit, sid: str, title: str, machine: str | None, window: tuple[float
 
 
 def stocks(series: list, counted: list, sid_of: dict[str, str], inputs: dict[str, list[float]], input_refs: dict[str, dict],
-           left_out: dict[str, str], step: float, unit_s: float, window: tuple[float, float], name_of, ref_of, machine_of) -> list:
+           left_out: dict[str, str], step: float, unit_s: float, window: tuple[float, float], name_of, ref_of, writer_of) -> list:
     """The levels conservation left out because no counters balance them that are stocks by their
     fitted net flow, as (stock, its flows, the input name it had, its series). The others get their
     reason in ``left_out``. ``counted``: conservation's stocks' series; ``name_of(series)``: a new
@@ -489,7 +490,7 @@ def stocks(series: list, counted: list, sid_of: dict[str, str], inputs: dict[str
         if got.driver is not None and got.driver.ref in as_input:      # another level that is a stock now
             got.driver = Driver(as_input[got.driver.ref], got.driver.values, got.driver.resolution_s, got.driver.key, got.driver.name)
         sid, title = named[s.key]
-        stock, flows = build(got, sid, title, machine_of(s), window, ref_of(s))
+        stock, flows = build(got, sid, title, writer_of(s), window, ref_of(s))
         left_out.pop(s.key, None)
         out.append((stock, flows, next((name for name, k in key_of.items() if k == s.key), None), s))
     return out

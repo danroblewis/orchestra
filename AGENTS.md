@@ -16,25 +16,33 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    universal machine like any other: its harnesses live with the machines
    that run it (the agents: `~/orchestra-agents`), never here. Never add
    a domain concept (ticket, task, build, agent) to the core.
-2. **Machines are outside Orchestra, and known only by observation.** A
-   machine is its CloudEvents `source` (`<machine>/<instance>` for one of
-   several instances), the events it publishes and listens for, how it says it
-   is engaged (continuous, scheduled, ad hoc), and the series it writes; or the
-   producer or consumer a series definition attributes counted traffic to on
-   another system's bus (`orchestra/sources/traffic.py`): known by counts, never
-   by events. The Machines page, the collectors and the
-   model read what is observed, never a machine's description of itself. The
-   exceptions are what an instance announces in `orchestra.machine.started`:
-   its mode, what it listens for, its kind (program, agent, person, service),
-   where its log is and which package it belongs to (the rest of the
-   announcement is passed on to that package's card, unread), and the machines
-   a plugin declares, which only fill in machines not seen yet and never
-   override what is observed. A log is read only
-   within the project's repository or state directory (`web/machine_logs.py`).
-   The launcher (`orchestra/launcher.py`) starts the commands a project
-   (`[[machines]]` in `orchestra.toml`) or a plugin (`Plugin.processes`)
-   declares and knows them only as processes (a name, a command, a pid, an
-   exit code): a process is a machine only by what it publishes.
+2. **Machines are outside Orchestra, and known by their events.** A machine
+   does actual work: a program, an AI agent (a universal machine), a person.
+   System dynamics has no machines, and a machine's relationship to the
+   model's flows is not known: it may influence no flow, one or several, and
+   several machines may contribute to one flow. Relating actual work to the
+   model, by inference, is what Orchestra is for. Orchestra knows a machine
+   exists because it shows up on the bus: its CloudEvents `source`
+   (`<machine>/<instance>` for one of several instances), the events it
+   publishes and listens for, and how it says it is engaged (continuous,
+   scheduled, ad hoc); or the producer or consumer a series definition
+   attributes counted traffic to on another system's bus
+   (`orchestra/sources/traffic.py`): known by counts, never by events. A
+   machine does not produce metrics, and a series never makes a machine
+   (rule 7). The Machines page and the model read what is observed, never a
+   machine's description of itself. The exceptions are what an instance
+   announces in `orchestra.machine.started`: its mode, what it listens for,
+   its kind (program, agent, person, service), where its log is and which
+   package it belongs to (the rest of the announcement is passed on to that
+   package's card, unread), and the machines a plugin declares
+   (`Plugin.machines`): placeholders that only fill in machines not seen yet,
+   never override what is observed, and say nothing about flows. A log is
+   read only within the project's repository or state directory
+   (`web/machine_logs.py`). The launcher (`orchestra/launcher.py`) starts the
+   commands a project (`[[machines]]` in `orchestra.toml`) or a plugin
+   (`Plugin.processes`) declares and knows them only as processes (a name, a
+   command, a pid, an exit code): a process is a machine only by what it
+   publishes.
 3. **Every event carries the CloudEvents envelope.** `orchestra.events`
    writes it; Orchestra reads the envelope and never the `data` payload, which
    belongs to the machines that use it. Counted traffic is never turned into
@@ -53,11 +61,29 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    only through `orchestra.sources`, never written; what is kept of them
    (each source's inferred definitions) lives in the state directory.
 6. **Every equation records its origin** (fitted, discovered, or declared).
-   A declared equation is an assumption until it is fitted. A machine's
-   attribution to a flow is a hypothesis.
-7. **Stocks are discovered, not configured.** Collectors expose plain series
-   named for what they measure; the model generator decides what is a stock or
-   a flow. Manual bindings are the exception.
+   A declared equation is an assumption until it is fitted. A machine is
+   associated with a flow only as a hypothesis, inferred with its evidence
+   and confidence (`orchestra/sd/attribute.py`: its events on the bus matching
+   the flow's counter); several machines may be hypotheses for one flow.
+   Nothing declares the association, not configuration and not a plugin, and
+   it never changes a flow's equation or the model's stocks and flows.
+7. **Stocks are discovered, not configured; measurements are not machines.**
+   Metrics are objective measurements of the running system, kept apart from
+   the machines whose work we hope influences them, so they can test what we
+   believe. Instruments (`[[collect]]`, `[[scrape]]`, `[[sources]]`, a
+   plugin's `Plugin.collectors`: collectors, scrapes, sources, detectors)
+   measure and never act; they are not machines, are not announced on the
+   bus, and are shown on the Instruments page. A collected point is labelled
+   `instrument=<name>` (provenance), and the target's own labels are kept,
+   `machine` included. A machine's existence is never inferred from who wrote
+   a series, and a flow is never associated with a machine from a
+   measurement's label. The metrics store is filled by instruments directly;
+   `orchestra_events_total`, Orchestra's count of the bus, is the one series
+   derived from the event log, and is secondary. Instruments expose plain
+   series named for what they measure; the model generator decides what is a
+   stock or a flow. Manual bindings are the exception. A hidden stock or a
+   flow no machine is associated with is a question about the system, not an
+   answer.
 8. **The core stays up.** `web/core.py` and `web/core_explore.py` import only
    the bus, the metrics store and the runtime record, and probe each under a
    time limit, so the Core page works when the model or every machine is

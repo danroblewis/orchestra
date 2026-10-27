@@ -20,9 +20,11 @@ In an empty Orchestra it does little, on purpose:
   (``events_endpoint``) and, with the token, in the environment of what the host launches
   (``ORCHESTRA_EVENTS_ENDPOINT``, ``ORCHESTRA_EVENTS_TOKEN``). It starts before the processes and
   stops after them, so a machine can publish until it is stopped;
-- in the host that launches, it runs the collectors the project declares (``[[collect]]``, a
-  command, and ``[[scrape]]``, a URL, in ``orchestra.toml``) on their intervals and writes what
-  they print, in the Prometheus text format, to the metrics store (``orchestra.collect``).
+- in the host that launches, it runs the instruments the project declares (``[[collect]]``, a
+  command, and ``[[scrape]]``, a URL, in ``orchestra.toml``) and the plugins declare
+  (``Plugin.collectors``) on their intervals and writes what they print, in the Prometheus text
+  format, to the metrics store, labelled ``instrument=<name>`` (``orchestra.collect``). An
+  instrument is not a machine: nothing is announced for it; its health is in the runtime record.
 
 Stopping it (SIGTERM, SIGHUP or Ctrl-C) stops what it launched."""
 
@@ -38,6 +40,7 @@ from datetime import datetime
 
 from . import endpoint, plugins, runtime
 from .collect.runner import Collecting
+from .collect.spec import Collector
 from .collectors import EventCollector, backfill, collapse
 from .config import Project
 from .events import HOST, Events
@@ -57,7 +60,8 @@ class Host:
         self.interval = interval
         self.launch_every = launch_every
         self._found = found               # stands in for the installed plugins (tests)
-        self._declared: dict[str, list[Process]] = {}     # each plugin's processes, as last loaded
+        self._declared: dict[str, tuple[list[Process], list[Collector]]] = {}   # each plugin's, as last loaded
+        self._loaded_for: float | None = None            # the orchestra.toml mtime they were loaded for
         self._stop = threading.Event()
 
     def log(self, msg: str) -> None:
@@ -116,20 +120,34 @@ class Host:
             except Exception as e:  # noqa: BLE001 - try again next interval
                 self.log(f"discovery: {type(e).__name__}: {e}")
 
-    def _plugin_processes(self) -> list[Process]:
-        """What the plugins ask to have run, asked again whenever orchestra.toml changes: the
-        project's config is read again first, since a plugin reads its own sections there. A
-        plugin that fails to load keeps what it last declared; a config that does not parse
-        raises, and the launcher keeps the last list."""
+    def _from_plugins(self) -> dict[str, tuple[list[Process], list[Collector]]]:
+        """What the plugins ask to have run and collected, loaded again whenever orchestra.toml
+        changes (the launcher and the collectors both ask; one load serves both): the project's
+        config is read again first, since a plugin reads its own sections there. A plugin that
+        fails to load keeps what it last declared; a config that does not parse raises, and the
+        launcher and the collectors keep their last lists."""
+        try:
+            mtime = (self.project.repo_root / "orchestra.toml").stat().st_mtime
+        except OSError:
+            mtime = None
+        if mtime is not None and mtime == self._loaded_for:
+            return self._declared
         self.project.reload_config()
         loaded = plugins.load(self.project, self._found)
-        now = {plug.name: [replace(p, owner=plug.name) for p in plug.processes] for plug in loaded.plugins}
+        now = {plug.name: ([replace(p, owner=plug.name) for p in plug.processes],
+                           [replace(c, owner=plug.name) for c in plug.collectors]) for plug in loaded.plugins}
         for err in loaded.errors:
             self.log(f"plugin {err['plugin']} failed to load: {err['error']}; what it last declared, if anything, stands")
         if loaded.errors:
             now = {**self._declared, **now}
-        self._declared = now
-        return [p for procs in now.values() for p in procs]
+        self._declared, self._loaded_for = now, mtime
+        return now
+
+    def _plugin_processes(self) -> list[Process]:
+        return [p for procs, _ in self._from_plugins().values() for p in procs]
+
+    def _plugin_collectors(self) -> list[Collector]:
+        return [c for _, cs in self._from_plugins().values() for c in cs]
 
     def _launch(self) -> None:
         """Keep the declared processes running and the declared collectors collecting until the
@@ -137,7 +155,7 @@ class Host:
         served = self._serve_events()
         env = {endpoint.ENV_URL: served.url, endpoint.ENV_TOKEN: served.token} if served else {}
         launcher = Launcher(self.project, self.events.publish, self.log, self._plugin_processes, env=env)
-        collecting = Collecting(self.project, self.events.publish, self.log)
+        collecting = Collecting(self.project, self.log, plugin_collectors=self._plugin_collectors)
         launcher.reap_orphans()
         try:
             while not self._stop.is_set():

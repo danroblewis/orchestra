@@ -218,10 +218,11 @@ def test_discovery_finds_each_backlog_filled_by_its_channel_and_drained_by_its_c
     pub = [f for f in m.flows if f.counter and f.counter.name == "mq:published_total" and f.counter.labels.get("exchange") == "orders"]
     assert {f.dst for f in pub} == orders and sum(1 for f in pub if "copy_of" in f.evidence) == 1
     assert all(f.counter.traffic["machine"] == "mq.orders-api" for f in pub)
-    owner = {fid: mc.id for mc in m.machines for fid in mc.attributed}
-    assert {owner[f.id] for f in pub} == {"mq.orders-api"}
-    drains = {owner[f.id] for f in m.flows if f.src in orders}
+    # each drain is counted as one consumer's traffic; the label naming it is kept as provenance
+    # and associates no machine with the flow (AGENTS.md rule 7): only events on the bus do
+    drains = {f.counter.traffic["machine"] for f in m.flows if f.src in orders and f.counter}
     assert drains == {"mq.billing", "mq.shipping"}
+    assert m.machines == [] and all(f.evidence["machines"]["hypotheses"] == [] for f in m.flows if "machines" in f.evidence)
 
 
 def test_a_counter_that_began_inside_the_window_counts_its_first_value():

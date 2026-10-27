@@ -52,8 +52,12 @@ equation of each flow, and the machine behind each flow:
    show the floor is rejected (see ``fit_flow``). A flow with fewer than ``MIN_EVENTS`` events
    in the window gets the constant form only: an influence fitted on one event is noise; one
    that reads another stock or an input needs ``EVENTS_PER_PARAM`` events per parameter.
-5. **Attribute** each flow to the machine named by its counter's ``machine`` label, and each stock
-   to the machine that writes it.
+5. **Associate machines** with flows, only as hypotheses with their evidence (``sd.attribute``):
+   the machines whose own events on the bus (``orchestra_events_total``, per type and source)
+   match a counter's increments; several may match one flow, and a machine may match none. Who
+   wrote a series (its ``instrument`` or ``machine`` label) is never read for this, and nothing
+   declares it: a measurement is not a machine (AGENTS.md rule 7). A flow with none says no machine
+   is associated yet. The hypotheses change no equation and no structure.
 6. **Levels no counters balance** may still be stocks: their net flow is fitted from the other
    series (``sd.netflow``), with origin ``fitted``; those it refutes stay inputs, with the reason.
 
@@ -72,6 +76,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from itertools import accumulate, pairwise
 
+from .attribute import associate, candidates
 from .balance import MIN_EVENTS, MIN_GAIN, LeastSquares, balance, columns, fit_of
 from .drivers import AIC_MARGIN, EVENTS_PER_PARAM, behind, co_counting
 from .ends import claims, moves
@@ -99,10 +104,10 @@ from .series import (
     EVENT_COUNTER,
     PLUMBING,
     Series,
-    machine_of,
     plumbing_reason,
     sample,
     sum_instances,
+    writer_of,
 )
 
 MIN_R2 = 0.9            # how well a balance must fit for a level to count as a stock
@@ -116,15 +121,15 @@ DRIVER_COVER = 0.95        # a stock may drive a flow only if it was live for th
 SHORT = "written for only"  # the start of the reason a level too new to be a stock is left out (it stays an input)
 UNITS = {"second": 1.0, "minute": 60.0, "hour": 3600.0}
 LEAD_S = 60.0              # a driver's level is compared this long before and after a flow's events (_follows)
-NOT_IDENTITY = {"machine", "source", "project", "instance"}   # who wrote a series, not which thing it measures
+NOT_IDENTITY = {"instrument", "machine", "source", "project", "instance"}   # who wrote a series, not which thing it measures
 
 
 def _said(s: Series) -> list[str]:
-    """The label values that say which series it is: not the project's or machine's, not a value
+    """The label values that say which series it is: not the project's or its writer's, not a value
     with nothing to say (RabbitMQ's vhost ``/``, which would end an id in ``__``), and not one
     another value already says (a queue ``analytics.clicks`` says its consumer ``analytics`` and its
     exchange ``clicks``: the id is ``…_analytics_clicks``, not ``…_analytics_clicks_analytics_clicks``)."""
-    vals = [v for k, v in sorted(s.labels.items()) if k not in ("project", "machine") and re.sub(r"\W+", "", v)]
+    vals = [v for k, v in sorted(s.labels.items()) if k not in ("project", "machine", "instrument") and re.sub(r"\W+", "", v)]
     words = [set(filter(None, re.split(r"\W+", v))) for v in vals]
     return [v for i, v in enumerate(vals)
             if not any(j != i and (words[i] < words[j] or (words[i] == words[j] and j < i)) for j in range(len(vals)))]
@@ -147,7 +152,7 @@ def _same_total(a: Series, b: Series) -> bool:
     total_a, total_b = sum(a.deltas), sum(b.deltas)
     if not total_a or abs(total_a - total_b) > max(1.0, SAME_STEPS * total_b):
         return False
-    return not (EVENT_COUNTER in (a.name, b.name) and (machine_of(a) is None or machine_of(a) != machine_of(b)))
+    return not (EVENT_COUNTER in (a.name, b.name) and (writer_of(a) is None or writer_of(a) != writer_of(b)))
 
 
 def same_flow(a: Series, b: Series, n: int) -> bool:
@@ -637,7 +642,7 @@ def _twins(a: Series, b: Series, a_terms: list, b_terms: list, same_flow, a_exac
 def _owns(s: Series, terms: list) -> int:
     """How many of the balance's counters the level's own machine writes: that machine owns the
     transitions, and the level is its record of them."""
-    return sum(1 for c, _ in terms if machine_of(c) is not None and machine_of(c) == machine_of(s))
+    return sum(1 for c, _ in terms if writer_of(c) is not None and writer_of(c) == writer_of(s))
 
 
 def own_balance(s: Series, counters: list[Series], steps: list[int], fits) -> tuple[list | None, float, float]:
@@ -647,7 +652,7 @@ def own_balance(s: Series, counters: list[Series], steps: list[int], fits) -> tu
     step more exactly (one machine's turns are not another's moves). Another machine's
     counter enters only to explain the residual the machine's own leave, when there is one. None
     when the machine's own do not balance it: then every counter is searched."""
-    own = [c for c in counters if machine_of(s) is not None and machine_of(c) == machine_of(s)]
+    own = [c for c in counters if writer_of(s) is not None and writer_of(c) == writer_of(s)]
     terms, r2, exact = balance(s, own, None, steps) if own else ([], 0.0, 0.0)
     if not (terms and fits(s, r2, exact)):
         return None, 0.0, 0.0
@@ -679,7 +684,7 @@ def channel_balance(s: Series, counters: list[Series], steps: list[int], fits) -
         return None, 0.0, 0.0
     channel = s.traffic[1]
     mates = [c for c in counters if c.traffic and c.traffic[1] == channel
-             and (c.traffic[0] == "out" or (c.traffic[0] == "in" and machine_of(c) == machine_of(s)))]
+             and (c.traffic[0] == "out" or (c.traffic[0] == "in" and writer_of(c) == writer_of(s)))]
     terms, r2, exact = balance(s, mates, None, steps) if mates else ([], 0.0, 0.0)
     if terms and fits(s, r2, exact):
         return terms, r2, exact
@@ -732,7 +737,7 @@ def twin_levels(found: list, left_out: dict[str, str], same_flow) -> tuple[list,
         else:
             win, lose = o, s
         share, alike = _equal_steps(win, lose), _alike(win, lose)
-        twins[win.key].append({"series": lose.key, "machine": machine_of(lose), "equal_steps": round(share, 4),
+        twins[win.key].append({"series": lose.key, "written_by": writer_of(lose), "equal_steps": round(share, 4),
                                **{k: round(v, 4) for k, v in alike.items()}})
         for rec in twins[win.key]:
             left_out[rec["series"]] = (f"the same as {win.key} (one stock measured twice: their changes are equal in "
@@ -745,6 +750,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     """The model the metrics imply over [start, end], with how it was found in ``model.discovery``."""
     n = max(2, int((end - start) // step))
     series, summed = sum_instances(sample(dump, start, step, n, kinds))
+    on_bus = candidates(series)    # each machine's event counts: what a flow may be associated with (sd.attribute)
     sampled = len(series)          # every series looked at (a machine's instances summed into one)
     left_out: dict[str, str] = {}
     end = start + n * step
@@ -761,7 +767,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             current.append(ser)
         else:
             since = round((end - (ivs[-1][1] if ivs else max((t for t, _ in ser.points), default=start))) / 60)
-            who = f"its machine {machine_of(ser)} has been silent" if machine_of(ser) else "its last point is"
+            who = f"its writer {writer_of(ser)} has been silent" if writer_of(ser) else "its last point is"
             left_out[ser.key] = f"no longer written: {who} {since} min before the end of the window"
     series = current
     # the window's data begin when the first series was live in it; a level is judged on how much
@@ -785,7 +791,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     named = named_apart([s for s in series if not s.counter])
     for c in counters:
         twin = next((k for k in kept_counters if same_flow(c, k, n) and not counts_apart(c, k, named)
-                     and (EVENT_COUNTER in (c.name, k.name) or machine_of(c) == machine_of(k))), None)
+                     and (EVENT_COUNTER in (c.name, k.name) or writer_of(c) == writer_of(k))), None)
         if twin is None:
             kept_counters.append(c)
             continue
@@ -864,10 +870,10 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # is recorded with why, below
     notes: dict[str, str] = {}
     for pass_ in (split_event_counters, split_foreign_counters):
-        found, made = pass_(found, counters, masks, machine_of, fits, MIN_EVENTS)
+        found, made = pass_(found, counters, masks, writer_of, fits, MIN_EVENTS)
         notes.update(made)
     found, made, joined = unify_same_flows(found, masks, lambda a, b: (same_flow(a, b, n) or lagged_flow(a, b)) and not counts_apart(a, b, named),
-                                           first_stamped, machine_of, fits)
+                                           first_stamped, writer_of, fits)
     notes.update(made)
     for keep, drop in joined:              # a counter joined to another stands for nothing on its own
         same_as[keep.key] += [{"name": drop.name, "labels": drop.labels}, *same_as.pop(drop.key, [])]
@@ -877,7 +883,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     counters = [c for c in counters if c.key not in dropped]
     # a set of a balance's counters that one unused counter counts at once gives way to it
     # (sd.parsimony: the customers' orders less the app's are the takers' own orders taken)
-    found, made = fewer_counters(found, counters, masks, fits, set(notes), machine_of)
+    found, made = fewer_counters(found, counters, masks, fits, set(notes), writer_of)
     notes.update(made)
     # a restated balance may have taken another level's counters: balanced again without them
     rebalanced = []
@@ -915,7 +921,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # a state each item leaves within a step is empty at almost every step of the grid, so the
     # chain through it runs past it (sd.hops) or ends at outside and begins again there
     # (sd.passing); joined through it
-    where = {"start": start, "end": end, "step": step, "machine_of": machine_of}
+    where = {"start": start, "end": end, "step": step, "writer_of": writer_of}
     stock_keys = {s.key for s, _, _, _ in found}
     levels = [s for s in series if not s.counter and s.key not in stock_keys and not left_out.get(s.key, "").startswith(("the same as", SHORT))]
     found, hopped, revived = split_hops(found, counters, copies, levels, first_stamped=first_stamped, **where)
@@ -937,7 +943,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     stocks, sid_of, ids = [], {}, set()
     held: dict[str, dict] = {}       # the levels whose value was carried on their machine's word, and for how long
     for s, terms, r2, exact in found:
-        sid = unique_id(_slug(s), machine_of(s), ids)
+        sid = unique_id(_slug(s), writer_of(s), ids)
         sid_of[s.key] = sid
         carried, at_end = held_for(s.points, s.intervals if s.intervals is not None else [(start, end)])
         if carried:
@@ -945,7 +951,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         p = passed.get(s.key)
         stocks.append(Stock(sid, _title(s), "items", ref(s) if not p or p.measured else None,
                             {"balance_r2": round(r2, 4), "exact_steps": round(exact, 4), "steps": n, "balance_steps": len(masks[s.key]),
-                             "machine": machine_of(s), "accumulator": all(sign > 0 for _, sign in terms),
+                             "written_by": writer_of(s), "accumulator": all(sign > 0 for _, sign in terms),
                              "balance": [{"series": c.key, "sign": sign} for c, sign in terms],
                              "held_minutes": round(carried / 60, 2),
                              **({"balance_r2_level": round(fit_of(s, terms, masks[s.key])[0], 4),
@@ -953,9 +959,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                                 if s.traffic and s.traffic[0] == "backlog" and r2 > fit_of(s, terms, masks[s.key])[0] + 1e-6 else {}),
                              **({"twins": twins[s.key]} if s.key in twins else {}), **(p.evidence() if p else {})}))
     # a counter in two balances connects those stocks (sd.ends: contested ends and co-flows)
-    fid_of = {c.key: unique_id(_slug(c), machine_of(c), ids) for c in counters}
-    by_counter = claims(found, sid_of, machine_of)
-    flow_moves = moves(counters, by_counter, fid_of, machine_of)
+    fid_of = {c.key: unique_id(_slug(c), writer_of(c), ids) for c in counters}
+    by_counter = claims(found, sid_of, writer_of)
+    flow_moves = moves(counters, by_counter, fid_of, writer_of)
     through = {sid_of[k]: p for k, p in passed.items()}
     for mv in flow_moves:
         if mv.src in through or mv.dst in through:
@@ -980,8 +986,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # a level no counters balance may still be a stock, its net flow fitted from the other series (sd.netflow)
     net_flows: list[Flow] = []
     for st, made, was_input, lv in net_flow_stocks(series, [s for s, _, _, _ in found], sid_of, inputs, input_refs, left_out, step,
-                                                   unit_s, (since, end), lambda x: (unique_id(_slug(x), machine_of(x), ids), _title(x)),
-                                                   ref, machine_of):
+                                                   unit_s, (since, end), lambda x: (unique_id(_slug(x), writer_of(x), ids), _title(x)),
+                                                   ref, writer_of):
         stocks.append(st)
         net_flows += made
         sources.pop(f"input:{was_input}", None)
@@ -999,7 +1005,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # influences. It stays a stock; it just may not explain other flows. Nor may a stock whose
     # balance counts the flow's own events, one off just before each of them (sd.drivers).
     accumulators = {sid_of[s.key] for s, terms, _, _ in found if all(sign > 0 for _, sign in terms)}
-    flows, by_machine = [], defaultdict(list)
+    flows, measured = [], {}
     grouped: dict[str, list] = defaultdict(list)       # per counter: its flow, then its co-flows (ends.moves's order)
     for mv in flow_moves:
         grouped[mv.counter.key].append(mv)
@@ -1047,10 +1053,18 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                               [Equation(best["form"], {k: round(v, 6) for k, v in best["params"].items()}, "fitted", "poisson-mle",
                                         (live[0][0], end), None, dict(q), list(best["inputs"]))],
                               [ref(m) for m in c.members], mv.evidence))
-            who = machine_of(c)
-            if who:
-                by_machine[who].append(mv.id)
+            measured[mv.id] = c
     flows += net_flows
+    # which machines may be associated with each flow: hypotheses from the bus, never from who
+    # wrote the counter; they change no equation and no structure (sd.attribute)
+    by_machine: dict[str, list[str]] = defaultdict(list)
+    events_of_machine: dict[str, list] = defaultdict(list)
+    for fl in flows:
+        fl.evidence["machines"] = assoc = associate(measured.get(fl.id), on_bus)
+        for h in assoc["hypotheses"]:
+            by_machine[h["machine"]].append(fl.id)
+            if ev := h.get("events"):
+                events_of_machine[h["machine"]].append(ev)
     # the time any flow was fitted on; with no flow, the window's data
     live = union(windows) if windows else [(since, end)]
     live_s = length(live)
@@ -1059,11 +1073,12 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         ser = series_of.get(st.id) or next((x for x in found_net if sid_of.get(x.key) == st.id), None)
         span = live_span(ser, end) if ser is not None else []
         st.evidence["live_from"] = max(since, span[0][0]) if span else since
-    owners = {st.evidence.get("machine") for st in stocks} - {None}
     # what a machine is (a program, a service, a person) is not in the metrics: the model says "machine"
-    machines = [Machine(m, m, "machine", "Seen in the metrics store: it writes the series these flows are bound to.",
-                        sorted(by_machine.get(m, [])), [ref(s) for s in series if machine_of(s) == m])
-                for m in sorted(set(by_machine) | owners)]
+    machines = [Machine(m, m, "machine", "Seen on the bus. Associated with these flows as hypotheses (sd.attribute): "
+                        + "; ".join(sorted({h["by"] for f in flows for h in f.evidence["machines"]["hypotheses"] if h["machine"] == m})) + ".",
+                        sorted(set(by_machine[m])), [ref(e) for e in on_bus if writer_of(e) == m
+                                                and {"type": e.labels.get("type"), "source": m} in events_of_machine[m]])
+                for m in sorted(by_machine)]
     model = Model("system", "The system",
                   "Discovered from the metrics store: stocks are levels that counters balance, with those counters "
                   "as flows fitted by Poisson maximum likelihood, and levels no counters balance whose net flow "
