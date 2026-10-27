@@ -66,3 +66,14 @@ test("a stock that only fills is drawn when a flow shown drains a stock into it"
   assert.deepEqual([...g.acc], ["tally"]);
   assert.deepEqual(SDGraph.build(m, { showAcc: true }).nodes.filter((n) => n.sid).map((n) => n.sid).sort(), ["done", "r", "tally"]);
 });
+
+test("a label that names the stocks of two services' series says the service too", () => {
+  const pods = (id, metric, svc, region) => ({ id, name: id, series: { name: `rig:${metric}_pods`, labels: { machine: `rig.${svc}`, service: svc, ...(region ? { region } : {}) } } });
+  const m = { stocks: [pods("s", "app_latency", "search"), pods("se", "app_latency", "search", "eu-west"), pods("su", "app_latency", "search", "us-east"),
+                       pods("ce", "http_duration", "checkout", "eu-west"), pods("cu", "http_duration", "checkout", "us-west")], flows: [] };
+  const n = (id) => SDGraph.stockName(m, id);
+  assert.deepEqual(["se", "su", "ce", "cu"].map(n), ["search · eu-west", "search · us-east", "checkout · eu-west", "checkout · us-west"]);
+  assert.equal(n("s"), "rig:app latency pods");
+  const tickets = { stocks: [stock("o", "tickets", { state: "open" }), stock("c", "tickets", { state: "closed" })], flows: [] };
+  assert.equal(SDGraph.stockName(tickets, "o"), "open");          // one series' label: no machine needed
+});

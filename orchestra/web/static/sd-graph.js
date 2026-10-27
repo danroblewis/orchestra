@@ -25,15 +25,22 @@
   // - a flow is named by its series (it is a kind of event), with only what its two ends do not
   //   already say: label values its stocks carry are left out;
   // - a flow measured by two counters of the same events (evidence.same_as: two transitions
-  //   stamped at one instant) is named by both label sets in full, joined by "=".
+  //   stamped at one instant) is named by both label sets in full, joined by "=";
+  // - a stock named by a label that also names the stocks of another series (pods by region, for
+  //   two services) says its machine too ("search · eu-west"), so two services' regions never
+  //   look alike. A remote machine's source prefix is left out (rig.search: "search").
   // Names are {name, family}; ``label`` is the name, with the family only where the name alone is
   // not unique in the model. The model's own ``name`` stays the full record.
   const IGNORE = new Set(["project", "machine", "instance", "source"]);
   const words = (v) => String(v).replace(/_/g, " ");
   const seriesOf = (x) => x.series || x.counter || (x.measured_by && x.measured_by[0]) || null;
   const familyName = (n) => words(n.replace(/_total$/, ""));
+  // a machine as a stock's name says it: without its source's prefix when the series has it
+  const machineWord = (s) => { const mc = (s.labels || {}).machine; if (!mc) return null;
+    const pre = s.name.includes(":") ? s.name.split(":")[0] + "." : null;
+    return words(pre && mc.startsWith(pre) ? mc.slice(pre.length) : mc); };
   function nameFamily(items, drop = null) {
-    const out = {}, fams = new Map();
+    const out = {}, fams = new Map(), said_by = {};
     for (const x of items) { const s = seriesOf(x); if (!s) continue; const k = s.name; fams.set(k, [...(fams.get(k) || []), x]); }
     for (const [fname, xs] of fams) {
       const labels = (x) => Object.fromEntries(Object.entries(seriesOf(x).labels || {}).filter(([k]) => !IGNORE.has(k)));
@@ -49,7 +56,15 @@
       // leaving a usual value out must never make two names the same
       names = names.map((nm, i) => (names.filter((o) => o === nm).length > 1 ? said(xs[i], true).join(" · ") : nm));
       xs.forEach((x, i) => { out[x.id] = drop ? { name: fam + (names[i] ? " · " + names[i] : ""), family: "" }
-        : names[i] ? { name: names[i], family: fam } : { name: fam, family: "" }; });
+        : names[i] ? { name: names[i], family: fam } : { name: fam, family: "" };
+        if (names[i]) said_by[x.id] = { fam: fname, keys: keys.map((c) => c.k), machine: machineWord(seriesOf(x)) }; });
+    }
+    if (!drop) {                        // a label that names the stocks of several series: say whose
+      const famsOf = new Map();
+      for (const v of Object.values(said_by)) for (const k of v.keys) famsOf.set(k, new Set([...(famsOf.get(k) || []), v.fam]));
+      for (const [id, v] of Object.entries(said_by)) {
+        if (v.machine && v.keys.some((k) => famsOf.get(k).size > 1) && !out[id].name.split(" · ").includes(v.machine)) out[id].name = `${v.machine} · ${out[id].name}`;
+      }
     }
     // what no series measures: a stock by its own name; a flow is a balance's remainder, named by
     // what it does (its ends are always shown beside it)

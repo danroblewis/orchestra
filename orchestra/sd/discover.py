@@ -100,14 +100,19 @@ UNITS = {"second": 1.0, "minute": 60.0, "hour": 3600.0}
 NOT_IDENTITY = {"machine", "source", "project", "instance"}   # who wrote a series, not which thing it measures
 
 
+def _said(s: Series) -> list[str]:
+    """The label values that say which series it is: not the project's or machine's, and not a
+    value with nothing to say (RabbitMQ's vhost ``/``, which would end an id in ``__``)."""
+    return [v for k, v in sorted(s.labels.items()) if k not in ("project", "machine") and re.sub(r"\W+", "", v)]
+
+
 def _slug(s: Series) -> str:
-    extra = [v for k, v in sorted(s.labels.items()) if k not in ("project", "machine")]
-    return "_".join([s.name, *[re.sub(r"\W+", "_", v) for v in extra]])
+    return "_".join([s.name, *[re.sub(r"\W+", "_", v) for v in _said(s)]])
 
 
 def _title(s: Series) -> str:
     base = re.sub(r"_total$", "", s.name).replace("_", " ")
-    extra = [v for k, v in sorted(s.labels.items()) if k not in ("project", "machine")]
+    extra = _said(s)
     return base + (f" ({', '.join(extra)})" if extra else "")
 
 
