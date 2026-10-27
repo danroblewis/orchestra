@@ -75,6 +75,11 @@
       <div id="mx-out"></div>
     </div>
   </section>
+  <div class="panel" id="cfg" style="margin-top:16px">
+    <h2 style="margin-top:0"><span>Configuration</span><span class="hctl"><span class="muted" id="cfg-note"></span></span></h2>
+    <div id="cfg-files" class="proc"></div>
+    <div id="cfg-keys" class="scroll" style="max-height:420px"></div>
+  </div>
   <div class="logs">
     <h2><span>Logs</span><span class="hctl"><span class="muted" id="log-note"></span></span></h2>
     <div class="bar" id="log-bar"></div>
@@ -256,6 +261,19 @@ async function loadEvents() {
 refreshCore(); refreshSources(); refreshLog(); loadCatalog(); loadEvents();
 let RESIZE = 0;   // charts are drawn at their width: redraw when it changes
 window.addEventListener("resize", () => { clearTimeout(RESIZE); RESIZE = setTimeout(() => { runQuery(); loadEvents(); }, 300); });
+// the configuration: orchestra.toml with the private overlay merged over it, each key with where it came from
+async function loadConfig() {
+  try {
+    const { config: c } = await (await fetch("/api/project")).json();
+    $("cfg-files").innerHTML = c.files.map((f) => `<div><b>${f.role === "repo" ? "repository" : "private overlay"}</b> <span class="mono">${esc(f.path)}</span>${f.exists ? "" : ` <span class="muted">(none${f.role === "overlay" ? `; named by the ${esc(f.named_by)}` : ""})</span>`}</div>`).join("");
+    if (c.error) { $("cfg-keys").innerHTML = `<div class="probe bad">${esc(c.error)}</div>`; return; }
+    const n = c.keys.filter((k) => k.from === "overlay").length;
+    $("cfg-note").textContent = `${c.keys.length} keys, ${n} from the overlay${c.removed.length ? `, ${c.removed.length} removed by it` : ""}`;
+    const val = (k) => k.secret ? `<span class="muted">secret</span>` : esc(JSON.stringify(k.value)) + (k.secret_fields ? ` <span class="muted">· secret: ${esc(k.secret_fields.join(", "))}</span>` : "");
+    $("cfg-keys").innerHTML = `<table class="ct"><tr><th>key</th><th>from</th><th>value</th></tr>${c.keys.map((k) => `<tr><td class="mono">${esc(k.key)}</td><td>${k.from === "overlay" ? "<b>overlay</b>" : "repository"}</td><td class="mono" style="word-break:break-all">${val(k)}</td></tr>`).join("")}${c.removed.map((r) => `<tr><td class="mono">${esc(r)}</td><td><b>overlay</b></td><td class="muted">removed (enabled = false)</td></tr>`).join("")}</table>`;
+  } catch (e) { $("cfg-note").textContent = "cannot read: " + e; }
+}
+loadConfig(); setInterval(loadConfig, 30000);
 setInterval(loadCatalog, 10000); setInterval(loadEvents, 10000);
 setInterval(refreshCore, 5000); setInterval(refreshLog, 3000); setInterval(refreshSources, 30000);
 </script>

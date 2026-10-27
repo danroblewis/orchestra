@@ -4,6 +4,7 @@ changes the system (AGENTS.md rule 9)."""
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 import time
 from pathlib import Path
@@ -88,7 +89,23 @@ def create_app(project: Project) -> FastAPI:
 
     @app.get("/api/project")
     def project_info() -> dict:
-        return {"key": project.key, "repo": str(project.repo_root)}
+        """The project and its configuration: the files it is read from (orchestra.toml and the
+        private overlay) and each key with where it came from, read now. A value the overlay
+        marks secret is left out; its key and origin are still shown (orchestra/overlay.py)."""
+        from ..config import OVERLAY_ENV
+        from ..overlay import describe
+        files = [{"role": "repo", "path": str(project.config_file), "exists": project.config_file.exists()},
+                 {"role": "overlay", "path": str(project.overlay_file), "exists": project.overlay_file.exists(),
+                  "named_by": OVERLAY_ENV if os.environ.get(OVERLAY_ENV) else "state directory"}]
+        out = {"key": project.key, "repo": str(project.repo_root), "config": {"files": files}}
+        try:
+            cfg = project.read_config()
+        except Exception as e:  # noqa: BLE001 - shown, not fatal
+            out["config"]["error"] = f"{type(e).__name__}: {e}"
+            return out
+        out["config"]["keys"] = describe(cfg.raw, cfg.layers)
+        out["config"]["removed"] = cfg.layers.removed if cfg.layers else []
+        return out
 
     # ---- Core: the fundamental services. Kept independent of the model and the machines, so
     # the page works when they do not (see web/core.py).

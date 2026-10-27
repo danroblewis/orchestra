@@ -659,8 +659,8 @@ after a pause that doubles with each exit within a minute of starting (1 s up to
 failures (non-zero exits) in a row, each within a minute of starting, it is given up on, which the
 host's log, the process's log and the bus (`orchestra.process.gave_up`) say. It is tried again when
 its entry changes or the host restarts. The host also publishes `orchestra.process.started` and
-`orchestra.process.exited`. It re-reads `orchestra.toml` whenever the file changes (checked every
-second): a new entry starts, a removed one stops, a changed one restarts. The plugins are then
+`orchestra.process.exited`. It re-reads the configuration (`orchestra.toml` with the private
+overlay merged, §8) whenever either file changes, appears or goes (checked every second): a new entry starts, a removed one stops, a changed one restarts. The plugins are then
 asked again for their processes (the config read first, since a plugin reads its own sections), so
 adding or removing a plugin's section starts or stops what it declares. A file that does not parse,
 or a plugin that fails to load, leaves what runs alone. Stopping the host (SIGTERM, SIGHUP or Ctrl-C) stops every process
@@ -702,7 +702,7 @@ machine (AGENTS.md rule 7). Nothing is announced on the bus for it and it is not
 page; the Instruments page lists it. Its name is its own: it may share a `[[machines]]` entry's
 name (a scrape of the program that entry runs) without being that machine. A plugin's is named
 `<plugin>.<name>`, and a project entry of that name takes its place, with a line in the host's
-log; the plugins are asked for theirs again whenever `orchestra.toml` changes.
+log; the plugins are asked for theirs again whenever the configuration (§8) changes.
 
 The host that launches (§5.1) runs each on its interval, each round in a thread of its own; an
 instrument whose last round is still running skips its turn. A command runs in the repository root,
@@ -726,8 +726,8 @@ labelled `machine="orchestra-host"`. A round that succeeds adds a line to the in
 Each instrument's health is in the runtime record (`instruments`: its kind, target, interval,
 owner and log, its last write and how many points, its failures and its last error), written when
 an instrument is added, removed, fails, first writes or writes a different number of points, and
-otherwise at most every 5 s. `orchestra.toml` is read again on the host's tick (every second) when
-it changed: an instrument added starts at once, one removed stops (a round under way finishes and
+otherwise at most every 5 s. The configuration (§8) is read again on the host's tick (every second) when
+either of its files changed: an instrument added starts at once, one removed stops (a round under way finishes and
 its points are dropped), one changed starts over, and an entry that cannot be used is left out
 with a line in the host's log. Stopping the host kills a command under way and writes nothing
 more.
@@ -758,6 +758,7 @@ keeps its own harness (`~/orchestra-agents/SPEC.md`).
   projects.json                  repository root → project key
   <key>/
     project.json
+    orchestra.local.toml         the private configuration overlay, if the owner writes one (§8)
     runtime.json                 the hosts', the launcher's, the events endpoint's, the web server's, the launched processes' and the instruments' records
     events.token                 the events endpoint's token (§3.1), readable by its owner only
     events.jsonl                 the event log, when [events] url = "file"
@@ -808,6 +809,34 @@ kind = "rate"
 
 Unknown sections are ignored, so files written for older versions still load, and a package of
 machines may keep its own settings here (other packages' sections).
+
+### 8.1 The private overlay
+
+A project's configuration is `orchestra.toml` with a **private overlay** merged over it, when
+there is one (`orchestra/overlay.py`, `Project.read_config`). It holds what must not land in a
+repository others share (docs/roadmap/decisions.md D10): the owner's channels, templates,
+identities, instruments. It is read from the file `ORCHESTRA_CONFIG_OVERLAY` names (relative to
+the repository root unless absolute; a missing file is then an error), else from
+`orchestra.local.toml` in the state directory (§7) if it is there. A file inside the repository
+is never read as an overlay. With no overlay, the configuration is `orchestra.toml` alone.
+
+- Tables merge key by key; the overlay's value wins.
+- Arrays of tables, at any depth (`[[machines]]`, `[[collect]]`, `[[scrape]]`, `[[sources]]`,
+  `[[series]]`, a plugin's), merge by `name`: an overlay entry named as one of the repository's
+  replaces it whole; any other is appended.
+- An overlay entry `{ name = "x", enabled = false }` removes the repository's `x`.
+- Anything else is replaced.
+
+`[overlay]` in the overlay is not merged: `secret` lists keys (`desk.me`, `machines[pager]`,
+`machines[pager].command`; a key covers what is under it) whose values are never shown.
+`/api/project` lists both files and each key of the merged configuration with `from` (`repo` or
+`overlay`) and its value unless secret, and the entries the overlay removed. Credentials never
+go in either file; they come from the environment or files, as §4.4 says.
+
+Everything that reads the configuration reads the merged one: `load_project`, the host, the
+launcher and the instruments re-read it when either file changes, appears or goes
+(`Project.config_stamp`), and plugins get it as `project.config.raw` without knowing there is an
+overlay. Orchestra only reads the overlay; it never writes it.
 
 ---
 
@@ -922,6 +951,9 @@ it. Pages read only the web server's background caches
   metrics (a catalogue of every series with the project's label, naming any series in the file
   store that lacks it, and a PromQL editor) and the events (types, volumes, sources); logs (the
   host's, Core's, the event stream and each launched process's). It imports only the bus, the metrics store and the runtime record.
+  Its Configuration panel (`/api/project`, fetched on its own, so the rest of the page does not
+  depend on it) lists the configuration's files and each key with the file it came from (§8),
+  never the value of a key the overlay marks secret.
 
 ### 10.1 Plugins
 

@@ -112,6 +112,7 @@ same value).
   projects.json                      repository root → project key
   <key>/
     project.json
+    orchestra.local.toml             your private configuration overlay, if you write one (§2)
     runtime.json                     the hosts, the launcher, the web server, the launched processes, the instruments' health
     events.jsonl                     the event log, when [events] url = "file"
     metrics.jsonl                    the metrics, when [metrics] url = "file"
@@ -138,6 +139,78 @@ settings (the web server reads them only when it starts).
 
 Sections Orchestra does not know are ignored, so a plugin may keep its own settings here, and a
 file written for an older Orchestra still loads.
+
+### A private overlay: configuration that stays out of the repository
+
+When the repository is shared (a team's or a company's), what is yours alone (your channels,
+templates, identities, your own instruments) should not land in it. Put it in a **private
+overlay**: a second file, outside the repository, merged over `orchestra.toml`. Orchestra reads
+it from:
+
+1. the file `ORCHESTRA_CONFIG_OVERLAY` names (relative to the repository root unless absolute),
+   if that variable is set; a missing file is then an error, so a mistyped path never silently
+   drops your settings;
+2. otherwise `~/.orchestrator/<key>/orchestra.local.toml`, in the project's state directory, if
+   it is there.
+
+A file in the repository (an `orchestra.local.toml` at its root, say) is never read on its own:
+the overlay is for what must stay out of the repository, and a file in it is one `git add -A`
+from being shared. Without an overlay nothing changes.
+
+The merge:
+
+- **Tables** merge key by key, and the overlay's value wins.
+- **Arrays of tables** (`[[machines]]`, `[[collect]]`, `[[scrape]]`, `[[sources]]`, `[[series]]`,
+  a plugin's `[[tasks.roles]]`, at any depth) merge by `name`: an overlay entry with the name of
+  one of the repository's replaces it whole; any other is added after them.
+- **Removing** an entry: an overlay entry `{ name = "x", enabled = false }` takes the
+  repository's `x` out.
+- **Anything else** (a string, a number, an array of plain values) is replaced.
+
+`[overlay]` in the overlay file is the overlay's own and is not merged. Its `secret` lists keys
+whose values are never shown (below); a key covers what is under it. Secret here means private,
+not a credential: **credentials never go in any configuration file**, overlay or not. They come
+from the environment or from files outside the repository, as `[[sources]]` auth does.
+
+```toml
+# ~/.orchestrator/work-repo-1a2b3c4d/orchestra.local.toml
+
+[overlay]
+secret = ["desk.me", "machines[pager].command"]
+
+[metrics]
+url = "http://127.0.0.1:8428"          # my VictoriaMetrics, not the team's file store
+
+[desk]                                  # a plugin's section, only mine
+me = "U0123ABC"
+channels = ["#my-team", "@me"]
+
+[[machines]]                            # added to the repository's [[machines]]
+name = "pager"
+command = "machines/pager.sh --to U0123ABC"
+
+[[machines]]                            # the repository's "demo" does not run for me
+name = "demo"
+enabled = false
+
+[[collect]]                             # replaces the repository's "disk" entry
+name = "disk"
+command = "machines/disk.sh"
+every = "5m"
+```
+
+`orchestra run` follows both files: a change to either, or the overlay appearing or going, is
+read within a second, as for `orchestra.toml` alone. Plugins see the merged configuration
+(`project.config.raw`) and need not know there is an overlay.
+
+To see where each key came from, open the Core page's Configuration panel, or
+`GET /api/project`: it names both files and lists each key (`events.url`, `machines[pager]`)
+with `"from": "repo"` or `"overlay"` and its value, except that a key the overlay marks secret has
+`"secret": true` and no value (an entry with a secret field lists it under `secret_fields`), and
+the entries the overlay removed are under `removed`.
+
+Set `ORCHESTRA_CONFIG_OVERLAY`, if you use it, for `orchestra run`, `orchestra web` and every
+CLI call alike. The state-directory file needs no variable.
 
 ### Durations
 
@@ -332,6 +405,7 @@ kind = "rate"
 | Variable | Read by | Meaning |
 |---|---|---|
 | `ORCHESTRATOR_HOME` | every command | Where state lives instead of `~/.orchestrator`. |
+| `ORCHESTRA_CONFIG_OVERLAY` | every command, `load_project()` | The private overlay to merge over `orchestra.toml`, instead of `<state>/orchestra.local.toml` (§2). |
 | `ORCHESTRA_REPO` | every command, `load_project()`, `for_repo()` | The repository, when `--repo` is not given. The launcher and the instruments set it for what they run. |
 | `ORCHESTRA_EVENTS_URL` | every command, `Events.for_project` | Overrides `[events] url`. |
 | `ORCHESTRA_METRICS_URL` | every command, `for_repo()` | Overrides `[metrics] url`. |

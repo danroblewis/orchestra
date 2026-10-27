@@ -76,6 +76,11 @@ That is all the registration there is.
 - **Not listed in `orchestra.toml`.** Every plugin installed in the environment that runs
   `orchestra` is loaded for every project. A plugin decides for itself whether it does anything in
   a given project, usually by checking for its own section of `orchestra.toml` (§4.6, §4.9).
+- **Read the configuration from `project.config.raw`.** It is `orchestra.toml` with the owner's
+  private overlay merged over it (SPEC §8.1), so a section the owner keeps out of a shared
+  repository reaches the plugin there, and the host loads the plugins again when either file
+  changes. A plugin that parses `<repo>/orchestra.toml` itself misses the overlay: use
+  `project.config.raw`, or `project.read_config()` for a fresh read.
 - **Read from installed metadata.** `importlib.metadata.entry_points(group="orchestra.plugins")`
   reads the entry points from the installed package's `entry_points.txt`, so the plugin must be
   installed in the same environment as Orchestra. An editable install picks up code changes
@@ -293,8 +298,8 @@ Orchestra knows nothing of what they mean. Any method works: the task system's
 human-facing writes that rule 9 allows plugins to have (§7).
 
 The router is built in the web server's process. To see edits to `orchestra.toml` live, re-read it
-in the handler (`project.reload_config()`; the task system does it in a router dependency,
-`Depends(fresh)`).
+in the handler (`project.reload_config()`, which merges the private overlay too; the task system
+does it in a router dependency, `Depends(fresh)`).
 
 ### 4.5 `machines`: declared machines
 

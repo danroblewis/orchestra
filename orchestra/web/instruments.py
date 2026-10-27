@@ -15,17 +15,16 @@ or querying an instrument:
 
 from __future__ import annotations
 
-import tomllib
-
 from .. import runtime
 from ..collect.spec import from_toml
+from ..config import ConfigError
 
 
 def _declared(project) -> tuple[list[dict], list[str]]:
     try:
-        raw = tomllib.loads((project.repo_root / "orchestra.toml").read_text(encoding="utf-8"))
-    except (OSError, ValueError) as e:
-        return [], [f"cannot read orchestra.toml: {e}"]
+        raw = project.read_config().raw
+    except (OSError, ValueError, ConfigError) as e:
+        return [], [f"cannot read the configuration: {e}"]
     found, errors = from_toml(raw)
     return [{"name": c.name, "kind": c.what, "target": c.target, "every_s": c.every_s, "owner": c.owner} for c in found], errors
 

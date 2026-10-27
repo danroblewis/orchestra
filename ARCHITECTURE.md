@@ -101,7 +101,7 @@ Each component, its module, and what it depends on:
 
 | Component | Module | What it does | Depends on |
 |---|---|---|---|
-| **Configuration** | `orchestra/config.py` | Finds the repository root with git (a worktree resolves to its main repository), reads `orchestra.toml`, computes the project key and the state directory. `orchestra init` writes a starter `orchestra.toml`. | git, `tomllib` |
+| **Configuration** | `orchestra/config.py` | Finds the repository root with git (a worktree resolves to its main repository), reads `orchestra.toml` and merges the private overlay over it (`orchestra/overlay.py`; `ORCHESTRA_CONFIG_OVERLAY`, else `<state>/orchestra.local.toml`), computes the project key and the state directory. `orchestra init` writes a starter `orchestra.toml`. | git, `tomllib` |
 | **Event bus** | `orchestra/bus/`, facade `orchestra/events.py` | An append-only, ordered, replayable log per project. `Events.publish` wraps every event in the CloudEvents envelope (`events.envelope`). Offsets are integers counting events; `Events.after(offset)` returns everything after an offset. | config; a client library for server backends |
 | **Metrics store** | `orchestra/metrics/` (`file.py`, `victoria.py`, `promql.py`) | Stores series: `write`, `raw`, `range`, `latest`, `series`, `dump`, `delete`. Every point carries a `project` label. Refuses points stamped more than 60 s in the future (`refuse_future`). `promql.py` is a tested PromQL subset for the file store. | config |
 | **Runtime record** | `orchestra/runtime.py` | `<state>/runtime.json`: the running hosts, the one host that launches, the web server, and the launched processes. Every write takes a file lock. A record holds a pid and the process's create time, so a reused pid is not mistaken for it. | config, `psutil`, `fcntl` |
@@ -147,8 +147,9 @@ own, with `ORCHESTRA_REPO`, `ORCHESTRA_MACHINE_LOG`, and the events endpoint's
 - After five failing exits in a row, each within a minute of starting, it is given up on and
   `orchestra.process.gave_up` is published. It is tried again when its entry changes or the host
   restarts.
-- `orchestra.toml` is re-read when it changes (checked every second). New entries start, removed
-  ones stop, changed ones restart. The plugins are asked for their processes again at the same
+- The configuration (`orchestra.toml` with the private overlay merged, `Project.read_config`) is
+  re-read when either file changes, appears or goes (`Project.config_stamp`, checked every
+  second). New entries start, removed ones stop, changed ones restart. The plugins are asked for their processes again at the same
   time.
 - Stopping the host sends SIGTERM to each process group, then SIGKILL after its stop grace
   (10 s unless set).
@@ -572,6 +573,7 @@ flowchart TD
   HOME["~/.orchestrator/ or ORCHESTRATOR_HOME"] --> PJ["projects.json: repo root to key"]
   HOME --> KEY["#lt;key#gt;/ : repo name plus 8 hex of its path hash"]
   KEY --> P1["project.json"]
+  KEY --> P10["orchestra.local.toml: the private overlay, if any"]
   KEY --> P2["runtime.json: hosts, launcher, events_endpoint, web, processes, instruments"]
   KEY --> P9["events.token: the events endpoint's token, owner-only"]
   KEY --> P3[".lock and discovery.lock"]
@@ -595,6 +597,12 @@ flowchart TD
 - `.lock` guards `runtime.json`. `discovery.lock` allows one discovery at a time.
 - Logs rotate once at 5 MB, to `.log.1`.
 - Inside the repository, Orchestra writes only `orchestra.toml`, and only on `orchestra init`.
+- The private overlay is merged over `orchestra.toml` wherever the configuration is read
+  (`Project.read_config`): `ORCHESTRA_CONFIG_OVERLAY`, else `orchestra.local.toml` in the state
+  directory; a file in the repository is never read as one. Tables merge key by key (the
+  overlay wins); arrays of tables merge by `name` (same name replaces, others append, and
+  `enabled = false` removes); anything else is replaced. `[overlay] secret` names keys whose
+  values `/api/project` never shows. Orchestra only reads it.
 - With a server bus or VictoriaMetrics, the event log and the metrics live in those servers
   instead of `events.jsonl` and `metrics.jsonl`. Everything else stays in the state directory.
 
@@ -666,7 +674,7 @@ so most page requests do no expensive work:
 | Page | What it shows | Main code |
 |---|---|---|
 | **Dashboard** (`/`) | Movable panels: Machines (what runs now) and Host (a Core status strip, CPU, GPU, memory, disk). Plugins may add panels. | `static/dashboard.js` |
-| **Core** (`/core`) | The host and its processes, the bus and the metrics store, each probed against its real backend under a 4 s limit; a metrics catalogue and PromQL editor; an event explorer; logs. | `web/core.py`, `web/core_explore.py` |
+| **Core** (`/core`) | The host and its processes, the bus and the metrics store, each probed against its real backend under a 4 s limit; a metrics catalogue and PromQL editor; an event explorer; logs; the configuration, each key with the file it came from (`/api/project`, read on its own so the rest of the page does not depend on it). | `web/core.py`, `web/core_explore.py`, `orchestra/overlay.py` |
 | **Machines** (`/machines`) | Every machine seen on the bus (and counted-traffic machines and plugin placeholders), its instances, mode and kind, whether it is active, the event map with hand-offs and counted traffic, communication loops, and a dialog per machine with its series, last events (envelopes only) and log tail. | `web/machines.py`, `web/traffic.py`, `web/machine_logs.py`, `static/netgraph.js`, `static/loops.js` |
 | **Instruments** (`/instruments`) | What measures the system, apart from the machines: each `[[collect]]`, `[[scrape]]` and `[[sources]]` entry (and a plugin's), with its kind (script, URL, source), target, interval, last write and points, failures, last error and log. Read from the runtime record's `instruments` and `orchestra.toml`, never by running an instrument. `/api/instruments`, `/api/instruments/<name>/log`. | `web/instruments.py`, `static/instruments.html` |
 | **Dynamics** (`/dynamics`) | The model as a stock-and-flow graph, with feedback loops marked balancing or reinforcing, history charts, each stock's and flow's drawer (a flow's lists each machine hypothesis with its why, or "no machine associated yet"), a flows table with "machines (hypotheses)" and their confidence, a simulation from the start of the era and a projection forward, and stepping through saved versions. "Rediscover now" runs discovery in the background. | `web/dynamics.py`, `sd/simulate.py`, `static/sd-graph.js`, `static/sd-layout.js`, `static/layout-worker.js` |
@@ -723,7 +731,7 @@ the entry-point group `orchestra.plugins`. The function takes the project and re
 | `collectors` | Instruments (`collect.spec.Collector`: `Collector.scrape(name, url, ...)`, `Collector.collect(name, command, ...)`) that `orchestra run` reads like the project's own, named `<plugin>.<name>`. A project entry of the same name wins, and the host logs that. Not machines. |
 
 Plugins are loaded in two places. The web app loads them once at start (`web/app.py:mount_plugins`).
-The host loads them again each time `orchestra.toml` changes, to ask for their processes
+The host loads them again each time `orchestra.toml` or the private overlay changes, to ask for their processes
 (`Host._plugin_processes`) and instruments. A plugin that raises, one whose name an earlier plugin
 took, and a script or stylesheet missing from a plugin's static directory are reported (`/api/plugins`, the host's log) and
 left out, and it never takes the web app or the host down. Orchestra knows nothing of what a
