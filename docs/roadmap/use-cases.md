@@ -49,8 +49,11 @@ Its second half, influencing and replacing (the environment as an actor, ghost m
 from fitted rates, leverage points, shadow-and-swap, distilling an agent into a program, and how
 many flows one machine should own), is `docs/proposals/environment-and-ghost-machines.md`.
 
-What it needs that is not built: script and scrape collectors (being built), each series' real
-resolution respected by discovery (H1), an impulse-injection machine and the tests that read it
+Built for it on 2026-10-27: each series' real resolution respected by discovery, and levels no
+counters balance taken for stocks when the other series explain their net flow (on the live
+telemetry over 6 h: the machine's load relaxing toward its CPU use, its processes, Claude's
+processes, a repository's disk use, the San Francisco tide; everything else stays an input with
+its reason). What it needs that is not built: an impulse-injection machine and the tests that read it
 (H1–H2), the recurring agent loop as a machine any user can declare (H2), the model readable by
 agents (H2).
 
@@ -89,7 +92,10 @@ a twin stock); after the first discovery fixes 6/10 (10:30; the five board state
 transitions right, remaining: a spurious takers-free stock from a stuck balance search, the
 rating not read by any flow, the rejected flow split through outside, stale values before a
 restart losing stocks in the host's scheduled runs). Reports under the session scratchpad
-`split/model-acceptance/`.
+`split/model-acceptance/`. On 2026-10-27 (levels with no counters, series resolution) the round-6
+export keeps its nine counted stocks and gains one by its fitted net flow, the shelf's mean age
+(an average of ages, read off the demand or the rating): not expected, and to be judged; the
+weather stays an input (its fit does not carry from one half of the hour to the other).
 
 ## UC-2: the task system with programs (`~/orchestra-tasking/demo`)
 

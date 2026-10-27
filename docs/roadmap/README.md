@@ -72,7 +72,10 @@ numbers came from." This horizon makes discovery earn trust on systems whose str
   counts and states, linear between points for smooth measurements, chosen per series and
   recorded), never lets a slow series explain anything faster than its own resolution, and the
   Dynamics page shows each series' resolution. Without this a feed that changes every 30 minutes,
-  polled every minute, looks like a fast driver.
+  polled every minute, looks like a fast driver. **Discovery's part built 2026-10-27 (SPEC §4.3
+  step 1, `sd/resolution.py`)**, with levels no counters balance becoming stocks by their fitted
+  net flow (`sd/netflow.py`); the live demo's 6 h at 5 s went from 11 minutes to 10 seconds.
+  Not yet: the collectors' half (no repeats written).
 - **Impulse injection** (UC-0): a machine that nudges a quantity at known times, and the
   intended-effect and null tests that read the response, so causal claims are tested, not
   inferred from correlation.
