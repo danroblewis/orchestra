@@ -102,7 +102,8 @@ class Host:
             wait = self.project.config.discovery_every
             try:
                 r = rediscover(self.project, metrics_for(self.project), skip_if_busy=True)
-                what = f"saved as version {r.version}" if r.version else "structure unchanged"
+                not_saved = r.model.discovery.get("not_saved")
+                what = f"saved as version {r.version}" if r.version else (f"not saved: {not_saved}" if not_saved else "structure unchanged")
                 self.log(f"discovery ({r.strategy}): {len(r.model.stocks)} stocks, {len(r.model.flows)} flows; {what}")
             except Busy:                              # the CLI or the web page is discovering: theirs will do
                 self.log("discovery: skipped, another process is discovering this project")
