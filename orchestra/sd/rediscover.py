@@ -9,7 +9,14 @@ in the state directory): the host skips a scheduled run while another holds it, 
 An SD Lab strategy is given a deadline below ``[discovery] every``, so one run cannot outlast the
 interval. The window's ends are on multiples of the step (``aligned``), so runs a few seconds
 apart sample the same grid: on a grid shifted by a few seconds a state that lasts a moment is
-seen in a different number of steps, and a borderline stock comes and goes between runs."""
+seen in a different number of steps, and a borderline stock comes and goes between runs.
+
+The series come through one catalogue (``orchestra.sources.catalogue``): the own store's as they
+are, and each remote source's read for exactly this window and step. When a source is missing
+(refused, unreachable, failing), the model is discovered from what arrived and cached for the
+page with the reason, but never saved as a version: a version without a source would delete its
+stocks and churn versions with every outage. A run long after the previous one (the machine
+slept) reads the whole window again like any other and records the gap."""
 
 from __future__ import annotations
 
@@ -22,8 +29,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..metrics import MetricsStore
+from ..sources.catalogue import Catalogue
 from .discover import structure
 from .model import Model
+from .provenance import annotate
 from .store import ModelStore
 from .strategies import CONSERVATION, DEFAULT, discover_with, sd_installed
 
@@ -83,10 +92,20 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
         store = ModelStore.for_state(project.state_dir)
         now = time.time()
         start, end = aligned(now - window_s, now, step_s)
-        m = discover_with(metrics.dump("", {"project": project.key}), start=start, end=end, step=step_s,
-                          strategy=strategy, options=options, deadline=DEADLINE_SHARE * cfg.discovery_every)
+        reading = Catalogue(project, metrics).read(start, end, step_s)
+        m = discover_with(reading.dump, start=start, end=end, step=step_s, strategy=strategy, options=options,
+                          deadline=DEADLINE_SHARE * cfg.discovery_every, kinds=reading.kinds)
+        annotate(m, reading.provenance)
         m.discovery.update(window_s=window_s, step_s=step_s)
+        if len(reading.status) > 1 or reading.missing:
+            m.discovery["sources"] = reading.status
+        if reading.missing:
+            m.discovery["not_saved"] = "missing " + "; ".join(f"{k}: {v}" for k, v in reading.missing.items())
+        prev = store.latest_discovery()
+        if prev and now - prev[0] > 2 * cfg.discovery_every:
+            m.discovery["since_last_s"] = round(now - prev[0])      # the machine slept, or nothing ran: this window was read whole, as always
         store.write_discovery(m, at=now)
         cur = store.load()
-        version = store.save(m, note=f"{note} ({strategy})") if m.stocks and (cur is None or structure(cur) != structure(m)) else None
+        changed = m.stocks and (cur is None or structure(cur) != structure(m))
+        version = store.save(m, note=f"{note} ({strategy})") if changed and not reading.missing else None
         return Result(m, now, version, strategy)

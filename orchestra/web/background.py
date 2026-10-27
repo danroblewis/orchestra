@@ -12,6 +12,9 @@ One thread keeps three caches warm:
   chart shows the levels discovery saw (a level held for four seconds is a stock on a 5 s grid
   and invisible on a 15 s one).
 
+A stock or flow bound to a series in another store (``SeriesRef.source``, from ``[[sources]]``)
+is read through the sources' catalogue (``orchestra.sources.catalogue``) for the same window.
+
 Endpoints read the caches and report how old they are. The model itself is rediscovered by the
 bootstrap host, not here (``orchestra.host``); this only reads what the host cached."""
 
@@ -22,7 +25,9 @@ import time
 from itertools import pairwise
 
 from ..metrics import step_sample
+from ..sd.model import SeriesRef
 from ..sd.store import ModelStore
+from ..sources.catalogue import Catalogue
 from .machines import MachineIndex, last_writes
 
 INDEX_EVERY_S = 5.0
@@ -46,6 +51,7 @@ class Refresher:
         self.history: dict = {}
         self.at: dict[str, float] = {}
         self.errors: dict[str, str] = {}
+        self.catalogue = Catalogue(project, metrics)
         self._stop = threading.Event()
         threading.Thread(target=self._run, name="web-refresher", daemon=True).start()
 
@@ -76,15 +82,23 @@ class Refresher:
         if model is None or self.metrics is None:
             self.history = {}
             return
-        self.history = history(model, self.metrics, time.time(), stock_step(self.project.config.discovery_step))
+        self.history = history(model, self.raw, time.time(), stock_step(self.project.config.discovery_step))
+
+    def raw(self, ref, start: float, end: float) -> list[tuple[float, float]]:
+        """A series' points in [start, end]: from the own store, or through its source."""
+        if ref.source and ref.source != "own":
+            return self.catalogue.read_ref(ref, start, end, stock_step(self.project.config.discovery_step))
+        return self.metrics.raw(ref.name, ref.labels, start=start, end=end)
 
     def _levels(self) -> None:
         model = self.model()
         out = {}
         if model is not None and self.metrics is not None:
+            now = time.time()
             for s in model.stocks:
                 if s.series:
-                    last = self.metrics.latest(s.series.name, s.series.labels)
+                    pts = self.raw(s.series, now - 900, now) if s.series.source not in (None, "own") else None
+                    last = (pts[-1] if pts else None) if pts is not None else self.metrics.latest(s.series.name, s.series.labels)
                     if last:
                         out[s.id] = {"t": last[0], "v": last[1]}
         self.levels = out
@@ -109,22 +123,23 @@ def stock_step(discovery_step: float) -> float:
     return min(STOCK_STEP_S, discovery_step) if discovery_step > 0 else STOCK_STEP_S
 
 
-def history(model, metrics, end: float, stock_step: float = STOCK_STEP_S) -> dict:
+def history(model, raw, end: float, stock_step: float = STOCK_STEP_S) -> dict:
     """The model's history over the HISTORY_S before ``end``: each stock's level every
-    ``stock_step``, each flow's rate every FLOW_STEP_S, and the measured inputs the equations read."""
+    ``stock_step``, each flow's rate every FLOW_STEP_S, and the measured inputs the equations read.
+    ``raw(ref, start, end)`` reads one series' points."""
     start = end - HISTORY_S
     unit = {"second": 1.0, "minute": 60.0, "hour": 3600.0}.get(model.time_unit, 60.0)
     stocks, flows = {}, {}
     for s in model.stocks:
         if s.series:
-            pts = metrics.raw(s.series.name, s.series.labels, start=start - 300, end=end)
+            pts = raw(s.series, start - 300, end)
             t0 = start - start % stock_step
             stocks[s.id] = [[round(t), v] for t, v in step_sample(pts, t0, end, stock_step)]
     for f in model.flows:
         refs = f.measured_by or ([f.counter] if f.counter else [])
         total: dict[int, float] = {}
         for c in refs:                     # a flow measured by several counters: their sum
-            pts = metrics.raw(c.name, c.labels, start=start - 300, end=end)
+            pts = raw(c, start - 300, end)
             t0 = start - start % FLOW_STEP_S
             for a, b in pairwise(step_sample(pts, t0, end, FLOW_STEP_S)):
                 total[round(b[0])] = total.get(round(b[0]), 0.0) + ((b[1] - a[1]) if b[1] >= a[1] else b[1]) * unit / FLOW_STEP_S
@@ -133,7 +148,7 @@ def history(model, metrics, end: float, stock_step: float = STOCK_STEP_S) -> dic
     # measured inputs the model's equations read (levels that are not stocks)
     inputs = {}
     for name, ref in (model.discovery.get("inputs") or {}).items():
-        pts = metrics.raw(ref["name"], ref["labels"], start=start - 300, end=end)
+        pts = raw(SeriesRef(ref["name"], ref["labels"], source=ref.get("source")), start - 300, end)
         t0 = start - start % stock_step
         inputs[name] = [[round(t), v] for t, v in step_sample(pts, t0, end, stock_step)]
     return {"at": end, "start": start, "stock_step": stock_step, "flow_step": FLOW_STEP_S,

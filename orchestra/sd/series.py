@@ -27,6 +27,17 @@ def plumbing_reason(name: str) -> str:
             "rename it for what it measures (docs/machines.md)")
 
 
+@dataclass(frozen=True)
+class Declared:
+    """What a series is, said by whoever defined it (a source's view, a ``[[series]]``) rather than
+    guessed from its name: a ``counter`` or a ``level``. A counter read from another store
+    (``baseline``) was counting before the window began: its first sample is where it stood, not
+    events, so steps before it take its value instead of zero."""
+
+    kind: str
+    baseline: bool = False
+
+
 def series_key(name: str, labels: dict[str, str]) -> str:
     """A series' identity in a discovery: its name and every label but the project (the machine
     included: two machines' series of one name are two series)."""
@@ -110,22 +121,28 @@ def mark_live(ser: Series, machine_alive: list[tuple[float, float]] | None, star
     return ser
 
 
-def sample(dump, start: float, step: float, n: int) -> list[Series]:
+def sample(dump, start: float, step: float, n: int, kinds: dict[str, Declared] | None = None) -> list[Series]:
     """Every series on the grid. Leading steps before a gauge's first point take its first value;
     before a counter's first point nothing had been counted (a counter written when it moves
-    starts at its first event, and that event moved the gauges written beside it)."""
+    starts at its first event, and that event moved the gauges written beside it), unless it is
+    a counter read from elsewhere, whose first sample is a baseline. ``kinds`` (by series key)
+    says what a series is when its definition said so; others are told by name and values."""
     out = []
     times = [start + i * step for i in range(n + 1)]
     for name, labels, pts in dump:
         if not pts:
             continue
+        said = (kinds or {}).get(series_key(name, labels))
+        counter_named = said.kind == "counter" if said else name.endswith("_total")
         got = dict(step_sample(pts, start, times[-1], step))
-        first = 0.0 if name.endswith("_total") else next((v for t, v in pts if t >= start), pts[-1][1])
+        first = (0.0 if counter_named and not (said and said.baseline)
+                 else next((v for t, v in pts if t >= start), pts[-1][1]))
         vals, last = [], None
         for t in times:
             last = got.get(t, last)
             vals.append(first if last is None else last)
-        out.append(Series(name, dict(labels), pts, vals, _is_counter(name, vals)))
+        counter = said.kind == "counter" if said else _is_counter(name, vals)
+        out.append(Series(name, dict(labels), pts, vals, counter))
     machines = alive(out, start, times[-1])
     return [mark_live(ser, machines.get(machine_of(ser)), start, step, n) for ser in out]
 

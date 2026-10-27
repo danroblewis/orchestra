@@ -25,8 +25,20 @@ from typing import Any
 
 @dataclass
 class SeriesRef:
+    """A series a stock, flow or machine is bound to, and where it came from: ``source`` is
+    ``own`` (the project's metrics store) or a ``[[sources]]`` name, with the final ``query`` that
+    reads it there, its ``kind``, its ``origin`` (inferred from which family and view, rewritten by
+    which script, or declared) and its measured ``resolution_s``. Versions saved before sources
+    carry only the name and labels: their series are the own store's."""
+
     name: str
     labels: dict[str, str] = field(default_factory=dict)
+    source: str | None = None
+    query: str | None = None
+    kind: str | None = None
+    origin: list[str] | None = None
+    resolution_s: float | None = None
+    unit: str | None = None
 
 
 @dataclass
@@ -40,6 +52,7 @@ class Equation:
     quality: dict[str, float] = field(default_factory=dict)   # se, loglik, dispersion, events, hours
     inputs: list[str] = field(default_factory=list)            # what the form reads: stock ids, or input:<name> for a measured input
     spec: dict[str, Any] = field(default_factory=dict)         # the full rate as SD Lab writes it (terms, effects, expr), when it found it
+    sources: list[str] = field(default_factory=list)           # where the series it was fitted on came from (own, or a [[sources]] name)
 
 
 @dataclass
@@ -118,7 +131,8 @@ class Model:
                     for s in d.get("stocks", [])],
             flows=[Flow(f["id"], f["name"], f.get("from"), f.get("to"), ref(f.get("counter")),
                         [Equation(**{**e, "window": tuple(e["window"]) if e.get("window") else None,
-                                     "inputs": list(e.get("inputs") or []), "spec": dict(e.get("spec") or {})})
+                                     "inputs": list(e.get("inputs") or []), "spec": dict(e.get("spec") or {}),
+                                     "sources": list(e.get("sources") or [])})
                          for e in f.get("equations", [])], [SeriesRef(**r) for r in f.get("measured_by") or []],
                         dict(f.get("evidence") or {}))
                    for f in d.get("flows", [])],

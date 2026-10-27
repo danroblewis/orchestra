@@ -480,10 +480,10 @@ def twin_levels(found: list, left_out: dict[str, str], same_flow) -> tuple[list,
     return kept, dict(twins)
 
 
-def discover(dump, *, start: float, end: float, step: float, time_unit: str = "minute") -> Model:
+def discover(dump, *, start: float, end: float, step: float, time_unit: str = "minute", kinds: dict | None = None) -> Model:
     """The model the metrics imply over [start, end], with how it was found in ``model.discovery``."""
     n = max(2, int((end - start) // step))
-    series, summed = sum_instances(sample(dump, start, step, n))
+    series, summed = sum_instances(sample(dump, start, step, n, kinds))
     sampled = len(series)          # every series looked at (a machine's instances summed into one)
     left_out: dict[str, str] = {}
     end = start + n * step

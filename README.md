@@ -47,7 +47,9 @@ orchestra web                # the UI on http://127.0.0.1:8000
 
 `orchestra.toml` picks the event bus (`[events] url`: file, Redis, RabbitMQ or Kafka) and the
 metrics store (`[metrics] url`: file or VictoriaMetrics). `deploy/dev/compose.yaml` starts all of
-them locally.
+them locally. Series that live in another store (Prometheus, VictoriaMetrics, Mimir, Chronosphere)
+are read in place by naming it under `[[sources]]` (SPEC §4.4); `orchestra sources infer` shows
+what Orchestra will read from it.
 
 Machines are your programs, and none needs to import Orchestra. A script that prints its
 measurements in the Prometheus text format (`disk_free_bytes 1.2e11`, one per line) is a machine:
@@ -67,6 +69,7 @@ outside (`docs/roadmap/use-cases.md`).
 ```bash
 uv run python -m pytest                     # unit, and the file backends
 ORCHESTRA_TEST_REDIS_URL=redis://127.0.0.1:6379/15 uv run python -m pytest tests/bus   # see tests/bus/README.md
+tests/sources/rig/rig.sh start              # a store to read in place; see tests/sources/README.md
 python scripts/acceptance_target.py --port 8123 &
 ORCHESTRA_TARGET_URL=http://127.0.0.1:8123 uv run python -m pytest tests/acceptance
 ```

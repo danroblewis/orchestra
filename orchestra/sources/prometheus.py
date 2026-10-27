@@ -1,0 +1,143 @@
+"""A source that answers the Prometheus HTTP query API (Prometheus, VictoriaMetrics, Thanos, Mimir,
+Chronosphere), over the standard library.
+
+Reads only: ``query_range`` for evaluated queries (in chunks of fewer than ``max_points`` points
+per series, joined), an instant ``query`` of ``selector[range]`` for raw samples at their real
+times, ``series`` for the schema, ``metadata`` and ``status/buildinfo`` where the server keeps
+them. Every request carries the source's auth (``auth.py``) and its timeout; a failure raises
+``SourceError`` naming the server and what it said, never a credential. Queries go as POSTed
+forms, which every one of these servers accepts, so long selectors do not hit URL limits."""
+
+from __future__ import annotations
+
+import json
+import math
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from . import Health, Labels, Points, SourceError
+from .auth import Auth
+from .spec import SourceSpec
+
+ENDPOINTS = {"query_range": ("/api/v1/query_range", {"query": "up", "start": "0", "end": "60", "step": "60"}),
+             "query": ("/api/v1/query", {"query": "up"}),
+             "series": ("/api/v1/series", {"match[]": "up", "start": "0", "end": "60"}),
+             "labels": ("/api/v1/labels", None),
+             "metadata": ("/api/v1/metadata", None),
+             "buildinfo": ("/api/v1/status/buildinfo", None)}
+
+
+def _points(values: list) -> Points:
+    out = []
+    for t, v in values:
+        try:
+            x = float(v)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(x):                    # staleness NaNs and ±Inf are dropped
+            out.append((float(t), x))
+    return out
+
+
+def _dur(seconds: float) -> str:
+    return f"{max(1, math.ceil(seconds))}s"
+
+
+class PrometheusSource:
+    def __init__(self, spec: SourceSpec):
+        self.spec = spec
+        self.name = spec.name
+        self.auth = Auth(spec.auth, spec.insecure)
+        self.requests = 0
+        self.points = 0
+
+    def _call(self, path: str, form: dict | None = None, *, post: bool = True) -> dict | list:
+        url = self.spec.url + path
+        body = None
+        if form is not None and post:
+            body = urllib.parse.urlencode(form, doseq=True).encode()
+        elif form is not None:
+            url += "?" + urllib.parse.urlencode(form, doseq=True)
+        headers = {"Accept": "application/json", **self.auth.headers()}
+        if body is not None:
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST" if body is not None else "GET")
+        self.requests += 1
+        try:
+            with urllib.request.urlopen(req, timeout=self.spec.timeout, context=self.auth.ssl_context()) as r:
+                doc = json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            raise SourceError(f"{self.spec.where()}{path}: {self._said(e)}") from None
+        except (OSError, ValueError) as e:
+            raise SourceError(f"{self.spec.where()}{path}: {getattr(e, 'reason', None) or e}") from None
+        if not isinstance(doc, dict) or doc.get("status") != "success":
+            raise SourceError(f"{self.spec.where()}{path}: {doc.get('error') if isinstance(doc, dict) else 'not a Prometheus answer'}")
+        return doc.get("data")
+
+    @staticmethod
+    def _said(e: urllib.error.HTTPError) -> str:
+        if e.code in (401, 403):
+            return f"HTTP {e.code}: the server refused the credentials (check the token or certificate)"
+        try:
+            err = json.loads(e.read()).get("error")
+        except (ValueError, AttributeError, OSError):
+            err = None
+        return f"HTTP {e.code}" + (f": {err}" if err else "")
+
+    def query_range(self, query: str, start: float, end: float, step: float) -> list[tuple[Labels, Points]]:
+        span = (self.spec.max_points - 1) * step
+        merged: dict[tuple, tuple[Labels, dict[float, float]]] = {}
+        t = start
+        while t <= end:
+            hi = min(end, t + span)
+            data = self._call("/api/v1/query_range", {"query": query, "start": f"{t:.3f}", "end": f"{hi:.3f}", "step": f"{step:g}"})
+            for r in data.get("result") or []:
+                labels = {k: v for k, v in (r.get("metric") or {}).items() if k != "__name__"}
+                g = merged.setdefault(tuple(sorted(labels.items())), (labels, {}))
+                g[1].update(_points(r.get("values") or []))
+            t = hi + step
+        out = [(labels, sorted(pts.items())) for labels, pts in merged.values()]
+        self.points += sum(len(p) for _, p in out)
+        return out
+
+    def select(self, selector: str, start: float, end: float) -> list[tuple[Labels, Points]]:
+        data = self._call("/api/v1/query", {"query": f"{selector}[{_dur(end - start)}]", "time": f"{end:.3f}"})
+        out = []
+        for r in data.get("result") or []:
+            pts = [(t, v) for t, v in _points(r.get("values") or []) if start <= t <= end]
+            if pts:
+                out.append((dict(r.get("metric") or {}), pts))
+        self.points += sum(len(p) for _, p in out)
+        return out
+
+    def series(self, match: list[str], start: float, end: float, limit: int = 0) -> list[Labels]:
+        form = {"match[]": list(match), "start": f"{start:.3f}", "end": f"{end:.3f}"}
+        if limit:
+            form["limit"] = str(limit)
+        data = self._call("/api/v1/series", form)
+        return [dict(x) for x in (data or [])][: limit or None]
+
+    def metadata(self) -> dict[str, dict]:
+        try:
+            data = self._call("/api/v1/metadata", None, post=False) or {}
+        except SourceError:
+            return {}
+        return {name: dict(entries[0]) for name, entries in data.items() if entries}
+
+    def health(self) -> Health:
+        began, ok, err = time.perf_counter(), {}, None
+        build: dict = {}
+        for what, (path, form) in ENDPOINTS.items():
+            try:
+                data = self._call(path, form, post=form is not None and what != "labels")
+                ok[what] = True
+                if what == "buildinfo" and isinstance(data, dict):
+                    build = {k: str(v) for k, v in data.items() if k in ("version", "revision", "branch", "goVersion")}
+            except SourceError as e:
+                ok[what] = False
+                if what in ("query_range", "query", "series") and err is None:
+                    err = str(e)
+        return Health(ok=all(ok.get(k) for k in ("query_range", "query", "series")), endpoints=ok, build=build,
+                      latency_ms=round(1000 * (time.perf_counter() - began) / len(ENDPOINTS), 1), error=err)

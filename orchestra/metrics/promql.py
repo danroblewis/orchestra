@@ -243,3 +243,19 @@ def query_range(dump, q: str, start: float, end: float, step: float) -> list[tup
         if pts:
             out.append((lab, pts))
     return out
+
+
+def select(dump, selector: str, start: float, end: float) -> list[tuple[dict, list[tuple[float, float]]]]:
+    """The raw samples in [start, end] of every series ``selector`` matches, labels with
+    ``__name__``: what a Prometheus server answers to an instant query of ``selector[range]``."""
+    p = _Parser(selector)
+    sel = p.selector()
+    if p.i != len(p.t):
+        raise PromQLError(f"unexpected {p.peek()[1]!r}: give a selector")
+    out = []
+    for name, labels, pts in dump:
+        if _match(sel, name, labels):
+            got = [(t, v) for t, v in pts if start <= t <= end]
+            if got:
+                out.append(({"__name__": name, **labels}, got))
+    return out

@@ -1,6 +1,14 @@
 # Proposal: reading other time-series stores (sources, inferred series, transformation scripts)
 
-Status: draft, revised 2026-10-26 with the owner's answers (§12). Nothing built. `[[collect]]`
+Status: **slice 1 built** (2026-10-27; SPEC §4.4), slices 2 and 3 not. Revised 2026-10-26 with the
+owner's answers (§12). What slice 1 does differently from the text below: mTLS and the `header`
+kind are in it (the owner asked for bearer, basic and mTLS from the start); a count comes with its
+**turnover** (the pods that started and stopped reporting, read from the same raw samples), so
+pods per service is a stock two counters balance exactly and the model holds it now, not after
+discovery learns stocks without counters; candidates are probed at the series' own resolution (a
+coarse probe missed a rolling deploy's few minutes); `max_range` is not built (long ranges are
+chunked by `max_points`); the Mimir rig and `vmagent` are not built (slice 3). The rig is in
+`tests/sources/rig/` and its acceptance in `tests/sources/test_rig_acceptance.py`. `[[collect]]`
 and `[[scrape]]` copy data *into* the project's store; this reads other stores where the data
 lives, copying nothing. The owner: "the definitions should be inferred from the time-series
 database schema, and we would have some way of writing scripts to transform the data or

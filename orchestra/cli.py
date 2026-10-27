@@ -112,8 +112,15 @@ def cmd_sd(args) -> int:
     store = metrics_for(project)
     print(f"{m.name} (version {args.version or models.current_version()})")
     print("\nstocks (latest level):")
+    from .sources.catalogue import Catalogue
+    cat = Catalogue(project, store)
     for s in m.stocks:
-        last = store.latest(s.series.name, s.series.labels) if s.series else None
+        last = None
+        if s.series and s.series.source not in (None, "own"):
+            now = time.time()
+            last = (cat.read_ref(s.series, now - 900, now, project.config.discovery_step) or [None])[-1]
+        elif s.series:
+            last = store.latest(s.series.name, s.series.labels)
         print(f"  {s.id:<24} {last[1] if last else '-':>8}")
     print("\nflows:")
     for f in m.flows:
@@ -129,6 +136,28 @@ def cmd_sd(args) -> int:
     print("\nmachines (attributed flows are hypotheses):")
     for mc in m.machines:
         print(f"  {mc.id:<20} {mc.kind:<8} flows: {', '.join(mc.attributed) or '-'}")
+    return 0
+
+
+def cmd_sources(args) -> int:
+    """Other time-series stores: check them, infer what to read from them, preview a query."""
+    from .metrics import for_project as metrics_for
+    from .sources import report
+    from .sources.catalogue import Catalogue
+
+    project = _project(args)
+    cat = Catalogue(project, metrics_for(project))
+    if args.action == "check":
+        lines = report.check(cat)
+    elif args.action == "infer":
+        lines = report.infer(cat, project, args.source)
+    else:
+        if not args.query:
+            print("preview needs a query")
+            return 2
+        lines = report.preview(cat, args.query, args.source, args.minutes or project.config.discovery_window / 60,
+                               args.step_s or project.config.discovery_step)
+    print("\n".join(lines))
     return 0
 
 
@@ -195,6 +224,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--version", type=int, help="for show and fit: start from this past version (default: the current one)")
     s.add_argument("--step", type=float, default=1.0, help="for fit: hours per step (default 1)")
     s.set_defaults(fn=cmd_sd)
+
+    s = sub.add_parser("sources", help="other time-series stores ([[sources]]): check them, infer what to read, preview a query")
+    s.add_argument("action", choices=["check", "infer", "preview"])
+    s.add_argument("query", nargs="?", help="for preview: a PromQL query")
+    s.add_argument("--source", help="for infer and preview: one source by name (preview default: the own store)")
+    s.add_argument("--minutes", type=float, help="for preview: the window (default: [discovery] window)")
+    s.add_argument("--step-s", dest="step_s", type=float, help="for preview: seconds per step (default: [discovery] step)")
+    s.set_defaults(fn=cmd_sources)
 
     s = sub.add_parser("events", help="the event log: info, or copy it to another bus backend")
     s.add_argument("action", choices=["info", "copy"])

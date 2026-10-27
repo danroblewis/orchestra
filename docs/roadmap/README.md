@@ -102,7 +102,11 @@ discovery fills and corrects it.
     series per service.
   - **How data is read:** discovery queries each source over exactly its window and step, with
     limits and a cache. The source and query are recorded on every series and equation.
-  - **Slice 1:** read the bakery's VictoriaMetrics as a remote source from the sample project.
+  - **Slice 1 (built 2026-10-27, SPEC §4.4):** Prometheus-compatible sources with bearer, header,
+    basic and mTLS auth; series inferred from the schema, the query script, counts as a type
+    switch with their turnover, the cap; discovery reads through one catalogue and saves no version
+    with a source missing. Tested against a rig (`tests/sources/rig/`) shaped like the owner's
+    work metrics.
 
 - **Event sources: buses we can only count, and bridges for things that behave like one**
   (`docs/proposals/event-sources.md`):

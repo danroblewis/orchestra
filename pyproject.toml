@@ -32,7 +32,7 @@ orchestra = "orchestra.cli:main"
 packages = ["orchestra"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests/unit", "tests/bus", "tests/metrics"]
+testpaths = ["tests/unit", "tests/bus", "tests/metrics", "tests/sources"]
 
 [tool.ruff]
 line-length = 100

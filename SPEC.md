@@ -284,6 +284,84 @@ model version. Not yet: stocks no series measures,
 delays, non-linear forms, eras. The bakery (`~/orchestra-bakery`, its own repository) is a toy
 system it is tested on.
 
+Discovery reads every series through one catalogue (§4.4): the own store's as they are, and each
+other store's for exactly its window and step. A series' declared kind (a remote counter, a
+level a definition named) overrides the name rule (`sd.series.Declared`), and a counter read from
+another store was counting before the window began, so its first sample is a baseline, not
+events. When a source is missing the discovery is cached for the page with the reason, and never
+saved as a version (§4.4).
+
+### 4.4 Other stores (sources)
+
+`orchestra/sources/`. A project may read series that live in other time-series stores without
+copying them (`docs/proposals/time-series-sources.md`, slice 1). A **source** is the own store or
+a server answering the Prometheus HTTP query API (Prometheus, VictoriaMetrics, Thanos, Mimir,
+Chronosphere):
+
+```toml
+[[sources]]
+name = "work"
+url = "https://tenant.example/data/metrics"
+auth = { bearer_env = "WORK_TOKEN" }   # or bearer_file, header, basic, client_cert/client_key/ca_file
+prefix = "work"                         # series work:<name>, machines work.<id>
+machine = "service"                     # the canonical label that names machines
+match = ['{__name__=~"http_.*"}']       # what to infer from (default everything, capped)
+max_series = 200                        # per source; at most max_per_family (12) per family
+[sources.labels]                        # canonical = spellings; the first a metric has wins
+service = ["service", "app", "k8s_app"]
+[sources.transform]
+queries = "scripts/queries.py"          # optional: rewrites the candidates (JSON in, JSON out)
+```
+
+- **Credentials** come from an environment variable or a file outside the repository, read when
+  a request is made. A literal secret in `orchestra.toml`, `user:pass@` in a URL, a secret file
+  inside the repository, or an auth kind not built yet (command, OAuth2, SigV4) **refuses the
+  source**, with the reason (`sources/spec.py`, `sources/auth.py`). Pages, logs and errors show
+  the kind, where the credential comes from and whether it is there; never its value.
+- **Series are inferred from the schema** every `infer_every` (an hour), cached in
+  `<state>/sources/<name>.json` (`sources/infer.py`): families (names differing by a statistic
+  suffix, or a `stat`/`statistic`/`quantile` label; a histogram's `_count`; a recording rule
+  `…:sum`/`:avg` as a view of its base by that function), label aliases, each label's role
+  (identity: one of the source's `identity` names, default pod/instance/container, or churning,
+  or over 50 values; constant; grouping) and the reporting interval (`sources/schema.py`).
+- **Views** (`sources/views.py`): of a per-pod statistic, the max of max, min of min, average of
+  average (flagged unweighted) and max of p95/p99 (flagged an upper bound), never a sum; of a
+  plain gauge the max and average (latencies, ratios) or the sum; of a counter, increments from
+  raw samples, reset-safe, by grouping; of a recording rule, its function by grouping. **A count
+  switches the type:** the pods reporting (`count by (G) (last_over_time(F[R]))`, R one and a half
+  reporting intervals) is a level, with its turnover (the pods that started and stopped reporting,
+  from the raw samples) as two counters that balance it exactly, so pods per service is a stock;
+  and how many values of each grouping label report. One family counts each thing.
+- **The query script** (any executable, from the repository root, with a timeout) gets the
+  candidates as JSON on standard input and prints rewrites: new queries, drops with a reason,
+  definitions of its own, pins (`sources/transform.py`). A failure fails the round.
+- **Rank and cap** (`sources/rank.py`): each candidate is read over the window at its resolution;
+  one that returns nothing or does not move is left out; the rest are scored (moves, stable,
+  small, coarse, view) and taken round-robin across families up to the cap. A pin bypasses the
+  ranking, not the cap. What is left out is kept with its score and why. A hand-written
+  `[[series]]` (source, name, query, kind level|counter|rate, unit) is always read.
+- **Reading** (`sources/catalogue.py`, `sources/fetch.py`): every definition is read for exactly
+  discovery's window, on its grid but never finer than the series' resolution; counters and
+  turnover from raw samples at their real times, rates integrated. Results take canonical labels,
+  `machine = <prefix>.<value>` from the machine label (a remote `machine` or `source` label is
+  prefixed too), and the name `<prefix>:<name>`; one that collides with an own series is refused.
+  Each source is read on its own, with a timeout per request and a deadline; a source that fails
+  is **missing**, and the stretches of the window in which it returned nothing are its gaps. Every
+  range is re-runnable: a run after the machine slept reads its whole window like any other.
+- **Provenance:** each `SeriesRef` in a model carries its `source` (`own` or a source's name),
+  final `query`, `kind`, `origin` (inferred from which family and view, rewritten by
+  `queries.py@<hash>`, or declared), `resolution_s` and `unit`; a stock bound to a count takes its
+  unit; each equation lists the sources of the series it was fitted on (`sd/provenance.py`). The
+  Dynamics page shows each source's state and why a discovery was not saved, and a stock's drawer
+  its source, query and origin; the web server reads remote stocks' levels and history through
+  the catalogue.
+
+`orchestra sources check` probes each source's endpoints and credentials; `orchestra sources
+infer` runs an inference round and prints the families, what was kept and what was left out;
+`orchestra sources preview QUERY [--source NAME]` reads a query's fan-out with sparklines. Not yet
+built (the proposal's slices 2 and 3): the cache of settled chunks, the data script, fingerprints
+and `sd verify`, the Sources page, command/OAuth2/SigV4 auth, SQL sources.
+
 ---
 
 ## 5. The bootstrap host
@@ -386,8 +464,8 @@ may share the name of the `[[machines]]` entry whose program it reads; a `[[coll
 an entry that cannot be used is left out with a line in the host's log. Stopping the host kills a
 command under way and writes nothing more.
 
-Only the Prometheus text format is read. There is no push endpoint, and a remote Prometheus server
-as a further data source is planned (`docs/roadmap/decisions.md`, D16).
+Only the Prometheus text format is read. There is no push endpoint. A remote Prometheus server is
+read where its data lives, not copied (§4.4).
 
 ---
 
@@ -410,6 +488,7 @@ keeps its own harness (`~/orchestra-agents/SPEC.md`).
     events.jsonl                 the event log, when [events] url = "file"
     metrics.jsonl                the metrics, when [metrics] url = "file"
     model/vNNNN.json             the model's versions
+    sources/<name>.json          each source's latest inference: its definitions, what was left out, its families (§4.4)
     logs/orchestra-host.log
     logs/machines/<name>.log     each launched process's output (§5.1), each collector's standard error and rounds (§5.2)
 ```
@@ -439,6 +518,15 @@ command = "machines/disk.sh"
 [[scrape]]              # a URL that serves measurements, read on an interval (§5.2)
 name = "app"
 url = "http://127.0.0.1:9100/metrics"
+[[sources]]             # another store, read where its data lives (§4.4)
+name = "work"
+url = "https://tenant.example/data/metrics"
+auth = { bearer_env = "WORK_TOKEN" }
+[[series]]              # a hand-written definition from a source (§4.4)
+source = "work"
+name = "checkout_errors"
+query = 'sum(rate(http_errors_total{svc="checkout"}[5m]))'
+kind = "rate"
 ```
 
 Unknown sections are ignored, so files written for older versions still load, and a package of
@@ -456,6 +544,7 @@ machines may keep its own settings here (other packages' sections).
 | `orchestra events info\|copy --to URL` | The event log |
 | `orchestra metrics backfill\|series` | Replay the log into event counters; list series |
 | `orchestra sd discover [--strategy S] [--minutes N] [--step-s S]\|show\|fit\|versions` | The model: discover it from the metrics, show, refit, list versions |
+| `orchestra sources check\|infer\|preview QUERY` | Other stores (§4.4): probe them, infer what to read, read a query's fan-out |
 
 ---
 
@@ -563,11 +652,14 @@ orchestra/
   collect/   a project's collectors and scrapes: spec, fetch, exposition (the Prometheus text
              format), round, runner
   metrics/   file, victoria, promql
+  sources/   other stores, read in place: spec, auth, prometheus, own, schema, views, transform,
+             rank, infer, fetch, catalogue, report (the CLI's text)
   sd/        model, store, fit, series and live (sampling, when a series was written), balance,
              collinear and restate (a level's balance), ends, inputs, drivers (which stocks may
-             drive a flow), discover (conservation), rates, strategies, simulate, rediscover
+             drive a flow), discover (conservation), rates, strategies, simulate, rediscover,
+             provenance (where each series in a model came from)
   sdlab/     SD Lab's discovery research: ~70 strategies (needs the sd extra)
   web/       app, core, core_explore, machines, dynamics, static/
 tests/
-  unit/  bus/  metrics/  acceptance/
+  unit/  bus/  metrics/  sources/  acceptance/
 ```

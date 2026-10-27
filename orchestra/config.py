@@ -107,6 +107,17 @@ every = "5m"             # how often the host rediscovers
 # name = "app"
 # url = "http://127.0.0.1:9100/metrics"
 # every = "30s"
+
+# Another time-series store (Prometheus, VictoriaMetrics, Mimir, Chronosphere), read where its data
+# lives: what to read is inferred from its schema (`orchestra sources infer` shows it). The
+# credential comes from an environment variable or a file outside the repository, never this file.
+# [[sources]]
+# name = "work"
+# url = "https://tenant.example/data/metrics"
+# auth = { bearer_env = "WORK_TOKEN" }
+# machine = "service"                    # the label that names machines
+# [sources.labels]                       # the label spellings that mean the same thing
+# service = ["service", "app", "k8s_app"]
 """
 
 

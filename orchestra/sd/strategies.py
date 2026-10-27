@@ -129,16 +129,18 @@ def known_changes(base: Model, by_key: dict, n: int) -> dict[str, list[float]]:
 
 
 def discover_with(dump, *, start: float, end: float, step: float, strategy: str = CONSERVATION,
-                  options: dict | None = None, time_unit: str = "minute", deadline: float | None = None) -> Model:
-    """The model the metrics imply, found with ``strategy``; how in ``model.discovery``."""
-    base = discover(dump, start=start, end=end, step=step, time_unit=time_unit)
+                  options: dict | None = None, time_unit: str = "minute", deadline: float | None = None,
+                  kinds: dict | None = None) -> Model:
+    """The model the metrics imply, found with ``strategy``; how in ``model.discovery``. ``kinds``
+    are the series' declared kinds (``sd.series.Declared``), by series key."""
+    base = discover(dump, start=start, end=end, step=step, time_unit=time_unit, kinds=kinds)
     base.discovery["strategy"] = CONSERVATION
     if strategy == CONSERVATION or not base.stocks:
         return base
     began = time.perf_counter()
     fit_start = base.discovery.get("fit_start") or start
     n = max(2, int((end - fit_start) // step))
-    series, _ = sum_instances(sample(dump, fit_start, step, n))
+    series, _ = sum_instances(sample(dump, fit_start, step, n, kinds))
     by_key = {s.key: s for s in series}
     stock_ids = [s.id for s in base.stocks]
     stock_keys = {series_key(s.series.name, s.series.labels): s.id for s in base.stocks if s.series}

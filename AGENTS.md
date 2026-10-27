@@ -45,7 +45,9 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    `orchestra.sd.store.ModelStore`; process records through
    `orchestra.runtime`. Nothing else touches a backend or those files
    directly. Orchestra's streams are named `orchestra.<key>.events` and never
-   share a topic with anyone else's.
+   share a topic with anyone else's. Other stores (`[[sources]]`) are read
+   only through `orchestra.sources`, never written; what is kept of them
+   (each source's inferred definitions) lives in the state directory.
 6. **Every equation records its origin** (fitted, discovered, or declared).
    A declared equation is an assumption until it is fitted. A machine's
    attribution to a flow is a hypothesis.
@@ -76,7 +78,7 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
 
 - Python 3.12+, `uv` for everything, `pytest` for tests (run with `uv run
   python -m pytest`), `ruff` for lint and format.
-- `tests/unit` is fast and pure. `tests/bus` and `tests/metrics` are
+- `tests/unit` is fast and pure. `tests/bus`, `tests/metrics` and `tests/sources` are
   conformance suites run against every backend (the server ones opt in by
   environment variable; see `tests/bus/README.md`). `tests/acceptance` runs against an empty Orchestra started by
   `scripts/acceptance_target.py` and skips unless `ORCHESTRA_TARGET_URL` is

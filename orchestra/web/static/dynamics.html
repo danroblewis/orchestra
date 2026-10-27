@@ -210,6 +210,16 @@ function lookedAt(d) {
   const n = d.looked_at ?? d.series, early = n - (d.series ?? n);
   return `Looked at ${n} series over ${ago(d.end - d.start)}, in ${d.step} s steps` + (early > 0 ? `: ${early} left out at once (Orchestra's own, or no longer written), ${d.series} considered.` : ".");
 }
+// the stores the series were read from (orchestra.toml's [[sources]]), when there are others than
+// the project's own: each one's state, and why a discovery with one missing was not saved
+function sourcesNote(d) {
+  const src = d.sources || {}, names = Object.keys(src).filter((k) => k !== "own");
+  if (!names.length) return "";
+  const line = (k) => { const s = src[k];
+    return `<div class="bal"><b>${esc(k)}</b> ${s.ok ? `<span class="muted">${esc(s.where || "")} · ${s.series ?? 0} series, ${s.points ?? 0} points in ${s.seconds ?? "?"} s${(s.gaps || []).length ? ` · nothing returned in ${s.gaps.length} stretch${s.gaps.length === 1 ? "" : "es"} of the window` : ""}</span>` : `<span class="stale">missing: ${esc(s.error || "")}</span>`}</div>`; };
+  return `<h3>Sources</h3>` + names.map(line).join("") + (d.not_saved ? `<div class="stale" style="font-size:12px">Not saved as a version: ${esc(d.not_saved)}</div>` : "")
+    + (d.since_last_s ? `<div class="muted" style="font-size:12px">The discovery before this one was ${ago(d.since_last_s)} earlier; this one read its whole window again.</div>` : "");
+}
 // series left out, grouped by why: the ones that changed but didn't balance are worth reading;
 // the ones that didn't move in the window are collapsed
 function leftOut(lo) {
@@ -238,7 +248,7 @@ function tables() {
       <td>${kindWord(x.id, x.kind)}</td><td class="num">${x.attributed.length}</td></tr>`).join("");
   const fitted = m.flows.filter((f) => f.current && f.current.origin === "fitted").length;
   const d = m.discovery || {};
-  $("found").innerHTML = d.left_out ? `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d))} A level is a stock when counters balance it (R² ≥ ${d.min_r2}).</div>`
+  $("found").innerHTML = d.left_out ? `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d))} A level is a stock when counters balance it (R² ≥ ${d.min_r2}).</div>` + sourcesNote(d)
     + m.stocks.map((s) => s.evidence && s.evidence.balance ? `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">changes by</span> ${s.evidence.balance.map((b) => `<span class="ty">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join(" ")} <span class="muted">R² ${s.evidence.balance_r2.toFixed(3)} · exact in ${Math.round(100 * s.evidence.exact_steps)}% of steps</span></div>` : "").join("")
     + `<h3>Left out <span class="count">${Object.keys(d.left_out).length} of ${d.looked_at ?? "?"}</span></h3>` + leftOut(d.left_out) : '<div class="muted">This version was declared, not discovered.</div>';
   $("sum").innerHTML = `${m.stocks.length} stocks · ${m.flows.length} flows (${fitted} fitted) · ${m.machines.length} machines${m.stored ? "" : ' · <span class="stale">not stored yet: <code>orchestra sd declare</code></span>'}${m.levels_error ? ` · <span class="stale">levels: ${esc(m.levels_error)}</span>` : ""}`;

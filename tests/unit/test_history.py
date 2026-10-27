@@ -16,7 +16,8 @@ def test_a_level_held_four_seconds_shows_on_a_five_second_grid_not_a_fifteen(tmp
     at = end - 60 - (end - 60) % 15 + 5                     # up at 5 s past a 15 s tick, down 4 s later
     store.write([Point("level", 0.0, T0, lab), Point("level", 1.0, at, lab), Point("level", 0.0, at + 4, lab)])
     model = Model("x", "x", stocks=[Stock("s", "s", series=SeriesRef("level", lab))], flows=[])
-    coarse = history(model, store, end, stock_step(30.0))["stocks"]["s"]
-    fine = history(model, store, end, stock_step(5.0))["stocks"]["s"]
+    raw = lambda ref, a, b: store.raw(ref.name, ref.labels, start=a, end=b)
+    coarse = history(model, raw, end, stock_step(30.0))["stocks"]["s"]
+    fine = history(model, raw, end, stock_step(5.0))["stocks"]["s"]
     assert stock_step(30.0) == STOCK_STEP_S and stock_step(5.0) == 5.0
     assert max(v for _, v in coarse) == 0.0 and max(v for _, v in fine) == 1.0
