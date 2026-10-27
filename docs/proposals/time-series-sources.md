@@ -268,3 +268,22 @@ per-minute statistics and count() as a type switch (§4); queries in the model, 
 3. **Where it runs at work:** which machine can reach Chronosphere, and may the cache and model
    versions of company data rest there, or is `cache = false` required (D10)?
 4. **Starting scope:** a `match` list of families that matter, or everything under the cap?
+
+### The owner's answers (2026-10-26, late evening)
+
+1. **The latency statistic, label or suffix:** too detailed to say; assume a typical production
+   Prometheus. So the design handles both spellings.
+2. **Rollups:** yes, but by aggregate function (recording rules named like `:sum` and `:avg`), not
+   by service. Discovery should recognise recording-rule names as views of their base metric.
+3. **Where Orchestra runs:** on the owner's own machine, which is sometimes off. So:
+   - every remote query is re-runnable for past ranges;
+   - a model is built from whatever ranges answer;
+   - discovery, bridges and counted-traffic pollers catch up after a gap instead of assuming
+     continuity, and record the gap.
+4. **Do services count their own Pub/Sub publishes?** Probably not. That would only cover expected
+   Pub/Sub behaviour anyway, not buses in all but name. Publisher attribution therefore relies on
+   the other methods (declared map, naming, IAM candidates, fitted split).
+5. **Slack:** a user token is allowed. "Answered" usually means a checkmark emoji reaction, so
+   that is the default rule, configurable.
+6. **People:** by name, each with a team. Machines (people, bots, services) are grouped by team,
+   as a label or a hierarchy. Grouping labels, never separates (rule 4).
