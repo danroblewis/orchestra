@@ -10,7 +10,8 @@ A project declares them in ``orchestra.toml``::
 
 and a plugin in ``Plugin.processes`` (the same ``Process``). Each runs in the repository root
 with ``ORCHESTRA_REPO`` (the root) and ``ORCHESTRA_MACHINE_LOG`` (its log,
-``<state>/logs/machines/<name>.log``, which gets its output) set, in a process group of its own so
+``<state>/logs/machines/<name>.log``, which gets its output) set, and what the host adds (``env``:
+the events endpoint's address and token, ``orchestra.endpoint``), in a process group of its own so
 stopping it stops what it started: SIGTERM to the group, then SIGKILL after its stop grace
 (``stop_grace``, ``STOP_GRACE_S`` unless given). One that exits is started again after a pause that doubles
 with each quick exit (up to a minute); one that fails ``GIVE_UP_AFTER`` times in a row, each
@@ -122,6 +123,7 @@ class Launcher:
     log: Callable[[str], None]                    # the host's log
     plugin_processes: list[Process] | Callable[[], list[Process]] = field(default_factory=list)   # a callable is asked
                                                                      # again whenever orchestra.toml changes
+    env: dict[str, str] = field(default_factory=dict)  # added to every process's environment
     backoff: float = 1.0
     stable_s: float = STABLE_S
     give_up_after: int = GIVE_UP_AFTER
@@ -198,7 +200,7 @@ class Launcher:
         if run.log.exists() and run.log.stat().st_size > LOG_MAX:
             run.log.replace(run.log.with_suffix(".log.1"))
         argv = run.spec.argv()
-        env = {**os.environ, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_MACHINE_LOG": str(run.log),
+        env = {**os.environ, **self.env, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_MACHINE_LOG": str(run.log),
                "PYTHONUNBUFFERED": "1"}
         try:
             with run.log.open("ab") as out:

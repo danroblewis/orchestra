@@ -144,6 +144,7 @@ Wherever a key takes a duration, give a number of seconds (`30`, `2.5`) or a str
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `url` | string | `"file"` | `file` (a JSONL file in the state directory), `redis://host:6379/0` (Redis Streams), `amqp://user:pass@host:5672/` (a RabbitMQ stream), or `kafka://host:9092` (one topic, one partition). `rediss://` and `amqps://` work too. |
+| `listen` | string | `"127.0.0.1:0"` | Where `orchestra run` serves the events endpoint ([§5.2](#52-publishing-and-reading-events)): `host:port`, port `0` meaning one the system picks. `"off"` serves none. |
 
 The environment variable `ORCHESTRA_EVENTS_URL` overrides it. The stream is named
 `orchestra.<key>.events` on every backend and is never shared with anyone else. A server backend
@@ -330,6 +331,8 @@ kind = "rate"
 | `ORCHESTRA_EVENTS_URL` | every command, `Events.for_project` | Overrides `[events] url`. |
 | `ORCHESTRA_METRICS_URL` | every command, `for_repo()` | Overrides `[metrics] url`. |
 | `ORCHESTRA_MACHINE_LOG` | set for what Orchestra runs | The log file of the process or collector. |
+| `ORCHESTRA_EVENTS_ENDPOINT` | set for what the launcher runs | The events endpoint's URL, `http://127.0.0.1:<port>`. Not the same as `ORCHESTRA_EVENTS_URL`, which names the bus backend. |
+| `ORCHESTRA_EVENTS_TOKEN` | set for what the launcher runs | The token the events endpoint wants, as `Authorization: Bearer <token>`. |
 
 If you set an override, set it for `orchestra run`, `orchestra web` and every CLI call alike, or
 they will read different stores.
@@ -380,10 +383,10 @@ flowchart LR
 | Another store | The series already live in Prometheus or something like it. | `[[sources]]` |
 
 A fourth way, writing points from Python with `orchestra.metrics.for_repo()`, is in
-[section 5.2](#52-publishing-events-and-writing-from-python).
+[section 5.2](#52-publishing-and-reading-events).
 
-Orchestra reads the Prometheus text format only. There is no push endpoint and no remote-write
-receiver.
+Orchestra reads the Prometheus text format only. There is no push endpoint for measurements and
+no remote-write receiver. (Events have an HTTP endpoint: [section 5.2](#52-publishing-and-reading-events).)
 
 ### 3.1 A script (`[[collect]]`)
 
@@ -684,13 +687,112 @@ becomes one by what it publishes or the series labelled with its name.
 
 Orchestra's own machine is `orchestra-host`.
 
-### 5.2 Publishing events and writing from Python
+### 5.2 Publishing and reading events
 
-**Today, publishing events needs Orchestra's Python library.** There is no library-free path: no
-HTTP endpoint for events, and no supported way to write the bus directly (its backends, and the
-file bus's offsets, are Orchestra's own). A program in another language can still be a machine
-by its measurements (a `[[collect]]` or a `[[scrape]]`), or publish through a small Python
-helper beside it.
+A machine publishes and reads events over HTTP, through the **events endpoint** `orchestra run`
+serves. Nothing of Orchestra's library is needed: `curl`, or any language's HTTP client, is
+enough. (Orchestra's Python helper does the same from Python, below; it is optional.)
+
+**Where it is.** `orchestra run` listens on `127.0.0.1` and a port the system picks
+(`[events] listen` sets another) and gives every process it launches two variables:
+
+| Variable | Value |
+|---|---|
+| `ORCHESTRA_EVENTS_ENDPOINT` | `http://127.0.0.1:<port>` |
+| `ORCHESTRA_EVENTS_TOKEN` | The project's token. Send it as `Authorization: Bearer <token>`. |
+
+A program `orchestra run` did not start (one you run by hand, or one a service manager runs)
+asks for them:
+
+```bash
+eval "$(orchestra events endpoint --env)"     # exports both; exits 1 when orchestra run is not running
+```
+
+The token lives in `<state>/events.token`, readable by you only, and stays the same across
+restarts of `orchestra run`. The port changes with each start unless `[events] listen` fixes it.
+
+**Publishing.** `POST /events` with one JSON object:
+
+```bash
+curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/events" \
+  -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"type": "invoice.sent", "source": "billing/1", "subject": "order-42", "data": {"order": 42}}'
+```
+
+```json
+{"ok": true, "id": "8565e16af5e94072a6b29667bb530108", "duplicate": false, "event": {"specversion": "1.0", ...}}
+```
+
+| Field | Required | Meaning |
+|---|---|---|
+| `type` | yes | What happened: `invoice.sent`. Letters, digits, `.`, `_`, `:`, `-`. Types starting `orchestra.` are Orchestra's: a machine may send only `orchestra.machine.started` (and the older `orchestra.machine.subscribed`). |
+| `source` | yes | The machine, or `<machine>/<instance>`. Not `orchestra-host`. |
+| `data` | no | Any JSON. Orchestra never reads it. |
+| `subject`, `correlationid`, `causationid` | no | Strings, as in the envelope ([§5.3](#53-the-cloudevents-envelope)). |
+| `time` | no | RFC 3339 with a timezone (`2026-10-27T18:58:31.043Z`); stored as UTC milliseconds. Default: now. |
+| `id` | no | Your id for the event. Default: a fresh one. Send one to make retries safe: a post whose `id` the endpoint has already written is answered `200` with `"duplicate": true` and written once. |
+
+Orchestra adds `specversion`, the `id` and `time` it was not given, and `datacontenttype`. A
+CloudEvent in structured mode (the same object, with `"specversion": "1.0"` and
+`"datacontenttype": "application/json"`) is accepted as it is. Answers:
+
+| Status | When |
+|---|---|
+| `201` | Written. The body has the `id` and the whole `event`. |
+| `200` | A duplicate `id`: not written again. |
+| `400` | Not one JSON object, a missing or malformed field, or a field it does not know (named in `error`). |
+| `401` | No token, or the wrong one. |
+| `403` | An `orchestra.*` type other than the announcements, or the source `orchestra-host`. |
+| `413` | A body over 1 MB. |
+| `503` | The bus could not take it. Retry with the same `id`. |
+
+**Reading.** `GET /events` returns the events after an offset, and the offset to read from next:
+
+```bash
+curl -sf "$ORCHESTRA_EVENTS_ENDPOINT/events?after=0&types=order.placed,order.cancelled&wait=30" \
+  -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN"
+```
+
+```json
+{"ok": true, "events": [{"specversion": "1.0", "type": "order.placed", ...}], "next": 118}
+```
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `after` | `0` | The offset to read after: `0` is the start of the bus, `end` its current end (only what comes next). |
+| `types` | every type | Comma-separated types to return. `next` moves past the events read either way. |
+| `wait` | `0` | Seconds (at most 30) to hold the request until a matching event arrives: a long poll. |
+| `limit` | `1000` | At most this many events (at most 10,000); read again from `next` for the rest. |
+
+To follow the bus, call it in a loop with `after` set to the last `next`, and keep `next` where
+you will find it after a restart. An offset is a cursor: never compute one. On the file bus a
+page cut at `limit` may repeat an event after an unreadable line; drop repeats by `id`.
+
+`GET /health` answers `{"ok": true}` without the token, for a program waiting for
+`orchestra run` to be up.
+
+A shell machine, start to finish:
+
+```bash
+#!/bin/sh
+# machines/billing.sh: announce, then answer every order.placed with an invoice.sent.
+post() { curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/events" -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN" \
+           -H "Content-Type: application/json" -d "$1" > /dev/null; }
+post '{"type": "orchestra.machine.started", "source": "billing", "data": {"mode": "continuous", "kind": "program", "listens_for": ["order.placed"]}}'
+after=end
+while true; do
+  page=$(curl -sf "$ORCHESTRA_EVENTS_ENDPOINT/events?after=$after&types=order.placed&wait=30" \
+           -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN") || { sleep 1; continue; }
+  after=$(printf '%s' "$page" | jq -r .next)
+  printf '%s' "$page" | jq -c '.events[] | {type: "invoice.sent", source: "billing", subject: .subject, causationid: .id, id: ("invoice-" + .id)}' |
+    while read -r ev; do post "$ev"; done
+done
+```
+
+(`jq` reads the JSON; the `id` derived from the order's makes a retry after a crash write
+nothing twice.)
+
+#### From Python, with the library (optional)
 
 To use the library, the program's Python must be able to `import orchestra`:
 
@@ -727,7 +829,8 @@ bus.publish("invoice.sent", {"order": 42}, subject="order-42", correlationid="ch
 Orchestra counts every event by type and source into `orchestra_events_total{type, source}`, so
 your events become series discovery can use.
 
-Writing points from Python, instead of serving them:
+Writing points from Python, instead of serving them (or serve them for a `[[scrape]]`, which
+needs no library):
 
 ```python
 import shutil, time
@@ -744,7 +847,7 @@ while True:
 `Point(series, value, ts, labels)` takes unix **seconds**. Write the series of one moment in one
 `write` call. Set the `machine` label yourself. Never write to a store URL of your own choosing,
 or to the files yourself: `for_repo()` writes where the web UI and discovery read. More, including
-how to keep such a program testable, is in [`docs/machines.md`](docs/machines.md#events-and-the-python-helper-optional).
+how to keep such a program testable, is in [`docs/machines.md`](docs/machines.md#the-python-helper-optional).
 
 ### 5.3 The CloudEvents envelope
 
@@ -776,7 +879,17 @@ An event as it lands in the file bus:
 ### 5.4 Announcing a machine: `orchestra.machine.started`
 
 An instance announces itself when it starts by publishing `orchestra.machine.started` from its
-own `source`. This is Orchestra's own event type, so Orchestra reads these fields of its `data`:
+own `source`. It is a plain event: send it like any other, over HTTP or with the helper.
+
+```bash
+curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/events" \
+  -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"type\": \"orchestra.machine.started\", \"source\": \"billing/1\",
+       \"data\": {\"mode\": \"continuous\", \"kind\": \"service\", \"listens_for\": [\"order.placed\"],
+                \"log\": \"$ORCHESTRA_MACHINE_LOG\"}}"
+```
+
+This is Orchestra's own event type, so Orchestra reads these fields of its `data`:
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -807,6 +920,7 @@ environment is `orchestra run`'s, plus:
 |---|---|
 | `ORCHESTRA_REPO` | The repository root. |
 | `ORCHESTRA_MACHINE_LOG` | Its log file. |
+| `ORCHESTRA_EVENTS_ENDPOINT`, `ORCHESTRA_EVENTS_TOKEN` | The events endpoint and its token ([§5.2](#52-publishing-and-reading-events)), unless `[events] listen = "off"`. |
 | `PYTHONUNBUFFERED` | `1`, so a Python program's output reaches its log at once. |
 
 `python` in a command is whatever `python` is on the `PATH` `orchestra run` was started with.
@@ -1317,7 +1431,8 @@ printed it; `cat ~/.orchestrator/projects.json` lists every project's key.
 | `orchestra init` | Register the repository and write `orchestra.toml`. |
 | `orchestra run [--once]` | The host. `--once` starts, records one heartbeat and stops. |
 | `orchestra web [--port 8000] [--host 127.0.0.1]` | The web UI. |
-| `orchestra events info` | Which bus, and how many events it holds. |
+| `orchestra events info` | Which bus, how many events it holds, and the events endpoint while `orchestra run` serves it. |
+| `orchestra events endpoint [--env]` | The events endpoint's URL and the token's file; with `--env`, `export` lines for `eval`. Exits 1 when no host serves it. |
 | `orchestra events copy --to URL [--force]` | Copy the event log to another bus backend. |
 | `orchestra metrics series` | Every series of the project, with its labels. |
 | `orchestra metrics backfill [--append]` | Replay the event log into `orchestra_events_total`. |
@@ -1358,6 +1473,9 @@ name.
 | What | Value |
 |---|---|
 | Collector or scrape output | 10 MB |
+| An event posted to the endpoint | 1 MB; `type`, `source` and `id` 256 characters, `subject` and the extensions 1024 |
+| `GET /events` | `wait` at most 30 s, `limit` at most 10,000 |
+| Duplicate ids the endpoint remembers | the bus's last 10,000 when it started, and every one posted to it since |
 | A point's timestamp | at most 60 s in the future |
 | `every` | at least 1 s |
 | Launcher pause | 1 s after a run of 60 s or more, else doubling from 2 s up to 60 s |

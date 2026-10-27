@@ -47,7 +47,7 @@ machines gets the parts of Orchestra that a bare program cannot get by itself:
 
 | A bare machine can... | A plugin can also... |
 |---|---|
-| publish events through `orchestra.events.Events` | have `orchestra run` start, restart and stop its processes (`processes`) |
+| publish and read events over HTTP (the events endpoint, `USING_ORCHESTRA.md` §5.2), or through `orchestra.events.Events` | have `orchestra run` start, restart and stop its processes (`processes`) |
 | write series through `orchestra.metrics` | list its machines on the Machines page before they first run (`machines`) |
 | be kept running by a project's `[[machines]]` entry | add pages and API routes to the web UI (`pages`, `router`) |
 | be collected or scraped (`[[collect]]`, `[[scrape]]`) | draw its machines' cards and add Dashboard panels (`scripts`, `stylesheets`) |
@@ -471,6 +471,9 @@ evs, offset = events.after(offset)        # every event after offset, in order; 
   no state of their own and rebuild it this way).
 - An event brought in from another system keeps its own time and a stable id:
   `publish(..., time=..., id=...)`.
+- A plugin's process that is not written in Python, or would rather not import Orchestra, uses
+  the events endpoint instead: the launcher gives it `ORCHESTRA_EVENTS_ENDPOINT` and
+  `ORCHESTRA_EVENTS_TOKEN`, as it does every process (`USING_ORCHESTRA.md` §5.2).
 
 ### 6.4 Metrics
 
@@ -552,7 +555,7 @@ These follow from AGENTS.md. The plugins' own `AGENTS.md` files repeat them.
   envelope and its own `orchestra.*` events;
 - **turn counted traffic into events** (rule 3);
 - **touch a backend or Orchestra's files directly** (rule 5). Events go through
-  `orchestra.events.Events`, metrics through `orchestra.metrics`, config through
+  `orchestra.events.Events` or the events endpoint, metrics through `orchestra.metrics`, config through
   `orchestra.config`. Never open the JSONL files, Redis or VictoriaMetrics yourself, and never
   write Orchestra's `runtime.json`, `events.jsonl` or `metrics.jsonl`. Other stores
   (`[[sources]]`) are read only, through `orchestra.sources`;

@@ -48,6 +48,7 @@ flowchart LR
     DI["Discovery thread"]
     LA["Launcher"]
     CO["Collectors and scrapes"]
+    EP["Events endpoint (HTTP)"]
   end
   subgraph stores["Backends"]
     BUS[("Event bus")]
@@ -64,7 +65,9 @@ flowchart LR
   PL["Plugins"]
   CLI["CLI (cli.py)"]
 
-  M -- "events (Events.publish)" --> BUS
+  M -- "POST /events, GET /events" --> EP
+  EP -- "Events.publish, Events.after" --> BUS
+  M -. "or the Python helper (Events.publish)" .-> BUS
   M -- "for_repo().write" --> MET
   LA -- "starts, restarts" --> M
   CO -- "run or scrape" --> M
@@ -75,6 +78,7 @@ flowchart LR
   DI -- "reads, never writes" --> R
   DI -- "versions" --> MS
   LA -- "processes" --> RT
+  EP -- "events_endpoint" --> RT
   BG --> BUS
   BG --> MET
   BG --> MS
@@ -97,13 +101,14 @@ Each component, its module, and what it depends on:
 | **Runtime record** | `orchestra/runtime.py` | `<state>/runtime.json`: the running hosts, the one host that launches, the web server, and the launched processes. Every write takes a file lock. A record holds a pid and the process's create time, so a reused pid is not mistaken for it. | config, `psutil`, `fcntl` |
 | **Event collector** | `orchestra/collectors.py` | Counts every event by type and source into `orchestra_events_total{type, source}`. Knows nothing about what events mean. | bus, metrics |
 | **Bootstrap host** | `orchestra/host.py` | `orchestra run`: Orchestra's own machine, `orchestra-host`. Registers itself, publishes `orchestra.host.started`/`stopped`, writes `orchestra_host_up`, runs the event collector, rediscovers the model on a timer, and (in the one host that launches) runs the launcher and the collectors. | everything below |
+| **Events endpoint** | `orchestra/endpoint/` (`__init__`, `validate`, `server`) | HTTP for machines in any language: `POST /events` checks one event's fields and publishes it through `Events.publish`; `GET /events?after=&types=&wait=&limit=` reads by offset, with a long poll. Served by the host that launches on `[events] listen` (127.0.0.1 and a port the system picks, by default), behind the project's token (`<state>/events.token`). Remembers recent ids, so a retried post is written once. | events (`Events`), runtime, the stdlib's `http.server` |
 | **Launcher** | `orchestra/launcher.py` | Keeps running the commands that `[[machines]]` and plugins (`Plugin.processes`) declare. Knows them only as processes: a name, a command, a pid, an exit code. | config, runtime, the host's `publish` |
 | **Collectors and scrapes** | `orchestra/collect/` (`spec`, `fetch`, `exposition`, `round`, `runner`) | Runs `[[collect]]` commands and reads `[[scrape]]` URLs on intervals, parses the Prometheus text format, and writes the points labelled `machine=<name>`. | metrics, launcher (name rule, log size), the host's `publish` |
 | **Sources** | `orchestra/sources/` | Reads other time-series stores in place (`[[sources]]`), never writes to them. Infers what to read from a store's schema, reads it for discovery's exact window, and records where every series came from. Also reads **counted traffic** (`sources/traffic.py`). | metrics (the own store), `sd/series.py`, HTTP |
 | **Discovery** | `orchestra/sd/` (`rediscover.py`, `discover.py`, `strategies.py`, `netflow.py`, and helpers), `orchestra/sdlab/` | Builds the model from the series without being told what anything is. `sd/discover.py` is Orchestra's own "conservation" step; `sd/strategies.py` can add one of SD Lab's strategies on top. | sources (the catalogue), model store; `numpy` and friends for SD Lab (`sd` extra) |
 | **Model store** | `orchestra/sd/store.py`, `orchestra/sd/model.py` | The one model and its versions: `<state>/model/vNNNN.json`, plus the latest discovery cached in `model/discovered.json`. | the state directory |
 | **Web** | `orchestra/web/` | `orchestra web`: a FastAPI app with the Dashboard, Core, Machines and Dynamics pages, and plugin pages. Background threads keep caches warm so page requests stay cheap. | bus, metrics, runtime, model store, sources, plugins |
-| **CLI** | `orchestra/cli.py` | `init`, `run`, `web`, `events info\|copy`, `metrics backfill\|series`, `sd discover\|show\|fit\|versions`, `sources check\|infer\|preview`. | the rest, imported on use |
+| **CLI** | `orchestra/cli.py` | `init`, `run`, `web`, `events info\|endpoint\|copy`, `metrics backfill\|series`, `sd discover\|show\|fit\|versions`, `sources check\|infer\|preview`. | the rest, imported on use |
 | **Plugins** | `orchestra/plugins.py` | Loads packages registered in the entry-point group `orchestra.plugins`. A plugin adds pages, a static directory, an API router, every-page scripts and stylesheets, declared machines and processes. One that fails to load is reported and left out. | launcher (`Process`) |
 
 ### Inside the host
@@ -115,7 +120,8 @@ Each component, its module, and what it depends on:
 | main | every 15 s | Writes `orchestra_host_up{machine="orchestra-host"}` (1 while running, 0 when stopping). |
 | `collector` | every 2 s | Replays the whole bus once at start (`collectors.backfill`, which replaces the event counters), then reads new events and writes their counts. |
 | `discovery` | 5 s after start, then every `[discovery] every` (default 5 min) | Calls `sd.rediscover.rediscover(..., skip_if_busy=True)` and logs the result. |
-| `launcher` | every 1 s | Only in the host that holds `launcher` in the runtime record. Each tick runs `Launcher.tick()` and `Collecting.tick()`. |
+| `launcher` | every 1 s | Only in the host that holds `launcher` in the runtime record. Before its first tick it starts the events endpoint, so the processes it launches get its address; each tick runs `Launcher.tick()` and `Collecting.tick()`; when the host stops it stops the processes, then the endpoint. |
+| `events-endpoint` | per request | Only in the launching host: a `ThreadingHTTPServer` (one thread per request, so a long poll holds up nothing). Each bus call takes one lock, since not every bus client library is thread-safe. |
 
 Only one host launches per project. `Host._claim` takes `launcher` in the runtime record under the
 lock, and only when no live process holds it. A second `orchestra run` still runs the event
@@ -125,7 +131,8 @@ dead one first stops whatever the dead one left running (`Launcher.reap_orphans`
 ### The launcher
 
 `orchestra/launcher.py` starts each process in the repository root, in a process group of its
-own, with `ORCHESTRA_REPO` and `ORCHESTRA_MACHINE_LOG` set and its output sent to
+own, with `ORCHESTRA_REPO`, `ORCHESTRA_MACHINE_LOG`, and the events endpoint's
+`ORCHESTRA_EVENTS_ENDPOINT` and `ORCHESTRA_EVENTS_TOKEN` (the host's `Launcher.env`) set and its output sent to
 `<state>/logs/machines/<name>.log`. A plugin's processes are named `<plugin>.<name>`.
 
 - A process that exits is started again after a pause that doubles with each exit within a minute
@@ -214,16 +221,24 @@ What happens at each stage:
 sequenceDiagram
   autonumber
   participant X as Machine baker/2
+  participant H as Events endpoint (endpoint/)
   participant E as Events.publish (events.py)
   participant B as Event bus
   participant C as Event collector (host.py)
   participant M as Metrics store
   participant I as MachineIndex (web/machines.py)
   participant P as Machines page
-  X->>E: publish("orchestra.machine.started", mode, listens_for, kind, log)
+  X->>H: POST /events {type orchestra.machine.started, source baker/2, data}
+  H->>H: check the token and the fields, never data
+  H->>E: publish(type, data, source)
   E->>B: append CloudEvents envelope
-  X->>E: publish("bread.baked", subject order-17)
+  H-->>X: 201 {id}
+  X->>H: POST /events {type bread.baked, subject order-17, id}
+  H->>E: publish, unless the id was written already
   E->>B: append envelope
+  X->>H: GET /events?after=#lt;offset#gt;#amp;wait=30
+  H->>B: read after the offset until an event comes
+  H-->>X: events, next
   loop every 2 s
     C->>B: read after last offset
     C->>M: orchestra_events_total{type, source} += 1
@@ -237,6 +252,9 @@ sequenceDiagram
   I-->>P: machines, publishes and listens edges, hand-offs
   P->>P: draw the event map and its loops (netgraph.js, loops.js)
 ```
+
+A machine written in Python may call `Events.publish` itself (the optional helper) instead of
+the endpoint; the envelope and everything after it are the same.
 
 What the Machines page knows about a machine, and where it comes from (`orchestra/web/machines.py`):
 
@@ -503,7 +521,8 @@ flowchart TD
   HOME["~/.orchestrator/ or ORCHESTRATOR_HOME"] --> PJ["projects.json: repo root to key"]
   HOME --> KEY["#lt;key#gt;/ : repo name plus 8 hex of its path hash"]
   KEY --> P1["project.json"]
-  KEY --> P2["runtime.json: hosts, launcher, web, processes"]
+  KEY --> P2["runtime.json: hosts, launcher, events_endpoint, web, processes"]
+  KEY --> P9["events.token: the events endpoint's token, owner-only"]
   KEY --> P3[".lock and discovery.lock"]
   KEY --> P4["events.jsonl, when events url is file"]
   KEY --> P5["metrics.jsonl, when metrics url is file"]
@@ -612,7 +631,8 @@ configuration, and every probe runs in a thread pool with a time limit.
 | `orchestra init` | Registers the repository and writes a starter `orchestra.toml`. | `orchestra.toml`, state directory |
 | `orchestra run [--once]` | Runs the bootstrap host. | runtime record, bus, metrics, model, logs |
 | `orchestra web [--port --host]` | Serves the web UI (default `127.0.0.1:8000`). | `web` in the runtime record |
-| `orchestra events info` | Says which backend holds the log, and how many events it has. | nothing |
+| `orchestra events info` | Says which backend holds the log, how many events it has, and where the events endpoint is. | nothing |
+| `orchestra events endpoint [--env]` | Prints the events endpoint's URL and the token's file, or `export` lines for both. | `events.token`, if it did not exist |
 | `orchestra events copy --to URL [--force]` | Copies the event log to another backend. | the target bus |
 | `orchestra metrics series` | Lists the project's series. | nothing |
 | `orchestra metrics backfill [--append]` | Replays the whole log into `orchestra_events_total`. | metrics |
@@ -654,13 +674,13 @@ divided.
 |---|---|---|
 | 1 | No tickets, tasks or AI in the core | The core modules handle only envelopes, series, processes and models. `collectors.py` counts events by `type` and `source` and nothing else. Agents' harnesses live in `~/orchestra-agents`. |
 | 2 | Machines are outside, known by observation | `web/machines.py` builds machines from envelopes and the `machine` label. Of `data`, it reads only `orchestra.machine.started` announcements. Plugin declarations fill in only unseen machines (`web/app.py:declare`). `web/machine_logs.py` reads a log only inside the repository or the state directory. `launcher.py` knows processes, not machines. Counted machines come only from `sources/traffic.py`. |
-| 3 | Every event carries the CloudEvents envelope | `events.envelope` is the only place events are built. `Events.publish` always uses it. `event_time` and `event_source` read older flat events too. Counted traffic is read as series and never turned into events. |
+| 3 | Every event carries the CloudEvents envelope | `events.envelope` is the only place events are built. `Events.publish` always uses it, and the events endpoint publishes only through it, passing `data` on unread. `event_time` and `event_source` read older flat events too. Counted traffic is read as series and never turned into events. |
 | 4 | One system, one model | One `ModelStore` per state directory, with one sequence of versions. Discovery runs over every series of the project at once. Package and group are labels on the Machines page, never separate views. |
 | 5 | State in `~/.orchestrator/<key>/`; bus and metrics in their stores | `config.Project` names every state path. Events go through `Events` over an `EventBus`, metrics through `MetricsStore`, the model through `ModelStore`, process records through `runtime`. `bus.stream_name` keeps Orchestra's own namespace. The `Source` protocol (`sources/__init__.py`) has only read methods. |
 | 6 | Every equation records its origin | `Equation.origin` is a required field (`sd/model.py`). Conservation writes `fitted`/`poisson-mle`, the net-flow layer `fitted`/`least-squares`, and SD Lab `discovered`/`sdlab:<strategy>`. `Machine.attributed` holds flow ids as hypotheses. |
 | 7 | Stocks are discovered, not configured | `Config` has no stock or flow bindings. `sd/discover.py` decides from the data alone. A series' declared kind (counter or level, from a `[[series]]` definition) is the only hint it takes. |
 | 8 | The core stays up | `web/core.py` and `web/core_explore.py` import only the bus, the metrics store, the runtime record and the configuration. Every probe runs under `TIMEOUT` (4 s). Plugins that fail are left out. |
-| 9 | Humans talk only to the Supervisor; UI and CLI read-only except observations | The web app has two POST routes: "rediscover" (an observation) and the Core page's bus probe. Any path that changes machines belongs to a plugin. |
+| 9 | Humans talk only to the Supervisor; UI and CLI read-only except observations | The web app has two POST routes: "rediscover" (an observation) and the Core page's bus probe. Any path that changes machines belongs to a plugin. The events endpoint is the bus reached over HTTP, for machines, as the Python helper is; the web UI and CLI gain no write from it (`events endpoint` only prints where it is). |
 | 10 | One package, no path hacks | `pyproject.toml` packages only `orchestra`. No module changes `sys.path`. `orchestra/sdlab` is excluded from ruff (`extend-exclude`) and its README records its source commit. |
 
 **Known departures** (as of `828da6d0`). These are places where the code goes further than the

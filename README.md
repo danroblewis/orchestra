@@ -59,8 +59,10 @@ declare it under `[[collect]]` in `orchestra.toml` and `orchestra run` runs it o
 writes what it prints, labelled `machine=<name>`, to the project's store. A program that already
 serves Prometheus metrics is declared under `[[scrape]]` with its URL. A program that should run all
 the time goes under `[[machines]]` and `orchestra run` keeps it running. Their series appear on the
-Machines page and in the Core explorers, and discovery reads them. Events on the bus, and writing
-series directly, go through the optional Python helpers (`orchestra.events.Events.publish`,
+Machines page and in the Core explorers, and discovery reads them. Events go over HTTP: `orchestra
+run` serves `POST /events` and `GET /events` and hands each process it launches the address and
+a token (`ORCHESTRA_EVENTS_ENDPOINT`, `ORCHESTRA_EVENTS_TOKEN`), so `curl` is enough. Python
+programs may use the optional helpers instead (`orchestra.events.Events.publish`,
 `orchestra.metrics.for_repo()`). **[docs/machines.md](docs/machines.md)** is the guide: a script
 collector, a scrape, a long-running program, naming, counters and levels, and labels.
 The bakery, a separate repository, is a toy system of machines used to test Orchestra from the

@@ -14,6 +14,12 @@ In an empty Orchestra it does little, on purpose:
   the plugins declare (``Plugin.processes``), through ``orchestra.launcher``, and stops them when
   it stops. Only one host launches for a project (``launcher`` in the runtime record): a second one, started while the
   first runs, launches nothing, says so, and leaves the first one's record alone;
+- in the host that launches, it serves the events endpoint (``orchestra.endpoint``): machines
+  publish and read events over HTTP on ``[events] listen`` (127.0.0.1 and a port the system picks,
+  unless given), with the project's token. Its address is in the runtime record
+  (``events_endpoint``) and, with the token, in the environment of what the host launches
+  (``ORCHESTRA_EVENTS_ENDPOINT``, ``ORCHESTRA_EVENTS_TOKEN``). It starts before the processes and
+  stops after them, so a machine can publish until it is stopped;
 - in the host that launches, it runs the collectors the project declares (``[[collect]]``, a
   command, and ``[[scrape]]``, a URL, in ``orchestra.toml``) on their intervals and writes what
   they print, in the Prometheus text format, to the metrics store (``orchestra.collect``).
@@ -30,7 +36,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
 
-from . import plugins, runtime
+from . import endpoint, plugins, runtime
 from .collect.runner import Collecting
 from .collectors import EventCollector, backfill, collapse
 from .config import Project
@@ -128,7 +134,9 @@ class Host:
     def _launch(self) -> None:
         """Keep the declared processes running and the declared collectors collecting until the
         host stops, then stop them."""
-        launcher = Launcher(self.project, self.events.publish, self.log, self._plugin_processes)
+        served = self._serve_events()
+        env = {endpoint.ENV_URL: served.url, endpoint.ENV_TOKEN: served.token} if served else {}
+        launcher = Launcher(self.project, self.events.publish, self.log, self._plugin_processes, env=env)
         collecting = Collecting(self.project, self.events.publish, self.log)
         launcher.reap_orphans()
         try:
@@ -145,6 +153,23 @@ class Host:
         finally:
             collecting.stop()
             launcher.stop_all()
+            if served is not None:
+                served.stop()
+
+    def _serve_events(self):
+        """Start the events endpoint, or say why there is none; the host runs on without it."""
+        from .endpoint.server import EventsEndpoint
+        try:
+            listen = endpoint.listen_address(self.project.config.events_listen)
+            if listen is None:
+                self.log("events endpoint: off ([events] listen)")
+                return None
+            ep = EventsEndpoint(self.project, Events.for_project(self.project), listen, endpoint.token(self.project), self.log)
+            self.log(f"events endpoint: {ep.start()} (POST /events, GET /events; token in {endpoint.token_file(self.project)})")
+            return ep
+        except Exception as e:  # noqa: BLE001 - the core stays up without it
+            self.log(f"events endpoint: not started: {type(e).__name__}: {e}")
+            return None
 
     def _claim(self) -> int | None:
         """Take the launch for this project, unless a live host holds it; returns that host's pid,
