@@ -6,7 +6,10 @@
 - A **counter** read from raw samples (view ``increments``) keeps the real sample times: each
   reporting series' increments are ``b − a``, or ``b`` after a drop (a reset), and its first
   sample is a baseline, not events; the increments are summed by the definition's grouping into
-  a running total that starts at 0.
+  a running total that starts at 0. A series that began inside the window (its first sample more
+  than two of its own sample intervals after the start, and no larger than twice its largest
+  increment: a counter that started at 0, such as a publisher's new channel) counts its first
+  value too.
 - A **turnover** (views ``starts`` and ``stops``) is read from the same raw samples a count is
   made from: the series that started and stopped reporting, so the count is a stock its two
   counters balance exactly.
@@ -18,7 +21,9 @@
 Results are renamed to canonical labels, labelled ``machine = <prefix>.<value>`` when they carry
 the source's machine label, and named ``<prefix>:<name>``. A ``machine`` or ``source`` label the
 remote itself wrote is prefixed too, since discovery reads machines from them, and a remote
-``authz`` must never merge with an own one."""
+``authz`` must never merge with an own one. A definition of counted traffic (``traffic.py``)
+resolves, per result series, the channel and the machine it counts for, and that machine is the
+series' ``machine`` label, so discovery attributes its flow to the producer or consumer."""
 
 from __future__ import annotations
 
@@ -26,6 +31,7 @@ import math
 from itertools import pairwise
 
 from . import Labels, Points, Source
+from .traffic import resolve
 from .views import Definition, count_window
 
 
@@ -36,14 +42,28 @@ def grid_step(step: float, resolution_s: float | None) -> float:
     return step * math.ceil(resolution_s / step - 1e-9)
 
 
-def increments(raw: list[tuple[Labels, Points]], by_real: list[str]) -> list[tuple[Labels, Points]]:
-    """Raw counter samples summed by ``by_real`` into running totals of their increments."""
+def began_inside(pts: Points, start: float | None) -> bool:
+    """Whether a counter series began inside the window: its first sample well after the start (two
+    of its own sample intervals) and no larger than twice its largest increment, so it counted
+    from 0 rather than being an old counter the store was missing at the start."""
+    if start is None or len(pts) < 3:
+        return False
+    gaps = sorted(b[0] - a[0] for a, b in pairwise(pts))
+    incs = [(b - a) if b >= a else b for (_, a), (_, b) in pairwise(pts)]
+    return pts[0][0] - start > 2 * gaps[len(gaps) // 2] and pts[0][1] <= 2 * max(incs, default=0.0)
+
+
+def increments(raw: list[tuple[Labels, Points]], by_real: list[str], start: float | None = None) -> list[tuple[Labels, Points]]:
+    """Raw counter samples summed by ``by_real`` into running totals of their increments; with
+    ``start``, a series that began inside the window counts its first value too."""
     groups: dict[tuple, tuple[Labels, dict[float, float], list[float]]] = {}
     for labels, pts in raw:
         key = {k: labels[k] for k in by_real if k in labels}
         g = groups.setdefault(tuple(sorted(key.items())), (key, {}, []))
         if pts:
             g[2].append(pts[0][0])
+            if began_inside(pts, start) and pts[0][1] > 0:
+                g[1][pts[0][0]] = g[1].get(pts[0][0], 0.0) + pts[0][1]
         for (_, a), (t, b) in pairwise(pts):
             g[1][t] = g[1].get(t, 0.0) + ((b - a) if b >= a else b)
     out = []
@@ -111,10 +131,11 @@ def integrate(pts: Points) -> Points:
 
 
 def read(source: Source, d: Definition, prefix: str, machine: str | None, start: float, end: float,
-         step: float) -> list[tuple[str, Labels, Points]]:
+         step: float, producers: dict[str, str] | None = None) -> list[tuple[str, Labels, Points, dict | None]]:
+    """Each result series: its name, labels, points, and what it counts when it is traffic."""
     if d.view == "increments":
         res = d.resolution_s or 0.0
-        got = increments(source.select(d.query, start - res, end), d.by_real)
+        got = increments(source.select(d.query, start - res, end), d.by_real, start)
     elif d.view in ("starts", "stops"):
         w = count_window(d.resolution_s)
         got = turnover(source.select(d.query, start - w, end), d.by_real, w, start, end, d.view == "stops")
@@ -127,10 +148,15 @@ def read(source: Source, d: Definition, prefix: str, machine: str | None, start:
     for labels, pts in got:
         lab = {d.rename.get(k, k): v for k, v in labels.items() if k != "__name__"}
         lab.update(d.extra_labels)
+        counted = resolve(d.traffic, lab, prefix, producers) if d.traffic else None
         for k in ("machine", "source"):           # the labels discovery reads machines from: never an own machine's name
             if lab.get(k):
                 lab[k] = f"{prefix}.{lab[k]}"
         if machine and lab.get(machine):
             lab["machine"] = f"{prefix}.{lab[machine]}"
-        out.append((f"{prefix}:{d.name}", lab, pts))
+        if counted and counted["machine"]:
+            lab["machine"] = counted["machine"]
+        elif counted and lab.get("machine"):           # no template, but the source's machine label names it
+            counted.update(machine=lab["machine"], attributed="from its machine label")
+        out.append((f"{prefix}:{d.name}", lab, pts, counted))
     return out

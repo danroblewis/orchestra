@@ -39,6 +39,7 @@ class SeriesRef:
     origin: list[str] | None = None
     resolution_s: float | None = None
     unit: str | None = None
+    traffic: dict | None = None         # counted traffic: direction, channel and machine (orchestra.sources.traffic)
 
 
 @dataclass

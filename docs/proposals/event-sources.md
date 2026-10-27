@@ -1,7 +1,20 @@
 # Proposal: event sources (counted traffic on other buses, and bridges for things that are buses)
 
-Status: draft, 2026-10-26. Nothing built. Sibling of `time-series-sources.md`, whose query
-machinery it reuses.
+Status: phase 1 (counted traffic, §1 and §3) built 2026-10-27 on RabbitMQ (SPEC §2, §4.3, §4.4,
+§10); the GitHub issues bridge (§4) is in `~/orchestra-bridges`. The rest is a draft. Sibling of
+`time-series-sources.md`, whose query machinery it reuses.
+
+What phase 1 built, and how it differs from the text below: `traffic` takes `direction = "out" |
+"in" | "backlog"` (a backlog is a level); `[sources.producers]` (channel = machine) is the declared
+attribution of producers; a source may name a `preset` file and set `infer = false`; a `select`
+with `by` declares a counter read from raw samples. A copy is found from the data alone (a counter
+that drains no stock and explains at least a quarter of each of several stocks' changes), not from
+the traffic metadata; the metadata is a prior (decision D4): a backlog is balanced first by what
+was produced into its channel less what its own consumer took (a consumer that keeps up is
+otherwise as good a stand-in for the publishes), and two declared backlogs are never one stock
+measured twice. A source's `settle` ends all its reads together (VictoriaMetrics hides the newest
+30 s from range queries only). The info-series join is done in the preset's PromQL (`group_left`), not in
+the catalogue. Not built: the Pub/Sub preset, simulator and topology poller, loose balances.
 
 The owner needs the bus for three things: **which machines exist**, **the event graph**, and
 **communication between the machines our repository runs**. Company systems bring two problems:

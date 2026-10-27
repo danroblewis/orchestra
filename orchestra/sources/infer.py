@@ -56,9 +56,14 @@ def settings_key(spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Pa
 
 
 def _declared(spec: SourceSpec, declared: list[DeclaredSeries]) -> list[Definition]:
-    return [Definition(id=f"declared.{i}", source=spec.name, name=x.name, family=f"declared:{x.name}", view="declared",
-                       kind=x.kind, query=x.query, unit=x.unit, origin=["declared in orchestra.toml"], pin=True,
-                       rename=spec.aliases())
+    """The hand-written and preset definitions: a ``select`` is a counter read from raw samples
+    (view ``increments``, reset-safe, summed by its ``by`` labels), anything else a query."""
+    aliases = spec.aliases()
+    return [Definition(id=f"declared.{i}", source=spec.name, name=x.name, family=f"declared:{x.name}",
+                       view="increments" if x.by is not None else "declared", kind=x.kind, query=x.query, unit=x.unit,
+                       group_by=[aliases.get(b, b) for b in x.by or []], by_real=list(x.by or []),
+                       origin=[f"declared in the preset {x.preset}" if x.preset else "declared in orchestra.toml"], pin=True,
+                       rename=aliases, traffic=dict(x.traffic or {}))
             for i, x in enumerate(declared) if x.source == spec.name]
 
 
@@ -123,6 +128,9 @@ def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries]
     new round; when the round fails, the cached ones inferred under the same settings, with the
     failure noted. Raises when there are none."""
     key = settings_key(spec, declared, repo_root)
+    if not spec.infer:                     # only what is declared: nothing to infer, nothing to cache
+        return Inference(spec.name, time.time(), key, _declared(spec, declared),
+                         notes=["infer = false: only the declared series are read, never the schema"])
     old = cached(state_dir, spec.name)
     if old and not refresh and old.key == key and time.time() - old.at < spec.infer_every:
         return old

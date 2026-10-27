@@ -83,6 +83,15 @@ there and an `id` stable across re-imports (`envelope(time=, id=)`), so a sync c
 bus already holds. Events written before the envelope (flat records with `ts`) stay readable; `event_time` and
 `event_source` read either shape.
 
+**Counted traffic.** A machine on another system's bus (a broker's producers and consumers, a
+Pub/Sub topic's publishers and subscribers) is known by counts, not events: a series a source
+reads there that a series definition marks as **traffic** (§4.4), what one machine produced into
+or consumed from a **channel** per interval, or the channel's backlog. The machine it is
+attributed to is a machine like any other (`<prefix>.<name>`), known by observation: a source
+counted its traffic; a count no machine is attributed to is **unattributed**, and shown so.
+Counted traffic is never turned into events: no envelope is made from a count, so the bus's volume
+is unchanged and replay never lies (`docs/proposals/event-sources.md` §1).
+
 **Subscriptions.** Until the bus adapters provide subscriptions with leases
 (`docs/proposals/empty-orchestra.md` §3), a machine reads the bus by offset and announces what it
 listens for in `orchestra.machine.started` (the older `orchestra.machine.subscribed` with
@@ -221,7 +230,11 @@ Conservation (`sd/discover.py`):
    within the tolerance, that is its balance, and another machine's counter never replaces one
    of them (an oven's own counters come before the board's, however exactly they
    coincide); it enters only to explain the residual the machine's own leave. Every counter is
-   searched only when the machine's own do not balance the level. Then, with every balance
+   searched only when the machine's own do not balance the level. Before both, a channel's
+   backlog (counted traffic, §4.4) is balanced by its own traffic: what was produced into the
+   channel, less what its own consumer took from it; kept only within the tolerance, a prior the
+   data must bear out (decision D4), since another consumer that keeps up counts a stand-in for the
+   channel's inflow a moment late. Then, with every balance
    known, the stand-ins give way (`sd/restate.py`): Orchestra's event counter to the
    machine counters that sum to it, when one is another stock's or the level's own machine's
    (among sets that sum to it alike, the level's own machine's parts before another machine's
@@ -238,11 +251,17 @@ Conservation (`sd/discover.py`):
    levels themselves, whose changes correlate by 0.9 or whose values are equal in 97% of the
    steps either held something (a copy a moment behind, balanced by its own machine's
    counters), are one stock measured twice: the machine whose counters make the balance keeps it, the other is recorded as its
-   twin. A level that only fills is a stock when its balance is exact, whatever feeds it (a
+   twin (never two backlogs a source declared: two queues one consumer acknowledges at once change
+   alike and are still two). A level that only fills is a stock when its balance is exact, whatever feeds it (a
    terminal state, where other stocks' outflows end); one the system's flows explain only
    roughly is a tally of activity unless counters no ordinary stock uses balance it;
 3. a counter that leaves one stock and enters another is a **flow** between them; otherwise it
-   comes from or goes to outside. A state each item leaves within a step (an order picked up and
+   comes from or goes to outside. A counter that drains no stock and that several stocks each take
+   as an inflow, explaining at least a quarter of each one's changes, is a **copy**: every event
+   fills each of them (a topic's published count fills every subscription's backlog, a fanout
+   exchange each bound queue), one flow from outside per stock (`<flow>><stock>`, with `copy_of`
+   and `copies` in their evidence), one count and one fitted rate (`sd/ends.py`). A claim below the
+   quarter is a contested end, recorded as before. A state each item leaves within a step (an order picked up and
    at once accepted or rejected; a ticket rejected and back in progress a second later) is empty
    at almost every step of the grid, so it is no stock, and the chain through it would run past
    it or split through outside. It is joined through again (`sd/hops.py`, `sd/passing.py`): a
@@ -355,6 +374,42 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   Dynamics page shows each source's state and why a discovery was not saved, and a stock's drawer
   its source, query and origin; the web server reads remote stocks' levels and history through
   the catalogue.
+
+**Counted traffic** (`sources/traffic.py`; `docs/proposals/event-sources.md` §1–3). A series
+definition may say what it counts on another system's bus:
+
+```toml
+[[series]]
+source = "rabbit"
+name = "rabbitmq_published_total"
+select = '{__name__="rabbitmq_detailed_channel_messages_published_total"}'   # raw samples, reset-safe
+by = ["vhost", "exchange"]                                                  # summed by these labels
+kind = "counter"
+traffic = { direction = "out", channel = "{exchange}" }   # out | in (counters), backlog (a level)
+```
+
+`channel` and `machine` are templates over each result series' labels (after the aliases), or
+plain names; the channel is `<prefix>:<channel>` and the machine `<prefix>.<machine>`, which
+becomes the series' `machine` label, so discovery attributes the flow to the producer or consumer.
+A count with no machine is unattributed, unless the source's `[sources.producers]` (channel =
+machine) declares who produces into that channel: a broker's counts rarely name publishers. This
+is metadata on the definition, never a label convention (a store's own `channel` label means
+nothing). The reading records each series' traffic in its provenance (`SeriesRef.traffic`), and
+the web server reads every traffic series over the last hour each minute
+(`Catalogue.counted`, `web/traffic.py`) for the Machines page. A `select` (with `by`) declares a
+counter read from raw samples, like an inferred counter's increments, so a publisher's channel
+that closes and reopens is no reset.
+
+A source may name a **preset** (`preset = "<file>"`, relative to the repository or absolute,
+`sources/preset.py`): a TOML file of `[[series]]` definitions for one exporter (they read this
+source) and `[source]` defaults the source table's own keys override. Presets ship with whatever
+reads that store (the RabbitMQ preset is in `~/orchestra-bridges`), never with Orchestra.
+`infer = false` reads only the declared series, never the schema. `settle` ends every read from a
+source that long before now, so its series end together (VictoriaMetrics hides the newest 30 s from
+range queries but not from raw reads, `-search.latencyOffset`). A counter read from raw samples
+whose series began inside the window (a publisher's new channel: its first sample well after the
+start and no larger than twice its largest increment) counts its first value; any other first
+sample is a baseline.
 
 `orchestra sources check` probes each source's endpoints and credentials; `orchestra sources
 infer` runs an inference round and prints the families, what was kept and what was left out;
@@ -566,7 +621,13 @@ Read-only for humans. Navigation: Dashboard, Machines, Dynamics, Core.
   two talk both ways, thicker with more traffic, the event types on hover; or with the event types
   as boxes; event families, the name up to its first dot, can be hidden; dotted, the hand-offs
   inferred from the envelope: one machine acted on a subject after another did, which connects
-  machines that announce nothing, such as a system brought in from outside), its feedback loops, and each machine's metrics. Clicking a machine
+  machines that announce nothing, such as a system brought in from outside; and **counted
+traffic** (§2, §4.4): each channel a box with what waits in it, each producer → channel and channel
+→ consumer a double line labelled with its rate per minute, a count no machine is attributed to
+coming from or going to a grey "unattributed" stub), its feedback loops, and each machine's
+metrics. A machine known by counted traffic is marked counted on its card, with its rates and
+backlogs per channel; its last seen is its last interval with a nonzero count (active within five
+minutes, which allows for the store's scrape interval and the minute between reads). Clicking a machine
   (its card or its node) opens its dialog: instances, what it publishes and listens for, its
   series' latest values, its last events (envelopes only) and the tail of its announced log,
   refreshed while open.
@@ -652,14 +713,14 @@ orchestra/
   collect/   a project's collectors and scrapes: spec, fetch, exposition (the Prometheus text
              format), round, runner
   metrics/   file, victoria, promql
-  sources/   other stores, read in place: spec, auth, prometheus, own, schema, views, transform,
-             rank, infer, fetch, catalogue, report (the CLI's text)
+  sources/   other stores, read in place: spec, preset, auth, prometheus, own, schema, views,
+             transform, rank, infer, fetch, traffic (counted traffic), catalogue, report (the CLI's text)
   sd/        model, store, fit, series and live (sampling, when a series was written), balance,
              collinear and restate (a level's balance), ends, inputs, drivers (which stocks may
              drive a flow), discover (conservation), rates, strategies, simulate, rediscover,
              provenance (where each series in a model came from)
   sdlab/     SD Lab's discovery research: ~70 strategies (needs the sd extra)
-  web/       app, core, core_explore, machines, dynamics, static/
+  web/       app, core, core_explore, machines, traffic (counted traffic), dynamics, static/
 tests/
   unit/  bus/  metrics/  sources/  acceptance/
 ```

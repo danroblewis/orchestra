@@ -3,7 +3,8 @@
 //   nodes   circle (a machine: initial inside, name beneath, optional halo), box (an event type, a
 //           stock: lines of text, optional decoration), valve (a flow: a small dot with a label),
 //           cloud (outside: a source or a sink);
-//   edges   solid or dashed, coloured, with an arrow, an optional label and sign, and optional
+//   edges   solid, dashed or double (``double``: two thin lines, for a count rather than events),
+//           coloured, with an arrow, an optional label and sign, and optional
 //           moving dashes whose speed follows a rate; an edge may end on another edge
 //           (``toEdge``), drawn to its middle: an influence on a flow;
 //   loops   elementary cycles of a directed graph, listed and clickable: clicking one highlights
@@ -353,6 +354,8 @@ const NetGraph = (() => {
         // ``both``: one line for two nodes linked both ways, an arrowhead at each end
         g.append("path").attr("class", "ng-line").attr("stroke", col).attr("stroke-width", e.width || 1.6).attr("stroke-dasharray", e.dash || (e.dashed ? "5 4" : null)).attr("marker-end", e.arrow === false ? null : marker(col))
           .attr("marker-start", e.both ? marker(col, true) : null);
+        // a double line: the line drawn wide, and its middle drawn again in the background's colour
+        if (e.double) { g.classed("ng-double", true); g.append("path").attr("class", "ng-gap"); }
         g.append("path").attr("class", "ng-hit");
         if (e.rate) g.append("path").attr("class", "ng-flowdash").style("animation-duration", `${Math.max(0.25, Math.min(6, 8 / Math.sqrt(e.rate))).toFixed(2)}s`);
         g.on("mouseenter", (ev) => showTip(tip && tip(e, "edge"), ev)).on("mousemove", moveTip).on("mouseleave", hideTip)

@@ -14,6 +14,9 @@ const Live = (() => {
   let HIDDEN = stored ? new Set(stored) : null;
   const per = () => { const u = (MODEL && MODEL.time_unit) || "minute"; return u === "minute" ? "/min" : u === "hour" ? "/h" : "/s"; };
   const fmt = (v) => (v == null ? "—" : Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2));
+  // counted traffic (orchestra.sources.traffic): what a series counts on another system's bus
+  const trafficText = (t) => (t.direction === "backlog" ? `what waits in ${t.channel}` : `${t.direction === "out" ? "produced into" : "consumed from"} ${t.channel}`)
+    + (t.machine ? ` by ${t.machine}` : t.direction === "backlog" ? "" : ", by no machine a source names (unattributed)") + "; a count, not events";
   const stockHist = (id) => (HISTORY && HISTORY.stocks && HISTORY.stocks[id]) || [];
   const flowHist = (id) => (HISTORY && HISTORY.flows && HISTORY.flows[id]) || [];
   const now = (id) => { const h = stockHist(id); return h.length ? h[h.length - 1][1] : (MODEL.levels[id] || {}).v; };
@@ -105,6 +108,7 @@ const Live = (() => {
       <div>changed by</div><div>${[...new Set([...io.in, ...io.out].map((f) => f.machine).filter(Boolean))].map((m) => `<span class="mdot" style="--c:${mcolor(m)}"></span>${esc(m)}`).join(" ") || "—"}</div>
       <div>measured by</div><div>${esc(ev.machine || "—")} <span class="muted">(writes the series)</span></div><div>bound to</div><div class="num">${esc(s.series ? s.series.name + JSON.stringify(Object.fromEntries(Object.entries(s.series.labels).filter(([k]) => k !== "project"))) : "—")}</div>
       ${s.series && s.series.source && s.series.source !== "own" ? `<div>read from</div><div>source <b>${esc(s.series.source)}</b>${s.series.resolution_s ? ` <span class="muted">· reports every ${esc(s.series.resolution_s)} s</span>` : ""}<div class="num" style="font-size:11.5px">${esc(s.series.query || "")}</div><div class="muted" style="font-size:11.5px">${esc((s.series.origin || []).join(" → "))}</div></div>` : ""}
+      ${s.series && s.series.traffic ? `<div>counted</div><div>${esc(trafficText(s.series.traffic))}</div>` : ""}
       ${ev.balance ? `<div>balance</div><div class="num">Δ = ${ev.balance.map((b) => `${b.sign > 0 ? "+" : "−"} ${esc(b.series)}`).join(" ")}<br><span class="muted">R² ${ev.balance_r2} · exact in ${Math.round(100 * ev.exact_steps)}% of steps</span></div>` : ""}</div>
       <h4 style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">Level: measured, as the equations run it, and projected
         <label class="muted" style="font-weight:400;font-size:11.5px">project <input id="sim-h" type="number" min="1" max="1440" value="${horizon()}" style="width:58px"> min ahead</label></h4>
@@ -144,6 +148,9 @@ const Live = (() => {
       ${(f.measured_by || []).length > 1 ? `<div>measured by</div><div class="num">${f.measured_by.map((c) => esc(c.name)).join(" + ")}</div>` : ""}
       <div>counter</div><div class="num">${esc(f.counter ? f.counter.name : "—")}</div>
       ${ev.co_flow_of ? `<div>co-flow</div><div>${esc(ev.note || "")} (see ${esc(flowName(MODEL.flows.find((x) => x.id === ev.co_flow_of)) || ev.co_flow_of)})</div>` : ""}
+      ${ev.copy_of ? `<div>copy</div><div>every event of ${esc(flowName(MODEL.flows.find((x) => x.id === ev.copy_of)) || ev.copy_of)} also fills ${esc(f.to ? stockName(f.to) : "this stock")}: one count filling several stocks, not a split</div>` : ""}
+      ${(ev.copies || []).length ? `<div>copies</div><div>every event also fills ${ev.copies.map((id) => { const c = MODEL.flows.find((x) => x.id === id); return esc(c && c.to ? stockName(c.to) : id); }).join(", ")}</div>` : ""}
+      ${(f.counter && f.counter.traffic) ? `<div>counted</div><div>${esc(trafficText(f.counter.traffic))}</div>` : ""}
       ${(ev.co_flows || []).length ? `<div>co-flows</div><div>the same events also move ${ev.co_flows.map((id) => esc(flowName(MODEL.flows.find((x) => x.id === id)) || id)).join(", ")}</div>` : ""}
       ${(ev.conflicts || []).map((c) => `<div>also claimed</div><div>its ${c.end === "src" ? "source" : "destination"} by ${c.others.map((o) => `${esc(stockName(o.stock))} (explains ${Math.round(100 * o.share)}% of its changes)`).join(", ")}; kept ${esc(stockName(c.kept))}</div>`).join("")}</div>
       <h4>Rate, last hour (${per()}): observed and what the equation predicts from the levels</h4>

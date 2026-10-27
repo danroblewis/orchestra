@@ -2,7 +2,8 @@
 
 Discovery works on series without asking where they live; afterwards each ``SeriesRef`` in the
 model (a stock's series, a flow's counters, a machine's series, the inputs its equations read) is
-told its source, final query, kind, origin and resolution, from the catalogue's reading
+told its source, final query, kind, origin, resolution and, for counted traffic, the channel
+and machine it counts for, from the catalogue's reading
 (``orchestra.sources.catalogue``); a series with no record there is the project's own. A stock
 bound to a remote count takes its unit (pods, regions). Each equation lists the sources of the
 series it was fitted on."""
@@ -24,6 +25,7 @@ def _tell(ref: SeriesRef | None, provenance: dict[str, dict]) -> str | None:
         return OWN
     ref.source, ref.query, ref.kind = p["source"], p.get("query"), p.get("kind")
     ref.origin, ref.resolution_s, ref.unit = list(p.get("origin") or []), p.get("resolution_s"), p.get("unit")
+    ref.traffic = p.get("traffic")
     return ref.source
 
 

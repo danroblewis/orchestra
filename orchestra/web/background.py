@@ -12,6 +12,10 @@ One thread keeps three caches warm:
   chart shows the levels discovery saw (a level held for four seconds is a stock on a 5 s grid
   and invisible on a 15 s one).
 
+- **counted traffic** (``traffic.py``): every series a source's definitions mark as traffic, read
+  through the catalogue over the last hour every minute, for the Machines page's counted machines,
+  channels and edges.
+
 A stock or flow bound to a series in another store (``SeriesRef.source``, from ``[[sources]]``)
 is read through the sources' catalogue (``orchestra.sources.catalogue``) for the same window.
 
@@ -29,9 +33,11 @@ from ..sd.model import SeriesRef
 from ..sd.store import ModelStore
 from ..sources.catalogue import Catalogue
 from .machines import MachineIndex, last_writes
+from .traffic import READ_S, READ_STEP_S, summarise
 
 INDEX_EVERY_S = 5.0
 SERIES_EVERY_S = 60.0
+COUNTED_EVERY_S = 60.0
 LEVELS_EVERY_S = 15.0
 HISTORY_EVERY_S = 15.0
 HISTORY_S = 3600.0
@@ -49,6 +55,7 @@ class Refresher:
         self.written: dict[tuple[str, str], float] = {}     # (machine, instance) -> its latest write
         self.levels: dict[str, dict] = {}
         self.history: dict = {}
+        self.counted: dict | None = None                    # counted traffic, summarised (traffic.summarise)
         self.at: dict[str, float] = {}
         self.errors: dict[str, str] = {}
         self.catalogue = Catalogue(project, metrics)
@@ -70,6 +77,13 @@ class Refresher:
             dumped = self.metrics.dump("", {"project": self.project.key})
             self.series = [(name, labels) for name, labels, _ in dumped]
             self.written = last_writes(dumped)
+
+    def _counted(self) -> None:
+        if not self.catalogue.specs.sources:
+            return
+        now = time.time()
+        got, failed = self.catalogue.counted(now - READ_S, now, READ_STEP_S)
+        self.counted = {**summarise(got, now), "failed": failed}
 
     def model(self):
         cached = self.models.latest_discovery()
@@ -107,6 +121,7 @@ class Refresher:
         while not self._stop.is_set():
             self._do("index", INDEX_EVERY_S, self.index.update)
             self._do("series", SERIES_EVERY_S, self._series)
+            self._do("counted", COUNTED_EVERY_S, self._counted)
             self._do("levels", LEVELS_EVERY_S, self._levels)
             self._do("history", HISTORY_EVERY_S, self._history)
             self._stop.wait(1.0)

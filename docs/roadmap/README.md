@@ -114,6 +114,11 @@ discovery fills and corrects it.
     we cannot or should not read. Pub/Sub comes through Cloud Monitoring; the test case is
     RabbitMQ's own counts. It feeds machine discovery, the event map (a separate edge style) and
     the model: counts become flows, backlogs become stocks.
+    **Phase 1 built 2026-10-27 (SPEC §2, §4.3, §4.4, §10):** `traffic` on series definitions,
+    presets, `[sources.producers]`, counted machines, channels and double-line edges on the
+    Machines page, copy flows in discovery. Tested against RabbitMQ with a simulated fleet
+    (`~/orchestra-bridges/orchestra_bridges/rabbitmq/`). Not yet: the Pub/Sub preset and
+    simulator, the topology poller and info-series join, loose balances with measured leaks.
   - **Bridges** that turn Jira, Slack, Confluence and Docs changes into metadata-only events on
     our bus. The test cases are GitHub issues, then Bluesky.
   - **The Slack 15-minute expectation** becomes a measurable stock of unanswered pings.

@@ -19,7 +19,10 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
 2. **Machines are outside Orchestra, and known only by observation.** A
    machine is its CloudEvents `source` (`<machine>/<instance>` for one of
    several instances), the events it publishes and listens for, how it says it
-   is engaged (continuous, scheduled, ad hoc), and the series it writes. The Machines page, the collectors and the
+   is engaged (continuous, scheduled, ad hoc), and the series it writes; or the
+   producer or consumer a series definition attributes counted traffic to on
+   another system's bus (`orchestra/sources/traffic.py`): known by counts, never
+   by events. The Machines page, the collectors and the
    model read what is observed, never a machine's description of itself. The
    exceptions are what an instance announces in `orchestra.machine.started`:
    its mode, what it listens for, its kind (program, agent, person, service),
@@ -34,7 +37,8 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    exit code): a process is a machine only by what it publishes.
 3. **Every event carries the CloudEvents envelope.** `orchestra.events`
    writes it; Orchestra reads the envelope and never the `data` payload, which
-   belongs to the machines that use it.
+   belongs to the machines that use it. Counted traffic is never turned into
+   events: no envelope is made from a count.
 4. **There is one system and one model.** Never split topics, models or views
    per package or per domain. Packages and metadata label; they never
    separate. The model changes by new versions; past versions stay readable.

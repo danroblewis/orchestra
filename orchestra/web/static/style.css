@@ -93,7 +93,7 @@ svg.netgraph { display:block; width:100%; min-height:0; font-size:11px; cursor:g
 .ng-cloud { fill:none; stroke:var(--muted); stroke-width:1.2; opacity:.7 } .ng-edge.ng-outside .ng-line { opacity:.5 } .ng-edge.ng-outside .ng-flowdash { opacity:.4 } .ng-grab { fill:transparent; pointer-events:all } .ng-cloud:hover, .ng-node:hover .ng-cloud { stroke:var(--text) }
 .ng-halo { fill:none; stroke:url(#ng-halo); stroke-width:4; stroke-dasharray:14 10; stroke-linecap:round; filter:drop-shadow(0 0 5px #60a5fa); animation:ng-halo 2.4s linear infinite; transform-box:fill-box; transform-origin:center }
 @keyframes ng-halo { to { transform:rotate(360deg) } }
-.ng-line { fill:none; opacity:.85 } .ng-hit { fill:none; stroke:transparent; stroke-width:12; cursor:pointer }
+.ng-line { fill:none; opacity:.85 } .ng-gap { fill:none; stroke:var(--panel2); stroke-width:1.8; pointer-events:none } .ng-double .ng-line, .ng-double .ng-line.ng-hover, .ng-hl.ng-double .ng-line { stroke-width:5 } .ng-hit { fill:none; stroke:transparent; stroke-width:12; cursor:pointer }
 .ng-flowdash { fill:none; stroke:#fff; stroke-width:2.2; stroke-dasharray:2 14; opacity:.7; pointer-events:none; animation:ng-flow linear infinite }
 @keyframes ng-flow { to { stroke-dashoffset:-32 } }
 .ng-elabel { fill:var(--text); font-size:10.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px; pointer-events:none } .ng-elabel tspan + tspan { font-weight:600 }

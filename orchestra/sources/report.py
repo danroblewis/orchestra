@@ -72,6 +72,11 @@ def infer(cat: Catalogue, project, only: str | None = None) -> list[str]:
         for d in inf.kept:
             out.append(f"    {spec.prefix}:{d.name} by ({', '.join(d.group_by)}) [{d.view}, {d.kind}] score {d.score}: {d.query}"
                        + (f"  ({'; '.join(d.flags)})" if d.flags else ""))
+            if d.traffic:
+                t = d.traffic
+                out.append(f"      counted traffic: {t['direction']}, channel {t['channel']}, machine {t.get('machine') or 'unattributed'}"
+                           + (f" (or [sources.producers]: {', '.join(f'{k} = {v}' for k, v in spec.producers.items())})"
+                              if t["direction"] == "out" and spec.producers else ""))
         out.append("  left out:")
         for d in inf.left_out:
             out.append(f"    {d.name} by ({', '.join(d.group_by)}) [{d.view}]: {d.why}")

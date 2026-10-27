@@ -20,6 +20,7 @@ from .background import Refresher
 from .core import CoreProbe
 from .core_explore import Explorer
 from .dynamics import model_view
+from .traffic import merge as merge_counted
 
 STATIC = Path(__file__).parent / "static"
 
@@ -181,11 +182,15 @@ def create_app(project: Project) -> FastAPI:
 
     @app.get("/api/machines")
     def machines() -> dict:
-        """The machines seen on the bus and who publishes and listens for what: from the web
-        server's background index, never a read of the bus on request."""
+        """The machines seen on the bus and who publishes and listens for what, and the machines,
+        channels and counted edges known from counted traffic: from the web server's background
+        reads, never a read of the bus or a source on request."""
         if not bg.ready("index"):
             return {"ok": False, "error": "reading the event bus for the first time…", "warming": True}
         out = {"ok": True, **bg.index.view(bg.series, written=bg.written)}
+        merge_counted(out, bg.counted, time.time())
+        if bg.counted and bg.counted.get("failed"):
+            out["counted_failed"] = bg.counted["failed"]
         declare(out["machines"])
         # the host publishes only when it starts and stops; whether it runs is in the runtime record
         up = bool(runtime.hosts(runtime.read(project)))

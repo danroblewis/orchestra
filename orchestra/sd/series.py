@@ -32,10 +32,14 @@ class Declared:
     """What a series is, said by whoever defined it (a source's view, a ``[[series]]``) rather than
     guessed from its name: a ``counter`` or a ``level``. A counter read from another store
     (``baseline``) was counting before the window began: its first sample is where it stood, not
-    events, so steps before it take its value instead of zero."""
+    events, so steps before it take its value instead of zero. Counted traffic (a source's
+    definition said so: ``orchestra.sources.traffic``) also says its ``direction`` (out, in,
+    backlog) and ``channel``."""
 
     kind: str
     baseline: bool = False
+    direction: str | None = None
+    channel: str | None = None
 
 
 def series_key(name: str, labels: dict[str, str]) -> str:
@@ -55,6 +59,7 @@ class Series:
     members: list = field(default_factory=list)   # the instances' series, when this one sums them (sum_instances)
     intervals: list[tuple[float, float]] | None = None   # when it was live; None: a machine-less series written as things happen, so always
     live: list[int] | None = None                        # the grid steps inside those intervals; None: every step
+    traffic: tuple[str, str] | None = None               # counted traffic: (direction, channel), when a definition said so
 
     @property
     def key(self) -> str:
@@ -142,7 +147,10 @@ def sample(dump, start: float, step: float, n: int, kinds: dict[str, Declared] |
             last = got.get(t, last)
             vals.append(first if last is None else last)
         counter = said.kind == "counter" if said else _is_counter(name, vals)
-        out.append(Series(name, dict(labels), pts, vals, counter))
+        ser = Series(name, dict(labels), pts, vals, counter)
+        if said and said.direction and said.channel:
+            ser.traffic = (said.direction, said.channel)
+        out.append(ser)
     machines = alive(out, start, times[-1])
     return [mark_live(ser, machines.get(machine_of(ser)), start, step, n) for ser in out]
 

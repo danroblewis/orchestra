@@ -17,7 +17,9 @@ equation of each flow, and the machine behind each flow:
    coincide by chance). The level's own machine's counters come first (its record of its
    transitions): when they balance it within the tolerance, another machine's counter never
    replaces one of them, and enters only to explain the residual they leave; every counter is
-   searched only when the machine's own do not balance it. A level is kept only if the balance
+   searched only when the machine's own do not balance it. A channel's backlog (counted traffic,
+   ``orchestra.sources.traffic``) is first balanced by its own traffic: what was produced into the
+   channel, less what its own consumer took (``channel_balance``). A level is kept only if the balance
    fits (R² ≥ ``MIN_R2``); everything else is left out, with the reason. With every balance
    known, a counter that stands in for others gives way to them (``sd.restate``: Orchestra's
    event counter to the machine counters it sums, another machine's copy to the machine's own,
@@ -405,6 +407,8 @@ def _alike(a: Series, b: Series) -> dict[str, float]:
 
 
 def _twins(a: Series, b: Series, a_terms: list, b_terms: list, same_flow) -> bool:
+    if a.traffic and b.traffic and a.traffic[0] == b.traffic[0] == "backlog":
+        return False            # two queues a source declared: never one stock measured twice, however alike (one consumer acks both at once)
     if _equal_steps(a, b) >= TWIN_STEPS or _same_balance(a_terms, b_terms, same_flow):
         return True
     alike = _alike(a, b)
@@ -439,6 +443,23 @@ def own_balance(s: Series, counters: list[Series], steps: list[int], fits) -> tu
         if r2b > r2 + MIN_GAIN:
             return terms + more, r2b, exact2
     return terms, r2, exact
+
+
+def channel_balance(s: Series, counters: list[Series], steps: list[int], fits) -> tuple[list | None, float, float]:
+    """A channel's backlog balanced by its own traffic, when the source's definitions said what
+    each count is (``orchestra.sources.traffic``): what was produced into the channel, less what
+    the backlog's own consumer (its machine) took from it. Searched first, as a level's own
+    machine's counters are, and kept only when it balances within the tolerance: a prior the data
+    must bear out (decision D4). Otherwise another consumer that keeps up, whose acks run a moment
+    behind the publishes, is as good a stand-in for the channel's inflow as the publishes
+    themselves. None when the level is no backlog, or its traffic does not balance it."""
+    if not s.traffic or s.traffic[0] != "backlog":
+        return None, 0.0, 0.0
+    channel = s.traffic[1]
+    mates = [c for c in counters if c.traffic and c.traffic[1] == channel
+             and (c.traffic[0] == "out" or (c.traffic[0] == "in" and machine_of(c) == machine_of(s)))]
+    terms, r2, exact = balance(s, mates, None, steps) if mates else ([], 0.0, 0.0)
+    return (terms, r2, exact) if terms and fits(s, r2, exact) else (None, 0.0, 0.0)
 
 
 def _same_balance(a: list, b: list, same_flow) -> bool:
@@ -564,7 +585,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                                "too few to tell a balance from coincidence")
             continue
         masks[s.key] = steps
-        terms, r2, exact = own_balance(s, counters, steps, fits)
+        terms, r2, exact = channel_balance(s, counters, steps, fits)
+        if terms is None:
+            terms, r2, exact = own_balance(s, counters, steps, fits)
         if terms is None:
             key = tuple(steps)
             if key not in solvers and counters:

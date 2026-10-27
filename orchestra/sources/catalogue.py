@@ -9,7 +9,11 @@ fails with nothing cached, past its deadline) is **missing**: the reading says s
 caller (``sd.rediscover``) discovers from what arrived but saves no version, so an outage neither
 churns versions nor deletes stocks. Every range is re-runnable: nothing assumes the last reading
 was recent, and the stretches of the window in which a source returned nothing are recorded as
-its gaps (a laptop that slept, a server that was down)."""
+its gaps (a laptop that slept, a server that was down).
+
+A definition of **counted traffic** (``traffic.py``) is read like any other; the reading records,
+per result series, the direction, channel and machine it counts for (``Reading.traffic``, and in
+its provenance). ``counted`` reads only those definitions, for the Machines page."""
 
 from __future__ import annotations
 
@@ -38,6 +42,7 @@ class Reading:
     provenance: dict[str, dict] = field(default_factory=dict)      # series key -> source, query, origin, ...
     status: dict[str, dict] = field(default_factory=dict)          # source name -> what happened
     missing: dict[str, str] = field(default_factory=dict)          # source name -> why it is missing
+    traffic: dict[str, dict] = field(default_factory=dict)         # series key -> direction, channel, machine (counted traffic)
 
 
 def gaps(times: list[float], start: float, end: float, step: float) -> list[list[float]]:
@@ -50,9 +55,9 @@ def gaps(times: list[float], start: float, end: float, step: float) -> list[list
     return out
 
 
-def provenance(spec: SourceSpec, d: Definition) -> dict:
+def provenance(spec: SourceSpec, d: Definition, traffic: dict | None = None) -> dict:
     return {"source": spec.name, "query": d.query, "kind": d.kind, "origin": list(d.origin), "resolution_s": d.resolution_s,
-            "unit": d.unit, "view": d.view, "family": d.family, "flags": list(d.flags)}
+            "unit": d.unit, "view": d.view, "family": d.family, "flags": list(d.flags), **({"traffic": traffic} if traffic else {})}
 
 
 class Catalogue:
@@ -82,34 +87,23 @@ class Catalogue:
             return
         st.update(inferred_at=inf.at, definitions=len(inf.kept), left_out=len(inf.left_out), script=inf.script,
                   inference_error=inf.error)
-        errors: list[str] = []
-        results: dict[str, list] = {}
-        with ThreadPoolExecutor(spec.concurrency) as pool:
-            futs = {pool.submit(read_definition, src, d, spec.prefix, spec.machine, start, end, step): d for d in inf.kept}
-            done, late = wait(futs, timeout=spec.deadline)
-            for f in late:
-                f.cancel()
-            for f in done:
-                d = futs[f]
-                try:
-                    results[d.id] = f.result()
-                except SourceError as e:
-                    errors.append(f"{d.name}: {e}")
-        if late:
-            errors.append(f"{len(late)} of {len(inf.kept)} reads were not done within the deadline of {spec.deadline:g} s")
+        results, errors = self._read_all(spec, inf.kept, start, end, step)
         times: list[float] = []
         n = 0
         refused: list[str] = []
         for d in inf.kept:
-            for name, labels, pts in results.get(d.id, []):
+            for name, labels, pts, counted in results.get(d.id, []):
                 key = series_key(name, labels)
                 if name in own_names or key in out.provenance:
                     refused.append(key)
                     continue
                 out.dump.append((name, labels, pts))
                 out.kinds[key] = Declared("counter" if d.kind in ("counter", "rate") else "level",
-                                          baseline=d.kind == "counter" and d.view != "increments")
-                out.provenance[key] = provenance(spec, d)
+                                          baseline=d.kind == "counter" and d.view != "increments",
+                                          direction=(counted or {}).get("direction"), channel=(counted or {}).get("channel"))
+                out.provenance[key] = provenance(spec, d, counted)
+                if counted:
+                    out.traffic[key] = counted
                 times += [t for t, _ in pts]
                 n += 1
         q = min((grid_step(step, d.resolution_s) for d in inf.kept), default=step)
@@ -121,6 +115,45 @@ class Catalogue:
             out.missing[spec.name] = st["error"]
         else:
             st["ok"] = True
+
+    def _read_all(self, spec: SourceSpec, defs: list[Definition], start: float, end: float,
+                  step: float) -> tuple[dict[str, list], list[str]]:
+        """Every definition read from its source at once, within the source's deadline, all of
+        them ending ``settle`` before ``end``: the results by definition id, and what failed."""
+        src, errors, results = self.remotes[spec.name], [], {}
+        end = end - spec.settle
+        with ThreadPoolExecutor(spec.concurrency) as pool:
+            futs = {pool.submit(read_definition, src, d, spec.prefix, spec.machine, start, end, step, spec.producers): d for d in defs}
+            done, late = wait(futs, timeout=spec.deadline)
+            for f in late:
+                f.cancel()
+            for f in done:
+                d = futs[f]
+                try:
+                    results[d.id] = f.result()
+                except SourceError as e:
+                    errors.append(f"{d.name}: {e}")
+        if late:
+            errors.append(f"{len(late)} of {len(defs)} reads were not done within the deadline of {spec.deadline:g} s")
+        return results, errors
+
+    def counted(self, start: float, end: float, step: float) -> tuple[list[dict], dict[str, str]]:
+        """Every series of counted traffic over [start, end]: its source, name, labels, points,
+        direction, channel and machine; and the sources that failed, with why."""
+        out, failed = [], {}
+        for spec in self.specs.sources:
+            try:
+                defs = [d for d in self.inference(spec.name, start, end).kept if d.traffic]
+            except (SourceError, TransformError) as e:
+                failed[spec.name] = str(e)
+                continue
+            results, errors = self._read_all(spec, defs, start, end, step) if defs else ({}, [])
+            if errors:
+                failed[spec.name] = errors[0]
+            for d in defs:
+                for name, labels, pts, counted in results.get(d.id, []):
+                    out.append({"source": spec.name, "name": name, "labels": labels, "points": pts, "kind": d.kind, **counted})
+        return out, failed
 
     def read(self, start: float, end: float, step: float) -> Reading:
         out = Reading()
@@ -149,7 +182,8 @@ class Catalogue:
         spec = self.spec(name)
         for d in inf.kept:
             if f"{spec.prefix}:{d.name}" == ref.name:
-                for n, labels, pts in read_definition(self.remotes[name], d, spec.prefix, spec.machine, start, end, step):
+                for n, labels, pts, _ in read_definition(self.remotes[name], d, spec.prefix, spec.machine, start, end - spec.settle,
+                                                         step, spec.producers):
                     if series_key(n, labels) == series_key(ref.name, ref.labels):
                         return pts
         return []

@@ -22,7 +22,23 @@ source = "work"
 name = "checkout_errors"
 query = 'sum(rate(http_errors_total{svc="checkout"}[5m]))'
 kind = "rate"
+
+[[series]]                                  # a counter read from raw samples, reset-safe, summed by
+source = "work"                             # labels, and marked as counted traffic (traffic.py)
+name = "orders_published_total"
+select = '{__name__="broker_published_total"}'
+by = ["topic"]
+kind = "counter"
+traffic = { direction = "out", channel = "{topic}" }
 ```
+
+A source may name a ``preset`` (``preset.py``): a file of series definitions for one exporter, and
+defaults for the source table; ``infer = false`` reads only the declared series, and
+``[sources.producers]`` (channel = machine) names the producer of a channel whose counts name none.
+``settle`` ends every read from the source that long before now, so its series end together: a
+store that hides the newest samples from range queries but not from raw reads (VictoriaMetrics'
+``-search.latencyOffset``, 30 s by default) would otherwise give a counter read from raw samples
+steps its levels never saw.
 
 A source that cannot be used is **refused with its reason**, never half-used: a literal secret
 (a token, a password, ``user:pass@`` in the URL), a secret file inside the repository (it would be
@@ -38,6 +54,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from ..config import parse_duration
+from . import preset as presets
+from . import traffic as counted
 from .auth import AuthSpec, auth_problems
 
 NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
@@ -68,6 +86,10 @@ class SourceSpec:
     concurrency: int = 4
     infer_every: float = 3600.0
     insecure: bool = False
+    infer: bool = True                  # False: read only the declared series (a preset's), never the schema
+    settle: float = 0.0                 # every read from this source ends this long before now: the store's own delay
+    producers: dict[str, str] = field(default_factory=dict)      # channel -> the machine producing into it (declared)
+    preset: str | None = None
 
     def aliases(self) -> dict[str, str]:
         """real -> canonical for a query someone wrote (a script's, a declared series'): every
@@ -88,9 +110,12 @@ class SourceSpec:
 class DeclaredSeries:
     source: str
     name: str
-    query: str
+    query: str                          # PromQL; for a select, the selector whose raw samples are read
     kind: str = "level"
     unit: str | None = None
+    by: list[str] | None = None         # a select's counters are summed by these labels (as the store spells them)
+    traffic: dict | None = None         # counted traffic (traffic.py)
+    preset: str | None = None           # the preset it came from
 
 
 @dataclass
@@ -136,6 +161,9 @@ def _source(raw: dict, repo_root: Path) -> SourceSpec:
     labels = raw.get("labels") or {}
     if not isinstance(labels, dict) or not all(isinstance(v, list) for v in labels.values()):
         raise ValueError("[sources.labels]: canonical = [spellings]")
+    producers = raw.get("producers") or {}
+    if not isinstance(producers, dict) or not all(isinstance(v, str) and v for v in producers.values()):
+        raise ValueError("[sources.producers]: channel = \"machine\"")
     transform = raw.get("transform") or {}
     match = raw.get("match") or ['{__name__=~".+"}']
     return SourceSpec(
@@ -147,16 +175,34 @@ def _source(raw: dict, repo_root: Path) -> SourceSpec:
         queries_script=transform.get("queries"), script_timeout=parse_duration(transform.get("timeout"), 20.0),
         timeout=parse_duration(raw.get("timeout"), 30.0), deadline=parse_duration(raw.get("deadline"), 120.0),
         max_points=int(raw.get("max_points", 11000)), concurrency=max(1, int(raw.get("concurrency", 4))),
-        infer_every=parse_duration(raw.get("infer_every"), 3600.0), insecure=bool(raw.get("insecure", False)))
+        infer_every=parse_duration(raw.get("infer_every"), 3600.0), insecure=bool(raw.get("insecure", False)),
+        infer=bool(raw.get("infer", True)), settle=parse_duration(raw.get("settle"), 0.0), producers={str(k): v for k, v in producers.items()}, preset=raw.get("preset"))
+
+
+def _series(r: dict) -> DeclaredSeries:
+    """One ``[[series]]`` definition, checked; raises ``ValueError`` with what it needs."""
+    name, kind, query, select = str(r.get("name") or ""), r.get("kind", "level"), r.get("query"), r.get("select")
+    if not NAME.match(name) or kind not in KINDS or bool(query) == bool(select):
+        raise ValueError(f"needs a name (lower-case letters, digits, _), a query or a select (one of them) and a kind in {sorted(KINDS)}")
+    if select and kind != "counter":
+        raise ValueError("a select reads a counter's raw samples: kind = \"counter\"")
+    by = r.get("by")
+    if by is not None and (not select or not isinstance(by, list) or not all(isinstance(x, str) for x in by)):
+        raise ValueError("by = [labels] goes with a select")
+    traffic = counted.parse(r["traffic"], kind) if r.get("traffic") is not None else None
+    return DeclaredSeries(r.get("source"), name, str(query or select), kind, r.get("unit"),
+                          list(by or []) if select else None, traffic, r.get("preset"))
 
 
 def load(raw: dict, repo_root: Path) -> Specs:
     """The sources and declared series ``orchestra.toml`` names; the refused ones with why."""
     out = Specs()
+    series = [(f"series[{i}]", r or {}) for i, r in enumerate(raw.get("series") or [])]
     for i, r in enumerate(raw.get("sources") or []):
         label = str((r or {}).get("name") or f"sources[{i}]")
         try:
-            s = _source(r or {}, Path(repo_root))
+            r, from_preset = presets.apply(r or {}, Path(repo_root))
+            s = _source(r, Path(repo_root))
         except ValueError as e:
             out.refused[label] = str(e)
             continue
@@ -164,15 +210,15 @@ def load(raw: dict, repo_root: Path) -> Specs:
             out.refused[label] = "the name is used by another source"
             continue
         out.sources.append(s)
-    for i, r in enumerate(raw.get("series") or []):
-        r = r or {}
-        src, name, query, kind = r.get("source"), str(r.get("name") or ""), r.get("query"), r.get("kind", "level")
-        if not any(s.name == src for s in out.sources):
-            out.refused[f"series[{i}]"] = f"source {src!r} is not a usable source"
-        elif not NAME.match(name) or not query or kind not in KINDS:
-            out.refused[f"series[{i}]"] = f"needs a name (lower-case letters, digits, _), a query and a kind in {sorted(KINDS)}"
-        else:
-            out.declared.append(DeclaredSeries(src, name, str(query), kind, r.get("unit")))
+        series += [(f"{s.name} preset series[{j}]", x) for j, x in enumerate(from_preset)]
+    for label, r in series:
+        if not any(s.name == r.get("source") for s in out.sources):
+            out.refused[label] = f"source {r.get('source')!r} is not a usable source"
+            continue
+        try:
+            out.declared.append(_series(r))
+        except ValueError as e:
+            out.refused[label] = str(e)
     return out
 
 

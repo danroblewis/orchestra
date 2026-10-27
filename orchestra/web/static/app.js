@@ -31,17 +31,21 @@ Orchestra.machineCards = (() => {
     // What Orchestra observed of a machine, as the rows of its card, drawn under whatever its
     // package put there: how it is engaged and what kind of thing it is (announced), its package,
     // its instances, when it was seen, what it publishes (all time, and the rate in the last ten
-    // minutes when there is one) and listens for, and the metrics it writes. One function, so
-    // every card shows the same rows.
+    // minutes when there is one) and listens for, the metrics it writes, and its counted traffic
+    // on another system's bus (rates and backlogs, never events). One function, so every card
+    // shows the same rows.
     rows(m) {
       const now = Date.now() / 1000;
       const chip = (p) => `<span class="ty" title="${p.count} events, ${p.day} in 24 h, ${p.per_min_10m}/min in the last 10 min">${esc(p.type)} · ${p.count}${p.per_min_10m ? ` · ${p.per_min_10m}/min` : ""}</span>`;
       return `<div class="row"><span class="muted">engaged</span><span>${m.mode ? `<span class="tag k-${esc(m.mode.replace(/ /g, "_"))}">${esc(m.mode.replace("_", " "))}</span>` : '<span class="muted">not announced</span>'}</span><span class="muted">kind</span><span>${m.kind ? `<span class="tag">${esc(kindWord(m.kind))}</span>` : '<span class="muted">not announced</span>'}</span></div>
     <div class="row"><span class="muted">package</span><span>${m.package ? esc(m.package) : '<span class="muted">no package</span>'}</span></div>
     ${m.instances && m.instances.length ? `<div class="row"><span class="muted">instances</span>${m.instances.map((i) => `<span class="ty" title="last seen ${ago(now - i.last_seen)} ago"><span class="dot ${i.active ? "" : "off"}" style="--rc:${i.active ? "#22c55e" : "#64748b"};width:7px;height:7px"></span> ${esc(i.id)}</span>`).join("")}</div>` : ""}
-    <div class="row"><span class="muted">seen</span><span>${m.first_seen ? `first ${ago(now - m.first_seen)} ago, last ${ago(now - m.last_seen)} ago` : "no events yet"}</span></div>
+    <div class="row"><span class="muted">seen</span><span>${m.first_seen ? `first ${ago(now - m.first_seen)} ago, last ${ago(now - m.last_seen)} ago` : m.counted_only ? (m.last_seen ? `known by counts only; last counted ${ago(now - m.last_seen)} ago` : "known by counts only") : "no events yet"}</span></div>
     <div class="row"><span class="muted">publishes</span>${(m.publishes || []).map(chip).join("") || '<span class="muted">nothing</span>'}</div>
     <div class="row"><span class="muted">listens for</span>${(m.subscribes || []).map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">nothing</span>'}</div>
+    ${(m.counted || []).length ? `<div class="row"><span class="muted">counted</span>${m.counted.map((t) => t.direction === "backlog"
+      ? `<span class="ty" title="what waits for it in ${esc(t.channel)}">${esc(t.channel)} · ${Math.round(t.backlog ?? 0).toLocaleString()} waiting</span>`
+      : `<span class="ty" title="${Math.round(t.window).toLocaleString()} in the last hour, counted on another system's bus">${t.direction === "out" ? "→" : "←"} ${esc(t.channel)} · ${t.per_min}/min</span>`).join("")}</div>` : ""}
     <div class="row"><span class="muted">metrics</span>${(m.metrics || []).map((x) => `<span class="ty">${esc(x)}</span>`).join("") || `<span class="muted">none labelled machine="${esc(m.id)}"</span>`}</div>`;
     },
     rank(m) { if (m.bootstrap) return 0; const s = this.of(m); try { return s && s.rank ? s.rank(m) : 50; } catch (e) { return 50; } },

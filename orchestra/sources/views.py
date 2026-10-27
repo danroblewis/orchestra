@@ -63,6 +63,7 @@ class Definition:
     score: float = 0.0
     why: str = ""
     counts: str = ""             # for a count and its turnover: what is counted, so one family counts it
+    traffic: dict = field(default_factory=dict)          # counted traffic, when a definition says so (traffic.py)
 
 
 def count_window(resolution_s: float | None) -> int:
