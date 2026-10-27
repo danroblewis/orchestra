@@ -102,3 +102,48 @@ def test_match_needs_increments_that_agree_and_allows_a_step_of_lag():
     assert match(counter(steps), late)["lag_steps"] == 1
     assert match(counter(steps), counter([0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 5, 10])) is None
     assert associate(None, [])["why"].startswith("no machine associated yet")
+
+
+def cumulative(n, at):
+    """A counter over ``n`` steps that moves once at each step in ``at``."""
+    out, total = [], 0
+    for i in range(n):
+        total += at.count(i)
+        out.append(total)
+    return counter(out)
+
+
+MOVES = [12, 31, 32, 58, 77, 103, 140, 141, 166, 190]       # the live sample's shape: 10 transitions in a burst or two
+
+
+def test_events_that_straddle_a_step_boundary_still_match_event_by_event():
+    # 2 of the 10 events land a step before the counter moves, the rest on time: no single lag
+    # makes the increments equal in 90% of the steps, but every event pairs within a step
+    early = [m - 1 if k in (2, 6) else m for k, m in enumerate(MOVES)]
+    found = match(cumulative(200, MOVES), cumulative(200, early))
+    assert found is not None and found["test"] == "event by event" and found["confidence"] >= 0.9
+    assert found["paired"] == {"flow": 1.0, "events": 1.0} and found["counts"] == {"flow": 10.0, "events": 10.0}
+    assoc = associate(cumulative(200, MOVES), [Series("orchestra_events_total", {"type": "task.reported", "source": "worker/1"}, [],
+                                                     cumulative(200, early).values, True)])
+    assert [h["machine"] for h in assoc["hypotheses"]] == ["worker"] and "within a step" in assoc["hypotheses"][0]["why"]
+
+
+def test_events_that_cover_every_increment_and_more_match_one_sided():
+    # the worker accepts 10 tasks: 6 from OPEN, 4 back from REJECTED; the OPEN counter's every
+    # increment has an accept beside it, and the other 4 feed another flow
+    accepted = sorted(MOVES[:6] + [45, 120, 150, 180])
+    found = match(cumulative(200, MOVES[:6]), cumulative(200, accepted))
+    assert found["test"] == "covers every increment" and 0.5 < found["confidence"] <= 0.6     # 6 of 10, less chance
+
+
+def test_an_unrelated_machine_does_not_match_event_by_event():
+    rng = random.Random(3)
+    for _ in range(20):
+        other = sorted(rng.sample(range(200), 10))               # as many events, at other times
+        assert match(cumulative(200, MOVES), cumulative(200, other)) is None
+    near = [m + 2 for m in MOVES]                                # always two steps late: not within a step
+    assert match(cumulative(200, MOVES), cumulative(200, near)) is None
+    # a busy machine publishing in most steps would cover any counter by chance: never matched this way
+    busy_counter = [i for i in range(200) if rng.random() < 0.4]
+    busy = [i for i in range(200) if rng.random() < 0.6]
+    assert match(cumulative(200, busy_counter), cumulative(200, busy)) is None
