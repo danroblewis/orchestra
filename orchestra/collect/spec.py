@@ -1,10 +1,10 @@
-"""The collectors ``orchestra.toml`` declares, ``[[collect]]`` (a command) and ``[[scrape]]`` (a
+"""The instruments ``orchestra.toml`` declares, ``[[collect]]`` (a command) and ``[[scrape]]`` (a
 URL), and those the plugins declare (``Plugin.collectors``).
 
 ::
 
     [[collect]]
-    name = "disk"                    # the machine's id: letters, digits, . _ -
+    name = "disk"                    # the instrument's id: letters, digits, . _ -
     command = "machines/disk.sh"     # split like a shell would, not run by one
     every = "60s"                    # how often (default 60 s)
     timeout = "20s"                  # how long one round may take (default 10 s, never more than every)
@@ -14,9 +14,8 @@ URL), and those the plugins declare (``Plugin.collectors``).
     url = "http://127.0.0.1:9100/metrics"
     every = "30s"
 
-A ``[[scrape]]`` may take the name of the ``[[machines]]`` entry whose program it reads, so the
-program and its measurements are one machine; a ``[[collect]]`` may not. A plugin's collector is
-named ``<plugin>.<name>``; a project entry of that name takes its place. An entry that cannot be
+An instrument's name is its own: it may share a ``[[machines]]`` entry's name (a scrape of the
+program that entry runs, say) without being that machine. A plugin's collector is named ``<plugin>.<name>``; a project entry of that name takes its place. An entry that cannot be
 used is left out, with the reason; the others stand."""
 
 from __future__ import annotations
@@ -53,24 +52,22 @@ class Collector:
         return cls(name, "collect", command, **kw)
 
     @property
-    def mode(self) -> str:
-        """How the machine is engaged: a command is run by the clock; a scraped program runs on its own."""
-        return "scheduled" if self.kind == "collect" else "continuous"
+    def what(self) -> str:
+        """What kind of instrument it is, in a word: a script, or a URL."""
+        return "script" if self.kind == "collect" else "URL"
 
     def argv(self) -> list[str]:
         return shlex.split(self.target)
 
 
-def check(c: Collector, accepted: Iterable[Collector], programs: set[str]) -> str | None:
+def check(c: Collector, accepted: Iterable[Collector]) -> str | None:
     """Why ``c`` cannot be run beside the collectors already ``accepted``, or None."""
     if not isinstance(c.name, str) or not NAME.match(c.name):
         return f"bad name {c.name!r}: use letters, digits, '.', '_' and '-'"
     if c.name == HOST or any(o.name == c.name for o in accepted):
-        return f"{c.name}: the name is taken (by Orchestra's host or another collector)"
+        return f"{c.name}: the name is taken (by Orchestra's host or another instrument)"
     if c.kind not in KINDS:
         return f"{c.name}: kind must be collect or scrape, not {c.kind!r}"
-    if c.kind == "collect" and c.name in programs:
-        return f"{c.name}: a [[machines]] entry has the name (only a [[scrape]] of that program may share it)"
     field = "command" if c.kind == "collect" else "url"
     if not isinstance(c.target, str) or not c.target.strip():
         return f"{c.name}: needs a {field}"
@@ -105,7 +102,6 @@ def from_toml(raw: dict, plugins: Iterable[Collector] = ()) -> tuple[list[Collec
     """The collectors of a parsed ``orchestra.toml`` and of the plugins (each named
     ``<owner>.<name>``), and why any entry was left out. A project entry wins over a plugin's of the
     same name."""
-    programs = {m.get("name") for m in raw.get("machines") or [] if isinstance(m, dict)}
     out: list[Collector] = []
     errors: list[str] = []
     for kind in KINDS:
@@ -116,7 +112,7 @@ def from_toml(raw: dict, plugins: Iterable[Collector] = ()) -> tuple[list[Collec
         for i, entry in enumerate(entries):
             try:
                 c = _one(kind, entry)
-                if (why := check(c, out, programs)) is not None:
+                if (why := check(c, out)) is not None:
                     raise ConfigError(why)
             except ConfigError as e:
                 errors.append(f"[[{kind}]] entry {i + 1}: {e}; left out")
@@ -130,7 +126,7 @@ def from_toml(raw: dict, plugins: Iterable[Collector] = ()) -> tuple[list[Collec
             continue
         if isinstance(c.every_s, int | float) and isinstance(c.timeout_s, int | float) and c.timeout_s > c.every_s:
             c = replace(c, timeout_s=c.every_s)
-        if (why := check(c, out, programs)) is not None:
+        if (why := check(c, out)) is not None:
             errors.append(f"plugin {c.owner}: {why}; left out")
             continue
         out.append(c)

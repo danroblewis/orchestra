@@ -25,14 +25,16 @@ The web app mounts what it returns:
   kind of thing it is, how it is engaged and what it listens for, the same as an announcement
   says), so the Machines page lists one before it is first seen. What is observed always wins: a
   declaration only fills in a machine nobody has seen yet, and names the package a machine
-  belongs to;
+  belongs to. It says nothing about flows: which flows a machine's work relates to is only ever
+  inferred (``sd.attribute``);
 - its ``processes``, optionally: the commands ``orchestra run`` keeps running for it
   (``orchestra.launcher.Process``: a name, a command, a restart policy, and how long it may take
   to stop), such as a scheduler or
   the host of the programs it runs. Orchestra starts them as it starts the project's own
   ``[[machines]]`` and knows nothing else of them;
-- its ``collectors``, optionally: the scrapes and commands ``orchestra run`` reads measurements
-  from for it (``orchestra.collect.spec.Collector``: ``Collector.scrape(name, url, ...)`` or
+- its ``collectors``, optionally: the instruments ``orchestra run`` reads measurements from for
+  it (instruments, not machines: their series are labelled ``instrument=<name>`` and nothing is
+  announced for them) (``orchestra.collect.spec.Collector``: ``Collector.scrape(name, url, ...)`` or
   ``Collector.collect(name, command, ...)``), run like the project's ``[[scrape]]`` and
   ``[[collect]]`` entries and named ``<plugin>.<name>``; a project entry of that name takes the
   place of the plugin's.

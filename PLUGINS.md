@@ -1,14 +1,14 @@
 # Writing an Orchestra plugin
 
 A **plugin** is a Python package, installed beside Orchestra, that adds things to an Orchestra
-project: the programs `orchestra run` keeps running, the machines the Machines page lists before
-they are first seen, and pages, API routes, Dashboard panels and machine cards in the web UI. The
-task system (`~/orchestra-tasking`), the AI agents (`~/orchestra-agents`) and the bridges
-(`~/orchestra-bridges`) are plugins.
+project: the programs `orchestra run` keeps running, the instruments it measures with, the
+machines the Machines page lists before they are first seen, and pages, API routes, Dashboard
+panels and machine cards in the web UI. The task system (`~/orchestra-tasking`), the AI agents
+(`~/orchestra-agents`) and the bridges (`~/orchestra-bridges`) are plugins.
 
 This guide is for an engineer building one. It covers the interface exactly as the code on `main`
-defines it (`orchestra/plugins.py`, `orchestra/launcher.py`, `orchestra/host.py`,
-`orchestra/web/app.py`, `orchestra/web/static/app.js`), the rules a plugin lives under, how the
+defines it (`orchestra/plugins.py`, `orchestra/launcher.py`, `orchestra/collect/spec.py`,
+`orchestra/host.py`, `orchestra/web/app.py`, `orchestra/web/static/app.js`), the rules a plugin lives under, how the
 three existing plugins use the interface, and a walkthrough that builds a small plugin from
 nothing and runs it end to end. The walkthrough's code was run as shown.
 
@@ -48,13 +48,14 @@ machines gets the parts of Orchestra that a bare program cannot get by itself:
 | A bare machine can... | A plugin can also... |
 |---|---|
 | publish and read events over HTTP (the events endpoint, `USING_ORCHESTRA.md` §5.2), or through `orchestra.events.Events` | have `orchestra run` start, restart and stop its processes (`processes`) |
-| write series through `orchestra.metrics` | list its machines on the Machines page before they first run (`machines`) |
-| be kept running by a project's `[[machines]]` entry | add pages and API routes to the web UI (`pages`, `router`) |
-| be collected or scraped (`[[collect]]`, `[[scrape]]`) | draw its machines' cards and add Dashboard panels (`scripts`, `stylesheets`) |
+| be kept running by a project's `[[machines]]` entry | have `orchestra run` measure what it serves, with instruments of its own (`collectors`) |
+| be measured by the project's instruments (`[[collect]]`, `[[scrape]]`) | list its machines on the Machines page before they first run (`machines`) |
+| | add pages and API routes to the web UI (`pages`, `router`) |
+| | draw its machines' cards and add Dashboard panels (`scripts`, `stylesheets`) |
 
 A plugin adds nothing to the core. Orchestra never imports a plugin's modules by name, never reads
 its events' `data`, and never learns what its pages mean. The core treats a plugin as a few lists:
-paths to mount, commands to run and ids to show.
+paths to mount, commands to run, instruments to read and ids to show.
 
 ---
 
@@ -74,7 +75,7 @@ That is all the registration there is.
 
 - **Not listed in `orchestra.toml`.** Every plugin installed in the environment that runs
   `orchestra` is loaded for every project. A plugin decides for itself whether it does anything in
-  a given project, usually by checking for its own section of `orchestra.toml` (§4.6).
+  a given project, usually by checking for its own section of `orchestra.toml` (§4.6, §4.9).
 - **Read from installed metadata.** `importlib.metadata.entry_points(group="orchestra.plugins")`
   reads the entry points from the installed package's `entry_points.txt`, so the plugin must be
   installed in the same environment as Orchestra. An editable install picks up code changes
@@ -91,7 +92,7 @@ is called from two places, at different times:
 | Caller | When | What it uses |
 |---|---|---|
 | `orchestra web` (`web/app.py`, `mount_plugins`) | **once**, when the web server starts | `pages`, `static`, `router`, `scripts`, `stylesheets`, `machines` |
-| `orchestra run` (`host.py`, `Host._plugin_processes`) | when the host starts, and **again every time `orchestra.toml` changes** (after re-reading the config) | `processes` |
+| `orchestra run` (`host.py`, `Host._from_plugins`) | when the host starts, and **again every time `orchestra.toml` changes** (after re-reading the config); one load serves the launcher and the instruments | `processes`, `collectors` |
 
 ```mermaid
 flowchart TD
@@ -102,13 +103,14 @@ flowchart TD
         PKG -- "uv sync / pip install" --> META
     end
     WEB["orchestra web<br/>create_app → mount_plugins"] -- "once, at start" --> LOAD
-    HOST["orchestra run<br/>Host._plugin_processes"] -- "at start, and whenever<br/>orchestra.toml changes" --> LOAD
+    HOST["orchestra run<br/>Host._from_plugins"] -- "at start, and whenever<br/>orchestra.toml changes" --> LOAD
     LOAD["orchestra.plugins.load(project)<br/>entry_points(group=#quot;orchestra.plugins#quot;)"] -- reads --> META
     LOAD -- "ep.load()(project)" --> FN["your plugin(project)"]
     FN -- "returns a Plugin" --> OK["Loaded.plugins"]
     FN -- "raises, or returns<br/>something else" --> ERR["Loaded.errors"]
     OK --> MOUNT["web: mount pages, static,<br/>router, scripts, stylesheets;<br/>merge declared machines"]
     OK --> LAUNCH["host: launcher runs<br/>processes as #lt;plugin#gt;.#lt;name#gt;"]
+    OK --> COLL["host: instruments run<br/>collectors as #lt;plugin#gt;.#lt;name#gt;"]
     ERR --> REP["web: listed in /api/plugins errors<br/>host: logged; what it last declared stands"]
 ```
 
@@ -116,7 +118,9 @@ flowchart TD
 something that is not a `Plugin`, `load` logs a warning and records
 `{"plugin": <entry point name>, "error": ..., "trace": ...}`. The web app lists it under `errors` in
 `/api/plugins` and leaves the plugin out. The host logs `plugin X failed to load: ...; what it last
-declared, if anything, stands` and keeps running that plugin's processes as it last knew them.
+declared, if anything, stands` and keeps running that plugin's processes and instruments as it
+last knew them. A plugin whose `name` an earlier plugin already has is left out and reported the
+same way (`its name ... is taken by the plugin of entry point ...; left out`).
 
 Because the host calls your function on every `orchestra.toml` change, and builds your router each
 time only to throw it away, **`plugin(project)` must be cheap and have no side effects**. Open the
@@ -136,6 +140,7 @@ flowchart LR
         P_SCRIPTS["scripts, stylesheets"]
         P_MACH["machines: Declared(...)"]
         P_PROC["processes: Process(...)"]
+        P_COLL["collectors: Collector(...)"]
     end
     subgraph WEBAPP["orchestra web"]
         W_PAGE["GET /path (nav link: title)"]
@@ -146,6 +151,7 @@ flowchart LR
     end
     subgraph HOSTBOX["orchestra run (bootstrap host)"]
         LAUNCHER["launcher: keeps #lt;name#gt;.#lt;proc#gt; running,<br/>log: state/logs/machines/#lt;name#gt;.#lt;proc#gt;.log"]
+        INSTR["instruments: scrape or run #lt;name#gt;.#lt;coll#gt;<br/>on their intervals (not machines),<br/>log: state/logs/instruments/#lt;name#gt;.#lt;coll#gt;.log"]
     end
     PROCS["your processes<br/>(machines)"]
     BUS[("event bus<br/>orchestra.events.Events")]
@@ -158,26 +164,31 @@ flowchart LR
     P_SCRIPTS --> W_EVERY
     P_MACH --> W_MACH
     P_PROC --> LAUNCHER
+    P_COLL --> INSTR
     LAUNCHER -- "starts, restarts, stops" --> PROCS
     LAUNCHER -- "orchestra.process.*" --> BUS
     PROCS -- "announce, publish, listen" --> BUS
-    PROCS -- "write series" --> METRICS
+    INSTR -- "GET /metrics, or run a script" --> PROCS
+    INSTR -- "write series,<br/>labelled instrument=#lt;name#gt;" --> METRICS
     PROCS --- STATE
     W_API -. "reads" .-> BUS
     W_API -. "reads" .-> METRICS
     W_MACH -. "observed from" .-> BUS
-    W_MACH -. "observed from" .-> METRICS
+    W_MACH -. "lists series labelled machine=#lt;id#gt;" .-> METRICS
 ```
 
-The solid arrows are what the plugin declares and what its processes do. The dotted arrows are
-reads. What the Machines page shows about a machine comes from the bus and the metrics store; a
-declaration only fills in what has not been observed yet (rule 2).
+The solid arrows are what the plugin declares and what its processes and instruments do. The
+dotted arrows are reads. What the Machines page knows of a machine comes from the bus; a
+declaration only fills in what has not been observed yet (rule 2). Measurements come from
+instruments, which are not machines: they are on the Instruments page, not the Machines page
+(rule 7). A machine's card lists the series labelled `machine=<its id>`, if any, but a series
+never makes a machine.
 
 ---
 
 ## 4. The interface, field by field
 
-Everything is in `orchestra/plugins.py` and `orchestra/launcher.py`:
+Everything is in `orchestra/plugins.py`, `orchestra/launcher.py` and `orchestra/collect/spec.py`:
 
 ```python
 @dataclass
@@ -203,6 +214,7 @@ class Plugin:
     stylesheets: list[str] = field(default_factory=list)   # files in ``static`` every page links
     machines: list[Declared] = field(default_factory=list)
     processes: list[Process] = field(default_factory=list)   # what `orchestra run` starts for it
+    collectors: list[Collector] = field(default_factory=list)   # what `orchestra run` scrapes or runs for measurements
 
 # orchestra/launcher.py
 @dataclass
@@ -212,10 +224,25 @@ class Process:
     restart: str = "always"
     owner: str = "project"         # "project", or the plugin that declared it
     stop_grace_s: float | None = None   # from SIGTERM to SIGKILL when stopping it; None: STOP_GRACE_S
+
+# orchestra/collect/spec.py
+@dataclass(frozen=True)
+class Collector:
+    name: str
+    kind: str                  # "collect" (a command) or "scrape" (a URL)
+    target: str                # the command, or the URL
+    every_s: float = EVERY_S   # 60 s
+    timeout_s: float = TIMEOUT_S   # 10 s, never more than every_s
+    owner: str = "project"     # "project", or the plugin that declared it
+
+    @classmethod
+    def scrape(cls, name: str, url: str, **kw) -> Collector: ...
+    @classmethod
+    def collect(cls, name: str, command: str, **kw) -> Collector: ...
 ```
 
-That is the whole interface. There is no hook for CLI commands, config schemas, lifecycle
-callbacks or scrapes (§13).
+That is the whole interface. There is no hook for CLI commands, config schemas or lifecycle
+callbacks (§13).
 
 ### 4.1 `name`
 
@@ -225,7 +252,12 @@ The plugin's name. It is used:
 - as the prefix of its processes: a `Process("scheduler", ...)` from plugin `tasks` runs as
   `tasks.scheduler`, with its log at `<state>/logs/machines/tasks.scheduler.log`, and is recorded
   with `owner: "tasks"` in the runtime record, on the Core page and in `orchestra.process.started`;
+- as the prefix of its instruments: a `Collector.scrape("slack", ...)` from plugin `bridges` runs
+  as `bridges.slack` (§4.7);
 - as the `package` of the machines it declares (§4.5).
+
+Two plugins with one `name`: the first loaded is kept, the second is left out and reported
+(`Loaded.errors`, `/api/plugins` errors, the host's log).
 
 Keep it to letters, digits, `.`, `_` and `-`. The launcher checks `<name>.<process>` against that
 pattern and refuses (logs once, does not start) anything else. Use the same string as your entry
@@ -251,7 +283,7 @@ after Orchestra's own links. `app.js` adds the links on every page from `/api/pl
 ### 4.3 `static`
 
 A directory, mounted at `/plugins/<name>/static`. It is needed for `scripts` and `stylesheets`,
-which name files in it. Without `static`, those two lists are ignored.
+which name files in it. Without `static`, every file those two lists name is left out and reported (§4.8).
 
 ### 4.4 `router`
 
@@ -267,10 +299,11 @@ in the handler (`project.reload_config()`; the task system does it in a router d
 ### 4.5 `machines`: declared machines
 
 `Declared(id, kind, mode, listens_for)` lists a machine the package provides, so the Machines page
-shows it before it is first seen. The web app merges the declarations into every `/api/machines`
+shows it before it is first seen. A declaration is a placeholder: it never overrides what is
+observed and says nothing about flows. The web app merges the declarations into every `/api/machines`
 response (`mount_plugins.declare`):
 
-- **What is observed always wins.** For a machine already seen on the bus or in the metrics, a
+- **What is observed always wins.** For a machine already seen on the bus, a
   declaration only fills in `package` (the plugin's name) and `kind`, and only where no
   announcement gave them.
 - A machine not seen yet is added with `"unseen": true`, `package` = the plugin's name, and the
@@ -279,8 +312,15 @@ response (`mount_plugins.declare`):
 - Only `orchestra web` reads `machines`, and only once at start (§2). A machine declared because a
   section exists in `orchestra.toml` appears only after `orchestra web` restarts.
 
-This is AGENTS.md rule 2's exception: "the machines a plugin declares, which only fill in machines
-not seen yet and never override what is observed."
+- **It says nothing about flows.** Nothing in a plugin declares which flows a machine affects.
+  Whether a machine is associated with a flow is only ever inferred, as a hypothesis with its
+  evidence and confidence, from its events on the bus matching the flow's counter
+  (`orchestra/sd/attribute.py`, AGENTS.md rule 6). A declared machine that never publishes is
+  never a hypothesis for any flow.
+
+This is AGENTS.md rule 2's exception: "the machines a plugin declares (`Plugin.machines`):
+placeholders that only fill in machines not seen yet, never override what is observed, and say
+nothing about flows."
 
 ### 4.6 `processes`
 
@@ -327,7 +367,53 @@ Since the host asks again whenever `orchestra.toml` changes, adding the section 
 process within seconds and removing it stops the process. The walkthrough shows this working
 (§9.6).
 
-### 4.7 `scripts` and `stylesheets`
+### 4.7 `collectors`: instruments
+
+`Collector.scrape(name, url, ...)` and `Collector.collect(name, command, ...)` declare what
+`orchestra run` reads measurements from for the plugin: the same instruments as a project's
+`[[scrape]]` (a URL serving the Prometheus text format) and `[[collect]]` (a command that prints
+it) entries, with `every_s` and `timeout_s` in seconds (defaults 60 and 10; a timeout longer than
+`every_s` is cut to it).
+
+They declare **instruments, not machines** (AGENTS.md rule 7). An instrument measures and never
+acts:
+
+- It runs as `<plugin>.<name>` (`bridges.slack`), with `owner` set to the plugin's name. Do not
+  set `owner` yourself.
+- Each point it writes is labelled `project` and `instrument=<plugin>.<name>` (provenance). The
+  target's other labels are kept as served, `machine` included; a target label `project` or
+  `instrument` is kept as `exported_project` / `exported_instrument`.
+- Nothing is announced on the bus for it. It is not on the Machines page; it is on the
+  **Instruments page** (`/instruments`, `/api/instruments`, `/api/instruments/<name>/log`), with
+  its kind (script or URL), target, interval, last write and points, failures and last error.
+- Its health is in the runtime record under `instruments`, written by the host that launches
+  (`orchestra/collect/runner.py`); its log is `<state>/logs/instruments/<plugin>.<name>.log`; a
+  failed round is counted in `orchestra_collect_failures_total{collector=<plugin>.<name>}`.
+- A project entry (`[[scrape]]` or `[[collect]]`) with the same name wins: the plugin's is left
+  out and the host logs `plugin <x>: its collector <name> is replaced by the project's entry of that
+  name`. An entry that fails the checks (bad name, bad URL, empty command, `every_s` under 1 s) is
+  left out and logged the same way; the others stand.
+- Instrument names are their own namespace. `bridges.slack` the instrument and `bridges.slack` the
+  process and machine are three different things that may share a name.
+- Like `processes`, `collectors` is asked for again whenever `orchestra.toml` changes (§2): one
+  added starts at once, one removed stops, one changed starts over.
+
+The usual pattern is again to declare one only when the project configures the plugin. The Slack
+bridge serves its counts on `/metrics` (`[bridges.slack] host` and `port`, by default
+`127.0.0.1:9465`), so its plugin can declare the scrape beside the process:
+
+```python
+from orchestra.collect.spec import Collector
+
+slack = section(project.config.raw, "slack")
+collectors=[Collector.scrape("slack", f"http://{slack.get('host', '127.0.0.1')}:{slack.get('port', 9465)}/metrics",
+                             every_s=30)] if slack is not None else []
+```
+
+An instrument says nothing about which machine does the work it measures. A machine is
+associated with a flow only by inference from its events (§4.5, §6.4).
+
+### 4.8 `scripts` and `stylesheets`
 
 - `scripts`: file names in `static`. They are listed in `/api/plugins` as
   `/plugins/<name>/static/<file>`, and `app.js` appends each one as a `<script>` to the body of
@@ -335,9 +421,10 @@ process within seconds and removing it stops the process. The walkthrough shows 
   Orchestra's own scripts. A page that already has the script keeps its copy.
 - `stylesheets`: file names in `static`, linked in the `<head>` of every page Orchestra renders
   (its own and every plugin's), after `style.css`.
-- A listed file that does not exist is dropped silently. It is **not** reported as an error.
+- A listed file that is not in `static` (or a plugin with no `static`) is left out and reported in
+  `/api/plugins` errors (`script x.js is not a file in its static directory; left out`).
 
-### 4.8 Configuration: your section of `orchestra.toml`
+### 4.9 Configuration: your section of `orchestra.toml`
 
 Orchestra has no config registry. It parses the whole of `orchestra.toml` and keeps it as
 `project.config.raw` (a `dict`). It reads its own sections (`[events]`, `[metrics]`,
@@ -350,7 +437,7 @@ plugins for processes.
 Name your section after your plugin (`[bridges.github]`, `[agents]`, `[heartbeat]`). Nothing stops
 two packages from claiming the same section (§13).
 
-### 4.9 CLI commands
+### 4.10 CLI commands
 
 Orchestra's CLI has no extension point. Plugins ship their own console scripts in
 `[project.scripts]` (`tasking`, `orchestra-agents`) or a `__main__` (`python -m
@@ -420,15 +507,16 @@ on pages that load `machine-dialog.js`.
 
 ## 6. Machines, events and metrics from a plugin
 
-A plugin's processes are machines like any other: Orchestra knows them only by what they publish
-and write (rule 2). `docs/machines.md` covers measurements in full. This section covers what a
-plugin's machines in particular need.
+A plugin's processes are machines only by their events: Orchestra knows a machine because it
+shows up on the bus, and by what it publishes and listens for (rule 2). Machines do not produce
+metrics. Measurements of the running system come from instruments (rule 7), kept apart from the
+machines so they can test what we believe about them. `docs/machines.md` covers measurements in
+full. This section covers what a plugin's machines in particular need.
 
 ### 6.1 Identity: sources and instances
 
 A machine is its CloudEvents `source`. Several instances of one machine publish as
-`<machine>/<instance>` (`worker/1`, `worker/2`; Orchestra splits at the first `/`), and label their
-series `machine=<machine>, instance=<instance>`. Open your bus handle with your source:
+`<machine>/<instance>` (`worker/1`, `worker/2`; Orchestra splits at the first `/`). Open your bus handle with your source:
 
 ```python
 events = Events.for_project(project, source="heartbeat")
@@ -453,7 +541,7 @@ reads its `data` (`web/machines.py`):
 | anything else | passed unread to your card as `m.about` (scalars and lists only) | machine (latest announcement) |
 
 Announcements are not counted as beats when Orchestra judges whether a machine is active. A
-machine stays active while its events or its writes keep coming at their usual cadence.
+machine stays active while its events keep coming at their usual cadence.
 
 ### 6.3 Publishing and listening
 
@@ -477,7 +565,12 @@ evs, offset = events.after(offset)        # every event after offset, in order; 
 
 ### 6.4 Metrics
 
-Write through Orchestra's store, labelled with your machine:
+The metrics store is filled by instruments. For what a plugin's process counts, the way is to
+serve it on `/metrics` in the Prometheus text format and declare the scrape in `Plugin.collectors`
+(§4.7), or have the project declare it (`[[scrape]]`). The scrape's points are labelled
+`instrument=<plugin>.<name>`; the series stay a measurement of the system, not a machine's.
+
+Writing through Orchestra's store directly also works, and the heartbeat in §9 does it:
 
 ```python
 from orchestra.metrics import Point, ProjectStore, for_project
@@ -485,13 +578,21 @@ store = ProjectStore(for_project(project), project.key)        # or orchestra.me
 store.write([Point("heartbeat_beats_total", 42, time.time(), {"machine": "heartbeat"})])
 ```
 
+A `machine` label written this way, or served on `/metrics`, is a label like any other: the
+machine's card lists such series, but the label never makes a machine, and is never read to
+associate a machine with a flow. Orchestra's only series derived from the event log is
+`orchestra_events_total{type,source}`, its count of the bus, and it is secondary.
+
 - Name each series for what it measures, with its unit. A counter ends in `_total`. Never start a
   name with `orchestra_`. Whether a series is a stock or a flow is for discovery to decide (rules
   6 and 7), not you.
-- Write on a schedule, even when nothing changed. Points stamped more than 60 s in the future are
-  refused.
-- Or serve `/metrics` and have the project scrape it (`[[scrape]]`). A plugin cannot declare the
-  scrape itself (§12.4, §13).
+- Serve or write on a schedule, even when nothing changed. Points stamped more than 60 s in the
+  future are refused.
+- Which flows a machine's work relates to is never declared, by you or anyone. Discovery infers
+  it, as hypotheses with evidence and a confidence, only from event counts on Orchestra's bus: a
+  counter that is the machine's own event count, or one whose increments match a machine's events
+  of one type step by step (`orchestra/sd/attribute.py`). A match is a correlation in time, not a
+  cause. A flow with none reads "no machine associated yet".
 
 ### 6.5 The whole path, in order
 
@@ -514,7 +615,7 @@ sequenceDiagram
         Proc->>Store: heartbeat_beats_total{machine="heartbeat"}
     end
     Web->>Bus: read new events (incrementally)
-    Web->>Store: read series labelled machine=...
+    Web->>Store: read series labelled machine=... (listed on the card; never make a machine)
     UI->>Web: GET /api/plugins
     Web-->>UI: pages, scripts
     UI->>Web: GET /plugins/heartbeat/static/heartbeat.js
@@ -535,7 +636,8 @@ These follow from AGENTS.md. The plugins' own `AGENTS.md` files repeat them.
 **A plugin may:**
 
 - define any domain: tickets, agents, people, pings. These live in the plugin, never in Orchestra (rule 1);
-- run processes through `orchestra run`, publish and listen on the bus, and write series;
+- run processes and instruments through `orchestra run`, publish and listen on the bus, and serve
+  or write series;
 - add pages, routes, panels and machine cards, and give humans a way to change the system. **Rule
   9: humans change the system only through plugins.** Orchestra's own UI and CLI are read-only
   except for rediscovering the model. The paths that exist are the agents' Supervisor chat (which
@@ -569,7 +671,11 @@ These follow from AGENTS.md. The plugins' own `AGENTS.md` files repeat them.
   5: "Nothing here imports Orchestra's web app, model or host." Tests may use
   `orchestra.web.app.create_app`;
 - describe its machines to Orchestra in place of being observed. A declaration fills in an unseen
-  machine and nothing more (rule 2).
+  machine and nothing more (rule 2);
+- declare which flows a machine affects. There is no way to, by design: that association is only
+  inferred (rule 6);
+- treat an instrument as a machine. A collector measures; it is not announced, and its name says
+  nothing about who does the work (rule 7).
 
 ---
 
@@ -688,8 +794,8 @@ series at start.
 
 On the unmerged `slack-bridge` branch, the plugin declares one process and one machine per
 configured system (`SYSTEMS = ("github", "slack")`). The Slack bridge serves `/metrics` instead of
-writing, and needs a `[[scrape]]` named `bridges.slack` that the owner adds to `orchestra.toml`
-by hand, because a plugin cannot declare one (§12.4, §13).
+writing. On that branch the owner adds a `[[scrape]]` named `bridges.slack` to `orchestra.toml`
+by hand; the plugin can now declare it itself in `collectors` (§4.7).
 
 ---
 
@@ -1307,7 +1413,7 @@ true}` until its background read finishes, so poll it.
 **Real processes, end to end.** Start `orchestra run` (and `orchestra web` on a free port) as
 subprocesses from the plugin's environment (`Path(sys.executable).with_name("orchestra")`, or
 `[sys.executable, "-m", "orchestra", "run"]`). Wait for the bus, the store or HTTP to show the
-result, then SIGTERM the host and check the process's log in `<state>/logs/machines/`. Examples:
+result, then SIGTERM the host and check the process's log in `<state>/logs/machines/` (an instrument's is in `<state>/logs/instruments/`). Examples:
 `orchestra-bridges/tests/e2e/test_orchestra_run.py`, and `orchestra-tasking/tests/e2e/test_demo_e2e.py`,
 which reuses `demo/run.py`'s own `make_project`/`start`/`stop` and runs the Tickets page in
 headless Chrome when one is at hand.
@@ -1350,10 +1456,11 @@ How it stands today:
 
 How to stay compatible:
 
-- **Pass `Plugin(...)` and `Declared(...)` fields by keyword** after `name`. The task system and the
+- **Pass `Plugin(...)` and `Declared(...)` fields by keyword** after `name`. `collectors` was added
+  last, with a default, so plugins that do not use it are unaffected. The task system and the
   agents pass `pages`, `static` and `router` positionally, which ties them to the field order.
 - Import only the interfaces: `orchestra.plugins` (`Plugin`, `Page`, `Declared`),
-  `orchestra.launcher.Process`, `orchestra.events`, `orchestra.metrics`, `orchestra.config`, and
+  `orchestra.launcher.Process`, `orchestra.collect.spec.Collector`, `orchestra.events`, `orchestra.metrics`, `orchestra.config`, and
   `orchestra.runtime.alive` if you need it. Keep `orchestra.web.*` to tests.
 - Don't set `Process.owner`, and don't depend on fields `/api/machines` does not document (§5).
 - A plugin built against a newer Orchestra that passes a keyword an older `Plugin` lacks raises
@@ -1404,22 +1511,23 @@ joined it (fixed in `91ce6dd`: `m.kinds && m.kinds.agent ? "agent" : m.kind`). R
 `instances` and never compare `kind` exactly. A declared `kind` fills in only when no instance
 announced one.
 
-### 12.4 A `[[scrape]]` overwrites the `machine` label
+### 12.4 A scrape labels points with its own name, as `instrument`
 
-A scrape (or a `[[collect]]`) replaces every point's `machine` and `project` labels with its own
-name (`orchestra/collect/round.py`). So:
+A scrape or a collect (the project's, or a plugin's `collectors`) labels every point it writes
+`project` and `instrument=<its name>` (`orchestra/collect/round.py`). Until 2026-10-27 it replaced
+the `machine` label with its name instead, and the host announced each one on the bus as a
+machine; both are gone. So:
 
-- name the scrape after the machine whose series it reads. The Slack bridge's must be named
-  `bridges.slack`, or its series belong to some other machine and a restarted bridge cannot find
-  its counts;
-- one scrape cannot serve series for several machines. Per-machine `machine=` labels in your
-  `/metrics` output are lost; use another label, or write through `orchestra.metrics` instead;
-- the host announces the scrape on the machine's behalf (source = the scrape's name, `kind:
-  program`, `mode: continuous`, extra fields `collector`, `url`, `every_s`, and the log
-  `<state>/logs/machines/<scrape name>.log`). That becomes the bare instance's latest announcement,
-  so it replaces `m.about` and that instance's log path. `package` survives, because the scrape's
-  announcement carries none;
-- the plugin cannot declare the scrape, so the owner adds it to `orchestra.toml` by hand (§13).
+- the target's own labels are kept as served, `machine` included. One scrape may serve series for
+  several machines' work, each with its own `machine=` label;
+- a target label `project` or `instrument` is kept as `exported_project` / `exported_instrument`;
+- the scrape's name no longer has to match a machine's. Name it for what it reads;
+- collected series changed identity at the upgrade (`machine=<name>` before, `instrument=<name>`
+  after), so a series' history splits there. Stores were not rewritten. A process that reads its
+  own counts back at start by the scrape's label must change: the Slack bridge's `_stored` reads
+  by `machine="bridges.slack"`, which new points carry only if its `/metrics` serves that label
+  itself. Read by `instrument=` (or serve the label), and expect the old points under `machine=`
+  until they age out.
 
 ### 12.5 An editable install imports the working tree
 
@@ -1448,7 +1556,7 @@ name (`orchestra/collect/round.py`). So:
   are orphaned (the agents' 30 s against their 20 s worst case).
 - Every-page stylesheets restyle every page: prefix your selectors.
 - Use `sys.executable` in process commands, not `python`.
-- A series named `orchestra_*` is refused by collectors and left out by discovery.
+- A series named `orchestra_*` is refused by instruments and left out by discovery.
 
 ---
 
@@ -1456,41 +1564,36 @@ name (`orchestra/collect/round.py`). So:
 
 Gaps and inconsistencies in the plugin interface on `main` today. This is a list, not a plan.
 
-1. **No way to declare a scrape or a collector.** `Plugin` can declare processes but not
-   `[[scrape]]` or `[[collect]]` entries. The Slack bridge serves `/metrics` and must ask the owner
-   to add `[[scrape]] name = "bridges.slack"` by hand.
-2. **The web app never reloads plugins.** The host asks for processes again on every
-   `orchestra.toml` change; the web app calls `plugin()` once at start. Declarations that depend on
-   config (the bridges', the heartbeat's) are stale until `orchestra web` restarts.
-3. **No CLI extension point**, and the `orchestra` CLI cannot list the installed plugins or their
+1. **The web app never reloads plugins.** The host asks for processes and collectors again on
+   every `orchestra.toml` change; the web app calls `plugin()` once at start. Declarations that
+   depend on config (the bridges', the heartbeat's) are stale until `orchestra web` restarts.
+2. **No CLI extension point**, and the `orchestra` CLI cannot list the installed plugins or their
    errors. Only `/api/plugins` in the web app can.
-4. **`/api/plugins` lists pages, scripts and errors only.** A plugin with no pages, such as the
-   bridges, is invisible there. Its processes show on the Core page, its declared machines on the
-   Machines page, and its stylesheets nowhere.
-5. **No config registry or namespacing.** Sections are read from `raw` by convention, so two
+3. **`/api/plugins` lists pages, scripts and errors only.** A plugin with no pages, such as the
+   bridges, is invisible there. Its processes show on the Core page, its instruments on the
+   Instruments page, its declared machines on the Machines page, and its stylesheets nowhere.
+4. **No config registry or namespacing.** Sections are read from `raw` by convention, so two
    packages can claim one section undetected. The task system claims generic names (`[project]`,
    `[gate]`, `[staging]`).
-6. **Plugin names are not checked.** A name that fails the process-name pattern only shows up as a
-   launcher log line. Two plugins with the same `name` are not detected: the host keys processes by
-   plugin name, so one plugin's processes silently replace the other's, and the web app mounts two
-   static directories at one path. `load` reports errors under the entry point's name, which may
-   differ from `Plugin.name`.
-7. **No interface version.** The field order of `Plugin` is de facto API, because two plugins pass
+5. **Plugin names are not checked against the name pattern.** A name that fails it only shows up
+   as a launcher log line (and as left-out instruments in the host's log). `load` reports errors
+   under the entry point's name, which may differ from `Plugin.name`.
+6. **No interface version.** The field order of `Plugin` is de facto API, because two plugins pass
    fields positionally (§11).
-8. **`Process` has no `env` or `cwd`.** Every process runs in the repository root with the host's
+7. **`Process` has no `env` or `cwd`.** Every process runs in the repository root with the host's
    environment. There is no way to pass a per-process setting except argv, and no way to keep a
    secret out of other processes' environments.
-9. **`Declared` cannot carry a log, a name or a group.** An unseen machine cannot show where its log
+8. **`Declared` cannot carry a log, a name or a group.** An unseen machine cannot show where its log
    will be.
-10. **Missing script or stylesheet files are dropped silently**, not reported in `errors` (Orchestra's own
-    test asserts this behaviour).
-11. **`{{v}}` reflects only Orchestra's static files**, so `?v={{v}}` on a plugin's own assets
-    never changes when the plugin's files change. The `Cache-Control: no-store` header on every
-    response makes this harmless today.
-12. **Collector names are not checked against plugin processes.** The launcher refuses a project
-    `[[machines]]` entry named `<plugin>.<x>`, but a `[[collect]]` with a plugin process's name is
-    accepted (only `[[scrape]]` is meant to share a program's name).
-13. **The plugins read their config in different ways.** The bridges read `project.config.raw`.
+9. **`{{v}}` reflects only Orchestra's static files**, so `?v={{v}}` on a plugin's own assets
+   never changes when the plugin's files change. The `Cache-Control: no-store` header on every
+   response makes this harmless today.
+10. **The plugins read their config in different ways.** The bridges read `project.config.raw`.
     The agents re-read `orchestra.toml` from disk with `tomllib` in `processes()`, and build a
     second project with `load_project(repo_root)`, although the host has just reloaded the config
     it passes in.
+
+Closed on 2026-10-27: a plugin can declare scrapes and collects (`collectors`, §4.7); two plugins
+with one `name` are detected, and the second is left out and reported (§4.1); a script or
+stylesheet missing from `static` is reported (§4.8); and instrument names are their own
+namespace, so a collector sharing a process's name is no longer a conflict (§4.7).

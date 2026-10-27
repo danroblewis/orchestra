@@ -1,5 +1,6 @@
 """The Dynamics page's data: the system dynamics model (there is one), as the host last discovered
-it or at a past version, with each flow's equation and the machines attributed to it. Nothing here
+it or at a past version, with each flow's equation and the machines associated with it, as
+hypotheses (``sd.attribute``). Nothing here
 queries the metrics store or discovers anything: it reads files and the web server's caches.
 
 Version 1 renders the model and steps through its history. Simulation, prospective versions,
@@ -10,6 +11,7 @@ from __future__ import annotations
 
 from ..sd.store import ModelStore
 
+NONE = "no machine associated yet"
 EARLY = ("Orchestra's own", "named orchestra_", "no longer written")   # the reasons a series is left out before it is considered (sd.discover)
 
 
@@ -64,9 +66,18 @@ def model_view(project, version: int | None = None, levels: dict | None = None, 
     out["versions"] = versions
     out["live"] = live                       # the latest discovery, which may be newer than any version
     out["as_of"] = as_of
-    owner = {f: m.id for m in model.machines for f in m.attributed}
+    owners: dict[str, list[str]] = {}
+    for m in model.machines:
+        for fid in m.attributed:
+            owners.setdefault(fid, []).append(m.id)
     for f in out["flows"]:
-        f["machine"] = owner.get(f["id"])
+        # the machines associated with it, as hypotheses (sd.attribute); a version saved before
+        # 2026-10-27 has only the machine its counter's label named
+        assoc = (f.get("evidence") or {}).get("machines")
+        f["machines"] = assoc["hypotheses"] if assoc else [{"machine": m, "origin": "label (before 2026-10-27)", "confidence": None}
+                                                           for m in owners.get(f["id"], [])]
+        f["association"] = (assoc or {}).get("why") or (None if f["machines"] else NONE)
+        f["machine"] = f["machines"][0]["machine"] if f["machines"] else None     # the colour it is drawn in
         f["current"] = f["equations"][-1] if f["equations"] else None
     if model.discovery:
         out["discovery"]["looked_at"] = looked_at(model.discovery)

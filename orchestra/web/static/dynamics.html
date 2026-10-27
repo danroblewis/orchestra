@@ -50,9 +50,9 @@
 </style>
 </head>
 <body>
-<nav id="nav"><a href="/">Dashboard</a><a href="/machines">Machines</a><a href="/dynamics" class="on">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
+<nav id="nav"><a href="/">Dashboard</a><a href="/machines">Machines</a><a href="/instruments">Instruments</a><a href="/dynamics" class="on">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="dynwrap">
-  <div class="intro">The system dynamics model of the system Orchestra covers. There is one model; it changes over time, and each change is kept as a version. Stocks are measured quantities (each bound to a series in the metrics store), flows move material between them with equations fitted from the history, and machines (programs, services and people) are attributed to the flows they are believed to cause. Every equation says whether it was fitted or only declared.</div>
+  <div class="intro">The system dynamics model of the system Orchestra covers. There is one model; it changes over time, and each change is kept as a version. Stocks are measured quantities (each bound to a series in the metrics store), flows move material between them with equations fitted from the history, and machines (programs, AI agents and people, known by their events) are associated with flows only as hypotheses, from their events matching a flow's counter. A flow may have several, or none yet; the associations never change an equation. Every equation says whether it was fitted or only declared.</div>
   <div class="dynhead"><h1 id="mname">The system</h1><span class="ver" id="ver"></span><span class="sum" id="sum"></span>
     <span style="margin-left:auto;display:inline-flex;gap:8px;align-items:center"><span class="muted" id="redisc-note" style="font-size:11.5px"></span><button class="ctl" id="redisc" onclick="rediscover()" title="Discover the model again now, with the settings below">rediscover now</button></span></div>
   <details class="dset" id="dset"><summary>discovery: <b id="dset-sum">…</b></summary>
@@ -160,7 +160,7 @@ function draw() {
   } else GRAPH.render(nodes, edges);
   Live.drawn(GRAPH);
   const used = [...new Set(flows.map((f) => f.machine || ""))];
-  $("legend").innerHTML = used.map((id) => { if (!id) return `<span class="lg prog" style="--c:${mcolor(id)}"><i></i>unattributed <span class="muted">no machine</span></span>`;
+  $("legend").innerHTML = used.map((id) => { if (!id) return `<span class="lg prog" style="--c:${mcolor(id)}"><i></i>no machine associated yet</span>`;
     const mc = byMachine[id] || { name: id, kind: "?" };
     return `<span class="lg prog" style="--c:${mcolor(id)}"><i></i>${esc(mc.name)} <span class="muted">${kindWord(id, mc.kind)}</span></span>`; }).join("")
     + `<label class="lg" style="cursor:pointer"><input type="checkbox" ${window.SHOW_ALL ? "checked" : ""} onchange="window.SHOW_ALL=this.checked;draw()" style="margin:0"> flows with no events</label>`
@@ -274,14 +274,14 @@ function netFlowLine(s, ev) {
 function tables() {
   const m = MODEL, byMachine = Object.fromEntries(m.machines.map((x) => [x.id, x]));
   $("nflows").textContent = m.flows.length; $("nstocks").textContent = m.stocks.length; $("nmachines").textContent = m.machines.length;
-  $("flows").innerHTML = `<tr><th>flow</th><th>equation</th><th>fit</th><th>machine</th></tr>` + m.flows.map((f) => { const e = f.current, q = (e && e.quality) || {};
+  $("flows").innerHTML = `<tr><th>flow</th><th>equation</th><th>fit</th><th title="machines whose events match the flow's counter: hypotheses, with their confidence. Two similar flows between the same stocks may not be told apart, so a hypothesis may belong to a flow's twin.">machines (hypotheses)</th></tr>` + m.flows.map((f) => { const e = f.current, q = (e && e.quality) || {};
     const end = (id) => (id ? stockName(id) : "outside");
     return `<tr><td>${esc(flowName(f))}<div class="muted" style="font-size:11px">${esc(end(f.from))} → ${esc(end(f.to))}</div></td><td class="num">${esc(eqText(f))}${e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}${SDGraph.correlational(m, f) ? `<div class="muted" style="font-family:inherit;font-size:11px">${esc(SDGraph.UNTESTED)}</div>` : ""}</td>
       <td>${e ? `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span> <span class="muted num">${esc(e.form)} · ${q.events ?? 0} ev · disp ${(q.dispersion ?? 0).toFixed(1)}</span>` : '<span class="muted">—</span>'}</td>
-      <td>${f.machine ? `<span class="mdot" style="--c:${mcolor(f.machine)}"></span>${esc((byMachine[f.machine] || {}).name || f.machine)}` : '<span class="muted">unattributed</span>'}</td></tr>`; }).join("");
+      <td>${(f.machines || []).length ? f.machines.map((h) => `<div title="${esc(h.why || h.origin || "")}"><span class="mdot" style="--c:${mcolor(h.machine)}"></span>${esc((byMachine[h.machine] || {}).name || h.machine)}${h.confidence != null ? ` <span class="muted num">${Math.round(100 * h.confidence)}%</span>` : ""}</div>`).join("") : `<span class="muted" title="${esc(f.association || "")}">no machine associated yet</span>`}</td></tr>`; }).join("");
   $("stocks").innerHTML = `<tr><th>stock</th><th>now</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr><td>${stockHead(s.id)}</td><td class="num">${m.levels[s.id] ? m.levels[s.id].v + " " + esc(s.unit) : "—"}</td>
       <td class="num muted">${s.series ? esc(keyOf(s.series)) + `<div style="font-family:inherit">${esc(resOf(m.discovery, keyOf(s.series)))}</div>` : "not measured"}</td></tr>`).join("");
-  $("machines").innerHTML = `<tr><th>machine</th><th>kind</th><th>flows</th></tr>` + m.machines.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span>${esc(x.name)}${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
+  $("machines").innerHTML = `<tr><th>machine</th><th>kind</th><th>flows (hypotheses)</th></tr>` + m.machines.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span>${esc(x.name)}${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
       <td>${kindWord(x.id, x.kind)}</td><td class="num">${x.attributed.length}</td></tr>`).join("");
   const fitted = m.flows.filter((f) => f.current && f.current.origin === "fitted").length;
   const d = m.discovery || {};

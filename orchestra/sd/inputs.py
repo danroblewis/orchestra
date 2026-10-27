@@ -27,7 +27,7 @@ def _group(s: Series) -> tuple[str, tuple]:
 
 
 def _name(name: str, labels: dict[str, str]) -> str:
-    return "_".join([name, *[re.sub(r"\W+", "_", v) for k, v in sorted(labels.items()) if k not in ("project", "machine")]])
+    return "_".join([name, *[re.sub(r"\W+", "_", v) for k, v in sorted(labels.items()) if k not in ("project", "machine", "instrument")]])
 
 
 def offered_inputs(series: list[Series], stocks: set[str], left_out: dict[str, str]

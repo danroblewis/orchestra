@@ -93,4 +93,4 @@ def test_a_machine_silent_longer_than_a_restart_is_gone(tmp_path):
     store.write(_heartbeat(start, end))
     m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
     assert not m.stocks
-    assert m.discovery["left_out"]['bakery_shelf_loaves{machine="shop"}'].startswith("no longer written: its machine shop has been silent 10 min")
+    assert m.discovery["left_out"]['bakery_shelf_loaves{machine="shop"}'].startswith("no longer written: its writer shop has been silent 10 min")

@@ -1,4 +1,4 @@
-"""Discovery finds a system's stocks, flows, equations and machines from its metrics alone.
+"""Discovery finds a system's stocks, flows and equations from its metrics alone.
 
 The system is a small bakery (an early version of ~/orchestra-bakery), simulated here without
 sleeping so the right answer is known: the rates below."""
@@ -88,10 +88,11 @@ def test_discovers_the_bakery(tmp_path):
     assert ordered.form == "linear" and ordered.inputs == ["bakery_shelf_loaves"] and ordered.params["k"] < 0, \
         "a low shelf raises orders: the balancing loop"
 
-    machines = {mc.id: set(mc.attributed) for mc in m.machines}
-    assert machines["oven"] == {"bakery_loaves_baked_total", "bakery_orders_filled_total"}
-    assert machines["shop"] == {"bakery_loaves_sold_total", "bakery_loaves_discarded_total", "bakery_loaves_ordered_total"}
-    assert "weather" not in machines
+    # the series' machine labels say who wrote them, never which machine's work a flow reflects:
+    # with no events on the bus, no machine is associated with any flow (AGENTS.md rule 7)
+    assert m.machines == []
+    assert all(x.evidence["machines"]["hypotheses"] == [] and "no machine associated yet" in x.evidence["machines"]["why"]
+               for x in m.flows)
 
 
 def test_nothing_to_find_in_noise(tmp_path):

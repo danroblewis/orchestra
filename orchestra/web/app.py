@@ -1,4 +1,4 @@
-"""The web UI: Dashboard, Machines, Dynamics and Core. Read-only for humans: nothing here
+"""The web UI: Dashboard, Machines, Instruments, Dynamics and Core. Read-only for humans: nothing here
 changes the system (AGENTS.md rule 9)."""
 
 from __future__ import annotations
@@ -62,6 +62,29 @@ def create_app(project: Project) -> FastAPI:
     @app.get("/machines", response_class=HTMLResponse)
     async def machines_page() -> str:
         return page("machines.html")
+
+    @app.get("/instruments", response_class=HTMLResponse)
+    async def instruments_page() -> str:
+        return page("instruments.html")
+
+    @app.get("/api/instruments")
+    def instruments() -> dict:
+        """What measures the system (``[[collect]]``, ``[[scrape]]``, ``[[sources]]``): instruments,
+        not machines. Read from the runtime record and orchestra.toml (web/instruments.py)."""
+        from .instruments import instruments_view
+        cached = bg.models.latest_discovery()
+        return instruments_view(project, cached[1].discovery if cached else None)
+
+    @app.get("/api/instruments/{name}/log")
+    def instrument_log(name: str, lines: int = 200) -> dict:
+        """The tail of an instrument's log; only a file within the project is read (machine_logs.py)."""
+        from .machine_logs import readable, tail
+        rec = (runtime.read(project).get("instruments") or {}).get(name) or {}
+        path, why = readable(rec.get("log") or str(project.logs_dir / "instruments" / f"{name}.log"),
+                             [project.repo_root, project.state_dir])
+        if path is None:
+            return {"ok": False, "error": why}
+        return {"ok": True, "path": str(path), "lines": tail(path, max(10, min(lines, 2000)))}
 
     @app.get("/api/project")
     def project_info() -> dict:

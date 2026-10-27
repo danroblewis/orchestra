@@ -14,7 +14,7 @@ from orchestra.collect.spec import Collector
 from orchestra.config import init_project
 from orchestra.metrics import for_project
 
-PROVENANCE = "machine"      # the label a collected point names its collector by
+PROVENANCE = "instrument"  # the label a collected point names its instrument by
 
 
 @pytest.fixture
@@ -75,12 +75,12 @@ def test_a_plugins_collector_runs_named_for_it_and_a_project_entry_of_that_name_
     declare(project, "")
     lines = []
     plugin = [Collector.scrape("slack", theirs, every_s=5, timeout_s=30, owner="bridges")]
-    c = Collecting(project, lambda t, d, source=None: None, lines.append, plugin_collectors=lambda: plugin)
+    c = Collecting(project, lines.append, plugin_collectors=lambda: plugin)
     run_once(c)
     assert list(c.wanted) == ["bridges.slack"] and c.wanted["bridges.slack"].timeout_s == 5
     assert by(project, "messages_total") == ["bridges.slack"]
 
-    c = Collecting(project, lambda t, d, source=None: None, lines.append, plugin_collectors=lambda: plugin)
+    c = Collecting(project, lines.append, plugin_collectors=lambda: plugin)
     declare(project, f'\n[[scrape]]\nname = "bridges.slack"\nurl = "{ours}"\n')
     run_once(c)
     assert c.wanted["bridges.slack"].target == ours and c.wanted["bridges.slack"].owner == "project"
@@ -92,7 +92,7 @@ def test_a_plugin_collector_that_cannot_run_is_left_out_with_the_reason(project)
     declare(project, "")
     lines = []
     plugin = [Collector.scrape("bad", "ftp://x", owner="bridges"), Collector.collect("ok", "true", every_s=60, owner="bridges")]
-    c = Collecting(project, lambda t, d, source=None: None, lines.append, plugin_collectors=lambda: plugin)
+    c = Collecting(project, lines.append, plugin_collectors=lambda: plugin)
     c.tick(1000.0)
     c.stop()
     assert list(c.wanted) == ["bridges.ok"]

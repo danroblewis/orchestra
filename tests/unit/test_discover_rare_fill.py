@@ -82,7 +82,7 @@ def test_a_rare_fill_without_a_measured_state_needs_a_free_counter_of_its_machin
     sent_back = [1.0 if i in (10, 40, 70, 100) else 0.0 for i in range(120)]
     kept = [a - b for a, b in zip(picked, sent_back)]
     lv = lambda name: Series(name, {"machine": "board"}, [], [3.0] * 121, False)
-    where = {"start": T0, "end": T0 + 3600, "step": 30, "machine_of": lambda s: s.labels["machine"]}
+    where = {"start": T0, "end": T0 + 3600, "step": 30, "writer_of": lambda s: s.labels["machine"]}
 
     def joined(accepted_by: str, picked_by: str = "board") -> list:
         picked_up, rejected = mk("picked_up_total", picked, picked_by), mk("rejected_total", sent_back, "board")

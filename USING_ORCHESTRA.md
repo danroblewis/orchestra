@@ -7,12 +7,16 @@ run. It does not assume you know Orchestra.
 Orchestra watches a system of **machines** (your programs, services, scripts, AI agents, people)
 through two things: an **event bus** and a **metrics store**. From the measurements in the store
 it builds one **system dynamics model**: which levels are **stocks**, which counters are the
-**flows** that fill and drain them, how fast each flow runs, which machine drives it, and the
-feedback loops between them. You never tell it what a stock is. You give it plain series, and it
-finds the stocks.
+**flows** that fill and drain them, how fast each flow runs, and the feedback loops between them.
+You never tell it what a stock is. You give it plain series, and it finds the stocks. Which
+machines may drive a flow is something it infers, as a hypothesis, from the machines' events.
+
+The measurements come from **instruments** (scripts, scrapes, other stores), not from the
+machines: an instrument measures the system and never acts on it; a machine does the work and
+speaks on the bus. Section 3 explains the difference.
 
 Orchestra runs none of your logic and knows nothing of your domain. It starts the commands you
-declare, reads what they print or serve, and reads what they publish.
+declare, reads what your instruments print or serve, and reads what your machines publish.
 
 Where to go for more:
 
@@ -65,7 +69,7 @@ project.
 ```bash
 cd my_project                  # any git repository
 orchestra init                 # writes orchestra.toml and registers the project
-orchestra run &                # the host: collectors, launcher, event counter, discovery
+orchestra run &                # the host: instruments, launcher, event counter, discovery
 orchestra web                  # the UI on http://127.0.0.1:8000
 ```
 
@@ -83,15 +87,15 @@ What each command does:
 | Command | What it does |
 |---|---|
 | `orchestra init` | Writes a starter `orchestra.toml` at the repository root, if there is none, and registers the project. It must run inside a git repository. Run it once. A clone that already has an `orchestra.toml` needs no `init`: the state directory is made the first time any command runs. |
-| `orchestra run` | Starts the **host**, Orchestra's own machine (`orchestra-host`). It runs your `[[collect]]` and `[[scrape]]` entries, keeps your `[[machines]]` running, counts every event on the bus, and rediscovers the model every `[discovery] every`. Stop it with Ctrl-C, SIGTERM or SIGHUP; it stops everything it started. |
-| `orchestra web [--port 8000] [--host 127.0.0.1]` | Serves the web UI: Dashboard, Machines, Dynamics and Core. It reads; it changes nothing but the model (when you press "rediscover now"). |
+| `orchestra run` | Starts the **host**, Orchestra's own machine (`orchestra-host`). It runs your `[[collect]]` and `[[scrape]]` instruments, keeps your `[[machines]]` running, counts every event on the bus, and rediscovers the model every `[discovery] every`. Stop it with Ctrl-C, SIGTERM or SIGHUP; it stops everything it started. |
+| `orchestra web [--port 8000] [--host 127.0.0.1]` | Serves the web UI: Dashboard, Machines, Instruments, Dynamics and Core. It reads; it changes nothing but the model (when you press "rediscover now"). |
 
 Every command takes `--repo PATH` to name the repository. Without it, Orchestra uses
 `ORCHESTRA_REPO`, then the current directory. From a subdirectory, or from a linked git worktree,
 Orchestra finds the main repository's root: a worktree is the same project as its repository.
 
 Only one host launches for a project. A second `orchestra run` started while one is running
-counts events and rediscovers, but starts no processes and no collectors. It says so in its log.
+counts events and rediscovers, but starts no processes and no instruments. It says so in its log.
 
 ### The project key and where state lives
 
@@ -108,14 +112,15 @@ same value).
   projects.json                      repository root → project key
   <key>/
     project.json
-    runtime.json                     the hosts, the launcher, the web server, the launched processes
+    runtime.json                     the hosts, the launcher, the web server, the launched processes, the instruments' health
     events.jsonl                     the event log, when [events] url = "file"
     metrics.jsonl                    the metrics, when [metrics] url = "file"
     model/vNNNN.json                 the model's saved versions
     model/discovered.json            the latest discovery, saved or not
     sources/<name>.json              each [[sources]] entry's latest inference
     logs/orchestra-host.log          the host's log
-    logs/machines/<name>.log         each launched process's output; each collector's stderr and rounds
+    logs/machines/<name>.log         each launched process's output
+    logs/instruments/<name>.log      each [[collect]] or [[scrape]] instrument's rounds (and a script's stderr)
 ```
 
 Logs roll over to `<name>.log.1` at 5 MB.
@@ -125,7 +130,7 @@ Logs roll over to `<name>.log.1` at 5 MB.
 ## 2. Configure: `orchestra.toml`
 
 `orchestra.toml` sits at the repository root and is committed with it. `orchestra run` reads it
-again within a second of it changing: a collector or machine added starts, one removed stops,
+again within a second of it changing: an instrument or machine added starts, one removed stops,
 one changed starts over. You never need to restart `orchestra run` for a change to
 `[[machines]]`, `[[collect]]` or `[[scrape]]`. After changing `[events]`, `[metrics]` or
 `[discovery]`, restart `orchestra run` and `orchestra web`, so every process reads the same
@@ -218,7 +223,7 @@ where `<plugin>` is a loaded plugin with processes, is refused: that form is kep
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `name` | string, required | | The machine's id. Letters, digits, `.`, `_` and `-`. Not `orchestra-host`, not another collector's or scrape's name, and not a `[[machines]]` entry's name. |
+| `name` | string, required | | The instrument's id. Letters, digits, `.`, `_` and `-`. Not `orchestra-host`, and not another `[[collect]]` or `[[scrape]]` entry's name. Instrument names are their own: it may share a `[[machines]]` entry's name without being that machine. Its log is `logs/instruments/<name>.log`. |
 | `command` | string, required | | Split like a shell would, not run by one. A file in the repository is named with a slash: `machines/disk.sh` or `./disk.sh`. |
 | `every` | duration | `"60s"` | How often it runs. At least 1 s. |
 | `timeout` | duration | `"10s"` | How long one run may take. More than 0; never more than `every` (a larger value is cut to `every`). |
@@ -235,7 +240,7 @@ timeout = "20s"
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `name` | string, required | | The machine's id, as for `[[collect]]`. It **may** share a `[[machines]]` entry's name: the program and its measurements are then one machine. |
+| `name` | string, required | | The instrument's id, as for `[[collect]]`. It may share a `[[machines]]` entry's name (a scrape of the program that entry runs, say); the scrape is still an instrument, not that machine. |
 | `url` | string, required | | Starts with `http://` or `https://`. Fetched with a GET. |
 | `every` | duration | `"60s"` | How often it is read. At least 1 s. |
 | `timeout` | duration | `"10s"` | How long each wait for the server may take (it bounds each read, not the whole transfer). Never more than `every`. |
@@ -327,10 +332,10 @@ kind = "rate"
 | Variable | Read by | Meaning |
 |---|---|---|
 | `ORCHESTRATOR_HOME` | every command | Where state lives instead of `~/.orchestrator`. |
-| `ORCHESTRA_REPO` | every command, `load_project()`, `for_repo()` | The repository, when `--repo` is not given. The launcher and collectors set it for what they run. |
+| `ORCHESTRA_REPO` | every command, `load_project()`, `for_repo()` | The repository, when `--repo` is not given. The launcher and the instruments set it for what they run. |
 | `ORCHESTRA_EVENTS_URL` | every command, `Events.for_project` | Overrides `[events] url`. |
 | `ORCHESTRA_METRICS_URL` | every command, `for_repo()` | Overrides `[metrics] url`. |
-| `ORCHESTRA_MACHINE_LOG` | set for what Orchestra runs | The log file of the process or collector. |
+| `ORCHESTRA_MACHINE_LOG` | set for what Orchestra runs | The log file of the process or `[[collect]]` script (the name is kept for both). |
 | `ORCHESTRA_EVENTS_ENDPOINT` | set for what the launcher runs | The events endpoint's URL, `http://127.0.0.1:<port>`. Not the same as `ORCHESTRA_EVENTS_URL`, which names the bus backend. |
 | `ORCHESTRA_EVENTS_TOKEN` | set for what the launcher runs | The token the events endpoint wants, as `Authorization: Bearer <token>`. |
 
@@ -340,6 +345,63 @@ they will read different stores.
 ---
 
 ## 3. Add your own metrics
+
+### Instruments and machines
+
+Orchestra keeps two things apart:
+
+- An **instrument** measures the running system and never acts on it: a `[[collect]]` script, a
+  `[[scrape]]` URL, a `[[sources]]` store, or a collector a plugin declares
+  (`Plugin.collectors`). Its measurements go into the metrics store, or, for a source, are read
+  where they live.
+- A **machine** does actual work: a program, an AI agent, a person. Orchestra knows a machine
+  because it shows up on the event bus (section 5). A machine does not produce the metrics.
+
+**The metrics store is filled by instruments directly.** The one series derived from the bus is
+`orchestra_events_total{type, source}`, Orchestra's count of the machines' events, and it is
+secondary. Keeping the measurements apart from the machines is what lets them test what we
+believe the machines do: system dynamics has no machines, and how a machine's work relates to
+the model's flows is not known. A machine may influence no flow, one or several, and several
+machines may contribute to one flow. Discovery infers which, and only as hypotheses
+([section 6](#machines-and-flows-hypotheses)).
+
+```mermaid
+flowchart LR
+    machines["Machines<br/>programs, agents, people"]
+    instruments["Instruments<br/>[[collect]], [[scrape]]"]
+    sources[("[[sources]]<br/>another store")]
+    bus[("Event bus")]
+    store[("Metrics store")]
+    disc["Discovery"]
+    model[("Model<br/>stocks and flows")]
+
+    machines -- "events" --> bus
+    bus -- "orchestra_events_total<br/>(secondary)" --> store
+    instruments -- "points labelled instrument=#lt;name#gt;" --> store
+    store --> disc
+    sources -- "read at each discovery" --> disc
+    disc --> model
+    machines -. "associated with flows<br/>only as hypotheses" .-> model
+```
+
+An instrument is not a machine. It is not announced on the bus and is not on the Machines page.
+It has a page of its own, **Instruments** (`/instruments`, and `/api/instruments`): each
+instrument's name, kind (script, URL, source), target, how often it is read, its last write and
+how many points, its failures, its last error and its log
+(`/api/instruments/<name>/log`). Its health is in `runtime.json` under `instruments`, its log in
+`<state>/logs/instruments/<name>.log`. A plugin's collectors run like yours, named
+`<plugin>.<name>`; a `[[collect]]` or `[[scrape]]` of the same name takes its place, and the
+host's log says so ([`PLUGINS.md`](PLUGINS.md)).
+
+Every point an instrument writes is labelled `instrument=<name>` and `project=<key>`. The label
+says which instrument measured it (provenance) and nothing else: it never makes a machine and is
+never read to associate a machine with a flow. Every other label the target serves is kept as
+it is, `machine` included (it is then the measured system's own dimension).
+
+Instruments changed on 2026-10-27; see [Migration](#migration-2026-10-27) for what that does to
+existing stores.
+
+### Ways to get measurements in
 
 There are three ways to get measurements in. None needs Orchestra's library.
 
@@ -355,7 +417,7 @@ flowchart LR
     subgraph host["orchestra run (the host)"]
         collect["[[collect]]<br/>runs it every 'every'"]
         scrape["[[scrape]]<br/>GETs it every 'every'"]
-        parse["Prometheus text parser<br/>sets machine and project labels"]
+        parse["Prometheus text parser<br/>sets instrument and project labels"]
         counter["Event counter<br/>orchestra_events_total{type, source}"]
         disc["Discovery<br/>every [discovery] every"]
     end
@@ -437,9 +499,10 @@ files_written_total 42 1761500000000
 
 **What Orchestra adds or refuses.**
 
-- Every point gets `machine="<name>"` and `project="<key>"`. A `machine` or `project` label in
-  the output is **overwritten**. Any other label, `instance` included, is kept.
-- A series named `orchestra_*` is **refused**. The host's log and the collector's log say to
+- Every point gets `instrument="<name>"` and `project="<key>"`. A `project` or `instrument`
+  label in the output is kept as `exported_project` or `exported_instrument` (as Prometheus
+  does). Any other label, `machine` and `instance` included, is kept as it is.
+- A series named `orchestra_*` is **refused**. The host's log and the instrument's log say to
   rename it.
 - A point stamped more than 60 seconds in the future is **refused** by the store (section 4).
 
@@ -450,20 +513,20 @@ is due, the next is skipped.
 | Environment | Value |
 |---|---|
 | `ORCHESTRA_REPO` | The repository root. |
-| `ORCHESTRA_MACHINE_LOG` | Its log: `<state>/logs/machines/<name>.log`. |
+| `ORCHESTRA_MACHINE_LOG` | Its log: `<state>/logs/instruments/<name>.log` (the variable's name is shared with launched processes). |
 | everything else | Inherited from `orchestra run`, including `PATH`. |
 
 **When a run fails.** A run fails when it exits non-zero, runs past `timeout` (its whole process
 group is killed), cannot start (not executable, not found), or prints more than 10 MB. A failed
-run writes nothing. The host's log and the collector's log say why, and
-`orchestra_collect_failures_total{collector="<name>"}` counts it, labelled
-`machine="orchestra-host"` (so a failing collector does not look alive). The next run is on time.
+run writes nothing. The host's log and the instrument's log say why, and
+`orchestra_collect_failures_total{collector="<name>"}` counts it (the host's own series,
+labelled `machine="orchestra-host"`). The next run is on time.
 
-A run that succeeds adds a line to the collector's log: `wrote N points`.
+A run that succeeds adds a line to the instrument's log: `wrote N points`.
 
-**On the Machines page** the collector is the machine `<name>`, mode `scheduled`, kind
-`program`, with its series and its log. The host announces it on its behalf when it starts
-collecting.
+**On the Instruments page** it is the instrument `<name>`, kind script, with its command, how
+often it runs, its last write, its failures and its log. Nothing is announced on the bus for it,
+and it is not on the Machines page.
 
 ### 3.2 A `/metrics` URL (`[[scrape]]`)
 
@@ -479,20 +542,22 @@ refusals. The request sends `Accept: text/plain;version=0.0.4;q=1.0, */*;q=0.1` 
 `User-Agent: orchestra-scrape`. A round fails on any answer but 200, no answer within `timeout`,
 or a body over 10 MB.
 
-**Labels.** Orchestra sets `machine` to the scrape's `name`, overwriting any `machine` label the
-target serves, and sets `project`. Unlike Prometheus, it adds no `job` or `instance` label of its
-own. To name an instance, the target must serve an `instance` label itself
-(`requests_total{instance="2"} 17`); Orchestra keeps it. Discovery then sums a counter's
-instances into one flow per machine. One scrape is one machine: to read several instances, give
-each its own `[[scrape]]` with the same metric names and an `instance` label in what each
-serves, or a different `name` per machine.
+**Labels.** Orchestra sets `instrument` to the scrape's `name` and sets `project`; a target's own
+`instrument` or `project` label is kept as `exported_instrument` or `exported_project`. Every
+other label the target serves is kept, `machine` included. Unlike Prometheus, it adds no `job`
+or `instance` label of its own. To name an instance, the target must serve an `instance` label
+itself (`requests_total{instance="2"} 17`); Orchestra keeps it. Discovery then sums a counter's
+instances into one flow per writer. To read several instances, give each its own `[[scrape]]`
+with the same metric names and an `instance` label in what each serves.
 
-**On the Machines page** the scrape is the machine `<name>`, mode `continuous`, kind `program`.
+**On the Instruments page** the scrape is the instrument `<name>`, kind URL. It is not on the
+Machines page.
 
-**A program and its scrape as one machine.** Run the program under `[[machines]]` and scrape it
-under `[[scrape]]` with the **same name**: the launcher keeps it running, the scrape reads it, and
-the two are one machine (section 7 does this). Only a `[[scrape]]` may share a `[[machines]]`
-name; a `[[collect]]` with one is refused.
+**A program and its scrape.** Run the program under `[[machines]]` and scrape it under
+`[[scrape]]`, under the same name if you like (section 7 does this): the launcher keeps it
+running and the scrape measures it. They stay two things: a process, which is a machine only by
+what it publishes on the bus, and an instrument. A `[[collect]]` may share a `[[machines]]` name
+too.
 
 ### 3.3 Another store (`[[sources]]`)
 
@@ -636,14 +701,15 @@ name says what is measured, with its unit.
 | A counter only goes up. Starting again from zero after a restart is fine. | A drop is read as a **reset**, as in Prometheus. A `_total` series that falls more often than twice or 1% of the steps (whichever is more) is read as a level. |
 | **Anything else is a level** (a gauge): how much there is now. `queue_jobs`, `disk_free_bytes`. | A level may be found to be a stock when counters explain its changes. |
 | Name it for what it measures, not for its role: `queue_jobs`, not `queue_stock`. | Whether it is a stock is discovery's answer, not yours. |
-| **Never start a name with `orchestra_`.** | The prefix is Orchestra's own. A collector's or scrape's series with it is refused. Discovery leaves out any such series (except `orchestra_events_total`), saying so. |
-| **Never stamp a point in the future.** | Any store refuses a point stamped more than 60 s past now, whoever writes it: it would make the machine look alive until a time not yet come. |
+| **Never start a name with `orchestra_`.** | The prefix is Orchestra's own. An instrument's series with it is refused. Discovery leaves out any such series (except `orchestra_events_total`), saying so. |
+| **Never stamp a point in the future.** | Any store refuses a point stamped more than 60 s past now, whoever writes it: it would make its writer look alive until a time not yet come. |
 | Keep label values few. | Each label value is a series of its own. |
-| Use `instance` for several instances of one machine. | Counters that differ only by `instance` are summed into one flow per machine. |
-| Write every series on a schedule, even when it has not changed. | Discovery and the Machines page judge a machine alive while its writes keep coming. A level written only when it changes looks, between writes, like a machine that stopped. Collectors and scrapes do this for you. |
+| Use `instance` for several instances of one measured thing. | Counters that differ only by `instance` are summed into one flow per writer. |
+| Write every series on a schedule, even when it has not changed. | Discovery judges a series' writer alive while its writes keep coming. A level written only when it changes looks, between writes, like a writer that stopped. Instruments do this for you. |
 
-The `machine` label is what attributes a flow to a machine. Collectors and scrapes set it. When
-you write points yourself (section 5.2), set it yourself.
+The `instrument` label says who measured a series; instruments set it. When you write points
+yourself (section 5.2), name the writer with it. No label associates a flow with a machine:
+that is inferred from the machines' events ([section 6](#machines-and-flows-hypotheses)).
 
 **Labels that tell series apart.** Two series with the same name and different labels (`disk="/"`
 and `disk="/data"`, or two machines' `jobs_done_total`) are two series to discovery. Counters
@@ -656,7 +722,8 @@ subtracted, balance its changes: `Δlevel ≈ Σ inflows − Σ outflows`, with 
 - each counter that carries the balance counted at least 5 events;
 - the level has been written for at least half of the window's data (a series that started
   ten minutes ago in a sixty-minute window is "too new" and waits);
-- its machine has not been silent for more than five minutes at the end of the window;
+- its writer (the instrument, or the `machine` label of a series written under that name) has
+  not been silent for more than five minutes at the end of the window;
 - a level that only takes two values (a flag: busy or not) is a stock only when its balance is
   exact in 97% of steps.
 
@@ -670,20 +737,22 @@ than by a constant. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full method
 
 ### 5.1 What a machine is
 
-A **machine** is anything outside Orchestra that does something. Orchestra knows it only by what
-it observes:
+A **machine** is anything outside Orchestra that does actual work: a program, an AI agent, a
+person. Orchestra knows it exists because it shows up on the event bus:
 
 - its CloudEvents **`source`**: the machine's id on the bus. Several instances of one machine
   publish as `<machine>/<instance>` (`baker/1`, `baker/2`: one machine, two instances);
 - the events it publishes, and the event types it says it listens for;
 - how it says it is engaged: **continuous** (runs all the time), **scheduled** (run by the
   clock) or **ad hoc** (a fresh instance per piece of work);
-- the series labelled `machine=<id>` (and `instance=<n>`) in the store;
-- for a machine on another system's bus, the counts a `[[sources]]` definition attributes to it.
+- or, for a machine on another system's bus, as the producer or consumer of the traffic a
+  `[[sources]]` definition counts: known by those counts, never by events.
 
-A machine may publish, listen, write series, all of these, or none. A collector or scrape is a
-machine by its name. A process the launcher runs is **not** a machine by being launched: it
-becomes one by what it publishes or the series labelled with its name.
+A machine does not produce the metrics, and a series never makes a machine, whatever its labels.
+Instruments measure the system ([section 3](#instruments-and-machines)); they are not machines. A
+process the launcher runs is **not** a machine by being launched: it becomes one by what it
+publishes. A plugin may declare machines (`Plugin.machines`): placeholders that fill in a machine
+not seen yet, never override what is observed, and say nothing about flows.
 
 Orchestra's own machine is `orchestra-host`.
 
@@ -827,10 +896,12 @@ bus.publish("invoice.sent", {"order": 42}, subject="order-42", correlationid="ch
 | `end()` | How many events the bus holds. |
 
 Orchestra counts every event by type and source into `orchestra_events_total{type, source}`, so
-your events become series discovery can use.
+your events become series discovery can use. These counts are how discovery associates a machine
+with a flow, as a hypothesis ([section 6](#machines-and-flows-hypotheses)).
 
 Writing points from Python, instead of serving them (or serve them for a `[[scrape]]`, which
-needs no library):
+needs no library). A program that does this is acting as an instrument of your own: it is not
+on the Instruments page, which lists only the declared ones, and its points make no machine.
 
 ```python
 import shutil, time
@@ -840,12 +911,13 @@ from orchestra.metrics import Point, for_repo
 store = for_repo()                              # the store orchestra.toml configures; adds the project label
 root = load_project().repo_root
 while True:
-    store.write([Point("disk_free_bytes", shutil.disk_usage(root).free, time.time(), {"machine": "telemetry"})])
+    store.write([Point("disk_free_bytes", shutil.disk_usage(root).free, time.time(), {"instrument": "telemetry"})])
     time.sleep(30)
 ```
 
 `Point(series, value, ts, labels)` takes unix **seconds**. Write the series of one moment in one
-`write` call. Set the `machine` label yourself. Never write to a store URL of your own choosing,
+`write` call. Set the `instrument` label yourself, to say who measured it (discovery groups a
+writer's series by it to judge when the writer was alive). Never write to a store URL of your own choosing,
 or to the files yourself: `for_repo()` writes where the web UI and discovery read. More, including
 how to keep such a program testable, is in [`docs/machines.md`](docs/machines.md#the-python-helper-optional).
 
@@ -904,8 +976,9 @@ This is Orchestra's own event type, so Orchestra reads these fields of its `data
 Anything else in `data` (strings, numbers, booleans, lists) is passed to its package's card
 unread. The older `orchestra.machine.subscribed` with `data.types` is read too.
 
-You announce only what Orchestra cannot observe. Everything else (what it publishes, its series,
-when it was last seen) is observed. Collectors and scrapes are announced for you by the host.
+You announce only what Orchestra cannot observe. Everything else (what it publishes,
+when it was last seen) is observed. Instruments are not machines and are not announced; the
+host's announcements for them before 2026-10-27 (with `data.collector`) are ignored.
 
 ### 5.5 Processes the launcher runs (`[[machines]]`)
 
@@ -982,16 +1055,19 @@ logs' names, so they never collide with yours.
 
 ### 5.6 How the Machines page judges a machine
 
-The Machines page lists every machine seen on the bus or in the store, with its instances.
+The Machines page lists every machine seen on the bus, with its instances, and the machines
+known by counted traffic from another store and those a plugin declares. A series labelled
+`machine=X` never makes a machine `X`, and instruments are not here (they are on the
+Instruments page).
 
 | Shown | Where it comes from |
 |---|---|
-| **Machine and instance** | The event `source` (`<machine>/<instance>`), and the `machine` and `instance` labels of series. |
+| **Machine and instance** | The event `source` (`<machine>/<instance>`). |
 | **Kind** | `data.kind` from each instance's latest `orchestra.machine.started`. When instances differ: `agent ×2, program ×1`. Empty for a machine that never announced (the host is `program`). |
 | **Mode** | `data.mode` the same way. |
 | **Last seen** | The later of its latest event and its latest write to a series labelled with it. An event stamped in the future counts as seen when it was read; a point stamped more than 60 s ahead is not counted. |
 | **Active** | See below. |
-| **Metrics** | The series labelled `machine=<id>`, and series from another store that the latest discovery bound to it. |
+| **Metrics** | The series labelled `machine=<id>`, if any exist, and series from another store that the latest discovery bound to it. They are listed on the card of a machine seen otherwise; they never make one. |
 | **Publishes, listens for** | The event types it published (counted), and its announced `listens_for`. |
 
 **Active.** An instance is active while either:
@@ -1002,7 +1078,7 @@ The Machines page lists every machine seen on the bus or in the store, with its 
 and never for less than 2 minutes. A cadence is observed, never announced: the median gap
 between its last nine events (announcements left out, since they come in bursts) or its last
 nine writes, counted at most as a day. A machine is active while any of its instances is. So a
-collector run every 15 minutes stays active between its runs, and a machine that stops goes
+machine scheduled every 15 minutes stays active between its runs, and a machine that stops goes
 quiet after a few of its own beats.
 
 A machine known only by counted traffic from another store is active within five minutes of its
@@ -1029,15 +1105,15 @@ sequenceDiagram
     loop every [[scrape]] every
         H->>S: GET /metrics
         S-->>H: jobs_received_total 74, jobs_done_total 69, queue_jobs 5
-        H->>M: write points with machine="queue", project="<key>"
+        H->>M: write points with instrument=#quot;queue#quot;, project=#quot;#lt;key#gt;#quot;
     end
     loop every [discovery] every
         D->>M: read every series over the window
-        D->>D: sample each on the step grid, mark when its machine was alive
+        D->>D: sample each on the step grid, mark when its writer was alive
         D->>D: tell counters (_total) from levels
         D->>D: balance each level, Δqueue_jobs ≈ received − done, R² ≥ 0.9, so a stock
         D->>D: fit each flow's rate (Poisson likelihood, the best form by AIC)
-        D->>D: attribute each flow to its counter's machine label
+        D->>D: associate machines with flows by their events on the bus, as hypotheses
         D->>V: write the discovery, and a new version if the structure changed
     end
     W->>V: read the latest discovery and the saved versions
@@ -1048,19 +1124,56 @@ sequenceDiagram
 on a grid of `step`:
 
 1. Every series is sampled onto the grid at its own resolution, and marked with when its
-   machine was alive.
+   writer was alive.
 2. A level whose changes counters balance is a **stock**. Each balancing counter is a **flow**:
    from one stock to another, or from or to outside (a cloud on the page).
 3. Each flow's rate is fitted by maximum likelihood: a constant, proportional to its source
    stock, or linear in another stock or measured level (an **influence**, which closes feedback
    loops). Every equation records its origin (`fitted`, `discovered` or `declared`) and quality.
-4. Each flow is attributed to the machine named by its counter's `machine` label (or the
-   `source` of the events an event counter counts). An attribution is a hypothesis.
+4. Machines are **associated** with flows, only as hypotheses inferred from their events on the
+   bus (below).
 5. Everything else is **left out, with the reason**, recorded in the model.
 
 With an SD Lab strategy, conservation runs first; the SD Lab strategy then explains only what
-counters do not balance exactly (hidden stocks, unmeasured flows). Depth:
+counters do not balance exactly. A hidden stock or an unexplained flow it finds is a question
+about the system: something in it is not measured or not understood yet. Depth:
 [`ARCHITECTURE.md`](ARCHITECTURE.md) and [SPEC §4.3](SPEC.md).
+
+### Machines and flows: hypotheses
+
+System dynamics has no machines. A flow is a measurement of the system; which machine's work it
+reflects is not known, and inferring it is what Orchestra is for. A machine may be associated
+with no flow, one or several, and several machines with one flow. **Nothing declares an
+association**: no setting in `orchestra.toml` and no plugin. Who wrote a flow's counter (its
+`instrument` label, or a `machine` label) is never read for it, and neither is the `machine`
+label of a counted-traffic counter from another store.
+
+Discovery forms a hypothesis from Orchestra's count of the bus, `orchestra_events_total`, in one
+of two ways:
+
+| `by` | When |
+|---|---|
+| **its own events** | The flow's counter is itself one machine's count of one event type. |
+| **events on the bus** | A machine's events of one type (its instances summed) match the counter's increments step by step, at the same step or one step either way: equal in at least 90% of the steps either moved (confidence: that share), or correlated at least 0.9 with totals within a factor of 2 (confidence: the correlation times the smaller ratio of the totals). |
+
+Orchestra's own event types (`orchestra.*`) are never candidates. Each hypothesis is kept in the
+flow's evidence (`evidence.machines.hypotheses`) with the machine, origin `inferred`, `by`, the
+event type and source, the share of equal steps, the correlation, the lag, the counts, a
+sentence saying why, and a `confidence` from 0 to 1. Every machine that matches is a hypothesis.
+A flow with none reads **no machine associated yet**. A hypothesis never changes a flow's
+equation or the model's stocks and flows. In the model, a machine's `attributed` lists the flows
+it is a hypothesis for, and `observed_by` the event counts that matched.
+
+Its limits: a match is a correlation in time, not a cause; two machines reacting to the same
+events both match; and discovery may not tell apart two similar flows between the same stocks,
+so a hypothesis may belong to a flow's twin.
+
+A machine that publishes nothing is never associated with anything. To let Orchestra relate a
+machine's work to the flows, have it publish an event for each piece of work it does
+(section 5.2).
+
+A model version saved before 2026-10-27 keeps its old association, read from the counter's
+`machine` label, and the page marks it "label (before 2026-10-27)".
 
 **Model versions.** There is one model per project. Each discovery is kept as the latest
 (`model/discovered.json`). When its structure differs from the current version (stocks, flows,
@@ -1079,16 +1192,18 @@ changes nothing else. One discovery runs at a time per project; the host skips i
 the CLI or the page is discovering.
 
 **The Dynamics page** (`/dynamics`) shows the model as a stock-and-flow diagram: each stock with
-its level, a tank fill and a sparkline; a valve on each flow with its equation and machine;
+its level, a tank fill and a sparkline; a valve on each flow with its equation; in the flows
+table, the machines associated with each flow (as hypotheses, with confidence) or "no machine
+associated yet";
 influences as dashed + or − links; the feedback loops, marked balancing or reinforcing. Clicking a
 stock or a flow opens a drawer with its history, its balance (or fitted net flow), the flow's
-observed rate against its equation, and a simulation from now over a horizon you choose. The page
+observed rate against its equation, each machine hypothesis with why, and a simulation from now over a horizon you choose. The page
 says what the window and step are, lists what was left out and why, and steps through the saved
 versions. **Rediscover now** reruns discovery in the background, optionally with another
 strategy for that run.
 
 The other pages: **Machines** (section 5.6, with the event map and each machine's dialog),
-**Core** (the host and its processes, the bus and the store probed live, a series catalogue, a
+**Instruments** (section 3: each instrument's health and log), **Core** (the host and its processes, the bus and the store probed live, a series catalogue, a
 PromQL editor, an events explorer, and every log), and the **Dashboard** (what runs now and the
 host's resources). The UI is read-only: nothing on it changes your machines.
 
@@ -1098,8 +1213,8 @@ host's resources). The UI is read-only: nothing on it changes your machines.
 
 A small service with a queue: jobs arrive at random, one worker takes them off. It serves two
 counters and a level on `/metrics`. By the end, the Dynamics page shows the stock `queue_jobs`
-with an inflow `jobs_received_total` and an outflow `jobs_done_total`, both attributed to the
-machine `queue`.
+with an inflow `jobs_received_total` and an outflow `jobs_done_total`, measured by the scrape
+`queue`. The service publishes no events, so no machine is associated with either flow yet.
 
 ### Files
 
@@ -1196,7 +1311,7 @@ every = "1m"
 name = "queue"
 command = "python3 machines/queue_service.py"
 
-[[scrape]]              # ... and read it: same name, so one machine
+[[scrape]]              # ... and measure it (an instrument; the same name is allowed)
 name = "queue"
 url = "http://127.0.0.1:9397/metrics"
 every = "5s"
@@ -1222,24 +1337,25 @@ collect: queue: cannot fetch http://127.0.0.1:9397/metrics: [Errno 61] Connectio
 
 ### Check each step
 
-The series are in the store, labelled with the machine:
+The series are in the store, labelled with the instrument that measured them:
 
 ```
-$ orchestra metrics series | grep machine=queue
-jobs_done_total machine=queue
-jobs_received_total machine=queue
-queue_jobs machine=queue
+$ orchestra metrics series | grep instrument=queue
+jobs_done_total instrument=queue
+jobs_received_total instrument=queue
+queue_jobs instrument=queue
 ```
 
-The machine is on the Machines page (http://127.0.0.1:8000/machines): `queue`, kind `program`,
-mode `continuous`, active, with its three series.
+The scrape is on the Instruments page (http://127.0.0.1:8000/instruments): `queue`, kind URL,
+its target, every 5 s, its last write and points. The service is a process on the Core page. It
+is not on the Machines page, since it publishes nothing on the bus.
 
 After a minute or two, discover (or wait for the host's next run):
 
 ```
 $ orchestra sd discover
-conservation, over the last 10 min in 5 s steps: 1 stocks, 2 flows, 1 machines
-  stock queue_jobs: Δ = − jobs_done_total{machine="queue"} + jobs_received_total{machine="queue"}   (R² 1.000, exact in 100% of steps)
+conservation, over the last 10 min in 5 s steps: 1 stocks, 2 flows, 0 machines
+  stock queue_jobs: Δ = − jobs_done_total{instrument="queue"} + jobs_received_total{instrument="queue"}   (R² 1.000, exact in 100% of steps)
 left out:
   orchestra_host_up{machine="orchestra-host"}: Orchestra's own (the host's and the Core page's plumbing), not a measure of the system
   ...
@@ -1254,7 +1370,6 @@ flows:
   jobs_received_total                  fitted     constant     60.39 /minute                  n=74
 
 machines (attributed flows are hypotheses):
-  queue                machine  flows: jobs_done_total, jobs_received_total
 ```
 
 What happened:
@@ -1267,11 +1382,16 @@ What happened:
 3. Each flow's rate is fitted. Which form wins depends on the run: a constant, or, as the
    worker drains faster when more is waiting, one linear in `queue_jobs`
    (`25.1 + 12.13 × queue_jobs /minute` on one run). Your numbers will differ.
-4. Both counters carry `machine="queue"`, so both flows are attributed to `queue`.
+4. No machine is associated with either flow. The `instrument="queue"` label says only which
+   instrument measured the counters. A machine would be associated only by its events: if the
+   service published a `job.done` event for each job it finished, its count in
+   `orchestra_events_total` would match `jobs_done_total` step by step, and the service would
+   become a hypothesis for that flow, with its confidence.
 
 Open http://127.0.0.1:8000/dynamics: the stock `queue_jobs` with its level, a cloud feeding it
 through the valve `jobs received`, and a valve `jobs done` draining it to a cloud, each with its
-equation and the machine `queue`. Click the stock to see its history and its balance.
+equation, and "no machine associated yet" in the flows table. Click the stock to see its history
+and its balance.
 
 ### Stop it
 
@@ -1301,18 +1421,20 @@ printed it; `cat ~/.orchestrator/projects.json` lists every project's key.
    grep -E 'collect:|launcher:' <state>/logs/orchestra-host.log | tail -20
    ```
 
-   Look for `left out` (a bad name, a `[[collect]]` sharing a `[[machines]]` name, a missing
+   Look for `left out` (a bad name, a name another instrument already has, a missing
    `command` or `url`, a URL that is not `http(s)://`, `every` under 1 s) and
    `cannot read orchestra.toml` (a file that does not parse: the previous entries keep running).
 
-3. **Is this host the one that launches?** Only one host runs collectors. If the log says
+3. **Is this host the one that launches?** Only one host runs instruments. If the log says
    `another orchestra run (pid N) runs this project ... this one starts none`, the other host is
-   running them. Check `<state>/runtime.json` (`launcher`) or the Core page.
+   running them. Check `<state>/runtime.json` (`launcher`, `instruments`), the Core page or the
+   Instruments page.
 
-4. **Did the run fail?** The collector's own log says each round's result:
+4. **Did the run fail?** The Instruments page shows each instrument's failures and last error.
+   Its own log says each round's result:
 
    ```bash
-   tail -20 <state>/logs/machines/<name>.log
+   tail -20 <state>/logs/instruments/<name>.log
    curl -s 'http://127.0.0.1:8000/api/core/metrics/query?q=orchestra_collect_failures_total&hours=1'
    ```
 
@@ -1357,16 +1479,17 @@ printed it; `cat ~/.orchestrator/projects.json` lists every project's key.
 2. **Does it write on a schedule?** A level written only when it changes looks stopped between
    writes. Write every series every few seconds to a minute, changed or not.
 
-3. **Are its writes labelled?** Only series with `machine=<id>` count for the machine (and
-   `instance=<n>` for an instance). Collectors and scrapes add `machine`; points you write with
-   `for_repo()` need it from you.
+3. **Is it a machine at all?** A machine is on the page because it publishes on the bus. A
+   series, whatever its labels, never puts one there, and an instrument is never one (look on
+   the Instruments page). For a machine seen on the bus, writes to series labelled
+   `machine=<id>` (and `instance=<n>`) also count as signs of life, if any exist.
 
 4. **Is its clock ahead?** Points stamped more than 60 s in the future are refused, and events
    stamped ahead count only from when they were read.
 
 5. **Is it a process, not a machine?** A `[[machines]]` entry is a process. It is on the Core
    page (`running`, `waiting`, `gave_up`) whether or not it publishes. It is on the Machines page
-   only by what it publishes or by series labelled with its name (scrape it under the same name).
+   only by what it publishes. Scraping it, under any name, does not put it there.
    If it was given up on:
 
    ```bash
@@ -1376,8 +1499,10 @@ printed it; `cat ~/.orchestrator/projects.json` lists every project's key.
    Fix it, then change its entry (or restart `orchestra run`).
 
 6. **Is the page behind?** The web server reads the list of series once a minute, so a machine
-   known only by its writes can show a last-seen up to a minute old. A collector whose every round
-   fails is active only for two minutes after the host announced it, since it writes nothing.
+   whose last sign of life is a write can show a last-seen up to a minute old.
+
+7. **Was it a detector or collector before 2026-10-27?** Those were shown as machines then. They
+   are instruments now, on the Instruments page, and the old announcements are ignored.
 
 ### A stock is not found
 
@@ -1399,7 +1524,7 @@ printed it; `cat ~/.orchestrator/projects.json` lists every project's key.
    | `a counter of only N events: fewer than 5` | Wait for more events, or a longer window. |
    | `no counters balance it (best R² ...)` | A flow is not measured. Add a counter for every way in and out of the level (arrivals, completions, expiries, retries). Or the level is a quantity of its own, and stays an input. |
    | `too new to be a stock yet, an input until it covers enough` | Wait: the level must have been written for half the window's data. |
-   | `no longer written: its machine ... has been silent N min before the end of the window` | The machine stopped writing more than five minutes before the window's end. Restart it, or look at a window when it ran (`--minutes`). |
+   | `no longer written: its writer ... has been silent N min before the end of the window` | The series' writer (named there: usually the instrument) stopped writing more than five minutes before the window's end. Fix the instrument (Instruments page), or look at a window when it ran (`--minutes`). |
    | `named orchestra_*` | Rename it. |
    | `a counter no stock's balance needed` | Not a problem: a counter that explains no level. |
    | `the same as ...` / `the same quantity measured again` | Two series measure one thing; one is kept. |
@@ -1407,7 +1532,7 @@ printed it; `cat ~/.orchestrator/projects.json` lists every project's key.
 3. **Is the counter read as a counter?** It must end in `_total` and only rise (except resets).
    A `_total` series that falls often is read as a level. A counter without `_total` is a level.
 
-4. **Did the machine go quiet?** A series whose machine was silent for more than five minutes at
+4. **Did its writer go quiet?** A series whose writer was silent for more than five minutes at
    the end of the window is left out as gone.
 
 5. **Are the window and step right?** A level that changes for a few seconds is lost on a 30 s
@@ -1448,14 +1573,12 @@ Every command takes `--repo PATH`.
 
 ### Events Orchestra publishes
 
-All from `source = "orchestra-host"`, except collector announcements, which use the collector's
-name.
+All from `source = "orchestra-host"`. Nothing is published for an instrument.
 
 | Type | `data` |
 |---|---|
 | `orchestra.host.started`, `orchestra.host.stopped` | `pid` |
 | `orchestra.machine.started` (the host's own) | `mode = "continuous"`, `listens_for = []` |
-| `orchestra.machine.started` (for a collector, `source = <name>`) | `mode` (`scheduled` for `[[collect]]`, `continuous` for `[[scrape]]`), `kind = "program"`, `listens_for = []`, `log`, and unread: `collector`, `command` or `url`, `every_s` |
 | `orchestra.process.started` | `name`, `pid`, `command`, `owner` |
 | `orchestra.process.exited` | `name`, `pid`, `code`, `restart_in` (seconds, or null) |
 | `orchestra.process.gave_up` | `name`, `code`, `failures` |
@@ -1464,15 +1587,18 @@ name.
 
 | Series | Labels | Meaning |
 |---|---|---|
-| `orchestra_events_total` | `type`, `source` | Every event on the bus, counted by type and source. Discovery uses it. |
+| `orchestra_events_total` | `type`, `source` | Every event on the bus, counted by type and source: the one series derived from the event log, and secondary. Discovery uses it, and associates machines with flows from it. |
 | `orchestra_host_up` | `machine="orchestra-host"` | 1 while the host runs, 0 when it stops. Left out of discovery. |
-| `orchestra_collect_failures_total` | `collector`, `machine="orchestra-host"` | Failed collector and scrape rounds. Left out of discovery. |
+| `orchestra_collect_failures_total` | `collector`, `machine="orchestra-host"` | Failed `[[collect]]` and `[[scrape]]` rounds, by instrument (`collector` is its name). Left out of discovery. |
+
+Everything else in the store was written by an instrument (labelled `instrument=<name>`) or by a
+program of your own.
 
 ### Limits
 
 | What | Value |
 |---|---|
-| Collector or scrape output | 10 MB |
+| An instrument's output (a script's or a URL's) | 10 MB |
 | An event posted to the endpoint | 1 MB; `type`, `source` and `id` 256 characters, `subject` and the extensions 1024 |
 | `GET /events` | `wait` at most 30 s, `limit` at most 10,000 |
 | Duplicate ids the endpoint remembers | the bus's last 10,000 when it started, and every one posted to it since |
@@ -1482,3 +1608,25 @@ name.
 | Giving up | 5 failures in a row, each within 60 s of starting |
 | Log rollover | 5 MB, to `<name>.log.1` |
 | Active | 2.5 × the observed cadence, at least 2 minutes |
+
+### Migration (2026-10-27)
+
+Instruments were told apart from machines on 2026-10-27. What changes for an existing project:
+
+- **Collected series change identity.** A point from `[[collect]]` or `[[scrape]]` was labelled
+  `machine=<name>`; it is now labelled `instrument=<name>`. Each collected series' history
+  therefore splits at the upgrade: points before it carry `machine`, points after carry
+  `instrument`. Stores are not rewritten.
+- **The model keeps its ids.** Discovery reads both labels as provenance only, so stock and flow
+  ids do not change (replays of recorded systems kept every stock and flow). A window that spans
+  the upgrade sees two series for one measurement until the old one ages out of the window.
+- **Past model versions stay readable.** A version saved before shows its old, label-based
+  association, marked "label (before 2026-10-27)". New versions associate machines with flows
+  only as hypotheses from their events ([section 6](#machines-and-flows-hypotheses)).
+- **Detectors and collectors leave the Machines page.** The host no longer announces them, and
+  its old announcements for them (`orchestra.machine.started` with `data.collector`) are ignored.
+  They are on the new **Instruments** page.
+- **Logs move** from `<state>/logs/machines/<name>.log` to `<state>/logs/instruments/<name>.log`
+  for instruments. A launched process's log stays where it was.
+- **Names.** A `[[collect]]` may now share a `[[machines]]` entry's name (before, only a
+  `[[scrape]]` could).

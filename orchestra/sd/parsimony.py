@@ -40,7 +40,7 @@ def same_events(a: list[float], b: list[float]) -> bool:
     return moved > 0 and apart <= CANCEL_STEPS * moved
 
 
-def fewer_counters(found: list, counters: list[Series], masks: dict[str, list[int]], fits, apart: set[str], machine_of
+def fewer_counters(found: list, counters: list[Series], masks: dict[str, list[int]], fits, apart: set[str], writer_of
                    ) -> tuple[list, dict[str, str]]:
     """The balances with each such set replaced, and per counter taken out, why."""
     used = {c.key for _, terms, _, _ in found for c, _ in terms}
@@ -53,7 +53,7 @@ def fewer_counters(found: list, counters: list[Series], masks: dict[str, list[in
             best = None
             for size in range(2, min(MAX_SET, len(terms)) + 1):
                 for sub in combinations(terms, size):
-                    if any(machine_of(c) is not None and machine_of(c) == machine_of(s) for c, _ in sub):
+                    if any(writer_of(c) is not None and writer_of(c) == writer_of(s) for c, _ in sub):
                         continue
                     summed = [sum(sign * c.deltas[i] for c, sign in sub) for i in range(len(s.deltas))]
                     t = 1 if sum(summed) >= 0 else -1

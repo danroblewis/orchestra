@@ -20,10 +20,11 @@ In an empty Orchestra it does little, on purpose:
   (``events_endpoint``) and, with the token, in the environment of what the host launches
   (``ORCHESTRA_EVENTS_ENDPOINT``, ``ORCHESTRA_EVENTS_TOKEN``). It starts before the processes and
   stops after them, so a machine can publish until it is stopped;
-- in the host that launches, it runs the collectors the project declares (``[[collect]]``, a
+- in the host that launches, it runs the instruments the project declares (``[[collect]]``, a
   command, and ``[[scrape]]``, a URL, in ``orchestra.toml``) and the plugins declare
   (``Plugin.collectors``) on their intervals and writes what they print, in the Prometheus text
-  format, to the metrics store (``orchestra.collect``).
+  format, to the metrics store, labelled ``instrument=<name>`` (``orchestra.collect``). An
+  instrument is not a machine: nothing is announced for it; its health is in the runtime record.
 
 Stopping it (SIGTERM, SIGHUP or Ctrl-C) stops what it launched."""
 
@@ -154,7 +155,7 @@ class Host:
         served = self._serve_events()
         env = {endpoint.ENV_URL: served.url, endpoint.ENV_TOKEN: served.token} if served else {}
         launcher = Launcher(self.project, self.events.publish, self.log, self._plugin_processes, env=env)
-        collecting = Collecting(self.project, self.events.publish, self.log, plugin_collectors=self._plugin_collectors)
+        collecting = Collecting(self.project, self.log, plugin_collectors=self._plugin_collectors)
         launcher.reap_orphans()
         try:
             while not self._stop.is_set():

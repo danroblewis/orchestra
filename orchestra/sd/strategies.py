@@ -52,6 +52,7 @@ import re
 import time
 from pathlib import Path
 
+from .attribute import UNSET
 from .bounded import Late, run_jobs
 from .discover import FLAG_EXACT, MIN_EVENTS, UNITS, discover
 from .inputs import offered_inputs
@@ -200,6 +201,23 @@ def _judged(base: Model, net: set[str], sd_flows: list[dict], parts: list, coars
     return sd_flows
 
 
+HIDDEN = ("a stock no series measures, found from how the measured levels change: something in the system "
+          "is not measured or not understood yet")
+
+
+def _associated(matched: list[Flow]) -> dict:
+    """The machines associated with a flow SD Lab found: every hypothesis of the counters' flows it
+    stands for (``sd.attribute``)."""
+    hyps: dict[str, dict] = {}
+    for m in matched:
+        for h in (m.evidence.get("machines") or {}).get("hypotheses") or []:
+            if h["machine"] not in hyps or h["confidence"] > hyps[h["machine"]]["confidence"]:
+                hyps[h["machine"]] = h
+    if hyps:
+        return {"hypotheses": sorted(hyps.values(), key=lambda h: (-h["confidence"], h["machine"]))}
+    return {"hypotheses": [], "why": f"{UNSET}: " + ("no counter measures it" if not matched else "no machine's events match its counters")}
+
+
 def discover_with(dump, *, start: float, end: float, step: float, strategy: str = CONSERVATION,
                   options: dict | None = None, time_unit: str = "minute", deadline: float | None = None,
                   kinds: dict | None = None) -> Model:
@@ -285,7 +303,10 @@ def discover_with(dump, *, start: float, end: float, step: float, strategy: str 
     sd_by_ends: dict[tuple, list[dict]] = {}
     for sf in sd_flows:
         sd_by_ends.setdefault((sf.get("from"), sf.get("to")), []).append(sf)
-    owner = {fid: m.id for m in base.machines for fid in m.attributed}
+    owners: dict[str, list[str]] = {}
+    for mc in base.machines:
+        for fid in mc.attributed:
+            owners.setdefault(fid, []).append(mc.id)
     flows, used, attributed, dropped = [], set(), {m.id: [] for m in base.machines}, across
     hidden: dict[str, Stock] = {}
     for (src, dst), sfs in sd_by_ends.items():
@@ -299,7 +320,7 @@ def discover_with(dump, *, start: float, end: float, step: float, strategy: str 
             continue
         for end_ in (src, dst):
             if end_ and end_ not in stock_ids and end_ not in hidden:
-                hidden[end_] = Stock(end_, end_.replace("_", " "), "items", None, {"hidden": True, "strategy": strategy})
+                hidden[end_] = Stock(end_, end_.replace("_", " "), "items", None, {"hidden": True, "strategy": strategy, "note": HIDDEN})
         if len(matched) == 1:
             fid, name, counter = matched[0].id, matched[0].name, matched[0].counter
         elif matched:
@@ -313,12 +334,14 @@ def discover_with(dump, *, start: float, end: float, step: float, strategy: str 
              **({"judged_scale": float(sfs[0]["judged_scale"])} if len(sfs) == 1 and "judged_scale" in sfs[0] else {})}
         eq = Equation(rate.get("form", "unknown"), numbers(rate), "discovered", f"sdlab:{strategy}", (fit_start, fit_start + n * coarse),
                       None, q, [ref(x) for x in reads(rate)], rate)
-        flows.append(Flow(fid, name, src, dst, counter, [eq], [m.counter for m in matched if m.counter],
-                          matched[0].evidence if len(matched) == 1 else {}))
+        ev = matched[0].evidence if len(matched) == 1 else {}
+        if "machines" not in ev:
+            ev = {**ev, "machines": _associated(matched)}
+        flows.append(Flow(fid, name, src, dst, counter, [eq], [m.counter for m in matched if m.counter], ev))
         used.update(m.id for m in matched)
         for m in matched:
-            if owner.get(m.id):
-                attributed[owner[m.id]].append(fid)
+            for who in owners.get(m.id, []):
+                attributed[who].append(fid)
     for bf in base.flows:                                       # counters SD Lab found no flow for
         if bf.evidence.get("net_flow_of") in replaced:          # a net flow SD Lab found again in its own forms
             base.stock(bf.evidence["net_flow_of"]).evidence.setdefault("conservation_fit", []).append(bf.id)
@@ -327,8 +350,8 @@ def discover_with(dump, *, start: float, end: float, step: float, strategy: str 
             if bf.current():
                 bf.current().quality["no_flow_from_levels"] = 1.0
             flows.append(bf)
-            if owner.get(bf.id):
-                attributed[owner[bf.id]].append(bf.id)
+            for who in owners.get(bf.id, []):
+                attributed[who].append(bf.id)
     for m in base.machines:
         m.attributed = list(dict.fromkeys(attributed[m.id]))
     model = Model(base.id, base.name,

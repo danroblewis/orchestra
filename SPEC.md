@@ -1,11 +1,13 @@
 # Orchestra Specification
 
-Orchestra observes a system of **machines** and keeps a **system dynamics model** of it. A
-machine is anything outside Orchestra that does something: a program, an AI agent, a service, a
-team of people. Machines talk over Orchestra's **event bus** and write measurements to its
-**metrics store**. From those measurements Orchestra builds and fits one model of the whole
-system: stocks, flows, and the feedback loops between them, with each flow attributed to the
-machines believed to cause it.
+Orchestra observes a system and the **machines** working in it, and keeps a **system dynamics
+model** of it. A machine is anything outside Orchestra that does actual work: a program, an AI
+agent (a universal machine), a person. Machines talk over Orchestra's **event bus**.
+**Instruments** (scripts, scraped URLs, other stores) measure the running system into its
+**metrics store**, apart from the machines. From those measurements Orchestra builds and fits
+one model of the whole system: stocks, flows, and the feedback loops between them. System
+dynamics has no machines: how a machine's work relates to the model's flows is not known, and
+Orchestra infers it, as hypotheses with their evidence.
 
 Its main use case is finding the feedback loops between a project's own domain and the processes
 used to develop it: do our workflows and AI agents change the measures the project exists for?
@@ -25,15 +27,20 @@ This document is the design of what exists. `AGENTS.md` lists the rules that mus
 ## 1. Principles
 
 1. **System dynamics first.** Everything Orchestra does serves the model: what is measured, how
-   stocks and flows relate, and which machines change them.
+   stocks and flows relate, and how the machines' work may relate to them.
 2. **Machines are outside Orchestra.** Orchestra can't guarantee what a machine does; it knows a
-   machine only by what it observes: events on the bus and series in the metrics store.
+   machine exists because it shows up on the bus. A machine may influence no flow, one or several,
+   and several machines may contribute to one flow; which, is inferred, never declared.
 3. **There is one system and one model.** Development and domain sit side by side. Large models
    are sliced for viewing with metadata, filters and graph algorithms, never split.
 4. **Flows are observed, not proclaimed.** Equations are fitted or discovered from the measured
-   history, and every equation records its origin. A machine's intended effect is a hypothesis.
-5. **Stocks are discovered, not configured.** Collectors expose plain series; the model generator
-   relates them.
+   history, and every equation records its origin. A machine's association with a flow is a
+   hypothesis with its evidence.
+5. **Stocks are discovered, not configured; measurements are not machines.** Metrics are
+   objective measurements of the running system, kept apart from the machines whose work we hope
+   influences them, so they can test what we believe. Instruments expose plain series; the model
+   generator relates them. Who wrote a series never makes a machine, and never associates one
+   with a flow.
 6. **The core stays up.** The bus, the metrics store and the host are probed on their own, so the
    Core page works when the model or every machine is broken.
 
@@ -41,11 +48,14 @@ This document is the design of what exists. `AGENTS.md` lists the rules that mus
 
 ## 2. Machines and events
 
-A **machine** is identified by the CloudEvents `source` it publishes under. Several instances of
-one machine publish as `<machine>/<instance>` (`baker/1`, `baker/2`: one machine, two instances)
-and label their metrics `machine=<machine>, instance=<instance>`. A machine may publish to the
-bus, listen to it, write metrics, all of these, or none (a machine that only changes measures
-others write is still a machine). Orchestra's own machine is the **bootstrap host**,
+A **machine** does actual work, and is identified by the CloudEvents `source` it publishes under.
+Several instances of one machine publish as `<machine>/<instance>` (`baker/1`, `baker/2`: one
+machine, two instances). Orchestra knows a machine exists because it shows up on the bus (or, on
+another system's bus, as the producer or consumer of counted traffic). A machine does not
+produce metrics: what measures the system is an **instrument** (§4, §5.2), and a series
+labelled with a name never makes that name a machine. A plugin may list machines it provides
+(`Plugin.machines`) as placeholders, shown until they are first seen; they never override what is
+observed and say nothing about flows. Orchestra's own machine is the **bootstrap host**,
 `orchestra-host` (section 5).
 
 **How a machine is engaged** is one of three modes, a property of how it is run, not of what it
@@ -62,11 +72,9 @@ announcements are Orchestra's own event type, so Orchestra reads their `data`. T
 shows an announced log only when its real path is a regular file inside the project's repository
 or state directory (`web/machine_logs.py`), because anything that can publish could name any
 file. The host starts and keeps running the commands a project or a plugin declares (§5.1), but
-knows them only as processes: a process becomes a machine by what it publishes. The collectors a
-project declares (§5.2) are the one case where the host announces a machine on its behalf, from
-`orchestra.toml`: what it announces is how the host engages the collector (on a schedule, or a
-scrape of a program that runs on its own), and the Machines page reads that announcement like
-any other. Running machines on
+knows them only as processes: a process becomes a machine by what it publishes. The instruments
+a project declares (§5.2) are not machines, and nothing is announced for them; announcements the
+host made for them before 2026-10-27 (`data.collector`) are ignored by the Machines page. Running machines on
 a clock is not built (`docs/roadmap/decisions.md`, D7).
 
 Every event carries the **CloudEvents 1.0** envelope (`orchestra.events.envelope`):
@@ -189,41 +197,53 @@ give (kind `person`, if they announce it), as with the helper.
 
 ---
 
-## 4. Metrics, collectors and the model
+## 4. Metrics, instruments and the model
 
 ### 4.1 The metrics store
 
 Measured series (`orchestra/metrics/`): name plus labels, like Prometheus, each carrying a
 `project` label. A JSONL file by default, or VictoriaMetrics (`[metrics] url =
 "http://host:port"`, or `ORCHESTRA_METRICS_URL`). The interface: `write`, `raw`, `range`,
-`latest`, `series`, `dump`, `delete`. A range carries the last value forward at each step. A
-machine's series reach the store without the machine importing Orchestra: a script collector
-prints them, or a program serves them, in the Prometheus text format, and the host writes them
-(§5.2). A Python program may instead write them through `orchestra.metrics.for_repo()`, the store
-the project's `orchestra.toml` configures. Either way every series is labelled `machine=<id>`, so
-it can be attributed, and `project`, which every reader selects by. Names say what is measured (`bakery_shelf_loaves`,
-`orchestra_events_total`); whether a series is a stock or a flow is the model's business. The
-`orchestra_` prefix is Orchestra's own: discovery leaves those series out, and says so of one a
-program wrote. How to write a machine's series is in `docs/machines.md`.
+`latest`, `series`, `dump`, `delete`. A range carries the last value forward at each step.
+
+The metrics are objective measurements of the running system, not of the machines, and the
+store is filled by **instruments** directly: a script the host runs (`[[collect]]`) or a URL it
+reads (`[[scrape]]`), each printing the Prometheus text format, declared by the project or a
+plugin (§5.2). An instrument measures and never acts; it is not a machine. Each point it writes
+is labelled `instrument=<name>` (provenance: who measured it) and `project`, which every reader
+selects by; every other label the target gave is kept, a `machine` label included (the measured
+system's own dimension of the data). A Python program may also write series through
+`orchestra.metrics.for_repo()`, the store the project's `orchestra.toml` configures; the label it
+gives them says who wrote them, nothing more. Who wrote a series never makes a machine, and never
+associates one with a flow (AGENTS.md rule 7). Orchestra's own count of the bus,
+`orchestra_events_total` (§4.2), is the one series derived from the event log, and is secondary.
+Names say what is measured (`bakery_shelf_loaves`, `orchestra_events_total`); whether a series is
+a stock or a flow is the model's business. The `orchestra_` prefix is Orchestra's own: discovery
+leaves those series out, and says so of one a program wrote. How to write an instrument is in
+`docs/machines.md`.
 
 Queries are PromQL: VictoriaMetrics answers them itself (scoped with `extra_label=project=<key>`);
 the file store uses `orchestra/metrics/promql.py`, a tested subset.
 
-### 4.2 Collectors
+### 4.2 Instruments, and the count of the bus
 
 Orchestra's own collector (`orchestra/collectors.py`) counts every event on the bus by type and
-source: `orchestra_events_total{type, source}`. The host runs it live (section 5); `orchestra
+source: `orchestra_events_total{type, source}`, the one series derived from the event log.
+Discovery reads it to associate machines with flows (§4.3). The host runs it live (section 5); `orchestra
 metrics backfill` replays the whole log. Only the last value of a series at an instant is written,
 because stores disagree on the order of points that share one.
 
-A project's own collectors, a command run on an interval (`[[collect]]`) or a URL read on one
-(`[[scrape]]`), are in §5.2.
+A project's own instruments, a command run on an interval (`[[collect]]`) or a URL read on one
+(`[[scrape]]`), and a plugin's (`Plugin.collectors`), are in §5.2; another store read at each
+discovery (`[[sources]]`) is in §4.4. The web UI lists them on the Instruments page
+(`web/instruments.py`): what kind each is, its target, how often it is read, its last write, its
+failures and last error, and its log.
 
 ### 4.3 The model
 
 `orchestra/sd/`: stocks (each bound to a series), flows (each bound to a counter), equations
-(each with its **origin**: `fitted`, `discovered` or `declared`, and its quality), machines
-attributed to flows, and eras. There is **one model** per project; every change is saved as a new
+(each with its **origin**: `fitted`, `discovered` or `declared`, and its quality), the machines
+associated with flows as hypotheses, and eras. There is **one model** per project; every change is saved as a new
 version (`<state>/model/vNNNN.json`), the highest is current, and past versions stay readable.
 
 **Fitting** (`sd/fit.py`): each flow's count per step is Poisson with mean `c × time`
@@ -291,7 +311,7 @@ Conservation (`sd/discover.py`):
    flows' windows, never the rest of the model's. A level live for less than half of the
    window's data (from the first time any series was live in the window, while anything was
    written) is too new to be a stock and stays an input, with the reason, until it covers
-   enough: a collector started ten minutes ago would otherwise be balanced on whatever counters
+   enough: an instrument started ten minutes ago would otherwise be balanced on whatever counters
    moved in those ten minutes. A series whose machine has been silent at the end of the window
    for longer than a restart takes (five minutes of the time anything at all was written: a
    computer asleep writes nothing, and its machines' silence then is not theirs) is gone, or
@@ -402,8 +422,22 @@ Conservation (`sd/discover.py`):
    are scored with the exact point-process likelihood (each event against the levels just
    before it), because counts per step favour spurious forms when a flow drains the level it
    depends on;
-5. each flow is attributed to the machine named by its counter's `machine` (or, for event
-   counters, `source`) label.
+5. machines are **associated** with each flow only as hypotheses with their evidence
+   (`sd/attribute.py`, `flow.evidence["machines"]`): a machine whose own events of one type
+   (`orchestra_events_total`, its instances summed) match the flow counter's increments step by
+   step, at the same step or one either way, equal in at least 90% of the steps either moved, or
+   correlated at least 0.9 with totals within a factor of two, each with its confidence; and a
+   counter that is itself a machine's event count is that machine's. Every machine that matches
+   is a hypothesis, so several may be for one flow, and a machine may be for none. Orchestra's
+   own event types never are. Nothing declares an association (no configuration, no plugin), who
+   wrote a series (its `instrument` or `machine` label, counted traffic's included) is never read
+   for it, and it changes no equation and no stock or flow. A flow with none says **no machine
+   associated yet**: a question about the system, not an answer. The limits: a match is a
+   correlation in time, not a cause; two machines reacting to the same events both match; and
+   discovery may not tell apart two similar flows between the same stocks, so a hypothesis may
+   belong to a flow's twin. Who wrote a series is still read as provenance: a writer's series
+   share when it was alive (step 1), and a level's own writer's counters are searched first (step
+   2).
 
 Last, a level no counters balance may still be a **stock by its fitted net flow**
 (`sd/netflow.py`): something accumulates in it (a temperature, a river, a tide, a load, a backlog
@@ -421,7 +455,9 @@ constant stays an input, and so does one that is another series measured again (
 with that series', or its values and changes follow it, up to two stretches apart), each with the
 reason. An accepted stock's net flow is an inflow (`c + a × X`, or its negative as an outflow) and
 an outflow proportional to the stock (`−b × level`), origin `fitted`, method `least-squares`, with
-no counter and no machine; with an SD Lab strategy its flows take their place.
+no counter and no machine associated; with an SD Lab strategy its flows take their place. A hidden
+stock an SD Lab strategy finds says what it is: something in the system not measured or not
+understood yet.
 
 Everything else is **left out, with the reason** (did not change, written in too few steps, no
 counters balance it and no net flow explains it, not needed by any balance, the same as another
@@ -516,7 +552,8 @@ traffic = { direction = "out", channel = "{exchange}" }   # out | in (counters),
 
 `channel` and `machine` are templates over each result series' labels (after the aliases), or
 plain names; the channel is `<prefix>:<channel>` and the machine `<prefix>.<machine>`, which
-becomes the series' `machine` label, so discovery attributes the flow to the producer or consumer.
+becomes the series' `machine` label: the producer or consumer is a machine on the Machines page,
+known by its counts. Discovery does not read that label to associate it with a flow (§4.3 step 5).
 A count with no machine is unattributed, unless the source's `[sources.producers]` (channel =
 machine) declares who produces into that channel: a broker's counts rarely name publishers. This
 is metadata on the definition, never a label convention (a store's own `channel` label means
@@ -555,7 +592,7 @@ and `sd verify`, the Sources page, command/OAuth2/SigV4 auth, SQL sources.
 - rediscovers the model every `[discovery] every`;
 - keeps running the processes the project and the plugins declare (§5.1);
 - serves the events endpoint (§3.1) while it launches;
-- runs the collectors the project declares (§5.2).
+- runs the instruments the project and the plugins declare (§5.2).
 
 ### 5.1 The launcher
 
@@ -600,14 +637,14 @@ The launcher starts commands and nothing more: what a process does and which mac
 learned only from what it publishes (AGENTS.md rules 1 and 2). A process's name is not a machine
 id.
 
-### 5.2 Collectors and scrapes
+### 5.2 Instruments: collectors and scrapes
 
 `orchestra/collect/`. A project declares in `orchestra.toml` commands that print measurements and
-URLs that serve them:
+URLs that serve them, and a plugin declares its own in `Plugin.collectors` (§10.1):
 
 ```toml
 [[collect]]
-name = "disk"                    # the machine's id: letters, digits, . _ -
+name = "disk"                    # the instrument's id: letters, digits, . _ -
 command = "machines/disk.sh"     # split like a shell would, not run by one
 every = "60s"                    # default 60 s, at least 1 s
 timeout = "20s"                  # default 10 s, never more than every
@@ -618,34 +655,46 @@ url = "http://127.0.0.1:9100/metrics"
 every = "30s"
 ```
 
-The host that launches (§5.1) runs each on its interval, each round in a thread of its own; a
-collector whose last round is still running skips its turn. A command runs in the repository root,
+Each is an **instrument**: it measures the running system and never acts on it, so it is not a
+machine (AGENTS.md rule 7). Nothing is announced on the bus for it and it is not on the Machines
+page; the Instruments page lists it. Its name is its own: it may share a `[[machines]]` entry's
+name (a scrape of the program that entry runs) without being that machine. A plugin's is named
+`<plugin>.<name>`, and a project entry of that name takes its place, with a line in the host's
+log; the plugins are asked for theirs again whenever `orchestra.toml` changes.
+
+The host that launches (§5.1) runs each on its interval, each round in a thread of its own; an
+instrument whose last round is still running skips its turn. A command runs in the repository root,
 in a process group of its own, with `ORCHESTRA_REPO` and `ORCHESTRA_MACHINE_LOG` set and its
-standard error going to its log (`<state>/logs/machines/<name>.log`); a URL is fetched with a GET.
+standard error going to its log (`<state>/logs/instruments/<name>.log`); a URL is fetched with a GET.
 The text, a command's standard output or a URL's body, is read as the Prometheus text exposition
 format (`collect/exposition.py`): samples with labels and optional millisecond timestamps, `# HELP`
 and `# TYPE` lines. Counters, gauges and untyped series are kept as they are; of a histogram or a
 summary only `_count` and `_sum` are kept, its buckets and quantiles left out; a value that is not a
 number is left out; a line that cannot be read is skipped and said once in the host's log. Each
-point gets `project` and `machine = <name>`, replacing any the text gave, and the round's start
-time when it has no timestamp. A series named `orchestra_*` is refused, with a line in the host's
-log saying to rename it.
+point gets `project` and `instrument = <name>` (its provenance), and the round's start time when it
+has no timestamp. Every other label the text gave is kept as it was, `machine` included: the
+measured system's own dimension of the data. A label of the text that Orchestra sets (`project`,
+`instrument`) is kept as `exported_<name>`, as Prometheus does, never overwritten. A series named
+`orchestra_*` is refused, with a line in the host's log saying to rename it.
 
 A round that fails (a non-zero exit, the timeout, which kills the command's group, a command that
 cannot start, an HTTP answer other than 200, or text over 10 MB) writes nothing, adds a line to the
-host's log and the collector's, and is counted in `orchestra_collect_failures_total{collector}`,
-labelled `machine="orchestra-host"`: a failing collector's writes must not look like signs of its
-life. A round that succeeds adds a line to the collector's log.
+host's log and the instrument's, and is counted in `orchestra_collect_failures_total{collector}`,
+labelled `machine="orchestra-host"`. A round that succeeds adds a line to the instrument's log.
+Each instrument's health is in the runtime record (`instruments`: its kind, target, interval,
+owner and log, its last write and how many points, its failures and its last error), written when
+an instrument is added, removed, fails, first writes or writes a different number of points, and
+otherwise at most every 5 s. `orchestra.toml` is read again on the host's tick (every second) when
+it changed: an instrument added starts at once, one removed stops (a round under way finishes and
+its points are dropped), one changed starts over, and an entry that cannot be used is left out
+with a line in the host's log. Stopping the host kills a command under way and writes nothing
+more.
 
-When a collector is added or changed the host publishes `orchestra.machine.started` with the
-collector's name as `source`: mode `scheduled` for a command, `continuous` for a scrape (the
-program it reads runs on its own), kind `program`, no `listens_for`, and its log; the rest
-(`collector`, `command` or `url`, `every_s`) is passed on unread. `orchestra.toml` is read again on
-the host's tick (every second) when it changed: a collector added starts at once, one removed stops
-(a round under way finishes and its points are dropped), one changed starts over. A `[[scrape]]`
-may share the name of the `[[machines]]` entry whose program it reads; a `[[collect]]` may not, and
-an entry that cannot be used is left out with a line in the host's log. Stopping the host kills a
-command under way and writes nothing more.
+Before 2026-10-27 the host announced each collector as a machine (`orchestra.machine.started`
+with `data.collector`) and labelled its points `machine=<name>`. Those announcements are ignored
+now, and the store is not rewritten: a collected series' history splits at the upgrade into the
+old `machine=<name>` series and the new `instrument=<name>` one. Discovery reads both labels as
+provenance, so stock and flow ids do not change.
 
 Only the Prometheus text format is read. There is no push endpoint for measurements (D16; events have one, §3.1). A remote Prometheus server is
 read where its data lives, not copied (§4.4).
@@ -654,8 +703,8 @@ read where its data lives, not copied (§4.4).
 
 ## 6. Machines that are AI agents
 
-Orchestra runs no AI. An AI agent is a machine like any other, known by its `source`, its events
-and its series; what starts it and talks to its model belongs to the package that runs it, which
+Orchestra runs no AI. An AI agent is a machine like any other, a universal one, known by its
+`source` and its events; what starts it and talks to its model belongs to the package that runs it, which
 keeps its own harness (`~/orchestra-agents/SPEC.md`).
 
 ---
@@ -667,14 +716,15 @@ keeps its own harness (`~/orchestra-agents/SPEC.md`).
   projects.json                  repository root → project key
   <key>/
     project.json
-    runtime.json                 the hosts', the launcher's, the events endpoint's, the web server's and the launched processes' records
+    runtime.json                 the hosts', the launcher's, the events endpoint's, the web server's, the launched processes' and the instruments' records
     events.token                 the events endpoint's token (§3.1), readable by its owner only
     events.jsonl                 the event log, when [events] url = "file"
     metrics.jsonl                the metrics, when [metrics] url = "file"
     model/vNNNN.json             the model's versions
     sources/<name>.json          each source's latest inference: its definitions, what was left out, its families (§4.4)
     logs/orchestra-host.log
-    logs/machines/<name>.log     each launched process's output (§5.1), each collector's standard error and rounds (§5.2)
+    logs/machines/<name>.log     each launched process's output (§5.1)
+    logs/instruments/<name>.log  each instrument's standard error and rounds (§5.2)
 ```
 
 The project key is the repository directory's name plus a hash of its path. Nothing is written
@@ -724,7 +774,7 @@ machines may keep its own settings here (other packages' sections).
 | Command | What it does |
 |---|---|
 | `orchestra init` | Register the repository and write `orchestra.toml` |
-| `orchestra run` | Run the bootstrap host, the processes the project and plugins declare, and the project's collectors |
+| `orchestra run` | Run the bootstrap host, the processes the project and plugins declare, and the instruments |
 | `orchestra web [--port]` | Serve the web UI |
 | `orchestra events info\|endpoint [--env]\|copy --to URL` | The event log; where the events endpoint is, and its token (§3.1) |
 | `orchestra metrics backfill\|series` | Replay the log into event counters; list series |
@@ -735,7 +785,7 @@ machines may keep its own settings here (other packages' sections).
 
 ## 10. Web UI
 
-Read-only for humans. Navigation: Dashboard, Machines, Dynamics, Core.
+Read-only for humans. Navigation: Dashboard, Machines, Instruments, Dynamics, Core.
 
 - **Dashboard:** panels as sections of one page on a 12-column grid (`static/dashboard.js`, with
   gridstack.js): the viewer drags a panel by its title bar and resizes it from its edges and
@@ -746,7 +796,7 @@ Read-only for humans. Navigation: Dashboard, Machines, Dynamics, Core.
   in the last two minutes; a click opens its dialog) and **Host** (a Core status strip; the
   host's CPU, GPU, memory and disk). A package adds panels of its own (`Orchestra.panels`, from its
   every-page script; §10.1).
-- **Machines:** every machine seen on the bus with its instances, how each is engaged and what kind
+- **Machines:** every machine seen on the bus (never one a series names, never an instrument) with its instances, how each is engaged and what kind
   it is (a machine whose instances differ says so: agent ×2, program ×1), whether it is active (last
   seen, by an event or a write, within two and a half beats of its own cadence and at least two
   minutes, the gap its events or writes are observed at; never by anything stamped in the future), the event map (by default machines only: an
@@ -764,8 +814,13 @@ minutes, which allows for the store's scrape interval and the minute between rea
   (its card or its node) opens its dialog: instances, what it publishes and listens for, its
   series' latest values, its last events (envelopes only) and the tail of its announced log,
   refreshed while open.
+- **Instruments:** every instrument (`web/instruments.py`): a script (`[[collect]]`), a URL
+  (`[[scrape]]`) or a source (`[[sources]]`), the project's and the plugins', with its target, how
+  often it is read, its last write and how many points, its failures and last error, and its log;
+  read from the runtime record and `orchestra.toml`, never by running or querying one.
 - **Dynamics:** the model as a stock-and-flow network (stocks with their level, tank fill and
-  sparkline; a valve per flow with its equation and machine; influences as dashed +/− links),
+  sparkline; a valve per flow with its equation and the machines associated with it, as
+  hypotheses with their confidence, or "no machine associated yet"; influences as dashed +/− links),
   its feedback loops marked balancing or reinforcing, the stocks' history, and drawers with each
   stock's and flow's history (a flow's observed rate against its equation's prediction). A
   stock's drawer also runs the equations (`sd/simulate.py`, SD Lab's simulator): from the measured
@@ -826,7 +881,10 @@ its own (`orchestra/plugins.py`). It names a function in the entry-point group
 title for the navigation, an HTML file that may use `/static/app.js` and `/static/style.css`), a
 static directory (served at `/plugins/<name>/static`), a FastAPI router (at
 `/api/plugins/<name>`), the processes `orchestra run` should keep running for it (`processes`:
-`orchestra.launcher.Process`, §5.1: a name, a command, a restart policy and a stop grace), and scripts from its static directory that every page loads after its own
+`orchestra.launcher.Process`, §5.1: a name, a command, a restart policy and a stop grace), the
+instruments it reads measurements from (`collectors`: `orchestra.collect.spec.Collector`, §5.2),
+the machines it provides (`machines`: placeholders shown until first seen, which never override
+what is observed and say nothing about flows), and scripts from its static directory that every page loads after its own
 (for what must be visible wherever the viewer is, such as the way to reach the package's own pages).
 From those scripts a package may register Dashboard panels (`Orchestra.panels`) and draw the cards
 of the machines it claims (`Orchestra.machineCards`: what is inside Orchestra's machine-card
@@ -834,7 +892,8 @@ frame, a few words for the Dashboard's machine list, and the machine's dialog). 
 own stylesheets, files from its static directory that every page links in its head after
 Orchestra's (`stylesheets`): Orchestra's has nothing of any package's domain. `/api/plugins` lists
 the pages, which the navigation adds after Orchestra's own, and any plugin that failed to load.
-A plugin that fails, or a page at a path Orchestra serves, is left out, never fatal. A plugin is
+A plugin that fails, one whose name an earlier plugin took, a page at a path Orchestra serves, or
+a script or stylesheet missing from its static directory is left out and reported, never fatal. A plugin is
 the package's, not Orchestra's: its routes are its own, and Orchestra knows nothing of what they
 mean.
 
@@ -847,17 +906,18 @@ orchestra/
   cli.py  config.py  events.py  runtime.py  host.py  launcher.py  collectors.py  plugins.py
   bus/       file, redis_streams, rabbitmq_streams, kafka
   endpoint/  the events endpoint (§3.1): the token and the record, validate, server
-  collect/   a project's collectors and scrapes: spec, fetch, exposition (the Prometheus text
-             format), round, runner
+  collect/   instruments, a project's and the plugins' collectors and scrapes: spec, fetch,
+             exposition (the Prometheus text format), round, runner
   metrics/   file, victoria, promql
   sources/   other stores, read in place: spec, preset, auth, prometheus, own, schema, views,
              transform, rank, infer, fetch, traffic (counted traffic), catalogue, report (the CLI's text)
   sd/        model, store, fit, series and live (sampling, when a series was written), balance,
              collinear and restate (a level's balance), ends, inputs, drivers (which stocks may
-             drive a flow), discover (conservation), rates, strategies, simulate, rediscover,
+             drive a flow), discover (conservation), attribute (machines associated with flows,
+             as hypotheses), rates, strategies, simulate, rediscover,
              provenance (where each series in a model came from)
   sdlab/     SD Lab's discovery research: ~70 strategies (needs the sd extra)
-  web/       app, core, core_explore, machines, traffic (counted traffic), dynamics, static/
+  web/       app, core, core_explore, machines, instruments, traffic (counted traffic), dynamics, static/
 tests/
   unit/  bus/  metrics/  sources/  acceptance/
 ```

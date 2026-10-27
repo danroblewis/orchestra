@@ -1,7 +1,8 @@
 """The series discovery works on: every series of a project sampled onto a grid of steps, told
 apart as a counter or a level, a machine's instances summed into one counter, and each marked
-with when it was live (``sd.live``: its machine alive, and a gauge written since the machine's
-last silence)."""
+with when it was live (``sd.live``: its writer alive, and a gauge written since the writer's
+last silence). A series' writer is who put it in the store (``writer_of``: an instrument, or a
+machine writing its own), which says when it was measured, never which machine sets it."""
 
 from __future__ import annotations
 
@@ -107,10 +108,22 @@ class Series:
         return out
 
 
-def machine_of(s: Series) -> str | None:
-    """The machine a series belongs to: its ``machine`` label, or, for Orchestra's event counters,
-    the ``source`` that emitted the events (``unknown`` is no machine)."""
-    who = s.labels.get("machine") or (s.labels.get("source") or "").partition("/")[0]   # baker/2 is the machine baker
+WRITTEN_BY = ("instrument", "machine")   # the labels that say who wrote a series: an instrument, or a machine writing its own
+
+
+def written_by(s: Series) -> str | None:
+    """Who wrote the series into the store, by its labels: the instrument that measured it
+    (``instrument``, set by the collectors), else the ``machine`` label of a series a machine (or
+    another store) wrote under its own name. Provenance, never attribution: discovery groups a
+    writer's series (when it was alive, which counters are its record of a level) and never takes it
+    for the machine that sets a flow (AGENTS.md rule 7)."""
+    return next((s.labels[k] for k in WRITTEN_BY if s.labels.get(k)), None)
+
+
+def writer_of(s: Series) -> str | None:
+    """Who wrote a series (``written_by``), or, for Orchestra's event counters, the ``source`` that
+    emitted the events (``unknown`` is no one)."""
+    who = written_by(s) or (s.labels.get("source") or "").partition("/")[0]   # baker/2 is the machine baker
     return who if who and who != "unknown" else None
 
 
@@ -129,13 +142,13 @@ def on_events(points: list[tuple[float, float]]) -> bool:
 
 
 def alive(series: list[Series], start: float, end: float) -> dict[str, list[tuple[float, float]]]:
-    """When each machine was alive: between any of its writes no further apart than its live limit
+    """When each writer (``writer_of``) was alive: between any of its writes no further apart than its live limit
     (ten times the interval of its fastest series written on a schedule, at least a minute), and
     from its first write to the end when none of its series is on a schedule. A counter written
     only when it moves is no schedule, even when its events come steadily enough to look like one."""
     by_machine: dict[str, list[Series]] = defaultdict(list)
     for s in series:
-        if (m := machine_of(s)) is not None:
+        if (m := writer_of(s)) is not None:
             by_machine[m].append(s)
     out = {}
     for m, group in by_machine.items():
@@ -197,7 +210,7 @@ def sample(dump, start: float, step: float, n: int, kinds: dict[str, Declared] |
         ser.summary = bool(said and said.summary)
         out.append(ser)
     machines = alive(out, start, times[-1])
-    return [mark_live(ser, machines.get(machine_of(ser)), start, step, n) for ser in out]
+    return [mark_live(ser, machines.get(writer_of(ser)), start, step, n) for ser in out]
 
 
 def sum_instances(series: list[Series]) -> tuple[list[Series], dict[str, str]]:
