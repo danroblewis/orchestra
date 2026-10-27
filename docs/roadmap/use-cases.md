@@ -192,6 +192,18 @@ flows and loops, and stories 5–21 with the structure each is expected to have.
 cases here when a story runs against fakes of the company systems (H3). Their expected
 structures are already written; what is missing is the running system that produces the metrics.
 
+## UC-6: the owner's work loop (planned; [goals.md](goals.md) G8)
+
+A Slack request becomes a merged pull request: Jira ticket from a template, the link posted back,
+a branch, the change and its tests, a templated description, AI review, review requests (repeated
+after a day), comments addressed until enough approvals, a final risk review, the SAIL label and
+its result, and the requesting threads told. Run first against fakes of Slack, Jira and GitHub.
+
+Expected stocks: requests waiting for a first answer (the 2-hour promise), tickets in progress,
+pull requests awaiting review, comments awaiting an answer, pull requests awaiting SAIL. Expected
+loops: an unanswered review request re-posted after a day; comments re-engaging the worker until
+approvals suffice; a SAIL failure looping back to the work.
+
 ## Adding a case
 
 A case needs: a start command, a stop, a duration, the repository that writes its metrics, and

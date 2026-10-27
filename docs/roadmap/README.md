@@ -33,6 +33,11 @@ are outside it and known by observation; packages label, they never separate the
 
 ## Horizons
 
+The owner's goals of 2026-10-27 (dummy agents, worktree reuse, custom workers, the Supervisor's
+knowledge, agents using the model, pull-request tracking, git-spice trees, and the work loop from
+a Slack request to a merged pull request) are in [goals.md](goals.md), each with its acceptance
+test; they slot into H2 and H3 below.
+
 Each horizon has a definition of done that a program or a reviewer can check, and a stop rule.
 Horizons overlap only where the text says so.
 
