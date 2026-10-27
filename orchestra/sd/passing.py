@@ -106,21 +106,24 @@ def _vouched(p: Series, outs: list[Series], total: dict[str, float], claims: dic
 
 
 def _best(o: Series, fills: list[Series], pool: list[tuple[Series, int]], total: dict[str, float], claims: dict, floor: float,
-          machine_of, seen) -> tuple | None:
+          machine_of, seen, apart=lambda a, b: False) -> tuple | None:
     """The best passage that starts with the drain ``o``: one fill from ``fills``, and up to
     ``MAX_COUNTERS`` counters in all with what ``pool`` offers (each with its role, +1 in, −1 out).
     No stock is both drained by an in and filled by an out: an item that leaves a stock and is
     back within a step went nowhere the model needs (a taker busy for a moment is a free taker
     less, which its own balance already says). A fill under ``floor`` needs the passage exact and
-    vouched for (``_vouched``, or ``seen(ins, outs)``: a measured level is the state between)."""
+    vouched for (``_vouched``, or ``seen(ins, outs)``: a measured level is the state between).
+    Counters ``apart`` (each another measured level's turnover: pods stopped in one region and
+    started in another) are never one passage's."""
     stocks = lambda cs: {k for c in cs for k, _ in claims.get(c.key, ())}
     best = None
     for size in range(MAX_COUNTERS - 1):
         for p in fills:
-            if p is o:
+            if p is o or apart(o, p):
                 continue
             for extra in combinations([(c, r) for c, r in pool if c is not o and c is not p], size):
-                if len({c.key for c, _ in extra}) < size or any(machine_of(c) not in (machine_of(o), machine_of(p)) for c, _ in extra):
+                if len({c.key for c, _ in extra}) < size or any(machine_of(c) not in (machine_of(o), machine_of(p)) for c, _ in extra) \
+                        or any(apart(c, x) for c, _ in extra for x in (o, p)):
                     continue
                 ins = [o, *(c for c, r in extra if r > 0)]
                 outs = [p, *(c for c, r in extra if r < 0)]
@@ -144,7 +147,8 @@ def _best(o: Series, fills: list[Series], pool: list[tuple[Series, int]], total:
 
 
 def passages(found: list, counters: list[Series], levels: list[Series], *, start: float, end: float, step: float,
-             machine_of, copies: dict[str, list[Series]] | None = None, floor: float = MIN_EVENTS) -> list[Passage]:
+             machine_of, copies: dict[str, list[Series]] | None = None, floor: float = MIN_EVENTS,
+             apart=lambda a, b: False) -> list[Passage]:
     """Every passage, in turn (``found``: the balances, as (level, terms, r², exact); ``levels``:
     the measured levels that are no stock, any of which may be the state between). The drain it
     starts from must have counted ``floor`` events, as a balance's counters must: a few events
@@ -166,7 +170,7 @@ def passages(found: list, counters: list[Series], levels: list[Series], *, start
         pool = [(c, 1) for c in drains + free] + [(c, -1) for c in fills + free]
         got = None
         for o in sorted((c for c in drains if total[c.key] >= floor), key=lambda c: (-total[c.key], c.key)):
-            got = _best(o, fills, pool, total, claims, floor, machine_of, seen)
+            got = _best(o, fills, pool, total, claims, floor, machine_of, seen, apart)
             if got:
                 break
         if got is None:

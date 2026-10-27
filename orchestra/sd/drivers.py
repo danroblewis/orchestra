@@ -23,6 +23,8 @@ from .collinear import CANCEL_STEPS
 from .series import Series
 
 PART_SHARE = 0.5      # a counter is a part of another's events only when it counts at least this share of them
+AIC_MARGIN = 2.0      # a form with another parameter, or reading another series, must beat the plain one by this much AIC
+EVENTS_PER_PARAM = 10  # a form that reads another stock or an input needs this many events per parameter
 
 
 def behind(lead: list[float], lag: list[float]) -> bool:

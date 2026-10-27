@@ -45,13 +45,15 @@ class Declared:
     events, so steps before it take its value instead of zero. Counted traffic (a source's
     definition said so: ``orchestra.sources.traffic``) also says its ``direction`` (out, in,
     backlog) and ``channel``. ``resolution_s`` is the reporting interval its source measured: no
-    series is finer than that (``sd.resolution``)."""
+    series is finer than that (``sd.resolution``). ``summary``: a statistic summarised across
+    reporters (an average, a maximum), which discovery never takes for a stock by its net flow."""
 
     kind: str
     baseline: bool = False
     direction: str | None = None
     channel: str | None = None
     resolution_s: float | None = None
+    summary: bool = False
 
 
 def series_key(name: str, labels: dict[str, str]) -> str:
@@ -74,6 +76,7 @@ class Series:
     traffic: tuple[str, str] | None = None               # counted traffic: (direction, channel), when a definition said so
     resolution: Resolution | None = None                 # its real resolution and how it is read between points (sd.resolution)
     blocks: list[tuple[int, float]] | None = None        # a level slower than the grid: the steps it was written in, and when (sd.resolution.units)
+    summary: bool = False                                # a statistic its source summarised across reporters (Declared.summary)
 
     @property
     def key(self) -> str:
@@ -182,6 +185,7 @@ def sample(dump, start: float, step: float, n: int, kinds: dict[str, Declared] |
             ser.blocks = block_ends(real_points(pts, res.read), start, step, n)
         if said and said.direction and said.channel:
             ser.traffic = (said.direction, said.channel)
+        ser.summary = bool(said and said.summary)
         out.append(ser)
     machines = alive(out, start, times[-1])
     return [mark_live(ser, machines.get(machine_of(ser)), start, step, n) for ser in out]

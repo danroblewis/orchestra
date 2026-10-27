@@ -104,13 +104,24 @@ def test_nothing_to_find_in_noise(tmp_path):
     assert set(m.discovery["left_out"]) == {"noise_level", "noise_total"}
 
 
+def counted(m) -> set[str]:
+    """The stocks counters balance, and a check that any other stock (the weather, which relaxes
+    toward its mean: a stock of its own by its fitted net flow) is an island no counted flow
+    touches or reads."""
+    net = {s.id for s in m.stocks if "net_flow" in s.evidence}
+    for f in m.flows:
+        if f.counter is not None or f.measured_by:
+            assert not ({f.src, f.dst} & net) and not (set(f.current().inputs) & net), f
+    return {s.id for s in m.stocks} - net
+
+
 def test_an_outage_is_missing_data_not_a_rate_of_zero(tmp_path):
     """While the machines are down nothing is written; levels must not be carried through the gap
     as if the shelf sat still with no sales, and counters that restart from zero are resets."""
     store = FileMetrics(tmp_path / "m.jsonl")
     start, end = simulate(store, minutes=100, outage=(40 * 60, 55 * 60))
     m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
-    assert {s.id for s in m.stocks} == {"bakery_shelf_loaves", "bakery_oven_orders_pending"}
+    assert counted(m) == {"bakery_shelf_loaves", "bakery_oven_orders_pending"}
     f = {x.id: x for x in m.flows}
     assert "bakery_loaves_sold_total" in f, "the shop's counters still count after their reset"
     sold = f["bakery_loaves_sold_total"].current()
@@ -229,7 +240,7 @@ def test_orchestras_own_series_are_plumbing(tmp_path):
     why = m.discovery["left_out"]
     assert why["orchestra_core_bus_read_ms"].startswith("Orchestra's own"), why
     assert why['orchestra_host_up{machine="orchestra-host"}'].startswith("Orchestra's own"), why
-    assert {s.id for s in m.stocks} == {"bakery_shelf_loaves", "bakery_oven_orders_pending"}
+    assert counted(m) == {"bakery_shelf_loaves", "bakery_oven_orders_pending"}
 
 
 def test_a_series_named_with_orchestras_prefix_is_left_out_with_why(tmp_path):

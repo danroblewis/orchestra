@@ -52,6 +52,8 @@ equation of each flow, and the machine behind each flow:
    that reads another stock or an input needs ``EVENTS_PER_PARAM`` events per parameter.
 5. **Attribute** each flow to the machine named by its counter's ``machine`` label, and each stock
    to the machine that writes it.
+6. **Levels no counters balance** may still be stocks: their net flow is fitted from the other
+   series (``sd.netflow``), with origin ``fitted``; those it refutes stay inputs, with the reason.
 
 Structure is discovered and parameters are fitted, so equations record ``origin: fitted`` with
 ``method: poisson-mle`` and the model records how it was found (``Model.discovery``).
@@ -69,12 +71,13 @@ from dataclasses import dataclass
 from itertools import accumulate, pairwise
 
 from .balance import MIN_EVENTS, MIN_GAIN, LeastSquares, balance, columns, fit_of
-from .drivers import behind, co_counting
+from .drivers import AIC_MARGIN, EVENTS_PER_PARAM, behind, co_counting
 from .ends import claims, moves
 from .hops import split_hops
 from .inputs import offered_inputs
 from .live import balance_steps, held_for, intersect, within
 from .model import Equation, Flow, Machine, Model, SeriesRef, Stock
+from .netflow import stocks as net_flow_stocks
 from .parsimony import fewer_counters
 from .passing import passages
 from .resolution import intervals_with, steps_of
@@ -95,9 +98,8 @@ SAME_STEPS = 0.03          # counters that differ in no more than this share of 
 TWIN_STEPS = 0.97          # levels whose changes are equal in this share of steps are one stock measured twice
 TWIN_CORR = 0.9            # ... or whose changes correlate this well (one a moment behind the other)
 MIN_STEPS = 5              # a level live in fewer steps than this (while every counter was) cannot be balanced
-AIC_MARGIN = 2.0           # a two-parameter form must beat the best one-parameter form by this much AIC to be chosen
-EVENTS_PER_PARAM = 10      # a form that reads another stock or an input needs this many events per parameter
 UNITS = {"second": 1.0, "minute": 60.0, "hour": 3600.0}
+LEAD_S = 60.0              # a driver's level is compared this long before and after a flow's events (_follows)
 NOT_IDENTITY = {"machine", "source", "project", "instance"}   # who wrote a series, not which thing it measures
 
 
@@ -146,6 +148,26 @@ def same_flow(a: Series, b: Series, n: int) -> bool:
         return True
     return (b.name == EVENT_COUNTER and a.name != EVENT_COUNTER and behind(da, db)) or \
         (a.name == EVENT_COUNTER and b.name != EVENT_COUNTER and behind(db, da))
+
+
+def named_apart(levels: list[Series]) -> dict[str, set[str]]:
+    """Per label, the values that tell measured levels apart (the regions pods are counted in)."""
+    out: dict[str, set[str]] = defaultdict(set)
+    for s in levels:
+        for k, v in _identity(s.labels).items():
+            out[k].add(v)
+    return out
+
+
+def counts_apart(a: Series, b: Series, named: dict[str, set[str]]) -> bool:
+    """Two counters that count different things: they differ in a label whose values tell measured
+    levels apart (``named_apart``: pods started in us-east, and pods started or stopped in us-west).
+    However often their events coincide (rolling deploys that reach every region in the same
+    minutes), each is its own level's turnover, never the same events. A machine's two counts of
+    one move made in two hops (``to`` one state, ``from`` it) differ in labels no level has, and may
+    still be one."""
+    ia, ib = _identity(a.labels), _identity(b.labels)
+    return any(k in ib and ib[k] != v and {v, ib[k]} <= named.get(k, set()) for k, v in ia.items())
 
 
 def lagged_flow(a: Series, b: Series) -> bool:
@@ -285,7 +307,8 @@ def events_of(points: list[tuple[float, float]], live: list[tuple[float, float]]
 
 
 def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, Path], src: str | None,
-             drivers: set[str] | None = None, slow: dict[str, float] | None = None, start: float = 0.0) -> list[dict]:
+             drivers: set[str] | None = None, slow: dict[str, float] | None = None, start: float = 0.0,
+             fills: set[str] | None = None) -> list[dict]:
     """Every candidate form for one flow, the chosen one first, scored with the exact
     point-process likelihood: each event against the rate just before it, the rate integrated
     over the stocks' actual paths:
@@ -306,6 +329,12 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
     observation of it: it needs as many intervals holding the flow's events as a form needs events
     (``sd.resolution.intervals_with``). A space-weather index that changes every few minutes does
     not drive a worker's turns because the worker happened to be busy while it was high.
+
+    A stock the flow fills (``fills``: its destination, and every backlog a copy of it fills) may
+    drive it only the other way: the fuller, the slower (a capacity: free bakers freed more slowly
+    the fewer are busy). It is higher after a burst of the flow's own events, so a rate rising
+    with it reads the flow's effect as its cause (a publisher fitted as publishing faster the
+    fuller a queue its own messages fill); such a form is rejected.
 
     The chosen form is the plain one (constant, or proportional to the flow's own source) with the
     lowest AIC, unless another beats it by at least ``AIC_MARGIN``: a second parameter, or a
@@ -342,18 +371,28 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
         # that stock held something (what waits is taken: the rate is nothing when nothing waits)
         expo = p.integral(0.0, 1.0)
         seen = intervals_with(events, start, slow[sid]) if slow and sid in slow else total   # observations of this driver
-        if expo > 0 and (sid == src or seen >= EVENTS_PER_PARAM):
+        filled = bool(fills) and sid in fills and sid != src        # the flow's own events raise it
+        span = max(xs) - min(xs)
+        follows = (lambda sid=sid, p=p, span=span: _follows(events, p, c0, span)) if sid != src and not filled else (lambda: "")
+        if expo > 0 and (sid == src or seen >= EVENTS_PER_PARAM) and not filled:
             k = total / expo
-            cands.append({"form": "proportional", "params": {"k": k}, "inputs": [sid], "loglik": ll(0.0, k, sid), "k": 1})
+            cand = {"form": "proportional", "params": {"k": k}, "inputs": [sid], "loglik": ll(0.0, k, sid), "k": 1}
+            if sid != src and (why := follows()):
+                cand["rejected"] = why
+            cands.append(cand)
         if seen < 2 * EVENTS_PER_PARAM:
             continue
-        span = max(xs) - min(xs)
 
         def nll(q, sid=sid):
             v = ll(q[0], q[1], sid)
             return -v if math.isfinite(v) else 1e18
         cc, kk = _nelder_mead(nll, [c0, 0.0], [max(c0, 1e-3) * 0.5, max(c0, 1e-3) / span])
         cand = {"form": "linear", "params": {"c": cc, "k": kk}, "inputs": [sid], "loglik": ll(cc, kk, sid), "k": 2}
+        if sid != src and not filled and (why := follows()):           # the flow's own ends move at its events
+            cand["rejected"] = why
+        if filled and kk > 0:
+            cand["rejected"] = (f"its rate rises with {sid}, which its own events fill: higher after a burst of them, so the "
+                                "form reads the flow's effect as its cause")
         level, held = p.below_zero(cc, kk)
         if level is not None and c0 * held < MIN_EVENTS:
             cand["rejected"] = (f"its rate is below zero from level {level:g} of {sid}, which the stock held only long enough for "
@@ -366,6 +405,31 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
     if best is not plain and best["aic"] > plain["aic"] - AIC_MARGIN:
         best = plain
     return [best, *sorted((c for c in cands if c is not best), key=lambda c: ("rejected" in c, c["aic"]))]
+
+
+def _follows(events: list[tuple[float, float]], p: Path, c0: float, span: float) -> str:
+    """Why a level read by a flow's rate follows the flow rather than leading it, or nothing: the
+    rate fitted on the level ``LEAD_S`` later explains the events better, by ``AIC_MARGIN``, than
+    on the level at the time. A cause comes first: a level that drives the rate is best read as it
+    was when the events came. A count of the last two minutes' orders, high after each rush began,
+    fits the orders as a cause would, until it is read a minute later and fits them better."""
+    def best(shift: float) -> float:
+        xs = [p.before(t + shift) for t, _ in events]
+
+        def nll(q):
+            out = 0.0
+            for (_, d), x in zip(events, xs):
+                r = q[0] + q[1] * x
+                if r <= 1e-12:
+                    return 1e18
+                out += d * math.log(r)
+            return -(out - p.integral(q[0], q[1]))
+        return -nll(_nelder_mead(nll, [c0, 0.0], [max(c0, 1e-3) * 0.5, max(c0, 1e-3) / span]))
+    later, now = best(LEAD_S), best(0.0)
+    if later > now + AIC_MARGIN:
+        return (f"the level a minute after each event explains the flow better than the level at the time "
+                f"(log-likelihood {later:.1f} against {now:.1f}): it follows what drives the flow, it does not drive it")
+    return ""
 
 
 def dispersion(events: list[tuple[float, float]], live: list[tuple[float, float]], form: dict, paths: dict[str, Path], unit_s: float) -> float:
@@ -487,13 +551,24 @@ def barred_counters(levels: list[Series], counters: list[Series]) -> dict[str, s
     return out
 
 
-def _twins(a: Series, b: Series, a_terms: list, b_terms: list, same_flow) -> bool:
+def _apart(a_terms: list, b_terms: list, a_exact: float, b_exact: float, same_flow) -> bool:
+    """Two levels each balanced exactly by counters of which none counts the other's events: each
+    is explained, step by step, by what happened to its own things. However alike their values
+    (two services' pods in one region, both two pods most of the time and both none while the
+    region is down), they are two stocks."""
+    return a_exact >= FLAG_EXACT and b_exact >= FLAG_EXACT and \
+        not any(ca is cb or same_flow(ca, cb) or lagged_flow(ca, cb) for ca, _ in a_terms for cb, _ in b_terms)
+
+
+def _twins(a: Series, b: Series, a_terms: list, b_terms: list, same_flow, a_exact: float = 0.0, b_exact: float = 0.0) -> bool:
     if a.traffic and b.traffic and a.traffic[0] == b.traffic[0] == "backlog":
         return False            # two queues a source declared: never one stock measured twice, however alike (one consumer acks both at once)
     if _parts_of_one(a, b):
         return False
     if _equal_steps(a, b) >= TWIN_STEPS or _same_balance(a_terms, b_terms, same_flow):
         return True
+    if _apart(a_terms, b_terms, a_exact, b_exact, same_flow):
+        return False
     alike = _alike(a, b)
     return alike["change_correlation"] >= TWIN_CORR or alike["equal_values"] >= TWIN_STEPS
 
@@ -535,14 +610,35 @@ def channel_balance(s: Series, counters: list[Series], steps: list[int], fits) -
     machine's counters are, and kept only when it balances within the tolerance: a prior the data
     must bear out (decision D4). Otherwise another consumer that keeps up, whose acks run a moment
     behind the publishes, is as good a stand-in for the channel's inflow as the publishes
-    themselves. None when the level is no backlog, or its traffic does not balance it."""
+    themselves. A backlog its consumer keeps near empty barely moves; it is kept when its traffic,
+    as declared (everything produced into the channel, less its own consumer's acks), accounts for
+    what went in (``through_r2``), and its R² is then that one. None when the level is no backlog,
+    or its traffic does not balance it."""
     if not s.traffic or s.traffic[0] != "backlog":
         return None, 0.0, 0.0
     channel = s.traffic[1]
     mates = [c for c in counters if c.traffic and c.traffic[1] == channel
              and (c.traffic[0] == "out" or (c.traffic[0] == "in" and machine_of(c) == machine_of(s)))]
     terms, r2, exact = balance(s, mates, None, steps) if mates else ([], 0.0, 0.0)
-    return (terms, r2, exact) if terms and fits(s, r2, exact) else (None, 0.0, 0.0)
+    if terms and fits(s, r2, exact):
+        return terms, r2, exact
+    prior = [(c, 1) for c in mates if c.traffic[0] == "out"] + [(c, -1) for c in mates if c.traffic[0] == "in"]
+    if any(sg > 0 for _, sg in prior) and any(sg < 0 for _, sg in prior) and (through := through_r2(s, prior, steps)) >= MIN_R2:
+        return prior, through, fit_of(s, prior, steps)[1]
+    return None, 0.0, 0.0
+
+
+def through_r2(s: Series, terms: list, steps: list[int]) -> float:
+    """How much of what went into a backlog its balance accounts for: one less the balance's squared
+    error over the variance of the inflow. A consumer that keeps up holds its backlog near empty,
+    so the level's own changes are a step's timing jitter and an R² on them says nothing; what was
+    published, less what was acknowledged, still accounts for every message within that jitter."""
+    y = [s.deltas[i] for i in steps]
+    inflow = [sum(c.deltas[i] for c, sign in terms if sign > 0) for i in steps]
+    sse = sum((v - sum(sign * c.deltas[i] for c, sign in terms)) ** 2 for v, i in zip(y, steps))
+    mean = sum(inflow) / max(1, len(inflow))
+    var = sum((v - mean) ** 2 for v in inflow)
+    return 1 - sse / var if var > 0 else 0.0
 
 
 def _same_balance(a: list, b: list, same_flow) -> bool:
@@ -563,7 +659,7 @@ def twin_levels(found: list, left_out: dict[str, str], same_flow) -> tuple[list,
     kept: list = []
     twins: dict[str, list[dict]] = defaultdict(list)
     for s, terms, r2, exact in found:
-        other = next((k for k in kept if _twins(s, k[0], terms, k[1], same_flow)), None)
+        other = next((k for k in kept if _twins(s, k[0], terms, k[1], same_flow, exact, k[3])), None)
         if other is None:
             kept.append((s, terms, r2, exact))
             continue
@@ -621,8 +717,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     kept_counters: list[Series] = []
     same_as: dict[str, list[dict]] = defaultdict(list)     # kept counter key -> the counters it stands for
     copies: dict[str, list[Series]] = defaultdict(list)    # ... as series (sd.hops may bring one back)
+    named = named_apart([s for s in series if not s.counter])
     for c in counters:
-        twin = next((k for k in kept_counters if same_flow(c, k, n)
+        twin = next((k for k in kept_counters if same_flow(c, k, n) and not counts_apart(c, k, named)
                      and (EVENT_COUNTER in (c.name, k.name) or machine_of(c) == machine_of(k))), None)
         if twin is None:
             kept_counters.append(c)
@@ -671,6 +768,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         masks[s.key] = steps
         mine = [c for c in counters if c.key not in barred.get(s.key, ())]
         terms, r2, exact = channel_balance(s, mine, steps, fits)
+        backlog = terms is not None                # a declared backlog its own traffic balances: never a flag
         if terms is None:
             terms, r2, exact = own_balance(s, mine, steps, fits)
         if terms is None:
@@ -678,7 +776,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             if key not in solvers and mine:
                 solvers[key] = LeastSquares(columns(s, mine, steps))
             terms, r2, exact = balance(s, mine, solvers.get(key), steps)
-        if len({v for _, v in s.points}) <= 2 and not (terms and fits(s, r2, exact)):
+        if len({v for _, v in s.points}) <= 2 and not backlog and not (terms and fits(s, r2, exact)):
             left_out[s.key] = "a flag (it only ever takes two values, and no counters balance it exactly), not a quantity that accumulates"
             continue
         if terms and r2 >= MIN_R2:
@@ -692,7 +790,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     for pass_ in (split_event_counters, split_foreign_counters):
         found, made = pass_(found, counters, masks, machine_of, fits, MIN_EVENTS)
         notes.update(made)
-    found, made, joined = unify_same_flows(found, masks, lambda a, b: same_flow(a, b, n) or lagged_flow(a, b),
+    found, made, joined = unify_same_flows(found, masks, lambda a, b: (same_flow(a, b, n) or lagged_flow(a, b)) and not counts_apart(a, b, named),
                                            first_stamped, machine_of, fits)
     notes.update(made)
     for keep, drop in joined:              # a counter joined to another stands for nothing on its own
@@ -752,7 +850,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             same_as[k] = [x for x in recs if (x["name"], x["labels"]) != (d.name, d.labels)]
     levels = [s for s in levels if all(s is not h.level for h in hopped)]
     passed = {}
-    for p in hopped + passages(found + [(h.level, h.terms, 1.0, 1.0) for h in hopped], counters, levels, copies=copies, **where):
+    joined_through = passages(found + [(h.level, h.terms, 1.0, 1.0) for h in hopped], counters, levels, copies=copies,
+                              apart=lambda a, b: counts_apart(a, b, named), **where)
+    for p in hopped + joined_through:
         masks[p.level.key] = balance_steps(p.level, [c for c, _ in p.terms])
         r2, exact = fit_of(p.level, p.terms, masks[p.level.key]) if p.measured else (1.0, 1.0)
         found.append((p.level, p.terms, max(0.0, r2), exact))
@@ -772,6 +872,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                              "machine": machine_of(s), "accumulator": all(sign > 0 for _, sign in terms),
                              "balance": [{"series": c.key, "sign": sign} for c, sign in terms],
                              "held_minutes": round(carried / 60, 2),
+                             **({"balance_r2_level": round(fit_of(s, terms, masks[s.key])[0], 4),
+                                 "balance_on": "traffic: the balance's error against what went in"}
+                                if s.traffic and s.traffic[0] == "backlog" and r2 > fit_of(s, terms, masks[s.key])[0] + 1e-6 else {}),
                              **({"twins": twins[s.key]} if s.key in twins else {}), **(p.evidence() if p else {})}))
     # a counter in two balances connects those stocks (sd.ends: contested ends and co-flows)
     fid_of = {c.key: unique_id(_slug(c), machine_of(c), ids) for c in counters}
@@ -802,10 +905,25 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # the measured gauges that are not stocks (a rating, a demand; sd.inputs) may drive a flow's
     # rate like a stock may, as input:<name>
     inputs, input_refs = offered_inputs(series, {s.key for s, _, _, _ in found}, left_out)
+    found_net: list[Series] = []
     for name, vals in inputs.items():
         paths[f"input:{name}"] = Path.of([(start + i * step, v) for i, v in enumerate(vals)], live, unit_s)
+    # a level no counters balance may still be a stock, its net flow fitted from the other series (sd.netflow)
+    net_flows: list[Flow] = []
+    for st, made, was_input, lv in net_flow_stocks(series, [s for s, _, _, _ in found], sid_of, inputs, input_refs, left_out, step,
+                                                   unit_s, (fit_start, end), lambda x: (unique_id(_slug(x), machine_of(x), ids), _title(x)),
+                                                   ref, machine_of):
+        stocks.append(st)
+        net_flows += made
+        paths.pop(f"input:{was_input}", None)
+        inputs.pop(was_input, None)
+        input_refs.pop(was_input, None)
+        paths[st.id] = Path.of([(start + i * step, v) for i, v in enumerate(lv.values)], live, unit_s)
+        sid_of[lv.key] = st.id
+        found_net.append(lv)
     # a driver slower than the grid explains nothing faster than its own resolution (sd.resolution)
-    slow = {sid_of[s.key]: s.resolution.seconds for s, _, _, _ in found if s.resolution and steps_of(s.resolution.seconds, step) > 1}
+    slow = {sid_of[s.key]: s.resolution.seconds for s in [x for x, _, _, _ in found] + found_net
+            if s.resolution and steps_of(s.resolution.seconds, step) > 1}
     slow.update({f"input:{k}": r["resolution_s"] for k, r in input_refs.items() if steps_of(r.get("resolution_s"), step) > 1})
     # A stock that only fills (no outflow in its balance) grows with time whatever else happens,
     # so as a driver of another flow's rate it stands in for time itself and finds spurious
@@ -829,12 +947,13 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         barred = co_counting(c, ends, found, sid_of, steps_live, lambda a, b: same_flow(a, b, n))
         events = events_of(c.points, live)
         src = mvs[0].src
-        best, *rest = fit_flow(events, live_s / unit_s, paths, src, set(paths) - accumulators - set(barred), slow, start)
+        best, *rest = fit_flow(events, live_s / unit_s, paths, src, set(paths) - accumulators - set(barred), slow, start,
+                               {mv.dst for mv in mvs if mv.dst})
         best["dispersion"] = dispersion(events, live, best, paths, unit_s)
         other = lambda x, src=src: f"_{x['inputs'][0]}" if x["inputs"] and x["inputs"] != [src] else ""   # a form in another stock says which
         alt = {f"aic_{x['form']}{other(x)}": round(x["aic"], 2) for x in rest[:4]}
         alt.update({f"proportional_k{other(x)}": round(x["params"]["k"], 6) for x in [best, *rest] if x["form"] == "proportional"})
-        if rejected := {f"linear_{x['inputs'][0]}": x["rejected"] for x in rest if "rejected" in x}:
+        if rejected := {f"{x['form']}_{x['inputs'][0]}": x["rejected"] for x in rest if "rejected" in x}:
             alt["rejected"] = rejected
         q = {"events": float(sum(y)), "loglik": round(best["loglik"], 3), "aic": round(best["aic"], 3),
              "dispersion": round(best["dispersion"], 3), "steps": float(len(steps_live)), "live_minutes": round(live_s / 60, 2), **alt}
@@ -851,14 +970,16 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             who = machine_of(c)
             if who:
                 by_machine[who].append(mv.id)
+    flows += net_flows
     owners = {st.evidence.get("machine") for st in stocks} - {None}
     # what a machine is (a program, a service, a person) is not in the metrics: the model says "machine"
     machines = [Machine(m, m, "machine", "Seen in the metrics store: it writes the series these flows are bound to.",
                         sorted(by_machine.get(m, [])), [ref(s) for s in series if machine_of(s) == m])
                 for m in sorted(set(by_machine) | owners)]
     model = Model("system", "The system",
-                  "Discovered from the metrics store: stocks are levels that counters balance; flows are those "
-                  "counters, with equations fitted by Poisson maximum likelihood.",
+                  "Discovered from the metrics store: stocks are levels that counters balance, with those counters "
+                  "as flows fitted by Poisson maximum likelihood, and levels no counters balance whose net flow "
+                  "the other series explain, fitted by least squares.",
                   time_unit, stocks, flows, machines)
     model.discovery = {"summed": summed, "start": start, "end": end, "fit_start": fit_start, "live_minutes": round(live_s / 60, 2) if found else 0,
                        "gaps": [[a, b] for (_, a), (b, _) in pairwise(live)] if found else [],

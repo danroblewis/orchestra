@@ -61,6 +61,15 @@ def why(e: Exception) -> str:
     return str(e) if isinstance(e, (SourceError, TransformError)) else f"{type(e).__name__}: {e}"
 
 
+SUMMARIES = {"avg_by", "upper_by", "max_by", "min_by"}       # views that summarise many reporters' values
+
+
+def summary(d: Definition) -> bool:
+    """Whether a definition reads a statistic summarised across reporters (an average, a maximum,
+    an upper bound of a quantile), not a quantity: discovery never takes one for a stock."""
+    return d.view in SUMMARIES or (d.view == "rollup" and d.name.endswith(("_avg", "_max", "_min")))
+
+
 def provenance(spec: SourceSpec, d: Definition, traffic: dict | None = None) -> dict:
     return {"source": spec.name, "query": d.query, "kind": d.kind, "origin": list(d.origin), "resolution_s": d.resolution_s,
             "unit": d.unit, "view": d.view, "family": d.family, "flags": list(d.flags), **({"traffic": traffic} if traffic else {})}
@@ -109,7 +118,7 @@ class Catalogue:
                 out.kinds[key] = Declared("counter" if d.kind in ("counter", "rate") else "level",
                                           baseline=d.kind == "counter" and d.view != "increments",
                                           direction=(counted or {}).get("direction"), channel=(counted or {}).get("channel"),
-                                          resolution_s=d.resolution_s)
+                                          resolution_s=d.resolution_s, summary=summary(d))
                 out.provenance[key] = provenance(spec, d, counted)
                 if counted:
                     out.traffic[key] = counted

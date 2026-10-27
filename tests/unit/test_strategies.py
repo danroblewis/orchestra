@@ -36,10 +36,15 @@ def test_conservation_is_always_available():
 
 
 def _fake(seen, flows):
+    """A strategy that records what it was given (over every group it was run on) and answers
+    with ``flows``, those whose ends are among the stocks it was given."""
     def run(strategy, stocks, run, opts):
+        known = {**seen.get("known", {}), **opts.get("known", {})}
         seen.update(opts)
-        seen["stocks"] = stocks
-        return {"flows": flows}
+        seen["known"] = known
+        seen["stocks"] = seen.get("stocks", []) + stocks
+        ids = {s["id"] for s in stocks}
+        return {"flows": [f for f in flows if {f.get("from"), f.get("to")} & ids]}
     return run
 
 
@@ -61,12 +66,49 @@ def _bakery_with_gauges(tmp_path, minutes=60):
     return store, start, end
 
 
+def _every_measured_stock(monkeypatch):
+    """Hand SD Lab every measured stock, exact or not, to test how its flows are merged."""
+    monkeypatch.setattr("orchestra.sd.strategies.handed", lambda base: [s for s in base.stocks if s.series is not None])
+
+
+def test_sdlab_is_given_no_stock_its_counters_balance_exactly(tmp_path, monkeypatch):
+    # the bakery's two counted stocks balance exactly: nothing is left to explain, so an SD Lab
+    # strategy is not run on them, and their flows keep conservation's fits
+    store = FileMetrics(tmp_path / "m.jsonl")
+    start, end = simulate(store, minutes=60)
+    dump = [x for x in store.dump("", {"project": "p"}) if x[0] != "weather_temperature_celsius"]
+    seen = {}
+    monkeypatch.setattr("orchestra.sd.strategies.run_strategy", _fake(seen, [{"from": None, "to": "bakery_shelf_loaves", "rate": {"form": "constant", "value": 1.0}}]))
+    m = discover_with(dump, start=start, end=end, step=30, strategy="fake")
+    assert seen == {} and m.discovery["sdlab"].startswith("not run: the counters balance every stock exactly")
+    assert m.flow("bakery_loaves_baked_total").current().method == "poisson-mle"
+    assert not [f for f in m.flows if f.id.startswith("unmeasured:")]
+
+
+def test_sdlab_is_given_the_stocks_no_counters_balance(tmp_path, monkeypatch):
+    # the weather beside the bakery relaxes toward its mean: a stock of its own by its fitted net
+    # flow. SD Lab is given that stock alone, and its flows take the place of conservation's
+    store = FileMetrics(tmp_path / "m.jsonl")
+    start, end = simulate(store, minutes=60)
+    seen = {}
+    flows = [{"from": "weather_temperature_celsius", "to": None, "rate": {"form": "proportional", "stock": "weather_temperature_celsius", "k": 0.3}}]
+    monkeypatch.setattr("orchestra.sd.strategies.run_strategy", _fake(seen, flows))
+    m = discover_with(store.dump("", {"project": "p"}), start=start, end=end, step=30, strategy="fake")
+    assert [s["id"] for s in seen["stocks"]] == ["weather_temperature_celsius"], seen.get("stocks")
+    assert m.check() == []
+    [sd] = [f for f in m.flows if f.src == "weather_temperature_celsius" or f.dst == "weather_temperature_celsius"]
+    assert sd.current().method == "sdlab:fake" and sd.current().quality["events"] > 0
+    assert m.stock("weather_temperature_celsius").evidence["conservation_fit"]
+    assert m.flow("bakery_loaves_baked_total").current().method == "poisson-mle"
+
+
 def test_the_measured_moves_are_known_to_sdlab_and_its_invented_flows_are_dropped_where_nothing_remains(tmp_path, monkeypatch):
-    # the bakery's two stocks are balanced exactly by their counters: nothing is left for an
-    # SD Lab strategy to explain there, so its flows that no counter measures are dropped; its
-    # flows on the counters are kept, and two between the same ends become one with two terms
+    # handed the bakery's two stocks, which are balanced exactly by their counters, an SD Lab
+    # strategy's flows that no counter measures are dropped there; its flows on the counters are
+    # kept, and two between the same ends become one with two terms
     store, start, end = _bakery_with_gauges(tmp_path)
     seen = {}
+    _every_measured_stock(monkeypatch)
     flows = [{"from": None, "to": "bakery_shelf_loaves", "rate": {"form": "constant", "value": 1.0}, "perStep": 1.0},
              {"from": None, "to": "bakery_shelf_loaves", "rate": {"form": "linear", "c": 0.0, "terms": [{"stock": "weather_temperature_celsius", "k": 0.1}]}},
              {"from": "bakery_oven_orders_pending", "to": "bakery_shelf_loaves", "rate": {"form": "proportional", "stock": "bakery_oven_orders_pending", "k": 0.2}},
@@ -75,8 +117,9 @@ def test_the_measured_moves_are_known_to_sdlab_and_its_invented_flows_are_droppe
     monkeypatch.setattr("orchestra.sd.strategies.explains_residual", lambda *a: False)      # a strategy that ignored known
     m = discover_with(store.dump("", {"project": "p"}), start=start, end=end, step=30, strategy="fake")
     assert m.check() == [] and m.discovery["sdlab_explains"] == "whole change"
-    assert {s.id for s in m.stocks} == {"bakery_shelf_loaves", "bakery_oven_orders_pending"}, "no hidden stock from a dropped flow"
-    assert all(s.evidence["exact_steps"] >= 0.97 for s in m.stocks)
+    assert {s.id for s in m.stocks} - {"weather_temperature_celsius"} == {"bakery_shelf_loaves", "bakery_oven_orders_pending"}, \
+        "no hidden stock from a dropped flow"
+    assert all(s.evidence["exact_steps"] >= 0.97 for s in m.stocks if "net_flow" not in s.evidence)
     # the measured moves were handed over: each stock's change per step, nothing at the first time
     n = m.discovery["steps"]
     assert set(seen["known"]) == {"bakery_shelf_loaves", "bakery_oven_orders_pending"}
@@ -86,7 +129,8 @@ def test_the_measured_moves_are_known_to_sdlab_and_its_invented_flows_are_droppe
     ids = [f.id for f in m.flows]
     assert len(ids) == len(set(ids))
     baked = m.flow("bakery_loaves_baked_total").current()
-    assert baked.method == "sdlab:fake" and baked.form == "linear" and baked.inputs == ["input:weather_temperature_celsius"]
+    assert baked.method == "sdlab:fake" and baked.form == "linear"
+    assert baked.inputs in (["input:weather_temperature_celsius"], ["weather_temperature_celsius"]), "an input, or a stock of its own"
     assert baked.spec["combined"] == 2 and baked.params["c"] == 2.0 and baked.params["k1"] == 0.2, "per step → per minute"
 
 
@@ -95,6 +139,7 @@ def test_a_strategy_that_explains_the_residual_adds_flows_beside_the_counters(tm
     # two ends a counter already joins is another flow, not that counter's equation; and where
     # the counters balance the stock exactly it is dropped (nothing remained there)
     store, start, end = _bakery_with_gauges(tmp_path)
+    _every_measured_stock(monkeypatch)
     flows = [{"from": None, "to": "bakery_shelf_loaves", "rate": {"form": "constant", "value": 0.5}}]
     monkeypatch.setattr("orchestra.sd.strategies.run_strategy", _fake({}, flows))
     monkeypatch.setattr("orchestra.sd.strategies.explains_residual", lambda *a: True)
@@ -106,6 +151,7 @@ def test_a_strategy_that_explains_the_residual_adds_flows_beside_the_counters(tm
 
 def test_inputs_offered_to_sdlab_leave_out_flags_and_sum_a_machines_instances(tmp_path, monkeypatch):
     store, start, end = _bakery_with_gauges(tmp_path)
+    _every_measured_stock(monkeypatch)
     seen = {}
     monkeypatch.setattr("orchestra.sd.strategies.run_strategy", _fake(seen, []))
     monkeypatch.setattr("orchestra.sd.strategies.explains_residual", lambda *a: True)
@@ -115,7 +161,8 @@ def test_inputs_offered_to_sdlab_leave_out_flags_and_sum_a_machines_instances(tm
     assert "oven_temp" in seen["inputs"] and not [k for k in seen["inputs"] if k.startswith("oven_temp_")]
     assert m.discovery["inputs"]["oven_temp"]["summed"] == "summed over 2 instances"
     assert 370 < seen["inputs"]["oven_temp"][0] < 390, "the instances' values are summed"
-    assert "weather_temperature_celsius" in seen["inputs"]
+    weather = [s for s in m.stocks if s.id == "weather_temperature_celsius"]
+    assert ("weather_temperature_celsius" in seen["inputs"]) != bool(weather), "an input, or a stock of its own"
 
 
 def test_rates_between_the_same_ends_combine():
@@ -149,16 +196,16 @@ def test_the_host_skips_a_discovery_another_process_holds(tmp_path):
 
 @pytest.mark.skipif(not sd_installed(), reason="SD Lab's strategies need orchestra[sd]")
 def test_an_sdlab_strategy_adds_nothing_where_the_counters_balance_exactly(tmp_path):
-    # the bakery's stocks are balanced exactly by their counters: given the measured moves as
-    # known, a real strategy leaves no unmeasured flow on them, every counter keeps a fitted or
-    # discovered equation, and every id is used once
+    # the bakery's stocks are balanced exactly by their counters: a real strategy is not run on
+    # them, so it leaves no unmeasured flow, every counter keeps its fitted equation, and every id
+    # is used once
     store = FileMetrics(tmp_path / "m.jsonl")
     start, end = simulate(store, minutes=90)
     m = discover_with(store.dump("", {"project": "p"}), start=start, end=end, step=30, strategy="matrix_v2", deadline=120)
     assert m.check() == []
+    assert {s.id for s in m.stocks} == {"bakery_oven_orders_pending", "bakery_shelf_loaves"}
     assert all(s.evidence["exact_steps"] >= 0.97 for s in m.stocks)
-    assert m.discovery["known"] == ["bakery_oven_orders_pending", "bakery_shelf_loaves"] and m.discovery["deadline_s"] == 120
-    assert m.discovery["sdlab_explains"] in ("residual", "whole change")
+    assert m.discovery["strategy"] == "matrix_v2" and m.discovery["sdlab"].startswith("not run")
     assert not [f for f in m.flows if f.id.startswith("unmeasured:")], [f.id for f in m.flows]
     assert {f.id for f in m.flows} == {"bakery_loaves_baked_total", "bakery_loaves_sold_total", "bakery_loaves_discarded_total",
                                        "bakery_loaves_ordered_total", "bakery_orders_filled_total"}
@@ -174,16 +221,18 @@ def test_an_unmeasured_flow_is_kept_where_a_stock_is_not_balanced_exactly(tmp_pa
     start, end = write(store, 90, random.Random(6), rates, {"a": {"a_in_total": 1, "a_out_total": -1}, "b": {"b_in_total": 1, "b_out_total": -1}},
                        machines, initial={"a": 30, "b": 30}, extra=lambda t, v: [Point("b", v["b"] + int(t - T0) // 60, t, {"project": "p", "machine": "m"})])
     flows = [{"from": None, "to": "b", "rate": {"form": "constant", "value": 0.5}}, {"from": None, "to": "a", "rate": {"form": "constant", "value": 0.1}}]
-    monkeypatch.setattr("orchestra.sd.strategies.run_strategy", _fake({}, flows))
+    seen = {}
+    monkeypatch.setattr("orchestra.sd.strategies.run_strategy", _fake(seen, flows))
     monkeypatch.setattr("orchestra.sd.strategies.explains_residual", lambda *a: True)
     m = discover_with(store.dump("", {"project": "p"}), start=start, end=end, step=30, strategy="fake")
     assert m.check() == []
     assert m.stock("a").evidence["exact_steps"] >= 0.97 > m.stock("b").evidence["exact_steps"]
+    assert [s["id"] for s in seen["stocks"]] == ["b"], "a stock balanced exactly is not handed over"
     unmeasured = [f for f in m.flows if f.id.startswith("unmeasured:")]
     assert [(f.id, f.src, f.dst) for f in unmeasured] == [("unmeasured:outside>b", None, "b")]
     eq = unmeasured[0].current()
     assert (eq.origin, eq.method, eq.form, eq.params["value"]) == ("discovered", "sdlab:fake", "constant", 1.0), "0.5 per 30 s step is 1 per minute"
-    assert m.flow("b_in_total").current().method == "poisson-mle" and [d["to"] for d in m.discovery["dropped"]] == ["a"]
+    assert m.flow("b_in_total").current().method == "poisson-mle" and m.discovery["dropped"] == []
 
 
 def test_runs_a_few_seconds_apart_discover_over_the_same_grid(tmp_path, monkeypatch):
@@ -203,3 +252,27 @@ def test_runs_a_few_seconds_apart_discover_over_the_same_grid(tmp_path, monkeypa
         windows.append((d["start"], d["end"]))
     assert windows[0] == windows[1] == (1_799_999_400.0, 1_800_000_000.0)
     assert rd.aligned(100.0, 707.0, 30.0) == (90.0, 690.0)
+
+
+def test_a_strategy_past_its_deadline_leaves_conservations_fits(tmp_path, monkeypatch):
+    # SD Lab's strategies keep budgets of their own that some outlast; past the discovery's
+    # deadline the strategy's process is stopped and the model is conservation's, saying why
+    from orchestra.sd.bounded import Late
+
+    store = FileMetrics(tmp_path / "m.jsonl")
+    start, end = simulate(store, minutes=60)
+
+    def late(jobs, deadline):
+        raise Late(f"stopped at its deadline of {deadline:g} s")
+    monkeypatch.setattr("orchestra.sd.strategies.run_jobs", late)
+    m = discover_with(store.dump("", {"project": "p"}), start=start, end=end, step=30, strategy="fake", deadline=5)
+    assert m.discovery["sdlab"] == "stopped at its deadline of 5 s: conservation's fits are kept"
+    assert all(f.current().method in ("poisson-mle", "least-squares") for f in m.flows)
+
+
+def test_a_strategy_runs_in_a_process_of_its_own_under_a_deadline():
+    import pytest as _pytest
+
+    from orchestra.sd.bounded import Late, run_jobs
+    with _pytest.raises(Late, match="its process failed"):
+        run_jobs([("no_such_strategy", [], {"t": [0, 1], "levels": {}}, {})], deadline=60)

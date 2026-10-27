@@ -88,6 +88,10 @@ def cmd_sd(args) -> int:
         print(f"{r.strategy}, over the last {m.discovery['window_s'] / 60:g} min in {m.discovery['step_s']:g} s steps: {len(m.stocks)} stocks, "
               f"{len(m.flows)} flows, {len(m.machines)} machines")
         for st in m.stocks:
+            if nf := st.evidence.get("net_flow"):
+                print(f"  stock {st.id}: no counters; net flow fitted as {nf['form']}   (R² {nf['r2']:.3f} over {nf['stretches']} "
+                      f"stretches of {nf['stretch_s']:g} s)")
+                continue
             if "balance" not in st.evidence:
                 print(f"  stock {st.id}: hidden (found by {r.strategy}, measured by no series)")
                 continue

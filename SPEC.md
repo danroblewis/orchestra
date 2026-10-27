@@ -173,7 +173,14 @@ Dynamics page): `conservation`, Orchestra's own (below), or one of SD Lab's ~70
 (`orchestra/sdlab`, brought in from SD Lab's discovery research; `kalman_lna` by default when the
 `sd` extra is installed; `combined2` and `matrix_v2` are the other strong ones). With an SD Lab
 strategy, conservation still runs first and finds the stocks and the counters that measure flows;
-the SD Lab strategy then works from the stocks' levels (on the time every series was written),
+the SD Lab strategy is then given only the stocks counters do not balance exactly (a balance with
+a residual, or no counters at all: the levels whose net flow conservation fitted, below), and
+does not run where counters balance every stock exactly, since nothing is left to explain there.
+It works on a grid no finer than the stocks it is given are read at (§4.3 step 1), once per group
+of stocks joined by measured flows (a flow between groups is dropped), a group of fitted net flows
+offered only the inputs those flows read, and in a process of its own that is stopped at the
+deadline (`sd/bounded.py`; past it the model keeps conservation's fits and says so). It reads their
+levels (on the time every series was written),
 with the measured moves handed to it as what is already **known** of each step, so it explains
 only the residual (hidden stocks, unmeasured inflows and drains, the inputs that drive them); the
 other measured gauges are its inputs (`sd/inputs.py`: not flags nor a stock's twin, one per
@@ -220,7 +227,10 @@ Conservation (`sd/discover.py`):
    that move together in all but 3% of steps are one when one is Orchestra's count of the
    other's events, or both are one machine's: the machine's own, then the shorter name, is kept;
    two machines' counts of the same events both stay (each machine's stocks take their own) and
-   become one afterwards where they join two stocks (step 2). Counters that differ only by
+   become one afterwards where they join two stocks (step 2). Counters that differ in a label whose
+   values tell measured levels apart (pods started in us-east, and pods started or stopped in
+   us-west) are never one, however often their events coincide (rolling deploys that reach every
+   region in the same minutes), and never join one passage (step 3). Counters that differ only by
    instance (an ``instance`` label, or ``source`` ``baker/3``) are summed into one per machine,
    and a flow from such a sum is measured by every instance's series;
 2. a level is a **stock** when counters, added or subtracted, balance its changes
@@ -246,7 +256,10 @@ Conservation (`sd/discover.py`):
    backlog (counted traffic, §4.4) is balanced by its own traffic: what was produced into the
    channel, less what its own consumer took from it; kept only within the tolerance, a prior the
    data must bear out (decision D4), since another consumer that keeps up counts a stand-in for the
-   channel's inflow a moment late. Then, with every balance
+   channel's inflow a moment late. A backlog its consumer keeps near empty barely moves, so its own
+   changes are a scrape's timing jitter: it is kept when that declared traffic accounts for what
+   went in (its error against the inflow's variance, R² ≥ 0.9, recorded beside the R² on the level
+   itself), and it is never a flag. Then, with every balance
    known, the stand-ins give way (`sd/restate.py`): Orchestra's event counter to the
    machine counters that sum to it, when one is another stock's or the level's own machine's
    (among sets that sum to it alike, the level's own machine's parts before another machine's
@@ -262,7 +275,9 @@ Conservation (`sd/discover.py`):
    balance (two machines' counts of the same events being one counter), or, judged on the
    levels themselves, whose changes correlate by 0.9 or whose values are equal in 97% of the
    steps either held something (a copy a moment behind, balanced by its own machine's
-   counters), are one stock measured twice: the machine whose counters make the balance keeps it, the other is recorded as its
+   counters), are one stock measured twice, unless each is balanced exactly by counters none of
+   which counts the other's events (two services' pods in one region, alike through the region's
+   outage, are two stocks): the machine whose counters make the balance keeps it, the other is recorded as its
    twin (never two backlogs a source declared: two queues one consumer acknowledges at once change
    alike and are still two). A level that only fills is a stock when its balance is exact, whatever feeds it (a
    terminal state, where other stocks' outflows end); one the system's flows explain only
@@ -304,16 +319,39 @@ Conservation (`sd/discover.py`):
    in for time), nor is a stock whose balance counts the flow's own events (the same events, or
    at least half of them either way; `sd/drivers.py`): it is one off just before each of those
    events by construction (the free takers just before an order is placed), which beats any
-   real driver on likelihood; the flow's evidence records such stocks as `not_drivers`. Forms
+   real driver on likelihood; the flow's evidence records such stocks as `not_drivers`. A stock the
+   flow fills (its destination, or a backlog a copy of it fills) may drive it only the other way (the
+   fuller, the slower: a capacity), since it is higher after a burst of the flow's own events; and
+   a level read a minute after each event that explains the flow better than the level at the time
+   follows what drives the flow rather than driving it. Both forms stay in the evidence as
+   rejected, with why. Forms
    are scored with the exact point-process likelihood (each event against the levels just
    before it), because counts per step favour spurious forms when a flow drains the level it
    depends on;
 5. each flow is attributed to the machine named by its counter's `machine` (or, for event
    counters, `source`) label.
 
+Last, a level no counters balance may still be a **stock by its fitted net flow**
+(`sd/netflow.py`): something accumulates in it (a temperature, a river, a tide, a load, a backlog
+nobody counts), and its change per unit of time is fitted by least squares among a constant
+drift, `c + b × level` (relaxing toward a goal, or growing on itself), `c + a × X`, and
+`c + a × X + b × level`, for X any stock or measured level, on stretches no finer than any series
+the form reads. A form needs ten changes of the level per parameter, an AIC gain over the constant
+of 2 plus `2 ln m` for the `m` forms tried, counted on the stretches that are independent evidence
+(residuals that run in long swings count once per swing), the same gain without its one largest
+change, a term in the level past the 1% Dickey–Fuller value while keeping at least half of itself
+from one stretch to the next, and, fitted on either half of the window, a better prediction of the
+other half than each simpler form it contains. A driver must change both ways in ten stretches (a
+clock that only rises stands in for time). A level whose net flow nothing explains better than a
+constant stays an input, and so does one that is another series measured again (its changes move
+with that series', or its values and changes follow it, up to two stretches apart), each with the
+reason. An accepted stock's net flow is an inflow (`c + a × X`, or its negative as an outflow) and
+an outflow proportional to the stock (`−b × level`), origin `fitted`, method `least-squares`, with
+no counter and no machine; with an SD Lab strategy its flows take their place.
+
 Everything else is **left out, with the reason** (did not change, written in too few steps, no
-counters balance it, not needed by any balance, the same as another counter), recorded in the
-model version. Not yet: stocks no series measures,
+counters balance it and no net flow explains it, not needed by any balance, the same as another
+counter), recorded in the model version. Not yet: stocks no series measures,
 delays, non-linear forms, eras. The bakery (`~/orchestra-bakery`, its own repository) is a toy
 system it is tested on.
 

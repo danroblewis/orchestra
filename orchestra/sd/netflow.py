@@ -1,0 +1,365 @@
+"""Levels no counters balance, as stocks whose net flow is fitted from the other series.
+
+A measured level that no counters balance (a temperature, a river's flow, a tide, a machine's
+load, a backlog nobody counts) may still be a stock: something accumulates in it, and what moves
+it can be read off the other series. Its **net flow**, the level's change per unit of time, is
+fitted by least squares among these forms, on a grid no finer than any series it reads (each at
+its own resolution, ``sd.resolution``: a slow series explains nothing faster than itself):
+
+- ``c``: a constant drift (the reference every other form must beat);
+- ``c + b × level``: the level relaxing toward a goal (``b`` below zero) or growing on itself;
+- ``c + a × X``: driven by another series X (a stock, or a measured level that is not one);
+- ``c + a × X + b × level``: driven by X while relaxing.
+
+Forms are scored by AIC against the constant on the same stretches. A form must earn its place:
+``EVENTS_PER_PARAM`` changes of the level per parameter (as a counted flow needs ten events per
+parameter); an AIC gain over the constant of ``AIC_MARGIN`` plus ``2 ln m`` for the ``m`` forms
+tried (the best of a hundred unrelated series beats a constant by chance by about that much),
+counting only the stretches that are independent evidence (residuals that run in long swings are
+one piece of evidence per swing); the same gain without the one stretch whose change is furthest
+from the usual (a fit resting on one jump explains the jump); for a term in the level itself, a t
+statistic past ``DF_T``, the 1% critical value of the Dickey–Fuller test, because a level
+regressed on its own value finds a pull toward its mean in a pure random walk far more often than
+ordinary statistics allow, while keeping at least half of itself from one stretch to the next
+(``FORGETS``: one that loses more holds nothing, and is readings scattered around a mean); and, fitted on either half of the window, a better prediction of the
+other half than each simpler form it contains. A driver must change both ways in at least
+``EVENTS_PER_PARAM`` stretches: one that changed once is a before and an after, and one that only
+rises stands in for time.
+
+A level is never driven by another of its own name (a part of it, its total, or another part), and
+a statistic a source summarised across reporters (an average, a maximum) is never tried: it
+summarises, it does not store. What is refuted stays an **input**, with the reason: a level whose net flow nothing explains
+better than a constant (a random walk, a steady drift), and one whose changes move with another
+series' changes (``SAME_MOVES``: a second measure of the same thing, or a function of it, such as
+a demand computed from a rating, is no store of its own).
+
+An accepted stock's net flow becomes an inflow (``c + a × X``, or its negative as an outflow when
+it is mostly below zero) and an outflow proportional to the stock (``−b × level``), each with
+origin ``fitted`` and method ``least-squares``; growth on itself is an inflow proportional to it.
+The flows have no counter and no machine: the environment moves them."""
+
+from __future__ import annotations
+
+import itertools
+import math
+from dataclasses import dataclass, field
+
+from .drivers import AIC_MARGIN, EVENTS_PER_PARAM
+from .model import Equation, Flow, Stock
+from .resolution import steps_of
+from .series import series_key
+
+DF_T = 3.43           # |t| a term in the level itself must reach: Dickey–Fuller's 1% critical value with a constant
+SAME_MOVES = 0.9      # a level whose changes another series' changes explain this well (R²) is that series again, or a function of it
+SAME_VALUES = 0.05    # ... or half as well, and whose values stay this close to another's, as a share of its range, is that series again
+FORGETS = 0.5         # a level that loses more than this share of itself from one stretch to the next keeps nothing: readings around a mean
+ONE_WAY = 0.1         # a driver whose changes go the other way in fewer than this share of stretches only rises (or falls): it stands in for time
+NET_FLOW = "no counters balance it"     # the reason conservation gives a level these are tried on
+
+
+@dataclass
+class Driver:
+    """A series a net flow may read: its values on the grid, its resolution, and how the model
+    refers to it (a stock id, or ``input:<name>``)."""
+
+    ref: str
+    values: list[float]
+    resolution_s: float | None
+    key: str
+    name: str = ""
+
+
+@dataclass
+class Fit:
+    params: dict[str, float]        # c, and a (on the driver) and b (on the level) when the form has them
+    driver: Driver | None
+    own: bool
+    block_s: float
+    blocks: int
+    changes: int
+    r2: float
+    aic: float
+    aic_constant: float
+    t_own: float | None = None
+    tried: int = 0
+    mean_in: float = 0.0            # the inflow part's mean (c + a × X) over the stretches
+    notes: dict = field(default_factory=dict)
+
+    @property
+    def form(self) -> str:
+        return " + ".join(["c", *(["a × " + self.driver.ref] if self.driver else []), *(["b × level"] if self.own else [])])
+
+
+def _ols(rows: list[list[float]], y: list[float]) -> tuple[list[float], float, list[float]] | None:
+    """Least squares with an intercept column already in ``rows``: coefficients, the residual sum
+    of squares, and each coefficient's standard error. None when the columns are degenerate."""
+    p, n = len(rows[0]), len(rows)
+    g = [[sum(r[i] * r[j] for r in rows) for j in range(p)] for i in range(p)]
+    b = [sum(r[i] * v for r, v in zip(rows, y)) for i in range(p)]
+    inv = _inverse(g)
+    if inv is None:
+        return None
+    coef = [sum(inv[i][j] * b[j] for j in range(p)) for i in range(p)]
+    rss = sum((v - sum(c * x for c, x in zip(coef, r))) ** 2 for r, v in zip(rows, y))
+    s2 = rss / max(1, n - p)
+    return coef, rss, [math.sqrt(max(0.0, s2 * inv[i][i])) for i in range(p)]
+
+
+def _inverse(m: list[list[float]]) -> list[list[float]] | None:
+    n = len(m)
+    a = [row[:] + [1.0 if i == j else 0.0 for j in range(n)] for i, row in enumerate(m)]
+    for c in range(n):
+        piv = max(range(c, n), key=lambda r: abs(a[r][c]))
+        if abs(a[piv][c]) < 1e-12 * max(1.0, max(abs(x) for row in m for x in row)):
+            return None
+        a[c], a[piv] = a[piv], a[c]
+        d = a[c][c]
+        a[c] = [x / d for x in a[c]]
+        for r in range(n):
+            if r != c and a[r][c]:
+                f = a[r][c]
+                a[r] = [x - f * y for x, y in zip(a[r], a[c])]
+    return [row[n:] for row in a]
+
+
+def _independent_share(resid: list[float]) -> float:
+    """The share of the stretches that count as independent, from the residuals' correlation with
+    the stretch before (``(1 − ρ) / (1 + ρ)``): a smooth series misfitted by a form leaves residuals
+    that run in long swings, each swing one piece of evidence however many stretches it spans."""
+    mean = sum(resid) / len(resid)
+    d = [r - mean for r in resid]
+    var = sum(x * x for x in d)
+    rho = sum(a * b for a, b in itertools.pairwise(d)) / var if var > 0 else 0.0
+    rho = min(0.99, max(0.0, rho))
+    return (1 - rho) / (1 + rho)
+
+
+def _without_largest(rows: list[list[float]], y: list[float], w: float, margin: float) -> bool:
+    """Whether the form still beats a constant by the margin without the stretch whose change is
+    furthest from the usual one: a fit that rests on one jump (a disk filled when a program
+    started, then a steady trickle) explains that jump, not the level."""
+    med = sorted(y)[len(y) // 2]
+    drop = max(range(len(y)), key=lambda i: abs(y[i] - med))
+    keep = [i for i in range(len(y)) if i != drop]
+    base, got = _ols([[1.0] for _ in keep], [y[i] for i in keep]), _ols([rows[i] for i in keep], [y[i] for i in keep])
+    if base is None or got is None:
+        return False
+    return w * len(keep) * math.log(max(base[1], 1e-12) / max(got[1], 1e-12)) - 2 * (len(rows[0]) - 1) >= margin
+
+
+def _aic(rss: float, n: int, p: int) -> float:
+    return n * math.log(max(rss, 1e-12) / n) + 2 * p
+
+
+def _stretches(live: set[int], n: int, k: int) -> list[int]:
+    """The starts of the stretches of ``k`` grid steps, from the window's start, whose every step
+    is live."""
+    return [j * k for j in range(n // k) if all(i in live for i in range(j * k, (j + 1) * k))]
+
+
+def _mean(values: list[float], a: int, k: int) -> float:
+    return sum(values[a:a + k + 1]) / (k + 1)
+
+
+def _holds_out(rows: list[list[float]], y: list[float], simpler: list[list[int]]) -> bool:
+    """Whether a form fitted on one half of the stretches predicts the other half (both ways)
+    better than each simpler form it contains (``simpler``: the columns each keeps). Two
+    unrelated series that wander alike for a while fit each other on the whole window; the
+    pairing rarely carries from one half to the other."""
+    h = len(y) // 2
+    halves = [(range(h), range(h, len(y))), (range(h, len(y)), range(h))]
+
+    def out_of_sample(cols: list[int]) -> float:
+        err = 0.0
+        for fit_on, test_on in halves:
+            got = _ols([[rows[i][c] for c in cols] for i in fit_on], [y[i] for i in fit_on])
+            if got is None:
+                return math.inf
+            err += sum((y[i] - sum(cf * rows[i][c] for cf, c in zip(got[0], cols))) ** 2 for i in test_on)
+        return err
+    full = out_of_sample(list(range(len(rows[0]))))
+    return all(full < out_of_sample(cols) for cols in simpler)
+
+
+def _same(level, d: Driver, starts: list[int], y: list[float], k: int, n: int) -> str:
+    """Whether the level is the driver measured again (or a function of it): its changes explained
+    by the driver's (``SAME_MOVES``), or half as well with its values within ``SAME_VALUES`` of
+    its range of the driver's, with the driver up to two stretches ahead or behind (two collectors of one
+    feed, one stamping the feed's own time and the other the time it polled)."""
+    lv = [level.values[a] for a in starts]
+    span = max(lv) - min(lv)
+    for lag in range(-2 * k, 2 * k + 1, max(1, k // 10)):
+        at = [(i, a + lag) for i, a in enumerate(starts) if 0 <= a + lag and a + lag + k <= n]
+        if len(at) < 3:
+            continue
+        r2 = _r2_alone([d.values[b + k] - d.values[b] for _, b in at], [y[i] for i, _ in at])
+        if r2 >= SAME_MOVES:
+            return f"its changes move with (R² {r2:.2f})"
+        if r2 >= SAME_MOVES / 2 and span > 0 and sum(abs(lv[i] - d.values[b]) for i, b in at) / len(at) <= SAME_VALUES * span:
+            return f"its values and changes (R² {r2:.2f}) are those of"
+    return ""
+
+
+def _eligible(d: Driver, starts: list[int], k: int) -> str:
+    """Why a series may not drive a net flow on these stretches, or nothing: it must change in
+    ``EVENTS_PER_PARAM`` of them (one that changed once is a before and an after, not a driver),
+    and both ways (one that only rises stands in for time)."""
+    dx = [d.values[a + k] - d.values[a] for a in starts]
+    up, down = sum(1 for v in dx if v > 0), sum(1 for v in dx if v < 0)
+    if up + down < EVENTS_PER_PARAM:
+        return "changed too seldom"
+    if min(up, down) < ONE_WAY * (up + down):
+        return "only moves one way"
+    return ""
+
+
+def fit(level, drivers: list[Driver], step: float, unit_s: float) -> tuple[Fit | None, str]:
+    """The level's net flow, or None and why it stays an input (said after conservation's reason)."""
+    n = len(level.values) - 1
+    live = set(range(n)) if level.live is None else set(level.live)
+    k0 = steps_of(level.resolution.seconds if level.resolution else None, step)
+    m = 1 + 2 * len(drivers)                         # forms tried beyond the constant: own, and two per driver
+    margin = AIC_MARGIN + 2 * math.log(max(1, m))
+    cands: list[tuple[Fit, list[list[float]], list[float], list[list[int]]]] = []
+    same: tuple[str, Driver] | None = None
+    cache: dict[int, tuple] = {}
+
+    def on(k: int):
+        if k not in cache:
+            starts = _stretches(live, n, k)
+            dt = k * step / unit_s
+            y = [(level.values[a + k] - level.values[a]) / dt for a in starts]
+            cache[k] = (starts, y, sum(1 for v in y if abs(v) > 1e-12))
+        return cache[k]
+
+    def consider(k: int, driver: Driver | None, own: bool) -> None:
+        starts, y, changes = on(k)
+        p = 1 + (driver is not None) + own
+        if changes < EVENTS_PER_PARAM * p or len(y) <= 2 * (p + 1):
+            return
+        base = _ols([[1.0] for _ in y], y)
+        rows = [[1.0, *([_mean(driver.values, a, k)] if driver else []), *([level.values[a]] if own else [])] for a in starts]
+        got = _ols(rows, y)
+        if base is None or got is None:
+            return
+        coef, rss, se = got
+        aic0, aic = _aic(base[1], len(y), 1), _aic(rss, len(y), p)
+        w = _independent_share([v - sum(c * x for c, x in zip(coef, r)) for r, v in zip(rows, y)])
+        gain = lambda rss_simple, dp: w * len(y) * math.log(max(rss_simple, 1e-12) / max(rss, 1e-12)) - 2 * dp
+        if gain(base[1], p - 1) < margin:
+            return
+        t_own = coef[-1] / se[-1] * math.sqrt(w) if own and se[-1] > 0 else (math.inf if own else None)
+        if own and (abs(t_own) < DF_T or coef[-1] * k * step / unit_s < -FORGETS):
+            return
+        if driver and own:                      # both terms must earn their place over each alone, the driver as one of many
+            for sub, need in (([[1.0, r[1]] for r in rows], AIC_MARGIN), ([[1.0, r[2]] for r in rows], margin)):
+                g = _ols(sub, y)
+                if g is None or gain(g[1], 1) < need:
+                    return
+        if not _without_largest(rows, y, w, margin):
+            return
+        sst = sum((v - sum(y) / len(y)) ** 2 for v in y) or 1e-12
+        params = {"c": coef[0], **({"a": coef[1]} if driver else {}), **({"b": coef[-1]} if own else {})}
+        inflow = [coef[0] + (coef[1] * r[1] if driver else 0.0) for r in rows]
+        simpler = [[0]] + ([[0, 1], [0, 2]] if driver and own else [])
+        cands.append((Fit(params, driver, own, k * step, len(y), changes, 1 - rss / sst, aic, aic0, t_own, m,
+                          sum(inflow) / len(inflow)), rows, y, simpler))
+
+    _, y0, changes0 = on(k0)
+    if changes0 < EVENTS_PER_PARAM * 2:
+        return None, (f"and it changed in only {changes0} of its {len(y0)} stretches of {k0 * step:g} s, "
+                      "too few to fit a net flow: an input")
+    consider(k0, None, True)
+    for d in drivers:
+        k = max(k0, steps_of(d.resolution_s, step))
+        starts, y, changes = on(k)
+        if changes < EVENTS_PER_PARAM * 2 or _eligible(d, starts, k):
+            continue
+        if why := _same(level, d, starts, y, k, n):
+            same = (why, d)
+            break
+        consider(k, d, False)
+        consider(k, d, True)
+    if same:
+        return None, (f"and {same[0]} {same[1].key}: the same quantity measured again, or a function of it, "
+                      "so an input, not a stock")
+    cands.sort(key=lambda c: c[0].aic - c[0].aic_constant)
+    best = next((f for f, rows, y, simpler in cands if _holds_out(rows, y, simpler)), None)
+    if best is None:
+        why = (f"none of the {len(cands)} that fitted the window predicted one half of it from the other"
+               if cands else f"of {m} forms tried")
+        return None, f"and no other series explains its changes better than a constant ({why}): an input, not a stock"
+    return best, ""
+
+
+def _r2_alone(x: list[float], y: list[float]) -> float:
+    """How well ``x`` alone, with an intercept, explains ``y``."""
+    got = _ols([[1.0, v] for v in x], y)
+    if got is None:
+        return 0.0
+    my = sum(y) / len(y)
+    sst = sum((v - my) ** 2 for v in y)
+    return 1 - got[1] / sst if sst > 0 else 0.0
+
+
+def build(f: Fit, sid: str, title: str, machine: str | None, window: tuple[float, float], ref) -> tuple[Stock, list[Flow]]:
+    """The stock and its fitted flows. ``ref``: the model's reference to the level's series."""
+    p = f.params
+    q = {"r2": round(f.r2, 4), "stretches": float(f.blocks), "stretch_s": f.block_s, "aic": round(f.aic, 3),
+         "aic_constant": round(f.aic_constant, 3), "forms_tried": float(f.tried), "events": float(f.changes), "changes": float(f.changes)}
+    note = {"net_flow_of": sid, "note": f"no counter measures it: fitted from how {title} changed ({f.form})"}
+    flows = []
+    if f.driver is not None or abs(p["c"]) > 1e-12:
+        sign = 1.0 if f.mean_in >= 0 else -1.0
+        params = {"c": round(sign * p["c"], 6), **({"k": round(sign * p["a"], 6)} if f.driver else {})}
+        eq = Equation("linear" if f.driver else "constant", params, "fitted", "least-squares", window, None, dict(q),
+                      [f.driver.ref] if f.driver else [])
+        fid, src, dst = (f"{sid}_inflow", None, sid) if sign > 0 else (f"{sid}_loss", sid, None)
+        flows.append(Flow(fid, ("into " if sign > 0 else "out of ") + title, src, dst, None, [eq], [], dict(note)))
+    if f.own:
+        b = p["b"]
+        eq = Equation("proportional", {"k": round(abs(b), 6)}, "fitted", "least-squares", window, None, dict(q), [sid])
+        fid, src, dst = (f"{sid}_outflow", sid, None) if b < 0 else (f"{sid}_growth", None, sid)
+        flows.append(Flow(fid, (f"out of {title}, in proportion to it" if b < 0 else f"into {title}, in proportion to it"),
+                          src, dst, None, [eq], [], dict(note)))
+    evidence = {"machine": machine, "net_flow": {"form": f.form, "params": {k: round(v, 6) for k, v in p.items()},
+                                                 "driver": f.driver.ref if f.driver else None, "r2": round(f.r2, 4),
+                                                 "stretch_s": f.block_s, "stretches": f.blocks, "changes": f.changes,
+                                                 "aic": round(f.aic, 3), "aic_constant": round(f.aic_constant, 3),
+                                                 "forms_tried": f.tried, **({"t_level": round(f.t_own, 2)} if f.t_own is not None else {})}}
+    return Stock(sid, title, "level", ref, evidence), flows
+
+
+def stocks(series: list, counted: list, sid_of: dict[str, str], inputs: dict[str, list[float]], input_refs: dict[str, dict],
+           left_out: dict[str, str], step: float, unit_s: float, window: tuple[float, float], name_of, ref_of, machine_of) -> list:
+    """The levels conservation left out because no counters balance them that are stocks by their
+    fitted net flow, as (stock, its flows, the input name it had, its series). The others get their
+    reason in ``left_out``. ``counted``: conservation's stocks' series; ``name_of(series)``: a new
+    stock's id and title; ``ref_of(series)``: the model's reference to it."""
+    key_of = {name: series_key(r["name"], r.get("labels") or {}) for name, r in input_refs.items()}
+    drivers = [Driver(sid_of[c.key], c.values, c.resolution.seconds if c.resolution else None, c.key, c.name) for c in counted]
+    drivers += [Driver(f"input:{name}", vals, input_refs[name].get("resolution_s"), key_of[name], input_refs[name]["name"])
+                for name, vals in inputs.items()]
+    accepted = []
+    for s in series:
+        if s.counter or not left_out.get(s.key, "").startswith(NET_FLOW):
+            continue
+        if s.summary:
+            left_out[s.key] += ", and it is a statistic its source summarised across reporters (an average, a maximum): a summary, not a store"
+            continue
+        got, why = fit(s, [d for d in drivers if d.name != s.name], step, unit_s)
+        if got is None:
+            left_out[s.key] = f"{left_out[s.key]}, {why}"
+        else:
+            accepted.append((s, got))
+    named = {s.key: name_of(s) for s, _ in accepted}
+    as_input = {f"input:{name}": named[k][0] for name, k in key_of.items() if k in named}
+    out = []
+    for s, got in accepted:
+        if got.driver is not None and got.driver.ref in as_input:      # another level that is a stock now
+            got.driver = Driver(as_input[got.driver.ref], got.driver.values, got.driver.resolution_s, got.driver.key, got.driver.name)
+        sid, title = named[s.key]
+        stock, flows = build(got, sid, title, machine_of(s), window, ref_of(s))
+        left_out.pop(s.key, None)
+        out.append((stock, flows, next((name for name, k in key_of.items() if k == s.key), None), s))
+    return out

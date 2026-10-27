@@ -232,6 +232,7 @@ def test_a_level_and_a_counter_that_coincide_on_a_few_steps_are_no_stock_and_flo
     assert "changed in only 3 steps" in why['planner_awake{machine="planner"}'], why
     assert "only 3 events" in why['planner_wakes_total{machine="planner"}'], why
     assert why['shelf_items{machine="shelf"}'].startswith("no counters balance it"), why
+    assert "too few to fit a net flow" in why['shelf_items{machine="shelf"}'], why
     assert "only 3 events" in why['shelf_put_total{machine="shelf"}'] and "only 3 events" in why['shelf_taken_total{machine="shelf"}']
 
 
