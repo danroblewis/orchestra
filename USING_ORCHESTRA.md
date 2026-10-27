@@ -1185,7 +1185,16 @@ orchestra sd discover [--minutes 60] [--step-s 30] [--strategy conservation]   #
 orchestra sd show [--version N]                                                # stocks, flows, machines
 orchestra sd versions                                                          # every saved version
 orchestra sd fit [--step 1]                                                    # refit the current model's flows
+orchestra sd observability [--json]                                            # which stocks what is measured determines
 ```
+
+`orchestra sd observability` (and `/api/dynamics/observability`) answers, for the latest model:
+can each stock's level, a hidden stock's above all, be determined from the series and counters
+there are? For each it says how (through which flow and which instrument), or, when it cannot,
+which new series or counter would make it determinable. It also lists numbers that only show in
+combination and which stocks the flows machines are hypothesised to affect connect to. The model
+is linearised at the last hour's mean levels, so the answers are local, and it names the flows for
+which that matters.
 
 `orchestra sd discover` is an observation: it reads the metrics and may save a version, and
 changes nothing else. One discovery runs at a time per project; the host skips its turn while
@@ -1565,6 +1574,7 @@ printed it; `cat ~/.orchestrator/projects.json` lists every project's key.
 | `orchestra sd show [--version N]` | The model: stocks with their latest level, flows, machines. |
 | `orchestra sd versions` | The saved versions. |
 | `orchestra sd fit [--version N] [--step H]` | Refit the flows over H-hour steps and save a version. |
+| `orchestra sd observability [--version N] [--json]` | Which stocks what is measured determines, and what would determine the rest. |
 | `orchestra sources check` | Probe each source's endpoints and credentials. |
 | `orchestra sources infer [--source NAME]` | Run an inference round and print what is kept and left out. |
 | `orchestra sources preview QUERY [--source NAME] [--minutes N] [--step-s S]` | Read a query's fan-out, with sparklines. |

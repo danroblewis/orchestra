@@ -472,6 +472,26 @@ another store was counting before the window began, so its first sample is a bas
 events. When a source is missing the discovery is cached for the page with the reason, and never
 saved as a version (§4.4).
 
+**Observability** (`sd/observability.py`, `sd/linearise.py`; `orchestra sd observability`,
+`/api/dynamics/observability`) says which stocks what is measured determines. The model is
+linearised at its recent operating point (the mean levels and inputs of the last hour; a hidden
+stock at 0): `dx/dt ≈ S·R·x`, with `S` the flows' ends and `R` each rate's slopes on the levels,
+taken from the rates as the simulator computes them. The sensors are the stocks bound to a series
+and the flows with a counter (a counter measures a rate, which its equation ties to the levels it
+reads). A stock is **determined** when its direction has no part in the unobservable subspace (the
+largest subspace inside the sensors' null space that the dynamics map into itself). For each
+determined stock the report gives the shortest way its level reaches a sensor and the sensors it
+relies on; for a measured stock, whether the counters and equations would determine it without its
+own series; for an undetermined one, each new series or counter that would determine it, and
+whether only the fitted numbers make it undetermined (the same test with random slopes on the same
+structure). It flags unmeasured flows' numbers that show in the determined levels only in
+combination, and numbers that multiply an undetermined stock. Controllability with respect to the
+flows machines are hypothesised to affect is reported as structural and weak: it ignores floors and
+caps. The answers are local: flows with effects, expressions, or a rate floored at 0 at that point
+are named, and so is every flow taken as an outside input because it has no equation to read. A
+stock determined through a counter is determined only as far as that flow's equation, a hypothesis,
+is right.
+
 ### 4.4 Other stores (sources)
 
 `orchestra/sources/`. A project may read series that live in other time-series stores without
@@ -915,7 +935,8 @@ orchestra/
              collinear and restate (a level's balance), ends, inputs, drivers (which stocks may
              drive a flow), discover (conservation), attribute (machines associated with flows,
              as hypotheses), rates, strategies, simulate, rediscover,
-             provenance (where each series in a model came from)
+             provenance (where each series in a model came from), linearise and observability
+             (which stocks what is measured determines)
   sdlab/     SD Lab's discovery research: ~70 strategies (needs the sd extra)
   web/       app, core, core_explore, machines, instruments, traffic (counted traffic), dynamics, static/
 tests/

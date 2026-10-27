@@ -102,6 +102,8 @@ def cmd_sd(args) -> int:
             print(f"  {k}: {why}")
         print(f"saved as version {r.version}" if r.version else "structure unchanged: no new version")
         args.version = None
+    if args.action == "observability":
+        return _observability(project, models, args)
     if args.action == "versions":
         for v in models.versions():
             print(f"v{v['version']:<4} {_when(v['saved_at'])}  {v['stocks']} stocks, {v['flows']} flows ({v['fitted']} fitted)  {v['note']}")
@@ -143,6 +145,47 @@ def cmd_sd(args) -> int:
     print("\nmachines (attributed flows are hypotheses):")
     for mc in m.machines:
         print(f"  {mc.id:<20} {mc.kind:<8} flows: {', '.join(mc.attributed) or '-'}")
+    return 0
+
+
+def _observability(project: Project, models, args) -> int:
+    """Which stocks what is measured determines (sd/observability.py), at the last hour's mean levels."""
+    import json
+
+    from .metrics import for_project as metrics_for
+    from .sd.observability import lines, operating_point, report
+    from .sd.strategies import sd_installed
+    from .sources.catalogue import Catalogue
+    from .web.background import history, stock_step
+
+    if not sd_installed():
+        sys.exit("orchestra: the observability report needs orchestra[sd] installed")
+    if args.version is None and (cached := models.latest_discovery()) and cached[1].stocks:
+        m, which = cached[1], "the latest discovery"
+    else:
+        m, which = models.load(args.version), f"version {args.version or models.current_version()}"
+    if m is None:
+        print("no model yet")
+        return 1
+    store = metrics_for(project)
+    cat = Catalogue(project, store)
+    step = stock_step(project.config.discovery_step)
+    readers: dict = {}
+
+    def raw(ref, start: float, end: float):
+        if ref.source and ref.source != "own":
+            if (start, end) not in readers:
+                readers[(start, end)] = cat.reader(start, end, step)
+            return readers[(start, end)](ref)
+        return store.raw(ref.name, ref.labels, start=start, end=end)
+
+    levels, inputs, point = operating_point(history(m, raw, time.time(), step))
+    r = report(m, levels, inputs, point=point)
+    if args.json:
+        print(json.dumps(r, indent=1))
+        return 0
+    print(f"{m.name} ({which})")
+    print("\n".join(lines(r)))
     return 0
 
 
@@ -241,13 +284,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--append", action="store_true", help="for backfill: keep existing points instead of replacing them")
     s.set_defaults(fn=cmd_metrics)
 
-    s = sub.add_parser("sd", help="the system dynamics model: discover it from the metrics, show it, fit it, list its versions")
-    s.add_argument("action", choices=["show", "fit", "versions", "discover"])
+    s = sub.add_parser("sd", help="the system dynamics model: discover it from the metrics, show it, fit it, list its versions, "
+                       "say which stocks what is measured determines")
+    s.add_argument("action", choices=["show", "fit", "versions", "discover", "observability"])
     s.add_argument("--minutes", type=float, help="for discover: the window, in minutes back from now (default: [discovery] window)")
     s.add_argument("--step-s", dest="step_s", type=float, help="for discover: seconds per step (default: [discovery] step)")
     s.add_argument("--strategy", help="for discover: conservation or an SD Lab strategy (default: [discovery] strategy)")
-    s.add_argument("--version", type=int, help="for show and fit: start from this past version (default: the current one)")
+    s.add_argument("--version", type=int, help="for show, fit and observability: this past version (default: the current one; for observability, the latest discovery)")
     s.add_argument("--step", type=float, default=1.0, help="for fit: hours per step (default 1)")
+    s.add_argument("--json", action="store_true", help="for observability: the report as JSON")
     s.set_defaults(fn=cmd_sd)
 
     s = sub.add_parser("sources", help="other time-series stores ([[sources]]): check them, infer what to read, preview a query")

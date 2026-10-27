@@ -501,6 +501,12 @@ glossary plus the one rename.**
   
   Use SD Lab's analysis and python-control on the linearised model. Done when UC-1 and the SD Lab
   control cases 213–215 are labelled as the ladder labels them.
+
+  **Built (2026-10-27), the observability part:** `orchestra sd observability` and
+  `/api/dynamics/observability` (`sd/observability.py`, numpy only, no python-control) say which
+  stocks the series and counters determine, through what, and which new instrument would determine
+  the rest, with parameters seen only in combination; identifiability against the ladder's labels
+  (UC-1, cases 213–215) is not done yet.
 - **H1, "Impulse injection" becomes "Probes (identification experiments)":**
   - a probe machine with a design (PRBS, steps or impulses, chosen per flow), an amplitude and
     time budget, and the user's sign-off before it acts on anything real (SD Lab

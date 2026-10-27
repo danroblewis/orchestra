@@ -203,6 +203,23 @@ def create_app(project: Project) -> FastAPI:
         except Exception as e:  # noqa: BLE001 - shown in the drawer
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
+    @app.get("/api/dynamics/observability")
+    def dynamics_observability() -> dict:
+        """Which stocks what is measured determines, and which would need another instrument
+        (sd/observability.py), at the mean levels of the cached history. Read-only."""
+        from ..sd.strategies import sd_installed
+        if not sd_installed():
+            return {"ok": False, "error": "the observability report needs orchestra[sd] installed"}
+        model = bg.model()
+        if model is None or not model.stocks:
+            return {"ok": False, "error": "there is no model yet"}
+        from ..sd.observability import operating_point, report
+        levels, inputs, point = operating_point(bg.history if bg.ready("history") else None)
+        try:
+            return report(model, levels, inputs, point=point)
+        except Exception as e:  # noqa: BLE001 - reported to the caller
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
     @app.get("/api/machines")
     def machines() -> dict:
         """The machines seen on the bus and who publishes and listens for what, and the machines,
