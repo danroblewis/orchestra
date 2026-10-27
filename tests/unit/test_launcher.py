@@ -302,3 +302,52 @@ def test_a_project_machine_never_takes_a_plugin_process_s_place(project):
         assert (project.logs_dir / "machines" / "tools.agents.log").exists()
     finally:
         la.stop_all()
+
+
+def test_a_plugin_s_processes_follow_its_section_in_orchestra_toml(project):
+    from orchestra.host import Host
+    from orchestra.plugins import Plugin
+
+    def make(project):
+        if "broken" in project.config.raw:
+            raise RuntimeError("a mistake in the plugin")
+        return Plugin("tools", processes=[Process("helper", [PY, "-c", SLEEPER])] if "tools" in project.config.raw else [])
+
+    class EntryPoint:
+        name = "tools"
+
+        def load(self):
+            return make
+
+    def write(text):
+        path = project.repo_root / "orchestra.toml"
+        path.write_text('[metrics]\nurl = "file"\n' + text)
+        t = time.time() + next(_later)
+        os.utime(path, (t, t))
+
+    def procs():
+        return {n: r["state"] for n, r in (runtime.read(project).get("processes") or {}).items()}
+
+    write("")
+    host = Host(project, interval=0.1, found=lambda: [EntryPoint()], launch_every=0.05)
+    t = threading.Thread(target=host.run)
+    t.start()
+    try:
+        until(lambda: "launcher" in runtime.read(project))
+        time.sleep(0.3)
+        assert procs() == {}
+        write("\n[tools]\n")                                        # the plugin's section added: its process starts
+        until(lambda: procs() == {"tools.helper": "running"})
+        pid = runtime.read(project)["processes"]["tools.helper"]["pid"]
+        write("\n[tools]\nbroken = true\n")                         # the plugin fails to load: what it declared stands
+        time.sleep(0.5)
+        assert procs() == {"tools.helper": "running"} and runtime.read(project)["processes"]["tools.helper"]["pid"] == pid
+        write("\n[tools\n")                                         # the file does not parse: likewise
+        time.sleep(0.5)
+        assert runtime.read(project)["processes"]["tools.helper"]["pid"] == pid
+        write("")                                                   # the section removed: its process stops
+        until(lambda: procs() == {})
+        assert not runtime.alive(pid)
+    finally:
+        host.stop()
+        t.join(timeout=20)

@@ -310,8 +310,10 @@ failures (non-zero exits) in a row, each within a minute of starting, it is give
 host's log, the process's log and the bus (`orchestra.process.gave_up`) say. It is tried again when
 its entry changes or the host restarts. The host also publishes `orchestra.process.started` and
 `orchestra.process.exited`. It re-reads `orchestra.toml` whenever the file changes (checked every
-second): a new entry starts, a removed one stops, a changed one restarts; a file that does not
-parse leaves what runs alone. Stopping the host (SIGTERM, SIGHUP or Ctrl-C) stops every process
+second): a new entry starts, a removed one stops, a changed one restarts. The plugins are then
+asked again for their processes (the config read first, since a plugin reads its own sections), so
+adding or removing a plugin's section starts or stops what it declares. A file that does not parse,
+or a plugin that fails to load, leaves what runs alone. Stopping the host (SIGTERM, SIGHUP or Ctrl-C) stops every process
 group it started: SIGTERM, then SIGKILL after the process's stop grace (`stop_grace` in
 `[[machines]]`, `stop_grace_s` in a `Process`; 10 s unless given, like systemd's
 `TimeoutStopSec`). A host started again after being killed first stops what the previous one left

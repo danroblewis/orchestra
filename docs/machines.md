@@ -107,8 +107,9 @@ seconds, one removed stops, and one whose entry changed restarts. The program it
 when it starts, so a change to it alone takes effect at its next restart. The Core page lists what
 the host runs, with each process's state, restarts and log.
 
-A plugin's processes run under the name `<plugin>.<name>`, so a name
-of yours never replaces one of theirs; a `[[machines]]` name of that form is refused.
+A plugin's processes run under the name `<plugin>.<name>`, so a name of yours never replaces one
+of theirs; a `[[machines]]` name of that form is refused. They follow `orchestra.toml` too: adding
+or removing a plugin's section starts or stops what the plugin declares.
 
 The command is not run by a shell: for a pipeline or `&&`, write `command = "sh -c '...'"`, or
 better, a script. A program that should run on a clock rather than continuously can loop and sleep

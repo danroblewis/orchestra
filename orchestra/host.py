@@ -47,6 +47,7 @@ class Host:
         self.interval = interval
         self.launch_every = launch_every
         self._found = found               # stands in for the installed plugins (tests)
+        self._declared: dict[str, list[Process]] = {}     # each plugin's processes, as last loaded
         self._stop = threading.Event()
 
     def log(self, msg: str) -> None:
@@ -105,14 +106,23 @@ class Host:
                 self.log(f"discovery: {type(e).__name__}: {e}")
 
     def _plugin_processes(self) -> list[Process]:
+        """What the plugins ask to have run, asked again whenever orchestra.toml changes: the
+        project's config is read again first, since a plugin reads its own sections there. A
+        plugin that fails to load keeps what it last declared; a config that does not parse
+        raises, and the launcher keeps the last list."""
+        self.project.reload_config()
         loaded = plugins.load(self.project, self._found)
+        now = {plug.name: [replace(p, owner=plug.name) for p in plug.processes] for plug in loaded.plugins}
         for err in loaded.errors:
-            self.log(f"plugin {err['plugin']} failed to load, so its processes are not started: {err['error']}")
-        return [replace(p, owner=plug.name) for plug in loaded.plugins for p in plug.processes]
+            self.log(f"plugin {err['plugin']} failed to load: {err['error']}; what it last declared, if anything, stands")
+        if loaded.errors:
+            now = {**self._declared, **now}
+        self._declared = now
+        return [p for procs in now.values() for p in procs]
 
     def _launch(self) -> None:
         """Keep the declared processes running until the host stops, then stop them."""
-        launcher = Launcher(self.project, self.events.publish, self.log, self._plugin_processes())
+        launcher = Launcher(self.project, self.events.publish, self.log, self._plugin_processes)
         launcher.reap_orphans()
         try:
             while not self._stop.is_set():

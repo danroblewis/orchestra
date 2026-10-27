@@ -17,7 +17,9 @@ with each quick exit (up to a minute); one that fails ``GIVE_UP_AFTER`` times in
 within ``STABLE_S`` of starting, is given up on, in the host's log, the process's log and on the
 bus (``orchestra.process.gave_up``). ``orchestra.toml`` is read again whenever it changes, so a
 machine added by a merged commit starts without restarting the host, one removed stops, and one
-whose command or restart changed is restarted (and a given-up one tried again). Every process is
+whose command or restart changed is restarted (and a given-up one tried again); the plugins'
+processes are asked for again then too, so a plugin's section added or removed starts or stops
+them. Every process is
 in the runtime record under ``processes`` for the Core page. A plugin's processes are named
 ``<plugin>.<name>`` there and in their logs' names, so a project's ``[[machines]]`` never collide
 with them.
@@ -118,13 +120,16 @@ class Launcher:
     project: Project
     publish: Callable[[str, dict], object]        # Events.publish: the host's own events
     log: Callable[[str], None]                    # the host's log
-    plugin_processes: list[Process] = field(default_factory=list)
+    plugin_processes: list[Process] | Callable[[], list[Process]] = field(default_factory=list)   # a callable is asked
+                                                                     # again whenever orchestra.toml changes
     backoff: float = 1.0
     stable_s: float = STABLE_S
     give_up_after: int = GIVE_UP_AFTER
     grace: float = STOP_GRACE_S
     runs: dict[str, _Run] = field(default_factory=dict)
-    _toml: tuple[float, list[Process]] | None = None
+    _mtime: float | None = None
+    _project: list[Process] = field(default_factory=list)
+    _plugins: list[Process] = field(default_factory=list)
     _said: set[str] = field(default_factory=set)
     _recorded: dict | None = None
 
@@ -134,24 +139,38 @@ class Launcher:
             self._said.add(msg)
             self.log(f"launcher: {msg}")
 
-    def _project_processes(self) -> list[Process]:
-        """``[[machines]]`` from orchestra.toml, read again only when the file changed; on a file
-        that does not parse, the last good list stands."""
+    def _declared(self) -> tuple[list[Process], list[Process]]:
+        """The project's ``[[machines]]`` and the plugins' processes, read again only when
+        orchestra.toml changed (a plugin's processes may depend on its sections there). What fails
+        to read leaves the last good list standing."""
+        if not callable(self.plugin_processes):
+            self._plugins = list(self.plugin_processes)
         path = self.project.repo_root / "orchestra.toml"
         try:
             mtime = path.stat().st_mtime
-            if self._toml is None or self._toml[0] != mtime:
-                self._toml = (mtime, from_toml(tomllib.loads(path.read_text(encoding="utf-8"))))
-        except (OSError, ValueError, TypeError) as e:
+        except OSError as e:
             self._say_once(f"cannot read {path.name}: {type(e).__name__}: {e}; keeping what runs")
-        return self._toml[1] if self._toml else []
+            return self._project, self._plugins
+        if mtime != self._mtime:
+            self._mtime = mtime
+            try:
+                self._project = from_toml(tomllib.loads(path.read_text(encoding="utf-8")))
+            except (OSError, ValueError, TypeError) as e:
+                self._say_once(f"cannot read {path.name}: {type(e).__name__}: {e}; keeping what runs")
+            if callable(self.plugin_processes):
+                try:
+                    self._plugins = list(self.plugin_processes())
+                except Exception as e:  # noqa: BLE001 - a plugin's mistake must not stop what runs
+                    self._say_once(f"cannot read the plugins' processes: {type(e).__name__}: {e}; keeping what runs")
+        return self._project, self._plugins
 
     def wanted(self) -> dict[str, Process]:
         """What should run, by name. A plugin's processes are named ``<plugin>.<name>``, so a
         project's never takes their place; a project name in a plugin's ``<plugin>.`` is refused."""
         out: dict[str, Process] = {}
-        plugins = {p.owner for p in self.plugin_processes}
-        for p in [*self._project_processes(), *self.plugin_processes]:
+        project, plugin = self._declared()
+        plugins = {p.owner for p in plugin}
+        for p in [*project, *plugin]:
             if p.owner != "project":
                 p = replace(p, name=f"{p.owner}.{p.name}")
             elif isinstance(p.name, str) and (taken := next((o for o in plugins if p.name.startswith(f"{o}.")), None)):
