@@ -292,14 +292,14 @@ def test_each_process_has_its_own_stop_grace(project):
 
 
 def test_a_project_machine_never_takes_a_plugin_process_s_place(project):
-    declare(project, ("agents", SLEEPER, "always"), ("tools.helper", SLEEPER, "always"))
-    la, _, lines = launcher(project, plugin_processes=[Process("agents", [PY, "-c", SLEEPER], owner="tools"),
+    declare(project, ("sampler", SLEEPER, "always"), ("tools.helper", SLEEPER, "always"))
+    la, _, lines = launcher(project, plugin_processes=[Process("sampler", [PY, "-c", SLEEPER], owner="tools"),
                                                        Process("helper", [PY, "-c", SLEEPER], owner="tools")])
     try:
         until(lambda: len(la.runs) == 3 and all(r.state == "running" for r in la.runs.values()), la)
-        assert {n: r.spec.owner for n, r in la.runs.items()} == {"agents": "project", "tools.agents": "tools", "tools.helper": "tools"}
+        assert {n: r.spec.owner for n, r in la.runs.items()} == {"sampler": "project", "tools.sampler": "tools", "tools.helper": "tools"}
         assert sum("'tools.helper' has the form tools.<name>, kept for the plugin tools's processes" in ln for ln in lines) == 1
-        assert (project.logs_dir / "machines" / "tools.agents.log").exists()
+        assert (project.logs_dir / "machines" / "tools.sampler.log").exists()
     finally:
         la.stop_all()
 
