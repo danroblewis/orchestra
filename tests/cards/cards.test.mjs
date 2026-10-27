@@ -23,10 +23,10 @@ test("every card names the package and what the machine listens for, whoever dre
   assert.ok(wrapped.startsWith('<div class="panel') && wrapped.includes("the package's head") && wrapped.includes("bakery"));
 });
 
-test("the mode tag's class has no space in it, and a kind is said in words", () => {
+test("the mode tag's class has no space in it, and a kind is said as announced", () => {
   const rows = Orchestra.machineCards.rows(m);
   assert.match(rows, /class="tag k-ad_hoc">ad hoc</);
-  assert.match(Orchestra.machineCards.rows({ ...m, mode: "continuous", kind: "agent" }), /k-continuous">continuous<.*>AI agent</);
+  assert.match(Orchestra.machineCards.rows({ ...m, mode: "continuous", kind: "service" }), /k-continuous">continuous<.*>service</);
   assert.match(Orchestra.machineCards.rows({ ...m, mode: null, kind: null, package: null, publishes: [], subscribes: [], metrics: [], instances: [], first_seen: null }), /not announced.*not announced.*no package.*no events yet.*nothing.*nothing.*none labelled machine="baker"/s);
 });
 

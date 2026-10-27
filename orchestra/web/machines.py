@@ -6,7 +6,7 @@ Everything here is observed, or announced by the machine itself:
   is one **instance** of it (``baker/1``, ``baker/2``: one machine, two instances). Orchestra's own
   host is a machine too;
 - **how it is engaged** (continuous, scheduled or ad hoc), **what it listens for**, **what kind
-  of thing it is** (a program, an AI agent, a person, a service) and **which package** it belongs
+  of thing it is** (a program, a service, a person) and **which package** it belongs
   to: until the bus adapters provide subscriptions the backend can list
   (docs/proposals/empty-orchestra.md §3), an instance announces these when it starts, with
   ``orchestra.machine.started`` (``data.mode``, ``data.listens_for``, ``data.kind``,
@@ -63,7 +63,7 @@ class MachineIndex:
         self.recent: dict[tuple[str, str], deque] = defaultdict(deque)   # (machine, type) -> times in the last day
         self.subs: dict[str, set] = defaultdict(set)                     # machine -> types its instances listen for
         self.mode: dict[str, str] = {}
-        self.kind: dict[str, str] = {}                                   # machine -> what it announced it is (program, agent, person, service)
+        self.kind: dict[str, str] = {}                                   # machine -> what it announced it is (program, person, service, ...)
         self.package: dict[str, str] = {}                                # machine -> the package it announced it belongs to
         self.about: dict[str, dict] = {}                                 # machine -> the rest of its last announcement (opaque)
         self.instances: dict[str, dict[str, dict]] = defaultdict(dict)  # machine -> instance -> first/last seen

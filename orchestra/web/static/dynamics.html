@@ -50,7 +50,7 @@
 <body>
 <nav id="nav"><a href="/">Dashboard</a><a href="/machines">Machines</a><a href="/dynamics" class="on">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="dynwrap">
-  <div class="intro">The system dynamics model of the system Orchestra covers. There is one model; it changes over time, and each change is kept as a version. Stocks are measured quantities (each bound to a series in the metrics store), flows move material between them with equations fitted from the history, and machines (AI agents and programs) are attributed to the flows they are believed to cause. Every equation says whether it was fitted or only declared.</div>
+  <div class="intro">The system dynamics model of the system Orchestra covers. There is one model; it changes over time, and each change is kept as a version. Stocks are measured quantities (each bound to a series in the metrics store), flows move material between them with equations fitted from the history, and machines (programs, services and people) are attributed to the flows they are believed to cause. Every equation says whether it was fitted or only declared.</div>
   <div class="dynhead"><h1 id="mname">The system</h1><span class="ver" id="ver"></span><span class="sum" id="sum"></span>
     <span style="margin-left:auto;display:inline-flex;gap:8px;align-items:center"><span class="muted" id="redisc-note" style="font-size:11.5px"></span><button class="ctl" id="redisc" onclick="rediscover()" title="Discover the model again now, with the settings below">rediscover now</button></span></div>
   <details class="dset" id="dset"><summary>discovery: <b id="dset-sum">…</b></summary>
@@ -121,7 +121,7 @@ const stockColor = (id) => { const i = MODEL ? MODEL.stocks.findIndex((s) => s.i
   }
   function kindWord(id, fallback) {
     const k = MKINDS[id] || MKINDS[String(id).split("/")[0]] || (fallback && fallback !== "machine" ? fallback : "");
-    return { agent: "AI agent", program: "program", person: "person", team: "team", device: "device", external: "external" }[k] || "machine";
+    return { program: "program", person: "person", team: "team", device: "device", external: "external" }[k] || "machine";
   }
 function draw() {
   const m = MODEL, byMachine = Object.fromEntries(m.machines.map((x) => [x.id, x]));

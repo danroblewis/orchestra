@@ -9,7 +9,7 @@ Orchestra.machineList = Orchestra.machineList || (() => []);
 const MPAL = ["#60a5fa", "#f59e0b", "#e879f9", "#22c55e", "#f87171", "#38bdf8", "#facc15", "#a78bfa", "#fb923c", "#2dd4bf"];
 const mcolor = (id) => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return MPAL[h % MPAL.length]; };
 // what a machine announced it is (orchestra.machine.started data.kind, or its package's declaration), in words
-const kindWord = (kind) => ({ agent: "AI agent", program: "program", person: "person", service: "service" }[kind] || kind || "machine");
+const kindWord = (kind) => kind || "machine";
 
 // a machine's dialog: what it is, its instances, what it publishes and listens for, its counted
 // traffic on another system's bus, its metrics now, its last events and the tail of its log

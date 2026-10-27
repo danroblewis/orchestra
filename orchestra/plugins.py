@@ -66,7 +66,7 @@ class Page:
 @dataclass
 class Declared:
     id: str                                   # the machine, as its events' source names it
-    kind: str = "program"                     # program | agent (an AI agent) | person | service
+    kind: str = "program"                     # what the package says it is: program, person, service, ...
     mode: str | None = None                   # continuous | scheduled | ad hoc
     listens_for: list[str] = field(default_factory=list)
 
