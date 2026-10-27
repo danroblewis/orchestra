@@ -11,6 +11,7 @@
   .itable { width:100%; border-collapse:collapse; font-size:12.5px } .itable th { text-align:left; color:var(--muted); font-weight:600; padding:6px 8px; border-bottom:1px solid var(--border) }
   .itable td { padding:6px 8px; border-bottom:1px solid var(--border); vertical-align:top; overflow-wrap:anywhere } .itable tr.click { cursor:pointer } .itable tr.click:hover td { background:var(--panel2) }
   .itable .num { font-family:var(--mono); font-size:11.5px } .bad { color:#f87171 } .scroll-x { overflow-x:auto }
+  @media (max-width: 700px) { .itable td { overflow-wrap:normal; white-space:nowrap } .itable td.err { white-space:normal; min-width:180px } }   /* on a phone the table scrolls sideways instead of breaking words */
   .logs { font-family:var(--mono); font-size:11.5px; white-space:pre-wrap; max-height:60vh; overflow:auto }
 </style>
 </head>
@@ -35,8 +36,8 @@ async function load() {
     + d.instruments.map((x) => `<tr class="${x.kind === "source" ? "" : "click"}" data-name="${esc(x.name)}">
       <td><b>${esc(x.name)}</b>${x.owner && x.owner !== "project" ? ` <span class="muted">(${esc(x.owner)})</span>` : ""}</td><td>${esc(x.kind)}</td>
       <td class="num">${esc(x.target)}</td><td>${esc(every(x.every_s))}</td>
-      <td>${x.last_write ? `${ago(now - x.last_write)} ago · ${x.points} points` : x.kind === "source" ? (x.status ? (x.status.ok === false ? "" : "read at the last discovery") : "not read yet") : '<span class="muted">none yet</span>'}</td>
-      <td class="${x.failures ? "bad" : ""}">${x.failures ?? ""}</td><td class="bad">${esc(x.last_error || "")}</td></tr>`).join("");
+      <td>${x.last_write ? `${ago(now - x.last_write)} ago · ${x.points} point${x.points === 1 ? "" : "s"}` : x.kind === "source" ? (x.status ? (x.status.ok === false ? "" : "read at the last discovery") : "not read yet") : '<span class="muted">none yet</span>'}</td>
+      <td class="${x.failures ? "bad" : ""}">${x.failures ?? ""}</td><td class="bad err">${esc(x.last_error || "")}</td></tr>`).join("");
   $("errors").innerHTML = (d.errors || []).map((e) => `<div>left out: ${esc(e)}</div>`).join("");
   document.querySelectorAll("#list tr.click").forEach((tr) => (tr.onclick = () => openLog(tr.dataset.name)));
 }
