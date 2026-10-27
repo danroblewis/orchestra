@@ -4,6 +4,21 @@ What the owner asked for next, grouped by when it can be built. Each goal has an
 which is how it is known to be done. Goals that were already on the roadmap are enhanced here and
 linked from their horizon in [README.md](README.md).
 
+**The relationship goes both ways** (the owner, 2026-10-27).
+
+- **From machines to model.** We learn how the system dynamics model arises from the machines in
+  the software factory. That gives capacity planning and project verification.
+- **From model to machines.** Machines get visibility into the model, so they can improve. A
+  machine doesn't define the model, but it can guess how its change relates to it. If the change
+  would cause a bad outcome elsewhere in the system, the machine can drop it, or use the
+  simulated outcomes to choose between options.
+
+This is closed-loop use of a model of the system being run: Forrester's industrial dynamics
+started inside a real factory, and the same idea underlies model-predictive control, model-based
+reinforcement learning and "digital twins". G5 is its first step; G10 is the first machine whose
+own job depends on it. Each machine's guesses are themselves hypotheses, checked against later
+model versions.
+
 **Run the tests with dummy agents.** Acceptance tests run on dummy agents: scripted machines
 that cost nothing. Claude on Haiku is used only where a test needs judgement, and such tests are
 marked as such. This is goal G1, and every other goal's tests depend on it.
