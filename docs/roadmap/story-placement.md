@@ -198,13 +198,12 @@ a shared repository needs it. See open question 1.
 **Built in core (2026-10-27, SPEC §8.1):** `ORCHESTRA_CONFIG_OVERLAY`, else
 `~/.orchestrator/<key>/orchestra.local.toml`, merged over `orchestra.toml` (tables key by key,
 arrays of tables by `name`, `enabled = false` removes, `[overlay] secret` hides values on
-`/api/project` and the Core page). Still to do outside core: the Supervisor commits config
-changes to `orchestra.toml` (agents' `toml_edit.py`, `setup_tools.py`); it could write the
-owner's keys to the overlay instead. Tasking and Agents still parse `<repo>/orchestra.toml`
-themselves in places (`tasking/config.py`, `orchestra_agents/config.py`, `web.py`,
-`setup_tools.py`, `dummy_agent.py`), so their own sections set only in the overlay do not reach
-those readers until they read `project.config.raw` or `Project.read_config()`. Reading
-`.orchestra/` from the overlay's repository is not built.
+`/api/project` and the Core page). **Changing it, in core too (2026-10-27, SPEC §8.2):**
+`project.config_edit` sets keys and entries in `orchestra.toml` or the overlay, keeping comments
+and validating the merged result. Tasking and Agents read their sections only from
+`project.config` (the overlay merged), and the Supervisor's setup tools change configuration only
+through `config_edit`, choosing the overlay for the owner's own settings and committing only
+changes to `orchestra.toml`. Reading `.orchestra/` from the overlay's repository is not built.
 
 ---
 

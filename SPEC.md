@@ -836,7 +836,33 @@ go in either file; they come from the environment or files, as §4.4 says.
 Everything that reads the configuration reads the merged one: `load_project`, the host, the
 launcher and the instruments re-read it when either file changes, appears or goes
 (`Project.config_stamp`), and plugins get it as `project.config.raw` without knowing there is an
-overlay. Orchestra only reads the overlay; it never writes it.
+overlay.
+
+### 8.2 Changing the configuration
+
+Plugins never open, parse or edit `orchestra.toml` or the overlay themselves. They read
+`project.config` (the merged result; `raw` is all of it), follow changes with
+`project.config_stamp()` and `project.reload_config()`, and change a setting through
+`project.config_edit` (`orchestra/config_edit.py`; Python objects, no web API):
+
+- `set(key, value, target=...)` and `unset(key, target=...)`, with `key` dotted (`tasks.workers`);
+- `add_entry(array, entry, target=...)`: adds the entry named `entry["name"]` to an array of
+  tables (`machines`, `gate.unit`), or sets the given fields on it;
+- `remove_entry(array, name, target=...)`.
+
+`target` is `"repo"` (`orchestra.toml`, which the team shares) or `"overlay"` (the private file,
+created `0600` on its first change). In the overlay an entry merges whole, so `add_entry` there
+starts from the repository's entry of that name, and `remove_entry` there writes
+`enabled = false` when the repository has the entry. Each change edits the target's text through
+`tomlkit` (comments and layout kept), then reads the merged result as Orchestra does (its
+settings, `[[machines]]`, `[[collect]]`, `[[scrape]]`) and as the caller's `check` does (a
+plugin's own reader): one that makes any of them say something new is refused with what they said.
+It is written whole, `project.config` is reloaded, and a `Change` is returned: the file, its text
+before and after, one line of what changed (no values for the overlay), and the keys of the merged
+configuration whose value changed (none, with a note, when the overlay's value still wins).
+`dry_run=True` returns the change unwritten, `apply(change)` writes it unless its file changed
+since, and `restore(change)` puts the file back. Orchestra commits nothing: committing a change to
+`orchestra.toml` is the caller's choice, and the overlay is outside the repository.
 
 ---
 
@@ -985,7 +1011,7 @@ mean.
 
 ```
 orchestra/
-  cli.py  config.py  events.py  runtime.py  host.py  launcher.py  collectors.py  plugins.py
+  cli.py  config.py  overlay.py  config_edit.py  toml_text.py  events.py  runtime.py  host.py  launcher.py  collectors.py  plugins.py
   bus/       file, redis_streams, rabbitmq_streams, kafka
   endpoint/  the events endpoint (§3.1): the token and the record, validate, server
   collect/   instruments, a project's and the plugins' collectors and scrapes: spec, fetch,

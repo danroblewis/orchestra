@@ -102,7 +102,11 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
     commit, and keep it out of lint. Machines and test systems live in
     their own repositories (the bakery: `~/orchestra-bakery`) and use Orchestra
     as a library, like any other program would; nothing in this repository is
-    an example system.
+    an example system. A plugin reads and changes configuration only through
+    Orchestra's objects (`project.config`, `project.reload_config()`,
+    `project.config_stamp()`, `project.config_edit`), never by opening, parsing
+    or editing `orchestra.toml` or the overlay itself: otherwise a setting in
+    the private overlay never reaches it, and its changes skip the checks.
 
 ## Conventions
 
