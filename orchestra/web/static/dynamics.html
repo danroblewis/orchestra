@@ -65,8 +65,8 @@
   <div class="diagram" id="diagram"></div>
   <div class="legend" id="legend"></div>
   <div class="ng-loops panel" id="loops" style="margin:0 0 10px"></div>
-  <div class="panel histp"><h2 style="margin-top:0"><span>Stocks, last hour</span><span class="hctl muted" style="font-size:11px">click a name to show or hide it</span></h2><div class="hkeys" id="hist-keys"></div><div id="hist"></div></div>
-  <div class="tables">
+  <div class="panel histp" id="histp"><h2 style="margin-top:0"><span>Stocks, last hour</span><span class="hctl muted" style="font-size:11px">click a name to show or hide it</span></h2><div class="hkeys" id="hist-keys"></div><div id="hist"></div></div>
+  <div class="tables" id="tables">
     <div>
       <div class="panel"><h2 style="margin-top:0"><span>Flows</span><span class="count" id="nflows"></span></h2><table class="dt" id="flows"></table></div>
       <div class="panel"><h2 style="margin-top:0"><span>How it was found</span></h2><div id="found"></div></div>
@@ -204,6 +204,12 @@ function loops(nodes, causal) {
     + (first ? `<div class="muted" style="margin-top:4px">and ${first} first-order loop${first === 1 ? "" : "s"}: a stock whose outflow depends on itself, which always balances it</div>` : "");
   if (main.length) NetGraph.loopList($("looplist"), GRAPH, main); else $("looplist").innerHTML = '<span class="muted">No loops through more than one stock.</span>';
 }
+// what a discovery looked at, in the same numbers everywhere: every series sampled, of which some
+// were left out at once (Orchestra's own, or no longer written) and the rest considered
+function lookedAt(d) {
+  const n = d.looked_at ?? d.series, early = n - (d.series ?? n);
+  return `Looked at ${n} series over ${ago(d.end - d.start)}, in ${d.step} s steps` + (early > 0 ? `: ${early} left out at once (Orchestra's own, or no longer written), ${d.series} considered.` : ".");
+}
 // series left out, grouped by why: the ones that changed but didn't balance are worth reading;
 // the ones that didn't move in the window are collapsed
 function leftOut(lo) {
@@ -232,9 +238,9 @@ function tables() {
       <td>${kindWord(x.id, x.kind)}</td><td class="num">${x.attributed.length}</td></tr>`).join("");
   const fitted = m.flows.filter((f) => f.current && f.current.origin === "fitted").length;
   const d = m.discovery || {};
-  $("found").innerHTML = d.left_out ? `<div class="muted" style="font-size:12px;margin-bottom:6px">Discovered from ${d.series} series over ${ago(d.end - d.start)}, in ${d.step} s steps. A level is a stock when counters balance it (R² ≥ ${d.min_r2}).</div>`
+  $("found").innerHTML = d.left_out ? `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d))} A level is a stock when counters balance it (R² ≥ ${d.min_r2}).</div>`
     + m.stocks.map((s) => s.evidence && s.evidence.balance ? `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">changes by</span> ${s.evidence.balance.map((b) => `<span class="ty">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join(" ")} <span class="muted">R² ${s.evidence.balance_r2.toFixed(3)} · exact in ${Math.round(100 * s.evidence.exact_steps)}% of steps</span></div>` : "").join("")
-    + `<h3>Left out <span class="count">${Object.keys(d.left_out).length}</span></h3>` + leftOut(d.left_out) : '<div class="muted">This version was declared, not discovered.</div>';
+    + `<h3>Left out <span class="count">${Object.keys(d.left_out).length} of ${d.looked_at ?? "?"}</span></h3>` + leftOut(d.left_out) : '<div class="muted">This version was declared, not discovered.</div>';
   $("sum").innerHTML = `${m.stocks.length} stocks · ${m.flows.length} flows (${fitted} fitted) · ${m.machines.length} machines${m.stored ? "" : ' · <span class="stale">not stored yet: <code>orchestra sd declare</code></span>'}${m.levels_error ? ` · <span class="stale">levels: ${esc(m.levels_error)}</span>` : ""}`;
 }
 function versionBar() {
@@ -300,15 +306,22 @@ async function rediscover() {
   } catch (e) { note.textContent = "failed: " + e; }
   btn.disabled = false;
 }
+// with no model there is nothing to draw: the legend, loops, history and tables stay hidden
+// rather than empty
+function showModelParts(on) {
+  for (const id of ["legend", "loops", "histp", "tables"]) $(id).style.display = on ? "" : "none";   // not hidden: their classes set display
+  if (!on) { $("sum").innerHTML = ""; $("ver").innerHTML = ""; }
+}
 async function load() {
   try {
     const d = await (await fetch("/api/dynamics/model" + (VERSION ? `?version=${VERSION}` : ""))).json();
     await loadKinds();
+    showModelParts(d.ok);
     if (!d.ok) {
       const lo = d.discovery && d.discovery.left_out;       // no model yet: what discovery saw, and why each series was left out
       $("diagram").innerHTML = `<div class="empty">${esc(d.error)}</div>` + (lo && Object.keys(lo).length
-        ? `<div class="panel" style="margin-top:10px"><h3 style="margin-top:0">Left out <span class="count">${Object.keys(lo).length}</span></h3>`
-          + `<div class="muted" style="font-size:12px;margin-bottom:6px">Discovered from ${d.discovery.series} series over ${ago(d.discovery.end - d.discovery.start)}, in ${d.discovery.step} s steps. A level is a stock when counters balance it.</div>${leftOut(lo)}</div>` : "");
+        ? `<div class="panel" style="margin-top:10px"><h3 style="margin-top:0">Left out <span class="count">${Object.keys(lo).length} of ${d.discovery.looked_at ?? "?"}</span></h3>`
+          + `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d.discovery))} A level is a stock when counters balance it.</div>${leftOut(lo)}</div>` : "");
       return;
     }
     MODEL = d.model; $("conn").textContent = "live"; versionBar(); draw(); tables();
@@ -322,6 +335,7 @@ setInterval(async () => {
     const d = await (await fetch("/api/dynamics/model")).json();
     if (!d.ok) return;
     const changed = !MODEL || d.model.version !== MODEL.version || d.model.as_of !== MODEL.as_of;
+    if (!MODEL) showModelParts(true);
     MODEL = d.model; versionBar(); if (changed) draw(); tables();
   } catch (e) {}
 }, 15000);

@@ -484,6 +484,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     """The model the metrics imply over [start, end], with how it was found in ``model.discovery``."""
     n = max(2, int((end - start) // step))
     series, summed = sum_instances(sample(dump, start, step, n))
+    sampled = len(series)          # every series looked at (a machine's instances summed into one)
     left_out: dict[str, str] = {}
     end = start + n * step
     # Orchestra's own series are plumbing, not a measure of the system; and a series not live at the
@@ -739,7 +740,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                   time_unit, stocks, flows, machines)
     model.discovery = {"summed": summed, "start": start, "end": end, "fit_start": fit_start, "live_minutes": round(live_s / 60, 2) if found else 0,
                        "gaps": [[a, b] for (_, a), (b, _) in pairwise(live)] if found else [],
-                       "step": step, "series": len(series), "inputs": input_refs, "held": held,
+                       "step": step, "sampled": sampled, "series": len(series), "inputs": input_refs, "held": held,
                        "stocks": len(stocks), "flows": len(flows), "min_r2": MIN_R2,
                        "left_out": dict(sorted(left_out.items()))}
     return model

@@ -10,6 +10,19 @@ from __future__ import annotations
 
 from ..sd.store import ModelStore
 
+EARLY = ("Orchestra's own", "named orchestra_", "no longer written")   # the reasons a series is left out before it is considered (sd.discover)
+
+
+def looked_at(discovery: dict) -> int:
+    """How many series a discovery looked at: every one sampled (``sampled``), of which ``series``
+    were considered and the rest left out at once (Orchestra's own, or no longer written).
+    Discoveries before 2026-10-26 recorded only ``series``: the ones left out at once are counted
+    from their reasons."""
+    if "sampled" in discovery:
+        return int(discovery["sampled"])
+    early = sum(1 for why in (discovery.get("left_out") or {}).values() if why.startswith(EARLY))
+    return int(discovery.get("series") or 0) + early
+
 
 def model_view(project, version: int | None = None, levels: dict | None = None, levels_error: str | None = None) -> dict:
     """The model to show: a past version when asked; otherwise the host's latest discovery (cached
@@ -29,11 +42,11 @@ def model_view(project, version: int | None = None, levels: dict | None = None, 
         cached = store.latest_discovery()
         if cached and not cached[1].stocks and not versions:
             d = cached[1].discovery
-            n = len(d.get("left_out", {}))
-            return {"ok": False, "error": f"There is no model yet: the host's last discovery found no stocks among "
-                                          f"{n} series (nothing balances yet). It looks again every few minutes; "
+            n = looked_at(d)
+            return {"ok": False, "error": f"There is no model yet: the host's last discovery found no stocks among the "
+                                          f"{n} series it looked at (nothing balances yet). It looks again every few minutes; "
                                           "`orchestra sd discover` does it now.",
-                    "discovery": {k: d[k] for k in ("left_out", "series", "step", "start", "end", "min_r2") if k in d}}
+                    "discovery": {**{k: d[k] for k in ("left_out", "series", "step", "start", "end", "min_r2") if k in d}, "looked_at": n}}
         if cached:
             as_of, model = cached
             live = True
@@ -53,6 +66,8 @@ def model_view(project, version: int | None = None, levels: dict | None = None, 
     for f in out["flows"]:
         f["machine"] = owner.get(f["id"])
         f["current"] = f["equations"][-1] if f["equations"] else None
+    if model.discovery:
+        out["discovery"]["looked_at"] = looked_at(model.discovery)
     out["levels"] = levels or {}
     out["levels_error"] = levels_error
     return {"ok": True, "model": out}
