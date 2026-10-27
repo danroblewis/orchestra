@@ -203,6 +203,42 @@ def create_app(project: Project) -> FastAPI:
         except Exception as e:  # noqa: BLE001 - shown in the drawer
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
+    @app.post("/api/dynamics/whatif")
+    async def dynamics_whatif(request: Request) -> dict:
+        """What the model says a change would do, against no change, with a band and what is not
+        trusted (sd/whatif.py), from the cached history. An observation, not a change (AGENTS.md
+        rule 9): a POST only because the question is a JSON body; it changes no machine, saves no
+        model version and writes no metric. The body: ``interventions`` (a list), and optionally
+        ``stocks``, ``horizon_s``, ``step_s``, ``members``, ``seed``, ``bounds`` ({stock: [lo, hi]})
+        and ``version`` (a saved version; default: the latest discovery)."""
+        from ..sd.strategies import sd_installed
+        if not sd_installed():
+            return {"ok": False, "error": "simulating needs orchestra[sd] installed"}
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001 - no body or not JSON
+            return {"ok": False, "error": "the body must be a JSON object with interventions"}
+        if not isinstance(body, dict):
+            return {"ok": False, "error": "the body must be a JSON object with interventions"}
+        if not bg.ready("history") or not bg.history:
+            return {"ok": False, "error": "reading the history for the first time…"}
+        from ..sd.whatif import load, what_if
+        try:
+            model, label = load(bg.models, None if body.get("version") is None else int(body["version"]))
+        except (ValueError, TypeError):
+            return {"ok": False, "error": "version must be a saved version's number"}
+        if model is None:
+            return {"ok": False, "error": "no model yet"}
+        h = bg.history
+        try:
+            bounds = {k: tuple(v) for k, v in (body.get("bounds") or {}).items()}
+            r = await asyncio.to_thread(what_if, model, h, list(body.get("interventions") or []), stocks=body.get("stocks"),
+                                        horizon_s=float(body.get("horizon_s") or 3600.0), step_s=body.get("step_s"),
+                                        members=int(body.get("members", 24)), seed=int(body.get("seed", 0)), bounds=bounds, label=label)
+        except (ValueError, TypeError) as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, **r}
+
     @app.get("/api/machines")
     def machines() -> dict:
         """The machines seen on the bus and who publishes and listens for what, and the machines,
