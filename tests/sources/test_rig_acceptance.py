@@ -25,6 +25,7 @@ from orchestra.sources.infer import infer
 from orchestra.sources.prometheus import PrometheusSource
 from orchestra.sources.schema import read
 from orchestra.sources.spec import load
+from orchestra.sources.views import Definition
 from orchestra.web.dynamics import model_view
 
 RIG = os.environ.get("ORCHESTRA_SOURCES_RIG")
@@ -66,29 +67,31 @@ def test_three_spellings_group_under_service_region_and_pod(tmp_path):
 
 def test_pods_per_service_and_region_match_the_ground_truth_within_one_reporting_interval(tmp_path):
     s = spec(tmp_path)
-    start, end = window()
-    truth = {}
-    for line in (rig_dir() / "ground_truth.jsonl").read_text().splitlines():
-        t = json.loads(line)
-        if start <= t["t"] <= end:
-            truth[t["t"]] = t["cells"]
+    lines = [json.loads(line) for line in (rig_dir() / "ground_truth.jsonl").read_text().splitlines()]
+    start, end = window(max(4.0, (time.time() - lines[0]["t"]) / 3600))      # the whole backfill: its region outage too
+    truth = {t["t"]: t["cells"] for t in lines if start <= t["t"] <= end}
     src = PrometheusSource(s)
     queries = {"checkout": 'count by (service, region) (last_over_time(http_request_duration_seconds{stat="p50"}[91s]))',
                "search": "count by (app, zone) (last_over_time(app_latency_seconds_p50[91s]))",
                "authz": 'count by (k8s_app, location) (last_over_time(k8s_request_latency{statistic="p50"}[91s]))'}
-    checked = exact = 0
+    rename = {"app": "service", "zone": "region", "k8s_app": "service", "location": "region"}
+    read = {}
     for service, q in queries.items():
-        for labels, pts in src.query_range(q, start, end, 60):
-            region = labels.get("region") or labels.get("zone") or labels.get("location")
-            for t, v in pts:
-                cell = (truth.get(t) or {}).get(f"{service}/{region}")
-                if cell is None:
-                    continue
-                checked += 1
-                # a pod is counted until a reporting interval after its last sample: the pods gone this minute still count
-                assert cell["pods"] <= v <= cell["pods"] + cell["gone"], (service, region, t, v, cell)
-                exact += v == cell["pods"] + cell["gone"]
-    assert checked > 500 and exact == checked
+        d = Definition(id=service, source="rig", name=f"{service}_pods", family=service, view="count", kind="level", query=q,
+                       rename=rename, resolution_s=60.0)
+        for _, labels, pts, _ in read_definition(src, d, "rig", None, start, end, 60.0):
+            read[f"{service}/{labels['region']}"] = dict(pts)
+    checked = exact = zero = 0
+    for t, cells in truth.items():                      # every cell of the truth, so a minute with no pods is checked too
+        for key, cell in cells.items():
+            v = read.get(key, {}).get(t)
+            assert v is not None, (key, t, cell)
+            checked += 1
+            zero += cell["pods"] == 0
+            # a pod is counted until a reporting interval after its last sample: the pods gone this minute still count
+            assert cell["pods"] <= v <= cell["pods"] + cell["gone"], (key, t, v, cell)
+            exact += v == cell["pods"] + cell["gone"]
+    assert checked > 500 and exact == checked and zero > 0, (checked, exact, zero)
 
 
 def test_no_latency_view_is_a_sum_and_the_cap_holds(tmp_path):
@@ -107,7 +110,7 @@ def test_a_script_adding_a_filter_changes_every_final_query(tmp_path):
 import json, re, sys
 out = []
 for c in json.load(sys.stdin)["candidates"]:
-    q = re.sub(r'([a-zA-Z_:][a-zA-Z0-9_:]*)(\\{{([^}}]*)\\}})?(?=\\[|\\)|$)',
+    q = re.sub(r'([a-zA-Z_:][a-zA-Z0-9_:]*)(\\{{([^}}]*)\\}})?(?=\\[|$)',
                lambda m: m[1] if m[1] in ("by", "count", "max", "min", "avg", "sum", "last_over_time") else m[1] + '{{' + ((m[3] + ',') if m[3] else '') + 'env="prod"}}', c["query"])
     out.append({{"id": c["id"], "queries": [{{"name": "prod_" + c["id"], "query": q}}]}})
 print(json.dumps(out))

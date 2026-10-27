@@ -13,6 +13,8 @@
 - A **turnover** (views ``starts`` and ``stops``) is read from the same raw samples a count is
   made from: the series that started and stopped reporting, so the count is a stock its two
   counters balance exactly.
+- A **count** (views ``count`` and ``distinct``) reads 0 for a group at the steps it has no
+  reporters while another group of the same count has some (``zero_fill``).
 - A **rate** (a query of per-second rates) is integrated over each step into a running total
   that starts at 0.
 - A counter evaluated by a query (a script's ``kind = "counter"``) is passed on as it is, and its
@@ -119,6 +121,19 @@ def turnover(raw: list[tuple[Labels, Points]], by_real: list[str], window: float
     return out
 
 
+def zero_fill(got: list[tuple[Labels, Points]]) -> list[tuple[Labels, Points]]:
+    """A count's groups at 0 where nothing reported: ``count by (G)`` returns no series for a group
+    with no reporters, so a region down reads as missing, not as 0 pods. Each group seen in the
+    window reads 0 at every step at which another group of the same count has a point. A step at
+    which no group has one stays empty: the store had nothing then (a gap), not zero."""
+    steps = {t for _, pts in got for t, _ in pts}
+    out = []
+    for labels, pts in got:
+        have = {t for t, _ in pts}
+        out.append((labels, sorted(pts + [(t, 0.0) for t in steps - have])))
+    return out
+
+
 def integrate(pts: Points) -> Points:
     """Per-second rates into a running total: each value covers the step that ends at it."""
     if not pts:
@@ -143,6 +158,8 @@ def read(source: Source, d: Definition, prefix: str, machine: str | None, start:
     else:
         q = grid_step(step, d.resolution_s)
         got = source.query_range(d.query, math.floor(start / q) * q, end, q, until=until)
+        if d.view in ("count", "distinct"):
+            got = zero_fill(got)
         if d.kind == "rate":
             got = [(labels, integrate(pts)) for labels, pts in got]
     out = []
