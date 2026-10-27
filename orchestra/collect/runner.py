@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import threading
 import time
-import tomllib
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -31,7 +30,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .. import runtime
-from ..config import Project
+from ..config import ConfigError, Project
 from ..events import HOST
 from ..launcher import LOG_MAX
 from ..metrics import Point
@@ -54,7 +53,7 @@ class Collecting:
     failures: Counter = field(default_factory=Counter)
     _due: dict[str, float] = field(default_factory=dict)
     _busy: dict[str, threading.Thread] = field(default_factory=dict)
-    _mtime: float | None = None
+    _mtime: tuple | None = None                      # the configuration's stamp last read
     _said: set[str] = field(default_factory=set)
     _plugins: list[Collector] = field(default_factory=list)
     health: dict[str, dict] = field(default_factory=dict)   # name -> its last write, points, last error
@@ -84,18 +83,20 @@ class Collecting:
             pass
 
     def _read(self) -> None:
-        """Take ``orchestra.toml``'s collectors and the plugins' again if the file changed; a file
-        that cannot be read leaves them as they are, and plugins that cannot be asked leave theirs."""
-        path = self.project.repo_root / "orchestra.toml"
+        """Take the configuration's collectors (orchestra.toml with the private overlay merged) and
+        the plugins' again if either file changed; a configuration that cannot be read leaves them
+        as they are, and plugins that cannot be asked leave theirs."""
         try:
-            mtime = path.stat().st_mtime
-            if mtime == self._mtime:
+            stamp = self.project.config_stamp()
+            if stamp == self._mtime:
                 return
-            self._mtime = mtime
+            self._mtime = stamp
+            if stamp[0] is None:
+                raise FileNotFoundError(self.project.config_file)
             self._ask_plugins()
-            found, errors = from_toml(tomllib.loads(path.read_text(encoding="utf-8")), self._plugins)
-        except (OSError, ValueError) as e:
-            self._say_once(f"cannot read {path.name}: {type(e).__name__}: {e}; keeping the collectors as they were")
+            found, errors = from_toml(self.project.read_config().raw, self._plugins)
+        except (OSError, ValueError, ConfigError) as e:
+            self._say_once(f"cannot read the configuration: {type(e).__name__}: {e}; keeping the collectors as they were")
             return
         for err in errors:
             self._say_once(err)

@@ -16,7 +16,7 @@ stopping it stops what it started: SIGTERM to the group, then SIGKILL after its 
 (``stop_grace``, ``STOP_GRACE_S`` unless given). One that exits is started again after a pause that doubles
 with each quick exit (up to a minute); one that fails ``GIVE_UP_AFTER`` times in a row, each
 within ``STABLE_S`` of starting, is given up on, in the host's log, the process's log and on the
-bus (``orchestra.process.gave_up``). ``orchestra.toml`` is read again whenever it changes, so a
+bus (``orchestra.process.gave_up``). ``orchestra.toml`` (and the private overlay, ``orchestra.overlay``) is read again whenever it changes, so a
 machine added by a merged commit starts without restarting the host, one removed stops, and one
 whose command or restart changed is restarted (and a given-up one tried again); the plugins'
 processes are asked for again then too, so a plugin's section added or removed starts or stops
@@ -36,7 +36,6 @@ import shlex
 import signal
 import subprocess
 import time
-import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -45,7 +44,7 @@ from pathlib import Path
 import psutil
 
 from . import runtime
-from .config import Project
+from .config import ConfigError, Project
 
 RESTARTS = ("always", "on-failure", "never")
 NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -129,7 +128,7 @@ class Launcher:
     give_up_after: int = GIVE_UP_AFTER
     grace: float = STOP_GRACE_S
     runs: dict[str, _Run] = field(default_factory=dict)
-    _mtime: float | None = None
+    _mtime: tuple | None = None                   # the configuration's stamp last read
     _project: list[Process] = field(default_factory=list)
     _plugins: list[Process] = field(default_factory=list)
     _said: set[str] = field(default_factory=set)
@@ -143,22 +142,20 @@ class Launcher:
 
     def _declared(self) -> tuple[list[Process], list[Process]]:
         """The project's ``[[machines]]`` and the plugins' processes, read again only when
-        orchestra.toml changed (a plugin's processes may depend on its sections there). What fails
-        to read leaves the last good list standing."""
+        configuration changed (orchestra.toml or the private overlay; a plugin's processes may depend
+        on its sections there). What fails to read leaves the last good list standing."""
         if not callable(self.plugin_processes):
             self._plugins = list(self.plugin_processes)
-        path = self.project.repo_root / "orchestra.toml"
-        try:
-            mtime = path.stat().st_mtime
-        except OSError as e:
-            self._say_once(f"cannot read {path.name}: {type(e).__name__}: {e}; keeping what runs")
+        stamp = self.project.config_stamp()
+        if stamp[0] is None:
+            self._say_once(f"cannot read {self.project.config_file.name}: it is not there; keeping what runs")
             return self._project, self._plugins
-        if mtime != self._mtime:
-            self._mtime = mtime
+        if stamp != self._mtime:
+            self._mtime = stamp
             try:
-                self._project = from_toml(tomllib.loads(path.read_text(encoding="utf-8")))
-            except (OSError, ValueError, TypeError) as e:
-                self._say_once(f"cannot read {path.name}: {type(e).__name__}: {e}; keeping what runs")
+                self._project = from_toml(self.project.read_config().raw)
+            except (OSError, ValueError, TypeError, ConfigError) as e:
+                self._say_once(f"cannot read the configuration: {type(e).__name__}: {e}; keeping what runs")
             if callable(self.plugin_processes):
                 try:
                     self._plugins = list(self.plugin_processes())

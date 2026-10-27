@@ -12,6 +12,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .overlay import Layers, OverlayError, merge
+
+CONFIG_FILE = "orchestra.toml"
+OVERLAY_FILE = "orchestra.local.toml"      # the private overlay's name in the state directory
+OVERLAY_ENV = "ORCHESTRA_CONFIG_OVERLAY"   # or a path named here
 
 class ConfigError(Exception):
     pass
@@ -53,11 +58,16 @@ class Config:
     discovery_step: float = 30.0            # [discovery] step: the grid it samples on
     discovery_every: float = 300.0          # [discovery] every: how often the host rediscovers
     discovery_options: dict[str, Any] = field(default_factory=dict)   # [discovery.options]: passed to the strategy
-    raw: dict[str, Any] = field(default_factory=dict)
+    raw: dict[str, Any] = field(default_factory=dict)   # the whole configuration, the overlay merged in
+    layers: Layers | None = None       # what the private overlay did (orchestra/overlay.py); None: no overlay
 
     @classmethod
     def from_toml(cls, text: str) -> Config:
-        raw = tomllib.loads(text)
+        """The configuration in one file's text (no overlay)."""
+        return cls.from_raw(tomllib.loads(text))
+
+    @classmethod
+    def from_raw(cls, raw: dict[str, Any], layers: Layers | None = None) -> Config:
         return cls(
             events_url=(raw.get("events", {}) or {}).get("url"),
             events_listen=(raw.get("events", {}) or {}).get("listen"),
@@ -68,6 +78,7 @@ class Config:
             discovery_every=parse_duration((raw.get("discovery", {}) or {}).get("every"), 300.0),
             discovery_options=dict((raw.get("discovery", {}) or {}).get("options") or {}),
             raw=raw,
+            layers=layers,
         )
 
 
@@ -154,8 +165,53 @@ class Project:
         for d in (self.state_dir, self.logs_dir):
             d.mkdir(parents=True, exist_ok=True)
 
+    @property
+    def config_file(self) -> Path:
+        return self.repo_root / CONFIG_FILE
+
+    @property
+    def overlay_file(self) -> Path:
+        """Where the private overlay is read from: ``ORCHESTRA_CONFIG_OVERLAY`` (relative to the
+        repository root unless absolute), else ``orchestra.local.toml`` in the state directory. It
+        need not exist (``read_config``)."""
+        named = os.environ.get(OVERLAY_ENV)
+        if named:
+            p = Path(named).expanduser()
+            return p if p.is_absolute() else self.repo_root / p
+        return self.state_dir / OVERLAY_FILE
+
+    def config_stamp(self) -> tuple:
+        """Changes whenever either file changes, appears or goes: what readers that follow the
+        configuration compare to know when to read it again."""
+        out = []
+        for p in (self.config_file, self.overlay_file):
+            try:
+                st = p.stat()
+                out.append((st.st_mtime_ns, st.st_size))
+            except OSError:
+                out.append(None)
+        return tuple(out)
+
+    def read_config(self) -> Config:
+        """``orchestra.toml`` with the private overlay merged over it, read now. Raises if either
+        does not parse, or if ``ORCHESTRA_CONFIG_OVERLAY`` names a file that is not there (a
+        mistyped path must not silently drop the private configuration)."""
+        raw = tomllib.loads(self.config_file.read_text(encoding="utf-8"))
+        path = self.overlay_file
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            if os.environ.get(OVERLAY_ENV):
+                raise ConfigError(f"{OVERLAY_ENV} names {path}, which does not exist") from None
+            return Config.from_raw(raw)
+        try:
+            merged, layers = merge(raw, tomllib.loads(text), str(path))
+        except (tomllib.TOMLDecodeError, OverlayError) as e:
+            raise ConfigError(f"{path}: {e}") from e
+        return Config.from_raw(merged, layers)
+
     def reload_config(self) -> None:
-        self.config = Config.from_toml((self.repo_root / "orchestra.toml").read_text())
+        self.config = self.read_config()
 
 
 def find_repo_root(start: Path) -> Path:
@@ -183,14 +239,16 @@ def find_repo_root(start: Path) -> Path:
 def load_project(repo: Path | str | None = None) -> Project:
     """Resolve the project for ``repo`` (default: ORCHESTRA_REPO, else the cwd).
 
-    ``orchestra.toml`` must exist at the repository root. The state directory under
+    ``orchestra.toml`` must exist at the repository root; the private overlay, if there is one,
+    is merged over it (``Project.read_config``). The state directory under
     ``~/.orchestrator`` is created on demand, so a freshly cloned repository that
     already carries an ``orchestra.toml`` needs no ``orchestra init``."""
     root = find_repo_root(Path(repo or os.environ.get("ORCHESTRA_REPO") or Path.cwd()))
-    toml_path = root / "orchestra.toml"
+    toml_path = root / CONFIG_FILE
     if not toml_path.exists():
         raise ConfigError(f"no orchestra.toml in {root}; run `orchestra init` there first")
-    project = Project(key=project_key(root), repo_root=root, config=Config.from_toml(toml_path.read_text()))
+    project = Project(key=project_key(root), repo_root=root, config=Config())
+    project.reload_config()
     if not project.state_dir.exists():
         _register(project)
     return project
@@ -212,6 +270,7 @@ def init_project(repo: Path) -> Project:
     toml_path = root / "orchestra.toml"
     if not toml_path.exists():
         toml_path.write_text(STARTER_TOML)
-    project = Project(key=project_key(root), repo_root=root, config=Config.from_toml(toml_path.read_text()))
+    project = Project(key=project_key(root), repo_root=root, config=Config())
+    project.reload_config()
     _register(project)
     return project

@@ -61,7 +61,7 @@ class Host:
         self.launch_every = launch_every
         self._found = found               # stands in for the installed plugins (tests)
         self._declared: dict[str, tuple[list[Process], list[Collector]]] = {}   # each plugin's, as last loaded
-        self._loaded_for: float | None = None            # the orchestra.toml mtime they were loaded for
+        self._loaded_for: tuple | None = None            # the configuration's stamp they were loaded for
         self._stop = threading.Event()
 
     def log(self, msg: str) -> None:
@@ -121,16 +121,13 @@ class Host:
                 self.log(f"discovery: {type(e).__name__}: {e}")
 
     def _from_plugins(self) -> dict[str, tuple[list[Process], list[Collector]]]:
-        """What the plugins ask to have run and collected, loaded again whenever orchestra.toml
-        changes (the launcher and the collectors both ask; one load serves both): the project's
+        """What the plugins ask to have run and collected, loaded again whenever orchestra.toml or
+        the private overlay changes (the launcher and the collectors both ask; one load serves both): the project's
         config is read again first, since a plugin reads its own sections there. A plugin that
         fails to load keeps what it last declared; a config that does not parse raises, and the
         launcher and the collectors keep their last lists."""
-        try:
-            mtime = (self.project.repo_root / "orchestra.toml").stat().st_mtime
-        except OSError:
-            mtime = None
-        if mtime is not None and mtime == self._loaded_for:
+        mtime = self.project.config_stamp()
+        if mtime == self._loaded_for:
             return self._declared
         self.project.reload_config()
         loaded = plugins.load(self.project, self._found)

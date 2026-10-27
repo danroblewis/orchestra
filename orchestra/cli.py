@@ -27,7 +27,7 @@ def _when(t: float | None) -> str:
 
 def cmd_init(args) -> int:
     p = init_project(Path(args.repo or os.getcwd()))
-    print(f"initialized {p.key}\n  repo:   {p.repo_root}\n  state:  {p.state_dir}\n  config: {p.repo_root / 'orchestra.toml'}")
+    print(f"initialized {p.key}\n  repo:   {p.repo_root}\n  state:  {p.state_dir}\n  config: {p.config_file}\n  private overlay (if any): {p.overlay_file}")
     return 0
 
 
