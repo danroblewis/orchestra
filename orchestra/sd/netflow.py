@@ -21,17 +21,46 @@ from the usual (a fit resting on one jump explains the jump); for a term in the 
 statistic past ``DF_T``, the 1% critical value of the Dickey–Fuller test, because a level
 regressed on its own value finds a pull toward its mean in a pure random walk far more often than
 ordinary statistics allow, while keeping at least half of itself from one stretch to the next
-(``FORGETS``: one that loses more holds nothing, and is readings scattered around a mean); and, fitted on either half of the window, a better prediction of the
-other half than each simpler form it contains. A driver must change both ways in at least
-``EVENTS_PER_PARAM`` stretches: one that changed once is a before and an after, and one that only
-rises stands in for time.
+(``FORGETS``: one that loses more holds nothing, and is readings scattered around a mean). A
+driver must change both ways in at least ``EVENTS_PER_PARAM`` stretches: one that changed once is
+a before and an after, and one that only rises stands in for time.
 
-A level is never driven by another of its own name (a part of it, its total, or another part), and
-a statistic a source summarised across reporters (an average, a maximum) is never tried: it
-summarises, it does not store. What is refuted stays an **input**, with the reason: a level whose net flow nothing explains
-better than a constant (a random walk, a steady drift), and one whose changes move with another
+A form that beats the constant must then survive four refutations; the best-scoring form that
+survives all four is the net flow:
+
+- **a steady trend in time** (``c + a × t``, ``t`` each stretch's middle) must not explain the
+  level's changes as well: the form must beat it by the same AIC margin it beat the constant by.
+  Over a few hours any two smooth series fit each other (a tide and a city's power demand: both
+  follow the clock), and a trend is the clock itself;
+- **the other half of the window**: fitted on either half, the form must predict the other half
+  better than the trend, the constant, and each form with one term fewer. Two unrelated series
+  that wander alike for a while fit each other on the whole window; the pairing rarely carries;
+- **enough explained**: at least ``MIN_NET_R2`` of the level's changes. Below that, noise moves
+  the level more than the form does, and a series that merely tends back to its mean (a count of
+  processes, a load average) passes every test above with a tenth of its changes explained;
+- **the driver read a quarter of the window away** (both earlier and later) must explain clearly
+  less of the changes than the driver in place, beyond what the rest of the form explains: below
+  ``SHIFTED`` of it. A cause explains the changes it causes when they happen; a series that only
+  moves smoothly explains a smooth level as well an hour off.
+
+A level is never driven by another of its own name (a part of it, its total, or another part),
+nor by a series that may be its part or its total under another name: counts in the same unit
+(whole numbers, and the same last word of the name, ``processes`` in ``claude_processes``) of
+which one never rises above the other and swings no wider. A part's changes are in its total's,
+so the total "explains" them by containing them. The rule only keeps a driver out; the unit is
+read from the name, so two counts in one unit that are not part and total (a repository's bytes
+under the disk's free bytes) are kept apart too. A statistic is never tried: one a source
+summarised across reporters (an average, a maximum), and one whose name says it is a statistic
+(a word ``mean``, ``avg``, ``average``, ``median``, or a percentile such as ``p95``), such as a
+shelf's mean age: it summarises what is there and holds nothing; its changes follow whatever moves
+the things it averages. What is refuted stays an **input**, with the reason: a level whose net flow
+nothing explains better than a constant (a random walk, a steady drift), or whose best form a
+refutation struck (the reason names it and the check), and one whose changes move with another
 series' changes (``SAME_MOVES``: a second measure of the same thing, or a function of it, such as
 a demand computed from a rating, is no store of its own).
+
+Every accepted driver is a correlation in the data, not an experiment: nothing here has moved the
+driver and watched the level answer.
 
 An accepted stock's net flow becomes an inflow (``c + a × X``, or its negative as an outflow when
 it is mostly below zero) and an outflow proportional to the stock (``−b × level``), each with
@@ -54,6 +83,9 @@ SAME_MOVES = 0.9      # a level whose changes another series' changes explain th
 SAME_VALUES = 0.05    # ... or half as well, and whose values stay this close to another's, as a share of its range, is that series again
 FORGETS = 0.5         # a level that loses more than this share of itself from one stretch to the next keeps nothing: readings around a mean
 ONE_WAY = 0.1         # a driver whose changes go the other way in fewer than this share of stretches only rises (or falls): it stands in for time
+MIN_NET_R2 = 0.4      # an accepted net flow explains at least this share of the level's changes: below it, noise moves the level more than the form does
+SHIFTED = 0.8         # a driver that, moved a quarter of the window earlier or later, still explains this share of what it explains in place is no cause
+STATISTICS = {"mean", "avg", "average", "median"}     # name words that say a level is a statistic of something (as are p50, p95, p99)
 NET_FLOW = "no counters balance it"     # the reason conservation gives a level these are tried on
 
 
@@ -83,6 +115,8 @@ class Fit:
     t_own: float | None = None
     tried: int = 0
     mean_in: float = 0.0            # the inflow part's mean (c + a × X) over the stretches
+    coef: list[float] = field(default_factory=list)     # the fitted coefficients, in the order of the form's columns
+    weight: float = 1.0             # the share of the stretches that count as independent evidence (_independent_share)
     notes: dict = field(default_factory=dict)
 
     @property
@@ -161,11 +195,12 @@ def _mean(values: list[float], a: int, k: int) -> float:
     return sum(values[a:a + k + 1]) / (k + 1)
 
 
-def _holds_out(rows: list[list[float]], y: list[float], simpler: list[list[int]]) -> bool:
-    """Whether a form fitted on one half of the stretches predicts the other half (both ways)
-    better than each simpler form it contains (``simpler``: the columns each keeps). Two
-    unrelated series that wander alike for a while fit each other on the whole window; the
-    pairing rarely carries from one half to the other."""
+def _holds_out(rows: list[list[float]], y: list[float], full: list[int], simpler: list[list[int]]) -> bool:
+    """Whether a form (``full``: the columns of ``rows`` it reads) fitted on one half of the
+    stretches predicts the other half (both ways) better than each simpler form (``simpler``: the
+    columns each reads), a steady trend in time among them. Two unrelated series that wander alike
+    for a while fit each other on the whole window; the pairing rarely carries from one half to
+    the other."""
     h = len(y) // 2
     halves = [(range(h), range(h, len(y))), (range(h, len(y)), range(h))]
 
@@ -177,8 +212,8 @@ def _holds_out(rows: list[list[float]], y: list[float], simpler: list[list[int]]
                 return math.inf
             err += sum((y[i] - sum(cf * rows[i][c] for cf, c in zip(got[0], cols))) ** 2 for i in test_on)
         return err
-    full = out_of_sample(list(range(len(rows[0]))))
-    return all(full < out_of_sample(cols) for cols in simpler)
+    err = out_of_sample(full)
+    return all(err < out_of_sample(cols) for cols in simpler)
 
 
 def _same(level, d: Driver, starts: list[int], y: list[float], k: int, n: int) -> str:
@@ -213,6 +248,91 @@ def _eligible(d: Driver, starts: list[int], k: int) -> str:
     return ""
 
 
+def _unit(name: str) -> str:
+    """The unit a series' name ends in (``processes`` in ``claude_processes``)."""
+    return name.rsplit("_", 1)[-1]
+
+
+def _part(level, d: Driver, starts: list[int], k: int) -> str:
+    """How the level and the driver may be a part and its total, or nothing: counts in the same
+    unit (whole numbers, the same last word in both names), one never above the other and swinging
+    no wider. A part's changes are in its total's, so the total explains the part's net flow by
+    containing it, and the part the total's."""
+    if not d.name or _unit(level.name) != _unit(d.name):
+        return ""
+    at = sorted({a for a in starts} | {a + k for a in starts})
+    lv, dv = [level.values[i] for i in at], [d.values[i] for i in at]
+    if not lv or not all(float(v).is_integer() for v in lv + dv):
+        return ""
+
+    def inside(p: list[float], t: list[float]) -> bool:
+        return all(0 <= a <= b for a, b in zip(p, t)) and max(p) - min(p) <= max(t) - min(t)
+    if inside(lv, dv):
+        return f"it may be a part of {d.key}"
+    return f"{d.key} may be a part of it" if inside(dv, lv) else ""
+
+
+def statistic(name: str) -> bool:
+    """Whether a series' name says it is a statistic of something (a mean age, a median, a 95th
+    percentile): it summarises what is there, it does not hold it."""
+    return any(w in STATISTICS or (len(w) in (3, 4) and w[0] == "p" and w[1:].isdigit()) for w in name.split("_"))
+
+
+def _shift_null(d: Driver, own: bool, rows: list[list[float]], y: list[float], starts: list[int], k: int, n: int) -> tuple[float, float, float] | None:
+    """What the driver explains of the level's changes beyond the rest of the form (its partial
+    R²) in place and moved a quarter of the window earlier or later, whichever explains more, and
+    the shift in grid steps. A cause explains the changes it causes when they happen; a series that
+    only moves smoothly (a demand that rises all afternoon) explains a smooth level as well an hour
+    off. None when too few stretches stay inside the window."""
+    shift = max(k, math.ceil(n / 4))
+    best: tuple[float, float, float] | None = None
+    for sh in (shift, -shift):
+        keep = [i for i, a in enumerate(starts) if 0 <= a + sh and a + sh + k <= n]
+        if len(keep) < max(2 * EVENTS_PER_PARAM, len(starts) // 2):
+            continue
+        yy = [y[i] for i in keep]
+        rest = _ols([[1.0, *([rows[i][2]] if own else [])] for i in keep], yy)
+        here = _ols([rows[i] for i in keep], yy)
+        moved = _ols([[1.0, _mean(d.values, starts[i] + sh, k), *([rows[i][2]] if own else [])] for i in keep], yy)
+        if rest is None or here is None or moved is None or rest[1] <= 0:
+            continue
+        got = (1 - here[1] / rest[1], 1 - moved[1] / rest[1], float(sh))
+        if best is None or got[1] > best[1]:
+            best = got
+    return best
+
+
+def _refuted(f: Fit, rows: list[list[float]], y: list[float], simpler: list[list[int]], starts: list[int], k: int, n: int,
+             step: float, margin: float) -> str:
+    """Why a form that beat a constant is still refuted, or nothing: a steady trend in time
+    explains the level's changes as well (by the AIC margin, and on the held-out half), it explains
+    too little of them (``MIN_NET_R2``), or its driver explains as much moved a quarter of the
+    window away (``SHIFTED``)."""
+    p = len(rows[0])
+    t = [(a + k / 2) / n for a in starts]
+    trend = _ols([[1.0, v] for v in t], y)
+    with_t = [[*r, v] for r, v in zip(rows, t)]
+    if trend is not None:
+        rss = sum((v - sum(c * x for c, x in zip(f.coef, r))) ** 2 for r, v in zip(rows, y))
+        sst = sum((v - sum(y) / len(y)) ** 2 for v in y) or 1e-12
+        if f.weight * len(y) * math.log(max(trend[1], 1e-12) / max(rss, 1e-12)) - 2 * (p - 2) < margin:
+            what = f"{f.driver.key} stands in for time" if f.driver else "its pull toward a level is a drift in time"
+            return f"a steady trend in time explains its changes as well (R² {1 - trend[1] / sst:.2f}): {what}"
+    if not _holds_out(with_t, y, list(range(p)), [[0, p]]):
+        return "fitted on either half of the window, it predicted the other half no better than a steady trend in time"
+    if not _holds_out(with_t, y, list(range(p)), simpler):
+        return "fitted on either half of the window, it predicted the other half no better than a form with fewer terms"
+    if f.r2 < MIN_NET_R2:
+        return f"it explains only {f.r2:.0%} of the level's changes, less than the {MIN_NET_R2:.0%} a net flow must"
+    if f.driver is not None and (null := _shift_null(f.driver, f.own, rows, y, starts, k, n)):
+        here, moved, sh = null
+        if moved >= SHIFTED * here:
+            when = f"{abs(sh) * step / 3600:g} h {'later' if sh > 0 else 'earlier'}"
+            return (f"{f.driver.key} read {when} explains as much of its changes (R² {moved:.2f} against {here:.2f} in place): "
+                    "a series that moves smoothly, not a cause")
+    return ""
+
+
 def fit(level, drivers: list[Driver], step: float, unit_s: float) -> tuple[Fit | None, str]:
     """The level's net flow, or None and why it stays an input (said after conservation's reason)."""
     n = len(level.values) - 1
@@ -220,8 +340,9 @@ def fit(level, drivers: list[Driver], step: float, unit_s: float) -> tuple[Fit |
     k0 = steps_of(level.resolution.seconds if level.resolution else None, step)
     m = 1 + 2 * len(drivers)                         # forms tried beyond the constant: own, and two per driver
     margin = AIC_MARGIN + 2 * math.log(max(1, m))
-    cands: list[tuple[Fit, list[list[float]], list[float], list[list[int]]]] = []
+    cands: list[tuple[Fit, list[list[float]], list[float], list[list[int]], list[int], int]] = []
     same: tuple[str, Driver] | None = None
+    parts: list[str] = []
     cache: dict[int, tuple] = {}
 
     def on(k: int):
@@ -263,7 +384,7 @@ def fit(level, drivers: list[Driver], step: float, unit_s: float) -> tuple[Fit |
         inflow = [coef[0] + (coef[1] * r[1] if driver else 0.0) for r in rows]
         simpler = [[0]] + ([[0, 1], [0, 2]] if driver and own else [])
         cands.append((Fit(params, driver, own, k * step, len(y), changes, 1 - rss / sst, aic, aic0, t_own, m,
-                          sum(inflow) / len(inflow)), rows, y, simpler))
+                          sum(inflow) / len(inflow), coef, w), rows, y, simpler, starts, k))
 
     _, y0, changes0 = on(k0)
     if changes0 < EVENTS_PER_PARAM * 2:
@@ -275,6 +396,9 @@ def fit(level, drivers: list[Driver], step: float, unit_s: float) -> tuple[Fit |
         starts, y, changes = on(k)
         if changes < EVENTS_PER_PARAM * 2 or _eligible(d, starts, k):
             continue
+        if part := _part(level, d, starts, k):
+            parts.append(part)
+            continue
         if why := _same(level, d, starts, y, k, n):
             same = (why, d)
             break
@@ -284,12 +408,15 @@ def fit(level, drivers: list[Driver], step: float, unit_s: float) -> tuple[Fit |
         return None, (f"and {same[0]} {same[1].key}: the same quantity measured again, or a function of it, "
                       "so an input, not a stock")
     cands.sort(key=lambda c: c[0].aic - c[0].aic_constant)
-    best = next((f for f, rows, y, simpler in cands if _holds_out(rows, y, simpler)), None)
-    if best is None:
-        why = (f"none of the {len(cands)} that fitted the window predicted one half of it from the other"
-               if cands else f"of {m} forms tried")
-        return None, f"and no other series explains its changes better than a constant ({why}): an input, not a stock"
-    return best, ""
+    first = ""
+    for f, rows, y, simpler, starts, k in cands:
+        why = _refuted(f, rows, y, simpler, starts, k, n, step, margin)
+        if not why:
+            return f, ""
+        first = first or f"the best, {f.form} at R² {f.r2:.2f}, refuted: {why}"
+    part = f"; {'; '.join(parts)} (counts in one unit, one never above the other and swinging no wider): neither drives the other" if parts else ""
+    return None, (f"and no other series explains its changes better than a constant ({first or f'of {m} forms tried'}{part}): "
+                  "an input, not a stock")
 
 
 def _r2_alone(x: list[float], y: list[float]) -> float:
@@ -346,6 +473,9 @@ def stocks(series: list, counted: list, sid_of: dict[str, str], inputs: dict[str
             continue
         if s.summary:
             left_out[s.key] += ", and it is a statistic its source summarised across reporters (an average, a maximum): a summary, not a store"
+            continue
+        if statistic(s.name):
+            left_out[s.key] += ", and its name says it is a statistic (a mean, a median, a percentile) of what it measures: a summary, not a store"
             continue
         got, why = fit(s, [d for d in drivers if d.name != s.name], step, unit_s)
         if got is None:

@@ -66,6 +66,16 @@ def _bakery_with_gauges(tmp_path, minutes=60):
     return store, start, end
 
 
+def _with_a_cooling_kiln(store, start, end):
+    """A kiln cooling toward the room after a firing, its temperature written every 30 s and no
+    counter of it: a stock by its fitted net flow (it loses heat in proportion to how hot it is)."""
+    rng, temp, pts = random.Random(9), 900.0, []
+    for i in range(int((end - start) // 30) + 1):
+        pts.append(Point("kiln_temperature_celsius", round(temp, 2), start + 30 * i, {"project": "p", "machine": "kiln"}))
+        temp += 0.03 * (20 - temp) + rng.gauss(0, 0.5)
+    store.write(pts)
+
+
 def _every_measured_stock(monkeypatch):
     """Hand SD Lab every measured stock, exact or not, to test how its flows are merged."""
     monkeypatch.setattr("orchestra.sd.strategies.handed", lambda base: [s for s in base.stocks if s.series is not None])
@@ -86,19 +96,20 @@ def test_sdlab_is_given_no_stock_its_counters_balance_exactly(tmp_path, monkeypa
 
 
 def test_sdlab_is_given_the_stocks_no_counters_balance(tmp_path, monkeypatch):
-    # the weather beside the bakery relaxes toward its mean: a stock of its own by its fitted net
-    # flow. SD Lab is given that stock alone, and its flows take the place of conservation's
+    # a kiln beside the bakery cools toward the room: a stock of its own by its fitted net flow.
+    # SD Lab is given that stock alone, and its flows take the place of conservation's
     store = FileMetrics(tmp_path / "m.jsonl")
     start, end = simulate(store, minutes=60)
+    _with_a_cooling_kiln(store, start, end)
     seen = {}
-    flows = [{"from": "weather_temperature_celsius", "to": None, "rate": {"form": "proportional", "stock": "weather_temperature_celsius", "k": 0.3}}]
+    flows = [{"from": "kiln_temperature_celsius", "to": None, "rate": {"form": "proportional", "stock": "kiln_temperature_celsius", "k": 0.3}}]
     monkeypatch.setattr("orchestra.sd.strategies.run_strategy", _fake(seen, flows))
     m = discover_with(store.dump("", {"project": "p"}), start=start, end=end, step=30, strategy="fake")
-    assert [s["id"] for s in seen["stocks"]] == ["weather_temperature_celsius"], seen.get("stocks")
+    assert [s["id"] for s in seen["stocks"]] == ["kiln_temperature_celsius"], seen.get("stocks")
     assert m.check() == []
-    [sd] = [f for f in m.flows if f.src == "weather_temperature_celsius" or f.dst == "weather_temperature_celsius"]
+    [sd] = [f for f in m.flows if f.src == "kiln_temperature_celsius" or f.dst == "kiln_temperature_celsius"]
     assert sd.current().method == "sdlab:fake" and sd.current().quality["events"] > 0
-    assert m.stock("weather_temperature_celsius").evidence["conservation_fit"]
+    assert m.stock("kiln_temperature_celsius").evidence["conservation_fit"]
     assert m.flow("bakery_loaves_baked_total").current().method == "poisson-mle"
 
 
@@ -261,6 +272,7 @@ def test_a_strategy_past_its_deadline_leaves_conservations_fits(tmp_path, monkey
 
     store = FileMetrics(tmp_path / "m.jsonl")
     start, end = simulate(store, minutes=60)
+    _with_a_cooling_kiln(store, start, end)
 
     def late(jobs, deadline):
         raise Late(f"stopped at its deadline of {deadline:g} s")
