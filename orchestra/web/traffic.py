@@ -14,8 +14,10 @@ consumed; ``merge`` adds them to the Machines view:
   its rate; a count no machine is attributed to runs from or to ``unattributed`` (the producers
   a broker cannot name), so the gap shows.
 
-Rates are per minute over the last ``RECENT_S`` of what was read (up to the source's last point,
-which a source's ``settle`` puts before now); counts are over the window read."""
+Rates are per minute over the last ``RECENT_S`` of what was read, every series of a source
+measured up to that source's last point (a source's ``settle`` puts it before now): a series that
+ended earlier (a publisher that disconnected, whose per-channel series the broker drops) counts
+nothing for the stretch it is missing. Counts are over the window read."""
 
 from __future__ import annotations
 
@@ -44,6 +46,10 @@ def summarise(counted: list[dict], now: float) -> dict:
     """``counted``: series with ``direction``, ``channel``, ``machine`` (or None) and ``points``."""
     edges: dict[tuple, dict] = {}
     channels: dict[str, dict] = {}
+    ends: dict[str, float] = {}             # each source's last point read: a source that settles ends before now
+    for c in counted:
+        if c.get("points"):
+            ends[c["source"]] = max(ends.get(c["source"], float("-inf")), c["points"][-1][0])
     for c in counted:
         ch = channels.setdefault(c["channel"], {"id": c["channel"], "source": c["source"], "out_per_min": 0.0, "in_per_min": 0.0,
                                                 "backlog": None, "series": 0})
@@ -59,7 +65,7 @@ def summarise(counted: list[dict], now: float) -> dict:
                 e["backlog"] = (e["backlog"] or 0.0) + pts[-1][1]
                 ch["backlog"] = (ch["backlog"] or 0.0) + pts[-1][1]
             continue
-        upto = pts[-1][0] if pts else now          # the last point read: a source that settles ends before now
+        upto = ends.get(c["source"], now)          # a series that ended (a publisher gone) counts nothing since
         recent, last = _increase(pts, upto - RECENT_S)
         span = min(RECENT_S, upto - pts[0][0]) if pts else RECENT_S
         e["per_min"] += recent / max(span, 60.0) * 60.0
