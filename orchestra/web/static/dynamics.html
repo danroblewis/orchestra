@@ -329,7 +329,10 @@ async function load() {
     showModelParts(d.ok);
     if (!d.ok) {
       const lo = d.discovery && d.discovery.left_out;       // no model yet: what discovery saw, and why each series was left out
-      $("diagram").innerHTML = `<div class="empty">${esc(d.error)}</div>` + (lo && Object.keys(lo).length
+      const src = d.discovery ? sourcesNote(d.discovery) : "";   // ... and the sources that were missing or refused
+      $("diagram").innerHTML = `<div class="empty">${esc(d.error)}</div>`
+        + (src ? `<div class="panel" style="margin-top:10px">${src}</div>` : "")
+        + (lo && Object.keys(lo).length
         ? `<div class="panel" style="margin-top:10px"><h3 style="margin-top:0">Left out <span class="count">${Object.keys(lo).length} of ${d.discovery.looked_at ?? "?"}</span></h3>`
           + `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d.discovery))} A level is a stock when counters balance it.</div>${leftOut(lo)}</div>` : "");
       return;

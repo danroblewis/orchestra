@@ -47,3 +47,19 @@ def test_the_counts_agree_with_each_other(tmp_path, monkeypatch):
     assert "among the 3 series it looked at" in out["error"] and out["discovery"]["looked_at"] == 3
     old = {k: v for k, v in d.items() if k != "sampled"}       # a discovery from before "sampled" was recorded
     assert looked_at(old) == 3
+
+
+def test_no_model_yet_says_which_source_was_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("ORCHESTRATOR_HOME", str(tmp_path / "home"))
+    (tmp_path / "repo").mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path / "repo", check=True)
+    project = init_project(tmp_path / "repo")
+    sources = {"own": {"ok": True, "series": 0}, "rig": {"ok": False, "error": "refused in orchestra.toml: a literal secret"}}
+    found = Model("m", "nothing yet", discovery={"left_out": {}, "series": 0, "step": 60.0, "start": 100.0, "end": 3700.0, "min_r2": 0.9,
+                                                 "sources": sources, "not_saved": "missing rig: refused in orchestra.toml: a literal secret",
+                                                 "since_last_s": 7200})
+    ModelStore.for_state(project.state_dir).write_discovery(found)
+    out = model_view(project)
+    assert not out["ok"] and "a source was missing" in out["error"] and "nothing balances yet" not in out["error"]
+    assert out["discovery"]["sources"] == sources and out["discovery"]["since_last_s"] == 7200
+    assert out["discovery"]["not_saved"].startswith("missing rig")

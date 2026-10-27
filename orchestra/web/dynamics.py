@@ -29,7 +29,7 @@ def model_view(project, version: int | None = None, levels: dict | None = None, 
     by ``orchestra run``; nothing is discovered here), else the current version. ``levels`` are the
     stocks' current levels, read in the background by the web server. With no model yet, the
     error comes with the latest discovery's ``discovery`` block, so the page can say which series
-    it looked at and why each was left out."""
+    it looked at, why each was left out, and which sources were missing or refused."""
     store = ModelStore.for_state(project.state_dir)
     versions = store.versions()
     current = versions[-1]["version"] if versions else None
@@ -43,10 +43,12 @@ def model_view(project, version: int | None = None, levels: dict | None = None, 
         if cached and not cached[1].stocks and not versions:
             d = cached[1].discovery
             n = looked_at(d)
+            why = (f"a source was missing ({d['not_saved']})" if d.get("not_saved") else "nothing balances yet")
             return {"ok": False, "error": f"There is no model yet: the host's last discovery found no stocks among the "
-                                          f"{n} series it looked at (nothing balances yet). It looks again every few minutes; "
+                                          f"{n} series it looked at ({why}). It looks again every few minutes; "
                                           "`orchestra sd discover` does it now.",
-                    "discovery": {**{k: d[k] for k in ("left_out", "series", "step", "start", "end", "min_r2") if k in d}, "looked_at": n}}
+                    "discovery": {**{k: d[k] for k in ("left_out", "series", "step", "start", "end", "min_r2", "sources", "not_saved",
+                                                       "since_last_s") if k in d}, "looked_at": n}}
         if cached:
             as_of, model = cached
             live = True
