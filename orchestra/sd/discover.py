@@ -25,7 +25,9 @@ equation of each flow, and the machine behind each flow:
    event counter to the machine counters it sums, another machine's copy to the machine's own,
    two machines' counts of one flow to one). Two levels that change alike in nearly every step,
    or that the same counters balance, are one stock measured twice: the machine whose counters
-   make the balance keeps it, the other is recorded as its twin.
+   make the balance keeps it, the other is recorded as its twin. Two levels of one name that
+   differ in what they measure (pods by region, and pods) are never twins, and a level is never
+   balanced by the counters of another level of its name (``barred_counters``).
 3. **Connect flows.** A counter that is an outflow of one stock and an inflow of another is a flow
    between them; otherwise it comes from or goes to outside (``sd.ends``: when two stocks claim the
    same end, the one the counter explains most keeps it and the other claim is evidence; stocks of
@@ -95,6 +97,7 @@ MIN_STEPS = 5              # a level live in fewer steps than this (while every 
 AIC_MARGIN = 2.0           # a two-parameter form must beat the best one-parameter form by this much AIC to be chosen
 EVENTS_PER_PARAM = 10      # a form that reads another stock or an input needs this many events per parameter
 UNITS = {"second": 1.0, "minute": 60.0, "hour": 3600.0}
+NOT_IDENTITY = {"machine", "source", "project", "instance"}   # who wrote a series, not which thing it measures
 
 
 def _slug(s: Series) -> str:
@@ -384,31 +387,92 @@ def unique_id(slug: str, machine: str | None, taken: set[str]) -> str:
     return sid
 
 
+def _live_in(s: Series, n: int) -> list[bool]:
+    live = set(s.live) if s.live is not None else None
+    return [live is None or i in live for i in range(n)]
+
+
 def _equal_steps(a: Series, b: Series) -> float:
     """The share of the steps in which either level changed where both changed by the same
     amount. Steps where neither moved say nothing: over a long window every quiet level would
-    be every other's twin."""
-    moved = [(x, y) for x, y in zip(a.deltas, b.deltas) if abs(x) > 1e-6 or abs(y) > 1e-6]
-    return sum(1 for x, y in moved if abs(x - y) <= 1e-6) / max(1, len(moved))
+    be every other's twin. A step in which one was live and the other not is a disagreement: a
+    level absent while the other moved is no evidence that they are one."""
+    n = min(len(a.deltas), len(b.deltas))
+    la, lb = _live_in(a, n), _live_in(b, n)
+    agree = moved = 0
+    for i in range(n):
+        if la[i] != lb[i]:
+            moved += 1
+        elif la[i] and (abs(a.deltas[i]) > 1e-6 or abs(b.deltas[i]) > 1e-6):
+            moved += 1
+            agree += abs(a.deltas[i] - b.deltas[i]) <= 1e-6
+    return agree / max(1, moved)
 
 
 def _alike(a: Series, b: Series) -> dict[str, float]:
-    """How alike two levels are, on the steps both were live in: the correlation of their
-    changes, and the share of the steps in which either held something where both held the same."""
-    steps = [i for i in range(min(len(a.deltas), len(b.deltas))) if (a.live is None or i in a.live) and (b.live is None or i in b.live)]
+    """How alike two levels are: the correlation of their changes on the steps both were live in,
+    scaled by the share of the steps either was live in that both were (a step one was absent in
+    is a disagreement); and the share of the steps in which either held something where both held
+    the same, a step only one was live in counting as unequal."""
+    n = min(len(a.deltas), len(b.deltas))
+    la, lb = _live_in(a, n), _live_in(b, n)
+    steps = [i for i in range(n) if la[i] and lb[i]]
+    either = sum(1 for i in range(n) if la[i] or lb[i])
     da, db = [a.deltas[i] for i in steps], [b.deltas[i] for i in steps]
-    n = max(1, len(steps))
-    ma, mb = sum(da) / n, sum(db) / n
+    k = max(1, len(steps))
+    ma, mb = sum(da) / k, sum(db) / k
     va, vb = sum((x - ma) ** 2 for x in da), sum((y - mb) ** 2 for y in db)
     corr = sum((x - ma) * (y - mb) for x, y in zip(da, db)) / math.sqrt(va * vb) if va > 0 and vb > 0 else 0.0
-    held = [i for i in steps if a.values[i + 1] or b.values[i + 1]]
-    same = sum(1 for i in held if abs(a.values[i + 1] - b.values[i + 1]) <= 1e-6) / len(held) if len(held) >= MIN_EVENTS else 0.0
+    corr *= len(steps) / max(1, either)
+    held = [i for i in range(n) if (la[i] or lb[i]) and (a.values[i + 1] or b.values[i + 1])]
+    same = (sum(1 for i in held if la[i] and lb[i] and abs(a.values[i + 1] - b.values[i + 1]) <= 1e-6) / len(held)
+            if len(held) >= MIN_EVENTS else 0.0)
     return {"change_correlation": corr, "equal_values": same}
+
+
+def _identity(labels: dict[str, str]) -> dict[str, str]:
+    """The labels that say which thing a series measures (not who wrote it)."""
+    return {k: v for k, v in labels.items() if k not in NOT_IDENTITY}
+
+
+def _parts_of_one(a: Series, b: Series) -> bool:
+    """Two levels of one name that measure different things of it: one a finer grouping of the
+    other (a part and its total: pods by region and pods), or two parts (another region). A part
+    is not its sum, nor another part, however alike they move."""
+    if a.name != b.name:
+        return False
+    ia, ib = set(_identity(a.labels).items()), set(_identity(b.labels).items())
+    return ia != ib
+
+
+def barred_counters(levels: list[Series], counters: list[Series]) -> dict[str, set[str]]:
+    """For each level, the counters that belong to another level of the same name: a counter that
+    has a different value of a label the level also has (``region="us-west"`` for the eu-west
+    pods), where another level of that name agrees with the counter on every label they share.
+    Those count that level's things, never this one's, however well they would balance it."""
+    by_name: dict[str, list[Series]] = defaultdict(list)
+    for s in levels:
+        by_name[s.name].append(s)
+    out: dict[str, set[str]] = {}
+    for s in levels:
+        sibs = [o for o in by_name[s.name] if o is not s]
+        if not sibs:
+            continue
+        mine = _identity(s.labels)
+        for c in counters:
+            theirs = _identity(c.labels)
+            differ = {k for k in theirs if k in mine and theirs[k] != mine[k]}
+            if differ and any(all(o.labels.get(k) == theirs[k] for k in differ)
+                              and all(o.labels[k] == v for k, v in theirs.items() if k in _identity(o.labels)) for o in sibs):
+                out.setdefault(s.key, set()).add(c.key)
+    return out
 
 
 def _twins(a: Series, b: Series, a_terms: list, b_terms: list, same_flow) -> bool:
     if a.traffic and b.traffic and a.traffic[0] == b.traffic[0] == "backlog":
         return False            # two queues a source declared: never one stock measured twice, however alike (one consumer acks both at once)
+    if _parts_of_one(a, b):
+        return False
     if _equal_steps(a, b) >= TWIN_STEPS or _same_balance(a_terms, b_terms, same_flow):
         return True
     alike = _alike(a, b)
@@ -558,7 +622,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             left_out[s.key] = "a counter that did not move in the window"
     found: list[tuple[Series, list[tuple[Series, int]], float, float]] = []
     masks: dict[str, list[int]] = {}              # the steps each level's balance was found on
-    solvers: dict[tuple, LeastSquares] = {}       # least squares over all counters, per set of steps
+    solvers: dict[tuple, LeastSquares] = {}       # least squares over the counters a level may use, per set of steps
+    barred = barred_counters([s for s in series if not s.counter], counters)
 
     def fits(s: Series, r2: float, exact: float) -> bool:
         """A balance a level may be a stock on: a level that only ever takes two values is usually
@@ -585,14 +650,15 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                                "too few to tell a balance from coincidence")
             continue
         masks[s.key] = steps
-        terms, r2, exact = channel_balance(s, counters, steps, fits)
+        mine = [c for c in counters if c.key not in barred.get(s.key, ())]
+        terms, r2, exact = channel_balance(s, mine, steps, fits)
         if terms is None:
-            terms, r2, exact = own_balance(s, counters, steps, fits)
+            terms, r2, exact = own_balance(s, mine, steps, fits)
         if terms is None:
-            key = tuple(steps)
-            if key not in solvers and counters:
-                solvers[key] = LeastSquares([[c.deltas[i] for i in steps] for c in counters])
-            terms, r2, exact = balance(s, counters, solvers.get(key), steps)
+            key = (tuple(steps), tuple(sorted(barred.get(s.key, ()))))
+            if key not in solvers and mine:
+                solvers[key] = LeastSquares([[c.deltas[i] for i in steps] for c in mine])
+            terms, r2, exact = balance(s, mine, solvers.get(key), steps)
         if len({v for _, v in s.points}) <= 2 and not (terms and fits(s, r2, exact)):
             left_out[s.key] = "a flag (it only ever takes two values, and no counters balance it exactly), not a quantity that accumulates"
             continue
@@ -620,6 +686,17 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # (sd.parsimony: the customers' orders less the app's are the takers' own orders taken)
     found, made = fewer_counters(found, counters, masks, fits, set(notes), machine_of)
     notes.update(made)
+    # a restated balance may have taken another level's counters: balanced again without them
+    rebalanced = []
+    for s, terms, r2, exact in found:
+        if any(c.key in barred.get(s.key, ()) for c, _ in terms):
+            mine = [c for c in counters if c.key not in barred[s.key]]
+            terms, r2, exact = balance(s, mine, None, masks[s.key])
+            if not (terms and fits(s, r2, exact)):
+                left_out[s.key] = f"no counters of its own balance it (best R² {r2:.2f}); the others count another {s.name}"
+                continue
+        rebalanced.append((s, terms, r2, exact))
+    found = rebalanced
 
     # A level that only fills (its balance only adds) is a stock when its balance is exact,
     # whatever feeds it: a terminal state, where other stocks' outflows end (the orders delivered).
