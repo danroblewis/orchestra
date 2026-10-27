@@ -27,6 +27,8 @@ def one(tmp_path, **src):
     ({"auth": {"bearer": "abc"}}, "literal secret"),
     ({"token": "abc"}, "literal secret"),
     ({"url": "https://me:pw@metrics.example/"}, "user:pass@"),
+    ({"url": "https://metrics.example/data?api_key=abc"}, "query string"),
+    ({"url": "https://metrics.example/data#frag"}, "query string"),
     ({"auth": {"basic": {"user": "u", "password": "pw"}}}, "literal secret"),
     ({"auth": {"header": {"name": "API-Token", "value": "abc"}}}, "literal secret"),
     ({"auth": {"oauth2": {"token_url": "x"}}}, "not built yet"),
@@ -104,3 +106,9 @@ def test_mtls_against_a_server_that_demands_a_client_certificate(tmp_path):
     spec, _ = one(tmp_path, auth={"client_cert": str(d / "me.pem"), "client_key": str(d / "missing.key")})
     with pytest.raises(SourceError, match="client certificate"):
         Auth(spec.auth).ssl_context()
+
+
+def test_a_second_source_with_a_prefix_already_used_is_refused(tmp_path):
+    specs = load({"sources": [{"name": "work", "url": "https://a.example"},
+                              {"name": "other", "url": "https://b.example", "prefix": "work"}]}, tmp_path / "repo")
+    assert [x.name for x in specs.sources] == ["work"] and specs.refused["other"] == "the prefix work is used by source work"

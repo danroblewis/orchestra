@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
@@ -126,11 +128,18 @@ def cached(state_dir: Path, name: str) -> Inference | None:
 
 
 def save(state_dir: Path, inf: Inference) -> None:
+    """Written whole and then moved into place, from a temporary file of this save's own (the host
+    and the web server may both save at once)."""
     d = Path(state_dir) / "sources"
     d.mkdir(parents=True, exist_ok=True)
-    tmp = d / f".{inf.source}.json.tmp"
-    tmp.write_text(json.dumps(inf.to_json(), indent=1))
-    tmp.replace(d / f"{inf.source}.json")
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=f".{inf.source}.", suffix=".json.tmp")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(json.dumps(inf.to_json(), indent=1))
+        os.replace(tmp, d / f"{inf.source}.json")
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path, state_dir: Path,

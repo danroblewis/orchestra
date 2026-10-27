@@ -41,8 +41,9 @@ store that hides the newest samples from range queries but not from raw reads (V
 steps its levels never saw.
 
 A source that cannot be used is **refused with its reason**, never half-used: a literal secret
-(a token, a password, ``user:pass@`` in the URL), a secret file inside the repository (it would be
-committed), an auth kind not built yet, a bad prefix. A refused source counts as missing for
+(a token, a password, ``user:pass@`` in the URL), a query string in the URL (the API path is
+appended to it), a secret file inside the repository (it would be committed), an auth kind not
+built yet, a bad prefix or one another source uses. A refused source counts as missing for
 discovery, which then saves no model version until it is fixed."""
 
 from __future__ import annotations
@@ -149,6 +150,8 @@ def _source(raw: dict, repo_root: Path) -> SourceSpec:
     if u.username or u.password:
         raise ValueError("the url carries user:pass@: a literal secret in orchestra.toml is refused; "
                          "use auth = { basic = { user = ..., password_env = ... } }")
+    if u.query or u.fragment or url.rstrip().endswith(("?", "#")):
+        raise ValueError("the url has a query string or fragment: the API path is appended to it; put credentials in auth")
     if keys := _secret_keys({k: v for k, v in raw.items() if k != "auth"}):
         raise ValueError(f"{', '.join(keys)}: a literal secret in orchestra.toml is refused; "
                          "name an environment variable or a file outside the repository in auth")
@@ -208,6 +211,9 @@ def load(raw: dict, repo_root: Path) -> Specs:
             continue
         if any(x.name == s.name for x in out.sources):
             out.refused[label] = "the name is used by another source"
+            continue
+        if other := next((x.name for x in out.sources if x.prefix == s.prefix), None):
+            out.refused[label] = f"the prefix {s.prefix} is used by source {other}"
             continue
         out.sources.append(s)
         series += [(f"{s.name} preset series[{j}]", x) for j, x in enumerate(from_preset)]
