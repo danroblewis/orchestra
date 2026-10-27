@@ -316,9 +316,13 @@ def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
     taken = {getattr(r, "path", None) for r in app.routes}
     pages, scripts, errors = [], [], list(loaded.errors)
     for p in loaded.plugins:
+        for what, files, into in (("script", p.scripts, scripts), ("stylesheet", p.stylesheets, stylesheets)):
+            for f in files:
+                if p.static and (p.static / f).is_file():
+                    into.append(f"/plugins/{p.name}/static/{f}")
+                else:
+                    errors.append({"plugin": p.name, "error": f"{what} {f} is not a file in its static directory; left out"})
         if p.static:
-            scripts += [f"/plugins/{p.name}/static/{s}" for s in p.scripts if (p.static / s).is_file()]
-            stylesheets.extend(f"/plugins/{p.name}/static/{s}" for s in p.stylesheets if (p.static / s).is_file())
             app.mount(f"/plugins/{p.name}/static", StaticFiles(directory=str(p.static)), name=f"plugin-{p.name}")
         if p.router is not None:
             app.include_router(p.router, prefix=f"/api/plugins/{p.name}")

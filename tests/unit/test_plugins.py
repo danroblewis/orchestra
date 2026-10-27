@@ -65,3 +65,18 @@ def test_a_plugin_adds_pages_static_files_and_routes_and_a_broken_one_is_reporte
     assert link in machines and machines.index(link) < machines.index("</head>")            # after Orchestra's own
     assert machines.index("/static/style.css") < machines.index(link)
     assert link in c.get("/bakery").text and "missing.css" not in machines                  # a missing file is left out
+    missing = sorted(e["error"] for e in d["errors"] if "static directory" in e["error"])
+    assert missing == ["script missing.js is not a file in its static directory; left out",     # and reported
+                       "stylesheet missing.css is not a file in its static directory; left out"]
+
+
+def test_a_second_plugin_of_one_name_is_left_out_and_reported(project):
+    found = [EntryPoint("tasks", lambda p: plugins.Plugin("tasks")), EntryPoint("tasks2", lambda p: plugins.Plugin("tasks", pages=[]))]
+    loaded = plugins.load(project, lambda: found)
+    assert len(loaded.plugins) == 1 and loaded.plugins[0].pages == []
+    assert [e["plugin"] for e in loaded.errors] == ["tasks2"] and "'tasks' is taken" in loaded.errors[0]["error"]
+
+
+def test_new_plugin_fields_come_last_with_defaults():
+    p = plugins.Plugin("x", [], None, None, [], [], [], [])                   # positional callers keep working
+    assert p.collectors == []

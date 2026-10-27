@@ -1,14 +1,16 @@
 """Running the declared collectors on their intervals, for the host that launches.
 
 ``tick`` is called every second or so (with the launcher's tick). It reads ``orchestra.toml`` again
-whenever the file changed: a collector added starts at once, one removed stops (a round under way
+whenever the file changed, and asks the plugins for theirs again then too (``Plugin.collectors``;
+a project entry of the same name wins): a collector added starts at once, one removed stops (a round under way
 finishes and its points are dropped), one changed starts over with its new entry. Each due round
 runs in a thread of its own, so a slow one holds up no other; a collector whose last round is still
 running skips its turn.
 
 When a collector is added or changed, the host announces it on the bus on its behalf
 (``orchestra.machine.started`` with the collector's name as ``source``: mode ``scheduled`` for a
-command, ``continuous`` for a scraped program, kind ``program``, and its log), so it appears on the
+command, ``continuous`` for a scraped program, kind ``program``, its log, and a plugin's name as
+``package``), so it appears on the
 Machines page though it imports nothing.
 
 A round that fails writes nothing, adds a line to the host's log and the collector's log, and is
@@ -45,12 +47,15 @@ class Collecting:
     publish: Callable[..., object]          # Events.publish: (type, data, source=...)
     log: Callable[[str], None]              # the host's log
     open_store: Callable[[], object] | None = None   # opens the metrics store; default: the project's
+    plugin_collectors: list[Collector] | Callable[[], list[Collector]] = field(default_factory=list)   # a callable
+                                                     # is asked again whenever orchestra.toml changes
     wanted: dict[str, Collector] = field(default_factory=dict)
     failures: Counter = field(default_factory=Counter)
     _due: dict[str, float] = field(default_factory=dict)
     _busy: dict[str, threading.Thread] = field(default_factory=dict)
     _mtime: float | None = None
     _said: set[str] = field(default_factory=set)
+    _plugins: list[Collector] = field(default_factory=list)
     _stop: threading.Event = field(default_factory=threading.Event)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -74,15 +79,16 @@ class Collecting:
             pass
 
     def _read(self) -> None:
-        """Take ``orchestra.toml``'s collectors again if the file changed; a file that cannot be
-        read leaves them as they are."""
+        """Take ``orchestra.toml``'s collectors and the plugins' again if the file changed; a file
+        that cannot be read leaves them as they are, and plugins that cannot be asked leave theirs."""
         path = self.project.repo_root / "orchestra.toml"
         try:
             mtime = path.stat().st_mtime
             if mtime == self._mtime:
                 return
             self._mtime = mtime
-            found, errors = from_toml(tomllib.loads(path.read_text(encoding="utf-8")))
+            self._ask_plugins()
+            found, errors = from_toml(tomllib.loads(path.read_text(encoding="utf-8")), self._plugins)
         except (OSError, ValueError) as e:
             self._say_once(f"cannot read {path.name}: {type(e).__name__}: {e}; keeping the collectors as they were")
             return
@@ -99,11 +105,21 @@ class Collecting:
                     self._announce(c)
             self.wanted = now
 
+    def _ask_plugins(self) -> None:
+        if not callable(self.plugin_collectors):
+            self._plugins = list(self.plugin_collectors)
+            return
+        try:
+            self._plugins = list(self.plugin_collectors())
+        except Exception as e:  # noqa: BLE001 - a plugin's mistake must not stop what collects
+            self._say_once(f"cannot read the plugins' collectors: {type(e).__name__}: {e}; keeping theirs as they were")
+
     def _announce(self, c: Collector) -> None:
         what = {"command": c.target} if c.kind == "collect" else {"url": c.target}
+        package = {"package": c.owner} if c.owner != "project" else {}
         self.publish("orchestra.machine.started", {"mode": c.mode, "kind": "program", "listens_for": [],
                                                    "log": str(self._log_of(c)), "collector": c.kind, **what,
-                                                   "every_s": c.every_s}, source=c.name)
+                                                   "every_s": c.every_s, **package}, source=c.name)
         self.log(f"collect: {c.name}: {'running' if c.kind == 'collect' else 'scraping'} `{c.target}` every {c.every_s:g} s")
 
     def tick(self, now: float | None = None) -> None:

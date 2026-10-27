@@ -1,4 +1,5 @@
-"""The collectors ``orchestra.toml`` declares: ``[[collect]]`` (a command) and ``[[scrape]]`` (a URL).
+"""The collectors ``orchestra.toml`` declares, ``[[collect]]`` (a command) and ``[[scrape]]`` (a
+URL), and those the plugins declare (``Plugin.collectors``).
 
 ::
 
@@ -14,13 +15,15 @@
     every = "30s"
 
 A ``[[scrape]]`` may take the name of the ``[[machines]]`` entry whose program it reads, so the
-program and its measurements are one machine; a ``[[collect]]`` may not. An entry that cannot be
+program and its measurements are one machine; a ``[[collect]]`` may not. A plugin's collector is
+named ``<plugin>.<name>``; a project entry of that name takes its place. An entry that cannot be
 used is left out, with the reason; the others stand."""
 
 from __future__ import annotations
 
 import shlex
-from dataclasses import dataclass
+from collections.abc import Iterable
+from dataclasses import dataclass, replace
 
 from ..config import ConfigError, parse_duration
 from ..events import HOST
@@ -29,6 +32,7 @@ from ..launcher import NAME
 EVERY_S = 60.0
 TIMEOUT_S = 10.0
 MIN_EVERY_S = 1.0
+KINDS = ("collect", "scrape")
 
 
 @dataclass(frozen=True)
@@ -38,6 +42,15 @@ class Collector:
     target: str                # the command, or the URL
     every_s: float = EVERY_S
     timeout_s: float = TIMEOUT_S
+    owner: str = "project"     # "project", or the plugin that declared it
+
+    @classmethod
+    def scrape(cls, name: str, url: str, **kw) -> Collector:
+        return cls(name, "scrape", url, **kw)
+
+    @classmethod
+    def collect(cls, name: str, command: str, **kw) -> Collector:
+        return cls(name, "collect", command, **kw)
 
     @property
     def mode(self) -> str:
@@ -48,54 +61,77 @@ class Collector:
         return shlex.split(self.target)
 
 
-def _one(kind: str, entry: object, taken: set[str], programs: set[str]) -> Collector:
+def check(c: Collector, accepted: Iterable[Collector], programs: set[str]) -> str | None:
+    """Why ``c`` cannot be run beside the collectors already ``accepted``, or None."""
+    if not isinstance(c.name, str) or not NAME.match(c.name):
+        return f"bad name {c.name!r}: use letters, digits, '.', '_' and '-'"
+    if c.name == HOST or any(o.name == c.name for o in accepted):
+        return f"{c.name}: the name is taken (by Orchestra's host or another collector)"
+    if c.kind not in KINDS:
+        return f"{c.name}: kind must be collect or scrape, not {c.kind!r}"
+    if c.kind == "collect" and c.name in programs:
+        return f"{c.name}: a [[machines]] entry has the name (only a [[scrape]] of that program may share it)"
+    field = "command" if c.kind == "collect" else "url"
+    if not isinstance(c.target, str) or not c.target.strip():
+        return f"{c.name}: needs a {field}"
+    if c.kind == "collect":
+        try:
+            if not shlex.split(c.target):
+                return f"{c.name}: empty command"
+        except ValueError as e:
+            return f"{c.name}: bad command: {e}"
+    elif not c.target.startswith(("http://", "https://")):
+        return f"{c.name}: url must start with http:// or https://"
+    for what, v in (("every", c.every_s), ("timeout", c.timeout_s)):
+        if isinstance(v, bool) or not isinstance(v, int | float):
+            return f"{c.name}: {what} must be a number of seconds, not {v!r}"
+    if c.every_s < MIN_EVERY_S:
+        return f"{c.name}: every must be at least {MIN_EVERY_S:g} s"
+    if c.timeout_s <= 0:
+        return f"{c.name}: timeout must be more than 0"
+    return None
+
+
+def _one(kind: str, entry: object) -> Collector:
     if not isinstance(entry, dict):
         raise ConfigError("is not a table")
-    name = entry.get("name")
-    if not isinstance(name, str) or not NAME.match(name):
-        raise ConfigError(f"bad name {name!r}: use letters, digits, '.', '_' and '-'")
-    if name == HOST or name in taken:
-        raise ConfigError(f"{name}: the name is taken (by Orchestra's host or another collector)")
-    if kind == "collect" and name in programs:
-        raise ConfigError(f"{name}: a [[machines]] entry has the name (only a [[scrape]] of that program may share it)")
-    field = "command" if kind == "collect" else "url"
-    target = entry.get(field)
-    if not isinstance(target, str) or not target.strip():
-        raise ConfigError(f"{name}: needs a {field}")
-    if kind == "collect":
-        try:
-            if not shlex.split(target):
-                raise ConfigError(f"{name}: empty command")
-        except ValueError as e:
-            raise ConfigError(f"{name}: bad command: {e}") from e
-    elif not target.startswith(("http://", "https://")):
-        raise ConfigError(f"{name}: url must start with http:// or https://")
     every = parse_duration(entry.get("every"), EVERY_S)
-    if every < MIN_EVERY_S:
-        raise ConfigError(f"{name}: every must be at least {MIN_EVERY_S:g} s")
     timeout = parse_duration(entry.get("timeout"), TIMEOUT_S)
-    if timeout <= 0:
-        raise ConfigError(f"{name}: timeout must be more than 0")
-    return Collector(name, kind, target, every, min(timeout, every))
+    return Collector(entry.get("name"), kind, entry.get("command" if kind == "collect" else "url"), every,
+                     min(timeout, every) if timeout > 0 else timeout)
 
 
-def from_toml(raw: dict) -> tuple[list[Collector], list[str]]:
-    """The collectors of a parsed ``orchestra.toml``, and why any entry was left out."""
+def from_toml(raw: dict, plugins: Iterable[Collector] = ()) -> tuple[list[Collector], list[str]]:
+    """The collectors of a parsed ``orchestra.toml`` and of the plugins (each named
+    ``<owner>.<name>``), and why any entry was left out. A project entry wins over a plugin's of the
+    same name."""
     programs = {m.get("name") for m in raw.get("machines") or [] if isinstance(m, dict)}
-    taken: set[str] = set()
     out: list[Collector] = []
     errors: list[str] = []
-    for kind in ("collect", "scrape"):
+    for kind in KINDS:
         entries = raw.get(kind) or []
         if not isinstance(entries, list):
             errors.append(f"{kind} must be an array of tables: write each one as [[{kind}]]")
             continue
         for i, entry in enumerate(entries):
             try:
-                c = _one(kind, entry, taken, programs)
+                c = _one(kind, entry)
+                if (why := check(c, out, programs)) is not None:
+                    raise ConfigError(why)
             except ConfigError as e:
                 errors.append(f"[[{kind}]] entry {i + 1}: {e}; left out")
                 continue
-            taken.add(c.name)
             out.append(c)
+    project = {c.name for c in out}
+    for c in plugins:
+        c = replace(c, name=f"{c.owner}.{c.name}")
+        if c.name in project:
+            errors.append(f"plugin {c.owner}: its collector {c.name} is replaced by the project's entry of that name")
+            continue
+        if isinstance(c.every_s, int | float) and isinstance(c.timeout_s, int | float) and c.timeout_s > c.every_s:
+            c = replace(c, timeout_s=c.every_s)
+        if (why := check(c, out, programs)) is not None:
+            errors.append(f"plugin {c.owner}: {why}; left out")
+            continue
+        out.append(c)
     return out, errors
