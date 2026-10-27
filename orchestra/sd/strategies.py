@@ -35,8 +35,10 @@ without. Its flows are then merged with the counters:
 
 Its flows into or out of a stock with a fitted net flow take the place of conservation's (whose
 ids stay in the stock's evidence, ``conservation_fit``) only when they predict the level's changes
-better than the fitted net flow on held-out halves of the window (``sd.rival``); otherwise they are
-dropped, the net flow's flows stay, and the stock's evidence says why (``sdlab_rejected``). Rates
+better than the fitted net flow on held-out halves of the window (``sd.rival``), each published at
+the scale it was judged at (a scale that turns a flow around, or a flow that moves nothing, is not
+published); otherwise they are dropped, the net flow's flows stay, and the stock's evidence says
+why (``sdlab_rejected``). Rates
 are per the model's time unit; SD Lab's are per step, and are scaled (``sd.rates``).
 
 Strategies are named in ``[discovery] strategy`` in ``orchestra.toml``, with ``[discovery.options]``
@@ -159,8 +161,11 @@ def read_by(base: Model, ids: list[str], inputs: dict[str, list[float]]) -> dict
 def _judged(base: Model, net: set[str], sd_flows: list[dict], parts: list, coarse: float, inputs: dict, by_key: dict,
             dropped: list[dict]) -> list[dict]:
     """SD Lab's flows less those into or out of a stock with a fitted net flow that predict its
-    level worse than that net flow on held-out data (``sd.rival``); each dropped flow is recorded
-    in ``dropped``, and the stock's evidence says why (``sdlab_rejected``)."""
+    level worse than that net flow on held-out data (``sd.rival``), and those that move it by a
+    negligible amount; each dropped flow is recorded in ``dropped``, and the stock's evidence says
+    why (``sdlab_rejected``). The flows kept are published as they were judged: each at the scale
+    fitted to the level (``judged_scale``), not at SD Lab's own coefficients."""
+    from .rates import times
     from .rival import judge
 
     def values_of(ref: str | None) -> list[float] | None:
@@ -182,11 +187,16 @@ def _judged(base: Model, net: set[str], sd_flows: list[dict], parts: list, coars
             continue
         ids, run_g, inputs_g = group_of[sid]
         st = base.stock(sid)
-        why = judge(st, mine, ids, run_g, inputs_g, coarse, values_of(st.evidence["net_flow"].get("driver")))
-        if why:
-            st.evidence["sdlab_rejected"] = why
-            dropped += [{"from": sf.get("from"), "to": sf.get("to"), "why": f"{sid}: {why}"} for sf in mine]
-            sd_flows = [sf for sf in sd_flows if sf not in mine]
+        v = judge(st, mine, ids, run_g, inputs_g, coarse, values_of(st.evidence["net_flow"].get("driver")))
+        gone = {id(sf) for j, sf in enumerate(mine) if v.why or j in v.negligible}
+        dropped += [{"from": sf.get("from"), "to": sf.get("to"), "why": f"{sid}: {v.negligible.get(j) or v.why}"}
+                    for j, sf in enumerate(mine) if id(sf) in gone]
+        if v.why:
+            st.evidence["sdlab_rejected"] = v.why
+        # what is published is what was judged: each shape at the scale fitted to the level
+        scaled = {id(sf): {**sf, "rate": times(sf.get("rate") or {}, v.scales[j]), "judged_scale": v.scales[j]}
+                  for j, sf in enumerate(mine) if j in v.scales}
+        sd_flows = [scaled.get(id(sf), sf) for sf in sd_flows if id(sf) not in gone]
     return sd_flows
 
 
@@ -298,7 +308,8 @@ def discover_with(dump, *, start: float, end: float, step: float, strategy: str 
             name, counter = f"{(src or 'outside').replace('_', ' ')} → {(dst or 'outside').replace('_', ' ')} (unmeasured)", None
         if not matched and (src in net or dst in net):          # what it is judged on: the changes of the level it moves
             events = float(max(base.stock(e).evidence["net_flow"]["changes"] for e in (src, dst) if e in net))
-        q = {"events": events, "steps": float(n), "per_step": float(sum(sf.get("perStep") or 0.0 for sf in sfs))}
+        q = {"events": events, "steps": float(n), "per_step": float(sum(sf.get("perStep") or 0.0 for sf in sfs)),
+             **({"judged_scale": float(sfs[0]["judged_scale"])} if len(sfs) == 1 and "judged_scale" in sfs[0] else {})}
         eq = Equation(rate.get("form", "unknown"), numbers(rate), "discovered", f"sdlab:{strategy}", (fit_start, fit_start + n * coarse),
                       None, q, [ref(x) for x in reads(rate)], rate)
         flows.append(Flow(fid, name, src, dst, counter, [eq], [m.counter for m in matched if m.counter],

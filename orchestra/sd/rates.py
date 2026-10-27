@@ -27,6 +27,48 @@ def scale(rate: dict, f: float) -> dict:
     return r
 
 
+def times(rate: dict, s: float) -> dict | None:
+    """A rate ``s`` times as large (``s`` above zero), or None for a form that cannot be scaled
+    exactly (an expression)."""
+    r = dict(rate)
+    form = r.get("form")
+    if form == "constant":
+        r["value"] = float(r.get("value") or 0.0) * s
+    elif form == "proportional":
+        r["k"] = float(r.get("k") or 0.0) * s
+    elif form == "linear":
+        r["c"] = float(r.get("c") or 0.0) * s
+        r["terms"] = [{**t, "k": float(t.get("k") or 0.0) * s} for t in r.get("terms") or []]
+    elif form == "gap":
+        r["time"] = float(r.get("time") or 1.0) / s
+    elif form == "sum":
+        parts = [times(p, s) for p in r.get("parts") or []]
+        if any(p is None for p in parts):
+            return None
+        r["parts"] = parts
+    else:
+        return None
+    return r
+
+
+def on(rate: dict, x: str) -> float | None:
+    """How much a rate rises per unit of ``x`` (a stock or an input it reads), or None when that
+    is not one number (an effect of ``x``, a gap toward a goal in it, an expression)."""
+    form = rate.get("form")
+    if any(e.get("stock") == x for e in rate.get("effects") or []):
+        return None
+    if form == "proportional":
+        return float(rate.get("k") or 0.0) if rate.get("stock") == x else 0.0
+    if form == "linear":
+        return sum(float(t.get("k") or 0.0) for t in rate.get("terms") or [] if t.get("stock") == x)
+    if form == "constant":
+        return 0.0
+    if form == "sum":
+        parts = [on(p, x) for p in rate.get("parts") or []]
+        return None if any(p is None for p in parts) else sum(parts)
+    return None if x in reads(rate) else 0.0
+
+
 def reads(rate: dict) -> list[str]:
     """What a rate reads: the stock or input of its form, its terms, its effects and its parts."""
     out = [rate["stock"]] if rate.get("stock") else []

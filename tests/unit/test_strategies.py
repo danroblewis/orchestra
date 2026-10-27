@@ -137,6 +137,49 @@ def test_sdlab_flows_that_predict_a_net_flow_stock_worse_are_dropped(tmp_path, m
     assert {"from": None, "to": "kiln_temperature_celsius"}.items() <= m.discovery["dropped"][0].items()
 
 
+def _kiln_flows(tmp_path, monkeypatch, flows):
+    store = FileMetrics(tmp_path / "m.jsonl")
+    start, end = simulate(store, minutes=60)
+    _with_a_cooling_kiln(store, start, end)
+    monkeypatch.setattr("orchestra.sd.strategies.run_strategy", _fake({}, flows))
+    m = discover_with(store.dump("", {"project": "p"}), start=start, end=end, step=30, strategy="fake")
+    return m, m.stock("kiln_temperature_celsius"), [f for f in m.flows if "kiln_temperature_celsius" in (f.src, f.dst)]
+
+
+def test_sdlab_flows_are_published_at_the_scale_they_were_judged_at(tmp_path, monkeypatch):
+    # SD Lab found the kiln's law at half its strength: it is judged with a scale fitted to the
+    # level (about 2), and what is published is that judged flow, not SD Lab's half-strength one
+    half = {**KILN_LAW, "rate": {**KILN_LAW["rate"], "k": 0.01}}
+    _, kiln, [sd] = _kiln_flows(tmp_path, monkeypatch, [half])
+    assert "sdlab_rejected" not in kiln.evidence
+    e = sd.current()
+    assert e.method == "sdlab:fake" and 1.6 < e.quality["judged_scale"] < 2.4, e.quality
+    assert abs(e.params["k"] - 0.02 * 2) < 0.008, e.params          # 0.02 a step of 30 s is 0.04 a minute
+
+
+def test_an_sdlab_flow_whose_judged_scale_turns_it_around_is_not_published(tmp_path, monkeypatch):
+    # SD Lab wrote the kiln's law as an inflow: the kiln would heat the hotter it is. Fitted to the
+    # level, its scale is below zero (the kiln cools), so the flow that would be published (an
+    # inflow) is not the one that was judged (an outflow): the net flow's flows stay
+    backwards = {**KILN_LAW, "from": None, "to": "kiln_temperature_celsius"}
+    _, kiln, mine = _kiln_flows(tmp_path, monkeypatch, [backwards])
+    assert "below zero" in kiln.evidence["sdlab_rejected"], kiln.evidence.get("sdlab_rejected")
+    assert mine and all(f.current().method == "least-squares" for f in mine)
+    nf = kiln.evidence["net_flow"]["params"]
+    assert nf["b"] < 0 and [f.id for f in mine if f.src == "kiln_temperature_celsius"], "it loses heat in proportion to itself"
+
+
+def test_an_sdlab_flow_that_moves_nothing_is_not_published(tmp_path, monkeypatch):
+    # beside the kiln's law, SD Lab answered a second outflow of 1e-23 times the temperature: it
+    # moves nothing, and a scale fitted to it would invent a flow; it is dropped and recorded
+    nothing = {"from": "kiln_temperature_celsius", "to": None, "rate": {"form": "proportional", "stock": "kiln_temperature_celsius", "k": 1e-23}}
+    m, kiln, mine = _kiln_flows(tmp_path, monkeypatch, [KILN_LAW, nothing])
+    assert "sdlab_rejected" not in kiln.evidence
+    [sd] = mine
+    assert sd.current().form == "proportional" and sd.current().params["k"] > 0.01, sd.current().params
+    assert any("less than the 1% a flow must" in d["why"] for d in m.discovery["dropped"]), m.discovery["dropped"]
+
+
 def test_the_measured_moves_are_known_to_sdlab_and_its_invented_flows_are_dropped_where_nothing_remains(tmp_path, monkeypatch):
     # handed the bakery's two stocks, which are balanced exactly by their counters, an SD Lab
     # strategy's flows that no counter measures are dropped there; its flows on the counters are
