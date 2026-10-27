@@ -97,18 +97,18 @@ is called from two places, at different times:
 flowchart TD
     subgraph ENV["One Python environment"]
         ORC["orchestra<br/>(CLI, host, web)"]
-        PKG["your package<br/>[project.entry-points.&quot;orchestra.plugins&quot;]<br/>heartbeat = &quot;heartbeat.plugin:plugin&quot;"]
+        PKG["your package<br/>[project.entry-points.#quot;orchestra.plugins#quot;]<br/>heartbeat = #quot;heartbeat.plugin:plugin#quot;"]
         META[("installed metadata<br/>entry_points.txt")]
         PKG -- "uv sync / pip install" --> META
     end
     WEB["orchestra web<br/>create_app → mount_plugins"] -- "once, at start" --> LOAD
     HOST["orchestra run<br/>Host._plugin_processes"] -- "at start, and whenever<br/>orchestra.toml changes" --> LOAD
-    LOAD["orchestra.plugins.load(project)<br/>entry_points(group=&quot;orchestra.plugins&quot;)"] -- reads --> META
+    LOAD["orchestra.plugins.load(project)<br/>entry_points(group=#quot;orchestra.plugins#quot;)"] -- reads --> META
     LOAD -- "ep.load()(project)" --> FN["your plugin(project)"]
     FN -- "returns a Plugin" --> OK["Loaded.plugins"]
     FN -- "raises, or returns<br/>something else" --> ERR["Loaded.errors"]
     OK --> MOUNT["web: mount pages, static,<br/>router, scripts, stylesheets;<br/>merge declared machines"]
-    OK --> LAUNCH["host: launcher runs<br/>processes as &lt;plugin&gt;.&lt;name&gt;"]
+    OK --> LAUNCH["host: launcher runs<br/>processes as #lt;plugin#gt;.#lt;name#gt;"]
     ERR --> REP["web: listed in /api/plugins errors<br/>host: logged; what it last declared stands"]
 ```
 
@@ -139,18 +139,18 @@ flowchart LR
     end
     subgraph WEBAPP["orchestra web"]
         W_PAGE["GET /path (nav link: title)"]
-        W_STATIC["/plugins/&lt;name&gt;/static/*"]
-        W_API["/api/plugins/&lt;name&gt;/*"]
-        W_EVERY["every page: &lt;link&gt; in head,<br/>&lt;script&gt; after app.js"]
+        W_STATIC["/plugins/#lt;name#gt;/static/*"]
+        W_API["/api/plugins/#lt;name#gt;/*"]
+        W_EVERY["every page: #lt;link#gt; in head,<br/>#lt;script#gt; after app.js"]
         W_MACH["/api/machines<br/>(fills in unseen machines)"]
     end
     subgraph HOSTBOX["orchestra run (bootstrap host)"]
-        LAUNCHER["launcher: keeps &lt;name&gt;.&lt;proc&gt; running,<br/>log: state/logs/machines/&lt;name&gt;.&lt;proc&gt;.log"]
+        LAUNCHER["launcher: keeps #lt;name#gt;.#lt;proc#gt; running,<br/>log: state/logs/machines/#lt;name#gt;.#lt;proc#gt;.log"]
     end
     PROCS["your processes<br/>(machines)"]
     BUS[("event bus<br/>orchestra.events.Events")]
     METRICS[("metrics store<br/>orchestra.metrics")]
-    STATE[("your state<br/>~/.orchestrator/&lt;key&gt;/&lt;yours&gt;/")]
+    STATE[("your state<br/>~/.orchestrator/#lt;key#gt;/#lt;yours#gt;/")]
 
     P_PAGES --> W_PAGE
     P_STATIC --> W_STATIC
