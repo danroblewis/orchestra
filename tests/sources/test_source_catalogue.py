@@ -197,3 +197,26 @@ def test_a_round_that_fails_midway_is_not_cached_and_the_old_definitions_stand(t
     for again in (listing, probing):
         assert [d.id for d in again.kept] == [d.id for d in good.kept]
     assert (p.state_dir / "sources" / "rig.json").read_text() == before
+
+
+def test_a_source_answering_in_another_shape_is_only_that_source_missing(tmp_path, monkeypatch):
+    end = now_grid(30.0)
+    dump, _ = world(now_grid(), 120, regions={"us-east": 1.0})
+    fake = FakePrometheus(dump)
+    answer = fake.answer
+    try:
+        p = project(tmp_path, monkeypatch, source_toml(fake.url, window="120m", step="30s"))
+        store = for_project(p)
+        store.write([Point(n, v, t, {**lab, "project": p.key}) for n, lab, pts in _queue(end, "consumer") for t, v in pts])
+        fake.answer = lambda endpoint, form: None                   # {"status": "success", "data": null}
+        fresh = rediscover(p, store)
+        fake.answer = answer
+        Catalogue(p, store).inference("rig", end - 7200, end)       # a good round cached
+        fake.answer = lambda endpoint, form: {"resultType": "matrix", "result": None} if endpoint != "series" else answer(endpoint, form)
+        cached_defs = rediscover(p, store)
+    finally:
+        fake.close()
+    for r in (fresh, cached_defs):
+        st = r.model.discovery["sources"]["rig"]
+        assert not st["ok"] and "not a Prometheus answer" in st["error"] and "rig" in r.model.discovery["not_saved"]
+        assert [s.series.name for s in r.model.stocks] == ["queue_depth"]

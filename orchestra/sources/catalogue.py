@@ -55,6 +55,12 @@ def gaps(times: list[float], start: float, end: float, step: float) -> list[list
     return out
 
 
+def why(e: Exception) -> str:
+    """What failed, for a source's status: a source's or a script's own message as it is; anything
+    else (a server answering in a shape nobody expected) with its type, so it is recognisable."""
+    return str(e) if isinstance(e, (SourceError, TransformError)) else f"{type(e).__name__}: {e}"
+
+
 def provenance(spec: SourceSpec, d: Definition, traffic: dict | None = None) -> dict:
     return {"source": spec.name, "query": d.query, "kind": d.kind, "origin": list(d.origin), "resolution_s": d.resolution_s,
             "unit": d.unit, "view": d.view, "family": d.family, "flags": list(d.flags), **({"traffic": traffic} if traffic else {})}
@@ -81,8 +87,8 @@ class Catalogue:
         out.status[spec.name] = st
         try:
             inf = self.inference(spec.name, start, end)
-        except (SourceError, TransformError) as e:
-            st.update(ok=False, error=f"inference failed: {e}")
+        except Exception as e:  # noqa: BLE001 - one source's failure never ends the discovery of the others
+            st.update(ok=False, error=f"inference failed: {why(e)}")
             out.missing[spec.name] = st["error"]
             return
         st.update(inferred_at=inf.at, definitions=len(inf.kept), left_out=len(inf.left_out), script=inf.script,
@@ -134,8 +140,8 @@ class Catalogue:
                 d = futs[f]
                 try:
                     results[d.id] = f.result()
-                except SourceError as e:
-                    errors.append(f"{d.name}: {e}")
+                except Exception as e:  # noqa: BLE001 - that source is missing, with why
+                    errors.append(f"{d.name}: {why(e)}")
         if late:
             errors.append(f"{len(late)} of {len(defs)} reads were not done within the deadline of {spec.deadline:g} s")
         return results, errors
@@ -147,8 +153,8 @@ class Catalogue:
         for spec in self.specs.sources:
             try:
                 defs = [d for d in self.inference(spec.name, start, end).kept if d.traffic]
-            except (SourceError, TransformError) as e:
-                failed[spec.name] = str(e)
+            except Exception as e:  # noqa: BLE001 - that source is missing, with why
+                failed[spec.name] = why(e)
                 continue
             results, errors = self._read_all(spec, defs, start, end, step) if defs else ({}, [])
             if errors:

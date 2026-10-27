@@ -147,10 +147,11 @@ def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries]
     when = time.strftime('%Y-%m-%d %H:%M', time.localtime(old.at)) if old else ""
     try:
         inf = infer(source, spec, declared, repo_root, start, end)
-    except (SourceError, TransformError) as e:
+    except Exception as e:
         if not same:
             raise
-        old.error = f"inference failed ({e}); using the definitions inferred at {when}"
+        said = str(e) if isinstance(e, (SourceError, TransformError)) else f"{type(e).__name__}: {e}"
+        old.error = f"inference failed ({said}); using the definitions inferred at {when}"
         return old
     if same and not refresh and inferred(inf) < inferred(old) / 2:
         # A store that answered but held little in the window (a laptop that slept, a server

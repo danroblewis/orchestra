@@ -108,6 +108,14 @@ class PrometheusSource:
             raise SourceError(f"{self.spec.where()}{path}: {doc.get('error') if isinstance(doc, dict) else 'not a Prometheus answer'}")
         return doc.get("data")
 
+    def _results(self, path: str, form: dict) -> list[dict]:
+        """The ``result`` list of a query's answer; ``SourceError`` when the answer has another shape."""
+        data = self._call(path, form)
+        res = data.get("result") if isinstance(data, dict) else None
+        if not isinstance(res, list) or not all(isinstance(r, dict) for r in res):
+            raise SourceError(f"{self.spec.where()}{path}: not a Prometheus answer")
+        return res
+
     @staticmethod
     def _said(e: urllib.error.HTTPError) -> str:
         if 300 <= e.code < 400:
@@ -126,8 +134,7 @@ class PrometheusSource:
         t = start
         while t <= end:
             hi = min(end, t + span)
-            data = self._call("/api/v1/query_range", {"query": query, "start": f"{t:.3f}", "end": f"{hi:.3f}", "step": f"{step:g}"})
-            for r in data.get("result") or []:
+            for r in self._results("/api/v1/query_range", {"query": query, "start": f"{t:.3f}", "end": f"{hi:.3f}", "step": f"{step:g}"}):
                 labels = {k: v for k, v in (r.get("metric") or {}).items() if k != "__name__"}
                 g = merged.setdefault(tuple(sorted(labels.items())), (labels, {}))
                 g[1].update(_points(r.get("values") or []))
@@ -137,9 +144,8 @@ class PrometheusSource:
         return out
 
     def select(self, selector: str, start: float, end: float) -> list[tuple[Labels, Points]]:
-        data = self._call("/api/v1/query", {"query": f"{selector}[{_dur(end - start)}]", "time": f"{end:.3f}"})
         out = []
-        for r in data.get("result") or []:
+        for r in self._results("/api/v1/query", {"query": f"{selector}[{_dur(end - start)}]", "time": f"{end:.3f}"}):
             pts = [(t, v) for t, v in _points(r.get("values") or []) if start <= t <= end]
             if pts:
                 out.append((dict(r.get("metric") or {}), pts))
@@ -151,14 +157,19 @@ class PrometheusSource:
         if limit:
             form["limit"] = str(limit)
         data = self._call("/api/v1/series", form)
-        return [dict(x) for x in (data or [])][: limit or None]
+        if not isinstance(data, list) or not all(isinstance(x, dict) for x in data):
+            raise SourceError(f"{self.spec.where()}/api/v1/series: not a Prometheus answer")
+        return [dict(x) for x in data][: limit or None]
 
     def metadata(self) -> dict[str, dict]:
         try:
             data = self._call("/api/v1/metadata", None, post=False) or {}
         except SourceError:
             return {}
-        return {name: dict(entries[0]) for name, entries in data.items() if entries}
+        if not isinstance(data, dict):                  # metadata is optional: a store answering it oddly keeps none
+            return {}
+        return {name: dict(entries[0]) for name, entries in data.items() if isinstance(entries, list) and entries
+                and isinstance(entries[0], dict)}
 
     def health(self) -> Health:
         began, ok, err = time.perf_counter(), {}, None
