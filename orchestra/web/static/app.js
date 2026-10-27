@@ -77,8 +77,24 @@ Orchestra.panels = (() => {
   };
 })();
 
-// The nav links are static HTML; this fills in the project label on every page, and adds the
-// installed plugins' pages (orchestra/plugins.py) after Orchestra's own.
+// Orchestra's own pages, in nav order: the one list every page's nav is built from, plugin pages
+// included, so a page added here appears everywhere (a page's static links are only the fallback
+// before this script runs).
+const CORE_PAGES = [["/", "Dashboard"], ["/machines", "Machines"], ["/instruments", "Instruments"], ["/dynamics", "Dynamics"], ["/core", "Core"]];
+(function coreNav() {
+  const nav = $("nav"), at = $("proj");
+  if (!nav || !at) return;
+  for (const a of [...nav.querySelectorAll("a")]) if (a.compareDocumentPosition(at) & Node.DOCUMENT_POSITION_FOLLOWING) a.remove();
+  for (const [path, title] of CORE_PAGES) {
+    const a = document.createElement("a");
+    a.href = path; a.textContent = title;
+    if (path === "/" ? location.pathname === "/" : location.pathname === path || location.pathname.startsWith(path + "/")) a.className = "on";
+    nav.insertBefore(a, at);
+  }
+})();
+
+// This fills in the project label on every page, and adds the installed plugins' pages
+// (orchestra/plugins.py) after Orchestra's own.
 fetch("/api/project").then((r) => r.json()).then((p) => { const el = $("proj"); if (el) el.textContent = p.key; }).catch(() => {});
 fetch("/api/plugins").then((r) => r.json()).then((d) => {
   const nav = $("nav"), at = $("proj");
