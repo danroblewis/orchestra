@@ -45,6 +45,10 @@ tides, space weather, earthquakes, river flow, flights, Wikipedia, Hacker News, 
 grids, the London Tube) is the first instance of step 1; almost all of it is noise on purpose,
 which makes it a test of whether discovery is fooled.
 
+Its second half, influencing and replacing (the environment as an actor, ghost machines inferred
+from fitted rates, leverage points, shadow-and-swap, distilling an agent into a program, and how
+many flows one machine should own), is `docs/proposals/environment-and-ghost-machines.md`.
+
 What it needs that is not built: script and scrape collectors (being built), each series' real
 resolution respected by discovery (H1), an impulse-injection machine and the tests that read it
 (H1–H2), the recurring agent loop as a machine any user can declare (H2), the model readable by

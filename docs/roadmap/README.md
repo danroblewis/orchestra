@@ -108,6 +108,16 @@ discovery fills and corrects it.
 - The Supervisor can read the model (the model tools proposed in `docs/proposals/empty-orchestra.md`
   §10) and nothing else changes it.
 
+- **The environment, ghost machines and leverage points**
+  (`docs/proposals/environment-and-ghost-machines.md`):
+  - flows with no machine are shown as set by the environment;
+  - groups of fitted rates are promoted to inferred ("ghost") machines, with their inputs,
+    outputs and origin;
+  - the model marks the stocks and flows a machine could act on, ranked by how much each would
+    move;
+  - it flags stocks steered by more than one machine, and hand-off stocks that only exist
+    because of a split ("one machine per decision rule; never two steering one stock").
+
 ### H3: the first real user story (weeks 5–8)
 
 What is the owner's alone (their company's systems, FedRAMP data classes, posting as them) is a
@@ -117,6 +127,12 @@ machines. The model carries the stocks in `docs/user-story-equations.md`; the ga
 record (1.4, 1.8, 1.11) are reproduced or refuted on the measured system, never tuned away.
 The company boundary is crossed only through connectors and the outbox; nothing speaks as the
 owner without an unedited-approval run behind it.
+
+Alongside it, **shadow and swap**: a candidate machine runs in shadow mode, with its would-be
+flows compared against the real ones; it takes over a flow only where it matches, and the next
+era verifies the swap against the ghost's prediction. The first use is distilling a rule-like
+part of an AI agent's work into a program, with the agent kept as the fallback for what the
+program does not match.
 
 ### H4: the coupled model (after H3)
 
