@@ -45,6 +45,25 @@ def _dur(seconds: float) -> str:
     return f"{max(1, math.ceil(seconds))}s"
 
 
+def _origin(url: str) -> tuple:
+    u = urllib.parse.urlsplit(url)
+    return u.scheme.lower(), (u.hostname or "").lower(), u.port or {"http": 80, "https": 443}.get(u.scheme.lower())
+
+
+class SameOriginRedirects(urllib.request.HTTPRedirectHandler):
+    """Follows a redirect only to the same scheme, host and port. urllib's default copies every
+    header, the credentials included, to wherever a redirect points (another host, or https to
+    http); this refuses instead, so they never leave the server they were meant for."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urljoin(req.full_url, newurl)
+        if _origin(target) != _origin(req.full_url):
+            s, h, p = _origin(target)
+            raise urllib.error.HTTPError(req.full_url, code, f"redirected to {s}://{h}:{p}, another server; not followed, "
+                                         "so the credentials are not sent there", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 class PrometheusSource:
     def __init__(self, spec: SourceSpec):
         self.spec = spec
@@ -52,6 +71,13 @@ class PrometheusSource:
         self.auth = Auth(spec.auth, spec.insecure)
         self.requests = 0
         self.points = 0
+        self._opener: urllib.request.OpenerDirector | None = None
+
+    def _open(self, req: urllib.request.Request):
+        if self._opener is None:
+            self._opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=self.auth.ssl_context()),
+                                                       SameOriginRedirects())
+        return self._opener.open(req, timeout=self.spec.timeout)
 
     def _call(self, path: str, form: dict | None = None, *, post: bool = True) -> dict | list:
         url = self.spec.url + path
@@ -66,18 +92,26 @@ class PrometheusSource:
         req = urllib.request.Request(url, data=body, headers=headers, method="POST" if body is not None else "GET")
         self.requests += 1
         try:
-            with urllib.request.urlopen(req, timeout=self.spec.timeout, context=self.auth.ssl_context()) as r:
-                doc = json.loads(r.read())
+            with self._open(req) as r:
+                raw = r.read()
         except urllib.error.HTTPError as e:
             raise SourceError(f"{self.spec.where()}{path}: {self._said(e)}") from None
-        except (OSError, ValueError) as e:
+        except OSError as e:
             raise SourceError(f"{self.spec.where()}{path}: {getattr(e, 'reason', None) or e}") from None
+        except ValueError:                  # the HTTP library refusing a header: its message would carry the value
+            raise SourceError(f"{self.spec.where()}{path}: invalid request header (a credential is malformed)") from None
+        try:
+            doc = json.loads(raw)
+        except ValueError as e:
+            raise SourceError(f"{self.spec.where()}{path}: the answer is not JSON ({e})") from None
         if not isinstance(doc, dict) or doc.get("status") != "success":
             raise SourceError(f"{self.spec.where()}{path}: {doc.get('error') if isinstance(doc, dict) else 'not a Prometheus answer'}")
         return doc.get("data")
 
     @staticmethod
     def _said(e: urllib.error.HTTPError) -> str:
+        if 300 <= e.code < 400:
+            return f"HTTP {e.code}: {e.msg}"
         if e.code in (401, 403):
             return f"HTTP {e.code}: the server refused the credentials (check the token or certificate)"
         try:

@@ -119,16 +119,26 @@ def auth_problems(a: AuthSpec, repo_root: Path) -> list[str]:
     return out
 
 
+def _printable(v: str, what: str, where: str) -> str:
+    """``v`` when it can go into a header; a line break or another control character would make
+    the HTTP library refuse the header with the value in its message, so it is refused here,
+    naming only where the value came from."""
+    if any(not c.isprintable() for c in v):
+        raise SourceError(f"{what}: the value in {where} has a line break or control character")
+    return v
+
+
 def _secret(env: str | None, file: str | None, what: str) -> str:
     if env:
         v = os.environ.get(env)
         if not v:
             raise SourceError(f"{what}: environment variable {env} is not set")
-        return v.strip()
+        return _printable(v.strip(), what, f"environment variable {env}")
     try:
-        return _path(file).read_text().strip()
+        v = _path(file).read_text().strip()
     except OSError as e:
         raise SourceError(f"{what}: cannot read {file}: {e.strerror}") from None
+    return _printable(v, what, f"file {file}")
 
 
 class Auth:
@@ -145,7 +155,8 @@ class Auth:
             pw = _secret(a.basic.get("password_env"), a.basic.get("password_file"), "basic password")
             out["Authorization"] = "Basic " + base64.b64encode(f"{a.basic['user']}:{pw}".encode()).decode()
         for h in a.headers:
-            out[h["name"]] = str(h["value"]) if "value" in h else _secret(h.get("value_env"), h.get("value_file"), f"header {h['name']}")
+            out[h["name"]] = (_printable(str(h["value"]), f"header {h['name']}", "orchestra.toml") if "value" in h
+                              else _secret(h.get("value_env"), h.get("value_file"), f"header {h['name']}"))
         return out
 
     def ssl_context(self) -> ssl.SSLContext | None:
