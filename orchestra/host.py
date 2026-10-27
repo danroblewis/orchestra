@@ -13,7 +13,9 @@ In an empty Orchestra it does little, on purpose:
 - it keeps running the commands the project declares (``[[machines]]`` in ``orchestra.toml``) and
   the plugins declare (``Plugin.processes``), through ``orchestra.launcher``, and stops them when
   it stops. Only one host launches for a project (``launcher`` in the runtime record): a second one, started while the
-  first runs, launches nothing, says so, and leaves the first one's record alone."""
+  first runs, launches nothing, says so, and leaves the first one's record alone.
+
+Stopping it (SIGTERM, SIGHUP or Ctrl-C) stops what it launched."""
 
 from __future__ import annotations
 
@@ -22,6 +24,7 @@ import signal
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import datetime
 
 from . import plugins, runtime
@@ -105,7 +108,7 @@ class Host:
         loaded = plugins.load(self.project, self._found)
         for err in loaded.errors:
             self.log(f"plugin {err['plugin']} failed to load, so its processes are not started: {err['error']}")
-        return [Process(p.name, p.command, p.restart, owner=plug.name) for plug in loaded.plugins for p in plug.processes]
+        return [replace(p, owner=plug.name) for plug in loaded.plugins for p in plug.processes]
 
     def _launch(self) -> None:
         """Keep the declared processes running until the host stops, then stop them."""
@@ -152,6 +155,7 @@ class Host:
         runtime.update(self.project, self._register)
         if threading.current_thread() is threading.main_thread():
             signal.signal(signal.SIGTERM, self.stop)
+            signal.signal(signal.SIGHUP, self.stop)       # a closed terminal stops the processes too
         self.events.publish("orchestra.host.started", {"pid": os.getpid()})
         self.events.publish("orchestra.machine.started", {"mode": "continuous", "listens_for": []})
         self.log(f"host started (pid {os.getpid()}) for {self.project.key}")

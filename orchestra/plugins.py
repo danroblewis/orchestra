@@ -27,7 +27,8 @@ The web app mounts what it returns:
   declaration only fills in a machine nobody has seen yet, and names the package a machine
   belongs to;
 - its ``processes``, optionally: the commands ``orchestra run`` keeps running for it
-  (``orchestra.launcher.Process``: a name, a command, a restart policy), such as a scheduler or
+  (``orchestra.launcher.Process``: a name, a command, a restart policy, and how long it may take
+  to stop), such as a scheduler or
   the host of the programs it runs. Orchestra starts them as it starts the project's own
   ``[[machines]]`` and knows nothing else of them.
 

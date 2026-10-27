@@ -6,11 +6,13 @@ A project declares them in ``orchestra.toml``::
     name = "telemetry"                               # letters, digits, . _ -
     command = "uv run python machines/telemetry.py"  # split like a shell would, not run by one
     restart = "always"                               # always (the default) | on-failure | never
+    stop_grace = 10                                  # seconds from SIGTERM to SIGKILL (default 10)
 
 and a plugin in ``Plugin.processes`` (the same ``Process``). Each runs in the repository root
 with ``ORCHESTRA_REPO`` (the root) and ``ORCHESTRA_MACHINE_LOG`` (its log,
 ``<state>/logs/machines/<name>.log``, which gets its output) set, in a process group of its own so
-stopping it stops what it started. One that exits is started again after a pause that doubles
+stopping it stops what it started: SIGTERM to the group, then SIGKILL after its stop grace
+(``stop_grace``, ``STOP_GRACE_S`` unless given). One that exits is started again after a pause that doubles
 with each quick exit (up to a minute); one that fails ``GIVE_UP_AFTER`` times in a row, each
 within ``STABLE_S`` of starting, is given up on, in the host's log, the process's log and on the
 bus (``orchestra.process.gave_up``). ``orchestra.toml`` is read again whenever it changes, so a
@@ -55,6 +57,7 @@ class Process:
     command: str | list[str]
     restart: str = "always"
     owner: str = "project"         # "project", or the plugin that declared it
+    stop_grace_s: float | None = None   # from SIGTERM to SIGKILL when stopping it; None: STOP_GRACE_S
 
     def argv(self) -> list[str]:
         return shlex.split(self.command) if isinstance(self.command, str) else [str(a) for a in self.command]
@@ -74,6 +77,9 @@ def check(p: Process) -> str | None:
         return f"{p.name}: bad command: {e}"
     if p.restart not in RESTARTS:
         return f"{p.name}: restart must be one of {', '.join(RESTARTS)}, not {p.restart!r}"
+    if p.stop_grace_s is not None and (isinstance(p.stop_grace_s, bool) or not isinstance(p.stop_grace_s, int | float)
+                                       or p.stop_grace_s < 0):
+        return f"{p.name}: stop_grace must be a number of seconds, not {p.stop_grace_s!r}"
     return None
 
 
@@ -86,7 +92,8 @@ def from_toml(raw: dict) -> list[Process]:
     for i, m in enumerate(entries):
         if not isinstance(m, dict):
             raise TypeError(f"[[machines]] entry {i + 1} is not a table")
-        out.append(Process(name=m.get("name"), command=m.get("command") or "", restart=m.get("restart", "always")))
+        out.append(Process(name=m.get("name"), command=m.get("command") or "", restart=m.get("restart", "always"),
+                           stop_grace_s=m.get("stop_grace")))
     return out
 
 
@@ -210,15 +217,18 @@ class Launcher:
         self._note(run, f"exited with code {code} after {ran:.1f} s; " + (f"starting again in {delay:g} s" if restart else "not restarted"))
         self.publish("orchestra.process.exited", {"name": run.spec.name, "pid": pid, "code": code, "restart_in": delay})
 
+    def _grace(self, p: Process) -> float:
+        return self.grace if p.stop_grace_s is None else float(p.stop_grace_s)
+
     def _stop(self, runs: list[_Run], why: str) -> None:
-        """Stop these processes and their groups: SIGTERM, then SIGKILL after the grace period."""
+        """Stop these processes and their groups: SIGTERM, then SIGKILL after each one's grace."""
         live = [r for r in runs if r.popen is not None and r.popen.poll() is None]
         for r in live:
             _signal_group(r.popen.pid, signal.SIGTERM)
-        deadline = time.time() + self.grace
-        for r in live:
+        t0 = time.time()
+        for r in sorted(live, key=lambda r: self._grace(r.spec)):
             try:
-                r.popen.wait(timeout=max(0.0, deadline - time.time()))
+                r.popen.wait(timeout=max(0.0, t0 + self._grace(r.spec) - time.time()))
             except subprocess.TimeoutExpired:
                 pass
             _signal_group(r.popen.pid, signal.SIGKILL)
@@ -260,7 +270,8 @@ class Launcher:
     def snapshot(self) -> dict:
         return {n: {"pid": r.popen.pid if r.popen else None, "since": r.started if r.popen else None,
                     "state": r.state, "restarts": r.restarts, "code": r.code, "owner": r.spec.owner,
-                    "command": r.spec.argv(), "log": str(r.log)} for n, r in sorted(self.runs.items())}
+                    "command": r.spec.argv(), "log": str(r.log), "stop_grace_s": self._grace(r.spec)}
+                for n, r in sorted(self.runs.items())}
 
     def _record(self) -> None:
         snap = self.snapshot()
@@ -270,15 +281,28 @@ class Launcher:
 
     def reap_orphans(self) -> None:
         """Stop what a previous host, killed without stopping its processes, left running: each
-        recorded process that is still the same process (its create time matches)."""
+        recorded process that is still the same process (its create time matches). It waits for
+        them to exit, up to each one's grace, and kills what remains, so no replacement started
+        after it overlaps one."""
+        reaped: list[tuple[psutil.Process, float]] = []
         for name, rec in (runtime.read(self.project).get("processes") or {}).items():
             pid, since = rec.get("pid"), rec.get("since")
             try:
-                if pid and since and abs(psutil.Process(pid).create_time() - since) < 1.0:
+                if pid and since and abs((p := psutil.Process(pid)).create_time() - since) < 1.0:
                     _signal_group(pid, signal.SIGTERM)
-                    self.log(f"launcher: stopped {name} (pid {pid}), left running by a previous orchestra run")
+                    reaped.append((p, float(rec.get("stop_grace_s") or self.grace)))
+                    self.log(f"launcher: stopping {name} (pid {pid}), left running by a previous orchestra run")
             except psutil.Error:
                 pass
+        t0 = time.time()
+        for p, grace in sorted(reaped, key=lambda x: x[1]):
+            try:
+                p.wait(timeout=max(0.0, t0 + grace - time.time()))
+            except psutil.TimeoutExpired:
+                self.log(f"launcher: pid {p.pid} did not stop within {grace:g} s; killed")
+            except psutil.Error:
+                pass
+            _signal_group(p.pid, signal.SIGKILL)                     # and whatever it started
 
 
 def _signal_group(pid: int, sig: int) -> None:

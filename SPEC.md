@@ -296,6 +296,7 @@ system it is tested on.
 name = "telemetry"                                  # letters, digits, . _ -
 command = "uv run python machines/telemetry.py"     # split like a shell would, not run by one
 restart = "always"                                  # always (default) | on-failure | never
+stop_grace = 10                                     # seconds from SIGTERM to SIGKILL (default 10)
 ```
 
 and a plugin in `Plugin.processes` (§10.1). The host starts each in the repository root, in a
@@ -307,9 +308,11 @@ host's log, the process's log and the bus (`orchestra.process.gave_up`) say. It 
 its entry changes or the host restarts. The host also publishes `orchestra.process.started` and
 `orchestra.process.exited`. It re-reads `orchestra.toml` whenever the file changes (checked every
 second): a new entry starts, a removed one stops, a changed one restarts; a file that does not
-parse leaves what runs alone. Stopping the host stops every process group it started (SIGTERM, then
-SIGKILL after 10 s); a host started again after being killed first stops what the previous one left
-running. Only one host launches for a project. It holds `launcher` in the runtime record (its
+parse leaves what runs alone. Stopping the host (SIGTERM, SIGHUP or Ctrl-C) stops every process
+group it started: SIGTERM, then SIGKILL after the process's stop grace (`stop_grace` in
+`[[machines]]`, `stop_grace_s` in a `Process`; 10 s unless given, like systemd's
+`TimeoutStopSec`). A host started again after being killed first stops what the previous one left
+running, waits for each to exit up to its grace, kills what remains, and only then starts anything. Only one host launches for a project. It holds `launcher` in the runtime record (its
 pid and its process's create time, so a reused pid is not taken for it), taken under the record's
 lock only when nobody holds it or its holder is dead, and cleared only by that holder when it
 stops. A second host, started while one runs, launches nothing and writes nothing of the
@@ -466,7 +469,7 @@ its own (`orchestra/plugins.py`). It names a function in the entry-point group
 title for the navigation, an HTML file that may use `/static/app.js` and `/static/style.css`), a
 static directory (served at `/plugins/<name>/static`), a FastAPI router (at
 `/api/plugins/<name>`), the processes `orchestra run` should keep running for it (`processes`:
-`orchestra.launcher.Process`, §5.1), and scripts from its static directory that every page loads after its own
+`orchestra.launcher.Process`, §5.1: a name, a command, a restart policy and a stop grace), and scripts from its static directory that every page loads after its own
 (for what must be visible wherever the viewer is, such as the way to reach the package's own pages).
 From those scripts a package may register Dashboard panels (`Orchestra.panels`) and draw the cards
 of the machines it claims (`Orchestra.machineCards`: what is inside Orchestra's machine-card

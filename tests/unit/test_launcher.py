@@ -251,3 +251,42 @@ def test_the_host_launches_the_project_and_plugin_processes_and_stops_them(proje
     assert not t.is_alive()
     assert not any(runtime.alive(p) for p in pids)
     assert "processes" not in runtime.read(project)
+
+
+STUBBORN = "import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\nwhile True: time.sleep(0.1)"
+
+
+def test_an_orphan_that_ignores_sigterm_is_killed_before_reaping_returns(project):
+    p = subprocess.Popen([PY, "-c", STUBBORN], start_new_session=True)
+    try:
+        time.sleep(0.3)                                             # its handler is in place
+        runtime.update(project, lambda d: d.__setitem__("processes", {"old": {"pid": p.pid, "since": psutil.Process(p.pid).create_time(),
+                                                                              "stop_grace_s": 0.5}}))
+        la, _, lines = launcher(project)                            # grace 2 s; the record's own 0.5 s wins
+        t0 = time.time()
+        la.reap_orphans()
+        assert 0.4 < time.time() - t0 < 1.9
+        assert p.wait(timeout=1) == -9                              # dead when reaping returned, not later
+        assert any("did not stop within 0.5 s; killed" in ln for ln in lines)
+    finally:
+        if p.poll() is None:
+            p.kill()
+
+
+def test_each_process_has_its_own_stop_grace(project):
+    (project.repo_root / "orchestra.toml").write_text(
+        f'[[machines]]\nname = "quick"\ncommand = {_toml_list([PY, "-c", STUBBORN])}\nstop_grace = 0.3\n\n'
+        f'[[machines]]\nname = "slow"\ncommand = {_toml_list([PY, "-c", STUBBORN])}\n')
+    la, _, _ = launcher(project)                                   # the launcher's own grace: 2 s
+    until(lambda: all(n in la.runs and la.runs[n].state == "running" for n in ("quick", "slow")), la)
+    time.sleep(0.3)
+    quick, slow = la.runs["quick"].popen, la.runs["slow"].popen
+    assert runtime.read(project)["processes"]["quick"]["stop_grace_s"] == 0.3
+    t0 = time.time()
+    threading.Thread(target=la.stop_all).start()
+    quick.wait(timeout=1.5)
+    assert time.time() - t0 < 1.5 and slow.poll() is None          # killed at its own grace, the other still waits
+    slow.wait(timeout=5)
+    assert time.time() - t0 >= 1.9
+    assert check(Process("x", "true", stop_grace_s="soon")) and check(Process("x", "true", stop_grace_s=-1))
+    assert from_toml({"machines": [{"name": "x", "command": "true", "stop_grace": 30}]})[0].stop_grace_s == 30

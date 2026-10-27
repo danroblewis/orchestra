@@ -94,6 +94,7 @@ Declare it in `orchestra.toml`:
 name = "telemetry"                                  # letters, digits, . _ -
 command = "uv run python machines/telemetry.py"     # split like a shell would, not run by one
 restart = "always"                                  # always (the default) | on-failure | never
+stop_grace = 10                                     # seconds from SIGTERM to SIGKILL (default 10)
 ```
 
 `orchestra run` starts it in the repository root with `ORCHESTRA_REPO` and

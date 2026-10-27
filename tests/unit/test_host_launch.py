@@ -123,3 +123,12 @@ def test_a_reused_pid_is_not_a_live_holder():
     assert not runtime.holds({**me, "since": me["since"] - 3600})  # the same pid, another process
     assert not runtime.holds({"pid": me["pid"]}) and not runtime.holds({})
     assert runtime.launcher({"launcher": {**me, "since": 1.0}}) is None
+
+
+def test_sighup_stops_the_host_and_its_processes(project, hosts):
+    a = hosts("a")
+    until(lambda: (runtime.read(project).get("processes") or {}).get("nap", {}).get("state") == "running")
+    a.send_signal(signal.SIGHUP)                                   # the terminal it ran in was closed
+    a.wait(timeout=30)
+    until(lambda: not sleeps(hosts.n), timeout=5)
+    assert said(a, "host stopped")
