@@ -14,6 +14,7 @@ import pytest
 from fake_prometheus import FakePrometheus
 from helpers import world
 
+from orchestra.sources.fetch import read as read_definition
 from orchestra.sources.infer import infer, probe
 from orchestra.sources.prometheus import PrometheusSource
 from orchestra.sources.rank import rank
@@ -172,3 +173,17 @@ def test_inference_is_cached_and_survives_a_failing_round(fake, tmp_path):
     finally:
         fake.fail_status = None
     assert stale.error.startswith("inference failed") and [d.name for d in stale.kept] == [d.name for d in first.kept]
+
+
+def test_definitions_a_script_adds_in_one_answer_each_have_their_own_id(fake, tmp_path):
+    script = _script(tmp_path, """
+print(json.dumps([{"id": None, "queries": [{"name": "a_total", "query": "sum(app_requests_total)", "kind": "counter"},
+                                           {"name": "b_total", "query": "sum(k8s_requests_total)", "kind": "counter"}], "pin": True}]))
+""")
+    spec = spec_for(fake.url, tmp_path, transform={"queries": script})
+    inf = infer(PrometheusSource(spec), spec, [], tmp_path, END - 7200, END)
+    added = {d.name: d for d in inf.kept if d.family.startswith("script:")}
+    assert set(added) == {"a_total", "b_total"} and added["a_total"].id != added["b_total"].id
+    src = PrometheusSource(spec)
+    for d in added.values():
+        assert read_definition(src, d, "rig", "service", END - 3600, END, 60.0), d.id

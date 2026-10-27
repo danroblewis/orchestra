@@ -66,7 +66,9 @@ def run(path: Path, repo_root: Path, payload: dict, timeout: float) -> list[dict
     return out
 
 
-def _from_script(base: Definition, q: dict, n: int, who: str, spec: SourceSpec) -> Definition:
+def _from_script(base: Definition, q: dict, n: str, who: str, spec: SourceSpec) -> Definition:
+    """One query of an answer as a definition: ``<candidate id>.<n>`` for a rewrite, ``script.<n>``
+    for one the script added (``n`` then names the answer and the query, so no two collide)."""
     name, query, kind = str(q.get("name") or ""), q.get("query"), q.get("kind")
     if not NAME.match(name) or not isinstance(query, str) or not query.strip() or (kind is not None and kind not in KINDS):
         raise TransformError(f"{who}: a rewrite needs a name (lower-case letters, digits, _), a query, and a kind in {sorted(KINDS)}")
@@ -102,7 +104,7 @@ def apply(spec: SourceSpec, repo_root: Path, defs: list[Definition]) -> tuple[li
             dropped.append(replace(base, why=f"dropped by {who}" + (f": {a['reason']}" if a.get("reason") else "")))
             continue
         for n, q in enumerate(queries):
-            d = _from_script(base, q, n if cid is not None else i, who, spec)
+            d = _from_script(base, q, f"{n}" if cid is not None else f"{i}.{n}", who, spec)
             d.pin = bool(a.get("pin", False))
             if cid is None:
                 d.family = f"script:{d.name}"
