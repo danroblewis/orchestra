@@ -239,3 +239,17 @@ def test_a_source_past_its_deadline_is_cut_short_and_missing(tmp_path, monkeypat
     assert took < 2 + 3 + 1, took
     why = reading.missing["rig"]
     assert "reads were not done within the deadline of 2 s" in why and "failed" not in why, why
+
+
+def test_a_source_whose_machine_label_is_machine_prefixes_it_once():
+    from orchestra.sources.fetch import read as read_definition
+    from orchestra.sources.views import Definition
+
+    class Store:
+        def query_range(self, query, start, end, step, until=None):
+            return [({"__name__": "q", "machine": "app", "source": "app"}, [(start, 1.0)])]
+
+    d = Definition(id="q", source="owner", name="q", family="q", view="sum_by", kind="level", query="q", resolution_s=60.0)
+    for machine in ("machine", "source", None):
+        (_, labels, _, _), = read_definition(Store(), d, "owner", machine, 0.0, 60.0, 60.0)
+        assert labels == {"machine": "owner.app", "source": "owner.app"}, machine

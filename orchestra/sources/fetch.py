@@ -167,11 +167,12 @@ def read(source: Source, d: Definition, prefix: str, machine: str | None, start:
         lab = {d.rename.get(k, k): v for k, v in labels.items() if k != "__name__"}
         lab.update(d.extra_labels)
         counted = resolve(d.traffic, lab, prefix, producers) if d.traffic else None
+        named = lab.get(machine) if machine else None   # read before the prefixing below: `machine` may be "machine"
         for k in ("machine", "source"):           # the labels discovery reads machines from: never an own machine's name
             if lab.get(k):
                 lab[k] = f"{prefix}.{lab[k]}"
-        if machine and lab.get(machine):
-            lab["machine"] = f"{prefix}.{lab[machine]}"
+        if named:
+            lab["machine"] = f"{prefix}.{named}"
         if counted and counted["machine"]:
             lab["machine"] = counted["machine"]
         elif counted and lab.get("machine"):           # no template, but the source's machine label names it
