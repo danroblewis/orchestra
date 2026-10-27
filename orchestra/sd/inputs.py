@@ -3,7 +3,7 @@ a demand, the weather), offered one per machine.
 
 Left out: counters, the stocks' own series and their twins, Orchestra's plumbing, levels that did
 not move or are not written on a schedule, and the levels conservation left out as flags (a
-two-valued level that merely moves with the work: a baker is busy or not). A flag as a driver only
+level of 0 and 1 that merely moves with the work: a baker is busy or not). A flag as a driver only
 restates that work was happening. A gauge written per instance (``bakery_baker_busy{instance="1"}``, and 2 and 3) is
 one input per machine, the instances summed (how many bakers are busy): a model is about
 machines, not their instances, and one flow per instance is not a model."""

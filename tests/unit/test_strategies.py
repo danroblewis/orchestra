@@ -312,3 +312,31 @@ def test_a_strategy_runs_in_a_process_of_its_own_under_a_deadline():
     from orchestra.sd.bounded import Late, run_jobs
     with _pytest.raises(Late, match="its process failed"):
         run_jobs([("no_such_strategy", [], {"t": [0, 1], "levels": {}}, {})], deadline=60)
+
+
+def test_past_its_deadline_a_strategy_process_is_stopped_with_every_process_it_started(tmp_path):
+    # a strategy that works in a pool of worker processes: at the deadline its whole process
+    # group is killed, the workers too, not only the process the jobs were handed to
+    import os
+    import sys
+    import time as _time
+
+    from orchestra.sd.bounded import Late, _bounded
+
+    pidfile = tmp_path / "grandchild.pid"
+    script = (f"import subprocess, sys, time; p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
+              f"open({str(pidfile)!r}, 'w').write(str(p.pid)); time.sleep(60)")
+    started = _time.monotonic()
+    with pytest.raises(Late, match="stopped at its deadline"):
+        _bounded([sys.executable, "-c", script], "", 2.0)
+    assert _time.monotonic() - started < 10
+    pid = int(pidfile.read_text())
+    for _ in range(50):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        _time.sleep(0.1)
+    else:
+        os.kill(pid, 9)
+        raise AssertionError(f"the strategy's worker {pid} outlived the deadline")

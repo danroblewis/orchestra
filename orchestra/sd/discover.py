@@ -80,7 +80,7 @@ from .model import Equation, Flow, Machine, Model, SeriesRef, Stock
 from .netflow import stocks as net_flow_stocks
 from .parsimony import fewer_counters
 from .passing import passages
-from .resolution import intervals_with, steps_of
+from .resolution import LINEAR, intervals_with, real_points, steps_of
 from .restate import split_event_counters, split_foreign_counters, unify_same_flows
 from .series import (
     EVENT_COUNTER,
@@ -748,9 +748,10 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
 
     def fits(s: Series, r2: float, exact: float) -> bool:
         """A balance a level may be a stock on: a level that only ever takes two values is usually
-        a flag (a baker is busy or not), and least squares will balance a flag with counters that
-        merely move with it; it is a stock only when counters balance it exactly (a shelf that
-        holds nothing or one item)."""
+        a flag (a baker is busy or not: 0 and 1) or changed too seldom to tell (a day's length,
+        612 then 613 minutes), and least squares will balance it with counters that merely move
+        with it; it is a stock only when counters balance it exactly (a shelf that holds nothing
+        or one item)."""
         return r2 >= MIN_R2 and (exact >= FLAG_EXACT or len({v for _, v in s.points}) > 2)
     for s in series:
         if s.counter:
@@ -781,8 +782,15 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             if key not in solvers and mine:
                 solvers[key] = LeastSquares(columns(s, mine, steps))
             terms, r2, exact = balance(s, mine, solvers.get(key), steps)
-        if len({v for _, v in s.points}) <= 2 and not backlog and not (terms and fits(s, r2, exact)):
-            left_out[s.key] = "a flag (it only ever takes two values, and no counters balance it exactly), not a quantity that accumulates"
+        values = {v for _, v in s.points}
+        if len(values) <= 2 and not backlog and not (terms and fits(s, r2, exact)):
+            if values == {0.0, 1.0}:
+                left_out[s.key] = "a flag (it only ever takes 0 and 1, and no counters balance it exactly), not a quantity that accumulates"
+            else:
+                times = len(real_points(s.points, LINEAR)) - 1
+                left_out[s.key] = (f"a level that changed only {times} time{'s' if times != 1 else ''}, between two values "
+                                   f"({', '.join(f'{v:g}' for v in sorted(values))}): too few to tell a balance from coincidence, "
+                                   "and no counters balance it exactly")
             continue
         if terms and r2 >= MIN_R2:
             found.append((s, terms, r2, exact))
