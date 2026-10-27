@@ -23,12 +23,12 @@ def test_a_collector_that_only_writes_after_announcing_stays_active(tmp_path):
     assert written == {("telemetry", ""): T0 + 300, ("sampler", "2"): T0 + 290}
 
     now = T0 + 310                                            # five minutes after the announcement
-    seen = {m["id"]: m for m in machines_view(started, [], now=now, written=written)["machines"]}
+    seen = {m["id"]: m for m in machines_view(started, now=now, written=written)["machines"]}
     assert seen["telemetry"]["active"] and seen["telemetry"]["last_seen"] == T0 + 300
     assert seen["sampler"]["active"] and seen["sampler"]["instances"][0]["active"]
     assert seen["sampler"]["instances"][0]["last_seen"] == T0 + 290
 
-    unseen = {m["id"]: m for m in machines_view(started, [], now=now)["machines"]}
+    unseen = {m["id"]: m for m in machines_view(started, now=now)["machines"]}
     assert not unseen["telemetry"]["active"]                  # by its events alone, it looks stopped
 
 
@@ -39,7 +39,7 @@ def test_an_announced_name_and_group_are_read_and_the_latest_announcement_stands
            started("telemetry", "2026-09-21T13:46:42Z"),
            started("person.cy", "2026-09-21T13:46:43Z", name="Cy", team="editor"),
            started("person.cy", "2026-09-21T13:50:00Z", name="Cy")]             # Cy left the team
-    seen = {m["id"]: m for m in machines_view(evs, [], now=T0)["machines"]}
+    seen = {m["id"]: m for m in machines_view(evs, now=T0)["machines"]}
     assert (seen["person.al"]["name"], seen["person.al"]["group"]) == ("Alice Liddell", "editor")
     assert seen["person.al"]["about"] == {"team": "editor", "github": "alice"}        # the rest still goes to the card
     assert seen["person.bo"]["group"] == "sre"
@@ -66,7 +66,7 @@ def test_a_machine_is_active_within_its_own_cadence_fast_or_slow(tmp_path):
     written, beats = last_writes(dumped, T0 + 720), write_cadence(dumped, T0 + 720)
 
     def active(now):
-        return {m["id"]: m["active"] for m in machines_view(evs, [(n, lab) for n, lab, _ in dumped], now=now, written=written, write_beats=beats)["machines"]}
+        return {m["id"]: m["active"] for m in machines_view(evs, now=now, written=written, write_beats=beats)["machines"]}
 
     assert active(T0 + 720 + 300) == {"orchestra-host": False, "tides": True, "bitcoin": False}     # 5 min into a 6 min round
     assert active(T0 + 720 + 100)["bitcoin"]
@@ -75,15 +75,15 @@ def test_a_machine_is_active_within_its_own_cadence_fast_or_slow(tmp_path):
     # nothing announced: the cadence it is observed at, by its writes or its events
     # a machine that announced itself once and then only writes its own series stays active while
     # they keep coming; a series alone, with nothing on the bus, makes no machine
-    seen = machines_view([announce("creek", T0, mode="scheduled")], [("creek_cfs", {"machine": "creek"})], now=T0 + 720 + 1200,
+    seen = machines_view([announce("creek", T0, mode="scheduled")], now=T0 + 720 + 1200,
                          written={("creek", ""): T0 + 720}, write_beats={("creek", ""): 900.0})
     assert {m["id"]: m["active"] for m in seen["machines"]}["creek"]
-    alone = machines_view([], [("river_cfs", {"machine": "river"})], now=T0, written={("river", ""): T0}, write_beats={("river", ""): 900.0})
+    alone = machines_view([], now=T0, written={("river", ""): T0}, write_beats={("river", ""): 900.0})
     assert "river" not in {m["id"] for m in alone["machines"]}
     talk = [{"type": "work.done", "source": "worker/1", "time": iso(T0 + 300 * k)} for k in range(4)]
-    seen = {m["id"]: m for m in machines_view(talk, [], now=T0 + 900 + 600)["machines"]}
+    seen = {m["id"]: m for m in machines_view(talk, now=T0 + 900 + 600)["machines"]}
     assert seen["worker"]["active"] and seen["worker"]["instances"][0]["cadence_s"] == {"events": 300, "writes": None}
-    assert not machines_view(talk, [], now=T0 + 900 + 900)["machines"][1]["active"]
+    assert not machines_view(talk, now=T0 + 900 + 900)["machines"][1]["active"]
 
 
 def test_nothing_stamped_in_the_future_makes_a_machine_look_alive(tmp_path):
@@ -94,11 +94,11 @@ def test_nothing_stamped_in_the_future_makes_a_machine_look_alive(tmp_path):
     dumped = store.dump("", {"project": "p"})
     written = last_writes(dumped, now)
     assert written == {("telemetry", ""): now - 7200 + 60}
-    seen = {m["id"]: m for m in machines_view([announce("telemetry", now - 7200)], [(n, lab) for n, lab, _ in dumped], now=now, written=written,
+    seen = {m["id"]: m for m in machines_view([announce("telemetry", now - 7200)], now=now, written=written,
                                                        write_beats=write_cadence(dumped, now))["machines"]}
     assert not seen["telemetry"]["active"]
     ahead = [{"type": "work.done", "source": "clock_ahead", "time": iso(now + 13 * 3600)}]
-    m = {m["id"]: m for m in machines_view(ahead, [], now=now + 1)["machines"]}["clock_ahead"]
+    m = {m["id"]: m for m in machines_view(ahead, now=now + 1)["machines"]}["clock_ahead"]
     assert m["last_seen"] <= now + 1
 
 
@@ -107,7 +107,7 @@ def test_kind_and_mode_belong_to_instances_and_a_machine_whose_instances_differ_
            announce("worker/2", T0 + 1, mode="continuous", kind="agent"),
            announce("worker/shell", T0 + 2, mode="continuous", kind="program"),              # announced last
            announce("baker/1", T0, mode="ad hoc", kind="program"), announce("baker/2", T0, mode="ad hoc", kind="program")]
-    seen = {m["id"]: m for m in machines_view(evs, [], now=T0 + 10)["machines"]}
+    seen = {m["id"]: m for m in machines_view(evs, now=T0 + 10)["machines"]}
     assert seen["worker"]["kind"] == "agent ×2, program ×1" and seen["worker"]["kinds"] == {"agent": 2, "program": 1}
     assert seen["worker"]["mode"] == "continuous"
     assert {i["id"]: i["kind"] for i in seen["worker"]["instances"]} == {"1": "agent", "2": "agent", "shell": "program"}

@@ -263,7 +263,7 @@ def create_app(project: Project) -> FastAPI:
         reads, never a read of the bus or a source on request."""
         if not bg.ready("index"):
             return {"ok": False, "error": "reading the event bus for the first time…", "warming": True}
-        out = {"ok": True, **bg.index.view(bg.series, written=bg.written, remote=bg.remote_series, write_beats=bg.write_beats)}
+        out = {"ok": True, **bg.index.view(written=bg.written, write_beats=bg.write_beats, flows=bg.flows)}
         merge_counted(out, bg.counted, time.time())
         if bg.counted and bg.counted.get("failed"):
             out["counted_failed"] = bg.counted["failed"]
@@ -281,21 +281,6 @@ def create_app(project: Project) -> FastAPI:
     def machine_events(machine: str) -> dict:
         """A machine's last events, newest first: envelopes only."""
         return {"ok": True, "machine": machine, "events": bg.index.events_of(machine)}
-
-    @app.get("/api/machines/{machine}/metrics")
-    def machine_metrics(machine: str) -> dict:
-        """The latest value of each series labelled with this machine."""
-        out = []
-        for name, labels in bg.series:
-            if labels.get("machine") != machine:
-                continue
-            try:
-                last = core.metrics.latest(name, labels) if core.metrics is not None else None
-            except Exception:  # noqa: BLE001 - one bad series does not hide the rest
-                last = None
-            out.append({"name": name, "labels": {k: v for k, v in labels.items() if k not in ("project", "machine")},
-                        "t": last[0] if last else None, "v": last[1] if last else None})
-        return {"ok": True, "machine": machine, "series": sorted(out, key=lambda x: (x["name"], sorted(x["labels"].items())))}
 
     @app.get("/api/machines/{machine}/log")
     def machine_log(machine: str, instance: str | None = None, lines: int = 200) -> dict:
@@ -431,6 +416,6 @@ def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
                 m["kind"] = m.get("kind") or d.kind
                 continue
             machines.append({"id": d.id, "bootstrap": False, "mode": d.mode, "kind": d.kind, "package": pkg, "about": {},
-                             "unseen": True, "publishes": [], "subscribes": list(d.listens_for), "metrics": [], "logs": [],
+                             "unseen": True, "publishes": [], "subscribes": list(d.listens_for), "flows": [], "logs": [],
                              "instances": [], "first_seen": None, "last_seen": None, "active": False})
     return declare

@@ -1,6 +1,6 @@
 // A machine's dialog, on any page that lists machines (the Machines page, the Dashboard): what it
-// is, its instances, what it publishes and listens for, its metrics now, its last events and the
-// tail of its log, refreshed while open. A machine its package claims opens the package's own
+// is, its instances, what it publishes and listens for, the flows it is hypothesised to be
+// associated with, its last events and the tail of its log, refreshed while open. A machine its package claims opens the package's own
 // dialog instead (Orchestra.machineCards). The page says where its machines are:
 // Orchestra.machineList = () => [...].
 window.Orchestra = window.Orchestra || {};
@@ -12,7 +12,7 @@ const mcolor = (id) => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCo
 const kindWord = (kind) => kind || "machine";
 
 // a machine's dialog: what it is, its instances, what it publishes and listens for, its counted
-// traffic on another system's bus, its metrics now, its last events and the tail of its log
+// traffic on another system's bus, its hypothesised flows, its last events and the tail of its log
 // (refreshed while open)
 let OPEN = null, OPEN_TIMER = null, LOG_INST = null;
 function closeMachine() { OPEN = null; clearInterval(OPEN_TIMER); $("drawer").classList.remove("mdlg"); closeDrawer(); }
@@ -31,7 +31,7 @@ function openMachine(id) {
     <h4>Publishes</h4>${m.publishes.length ? `<table class="dt"><tr><th>event type</th><th>all time</th><th>last 24h</th><th>last 10 min</th></tr>${m.publishes.map((p) => `<tr><td class="num">${esc(p.type)}</td><td class="num">${p.count}</td><td class="num">${p.day}</td><td class="num">${p.per_min_10m}/min</td></tr>`).join("")}</table>` : '<div class="muted">nothing</div>'}
     <h4>Listens for</h4><div class="row">${m.subscribes.map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">nothing announced</span>'}</div>
     ${(m.counted || []).length ? `<h4>Counted traffic <span style="text-transform:none;letter-spacing:0;font-weight:400">(counts a source read from another system's bus; never events)</span></h4><table class="dt"><tr><th>channel</th><th></th><th>last 10 min</th><th>last hour</th><th>waiting</th></tr>${m.counted.map((t) => `<tr><td class="num">${esc(t.channel)}</td><td>${t.direction === "out" ? "produces into" : t.direction === "in" ? "consumes from" : "its backlog"}</td><td class="num">${t.direction === "backlog" ? "" : `${t.per_min}/min`}</td><td class="num">${t.direction === "backlog" ? "" : Math.round(t.window).toLocaleString()}</td><td class="num">${t.backlog == null ? "" : Math.round(t.backlog).toLocaleString()}</td></tr>`).join("")}</table>` : ""}
-    <h4>Metrics now</h4><div id="m-metrics" class="muted">reading…</div>
+    <h4>Flows <span style="text-transform:none;letter-spacing:0;font-weight:400">(hypotheses: its events match the flow's counter in time, which is not a cause)</span></h4>${(m.flows || []).length ? `<table class="dt"><tr><th>flow</th><th>confidence</th><th>its events</th><th>why</th></tr>${m.flows.map((f) => `<tr><td>${esc(f.name || f.flow)}</td><td class="num">${f.confidence != null ? `${Math.round(100 * f.confidence)}%` : "—"}</td><td class="num">${esc((f.events || {}).type || "")}</td><td class="muted">${esc(f.why || "")}</td></tr>`).join("")}</table>` : '<div class="muted">none hypothesised yet: no flow of the latest model matches its events</div>'}
     <h4>Last events <span style="text-transform:none;letter-spacing:0;font-weight:400">(envelopes; the data is the machine's own)</span></h4><div id="m-events" class="muted">reading…</div>`);
   machineDetail();
   clearInterval(OPEN_TIMER); OPEN_TIMER = setInterval(() => { if (!$("overlay").classList.contains("open")) return closeMachine(); machineDetail(true); }, 5000);
@@ -39,12 +39,10 @@ function openMachine(id) {
 async function machineDetail(refresh) {
   const id = OPEN; if (!id) return;
   const m = Orchestra.machineList().find((x) => x.id === id) || { logs: [] }, q = encodeURIComponent(id);
-  const [mx, ev, lg] = await Promise.all([
-    refresh ? null : fetch(`/api/machines/${q}/metrics`).then((r) => r.json()).catch(() => null),
+  const [ev, lg] = await Promise.all([
     fetch(`/api/machines/${q}/events`).then((r) => r.json()).catch(() => null),
     fetch(`/api/machines/${q}/log?lines=300` + (LOG_INST ? `&instance=${encodeURIComponent(LOG_INST)}` : "")).then((r) => r.json()).catch(() => null)]);
   if (OPEN !== id) return;
-  if (mx) $("m-metrics").innerHTML = mx.series && mx.series.length ? `<table class="dt"><tr><th>series</th><th>labels</th><th>now</th><th>written</th></tr>${mx.series.map((x) => `<tr><td class="num">${esc(x.name)}</td><td class="num muted">${esc(Object.entries(x.labels).map(([k, v]) => `${k}="${v}"`).join(", "))}</td><td class="num">${x.v == null ? "—" : Charts_num(x.v)}</td><td class="muted">${x.t ? ago(Date.now() / 1000 - x.t) + " ago" : ""}</td></tr>`).join("")}</table>` : `<span class="muted">no series labelled machine="${esc(id)}"</span>`;
   if (ev) $("m-events").innerHTML = ev.events && ev.events.length ? `<table class="dt"><tr><th>when</th><th>type</th><th>instance</th><th>subject</th></tr>${ev.events.slice(0, 15).map((e) => `<tr><td class="muted">${e.t ? new Date(e.t * 1000).toLocaleTimeString() : ""}</td><td class="num">${esc(e.type)}</td><td class="num">${esc(e.instance || "")}</td><td class="num muted">${esc(e.subject || "")}</td></tr>`).join("")}</table>` : '<span class="muted">none since the web server started reading the bus</span>';
   $("m-loginst").innerHTML = (m.logs || []).length > 1 ? m.logs.map((i) => `<button class="${i === LOG_INST ? "on" : ""}" onclick="LOG_INST='${esc(i)}';machineDetail(true)">${esc(i)}</button>`).join("") : "";
   const box = $("m-log"), atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 8;
@@ -52,4 +50,3 @@ async function machineDetail(refresh) {
   else { box.innerHTML = ""; $("m-lognote").textContent = lg ? lg.error : "the log could not be read"; }
   if (atEnd || !refresh) box.scrollTop = box.scrollHeight;
 }
-const Charts_num = (v) => (Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : Math.abs(v) >= 10 ? (+v).toFixed(1) : (+v).toPrecision(3).replace(/\.?0+$/, ""));

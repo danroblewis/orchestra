@@ -98,7 +98,7 @@ def merge(view: dict, summary: dict | None, now: float) -> None:
         m = seen.get(mid)
         if m is None:
             m = {"id": mid, "bootstrap": False, "mode": None, "kind": None, "package": None, "about": {}, "publishes": [],
-                 "subscribes": [], "metrics": [], "logs": [], "instances": [], "first_seen": None, "last_seen": None,
+                 "subscribes": [], "flows": [], "logs": [], "instances": [], "first_seen": None, "last_seen": None,
                  "active": False, "counted_only": True}
             view["machines"].append(m)
         if not m.get("first_seen") and not m.get("publishes"):

@@ -24,11 +24,10 @@ Everything here is observed, or announced by the machine itself:
   rest the machine's latest announcement stands, and what is left of it is passed to the
   package's card unread;
 - **publishes**: the event types its instances emitted, with counts (all time and the last day);
-- **metrics**: the series in the metrics store labelled ``machine=<id>`` (shown on a machine's card
-  when it is a machine; a series alone never makes one), and the series read from
-  another store (``[[sources]]``) that the latest discovery found labelled with it: such a
-  machine is marked ``from_source`` (the source's name), read from the discovery record, never by
-  querying the source from the page;
+- **flows**: the flows of the latest discovery the machine is hypothesised to be associated with
+  (``sd.attribute``: its events match a flow's counter in time), each with its confidence and
+  why. A hypothesis, never a fact; a series, whoever wrote it or whatever it is labelled, never
+  belongs to a machine and is not listed (AGENTS.md rule 7);
 - **when it was last seen**: its latest event or its latest write to a series labelled with it
   (``instance=<n>`` too, for an instance), whichever is later, so a machine that announces itself
   once and then only writes measurements stays active while its writes keep coming. Never in the
@@ -183,27 +182,19 @@ class MachineIndex:
             logs = self.logs.get(machine) or {}
             return logs.get(instance or "") if instance is not None else next(iter(logs.values()), None)
 
-    def view(self, series: list[tuple[str, dict]], now: float | None = None,
-             written: dict[tuple[str, str], float] | None = None, remote: list[tuple[str, dict, str]] | None = None,
-             write_beats: dict[tuple[str, str], float] | None = None) -> dict:
+    def view(self, now: float | None = None, written: dict[tuple[str, str], float] | None = None,
+             write_beats: dict[tuple[str, str], float] | None = None, flows: dict[str, list[dict]] | None = None) -> dict:
         """``written``: the latest write of each (machine, instance) (``last_writes``);
-        ``remote``: series read from other stores, with their source (``remote_series``);
-        ``write_beats``: the gap each (machine, instance) is observed to write at (``write_cadence``)."""
+        ``write_beats``: the gap each (machine, instance) is observed to write at (``write_cadence``);
+        ``flows``: each machine's hypothesised flows (``flow_hypotheses``)."""
         now = now or time.time()
         written = written or {}
         write_beats = write_beats or {}
+        flows = flows or {}
         with self._lock:
             for q in [*self.recent.values(), *self.recent_handoffs.values()]:
                 while q and q[0] < now - DAY:
                     q.popleft()
-            metrics: dict[str, set] = defaultdict(set)
-            from_source: dict[str, str] = {}
-            for name, labels, source in [*((n, lab, None) for n, lab in series), *(remote or [])]:
-                if labels.get("machine"):
-                    extra = ",".join(f'{k}="{v}"' for k, v in sorted(labels.items()) if k not in ("project", "machine", "instance"))
-                    metrics[labels["machine"]].add(name + (f"{{{extra}}}" if extra else ""))
-                    if source:
-                        from_source.setdefault(labels["machine"], source)
             # machines are what the bus shows; a series labelled with a name makes no machine
             ids = sorted(set(self.total) | set(self.subs) | set(self.instances) | {HOST}, key=lambda m: (m != HOST, m))
             machines = []
@@ -234,11 +225,10 @@ class MachineIndex:
                                  "kind": of_instances(kinds) or ("program" if m == HOST else None), "kinds": dict(kinds),
                                  "package": self.package.get(m), "name": self.name.get(m), "group": self.group.get(m),
                                  "about": self.about.get(m, {}), "publishes": pubs,
-                                 "subscribes": sorted(self.subs.get(m, ())), "metrics": sorted(metrics.get(m, [])),
+                                 "subscribes": sorted(self.subs.get(m, ())), "flows": flows.get(m, []),
                                  "logs": sorted(i or m for i in self.logs.get(m, {})),
                                  "instances": [i for i in insts if i["id"] != m] if any(k for k in self.instances[m]) else [],
-                                 "first_seen": first, "last_seen": last, "active": alive,
-                                 **({"from_source": from_source[m]} if m in from_source else {})})
+                                 "first_seen": first, "last_seen": last, "active": alive})
             types = sorted({p["type"] for x in machines for p in x["publishes"]} | {t for x in machines for t in x["subscribes"]})
             edges = [{"from": x["id"], "to": p["type"], "kind": "publishes", "count": p["count"], "day": p["day"]}
                      for x in machines for p in x["publishes"]]
@@ -268,22 +258,18 @@ def of_instances(counts: Counter) -> str | None:
     return ", ".join(f"{v} ×{n}" for v, n in sorted(counts.items(), key=lambda x: (-x[1], x[0])))
 
 
-def remote_series(model) -> list[tuple[str, dict, str]]:
-    """The series of another store (``[[sources]]``) a discovered model is bound to and that name
-    a machine (its stocks', its flows' and its machines' series), with their source: what the
-    Machines page knows of remote machines, read from the discovery record."""
-    if model is None:
-        return []
-    refs = [s.series for s in model.stocks] + [r for f in model.flows for r in [f.counter, *f.measured_by]]
-    refs += [r for m in model.machines for r in m.observed_by]
-    seen, out = set(), []
-    for r in refs:
-        if r is not None and r.source not in (None, "own") and r.labels.get("machine"):
-            key = (r.name, tuple(sorted(r.labels.items())))
-            if key not in seen:
-                seen.add(key)
-                out.append((r.name, dict(r.labels), r.source))
-    return out
+def flow_hypotheses(model) -> dict[str, list[dict]]:
+    """The flows of a discovered model each machine is hypothesised to be associated with
+    (``flow.evidence["machines"]``, ``sd.attribute``), best first: what a machine's card says of
+    its part in the model. A model saved before 2026-10-27 named machines by a label, not a
+    hypothesis, and gives none."""
+    out: dict[str, list[dict]] = defaultdict(list)
+    for f in (model.flows if model is not None else []):
+        for h in ((f.evidence or {}).get("machines") or {}).get("hypotheses") or []:
+            if h.get("machine"):
+                out[h["machine"]].append({"flow": f.id, "name": f.name, "confidence": h.get("confidence"), "by": h.get("by"),
+                                          "events": h.get("events"), "why": h.get("why"), "hypothesis": True})
+    return {m: sorted(hs, key=lambda h: (-(h["confidence"] or 0), h["flow"])) for m, hs in out.items()}
 
 
 def _writes(dumped, now: float | None):
@@ -325,10 +311,9 @@ class _ListBus:
         return self.evs[since:][-limit:], len(self.evs)
 
 
-def machines_view(events: list[dict], series: list[tuple[str, dict]], now: float | None = None,
-                  written: dict[tuple[str, str], float] | None = None, remote: list[tuple[str, dict, str]] | None = None,
-                  write_beats: dict[tuple[str, str], float] | None = None) -> dict:
+def machines_view(events: list[dict], now: float | None = None, written: dict[tuple[str, str], float] | None = None,
+                  write_beats: dict[tuple[str, str], float] | None = None, flows: dict[str, list[dict]] | None = None) -> dict:
     """The view over a given list of events (for tests and one-off use)."""
     idx = MachineIndex(_ListBus(events))
     idx.update()
-    return idx.view(series, now, written, remote, write_beats)
+    return idx.view(now, written, write_beats, flows)

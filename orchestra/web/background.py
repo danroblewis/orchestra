@@ -38,7 +38,7 @@ from ..metrics import step_sample
 from ..sd.model import SeriesRef
 from ..sd.store import ModelStore
 from ..sources.catalogue import Catalogue
-from .machines import MachineIndex, last_writes, remote_series, write_cadence
+from .machines import MachineIndex, flow_hypotheses, last_writes, write_cadence
 from .traffic import READ_S, READ_STEP_S, summarise
 
 INDEX_EVERY_S = 5.0
@@ -57,10 +57,9 @@ class Refresher:
         self.metrics = metrics
         self.index = MachineIndex(events)
         self.models = ModelStore.for_state(project.state_dir)
-        self.series: list[tuple[str, dict]] = []
         self.written: dict[tuple[str, str], float] = {}     # (machine, instance) -> its latest write
         self.write_beats: dict[tuple[str, str], float] = {}  # (machine, instance) -> the gap it writes at
-        self.remote_series: list[tuple[str, dict, str]] = []  # series of other stores the latest discovery bound, with their source
+        self.flows: dict[str, list[dict]] = {}   # each machine's hypothesised flows in the latest discovery
         self.own_levels: dict[str, dict] = {}
         self.remote_levels: dict[str, dict] = {}
         self.history: dict = {}
@@ -95,11 +94,10 @@ class Refresher:
     def _series(self) -> None:
         if self.metrics is not None:
             dumped = self.metrics.dump("", {"project": self.project.key})
-            self.series = [(name, labels) for name, labels, _ in dumped]
             now = time.time()
             self.written, self.write_beats = last_writes(dumped, now), write_cadence(dumped, now)
         latest = self.models.latest_discovery()
-        self.remote_series = remote_series(latest[1] if latest else None)
+        self.flows = flow_hypotheses(latest[1] if latest else None)
 
     def _counted(self) -> None:
         if not self.catalogue.specs.sources:

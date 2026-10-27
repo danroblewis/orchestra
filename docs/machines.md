@@ -172,9 +172,9 @@ lists what the program needs.
   which machine does a flow's work.
 - Labels split one measurement into several series (`disk="/"`, `city="Denver"`, `instance="2"`).
   Keep their values few: each value is a series of its own.
-- A `machine` label is kept like any other. A machine seen on the bus lists the series labelled
-  with its name on its card, but a series labelled `machine=X` never makes a machine X and never
-  associates X with a flow.
+- A `machine` label is kept like any other. A series labelled `machine=X` never makes a machine
+  X, is not listed on X's card, and never associates X with a flow: a card lists the flows its
+  events are hypothesised to be associated with.
 
 ## How often
 

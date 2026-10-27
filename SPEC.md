@@ -847,12 +847,13 @@ Read-only for humans. Navigation: Dashboard, Machines, Instruments, Dynamics, Co
   machines that announce nothing, such as a system brought in from outside; and **counted
 traffic** (§2, §4.4): each channel a box with what waits in it, each producer → channel and channel
 → consumer a double line labelled with its rate per minute, a count no machine is attributed to
-coming from or going to a grey "unattributed" stub), its feedback loops, and each machine's
-metrics. A machine known by counted traffic is marked counted on its card, with its rates and
+coming from or going to a grey "unattributed" stub), its feedback loops, and the flows of the
+latest discovery each machine is hypothesised to be associated with, with their confidence (§4.3,
+`sd.attribute`; a series is never a machine's, whatever it is labelled). A machine known by counted traffic is marked counted on its card, with its rates and
 backlogs per channel; its last seen is its last interval with a nonzero count (active within five
 minutes, which allows for the store's scrape interval and the minute between reads). Clicking a machine
   (its card or its node) opens its dialog: instances, what it publishes and listens for, its
-  series' latest values, its last events (envelopes only) and the tail of its announced log,
+  hypothesised flows with their evidence, its last events (envelopes only) and the tail of its announced log,
   refreshed while open.
 - **Instruments:** every instrument (`web/instruments.py`): a script (`[[collect]]`), a URL
   (`[[scrape]]`) or a source (`[[sources]]`), the project's and the plugins', with its target, how

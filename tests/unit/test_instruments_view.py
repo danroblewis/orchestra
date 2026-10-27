@@ -41,5 +41,5 @@ def test_an_instrument_the_host_once_announced_is_no_machine():
     evs = [{"type": "orchestra.machine.started", "source": "goes_protons", "time": "2026-10-26T00:00:00Z",
             "data": {"mode": "scheduled", "kind": "program", "listens_for": [], "collector": "collect", "command": "x"}},
            {"type": "orchestra.machine.started", "source": "worker/1", "time": "2026-10-26T00:00:00Z", "data": {"listens_for": []}}]
-    ids = {m["id"] for m in machines_view(evs, [("goes_proton_flux", {"machine": "goes_protons"})])["machines"]}
+    ids = {m["id"] for m in machines_view(evs)["machines"]}
     assert ids == {"orchestra-host", "worker"}

@@ -61,7 +61,7 @@ def test_a_detector_is_an_instrument_not_a_machine(project, tmp_path):
     evs, _ = Events.for_project(project).read(0, limit=10_000)
     assert not any(e.get("source") == "goes_protons" for e in evs)          # nothing announced for it
     dumped = store.dump("", {"project": project.key})
-    view = machines_view(evs, store.series(""), written=last_writes(dumped))
+    view = machines_view(evs, written=last_writes(dumped))
     assert {m["id"] for m in view["machines"]} == {"orchestra-host"}        # not the detector, nor the satellite it names
 
     log = web.get("/api/instruments/goes_protons/log").json()

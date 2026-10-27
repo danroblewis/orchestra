@@ -11,14 +11,16 @@ for (const f of ["app.js", "machine-dialog.js"]) vm.runInThisContext(fs.readFile
 
 const now = Date.now() / 1000;
 const m = { id: "baker", mode: "ad hoc", kind: "program", package: "bakery", publishes: [{ type: "order.baked", count: 12, day: 12, per_min_10m: 0 }, { type: "oven.opened", count: 40, day: 9, per_min_10m: 0.6 }],
-            subscribes: ["order.assigned"], metrics: ['loaves_total{oven="1"}'], instances: [{ id: "1", first_seen: now - 100, last_seen: now - 5, active: true }], first_seen: now - 100, last_seen: now - 5, active: true };
+            subscribes: ["order.assigned"], flows: [{ flow: "loaves_baked", name: "loaves <baked>", confidence: 0.92, why: "baker's order.baked events match its increments", hypothesis: true }], instances: [{ id: "1", first_seen: now - 100, last_seen: now - 5, active: true }], first_seen: now - 100, last_seen: now - 5, active: true };
 
 test("every card names the package and what the machine listens for, whoever drew its head", () => {
   const rows = Orchestra.machineCards.rows(m);
   assert.match(rows, /package<\/span><span>bakery</);
   assert.match(rows, /listens for<\/span><span class="ty">order.assigned<\/span>/);
   assert.match(rows, /instances<\/span>.*> 1<\/span>/);
-  assert.match(rows, /loaves_total\{oven=&quot;1&quot;\}/);
+  // a machine's part in the model is a hypothesis, with its confidence; a series is never its own
+  assert.match(rows, /flows \(hypotheses\)<\/span><span class="ty" title="baker's order.baked events match its increments">loaves &lt;baked&gt; · 92%</);
+  assert.doesNotMatch(rows, /metrics|labelled machine/);
   const wrapped = Orchestra.machineCards.wrap(m, "<h3>the package's head</h3>" + rows);
   assert.ok(wrapped.startsWith('<div class="panel') && wrapped.includes("the package's head") && wrapped.includes("bakery"));
 });
@@ -27,7 +29,7 @@ test("the mode tag's class has no space in it, and a kind is said as announced",
   const rows = Orchestra.machineCards.rows(m);
   assert.match(rows, /class="tag k-ad_hoc">ad hoc</);
   assert.match(Orchestra.machineCards.rows({ ...m, mode: "continuous", kind: "service" }), /k-continuous">continuous<.*>service</);
-  assert.match(Orchestra.machineCards.rows({ ...m, mode: null, kind: null, package: null, publishes: [], subscribes: [], metrics: [], instances: [], first_seen: null }), /not announced.*not announced.*no package.*no events yet.*nothing.*nothing.*none labelled machine="baker"/s);
+  assert.match(Orchestra.machineCards.rows({ ...m, mode: null, kind: null, package: null, publishes: [], subscribes: [], flows: [], instances: [], first_seen: null }), /not announced.*not announced.*no package.*no events yet.*nothing.*nothing.*none hypothesised yet/s);
 });
 
 test("a publishes chip shows the all-time count, and a rate only when there is one", () => {

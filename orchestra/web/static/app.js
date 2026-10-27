@@ -3,10 +3,10 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const color = (s) => `var(--${s})`;
 // How a machine was seen, one wording wherever it is shown: on the bus (first and last), by its
-// counted traffic only, by its series in another store only, or not yet.
+// counted traffic only, or not yet.
 const seenText = (m, now = Date.now() / 1000) => (m.first_seen ? `first ${ago(now - m.first_seen)} ago, last ${ago(now - m.last_seen)} ago`
   : m.counted_only ? (m.last_seen ? `known by counts only; last counted ${ago(now - m.last_seen)} ago` : "known by counts only")
-  : m.from_source ? `known by its series in ${m.from_source} only` : "no events yet");
+  : "no events yet");
 const ago = (sec) => (sec < 60 ? `${Math.round(sec)}s` : sec < 3600 ? `${Math.round(sec / 60)}m` : `${(sec / 3600).toFixed(1)}h`);
 const fmtBytes = (b) => (b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)} GB` : `${Math.round(b / (1 << 20))} MB`);
 
@@ -36,9 +36,10 @@ Orchestra.machineCards = (() => {
     // What Orchestra observed of a machine, as the rows of its card, drawn under whatever its
     // package put there: how it is engaged and what kind of thing it is (announced), its package,
     // its instances, when it was seen, what it publishes (all time, and the rate in the last ten
-    // minutes when there is one) and listens for, the metrics it writes, and its counted traffic
-    // on another system's bus (rates and backlogs, never events). One function, so every card
-    // shows the same rows.
+    // minutes when there is one) and listens for, its counted traffic on another system's bus
+    // (rates and backlogs, never events), and the flows the latest discovery hypothesises it is
+    // associated with (a match in time; a series never belongs to a machine). One function, so
+    // every card shows the same rows.
     rows(m) {
       const now = Date.now() / 1000;
       const chip = (p) => `<span class="ty" title="${p.count} events, ${p.day} in 24 h, ${p.per_min_10m}/min in the last 10 min">${esc(p.type)} · ${p.count}${p.per_min_10m ? ` · ${p.per_min_10m}/min` : ""}</span>`;
@@ -51,7 +52,7 @@ Orchestra.machineCards = (() => {
     ${(m.counted || []).length ? `<div class="row"><span class="muted">counted</span>${m.counted.map((t) => t.direction === "backlog"
       ? `<span class="ty" title="what waits for it in ${esc(t.channel)}">${esc(t.channel)} · ${Math.round(t.backlog ?? 0).toLocaleString()} waiting</span>`
       : `<span class="ty" title="${Math.round(t.window).toLocaleString()} in the last hour, counted on another system's bus">${t.direction === "out" ? "→" : "←"} ${esc(t.channel)} · ${t.per_min}/min</span>`).join("")}</div>` : ""}
-    <div class="row"><span class="muted">metrics</span>${(m.metrics || []).map((x) => `<span class="ty">${esc(x)}</span>`).join("") || `<span class="muted">none labelled machine="${esc(m.id)}"</span>`}</div>`;
+    <div class="row"><span class="muted" title="flows of the model its events match in time: hypotheses, not causes">flows (hypotheses)</span>${(m.flows || []).map((f) => `<span class="ty" title="${esc(f.why || "")}">${esc(f.name || f.flow)}${f.confidence != null ? ` · ${Math.round(100 * f.confidence)}%` : ""}</span>`).join("") || '<span class="muted">none hypothesised yet</span>'}</div>`;
     },
     rank(m) { if (m.bootstrap) return 0; const s = this.of(m); try { return s && s.rank ? s.rank(m) : 50; } catch (e) { return 50; } },
     sort(ms) { return [...ms].sort((a, b) => this.rank(a) - this.rank(b) || a.id.localeCompare(b.id)); },
