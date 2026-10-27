@@ -92,8 +92,8 @@ timeout = "10s"                  # default 10 s
 The body is read like a collector's output, with the same labels and the same handling of
 failures (anything but a 200, or no answer within the timeout). The machine `app` appears on the
 Machines page as running continuously. Orchestra reads Prometheus's text format only; it does not
-take pushes, and a remote Prometheus server as a data source is planned, not built
-(`docs/roadmap/decisions.md`, D16).
+take pushes. A remote Prometheus-compatible store can also be read in place, without copying,
+under `[[sources]]` (`USING_ORCHESTRA.md`, SPEC §4.4).
 
 ## A long-running program
 

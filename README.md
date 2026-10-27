@@ -5,6 +5,8 @@ bus and a metrics store, and keeps one system dynamics model of it: stocks, flow
 and which machines drive which flows. Its aim is to find the loops between a project's own domain
 and the processes used to develop it.
 
+**Documentation:** [USING_ORCHESTRA.md](USING_ORCHESTRA.md) (add your metrics, connect your machines, configure), [PLUGINS.md](PLUGINS.md) (write a plugin), [ARCHITECTURE.md](ARCHITECTURE.md) (how it works).
+
 This is an **empty Orchestra**: the bus, the metrics store, the model, the bootstrap host and the
 web UI, with no machines of its own. Machines come from other packages. A **plugin** is a package
 installed in the same environment as `orchestra web` that registers itself in the entry-point
