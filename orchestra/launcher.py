@@ -4,7 +4,7 @@ A project declares them in ``orchestra.toml``::
 
     [[machines]]
     name = "telemetry"                               # letters, digits, . _ -
-    command = "uv run python machines/telemetry.py"  # split like a shell would, not run by one
+    command = "python machines/telemetry.py"         # split like a shell would, not run by one
     restart = "always"                               # always (the default) | on-failure | never
     stop_grace = 10                                  # seconds from SIGTERM to SIGKILL (default 10)
 

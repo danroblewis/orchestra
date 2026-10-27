@@ -84,10 +84,15 @@ step = "30s"             # the grid it samples on
 every = "5m"             # how often the host rediscovers
 # [discovery.options]    # passed to the strategy as they are
 
-# The programs `orchestra run` keeps running (docs/machines.md in Orchestra's repository):
+# The programs `orchestra run` keeps running (docs/machines.md in Orchestra's repository). A command
+# runs in the repository root with the PATH `orchestra run` was started with, so `python` is the
+# interpreter Orchestra is installed in when `orchestra run` starts from that environment; use
+# `uv run python ...` only if this project's pyproject.toml depends on Orchestra. Try a program
+# once first (`python machines/telemetry.py --once`); one that exits 0 is started again after a
+# pause, so a one-reading sampler runs about once a minute.
 # [[machines]]
 # name = "telemetry"
-# command = "uv run python machines/telemetry.py"
+# command = "python machines/telemetry.py"
 # restart = "always"     # always, on-failure or never
 """
 

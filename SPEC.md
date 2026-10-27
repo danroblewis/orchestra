@@ -294,7 +294,7 @@ system it is tested on.
 ```toml
 [[machines]]
 name = "telemetry"                                  # letters, digits, . _ -
-command = "uv run python machines/telemetry.py"     # split like a shell would, not run by one
+command = "python machines/telemetry.py"            # split like a shell would, not run by one
 restart = "always"                                  # always (default) | on-failure | never
 stop_grace = 10                                     # seconds from SIGTERM to SIGKILL (default 10)
 ```
@@ -372,7 +372,7 @@ url = "file"            # or http://host:8428 (VictoriaMetrics)
 strategy = "kalman_lna"
 [[machines]]            # the commands `orchestra run` keeps running (§5.1)
 name = "telemetry"
-command = "uv run python machines/telemetry.py"
+command = "python machines/telemetry.py"
 ```
 
 Unknown sections are ignored, so files written for older versions still load, and a package of
