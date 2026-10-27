@@ -2,8 +2,9 @@
 
 A machine is any program of yours that Orchestra observes. This page covers how a program's
 measurements reach the project's metrics store, so they show up in the web UI and are offered to
-discovery, and how to have `orchestra run` keep the program running. Nothing here needs Orchestra's
-library: a script that prints two lines is enough.
+discovery, how it publishes and reads events, and how to have `orchestra run` keep the program
+running. Nothing here needs Orchestra's library: a script that prints two lines is enough, and
+events go over HTTP.
 
 There are three ways, simplest first:
 
@@ -12,7 +13,8 @@ There are three ways, simplest first:
 2. **A scrape** (`[[scrape]]`): `orchestra run` reads a URL that serves Prometheus metrics, such
    as a program's `/metrics` or an exporter's.
 3. **A long-running program** (`[[machines]]`): `orchestra run` keeps it running; it serves its
-   measurements for a scrape, or writes them with the Python helper.
+   measurements for a scrape, or writes them with the Python helper, and publishes events over
+   HTTP ([below](#events)).
 
 All three are declared in `orchestra.toml`, committed with the repository, and take effect within
 seconds of the file changing, without restarting `orchestra run`.
@@ -161,17 +163,42 @@ changed; a collector and a scrape do. A machine is taken to be alive while its w
 a level written only when it changes looks, between writes, like a machine that stopped. The
 `[discovery] step` (30 s by default) is the finest grain discovery sees.
 
-## Events, and the Python helper (optional)
+## Events
 
 Measurements are all most machines need. A machine that also takes part in the event bus (it
-publishes what it did, or listens for what others did) publishes CloudEvents through Orchestra's
-Python helper, `orchestra.events.Events` (`SPEC.md` §2), and announces itself when it starts with
-`orchestra.machine.started`: `mode` (`continuous`, `scheduled` or `ad hoc`), `kind` (`program`),
-`listens_for` (the event types it reads) and `log` (its log file, shown in its dialog when it is
+publishes what it did, or listens for what others did) does it over HTTP, through the events
+endpoint `orchestra run` serves (`SPEC.md` §3.1, `USING_ORCHESTRA.md` §5.2). What it launches gets
+the address in `ORCHESTRA_EVENTS_ENDPOINT` and the token in `ORCHESTRA_EVENTS_TOKEN`; a program it
+did not launch runs `eval "$(orchestra events endpoint --env)"` for both.
+
+```bash
+# announce yourself once, at start: a plain event, from your own source
+curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/events" \
+  -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"type": "orchestra.machine.started", "source": "telemetry",
+       "data": {"mode": "continuous", "kind": "program", "listens_for": ["disk.full"]}}'
+
+# publish what happened; an id of your own makes a retry write it once
+curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/events" \
+  -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"type": "disk.cleaned", "source": "telemetry", "id": "clean-2026-10-27", "data": {"freed_bytes": 1200000}}'
+
+# read what others published after an offset, waiting up to 30 s for one
+curl -sf "$ORCHESTRA_EVENTS_ENDPOINT/events?after=0&types=disk.full&wait=30" \
+  -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN"
+# -> {"ok": true, "events": [...], "next": 42}: read again with after=42
+```
+
+`orchestra.machine.started` takes `mode` (`continuous`, `scheduled` or `ad hoc`), `kind`
+(`program`, `agent`, `person` or `service`), `listens_for` (the event types it reads) and `log`
+(its log file, `$ORCHESTRA_MACHINE_LOG` for a launched process, shown in its dialog when it is
 inside the repository or the state directory). Collectors and scrapes are announced for you.
 
-A Python program may also write its measurements with the helper instead of serving them, in the
-environment Orchestra is installed in (or with Orchestra as a dependency:
+## The Python helper (optional)
+
+A Python program may use Orchestra's library instead: `orchestra.events.Events` publishes and
+reads the same events (`USING_ORCHESTRA.md` §5.2). It may also write its measurements with the
+helper instead of serving them, in the environment Orchestra is installed in (or with Orchestra as a dependency:
 `uv add "orchestra @ git+https://github.com/danroblewis/orchestra"`):
 
 ```python
