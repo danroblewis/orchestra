@@ -109,7 +109,7 @@ def create_app(project: Project) -> FastAPI:
 
     @app.get("/api/dynamics/model")
     def dynamics_model(version: int | None = None) -> dict:
-        return model_view(project, version, bg.levels, bg.errors.get("levels"))
+        return model_view(project, version, bg.levels, bg.levels_error)
 
     rediscovery: dict = {"running": False}
 
@@ -198,7 +198,7 @@ def create_app(project: Project) -> FastAPI:
             if m["bootstrap"]:
                 m["active"] = up
         if bg.errors:
-            out["errors"] = bg.errors
+            out["errors"] = dict(bg.errors)
         return out
 
     @app.get("/api/machines/{machine}/events")

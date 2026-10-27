@@ -1,6 +1,9 @@
 """The web server's background reads, so no page request does expensive work.
 
-One thread keeps three caches warm:
+Two threads keep these caches warm: one the bus, the own store and the levels read from it, the
+other everything read from another store (counted traffic, the levels of stocks bound to a
+remote series, and the history, which may read remotes), so the index, the series and the own
+store's levels never wait on a remote source, which may take up to its timeout:
 - the **machine index** (``machines.MachineIndex``), following the bus every few seconds;
 - the project's **series list** from the metrics store (an export on VictoriaMetrics), every
   minute, with the latest write of each machine's series, which the Machines page counts as
@@ -17,7 +20,10 @@ One thread keeps three caches warm:
   channels and edges.
 
 A stock or flow bound to a series in another store (``SeriesRef.source``, from ``[[sources]]``)
-is read through the sources' catalogue (``orchestra.sources.catalogue``) for the same window.
+is read through the sources' catalogue (``orchestra.sources.catalogue``) for the same window,
+each definition once per round however many stocks and flows are bound to its series. A source
+that fails leaves its stocks without a level and records why (``errors["source <name>"]``);
+every other stock's level and history still update.
 
 Endpoints read the caches and report how old they are. The model itself is rediscovered by the
 bootstrap host, not here (``orchestra.host``); this only reads what the host cached."""
@@ -53,7 +59,8 @@ class Refresher:
         self.models = ModelStore.for_state(project.state_dir)
         self.series: list[tuple[str, dict]] = []
         self.written: dict[tuple[str, str], float] = {}     # (machine, instance) -> its latest write
-        self.levels: dict[str, dict] = {}
+        self.own_levels: dict[str, dict] = {}
+        self.remote_levels: dict[str, dict] = {}
         self.history: dict = {}
         self.counted: dict | None = None                    # counted traffic, summarised (traffic.summarise)
         self.at: dict[str, float] = {}
@@ -61,6 +68,17 @@ class Refresher:
         self.catalogue = Catalogue(project, metrics)
         self._stop = threading.Event()
         threading.Thread(target=self._run, name="web-refresher", daemon=True).start()
+        threading.Thread(target=self._run_remote, name="web-refresher-sources", daemon=True).start()
+
+    @property
+    def levels(self) -> dict[str, dict]:
+        return {**self.own_levels, **self.remote_levels}
+
+    @property
+    def levels_error(self) -> str | None:
+        """Why some levels are missing: a read of them failing, or a source of the model's series."""
+        failed = [f"{k}: {v}" for k, v in list(self.errors.items()) if k in ("levels", "remote_levels") or k.startswith("source ")]
+        return "; ".join(failed) or None
 
     def _do(self, name: str, every: float, fn) -> None:
         if time.time() - self.at.get(name, 0.0) < every:
@@ -89,6 +107,52 @@ class Refresher:
         cached = self.models.latest_discovery()
         return cached[1] if cached and cached[1].stocks else self.models.load()
 
+    def raw_for_round(self):
+        """``raw(ref, start, end)``: a series' points in [start, end], from the own store or
+        through its source; a remote definition is read once per window in a round, however many
+        stocks and flows are bound to its series."""
+        readers: dict[tuple[float, float], object] = {}
+        step = stock_step(self.project.config.discovery_step)
+
+        def raw(ref, start: float, end: float) -> list[tuple[float, float]]:
+            if ref.source and ref.source != "own":
+                if (start, end) not in readers:
+                    readers[(start, end)] = self.catalogue.reader(start, end, step)
+                return readers[(start, end)](ref)
+            return self.metrics.raw(ref.name, ref.labels, start=start, end=end)
+        return raw
+
+    def _note_sources(self) -> None:
+        """The catalogue's source errors, as ``errors["source <name>"]``."""
+        for k in [k for k in list(self.errors) if k.startswith("source ")]:
+            if k.removeprefix("source ") not in self.catalogue.errors:
+                self.errors.pop(k, None)
+        for name, why in list(self.catalogue.errors.items()):
+            self.errors[f"source {name}"] = why
+
+    def _levels(self) -> None:
+        """The levels of the stocks bound to the own store."""
+        model = self.model()
+        out = {}
+        if model is not None and self.metrics is not None:
+            for s in model.stocks:
+                if s.series and s.series.source in (None, "own") and (last := self.metrics.latest(s.series.name, s.series.labels)):
+                    out[s.id] = {"t": last[0], "v": last[1]}
+        self.own_levels = out
+
+    def _remote_levels(self) -> None:
+        """The levels of the stocks bound to another store's series."""
+        model = self.model()
+        out = {}
+        if model is not None:
+            now = time.time()
+            raw = self.raw_for_round()
+            for s in model.stocks:
+                if s.series and s.series.source not in (None, "own") and (pts := raw(s.series, now - 900, now)):
+                    out[s.id] = {"t": pts[-1][0], "v": pts[-1][1]}
+            self._note_sources()
+        self.remote_levels = out
+
     def _history(self) -> None:
         """Each stock's level every ``stock_step``, and each flow's rate (per the model's time
         unit) every FLOW_STEP_S, over the last HISTORY_S."""
@@ -96,33 +160,21 @@ class Refresher:
         if model is None or self.metrics is None:
             self.history = {}
             return
-        self.history = history(model, self.raw, time.time(), stock_step(self.project.config.discovery_step))
-
-    def raw(self, ref, start: float, end: float) -> list[tuple[float, float]]:
-        """A series' points in [start, end]: from the own store, or through its source."""
-        if ref.source and ref.source != "own":
-            return self.catalogue.read_ref(ref, start, end, stock_step(self.project.config.discovery_step))
-        return self.metrics.raw(ref.name, ref.labels, start=start, end=end)
-
-    def _levels(self) -> None:
-        model = self.model()
-        out = {}
-        if model is not None and self.metrics is not None:
-            now = time.time()
-            for s in model.stocks:
-                if s.series:
-                    pts = self.raw(s.series, now - 900, now) if s.series.source not in (None, "own") else None
-                    last = (pts[-1] if pts else None) if pts is not None else self.metrics.latest(s.series.name, s.series.labels)
-                    if last:
-                        out[s.id] = {"t": last[0], "v": last[1]}
-        self.levels = out
+        self.history = history(model, self.raw_for_round(), time.time(), stock_step(self.project.config.discovery_step))
+        self._note_sources()
 
     def _run(self) -> None:
         while not self._stop.is_set():
             self._do("index", INDEX_EVERY_S, self.index.update)
             self._do("series", SERIES_EVERY_S, self._series)
-            self._do("counted", COUNTED_EVERY_S, self._counted)
             self._do("levels", LEVELS_EVERY_S, self._levels)
+            self._stop.wait(1.0)
+
+    def _run_remote(self) -> None:
+        while not self._stop.is_set():
+            self._do("counted", COUNTED_EVERY_S, self._counted)
+            if self.catalogue.specs.sources:
+                self._do("remote_levels", LEVELS_EVERY_S, self._remote_levels)
             self._do("history", HISTORY_EVERY_S, self._history)
             self._stop.wait(1.0)
 

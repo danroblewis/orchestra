@@ -72,6 +72,7 @@ class Catalogue:
         self.specs = specs if specs is not None else for_project(project)
         self.own = OwnSource(metrics, project.key) if metrics is not None else None
         self.remotes = {s.name: PrometheusSource(s) for s in self.specs.sources}
+        self.errors: dict[str, str] = {}            # source -> why the last read of a model's series from it failed (reader)
 
     def spec(self, name: str) -> SourceSpec:
         return next(s for s in self.specs.sources if s.name == name)
@@ -186,22 +187,43 @@ class Catalogue:
             self._remote(spec, start, end, step, own_names, out)
         return out
 
+    def reader(self, start: float, end: float, step: float):
+        """A reader of the remote series a model is bound to (``SeriesRef`` with a ``source``)
+        over one window: ``read(ref)`` gives that series' points, read through the definition of
+        that name in the source's current inference. Each definition is read once and shared by
+        every stock and flow bound to one of its series; a source that fails is tried once, its
+        error kept in ``errors`` (by source name) until a read of it works, and its series read
+        as empty. For the web server's levels and history, and ``orchestra sd show``."""
+        results: dict[tuple[str, str], dict[str, list]] = {}
+        failed: set[str] = set()
+
+        def definition(source: str, name: str) -> dict[str, list]:
+            spec = self.spec(source)
+            inf = self.inference(source, start, end)
+            out: dict[str, list] = {}
+            for d in inf.kept:
+                if f"{spec.prefix}:{d.name}" == name:
+                    for n, labels, pts, _ in read_definition(self.remotes[source], d, spec.prefix, spec.machine, start,
+                                                             end - spec.settle, step, spec.producers):
+                        out[series_key(n, labels)] = pts
+            return out
+
+        def read(ref) -> list[tuple[float, float]]:
+            source = ref.source
+            if source not in self.remotes or source in failed:
+                return []
+            if (source, ref.name) not in results:
+                try:
+                    results[(source, ref.name)] = definition(source, ref.name)
+                    self.errors.pop(source, None)
+                except Exception as e:  # noqa: BLE001 - the series reads as empty; the page shows why
+                    self.errors[source] = why(e)
+                    failed.add(source)
+                    return []
+            return results[(source, ref.name)].get(series_key(ref.name, ref.labels), [])
+        return read
+
     def read_ref(self, ref, start: float, end: float, step: float) -> list[tuple[float, float]]:
-        """The points of one remote series a model is bound to (``SeriesRef`` with a ``source``),
-        read through the definition of that name in the source's current inference: for the web
-        server's levels and history. Empty when the source or the definition is gone."""
-        name = ref.source
-        if name not in self.remotes:
-            return []
-        try:
-            inf = self.inference(name, start, end)
-        except (SourceError, TransformError):
-            return []
-        spec = self.spec(name)
-        for d in inf.kept:
-            if f"{spec.prefix}:{d.name}" == ref.name:
-                for n, labels, pts, _ in read_definition(self.remotes[name], d, spec.prefix, spec.machine, start, end - spec.settle,
-                                                         step, spec.producers):
-                    if series_key(n, labels) == series_key(ref.name, ref.labels):
-                        return pts
-        return []
+        """One remote series' points (``reader``): empty when the source fails (why is in
+        ``errors``) or the definition is gone."""
+        return self.reader(start, end, step)(ref)

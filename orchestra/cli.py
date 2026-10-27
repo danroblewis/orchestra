@@ -114,14 +114,17 @@ def cmd_sd(args) -> int:
     print("\nstocks (latest level):")
     from .sources.catalogue import Catalogue
     cat = Catalogue(project, store)
+    now = time.time()
+    remote = cat.reader(now - 900, now, project.config.discovery_step)
     for s in m.stocks:
-        last = None
+        last, why = None, ""
         if s.series and s.series.source not in (None, "own"):
-            now = time.time()
-            last = (cat.read_ref(s.series, now - 900, now, project.config.discovery_step) or [None])[-1]
+            last = (remote(s.series) or [None])[-1]
+            if s.series.source in cat.errors:
+                last, why = ("unavailable",), f"  ({s.series.source}: {cat.errors[s.series.source]})"
         elif s.series:
             last = store.latest(s.series.name, s.series.labels)
-        print(f"  {s.id:<24} {last[1] if last else '-':>8}")
+        print(f"  {s.id:<24} {last[-1] if last else '-':>8}{why}")
     print("\nflows:")
     for f in m.flows:
         eq = f.current()
