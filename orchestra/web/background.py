@@ -224,11 +224,13 @@ def stock_step(discovery_step: float) -> float:
     return min(STOCK_STEP_S, discovery_step) if discovery_step > 0 else STOCK_STEP_S
 
 
-def history(model, raw, end: float, stock_step: float = STOCK_STEP_S, span_s: float = HISTORY_S) -> dict:
+def history(model, raw, end: float, stock_step: float = STOCK_STEP_S, span_s: float = HISTORY_S,
+            flow_step: float | None = None) -> dict:
     """The model's history over the ``span_s`` (HISTORY_S) before ``end``: each stock's level every
-    ``stock_step``, each flow's rate every FLOW_STEP_S, and the measured inputs the equations read.
-    ``raw(ref, start, end)`` reads one series' points."""
+    ``stock_step``, each flow's rate every ``flow_step`` (FLOW_STEP_S), and the measured inputs the
+    equations read. ``raw(ref, start, end)`` reads one series' points."""
     start = end - span_s
+    fstep = float(flow_step or FLOW_STEP_S)
     unit = {"second": 1.0, "minute": 60.0, "hour": 3600.0}.get(model.time_unit, 60.0)
     stocks, flows = {}, {}
     for s in model.stocks:
@@ -241,9 +243,9 @@ def history(model, raw, end: float, stock_step: float = STOCK_STEP_S, span_s: fl
         total: dict[int, float] = {}
         for c in refs:                     # a flow measured by several counters: their sum
             pts = raw(c, start - 300, end)
-            t0 = start - start % FLOW_STEP_S
-            for a, b in pairwise(step_sample(pts, t0, end, FLOW_STEP_S)):
-                total[round(b[0])] = total.get(round(b[0]), 0.0) + ((b[1] - a[1]) if b[1] >= a[1] else b[1]) * unit / FLOW_STEP_S
+            t0 = start - start % fstep
+            for a, b in pairwise(step_sample(pts, t0, end, fstep)):
+                total[round(b[0])] = total.get(round(b[0]), 0.0) + ((b[1] - a[1]) if b[1] >= a[1] else b[1]) * unit / fstep
         if refs:
             flows[f.id] = [[t, v] for t, v in sorted(total.items())]
     # measured inputs the model's equations read (levels that are not stocks)
@@ -252,5 +254,5 @@ def history(model, raw, end: float, stock_step: float = STOCK_STEP_S, span_s: fl
         pts = raw(SeriesRef(ref["name"], ref["labels"], source=ref.get("source")), start - 300, end)
         t0 = start - start % stock_step
         inputs[name] = [[round(t), v] for t, v in step_sample(pts, t0, end, stock_step)]
-    return {"at": end, "start": start, "stock_step": stock_step, "flow_step": FLOW_STEP_S,
+    return {"at": end, "start": start, "stock_step": stock_step, "flow_step": fstep,
             "time_unit": model.time_unit, "stocks": stocks, "flows": flows, "inputs": inputs}
