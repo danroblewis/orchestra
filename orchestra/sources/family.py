@@ -6,7 +6,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-UNREAD = ("timestamp", "clock", "info", "scrape")   # kinds read as neither a level nor a flow (an info metric's reporters are counted)
+UNREAD = ("timestamp", "clock", "info", "scrape", "unknown")   # kinds read as neither a level nor a flow (an info metric's reporters are counted)
+# "unknown": its samples could not be read this round and no earlier round judged it: left out, never guessed
+
+def lookback(resolution_s: float | None) -> int:
+    """R, in seconds, for ``last_over_time(…[R])``: the larger of 2.5 reporting intervals and one
+    interval plus 30 s (an interval of a minute when unknown), so one missed or late scrape never
+    drops a series from a sum (``views.py``)."""
+    r = resolution_s or 60.0
+    return int(max(2.5 * r, r + 30.0)) + 1
+
 
 def esc(v: str) -> str:
     return v.replace("\\", "\\\\").replace('"', '\\"')
@@ -29,7 +38,7 @@ class LabelInfo:
     real: str
     cardinality: int
     churn: float
-    role: str                    # identity | grouping | constant
+    role: str                    # identity | grouping | constant | unit (kept in every view: never summed across units)
 
 
 @dataclass
@@ -50,6 +59,7 @@ class Family:
     retyped: str | None = None   # why its kind is not the one its type or name gives (behaviour.py)
     where: dict[str, str] = field(default_factory=dict)         # real label -> the one value read: the others repeat it (duplicates.py)
     notes: list[str] = field(default_factory=list)              # what was found about it: duplicates dropped, ...
+    counter_form: str = ""       # a counter read otherwise: "native" (a native histogram, by its count), "delta" (each sample a count)
 
     @property
     def stats(self) -> list[str]:

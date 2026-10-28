@@ -8,8 +8,8 @@ consumer groups, pod phases, each its own stock, which their total would merge);
 labels are **stable** (low churn); it is **small** (few series); its grouping is **coarse**; its
 view is one discovery uses most (counts and counters first, a minimum last). Only a level's own
 groups count as apart: merging them merges stocks. A counter's split is worth its series only
-where a level is split by the same label because its groups move apart (the lag by consumer
-group): then it scores as apart as that level, so the flows of each group are there to balance
+where a level is split by the same label, alone or with another, because its groups move apart
+(the lag by consumer group, or by consumer group and topic: the offsets produced per topic): then it scores as apart as that level, so the flows of each group are there to balance
 it; anywhere else its total balances the total, and its groups (successes and failures) moving
 apart is no reason to spend the cap.
 
@@ -45,26 +45,33 @@ TARGET_LABELS = COLLECTION_LABELS | {"endpoint", "metrics_path", "instance"}   #
 WHOLE_SHARE = 0.6            # of the cap, what the first round (every family's coarsest) may take before the splits
 
 
-def _split(d: Definition) -> str | None:
-    """The one grouping label (of at most ``APART_VALUES`` values) a definition is split by, when
-    it names something of the system (a queue, a topic, a phase), not who reported it (``job``,
+def _labels(d: Definition) -> list[str]:
+    """The grouping labels (each of at most ``APART_VALUES`` values) a definition is split by that
+    name something of the system (a queue, a topic, a phase), not who reported it (``job``,
     ``endpoint``: ``TARGET_LABELS``, which the collection adds)."""
+    return [c for c in d.group_by if d.labels_info.get(c, {}).get("role") == "grouping"
+            and int(d.labels_info[c].get("cardinality", 0)) <= APART_VALUES
+            and d.labels_info[c].get("real", c) not in TARGET_LABELS]
+
+
+def _split(d: Definition) -> str | None:
+    """The one such label a definition is split by, when it is split by exactly one grouping label."""
     split = [c for c in d.group_by if d.labels_info.get(c, {}).get("role") == "grouping"]
-    if len(split) != 1 or int(d.labels_info[split[0]].get("cardinality", 0)) > APART_VALUES:
-        return None
-    return None if d.labels_info[split[0]].get("real", split[0]) in TARGET_LABELS else split[0]
+    return split[0] if len(split) == 1 and _labels(d) == split else None
 
 
 def stock_splits(defs: list[Definition], probes: dict[str, dict]) -> dict[str, float]:
-    """The labels a level is split by because its groups move apart (lag by consumer group), with
-    how far apart: the counters split by the same label are what can balance each group, so they
-    score as far apart as the level (a hair less, so the level is taken first)."""
+    """The labels a level is split by because its groups move apart (lag by consumer group, or by
+    consumer group and topic), with how far apart: the counters split by the same label are what
+    can balance each group (the offsets produced on each topic), so they score as far apart as the
+    level (a hair less, so the level is taken first). A level split by two labels credits both."""
     out: dict[str, float] = {}
     for d in defs:
-        if d.kind == "level" and d.view in ("sum_by", "rollup") and (c := _split(d)):
+        if d.kind == "level" and d.view in ("sum_by", "rollup"):
             a = float((probes.get(d.id) or {}).get("apart") or 0.0)
             if a >= 0.5:
-                out[c] = max(out.get(c, 0.0), 0.99 * a)
+                for c in _labels(d):
+                    out[c] = max(out.get(c, 0.0), 0.99 * a)
     return out
 
 

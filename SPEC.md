@@ -743,23 +743,41 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   source**, with the reason (`sources/spec.py`, `sources/auth.py`). Pages, logs and errors show
   the kind, where the credential comes from and whether it is there; never its value.
 - **Series are inferred from the schema** every `infer_every` (an hour), cached in
-  `<state>/sources/<name>.json` (`sources/infer.py`): families (names differing by a statistic
+  `<state>/sources/<name>.json` with the window inferred over (`sources/infer.py`,
+  `sources/cache.py`). **Only the host's discovery and the CLI infer**; the web server and the
+  judge read the cache. One round at a time across processes (a lock); a failed or partial round
+  is retried after 5 minutes, doubling to `infer_every`, while the cached definitions stand; a
+  round over a narrower window never replaces a broader one. A round has a budget
+  (`infer_requests`, 1500; `infer_deadline`, 300 s) and its reads are **batched across families**
+  (`sources/listing.py`: names from `label/__name__/values`, series in batches of names split on a
+  422, histogram buckets never listed; `sources/census.py`, `sources/survey.py`: samples, churn,
+  duplicates in few queries; `sources/batch.py`: parts joined with `or`, tagged by
+  `label_replace`, under the source's `series_per_query`). A family a round cannot read keeps the
+  last round's verdict or is `unknown` and left out, never guessed. Families (names differing by a statistic
   suffix, or a `stat`/`statistic`/`quantile` label; a histogram's or summary's `_count`, typed
   under its own name or its base's; a recording rule `…:sum`/`:avg` as a view of its base by that
   function, read on its own interval), label aliases, each label's role (identity: one of the
   source's `identity` names, default pod/instance/container, a label naming one object (an id,
   an address, an image or version), churning, or over 50 values; constant; grouping) and the
-  reporting interval (`sources/schema.py`). **A name is a hint; the samples decide**
-  (`sources/behaviour.py`): a gauge that never falls but at rare resets and whose name counts
-  events is a counter, a counter that falls by halves is a gauge, and timestamps, clocks, info
-  metrics and Prometheus' `up`/`scrape_*` are never levels or flows. A scrape job or replica
-  label whose values repeat each other's series is read at one value (`sources/duplicates.py`).
+  reporting interval (`sources/schema.py`); a label naming a **unit** (`unit`, `resource`, or
+  values that are units) is kept in every view, and each definition carries its unit (metadata,
+  else the name's suffix). **A name is a hint; the samples decide** (`sources/behaviour.py`): a
+  gauge that never falls but at resets (a drop to half or less, crash loops included) and whose
+  name counts events is a counter, a counter that falls by halves is a gauge, a gauge whose
+  samples are counts of their own is a delta, a native histogram is a counter by its count, and
+  timestamps, clocks, info metrics and Prometheus' `up`/`scrape_*` are never levels or flows. A
+  family that only rose in the window is judged over `history` (24 h) as well, and a type once
+  judged changes only when the samples decide it. A scrape job or replica label is read at one
+  value when its values scrape the same targets (instance without the port, EC2 host names as
+  addresses, node labels) and agree: a counter's increase each quarter of the window within 5%
+  (`sources/duplicates.py`).
 - **Views** (`sources/views.py`): of a per-pod statistic, the max of max, min of min, average of
   average (flagged unweighted) and max of p95/p99 (flagged an upper bound), never a sum; of a
-  plain gauge the max and average (latencies, ratios) or the sum; of a counter, increments from
-  raw samples, reset-safe, by grouping; of a recording rule, its function by grouping. **A count
-  switches the type:** the pods reporting (`count by (G) (last_over_time(F[R]))`, R one and a half
-  reporting intervals) is a level, with its turnover (the pods that started and stopped reporting,
+  plain gauge the max and average (latencies, ratios) or the sum; of a counter, its increase by
+  grouping; of a recording rule, its function by grouping, except a rule over a counter, which is
+  left out for the counter (one flow). Levels are read with `last_over_time(…[R])`, R the larger
+  of 2.5 reporting intervals and one interval plus 30 s. **A count switches the type:** the pods
+  reporting (`count by (G) (last_over_time(F[R]))`) is a level, with its turnover (the pods that started and stopped reporting,
   from the raw samples) as two counters that balance it exactly, so pods per service is a stock;
   and how many values of each grouping label report. One family counts each thing.
 - **The query script** (any executable, from the repository root, with a timeout) gets the
@@ -777,13 +795,20 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   discovery tries the declared counters as that level's balance before any search, and judges it
   by the same evidence (`sd/pins.py`; it records `declared`, its origin, and is searched like any
   level when it does not fit).
-- **Reading** (`sources/catalogue.py`, `sources/fetch.py`): every definition is read for exactly
-  discovery's window, on its grid but never finer than the series' resolution; counters and
-  turnover from raw samples at their real times, rates integrated. Results take canonical labels,
+- **Reading** (`sources/catalogue.py`, `sources/fetch.py`, `sources/plan.py`): every definition is
+  read for exactly discovery's window, on its grid but never finer than the series' resolution;
+  each family once per aggregation at the finest grouping its views need, every view derived
+  exactly (`sources/regroup.py`); counters server-side as `sum by (G) (increase(x[S]))`, S the
+  step holding two samples, accumulated; turnover and declared `select`s from raw samples at
+  their real times, each selector read once; rates integrated. Results take canonical labels,
   `machine = <prefix>.<value>` from the machine label (a remote `machine` or `source` label is
   prefixed too), and the name `<prefix>:<name>`; one that collides with an own series is refused.
-  Each source is read on its own, with a timeout per request and a deadline; a source that fails
-  is **missing**, and the stretches of the window in which it returned nothing are its gaps. Every
+  Each source is read on its own, with a timeout per request, a deadline and a budget
+  (`max_requests`), at its request `rate` shared by every process (`sources/limits.py`); 429,
+  502, 503 and 504 are retried after `Retry-After` or a jittered backoff (`sources/transport.py`).
+  A source with at most a tenth of its definitions unread is **partial** (the rest used, the
+  failed named); one that fails beyond that is **missing**, and the stretches of the window in
+  which it returned nothing are its gaps. Every
   range is re-runnable: a run after the machine slept reads its whole window like any other.
 - **Provenance:** each `SeriesRef` in a model carries its `source` (`own` or a source's name),
   final `query`, `kind`, `origin` (inferred from which family and view, rewritten by
