@@ -43,6 +43,7 @@ from pathlib import Path
 from ..metrics import MetricsStore
 from ..sources.catalogue import Catalogue
 from . import eras as era_record
+from . import persistence
 from .compare import compare
 from .discover import structure
 from .model import Model
@@ -124,7 +125,7 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
         if era is None or end - start >= 2 * step_s:
             reading = Catalogue(project, metrics).read(start, end, step_s)
             m = discover_with(reading.dump, start=start, end=end, step=step_s, strategy=strategy, options=options,
-                              deadline=DEADLINE_SHARE * cfg.discovery_every, kinds=reading.kinds)
+                              deadline=DEADLINE_SHARE * cfg.discovery_every, kinds=reading.kinds, provenance=reading.provenance)
             annotate(m, reading.provenance)
         else:                                   # the era is too young to read: its prior, carried whole
             reading = None
@@ -149,6 +150,7 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
             cur = store.load()
             version = store.save(m, note=f"era {m.era} began: its prior") if m.stocks and (cur is None or cur.era != m.era) else None
             return Result(m, now, version, strategy)
+        persistence.apply(store, m, now)          # each stock's share of recent discoveries that found it the same way
         if len(reading.status) > 1 or reading.missing:
             m.discovery["sources"] = reading.status
         if reading.missing:

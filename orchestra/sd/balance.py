@@ -209,6 +209,13 @@ def balance(level, counters: list, ls: LeastSquares | None = None, steps: list[i
         us = units(level.blocks, list(range(len(y))) if steps is None else steps)
         y = [pick(level, u) for u in us]
         xs = [[pick(c, u) for u in us] for c in counters]
+    return balance_of(y, xs, counters, ls)
+
+
+def balance_of(y: list[float], xs: list[list[float]], counters: list, ls: LeastSquares | None = None
+               ) -> tuple[list[tuple], float, float]:
+    """``balance`` on a level's changes ``y`` per unit and each counter's ``xs`` over the same units:
+    the search itself, which the shift null (``sd.identify``) also runs on a level moved in time."""
     mean = sum(y) / max(1, len(y))
     sst = sum((v - mean) ** 2 for v in y) or 1e-12
     if not counters or not y:
