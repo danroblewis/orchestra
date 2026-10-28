@@ -350,6 +350,53 @@ each pin), or narrow `match` to the families you did not pin.
    - labels that change with every request or sample (trace or request ids) are identity: sum
      them away, or leave the metric out.
 
+9. **Declare a stock you know.** When you know which level a set of counters fills and drains,
+   say so: give the level and its flows one `stock` name and each its `role` (`"level"`,
+   `"inflow"` or `"outflow"`; a flow is `kind = "counter"`). Discovery tries that balance first,
+   before any search, and judges it by the same evidence as any other (enough stretches, a fit
+   that holds on each half of the window, the level reproduced over the hour, the shift null). A
+   declaration is a hypothesis, not a binding: one that does not fit is searched like any level,
+   and the reason the level is left out (if it is) says how well the declared balance fitted. A
+   stock found this way records `declared` (its origin) in its evidence; its flows are still
+   fitted. The level and its flows may be in different stores:
+
+```toml
+[[sources]]
+name = "shop"
+url = "https://shop.example/metrics"
+infer = false
+
+[[sources]]
+name = "biz"
+url = "https://biz.example/metrics"
+settle = "90s"                                # it writes its samples a minute late
+infer = false
+
+[[series]]
+source = "shop"
+name = "email_queue_backlog"
+query = 'sum(rabbitmq_queue_messages{queue="email.notifications"})'
+kind = "level"
+stock = "email_queue"
+role = "level"
+
+[[series]]
+source = "shop"
+name = "email_queue_published"
+query = 'sum(rabbitmq_queue_messages_published_total{queue="email.notifications"})'
+kind = "counter"
+stock = "email_queue"
+role = "inflow"
+
+[[series]]
+source = "biz"                                # another store, once a minute, a minute late
+name = "emails_sent"
+query = 'sum(fulfilment_emails_sent_total{env="prod"})'
+kind = "counter"
+stock = "email_queue"
+role = "outflow"
+```
+
 ### Two stores, and a busy one
 
 - **One store, one entry.** One store is often reachable at several addresses (direct, behind a
@@ -364,7 +411,13 @@ each pin), or narrow `match` to the families you did not pin.
   labels per source, never across stores.
 - **Late and coarse stores.** A store that writes its samples late needs `settle` above that
   delay (one written a minute late, on VictoriaMetrics: `settle = "90s"`); one sampled once a
-  minute cannot show a change inside a minute.
+  minute cannot show a change inside a minute. Discovery handles both: a series' steps after its
+  last sample, a little before the window's end, are missing rather than zero, and a level whose
+  flows include a counter counted once a minute is balanced on the stretches between that
+  counter's samples (the stock's evidence says `balance_on`), where every series is read at the
+  same two instants. Two stores never scrape at the same instant, so such a balance misses by a
+  few seconds' worth either way, made up in the next minute; it is judged on whether those misses
+  cancel and the level is reproduced over the window, not on R² alone.
 - **A busy store** answers 429 or 503 when rate-limited or overloaded, 422 when a query touches too
   many series, 400 when a range asks for too many points. Never lower the cap or raise a limit to
   fit: narrow the read. A `match` per family you need, with label matchers on a metric that is too

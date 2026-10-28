@@ -68,6 +68,7 @@ class Definition:
     counts: str = ""             # for a count and its turnover: what is counted, so one family counts it
     traffic: dict = field(default_factory=dict)          # counted traffic, when a definition says so (traffic.py)
     merged: dict[str, int] = field(default_factory=dict)  # grouping labels of its family it aggregates over -> how many values
+    stock: dict = field(default_factory=dict)            # a declared stock's level or flow ({"name", "role"}; spec.DeclaredSeries)
 
 
 def count_window(resolution_s: float | None) -> int:

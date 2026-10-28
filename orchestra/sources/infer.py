@@ -70,7 +70,7 @@ def _declared(spec: SourceSpec, declared: list[DeclaredSeries]) -> list[Definiti
                        view="increments" if x.by is not None else "declared", kind=x.kind, query=x.query, unit=x.unit,
                        group_by=[aliases.get(b, b) for b in x.by or []], by_real=list(x.by or []),
                        origin=[f"declared in the preset {x.preset}" if x.preset else "declared in orchestra.toml"], pin=True,
-                       rename=aliases, traffic=dict(x.traffic or {}))
+                       rename=aliases, traffic=dict(x.traffic or {}), stock=dict(x.stock or {}))
             for i, x in enumerate(declared) if x.source == spec.name]
 
 

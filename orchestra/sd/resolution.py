@@ -44,6 +44,7 @@ from .live import usual_interval
 HOLD, LINEAR = "hold", "linear"     # how a series is read (always HOLD); LINEAR names a measurement's changes (``real_points``)
 SLOW = 1.5          # a series is slower than the grid when its resolution is this many steps or more
 ENOUGH = 10         # writes it takes to tell a schedule from writes as things happen (``sd.live.usual_interval``)
+RESAMPLED = 4.5     # a series that moves steadily every 2 to 4 reads is a coarser store's samples read again (``counted_every``)
 
 
 @dataclass(frozen=True)
@@ -87,7 +88,7 @@ def measure(points: list[tuple[float, float]], counter: bool, declared: float | 
     interval = usual_interval(points)
     seconds: float | None
     if counter:
-        seconds = None if on_events else interval
+        seconds = None if on_events else (counted_every(points, interval) or interval)
     elif not smooth and interval is None and len(points) >= ENOUGH and 2 * len(real_points(points, LINEAR)) > len(points):
         seconds = None                  # a count written as things happen: every write is one
     else:
@@ -97,6 +98,32 @@ def measure(points: list[tuple[float, float]], counter: bool, declared: float | 
     if declared:
         seconds = max(seconds or 0.0, float(declared))
     return Resolution(seconds, HOLD)
+
+
+def counted_every(points: list[tuple[float, float]], interval: float | None) -> float | None:
+    """How often a series on a schedule is really sampled: the usual gap between the points where it
+    moved, when it moves steadily (``steady``) every two to four writes (``RESAMPLED``). A store read
+    on a finer grid than its scrape repeats each sample (a counter scraped every minute, read every
+    30 s, holds its value for one read and doubles the next; a stock level too), and so does a
+    store that reports once a minute: its counts arrive a minute at a time, and between them
+    nothing was observed, not nothing counted. None when it moves at nearly every write, as things
+    happen (gaps that keep no schedule: a counter of rare events is as fine as its writes), or
+    seldom (a gauge polled every 30 s that changes every half hour is observed at every poll)."""
+    if not interval:
+        return None
+    moved = [t for (_, a), (t, b) in pairwise(points[-2000:]) if b != a]
+    gaps = [b - a for a, b in pairwise(moved)]
+    if len(gaps) < ENOUGH or not steady(gaps):
+        return None
+    usual = median(gaps)
+    return usual if SLOW * interval <= usual <= RESAMPLED * interval else None
+
+
+def moved_points(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """A counter's observations when it counts more seldom than it is written (``counted_every``):
+    every point where it moved; the repeats between are the same reading again. Its first point is
+    none: it may be a reading from before the window, repeated, so when it was counted is unknown."""
+    return [(t, b) for (_, a), (t, b) in pairwise(points) if b != a]
 
 
 def observed_every(points: list[tuple[float, float]], res: Resolution, declared: float | None = None) -> float | None:
@@ -178,14 +205,27 @@ def counted_between(ser, a: float, b: float) -> float:
     return at(b) - at(a)
 
 
+def value_at(ser, t: float) -> float:
+    """A level's value at ``t``, from its own points, its last value held."""
+    cached = ser.__dict__.get("_times")
+    if cached is None or cached[0] is not ser.points:
+        cached = ser.__dict__["_times"] = (ser.points, [x for x, _ in ser.points])
+    i = bisect_right(cached[1], t) - 1
+    return ser.points[max(0, i)][1]
+
+
 def pick(ser, unit) -> float:
-    """A series' change over one unit: a step, or a stretch between a slow level's writes. Over a
-    stretch, a counter's is what it counted between the two writes, from its own points; any
-    other series' is the sum of its changes over the stretch's steps."""
+    """A series' change over one unit: a step, or a stretch between two writes of a slow series
+    (``Block``). Over a stretch, each series is read at the stretch's two instants from its own
+    points: a counter's change is what it counted between them; a level's, its value at the second
+    less its value at the first (the slow level's own writes, or a fast level read where a slow
+    counter was). A series with no points of its own (a residual) sums its changes over the steps."""
     if isinstance(unit, int):
         return ser.deltas[unit]
-    if ser.counter and ser.points and ser.points[0][0] <= unit.after:
-        return counted_between(ser, unit.after, unit.until)
+    if ser.points and ser.points[0][0] <= unit.after:
+        if ser.counter:
+            return counted_between(ser, unit.after, unit.until)
+        return value_at(ser, unit.until) - value_at(ser, unit.after)
     return sum(ser.deltas[i] for i in unit.steps)
 
 
