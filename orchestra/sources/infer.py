@@ -15,11 +15,11 @@ import re
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from itertools import pairwise
 from pathlib import Path
 
-from . import Source, SourceError
+from . import PastDeadline, Source, SourceError
 from .rank import rank
 from .schema import read as read_schema
 from .spec import DeclaredSeries, SourceSpec
@@ -41,6 +41,7 @@ class Inference:
     script: str | None = None
     notes: list[str] = field(default_factory=list)
     error: str | None = None                     # the last round's failure, when these are older definitions
+    partial: bool = False                        # some candidates were not probed by the deadline: never fresh
 
     def to_json(self) -> dict:
         return asdict(self)
@@ -49,7 +50,8 @@ class Inference:
     def from_json(cls, d: dict) -> Inference:
         defs = lambda xs: [Definition(**x) for x in xs]
         return cls(d["source"], d["at"], d["key"], defs(d.get("kept") or []), defs(d.get("left_out") or []),
-                   list(d.get("families") or []), d.get("script"), list(d.get("notes") or []), d.get("error"))
+                   list(d.get("families") or []), d.get("script"), list(d.get("notes") or []), d.get("error"),
+                   bool(d.get("partial")))
 
 
 def settings_key(spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path) -> str:
@@ -127,6 +129,8 @@ def probe(source: Source, d: Definition, start: float, end: float, until: float 
         q = f"sum by ({', '.join(d.by_real)}) ({d.query})" if d.by_real else f"sum({d.query})"
     try:
         got = source.query_range(q, start, end, step, until=until)
+    except PastDeadline as e:
+        return {"series": 0, "moves": False, "error": str(e), "late": True}
     except SourceError as e:
         return {"series": 0, "moves": False, "error": str(e)}
     out = {"series": len(got), "moves": any(len({v for _, v in pts}) > 1 for _, pts in got),
@@ -154,10 +158,12 @@ def unique_names(defs: list[Definition]) -> None:
 def infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path,
           start: float, end: float, until: float | None = None) -> Inference:
     """A fresh round. Raises ``SourceError`` or ``TransformError`` when it cannot finish; a probe
-    not made by ``until`` (the source's deadline, ``time.monotonic()``) is a failed one."""
-    until = time.monotonic() + spec.deadline if until is None else until
+    not made by ``until`` (``time.monotonic()``; by default the source's deadline counted from the
+    end of the schema's read, which on a slow store takes a deadline of its own) is left out, and
+    the round is partial."""
     inf = Inference(spec.name, time.time(), settings_key(spec, declared, repo_root))
     schema = read_schema(source, spec, start, end)
+    until = time.monotonic() + spec.deadline if until is None else until
     inf.notes = list(schema.notes)
     inf.families = [{"name": f.name, "kind": f.kind, "metrics": list(f.metrics), "stats": f.stats, "series": f.series,
                      "resolution_s": f.resolution_s, "rollup": f.rollup, "rollups": sorted(r["metric"] for r in f.rollups.values()),
@@ -172,8 +178,17 @@ def infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo
         inf.left_out += dropped
     with ThreadPoolExecutor(spec.concurrency) as pool:
         probes = dict(zip([d.id for d in cands], pool.map(lambda d: probe(source, d, start, end, until), cands), strict=True))
-    if failed := [p["error"] for p in probes.values() if p.get("error")]:
+    if failed := [p["error"] for p in probes.values() if p.get("error") and not p.get("late")]:
         raise SourceError(f"{len(failed)} of {len(probes)} probes failed; the first: {failed[0]}")
+    late = {i for i, p in probes.items() if p.get("late")}
+    if late and len(late) * 2 > len(probes):
+        raise SourceError(f"{len(late)} of {len(probes)} probes were not made within the source's deadline of {spec.deadline:g} s: "
+                          "narrow match, or raise deadline (or concurrency) on the [[sources]] entry")
+    if late:                                            # a slow store: rank what was probed, and say what was not
+        inf.left_out += [replace(d, why=f"not probed within the source's deadline of {spec.deadline:g} s") for d in cands if d.id in late]
+        inf.notes.append(f"{len(late)} of {len(probes)} candidates were not probed within the deadline and are left out: "
+                         "narrow match, or raise deadline (or concurrency)")
+        cands, inf.partial = [d for d in cands if d.id not in late], True
     for d in cands:
         if d.kind == "rate" and (probes[d.id].get("min") or 0.0) < 0:     # its name says a rate; its data, which went below 0, says not
             d.kind = "level"
@@ -222,7 +237,7 @@ def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries]
         return Inference(spec.name, time.time(), key, _declared(spec, declared),
                          notes=["infer = false: only the declared series are read, never the schema"])
     old = cached(state_dir, spec.name)
-    if old and not refresh and old.key == key and time.time() - old.at < spec.infer_every:
+    if old and not refresh and not old.partial and old.key == key and time.time() - old.at < spec.infer_every:
         return old
     same = old is not None and old.key == key        # older definitions under other settings would not be what was asked for
     when = time.strftime('%Y-%m-%d %H:%M', time.localtime(old.at)) if old else ""

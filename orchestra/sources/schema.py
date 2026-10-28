@@ -36,6 +36,7 @@ churn are measured from samples within the window instead."""
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 from . import Labels, Source, SourceError
 from .checks import (
@@ -188,6 +189,7 @@ def read(source: Source, spec: SourceSpec, start: float, end: float) -> Schema:
     """The families of what ``spec.match`` selects, with aliases, roles and resolution."""
     sets = source.series(spec.match, start, end, SCHEMA_LIMIT)
     notes = [f"the listing was cut at {SCHEMA_LIMIT} series; narrow match to infer from all"] if len(sets) >= SCHEMA_LIMIT else []
+    notes += [f"refused by the store even when narrowed, so left out: {x}" for x in getattr(source, "left_out", [])]
     names: dict[str, list[Labels]] = {}
     for lab in sets:
         n = lab.get("__name__")
@@ -195,45 +197,55 @@ def read(source: Source, spec: SourceSpec, start: float, end: float) -> Schema:
             names.setdefault(n, []).append({k: v for k, v in lab.items() if k != "__name__"})
     meta = source.metadata()
     families = _group(names, meta)
-    for fam in families:
-        fam_sets = [lab for m in fam.metrics for lab in names.get(m, [])]
-        real = {k for lab in fam_sets for k in lab} - SKIP_LABELS - ({fam.stat_label} if fam.stat_label else set())
-        one = [lab for lab in names.get(fam.first_metric(), []) if not fam.stat_label or lab.get(fam.stat_label) == next(iter(fam.stat_values.values()), None)]
-        fam.series = len({tuple(sorted((k, v) for k, v in lab.items() if k != fam.stat_label)) for lab in one}) or len(fam_sets)
-        judged = fam.kind in ("gauge", "counter") and not fam.stats
-        try:
-            raw = samples(source, [{"__name__": fam.first_metric(), **x} for x in one or fam_sets], start, end, more=judged)
-            fam.resolution_s = interval(raw)
-            if judged and raw:
-                behave(source, fam, raw, (meta.get(fam.first_metric()) or {}).get("type"), start, end)
-            for rule in fam.rollups.values():
-                rule["resolution_s"] = interval(samples(source, [{"__name__": rule["metric"], **x} for x in names.get(rule["metric"], [])],
-                                                         start, end))
-        except SourceError as e:
-            notes.append(f"{fam.name}: could not read its samples: {e}")
-        r = 1.5 * (fam.resolution_s or 60.0)
-        sel = fam.selector(fam.stats[0] if fam.stats else None)
-        for canonical, rl in _aliases(real, spec).items():
-            values = {lab[rl] for lab in fam_sets if rl in lab}
-            if canonical in spec.identity or (len(values) > 1 and is_object(canonical, rl, values)):
-                fam.labels[canonical] = LabelInfo(rl, len(values), 0.0, "identity")
-                continue
-            if len(values) <= 1:
-                fam.labels[canonical] = LabelInfo(rl, len(values), 0.0, "constant")
-                if values:
-                    fam.constants[canonical] = next(iter(values))
-                continue
-            try:
-                card, churned = churn(source, sel, rl, r, start, end)
-            except SourceError as e:
-                notes.append(f"{fam.name}: could not measure {rl}'s churn: {e}")
-                card, churned = len(values), 0.0
-            role = "identity" if (churned >= CHURN and card > 3) or card > HIGH_CARDINALITY else ("grouping" if card > 1 else "constant")
-            fam.labels[canonical] = LabelInfo(rl, card, churned, role)
-            if role == "constant" and len(values) == 1:
-                fam.constants[canonical] = next(iter(values))
-        try:
-            dedupe(source, fam, start, end)
-        except SourceError as e:
-            notes.append(f"{fam.name}: could not compare its labels' values: {e}")
+    with ThreadPoolExecutor(max(1, getattr(spec, "concurrency", 1))) as pool:   # a slow store: its families read side by side
+        for said in pool.map(lambda fam: _family(source, spec, fam, names, meta, start, end), families):
+            notes += said
     return Schema(families, notes)
+
+
+def _family(source: Source, spec: SourceSpec, fam: Family, names: dict[str, list[Labels]], meta: dict[str, dict],
+            start: float, end: float) -> list[str]:
+    """One family's resolution, behaviour, label roles and duplicates, read from the store; what
+    could not be read, as notes."""
+    notes: list[str] = []
+    fam_sets = [lab for m in fam.metrics for lab in names.get(m, [])]
+    real = {k for lab in fam_sets for k in lab} - SKIP_LABELS - ({fam.stat_label} if fam.stat_label else set())
+    one = [lab for lab in names.get(fam.first_metric(), []) if not fam.stat_label or lab.get(fam.stat_label) == next(iter(fam.stat_values.values()), None)]
+    fam.series = len({tuple(sorted((k, v) for k, v in lab.items() if k != fam.stat_label)) for lab in one}) or len(fam_sets)
+    judged = fam.kind in ("gauge", "counter") and not fam.stats
+    try:
+        raw = samples(source, [{"__name__": fam.first_metric(), **x} for x in one or fam_sets], start, end, more=judged)
+        fam.resolution_s = interval(raw)
+        if judged and raw:
+            behave(source, fam, raw, (meta.get(fam.first_metric()) or {}).get("type"), start, end)
+        for rule in fam.rollups.values():
+            rule["resolution_s"] = interval(samples(source, [{"__name__": rule["metric"], **x} for x in names.get(rule["metric"], [])],
+                                                     start, end))
+    except SourceError as e:
+        notes.append(f"{fam.name}: could not read its samples: {e}")
+    r = 1.5 * (fam.resolution_s or 60.0)
+    sel = fam.selector(fam.stats[0] if fam.stats else None)
+    for canonical, rl in _aliases(real, spec).items():
+        values = {lab[rl] for lab in fam_sets if rl in lab}
+        if canonical in spec.identity or (len(values) > 1 and is_object(canonical, rl, values)):
+            fam.labels[canonical] = LabelInfo(rl, len(values), 0.0, "identity")
+            continue
+        if len(values) <= 1:
+            fam.labels[canonical] = LabelInfo(rl, len(values), 0.0, "constant")
+            if values:
+                fam.constants[canonical] = next(iter(values))
+            continue
+        try:
+            card, churned = churn(source, sel, rl, r, start, end)
+        except SourceError as e:
+            notes.append(f"{fam.name}: could not measure {rl}'s churn: {e}")
+            card, churned = len(values), 0.0
+        role = "identity" if (churned >= CHURN and card > 3) or card > HIGH_CARDINALITY else ("grouping" if card > 1 else "constant")
+        fam.labels[canonical] = LabelInfo(rl, card, churned, role)
+        if role == "constant" and len(values) == 1:
+            fam.constants[canonical] = next(iter(values))
+    try:
+        dedupe(source, fam, start, end)
+    except SourceError as e:
+        notes.append(f"{fam.name}: could not compare its labels' values: {e}")
+    return notes
