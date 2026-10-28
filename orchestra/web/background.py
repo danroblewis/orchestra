@@ -4,7 +4,9 @@ Two threads keep these caches warm: one the bus, the own store and the levels re
 other everything read from another store (counted traffic, the levels of stocks bound to a
 remote series, and the history, which may read remotes), so the index and the own store's
 levels never wait on a remote source, which may take up to its timeout:
-- the **machine index** (``machines.MachineIndex``), following the bus every few seconds;
+- the **machine index** (``machines.MachineIndex``), following the bus every few seconds, and
+  one for the current era alone (``sd.eras``: its events since the era began), started again
+  when an era begins; a past era's is built when first asked for (``era_index``) and kept;
 - each machine's **flow hypotheses** from the latest discovery, every minute. The Machines page
   reads no metrics: a machine is seen, and active, by its events alone (``machines.py``);
 - the **current levels** of the model's stocks, every few seconds;
@@ -34,6 +36,7 @@ import time
 from itertools import pairwise
 
 from ..metrics import step_sample
+from ..sd import eras as era_record
 from ..sd.model import SeriesRef
 from ..sd.store import ModelStore
 from ..sources.catalogue import Catalogue
@@ -54,7 +57,11 @@ class Refresher:
     def __init__(self, project, events, metrics):
         self.project = project
         self.metrics = metrics
+        self.events = events
         self.index = MachineIndex(events)
+        self.era: str | None = None                         # the current era, and its own index (the same as index before any era)
+        self.era_idx = self.index
+        self.past: dict[str | None, MachineIndex] = {}      # past eras' indexes, built when asked for
         self.models = ModelStore.for_state(project.state_dir)
         self.flows: dict[str, list[dict]] = {}   # each machine's hypothesised flows in the latest discovery
         self.own_levels: dict[str, dict] = {}
@@ -87,6 +94,37 @@ class Refresher:
         except Exception as e:  # noqa: BLE001 - shown on the page; tried again next round
             self.errors[name] = f"{type(e).__name__}: {e}"
         self.at[name] = time.time()
+
+    def _index(self) -> None:
+        """Follow the bus: the whole of it, and the current era's part."""
+        self.index.update()
+        cur = era_record.current(era_record.recorded(self.models), time.time())
+        if (cur.id if cur else None) != self.era:
+            self.era, self.era_idx = (cur.id, MachineIndex(self.events, since=cur.start)) if cur else (None, self.index)
+        if self.era_idx is not self.index:
+            self.era_idx.update()
+
+    def era_index(self, era: str | None) -> MachineIndex | None:
+        """The index of an era's events (``"all"``: every event; None: the current era); None
+        when there is no such era. A past era's is read from the bus once, then kept."""
+        if era is None or era == self.era:
+            return self.era_idx
+        if era == "all":
+            return self.index
+        eras = era_record.recorded(self.models)
+        if era == "none":                           # the time before the first era
+            key, since, until = None, None, (eras[0].start if eras else None)
+        else:
+            e = next((x for x in eras if x.id == era), None)
+            if e is None:
+                return None
+            nxt = next((x.start for x in eras if x.start > e.start), None)
+            key, since, until = era, e.start, nxt
+        if key not in self.past:
+            idx = MachineIndex(self.events, since=since, until=until)
+            idx.update()
+            self.past[key] = idx
+        return self.past[key]
 
     def _flows(self) -> None:
         latest = self.models.latest_discovery()
@@ -161,7 +199,7 @@ class Refresher:
 
     def _run(self) -> None:
         while not self._stop.is_set():
-            self._do("index", INDEX_EVERY_S, self.index.update)
+            self._do("index", INDEX_EVERY_S, self._index)
             self._do("flows", FLOWS_EVERY_S, self._flows)
             self._do("levels", LEVELS_EVERY_S, self._levels)
             self._stop.wait(1.0)
@@ -186,11 +224,11 @@ def stock_step(discovery_step: float) -> float:
     return min(STOCK_STEP_S, discovery_step) if discovery_step > 0 else STOCK_STEP_S
 
 
-def history(model, raw, end: float, stock_step: float = STOCK_STEP_S) -> dict:
-    """The model's history over the HISTORY_S before ``end``: each stock's level every
+def history(model, raw, end: float, stock_step: float = STOCK_STEP_S, span_s: float = HISTORY_S) -> dict:
+    """The model's history over the ``span_s`` (HISTORY_S) before ``end``: each stock's level every
     ``stock_step``, each flow's rate every FLOW_STEP_S, and the measured inputs the equations read.
     ``raw(ref, start, end)`` reads one series' points."""
-    start = end - HISTORY_S
+    start = end - span_s
     unit = {"second": 1.0, "minute": 60.0, "hour": 3600.0}.get(model.time_unit, 60.0)
     stocks, flows = {}, {}
     for s in model.stocks:

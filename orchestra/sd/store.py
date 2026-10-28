@@ -11,13 +11,22 @@ only when its structure (stocks, flows, forms and influences) changed. Readers (
 the cache; nothing rediscovers on request.
 
 Declared structure and fitted equations live together in each version; every equation carries
-its origin, so a reader can always tell a fit from an assumption."""
+its origin, so a reader can always tell a fit from an assumption.
+
+**Eras** (``sd.eras``): each version records the era it is the model of (``Model.era``). When an
+era begins, the previous era's last discovery is saved as a version before anything of the new
+era is, so every past era stays readable (``of_era``), and the new era's prior is the latest
+version of another era (``prior_for``). Beside the versions the store keeps two small records:
+``eras.json``, the eras recorded from the bus (``sd.eras.sync``), and ``announce.json``, what
+the host last announced about the model (``sd.announce``)."""
 
 from __future__ import annotations
 
+import fcntl
 import json
 import re
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from .model import Model
@@ -84,10 +93,51 @@ class ModelStore:
             d = self._read(n) or {}
             m = d.get("model", {})
             flows = m.get("flows", [])
-            out.append({"version": n, "saved_at": d.get("saved_at"), "note": d.get("note", ""),
+            out.append({"version": n, "saved_at": d.get("saved_at"), "note": d.get("note", ""), "era": m.get("era"),
                         "stocks": len(m.get("stocks", [])), "flows": len(flows),
                         "fitted": sum(1 for f in flows if f.get("equations")), "machines": len(m.get("machines", []))})
         return out
+
+    def of_era(self, era: str | None) -> tuple[int, Model] | None:
+        """The latest version of an era's model (``None``: before any era began), with its number."""
+        for n in reversed(self._numbers()):
+            d = self._read(n)
+            if d and d.get("model", {}).get("era") == era:
+                return n, Model.from_json(d["model"])
+        return None
+
+    def prior_for(self, era: str | None) -> Model | None:
+        """The model an era starts from (``sd.prior``): the latest version of any other era."""
+        for n in reversed(self._numbers()):
+            d = self._read(n)
+            if d and d.get("model", {}).get("era") != era:
+                return Model.from_json(d["model"])
+        return None
+
+    def read_record(self, name: str) -> dict | None:
+        """One of the store's small records (``eras``, ``announce``), or None."""
+        try:
+            return json.loads((self.dir / f"{name}.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    def write_record(self, name: str, record: dict) -> None:
+        self.dir.mkdir(parents=True, exist_ok=True)
+        p = self.dir / f"{name}.json"
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(record) + "\n", encoding="utf-8")
+        tmp.replace(p)
+
+    @contextmanager
+    def locked(self, name: str):
+        """A record held for reading and writing, across processes."""
+        self.dir.mkdir(parents=True, exist_ok=True)
+        with open(self.dir / f"{name}.lock", "w") as fh:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(fh, fcntl.LOCK_UN)
 
     def write_discovery(self, model: Model, at: float | None = None) -> None:
         self.dir.mkdir(parents=True, exist_ok=True)

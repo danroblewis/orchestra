@@ -71,6 +71,48 @@ def cmd_metrics(args) -> int:
     return 0
 
 
+def _eras(models, args) -> int:
+    """The eras recorded (sd/eras.py), each with its model's versions, and what changed at the
+    current era's boundary (sd/compare.py)."""
+    import json
+
+    from .sd import eras as era_record
+
+    eras = era_record.recorded(models)
+    versions = models.versions()
+    cached = models.latest_discovery()
+    comparison = (cached[1].discovery.get("era_comparison") if cached else None) or None
+    if args.json:
+        print(json.dumps({"eras": [vars(e) for e in eras], "current": cached[1].era if cached else None,
+                          "versions": {e: [v["version"] for v in versions if v.get("era") == e] for e in [None, *(x.id for x in eras)]},
+                          "comparison": comparison}, indent=1, default=str))
+        return 0
+    if not eras:
+        print("no eras yet: none has begun (system.changed, or an event [discovery] eras_from names; recorded by the host as it "
+              "follows the bus, and by `orchestra sd discover`)")
+        return 0
+    for e in [None, *eras]:
+        vs = [f"v{v['version']}" for v in versions if v.get("era") == (e.id if e else None)]
+        head = f"{e.id:<5} from {_when(e.start)}  {e.label}" + (f"  subject {e.subject}" if e.subject else "") if e else "-     before any era"
+        mark = "  (current)" if cached and cached[1].era == (e.id if e else None) else ""
+        print(f"{head}{mark}" + (f"\n      versions: {', '.join(vs)}" if vs else ""))
+    if comparison:
+        print(f"\nat the start of era {comparison['to']}, against era {comparison['from'] or 'before any era'}:")
+        for f in comparison["flows"]:
+            if f["status"] in ("changed", "unchanged"):
+                nums = "; ".join(f"{n['param']} {n['before']:.4g} → {n['after']:.4g} (z {n['z']})" for n in f.get("params", []))
+                print(f"  flow {f['id']}: {f['status']}: {nums}")
+            else:
+                print(f"  flow {f['id']}: {f['status']}" + (f" ({f['why']})" if f.get("why") else ""))
+        for kind in ("appeared", "disappeared", "carried"):
+            if comparison["stocks"].get(kind):
+                print(f"  stocks {kind}: {', '.join(comparison['stocks'][kind])}")
+        for kind in ("appeared", "disappeared"):
+            if comparison["loops"].get(kind):
+                print(f"  loops {kind}: {', '.join(comparison['loops'][kind])}")
+    return 0
+
+
 def cmd_sd(args) -> int:
     """The system dynamics model: show it, fit its flows, list its versions."""
     from .metrics import for_project as metrics_for
@@ -83,7 +125,7 @@ def cmd_sd(args) -> int:
         from .sd.rediscover import rediscover
 
         r = rediscover(project, metrics_for(project), strategy=args.strategy, window_s=args.minutes * 60 if args.minutes else None,
-                       step_s=args.step_s, note="discovered with orchestra sd discover")
+                       step_s=args.step_s, note="discovered with orchestra sd discover", events=Events.for_project(project))
         m = r.model
         print(f"{r.strategy}, over the last {m.discovery['window_s'] / 60:g} min in {m.discovery['step_s']:g} s steps: {len(m.stocks)} stocks, "
               f"{len(m.flows)} flows, {len(m.machines)} machines")
@@ -100,15 +142,20 @@ def cmd_sd(args) -> int:
         print("left out:")
         for k, why in m.discovery["left_out"].items():
             print(f"  {k}: {why}")
+        if m.era:
+            print(f"era {m.era} (from {_when(m.discovery.get('era_start'))}); `orchestra sd eras` compares it with its prior")
         print(f"saved as version {r.version}" if r.version else "structure unchanged: no new version")
         args.version = None
     if args.action == "whatif":
         return cmd_whatif(args, project, models)
+    if args.action == "eras":
+        return _eras(models, args)
     if args.action == "observability":
         return _observability(project, models, args)
     if args.action == "versions":
         for v in models.versions():
-            print(f"v{v['version']:<4} {_when(v['saved_at'])}  {v['stocks']} stocks, {v['flows']} flows ({v['fitted']} fitted)  {v['note']}")
+            era = f"  era {v['era']}" if v.get("era") else ""
+            print(f"v{v['version']:<4} {_when(v['saved_at'])}  {v['stocks']} stocks, {v['flows']} flows ({v['fitted']} fitted){era}  {v['note']}")
         return 0
     m = models.load(args.version)
     if m is None:
@@ -334,8 +381,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(fn=cmd_metrics)
 
     s = sub.add_parser("sd", help="the system dynamics model: discover it from the metrics, show it, fit it, list its versions, "
-                       "say which stocks what is measured determines, ask what a change would do (whatif)")
-    s.add_argument("action", choices=["show", "fit", "versions", "discover", "observability", "whatif"])
+                       "say which stocks what is measured determines, ask what a change would do (whatif), list the eras and what changed (eras)")
+    s.add_argument("action", choices=["show", "fit", "versions", "discover", "observability", "whatif", "eras"])
     s.add_argument("--minutes", type=float, help="for discover: the window, in minutes back from now (default: [discovery] window)")
     s.add_argument("--step-s", dest="step_s", type=float, help="for discover: seconds per step (default: [discovery] step); "
                    "for whatif: the simulation's step (default 15 s, longer for long horizons)")
@@ -343,7 +390,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--version", type=int, help="for show, fit, observability and whatif: this past version (default: the current one; "
                    "for observability and whatif, the latest discovery)")
     s.add_argument("--step", type=float, default=1.0, help="for fit: hours per step (default 1)")
-    s.add_argument("--json", action="store_true", help="for observability and whatif: the answer as JSON, as the web API returns it")
+    s.add_argument("--json", action="store_true", help="for observability, whatif and eras: the answer as JSON")
     w = s.add_argument_group("whatif", "what the model says a change would do, against no change (read only)")
     w.add_argument("--flow", help="the flow --scale and --add change")
     w.add_argument("--scale", type=float, help="multiply the flow's rate by this")

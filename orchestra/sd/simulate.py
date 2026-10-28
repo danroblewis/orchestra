@@ -4,7 +4,7 @@ Two runs, both stepped by SD Lab's simulator (``orchestra.sdlab.discovery.simula
 measured inputs, and no stock giving more than it holds):
 
 - **since the era began**: from the measured levels at the start of the era (the time since every
-  series the model was fitted on was being written), with nothing but the equations, the measured
+  series the model was fitted on was being written, within the current era: ``sd.eras``), with nothing but the equations, the measured
   inputs and the flows that are replayed (below) to now. How far it ends from what was measured
   is how well the equations explain the system;
 - **projection**: from the measured levels now, ``horizon_s`` into the future, with each measured

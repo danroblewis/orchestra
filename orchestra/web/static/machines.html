@@ -42,7 +42,7 @@
 <nav id="nav"><a href="/">Dashboard</a><a href="/machines" class="on">Machines</a><a href="/instruments">Instruments</a><a href="/dynamics">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="mwrap">
   <div class="intro">A machine does actual work: a program, an AI agent, a person. Orchestra knows one exists because it shows up on the event bus; one that runs as several copies is one machine with instances: events from <code>baker/1</code> are instance 1 of the machine <code>baker</code>. What it publishes, its instances and the hand-offs between machines are observed on the bus; a machine on another system's bus is known by the counts a source reads there (what it produced into or consumed from a channel, marked counted); how it is engaged, what it listens for, what kind of thing it is, where its log is and which package it belongs to are what the machine announces about itself when it starts. A package may list a machine before it is first seen (marked unseen); what is observed always wins. What measures the system is not a machine: scripts, scraped URLs and sources are on the <a href="/instruments">Instruments</a> page. How a machine's work relates to the model's flows is not known in advance; each card shows the flows discovery infers it may be associated with, as hypotheses with their confidence, and the Dynamics page shows them on the model.</div>
-  <h2>Event map</h2>
+  <h2>Event map <select id="era" class="ctl" style="font-size:12px;margin-left:8px;display:none" onchange="ERA = this.value; load()" title="eras begin when a machine says it changed the system: the map and the cards of one era are drawn from that era's events alone"></select></h2>
   <div id="evmap-host"></div>
   <h2>Machines <span class="count" id="nm"></span></h2>
   <div class="cards" id="cards"></div>
@@ -55,7 +55,17 @@
 <script src="/static/edge-color.js?v={{v}}"></script>
 <script src="/static/loops.js?v={{v}}"></script>
 <script>
-let DATA = null;
+let DATA = null, ERA = "";   // "": the current era
+function eraPicker(d) {
+  const eras = d.eras || [], sel = $("era");
+  sel.style.display = eras.length ? "" : "none";
+  if (!eras.length || sel.dataset.n === String(eras.length) + (d.current_era || "")) return;
+  sel.dataset.n = String(eras.length) + (d.current_era || "");
+  const opt = (v, t) => `<option value="${esc(v)}" ${v === ERA ? "selected" : ""}>${esc(t)}</option>`;
+  sel.innerHTML = opt("", `this era (${d.current_era || "before any era"})`)
+    + eras.slice().reverse().filter((e) => e.id !== d.current_era).map((e) => opt(e.id, `${e.id}: ${e.label}, from ${new Date(e.start * 1000).toLocaleString()}`)).join("")
+    + opt("none", "before any era") + opt("all", "all time");
+}
 Orchestra.machineList = () => (DATA ? DATA.machines : []);
 
 // The observed machines and event types as the map's graph: machines publish event types
@@ -266,8 +276,9 @@ function cards() {
 function render() { if (DATA) { eventMap(DATA); cards(); } }
 async function load() {
   try {
-    const d = await (await fetch("/api/machines")).json();
+    const d = await (await fetch("/api/machines" + (ERA ? `?era=${encodeURIComponent(ERA)}` : ""))).json();
     $("conn").textContent = "live";
+    eraPicker(d);
     if (!d.ok) { $("evmap-host").innerHTML = `<div class="empty">${esc(d.error)}</div>`; return; }
     const first = !DATA;
     DATA = d; render();

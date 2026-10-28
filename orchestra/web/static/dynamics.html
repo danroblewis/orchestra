@@ -46,6 +46,11 @@
   .charttip .tt { color:var(--muted); font-size:10.5px; margin-bottom:3px } .charttip .tr { display:flex; align-items:center; gap:6px; white-space:nowrap } .charttip .tr i { width:9px; height:3px; border-radius:2px } .charttip .tl { color:var(--text2); font-family:var(--mono); font-size:11px } .charttip .tr b { margin-left:auto; padding-left:12px; font-family:var(--mono) }
   svg .xh { stroke:var(--text2); stroke-width:1; stroke-dasharray:3 3; vector-effect:non-scaling-stroke }
   .drawer h4 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:14px 0 6px } .drawer .def { display:grid; grid-template-columns:110px 1fr; gap:5px 12px; font-size:12.5px } .drawer .def > div:nth-child(odd) { color:var(--muted) }
+  .origin.prior { color:#ddd6fe; border-color:#5b21b6 }
+  .eras { margin:0 0 10px; font-size:12px } .eratl { display:flex; gap:2px; margin:6px 0 }
+  .eratl button { flex:1 1 0; min-width:34px; background:var(--panel3); color:var(--text2); border:1px solid var(--border2); border-radius:5px; font:inherit; font-size:11px; padding:3px 4px; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .eratl button.cur { border-color:#7c3aed } .eratl button.on { background:#4c1d95; color:var(--text) }
+  .erachg div { margin:2px 0 } .erachg .chg { color:#fcd34d } .erachg .gone { color:#fca5a5 } .erachg .new { color:#86efac }
   .tables h3 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:12px 0 6px }
 </style>
 </head>
@@ -55,6 +60,7 @@
   <div class="intro">The system dynamics model of the system Orchestra covers. There is one model; it changes over time, and each change is kept as a version. Stocks are measured quantities (each bound to a series in the metrics store), flows move material between them with equations fitted from the history, and machines (programs, AI agents and people, known by their events) are associated with flows only as hypotheses, from their events matching a flow's counter. A flow may have several, or none yet; the associations never change an equation. Every equation says whether it was fitted or only declared.</div>
   <div class="dynhead"><h1 id="mname">The system</h1><span class="ver" id="ver"></span><span class="sum" id="sum"></span>
     <span style="margin-left:auto;display:inline-flex;gap:8px;align-items:center"><span class="muted" id="redisc-note" style="font-size:11.5px"></span><button class="ctl" id="redisc" onclick="rediscover()" title="Discover the model again now, with the settings below">rediscover now</button></span></div>
+  <div class="panel eras" id="eras" style="display:none"></div>
   <details class="dset" id="dset"><summary>discovery: <b id="dset-sum">…</b></summary>
     <div class="dgrid">
       <label>strategy <select id="d-strategy"></select></label>
@@ -94,6 +100,7 @@
 const MPAL = ["#60a5fa", "#f59e0b", "#e879f9", "#22c55e", "#f87171", "#38bdf8", "#facc15", "#a78bfa", "#fb923c"];
 const mcolor = (id) => { if (!id || id === "none") return "#94a3b8"; let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return MPAL[h % MPAL.length]; };
 let MODEL = null, VERSION = null;   // null: follow the current version
+let ERA = null;                     // null: the current era; else a past era's id ("none": before any era)
 const nice = (s) => (s || "outside").toLowerCase().replace(/_/g, " ");
 // stocks and flows by what tells them apart (SDGraph.names); the model's ``name`` is the full record
 const stockName = (id) => SDGraph.stockName(MODEL, id), flowName = (f) => SDGraph.flowName(MODEL, f);
@@ -118,7 +125,7 @@ const stockColor = (id) => { const i = MODEL ? MODEL.stocks.findIndex((s) => s.i
   // or its package's declaration), never from the model, which only knows it writes series
   window.MKINDS = window.MKINDS || {};
   async function loadKinds() {
-    try { const d = await (await fetch("/api/machines")).json();
+    try { const d = await (await fetch("/api/machines?era=all")).json();
       for (const m of d.machines || []) MKINDS[m.id] = m.kind || "";
     } catch (e) {}
   }
@@ -277,7 +284,7 @@ function tables() {
   $("flows").innerHTML = `<tr><th>flow</th><th>equation</th><th>fit</th><th title="machines whose events match the flow's counter: hypotheses, with their confidence. Two similar flows between the same stocks may not be told apart, so a hypothesis may belong to a flow's twin.">machines (hypotheses)</th></tr>` + m.flows.map((f) => { const e = f.current, q = (e && e.quality) || {};
     const end = (id) => (id ? stockName(id) : "outside");
     return `<tr><td>${esc(flowName(f))}<div class="muted" style="font-size:11px">${esc(end(f.from))} → ${esc(end(f.to))}</div></td><td class="num">${esc(eqText(f))}${e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}${SDGraph.correlational(m, f) ? `<div class="muted" style="font-family:inherit;font-size:11px">${esc(SDGraph.UNTESTED)}</div>` : ""}</td>
-      <td>${e ? `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span> <span class="muted num">${esc(e.form)} · ${q.events ?? 0} ev · disp ${(q.dispersion ?? 0).toFixed(1)}</span>` : '<span class="muted">—</span>'}</td>
+      <td>${e ? `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span> <span class="muted num">${esc(e.form)} · ${q.events ?? 0} ev · disp ${(q.dispersion ?? 0).toFixed(1)}</span>${e.prior && e.prior.weight != null && e.origin !== "prior" ? `<div class="muted" style="font-size:11px">${Math.round(100 * e.prior.weight)}% from the prior (era ${esc(e.prior.era || "before")})</div>` : ""}${eraNote(f)}` : '<span class="muted">—</span>'}</td>
       <td>${(f.machines || []).length ? f.machines.map((h) => `<div title="${esc(h.why || h.origin || "")}"><span class="mdot" style="--c:${mcolor(h.machine)}"></span>${esc((byMachine[h.machine] || {}).name || h.machine)}${h.confidence != null ? ` <span class="muted num">${Math.round(100 * h.confidence)}%</span>` : ""}</div>`).join("") : `<span class="muted" title="${esc(f.association || "")}">no machine associated yet</span>`}</td></tr>`; }).join("");
   $("stocks").innerHTML = `<tr><th>stock</th><th>now</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr><td>${stockHead(s.id)}</td><td class="num">${m.levels[s.id] ? m.levels[s.id].v + " " + esc(s.unit) : "—"}</td>
       <td class="num muted">${s.series ? esc(keyOf(s.series)) + `<div style="font-family:inherit">${esc(resOf(m.discovery, keyOf(s.series)))}</div>` : "not measured"}</td></tr>`).join("");
@@ -293,6 +300,52 @@ function tables() {
       return ""; }).join("")
     + `<h3>Left out <span class="count">${Object.keys(d.left_out).length} of ${d.looked_at ?? "?"}</span></h3>` + leftOut(d.left_out) : '<div class="muted">This version was declared, not discovered.</div>';
   $("sum").innerHTML = `${m.stocks.length} stocks · ${m.flows.length} flows (${fitted} fitted) · ${m.machines.length} machines${m.stored ? "" : ' · <span class="stale">not stored yet: <code>orchestra sd declare</code></span>'}${m.levels_error ? ` · <span class="stale">levels: ${esc(m.levels_error)}</span>` : ""}`;
+}
+// Eras (sd/eras.py): a new one begins when a machine changes the system; each is discovered from
+// its own data, with the era before as its prior. The timeline picks the era to show (a past
+// one's last saved version); under it, what changed at the shown era's boundary.
+function erasBar() {
+  const m = MODEL, eras = m.eras_recorded || [];
+  if (!eras.length) { $("eras").style.display = "none"; return; }
+  $("eras").style.display = "";
+  const now = Date.now() / 1000, shown = m.era ?? "none", current = m.current_era ?? "none";
+  const segs = [{ id: "none", label: "before any era", start: null }, ...eras];
+  const when = (t) => (t ? new Date(t * 1000).toLocaleString() : "the start");
+  const bar = segs.map((e, i) => { const end = i + 1 < segs.length ? segs[i + 1].start : now, len = e.start ? Math.max(1, end - e.start) : Math.max(1, (end - eras[0].start) / 4 || 1);
+    return `<button class="${e.id === shown ? "on" : ""} ${e.id === current ? "cur" : ""}" style="flex-grow:${Math.max(0.15, Math.sqrt(len))}" onclick="pickEra('${esc(e.id)}')"
+      title="${esc(e.id === "none" ? "before any era" : `${e.id}: ${e.label}${e.subject ? " (" + e.subject + ")" : ""}, from ${when(e.start)}`)}${e.id === current ? " · current" : ""}">${esc(e.id === "none" ? "before" : e.id)}</button>`; }).join("");
+  const e = eras.find((x) => x.id === shown);
+  const head = e ? `era <b>${esc(e.id)}</b>${e.id === current ? " (current)" : ' <span class="past">· a past era</span>'}: began ${esc(ago(now - e.start))} ago, when ${esc(e.label)}${e.subject ? ` changed <span class="ty">${esc(e.subject)}</span>` : ""}`
+    : "the time before any era";
+  $("eras").innerHTML = `<div><span class="muted">Eras: a new one begins when a machine says it changed the system (<code>system.changed</code>, or <code>[discovery] eras_from</code>); each is discovered from its own data, with the era before as its prior.</span></div>
+    <div class="eratl">${bar}</div><div>${head}</div><div class="erachg">${eraChanges(m)}</div>`;
+}
+function eraChanges(m) {
+  const c = (m.discovery || {}).era_comparison;
+  if (!c) return "";
+  const fl = (id) => { const f = m.flows.find((x) => x.id === id); return f ? flowName(f) : nice(id); };
+  const rows = c.flows.filter((f) => f.status !== "unchanged").map((f) => {
+    if (f.status === "changed") return `<div class="chg">${esc(fl(f.id))}: ${f.params.map((p) => `${esc(p.param)} ${num(p.before, true)} → ${num(p.after, true)}${p.ratio != null ? ` (×${p.ratio.toFixed(2)}` : " ("}, ${p.z == null ? "z ∞" : "z " + p.z}; ± ${num(p.se_before, true)} → ± ${num(p.se_after, true)})`).join("; ")}</div>`;
+    if (f.status === "form changed") return `<div class="chg">${esc(fl(f.id))}: its form changed, ${esc(f.before.form)} → ${esc(f.after.form)}</div>`;
+    if (f.status === "disappeared") return `<div class="gone">${esc(nice(f.id))}: disappeared</div>`;
+    if (f.status === "appeared") return `<div class="new">${esc(fl(f.id))}: appeared</div>`;
+    return `<div class="muted">${esc(fl(f.id))}: ${f.status === "carried" ? "carried from the prior, not yet found in this era" : "the prior's equation; too few events in this era for its form"}</div>`; });
+  const s = c.stocks, lp = c.loops;
+  if (s.appeared.length) rows.push(`<div class="new">stocks appeared: ${s.appeared.map((x) => esc(stockName(x))).join(", ")}</div>`);
+  if (s.disappeared.length) rows.push(`<div class="gone">stocks disappeared: ${s.disappeared.map((x) => esc(nice(x))).join(", ")}</div>`);
+  if (s.carried.length) rows.push(`<div class="muted">stocks carried from the prior: ${s.carried.map((x) => esc(stockName(x))).join(", ")}</div>`);
+  if (lp.appeared.length || lp.disappeared.length) rows.push(`<div>loops: ${lp.appeared.length} appeared, ${lp.disappeared.length} disappeared</div>`);
+  const same = c.flows.filter((f) => f.status === "unchanged").length;
+  return `<div style="margin-top:6px"><b>At its start</b>, against ${c.from ? "era " + esc(c.from) : "the time before any era"} (a number changed when it moved by at least twice its standard error):</div>`
+    + (rows.join("") || '<div class="muted">nothing changed</div>') + (same ? `<div class="muted">${same} flow${same > 1 ? "s" : ""} unchanged</div>` : "");
+}
+function pickEra(id) { ERA = id === (MODEL.current_era ?? "none") ? null : id; VERSION = null; load(); }
+function eraNote(f) {
+  const c = (MODEL.discovery || {}).era_comparison, x = c && c.flows.find((y) => y.id === f.id);
+  if (!x || x.status === "unchanged") return "";
+  const at = `at ${esc(c.to)}`;
+  if (x.status === "changed") return `<div class="muted" style="font-size:11px;color:#fcd34d">changed ${at}: ${x.params.map((p) => `${esc(p.param)} ${num(p.before, true)} → ${num(p.after, true)}`).join(", ")}</div>`;
+  return `<div class="muted" style="font-size:11px">${esc(x.status)} ${at}</div>`;
 }
 function versionBar() {
   const m = MODEL, vs = m.versions || [], i = vs.findIndex((v) => v.version === m.version);
@@ -312,6 +365,7 @@ function versionBar() {
     <span class="muted" title="${esc(when)}">${esc(v.note || "")}${when ? " · " + esc(ago(Date.now() / 1000 - v.saved_at)) + " ago" : ""}</span>`;
 }
 function step(d) {
+  ERA = null;
   const vs = MODEL.versions;
   if (MODEL.live && VERSION === null) { if (d < 0 && vs.length) { VERSION = vs[vs.length - 1].version; load(); } return; }
   const i = vs.findIndex((v) => v.version === MODEL.version), n = vs[i + d];
@@ -366,7 +420,7 @@ function showModelParts(on) {
 }
 async function load() {
   try {
-    const d = await (await fetch("/api/dynamics/model" + (VERSION ? `?version=${VERSION}` : ""))).json();
+    const d = await (await fetch("/api/dynamics/model" + (VERSION ? `?version=${VERSION}` : ERA ? `?era=${encodeURIComponent(ERA)}` : ""))).json();
     await loadKinds();
     showModelParts(d.ok);
     if (!d.ok) {
@@ -379,19 +433,19 @@ async function load() {
           + `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d.discovery))} A level is a stock when counters balance it.</div>${leftOut(lo)}</div>` : "");
       return;
     }
-    MODEL = d.model; $("conn").textContent = "live"; versionBar(); draw(); tables();
+    MODEL = d.model; $("conn").textContent = "live"; versionBar(); erasBar(); draw(); tables();
   } catch (e) { $("conn").textContent = "disconnected"; }
 }
 load();
 // follow the current model (a fit makes a new version), unless a past one is being read
 setInterval(async () => {
-  if (VERSION !== null) return;
+  if (VERSION !== null || ERA !== null) return;
   try {
     const d = await (await fetch("/api/dynamics/model")).json();
     if (!d.ok) return;
     const changed = !MODEL || d.model.version !== MODEL.version || d.model.as_of !== MODEL.as_of;
     if (!MODEL) showModelParts(true);
-    MODEL = d.model; versionBar(); if (changed) draw(); tables();
+    MODEL = d.model; versionBar(); erasBar(); if (changed) draw(); tables();
   } catch (e) {}
 }, 15000);
 </script>
