@@ -27,6 +27,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from ..launcher import child_env
+from ..sd.units import from_name
 from .spec import KINDS, NAME, SourceSpec
 from .views import Definition
 
@@ -77,7 +78,7 @@ def _from_script(base: Definition, q: dict, n: str, who: str, spec: SourceSpec) 
     same = query == base.query and kind in (None, base.kind)      # a rename: still read as generated (plan.py)
     return replace(base, id=f"{base.id}.{n}" if base.id else f"script.{n}", name=name, query=query,
                    inner=base.inner if same else "", agg=base.agg if same else "", agg_labels=list(base.agg_labels) if same else [],
-                   kind=kind or base.kind, unit=q.get("unit") or base.unit, view=base.view if raw_counter else "script",
+                   kind=kind or base.kind, unit=q.get("unit") or (base.unit if same else None) or from_name(name), view=base.view if raw_counter else "script",
                    extra_labels={str(k): str(v) for k, v in (q.get("labels") or {}).items()},
                    origin=[*base.origin, f"rewritten by {who}" if base.id else f"added by {who}"],
                    flags=list(base.flags), rename=dict(base.rename) or spec.aliases())

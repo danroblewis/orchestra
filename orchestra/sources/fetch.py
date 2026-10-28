@@ -146,16 +146,21 @@ def integrate(pts: Points) -> Points:
     return out
 
 
-def accumulate(rows: list[tuple[Labels, Points]], t0: float) -> list[tuple[Labels, Points]]:
-    """Each step's events (``increase`` over it) into a running total from 0 at ``t0``; the step at
-    ``t0`` itself is before the window and is not counted."""
+def accumulate(rows: list[tuple[Labels, Points]], t0: float, step: float) -> list[tuple[Labels, Points]]:
+    """Each step's events (``increase`` over it) into a running total from 0, one step before its
+    first increase in the window (``t0`` at the earliest: the step at ``t0`` itself covers time
+    before the window and is not counted). A counter that began reporting inside the window starts
+    there, not at the window's start: a 0 written at the start would read, to discovery, as a
+    write followed by a silence until its first sample."""
     out = []
     for labels, pts in rows:
-        total, acc = 0.0, [(t0, 0.0)]
-        for t, v in sorted(pts):
-            if t > t0:
-                total += v
-                acc.append((t, total))
+        pts = sorted((t, v) for t, v in pts if t > t0)
+        if not pts:
+            continue
+        total, acc = 0.0, [(max(t0, pts[0][0] - step), 0.0)]
+        for t, v in pts:
+            total += v
+            acc.append((t, total))
         out.append((labels, acc))
     return out
 
@@ -219,7 +224,7 @@ def read_many(source: Source, defs: list[Definition], prefix: str, machine: str 
     for i, got in rows.items():
         d = by_id[i]
         if d.agg == "increase":
-            got = accumulate(got, starts[forms[i][2]])
+            got = accumulate(got, starts[forms[i][2]], forms[i][2])
         out[i] = _finish(d, got, prefix, machine, producers)
     selects: dict = {}
     alone = [d for d in defs if d.id not in forms]

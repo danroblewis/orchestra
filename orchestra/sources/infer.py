@@ -24,6 +24,7 @@ from dataclasses import asdict, dataclass, field, replace
 from itertools import pairwise
 from pathlib import Path
 
+from ..sd.units import from_name
 from . import PastDeadline, Source, SourceError
 from .limits import Budget
 from .plan import probe_form, shared
@@ -91,7 +92,7 @@ def _declared(spec: SourceSpec, declared: list[DeclaredSeries]) -> list[Definiti
     (view ``increments``, reset-safe, summed by its ``by`` labels), anything else a query."""
     aliases = spec.aliases()
     return [Definition(id=f"declared.{i}", source=spec.name, name=x.name, family=f"declared:{x.name}",
-                       view="increments" if x.by is not None else "declared", kind=x.kind, query=x.query, unit=x.unit,
+                       view="increments" if x.by is not None else "declared", kind=x.kind, query=x.query, unit=x.unit or from_name(x.name),
                        group_by=[aliases.get(b, b) for b in x.by or []], by_real=list(x.by or []),
                        origin=[f"declared in the preset {x.preset}" if x.preset else "declared in orchestra.toml"], pin=True,
                        rename=aliases, traffic=dict(x.traffic or {}))
