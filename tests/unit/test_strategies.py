@@ -386,3 +386,18 @@ def test_past_its_deadline_a_strategy_process_is_stopped_with_every_process_it_s
     else:
         os.kill(pid, 9)
         raise AssertionError(f"the strategy's worker {pid} outlived the deadline")
+
+
+def test_each_stock_gets_a_behaviour_trust_beside_its_identity_trust(tmp_path):
+    # the bakery's stocks are found by their balances (identity trust); run forward from part-way
+    # through the window, the model is judged against the measured levels, and that is kept beside
+    store = FileMetrics(tmp_path / "m.jsonl")
+    start, end = simulate(store, minutes=60)
+    m = discover_with(store.dump("", {"project": "p"}), start=start, end=end, step=30)
+    assert m.discovery["behaviour"]["stocks"] == len(m.stocks) > 0
+    for s in m.stocks:
+        t = s.evidence["trust"]
+        b = t["behaviour"]
+        assert 0.0 <= b["score"] <= 1.0 and b["score"] == pytest.approx(1 / (1 + b["error"]), abs=1e-3)
+        assert b["growth"] >= 0 and b["z"] > 0 and b["pairs"] > 10
+        assert t["score"] == pytest.approx(min(t["components"].values())), "the identity trust is still the weakest of its own"
