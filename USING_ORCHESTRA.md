@@ -287,7 +287,7 @@ CLI call alike. The state-directory file needs no variable.
 ### Durations
 
 Wherever a key takes a duration, give a number of seconds (`30`, `2.5`) or a string with a unit:
-`"500ms"`, `"30s"`, `"5m"`, `"1h"`. A string with no unit is seconds.
+`"500ms"`, `"30s"`, `"5m"`, `"1h"`, `"7d"`, `"2w"`. A string with no unit is seconds.
 
 ### `[events]`: the event bus
 

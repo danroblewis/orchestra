@@ -33,16 +33,20 @@ def project_key(repo_root: Path) -> str:
     return f"{name}-{digest}"
 
 
+DURATION_UNITS = {"ms": 0.001, "s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+
+
 def parse_duration(value: Any, default: float) -> float:
+    """Seconds: a number is seconds, a string a number with a unit (ms, s, m, h, d or w; none is s)."""
     if value is None:
         return default
     if isinstance(value, (int, float)):
         return float(value)
-    m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*(ms|s|m|h)?\s*", str(value))
+    m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*(ms|s|m|h|d|w)?\s*", str(value))
     if not m:
-        raise ConfigError(f"bad duration {value!r}")
+        raise ConfigError(f"bad duration {value!r}: a number of seconds, or with a unit: ms, s, m, h, d or w")
     n, unit = float(m.group(1)), m.group(2) or "s"
-    return n * {"ms": 0.001, "s": 1, "m": 60, "h": 3600}[unit]
+    return n * DURATION_UNITS[unit]
 
 
 @dataclass
