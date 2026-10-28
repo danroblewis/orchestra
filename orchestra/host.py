@@ -196,22 +196,22 @@ class Host:
         from .sd.store import ModelStore
         from .sd.strategies import sd_installed
         from .sources.catalogue import Catalogue
-        from .web.background import history, stock_step
+        from .web.background import history, remote_refs, stock_step
 
         cfg = self.project.config
         hist = None
         if r.model.stocks or r.model.flows:         # reading series: stalls need no simulator, divergence does
             store, cat = metrics_for(self.project), Catalogue(self.project, metrics_for(self.project), infer=False)
-            step = stock_step(cfg.discovery_step)
-            readers: dict = {}
+            span = max(cfg.diverge_after, 3 * cfg.stall_after, 2 * cfg.discovery_every) + 600
+            # the remote series once, at discovery's step, over the whole span: what the discovery
+            # just read is in its read cache, so only the steps after it are asked for
+            read = cat.reader(r.at - span - 300, r.at, cfg.discovery_step, remote_refs(r.model))
 
             def raw(ref, start, end):
                 if ref.source and ref.source != "own":
-                    readers.setdefault((start, end), cat.reader(start, end, step))
-                    return readers[(start, end)](ref)
+                    return [(t, v) for t, v in read(ref) if start <= t <= end]
                 return store.raw(ref.name, ref.labels, start=start, end=end)
-            span = max(cfg.diverge_after, 3 * cfg.stall_after, 2 * cfg.discovery_every) + 600
-            hist = history(r.model, raw, r.at, step, span_s=span)
+            hist = history(r.model, raw, r.at, stock_step(cfg.discovery_step), span_s=span)
         said = announce(ModelStore.for_state(self.project.state_dir), self.events.publish, r.model, r.at, hist,
                         hold=cfg.announce_hold, gap_s=cfg.announce_gap, after_s=cfg.diverge_after, every_s=cfg.discovery_every,
                         era_start=r.model.discovery.get("era_start"), stall_after=cfg.stall_after,

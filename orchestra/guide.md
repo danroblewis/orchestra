@@ -254,19 +254,71 @@ inferred, so changing one keeps the cached definitions):
 name = "work"
 url = "https://tenant.example/data/metrics"
 auth = { bearer_env = "WORK_TOKEN" }
-rate = 5                  # requests a second, shared by the host and the web server
+rate = 5                  # requests a second to this store, from everything on this machine
 burst = 10
+max_requests_per_day = 20000   # per store per UTC day, every project and process counted; then reads stop until 00:00 UTC
+web_share = 0.2           # of the rate and the daily cap, at most, for the web server's reads
 max_requests = 1000       # per discovery's reads, retries included
 infer_requests = 1500     # per inference round, retries included
 infer_deadline = "300s"   # per inference round, the schema's reads included
 series_per_query = 2000   # the most series one batched read touches; below the store's limit
+max_names = 2000          # metric names match may select for inference to list them
 ```
 
+The rate and the daily cap are **per store**: its URL and any tenant header, shared by every
+project, process, `[[sources]]` entry and trial read on this machine that points at it (a bucket
+under Orchestra's home, `stores/`). Two entries for one store do not get twice the rate.
+
 Only the host's discovery and `orchestra sources infer` infer; the web server and the judge read
-the cached definitions (an hour old by default, `infer_every`). A round that fails, or could not
-read everything, is tried again after 5 minutes, then 10, 20, up to `infer_every`, never at once;
-the definitions before it stand meanwhile. A round over a shorter window than the cached one's
-never replaces it. `history = "24h"` is how far back a family's type is judged (below). A
+the cached definitions (an hour old by default, `infer_every`; six hours for a source that declares
+`[[series]]` and does not set it). A round that fails, or could not read everything, is tried again
+after 5 minutes, then 20, 80, never at once; the definitions before it stand meanwhile. After three
+rounds that failed for what they cost (their budget or deadline spent), or one refused because the
+store is too big to list, **no round runs until the `[[sources]]` entry changes** (or
+`orchestra sources infer` asks for one): narrow it rather than paying for the same failure every
+hour. A round over a shorter window than the cached one's never replaces it.
+
+**What a store is asked, and how often.** Discovery reads its window once, then only the steps
+since its last read (and five minutes before, further for a series whose newest samples are late), reading the whole window
+again hourly; the web server reads other stores only while a page shows their levels, history or
+counted traffic, starting from what the host's discovery read, and slows down when the store
+throttles it. A read the store refused for its size is not asked again for an hour.
+
+**A large tenant (millions of series, tens of thousands of names).** Inference never lists a
+whole big store: when `match` selects more than `max_names` metric names (one cheap request
+says how many), inference is refused with what to narrow, and not tried again until the entry
+changes. Never answer that by raising a budget or a limit: narrow `match` to the families the
+model is about, with a label matcher where the store is shared, or declare the series and set
+`infer = false`. Safe settings for a tenant of about 5M series:
+
+```toml
+[[sources]]
+name = "prod"
+url = "https://<tenant>.chronosphere.io/data/metrics"
+auth = { header = { name = "API-Token", value_file = "~/.config/chronosphere/token" } }
+settle = "60s"
+match = ['{__name__=~"rabbitmq_queue_messages(_ready|_unacked)?|kafka_consumergroup_lag_sum|checkout_orders_total", env="prod"}']
+infer = false            # once the declared [[series]] cover the stocks; infer only while setting up
+rate = 1.0               # requests a second to this store from this machine
+burst = 5
+concurrency = 2
+max_requests_per_day = 10000
+max_requests = 200       # per discovery round
+infer_requests = 300     # per inference round: fail fast, then narrow
+infer_every = "6h"       # the schema does not change hourly; a burst must not flip the model
+series_per_query = 1000  # well under the tenant's per-query limit: a burst doubles cardinality
+max_series = 60          # definitions discovery reads
+history = "6h"
+
+[discovery]
+window = "60m"
+step = "60s"             # half the points and samples of 30 s
+every = "15m"
+```
+
+With these, check a store before inferring from it (`check_sources` asks no series), look at
+names before series (`source_schema` with a `match`), preview only aggregated queries with a label
+matcher, and infer at most once per change of `match`. `history = "24h"` is how far back a family's type is judged (below). A
 `[[series]]` entry (`source`, `name`, `query` or `select`, `kind = "level" | "counter" | "rate"`)
 pins one definition the inference would not rank.
 
@@ -467,6 +519,9 @@ role = "outflow"
   many series, 400 when a range asks for too many points. Orchestra waits out a 429 or 503 for
   its `Retry-After` (every reader of the source pauses with it), splits a batch the store refuses
   for its size and remembers the limit the store named, and reads at `rate` requests a second.
+  A metric over the limit across an HA pair's replicas (`prometheus_replica`, `replica`) is read
+  at one replica, and a recording rule over the pair is read at one replica too: a rule summed
+  across replicas counts everything twice, so its base is read instead.
   Inference batches its reads across families: a tenant of a few hundred metric names costs one
   or two hundred requests to infer and a handful a discovery. Never lower the cap or raise a
   limit to fit: narrow the read. A metric too big for one query alone is named in

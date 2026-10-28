@@ -8,7 +8,12 @@ at once (``census.py``):
 3. for the families the window cannot judge (it only rose), the same series over ``history``;
    for those whose samples are all 1, their extremes (an info metric);
 4. each label's role: identity, unit, constant, or grouping when its values do not churn;
-5. labels the collection adds whose values repeat each other (``duplicates.py``).
+5. labels the collection adds whose values repeat each other (``duplicates.py``), recording rules
+   included (a rule evaluated by each replica of an HA pair carries the replica label,
+   and summed across it counts everything twice).
+
+A name over the store's per-query limit across an HA pair's replicas but under it at one
+(``listing.py``) is read at that replica: its family's ``where``.
 
 A family any phase could not read is not guessed at: it keeps the last round's verdict
 (``known``: kind, interval, label roles, the value read of a duplicated label), noted, or else is
@@ -16,6 +21,8 @@ A family any phase could not read is not guessed at: it keeps the last round's v
 changes only when this round's samples decide it (``behaviour.decides``)."""
 
 from __future__ import annotations
+
+import time
 
 from . import Source, census
 from .behaviour import classify, counter_like, decides
@@ -32,8 +39,8 @@ from .checks import (
     pick_live,
 )
 from .duplicates import duplicated
-from .family import UNREAD, Family, LabelInfo, Schema
-from .listing import listing
+from .family import UNREAD, Family, LabelInfo, Schema, esc
+from .listing import REPLICA_LABELS, listing
 from .schema import SKIP_LABELS, _aliases, _group
 from .spec import SourceSpec
 
@@ -64,16 +71,46 @@ def _restore(fam: Family, k: dict | None, why: str) -> None:
     fam.notes.append(f"could not be read this round ({why}): kept as the last round found it")
 
 
+def _remembered(lst, old: dict | None) -> dict:
+    """What the next rounds' listings keep of this one's: names too big, names listed at one replica."""
+    now = time.time()
+    keep = lambda kind, n: (old or {}).get(kind, {}).get(n, {}).get("at", now)
+    return {"too_big": {n: {"why": w.split(" (found at ")[0], "at": keep("too_big", n)} for n, w in lst.too_big.items()},
+            "pinned": {n: {"pin": p, "at": keep("pinned", n)} for n, p in lst.pinned.items()}}
+
+
+def _at(sel: str, where: dict[str, str]) -> str:
+    """``sel`` narrowed to the label values of ``where``."""
+    if not where:
+        return sel
+    m = ",".join(f'{k}="{esc(v)}"' for k, v in sorted(where.items()))
+    if sel.endswith("}"):
+        return sel[:-1] + ("" if sel.endswith("{}") else ",") + m + "}"
+    return f"{sel}{{{m}}}"
+
+
+def _metadata(source: Source, names: list[str]) -> dict:
+    try:
+        return source.metadata(names)
+    except TypeError:                      # a source whose metadata takes no names
+        return source.metadata()
+
+
 def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until: float | None = None,
-           known: dict[str, dict] | None = None) -> Schema:
+           known: dict[str, dict] | None = None, remembered: dict | None = None) -> Schema:
     known = known or {}
     conc = spec.concurrency
-    lst = listing(source, spec.match, start, end, until=until, concurrency=conc)
+    lst = listing(source, spec.match, start, end, until=until, concurrency=conc, max_names=spec.max_names, known=remembered)
     notes = list(lst.notes)
     names = lst.names
-    meta = source.metadata()
+    meta = _metadata(source, sorted(names))
     families = _group(names, meta)
     families_by = {f.name: f for f in families}
+    for fam in families:                   # listed at one replica of an HA pair: read there
+        if pin := next((lst.pinned[m] for m in fam.metrics if m in lst.pinned), None):
+            fam.where.update(pin)
+            fam.notes.append(f"over the store's per-query limit across its replicas: read at {', '.join(f'{k}={v}' for k, v in pin.items())} "
+                             "only (an HA pair's replicas repeat each other)")
     failed: dict[str, str] = {}
     sets_of: dict[str, list] = {}
     one_of: dict[str, list] = {}
@@ -88,6 +125,13 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
     judged = {f.name for f in families if f.kind in RETYPABLE and not f.stats and not f.counter_form}
     picks = {f.name: pick(f.first_metric(), one_of[f.name], PICKS if f.name in judged else 3) for f in families}
     rule_picks = {(f.name, r["metric"]): pick(r["metric"], names.get(r["metric"], []), 3) for f in families for r in f.rollups.values()}
+    for fam in families:                   # a family read at one replica is sampled there too
+        if fam.where:
+            picks[fam.name] = (_at(picks[fam.name][0], fam.where), picks[fam.name][1])
+            for r in fam.rollups.values():
+                rule_picks[(fam.name, r["metric"])] = (_at(rule_picks[(fam.name, r["metric"])][0],
+                                                           {k: v for k, v in fam.where.items() if k in r.get("labels", [])}),
+                                                       rule_picks[(fam.name, r["metric"])][1])
     raw, bad = census.raw(source, {**picks, **rule_picks}, start, end, until, conc)
     gone = {f.name: (f.first_metric(), 2 * (PICKS if f.name in judged else 3), max(1, len(one_of[f.name]))) for f in families
             if f.name not in bad and picks[f.name][0] != f.first_metric() and sum(span(p) >= (end - start) / 2 for p in raw.get(f.name, [])) < 2}
@@ -198,7 +242,7 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
 
     # 5. duplicates
     dups = {f.name: [c for c, i in f.labels.items() if i.role == "grouping" and 2 <= i.cardinality <= 4 and i.real in COLLECTION_LABELS]
-            for f in families if f.name not in failed and f.series <= DUPLICATE_SERIES and f.kind not in (*UNREAD, "rollup")}
+            for f in families if f.name not in failed and f.series <= DUPLICATE_SERIES and f.kind not in UNREAD}
     dups = {n: cs for n, cs in dups.items() if cs}
     grids, bad = census.grid(source, {n: (families_by[n].selector(families_by[n].stats[0] if families_by[n].stats else None),
                                           families_by[n].resolution_s, max(1, families_by[n].series)) for n in dups},
@@ -220,6 +264,22 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
             fam.series = max(1, fam.series // (1 + len(dropped)))
             fam.notes.append(f"{real}={', '.join(dropped)} only repeats {real}={keep}, target for target: only {keep} is read")
             series = [(lab, v) for lab, v in series if lab.get(real) not in dropped]
+    for fam in families:                   # too big to check by its data: an HA pair's replica label is read at one value
+        if fam.name in failed or fam.name in dups or fam.series <= DUPLICATE_SERIES or fam.kind in UNREAD:
+            continue
+        for c, i in list(fam.labels.items()):
+            if i.role == "grouping" and 2 <= i.cardinality <= 4 and i.real in REPLICA_LABELS:
+                counts: dict[str, int] = {}
+                for lab in sets_of[fam.name]:
+                    if i.real in lab:
+                        counts[lab[i.real]] = counts.get(lab[i.real], 0) + 1
+                keep = min(counts, key=lambda v: (-counts[v], v))
+                fam.where[i.real] = keep
+                fam.labels[c] = LabelInfo(i.real, 1, 0.0, "constant")
+                fam.constants[c] = keep
+                fam.series = max(1, fam.series // len(counts))
+                fam.notes.append(f"{i.real} names a replica of an HA pair ({len(counts)} values): read at {i.real}={keep} only, "
+                                 f"never summed across it (too many series, {sum(counts.values())}, to compare the replicas by their data)")
 
     for n, why in failed.items():
         _restore(families_by[n], known.get(n), why)
@@ -229,5 +289,5 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
                      f"round found them, {len(failed) - kept} unknown and left out; the first: {next(iter(failed.values()))}")
     for n, why in lst.failed.items():
         notes.append(f"{n}: could not be listed ({why})")
-    return Schema(families, notes)
+    return Schema(families, notes, _remembered(lst, remembered))
 

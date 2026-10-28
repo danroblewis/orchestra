@@ -7,9 +7,9 @@ counts, which switch its type.
 | a gauge with no statistic | an intensive one (latency, ratio, utilisation) ``max`` and ``avg by (G)``; any other ``sum by (G)`` |
 | a counter | increments by G: ``sum by (G) (increase(x[S]))`` on discovery's grid, read server-side (``fetch.py``) |
 | a native histogram | its count, a counter: ``histogram_count`` of the same (its ``_sum`` is not read, as for a classic one) |
-| a recording rule ``…:fn`` | ``fn by (G)`` of it (a sum of sums, a max of maxes; a sum of rates), as a rate when its name says rate, read with its own interval's lookback; in its base's family, it replaces the base's own view of that function; ``level:metric:fn`` is named by its full name, so it never takes an exporter's own ``metric_fn``. A rule over a counter (a rate, a sum) counts the same events as the counter: the counter is read, the rule left out and says why (only a ``count`` rule, of reporters, is read beside it) |
+| a recording rule ``…:fn`` | ``fn by (G)`` of it (a sum of sums, a max of maxes; a sum of rates), as a rate when its name says rate, read with its own interval's lookback; in its base's family, it replaces the base's own view of that function; ``level:metric:fn`` is named by its full name, so it never takes an exporter's own ``metric_fn``. A rule over a counter (a rate, a sum) counts the same events as the counter: the counter is read, the rule left out and says why (only a ``count`` rule, of reporters, is read beside it). A rule is read at the value of a replica or scrape-job label its base is read at; one that lacks that label was summed across the copies and is left out for its base |
 | a timestamp, a clock, an info metric or a scrape's own series (``schema.UNREAD``) | none but an info metric's count of reporters: a sum of them means nothing |
-| any family with an identity label | ``count by (G)`` of one statistic: the pods reporting, a level; and its turnover, the pods that started and stopped reporting, as two counters that balance it exactly |
+| any family with an identity label | ``count by (G)`` of one statistic: the pods reporting, a level; and its turnover, the pods that started and stopped reporting, as two counters that balance it exactly (read from raw samples, so only for a family of at most ``series_per_query`` series: a bigger one is counted on the server only) |
 | any family | how many values of each grouping label report: ``count(count by (L) (…))`` |
 
 A count is made from one family per thing counted (the gauges' before a counter's), so the pods of
@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from itertools import combinations
 from math import prod
 
-from .family import lookback
+from .family import esc, lookback
 from .schema import INTENSIVE, UNREAD, Family
 from .spec import SourceSpec
 
@@ -137,18 +137,24 @@ def views(fam: Family, spec: SourceSpec) -> list[Definition]:
             unit_label=unit_label if view not in ("count", "starts", "stops", "distinct") else None, counter_form=fam.counter_form, left=left))
 
     rules = fam.rollups or ({fam.rollup["fn"]: {**fam.rollup, "metric": fam.name, "resolution_s": fam.resolution_s}} if fam.rollup else {})
+    carries = lambda rule, k: "labels" not in rule or k in rule["labels"]
+    # a rule without a label the family is read at one value of (an HA pair's replica, a duplicated
+    # scrape job) was summed across its copies: the base, read at one value, is read instead
+    doubled = {fn: r for fn, r in rules.items() if fam.kind not in ("rollup", *UNREAD) and any(not carries(r, k) for k in fam.where)}
+    rules = {fn: r for fn, r in rules.items() if fn not in doubled}
     covered = set(rules)                            # the base's own views of these functions give way to the rules
 
-    def rule_view(fn: str, rule: dict, by: list[str], group: list[str], gtext: str, constants: bool = True) -> None:
+    def rule_view(fn: str, rule: dict, by: list[str], group: list[str], gtext: str, constants: bool = True, left: str = "") -> None:
         outer = {"count": "sum", "avg": "avg", "rate": "sum"}.get(fn, fn)
-        left = (f"the same events as its counter {fam.name}, which is read instead: a rule over a counter and the counter are one flow"
-                if fam.kind == "counter" and fn != "count" else "")
+        left = left or (f"the same events as its counter {fam.name}, which is read instead: a rule over a counter and the counter are one flow"
+                        if fam.kind == "counter" and fn != "count" else "")
         flags = ["an unweighted average of the rule's averages"] if fn == "avg" else []
         if rule["rate"] and "increase" in rule["metric"].rpartition(":")[2]:
             flags.append("an increase over the rule's window read as a per-second rate: its size is off by that window")
         res = rule.get("resolution_s") or fam.resolution_s       # a rule's own interval: it is evaluated on its own clock
         name = rule["metric"] if rule.get("level") else f"{rule['of']}_{fn}"    # level:metric:fn by its full name, never the base's own name
-        inner = f"last_over_time({rule['metric']}[{lookback(res)}s])"
+        pin = [f'{k}="{esc(v)}"' for k, v in sorted(fam.where.items()) if carries(rule, k)]   # read at the value its base is
+        inner = f"last_over_time({rule['metric']}{'{' + ','.join(pin) + '}' if pin else ''}[{lookback(res)}s])"
         add(name, "rollup", "rate" if rule["rate"] else "level", _by(outer, by, inner),
             group, flags=flags, origin=f"a recording rule ({rule['metric']}), {fn} of {rule['of']}; {outer}{gtext}", constants=constants,
             resolution_s=res, inner=inner, agg=outer, left=left)
@@ -200,12 +206,17 @@ def views(fam: Family, spec: SourceSpec) -> list[Definition]:
             by_n = [fam.labels[c].real for c in plain + group]
             add(f"{base}_{who}s", "count", "level", _by("count", by_n, sel), group, inner=sel, agg="count",
                 stat=stat, unit=f"{who}s", origin=f"{who}s reporting{gtext}, counted from {fam.name}", counts=thing)
-            for view, verb in (("starts", "started"), ("stops", "stopped")):
+            for view, verb in (("starts", "started"), ("stops", "stopped")) if fam.series <= spec.series_per_query else ():
                 add(f"{base}_{who}s_{verb}_total", view, "counter", fam.selector(stat), group, stat=stat, unit=f"{who}s",
                     origin=f"{who}s that {verb} reporting{gtext}, from {fam.name}'s raw samples", counts=thing)
     for fn, rule in sorted(rules.items()):
         if fn not in served:                        # a rule at another level (job:…) than any grouping of its base: its total
             rule_view(fn, rule, [], [], "", constants=False)
+    for fn, rule in sorted(doubled.items()):
+        over = ", ".join(f"{k}" for k in fam.where if not carries(rule, k))
+        rule_view(fn, rule, [], [], "", constants=False,
+                  left=f"summed across {over}, whose values repeat each other ({fam.name} is read at "
+                       f"{', '.join(f'{k}={v}' for k, v in sorted(fam.where.items()))}): it counts every copy; {fam.name} is read instead")
     kept_real = [fam.labels[c].real for c in plain]
     for c in fam.role("grouping") if fam.kind not in ("timestamp", "clock", "scrape") else []:
         sel = f"last_over_time({fam.selector(fam.stats[0] if fam.stats else None)}[{r}])"

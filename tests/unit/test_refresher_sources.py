@@ -41,6 +41,7 @@ def _project(tmp_path, monkeypatch):
 def test_a_down_source_never_stops_the_own_levels_or_the_history(tmp_path, monkeypatch):
     project = _project(tmp_path, monkeypatch)
     bg = Refresher(project, Events.for_project(project), for_project(project))
+    bg.want("remote")                              # a page shows the levels
     try:
         deadline = time.time() + 20
         while time.time() < deadline and not (bg.ready("history") and "source rig" in bg.errors and "queue" in bg.levels):
@@ -59,3 +60,27 @@ def test_sd_show_says_a_down_sources_level_is_unavailable(tmp_path, monkeypatch,
     line = next(x for x in out.out.splitlines() if x.strip().startswith("pods"))
     assert "unavailable" in line and "rig:" in line and "Traceback" not in out.out + out.err
     assert next(x for x in out.out.splitlines() if x.strip().startswith("queue")).split()[-1] == "7.0"
+
+
+def test_no_page_no_remote_read(tmp_path, monkeypatch):
+    """With no page asking for remote levels or history, the web server reads no other store; the
+    own store's levels and the history still update."""
+    project = _project(tmp_path, monkeypatch)
+    bg = Refresher(project, Events.for_project(project), for_project(project))
+    asked = []
+    bg.catalogue.reader = lambda *a, **k: asked.append(a) or (lambda ref: [])
+    try:
+        deadline = time.time() + 10
+        while time.time() < deadline and not (bg.ready("history") and "queue" in bg.levels):
+            time.sleep(0.2)
+        time.sleep(1.5)
+        assert asked == [] and "source rig" not in bg.errors and bg.history["stocks"]["queue"]
+        bg.want("remote")
+        deadline = time.time() + 10
+        while time.time() < deadline and not asked:
+            time.sleep(0.2)
+        assert asked, "a page's ask starts the remote reads"
+        ref_window = asked[0]
+        assert ref_window[2] == project.config.discovery_step   # read on discovery's grid: the host's reads are reused
+    finally:
+        bg.stop()

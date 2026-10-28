@@ -40,7 +40,8 @@ SHAPE_POINTS = 30            # a probe's series, kept at this many points, to co
 REFUSED = re.compile(r"over the store's per-query series limit|HTTP 4(?!29|01|03)\d\d")   # the store will not read it: no retry helps
 UNPROBED = 0.5               # of the candidates, at most, not probed for the round to stand (partial)
 TRANSPORT = ("timeout", "deadline", "concurrency", "infer_every", "rate", "burst", "max_requests", "infer_requests",
-             "infer_deadline", "max_points", "settle", "script_timeout", "series_per_query")   # how a source is read, not what it holds
+             "infer_deadline", "max_points", "settle", "script_timeout", "series_per_query",
+             "max_requests_per_day", "web_share", "max_names", "infer_every_set")   # how a source is read, not what it holds
 
 
 @dataclass
@@ -58,6 +59,7 @@ class Inference:
     window: list[float] = field(default_factory=list)   # [start, end] it was inferred over
     requests: int = 0                            # the round's requests, retries included
     seconds: float = 0.0                         # its wall time
+    remembered: dict = field(default_factory=dict)   # names too big, names listed at one replica (listing.py), for the next rounds
 
     def to_json(self) -> dict:
         return asdict(self)
@@ -68,7 +70,8 @@ class Inference:
         defs = lambda xs: [Definition(**{k: v for k, v in x.items() if k in fields}) for x in xs]
         return cls(d["source"], d["at"], d["key"], defs(d.get("kept") or []), defs(d.get("left_out") or []),
                    list(d.get("families") or []), d.get("script"), list(d.get("notes") or []), d.get("error"),
-                   bool(d.get("partial")), list(d.get("window") or []), int(d.get("requests") or 0), float(d.get("seconds") or 0.0))
+                   bool(d.get("partial")), list(d.get("window") or []), int(d.get("requests") or 0), float(d.get("seconds") or 0.0),
+                   dict(d.get("remembered") or {}))
 
     def span(self) -> float:
         return self.window[1] - self.window[0] if len(self.window) == 2 else 0.0
@@ -199,17 +202,19 @@ def unique_names(defs: list[Definition]) -> None:
 
 
 def infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path,
-          start: float, end: float, until: float | None = None, known: dict[str, dict] | None = None) -> Inference:
+          start: float, end: float, until: float | None = None, known: dict[str, dict] | None = None,
+          remembered: dict | None = None) -> Inference:
     """A fresh round, by ``until`` (``time.monotonic()``; the source's ``infer_deadline`` from now
     by default) and within ``infer_requests``. Raises ``SourceError`` or ``TransformError`` when it
-    cannot stand; ``known``: the last round's families by name."""
+    cannot stand; ``known``: the last round's families by name; ``remembered``: what its listing
+    found too big or listed at one replica."""
     began = time.monotonic()
     until = began + spec.infer_deadline if until is None else until
     before, outer = getattr(source, "requests", 0), getattr(source, "budget", None)
     if hasattr(source, "budget"):
         source.budget = Budget(spec.infer_requests, until, "the inference round")
     try:
-        inf = _infer(source, spec, declared, repo_root, start, end, until, known)
+        inf = _infer(source, spec, declared, repo_root, start, end, until, known, remembered)
     finally:
         if hasattr(source, "budget"):
             source.budget = outer
@@ -218,9 +223,10 @@ def infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo
 
 
 def _infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path,
-           start: float, end: float, until: float, known: dict[str, dict] | None) -> Inference:
+           start: float, end: float, until: float, known: dict[str, dict] | None, remembered: dict | None = None) -> Inference:
     inf = Inference(spec.name, time.time(), settings_key(spec, declared, repo_root), window=[start, end])
-    schema = read_schema(source, spec, start, end, until=until, known=known)
+    schema = read_schema(source, spec, start, end, until=until, known=known, remembered=remembered)
+    inf.remembered = schema.remembered
     inf.notes = list(schema.notes)
     inf.partial = any("could not be read this round" in n for n in schema.notes)
     inf.families = [{"name": f.name, "metrics": list(f.metrics), "stats": f.stats, "series": f.series, "unit": f.unit,
@@ -241,7 +247,8 @@ def _infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], rep
     if missed and len(missed) > UNPROBED * len(probes):
         first = next(probes[i]["error"] for i in missed)
         raise SourceError(f"{len(missed)} of {len(probes)} probes could not be made; the first: {first} "
-                          "(narrow match, or raise infer_deadline or infer_requests on the [[sources]] entry)")
+                          "(narrow match on the [[sources]] entry to fewer families, or set infer = false and declare the series "
+                          "in [[series]])")
     if missed or big:
         why = lambda i: (f"the store refuses its read ({probes[i]['error']}): narrow match, or declare it in [[series]]"
                          if i in big else f"not probed this round ({probes[i]['error']})")

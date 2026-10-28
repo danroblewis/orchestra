@@ -13,8 +13,17 @@ the retries, the round's deadline or budget), the rest are used, the failed ones
 status (``failed``), and discovery goes on. Credentials refused, or more failing, is missing.
 
 A source's reads in one discovery are one round: at most ``max_requests`` requests (retries
-included) by ``deadline``, at the source's request ``rate`` shared with every other process of the
-project (``limits.py``), the generated views read together (``fetch.read_many``).
+included) by ``deadline``, at the source's request ``rate`` shared with every other reader of the
+same store on this machine, and under its daily cap (``limits.py``), the generated views read
+together (``fetch.read_many``). **Reads are incremental** (``readcache.py``): discovery keeps what
+it read in ``<state>/sources/<name>.reads.json`` and asks the store only for the steps after it
+(and a few before, for samples written late), reading the whole window again hourly; every other
+reader (the web server, the judge, ``orchestra sd show``) starts from that file and asks only for
+what is newer.
+
+The web server's catalogue (``share=True``) reads from its own share of the store's rate and daily
+cap (``web_share``, a fifth), drawn from before the store's, under a small budget per round
+(``WEB_REQUESTS`` by ``WEB_DEADLINE``): it can never starve discovery or inference.
 
 A catalogue made with ``infer=False``, or made inside ``reading_only()`` on the same thread (the web
 server's "rediscover" button runs so), reads the cached definitions and never starts an inference
@@ -40,12 +49,12 @@ from ..sd.series import Declared, series_key
 from . import SourceError
 from .cache import definitions
 from .fetch import grid_step, read_many
-from .fetch import read as read_definition
 from .infer import Inference
-from .limits import Budget, RateLimit
+from .limits import Budget, for_store, store_key
 from .own import OWN, OwnSource
 from .plan import read_resolution
 from .prometheus import PrometheusSource
+from .readcache import ReadCache
 from .spec import SourceSpec, Specs, for_project
 from .transform import TransformError
 from .views import Definition
@@ -79,6 +88,9 @@ def why(e: Exception) -> str:
 
 SUMMARIES = {"avg_by", "upper_by", "max_by", "min_by"}       # views that summarise many reporters' values
 PARTIAL = 0.1               # of a source's definitions, at most, that may fail for the source to be partial, not missing
+WEB_REQUESTS = 20           # a round of the web server's reads from one source, at most
+WEB_DEADLINE = 30.0         # ... done within this many seconds
+KEEP_BEFORE = 900.0         # what the read cache keeps before the window it was last asked for
 
 
 def summary(d: Definition) -> bool:
@@ -120,14 +132,36 @@ def reading_only():
 
 
 class Catalogue:
-    def __init__(self, project, metrics: MetricsStore | None, specs: Specs | None = None, *, infer: bool | None = None):
+    def __init__(self, project, metrics: MetricsStore | None, specs: Specs | None = None, *, infer: bool | None = None,
+                 share: bool = False, incremental: bool = True):
+        """``share``: the web server's catalogue, reading from its share of each store (``web_share``)
+        under a small budget per round. ``incremental=False`` reads every window whole."""
         self.project = project
         self.infer = (not getattr(_THREAD, "reading_only", False)) if infer is None else infer
         self.specs = specs if specs is not None else for_project(project)
         self.own = OwnSource(metrics, project.key) if metrics is not None else None
-        rate = lambda s: RateLimit(s.rate, s.burst, Path(project.state_dir) / "sources" / f"{s.name}.rate")
-        self.remotes = {s.name: PrometheusSource(s, rate(s)) for s in self.specs.sources}
+        self.share = share
+        self.remotes = {s.name: PrometheusSource(s, for_store(s, s.web_share if share else None)) for s in self.specs.sources}
+        self.caches = {s.name: ReadCache(store_key(s.url, s.auth.headers), self._reads_file(s)) for s in self.specs.sources} if incremental else {}
+        self._loaded: set[str] = set()
         self.errors: dict[str, str] = {}            # source -> why the last read of a model's series from it failed (reader)
+
+    def _reads_file(self, spec: SourceSpec) -> Path:
+        return Path(self.project.state_dir) / "sources" / f"{spec.name}.reads.json"
+
+    def _cache(self, spec: SourceSpec, *, keeps: bool) -> ReadCache | None:
+        """The source's read cache, with what the host's discovery last kept: loaded once by the
+        catalogue that keeps it (``keeps``: discovery's), else taken in when it changed."""
+        cache = self.caches.get(spec.name)
+        if cache is None:
+            return None
+        if keeps:
+            if spec.name not in self._loaded:
+                cache.load()
+                self._loaded.add(spec.name)
+        else:
+            cache.absorb(self._reads_file(spec))
+        return cache
 
     def spec(self, name: str) -> SourceSpec:
         return next(s for s in self.specs.sources if s.name == name)
@@ -136,7 +170,8 @@ class Catalogue:
         return definitions(self.remotes[name], self.spec(name), self.specs.declared, Path(self.project.repo_root),
                            Path(self.project.state_dir), start, end, refresh=refresh, until=until, infer_ok=self.infer or refresh)
 
-    def _remote(self, spec: SourceSpec, start: float, end: float, step: float, own_names: set[str], out: Reading) -> None:
+    def _remote(self, spec: SourceSpec, start: float, end: float, step: float, own_names: set[str], out: Reading,
+                keep: bool = True) -> None:
         src = self.remotes[spec.name]
         began, before = time.monotonic(), (src.requests, src.points, src.retries)
         st: dict = {"where": spec.where(), "auth": src.auth.describe(), "prefix": spec.prefix}
@@ -149,7 +184,7 @@ class Catalogue:
             return
         st.update(inferred_at=inf.at, definitions=len(inf.kept), left_out=len(inf.left_out), script=inf.script,
                   inference_error=inf.error)
-        results, failed = self._read_all(spec, inf.kept, start, end, step, time.monotonic() + spec.deadline)
+        results, failed = self._read_all(spec, inf.kept, start, end, step, time.monotonic() + spec.deadline, keeps=keep)
         times: list[float] = []
         n = 0
         refused: list[str] = []
@@ -189,18 +224,33 @@ class Catalogue:
                 st["warning"] = "partial: " + _failures(failed, names, len(inf.kept), spec.deadline)
 
     def _read_all(self, spec: SourceSpec, defs: list[Definition], start: float, end: float, step: float,
-                  until: float | None = None) -> tuple[dict[str, list], dict[str, str]]:
+                  until: float | None = None, *, keeps: bool = False) -> tuple[dict[str, list], dict[str, str]]:
         """Every definition read from its source, as one round (``max_requests`` by ``until``, the
-        source's deadline from now when not given), all of them ending ``settle`` before ``end``:
-        the results by definition id, and why by id for those that could not be read."""
+        source's deadline from now when not given; the web server's: ``WEB_REQUESTS`` by
+        ``WEB_DEADLINE``), all of them ending ``settle`` before ``end``, asking only for what the
+        read cache does not keep (``keeps``: discovery's, saved for the next round and every
+        other reader): the results by definition id, and why by id for those that could not be read."""
         src = self.remotes[spec.name]
-        until = time.monotonic() + spec.deadline if until is None else until
-        outer, src.budget = src.budget, Budget(spec.max_requests, until, "this discovery's reads")
+        if self.share:
+            until = min(until if until is not None else time.monotonic() + WEB_DEADLINE, time.monotonic() + WEB_DEADLINE)
+            budget = Budget(WEB_REQUESTS, until, "the web server's reads")
+        else:
+            until = time.monotonic() + spec.deadline if until is None else until
+            budget = Budget(spec.max_requests, until, "this discovery's reads")
+        cache = self._cache(spec, keeps=keeps)
+        outer, src.budget = src.budget, budget
         try:
             return read_many(src, defs, spec.prefix, spec.machine, start, end - spec.settle, step, spec.producers, until,
-                             spec.concurrency)
+                             spec.concurrency, cache, max(spec.settle, 2 * step))
         finally:
             src.budget = outer
+            if cache is not None:
+                cache.trim(start - KEEP_BEFORE)
+                if keeps:
+                    try:
+                        cache.save()
+                    except OSError:
+                        pass                    # the next round reads the window whole
 
     def counted(self, start: float, end: float, step: float) -> tuple[list[dict], dict[str, str]]:
         """Every series of counted traffic over [start, end]: its source, name, labels, points,
@@ -221,7 +271,10 @@ class Catalogue:
                     out.append({"source": spec.name, "name": name, "labels": labels, "points": pts, "kind": d.kind, **counted})
         return out, failed
 
-    def read(self, start: float, end: float, step: float) -> Reading:
+    def read(self, start: float, end: float, step: float, *, keep: bool = True) -> Reading:
+        """Every series for the window (see the module's docstring). ``keep``: the reads are kept
+        for the next discovery and the project's other readers (``readcache.py``); False for a
+        read of another window (the judge's halves), which reads from the cache but keeps nothing."""
         out = Reading()
         if self.own is not None:
             out.dump = list(self.own.dump())
@@ -231,41 +284,64 @@ class Catalogue:
             out.status[name] = {"ok": False, "error": f"refused in orchestra.toml: {why}"}
             out.missing[name] = out.status[name]["error"]
         for spec in self.specs.sources:
-            self._remote(spec, start, end, step, own_names, out)
+            self._remote(spec, start, end, step, own_names, out, keep)
         return out
 
-    def reader(self, start: float, end: float, step: float):
+    def reader(self, start: float, end: float, step: float, refs: list | None = None):
         """A reader of the remote series a model is bound to (``SeriesRef`` with a ``source``)
         over one window: ``read(ref)`` gives that series' points, read through the definition of
-        that name in the source's current inference. Each definition is read once and shared by
-        every stock and flow bound to one of its series; a source that fails is tried once, its
-        error kept in ``errors`` (by source name) until a read of it works, and its series read
-        as empty. For the web server's levels and history, and ``orchestra sd show``."""
+        that name in the source's current inference. The definitions of ``refs`` are read
+        together, one round per source (``fetch.read_many``), and any other when first asked for;
+        each once, shared by every stock and flow bound to one of its series, asking the store only
+        for what the read cache does not keep. A source that fails is tried once, its error kept
+        in ``errors`` (by source name) until a read of it works, and its series read as empty. For
+        the web server's levels and history, the judge, the host's announcements and
+        ``orchestra sd show``."""
         results: dict[tuple[str, str], dict[str, list]] = {}
         failed: set[str] = set()
 
-        def definition(source: str, name: str) -> dict[str, list]:
+        def load(source: str, names: set[str]) -> str | None:
+            """Reads the definitions of ``names``; why some could not be read, if any."""
             spec = self.spec(source)
             inf = self.inference(source, start, end)
-            out: dict[str, list] = {}
-            for d in inf.kept:
-                if f"{spec.prefix}:{d.name}" == name:
-                    for n, labels, pts, _ in read_definition(self.remotes[source], d, spec.prefix, spec.machine, start,
-                                                             end - spec.settle, step, spec.producers):
-                        out[series_key(n, labels)] = pts
-            return out
+            defs = [d for d in inf.kept if f"{spec.prefix}:{d.name}" in names]
+            got, errors = self._read_all(spec, defs, start, end, step) if defs else ({}, {})
+            for name in names:
+                results.setdefault((source, name), {})
+            for d in defs:
+                for n, labels, pts, _ in got.get(d.id, []):
+                    results[(source, f"{spec.prefix}:{d.name}")][series_key(n, labels)] = pts
+            if not errors:
+                return None
+            first = next(iter(errors.values())).removeprefix("late: ")
+            return f"{len(errors)} of {len(defs)} reads failed; the first: {first}"
+
+        def attempt(source: str, names: set[str]) -> None:
+            try:
+                said = load(source, names)
+            except Exception as e:  # noqa: BLE001 - the series reads as empty; the page shows why
+                self.errors[source] = why(e)
+                failed.add(source)
+                return
+            if said:                            # the others were read: theirs are used
+                self.errors[source] = said
+            else:
+                self.errors.pop(source, None)
+
+        by_source: dict[str, set[str]] = {}
+        for ref in refs or []:
+            if ref.source in self.remotes:
+                by_source.setdefault(ref.source, set()).add(ref.name)
+        for source, names in by_source.items():
+            attempt(source, names)
 
         def read(ref) -> list[tuple[float, float]]:
             source = ref.source
             if source not in self.remotes or source in failed:
                 return []
             if (source, ref.name) not in results:
-                try:
-                    results[(source, ref.name)] = definition(source, ref.name)
-                    self.errors.pop(source, None)
-                except Exception as e:  # noqa: BLE001 - the series reads as empty; the page shows why
-                    self.errors[source] = why(e)
-                    failed.add(source)
+                attempt(source, {ref.name})
+                if source in failed:
                     return []
             return results[(source, ref.name)].get(series_key(ref.name, ref.labels), [])
         return read

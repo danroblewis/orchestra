@@ -25,10 +25,12 @@ from . import Labels, PastDeadline, Points, Source, SourceError
 from .transport import TooBig
 
 PART_LABEL = "orchestra_part"
+OVER_LIMIT = "over the store's per-query series limit"
 MAX_PARTS = 40
 MAX_CHARS = 16000
 RAW_SERIES = 60                  # series per batched raw read
 NAME = re.compile(r"^[a-zA-Z_:][a-zA-Z0-9_:]*$")
+REJECTED = re.compile(r"HTTP 400\b")       # the store rejected the query itself (a part written by hand)
 
 
 @dataclass
@@ -76,13 +78,18 @@ def _one(source: Source, group: list[Part], start: float, end: float, step: floa
         rows = source.query_range(q, start, end, step, until=until, narrow=False)
     except TooBig as e:
         if len(group) == 1:
-            failed[group[0].key] = f"over the store's per-query series limit: {e}"
+            failed[group[0].key] = f"{OVER_LIMIT}: {e}"
             return
         half = len(group) // 2
         _one(source, group[:half], start, end, step, until, got, failed)
         _one(source, group[half:], start, end, step, until, got, failed)
         return
     except SourceError as e:              # PastDeadline included: those parts are not read
+        if len(group) > 1 and REJECTED.search(str(e)) and not isinstance(e, PastDeadline):
+            half = len(group) // 2        # one part the store rejects (a query written by hand) fails alone
+            _one(source, group[:half], start, end, step, until, got, failed)
+            _one(source, group[half:], start, end, step, until, got, failed)
+            return
         for p in group:
             failed[p.key] = str(e) if not isinstance(e, PastDeadline) else f"late: {e}"
         return
