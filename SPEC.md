@@ -1444,6 +1444,23 @@ A plugin may also ship a guide (`guide`: a markdown file in its package) written
 operator that configures it for the owner; `orchestra.guides.collect` and `/api/guides` return
 Orchestra's own guide (`orchestra/guide.md`: its settings, instruments, machines, the overlay)
 first, then each plugin's, and Orchestra reads nothing in them (PLUGINS.md §4.7.1).
+**A project's own plugins and overrides** (`orchestra/plugins.py`, `orchestra/overrides.py`;
+docs/proposals/agent-first-machines.md §10.1). Orchestra's environments are not editable installs,
+so a project patches in place. `.orchestra/plugins/<name>/__init__.py` (or `<name>.py`) is a plugin
+with the same contract, `plugin(project)`, loaded after the installed ones by file location as
+`orchestra_local.<name>`, never through `sys.path` (AGENTS.md rule 10). `.orchestra/overrides/<name>.py`
+replaces one attribute of an installed package: its header names `TARGET` (`module:attribute`),
+`PACKAGE` (`dist==version`, the version it was written against), `KIND` (`wrap`: `override(original)`
+is called once and returns what takes the attribute's place; `replace`: `override` itself takes
+it) and `ISSUE` (where the fix is asked upstream). It is applied only while that exact version is
+installed (otherwise **stale**, not applied, so it never outlives the fix), wherever plugin code
+runs: on every `plugins.load` and before a plugin command (`commands.run`, which is how the launcher
+starts plugin processes). Applied once; a changed file is applied again from the kept original; a
+removed or stale one is taken out. Each is reported in `/api/plugins` (`local`: name, file, status
+applied | stale | failed | loaded, error; an override's target, package, installed version and
+issue) and listed on the Core page. The limit: a copy taken with `from x import y` before the
+override was applied keeps the original.
+
 A plugin that fails, one whose name an earlier plugin took, a page at a path Orchestra serves, or
 a script or stylesheet missing from its static directory is left out and reported, never fatal. A plugin is
 the package's, not Orchestra's: its routes are its own, and Orchestra knows nothing of what they

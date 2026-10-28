@@ -261,6 +261,9 @@ class Host:
                            [replace(c, owner=plug.name) for c in plug.collectors]) for plug in loaded.plugins}
         for err in loaded.errors:
             self.log(f"plugin {err['plugin']} failed to load: {err['error']}; what it last declared, if anything, stands")
+        for item in loaded.local:
+            if item["status"] not in ("applied", "loaded"):
+                self.log(f"local {item['kind_of']} {item['name']}: {item['status']}: {item['error']}")
         if loaded.errors:
             now = {**self._declared, **now}
         self._declared, self._loaded_for = now, mtime
