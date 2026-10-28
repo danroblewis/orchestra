@@ -135,7 +135,7 @@ def test_pytest_report_log_with_markers_and_reruns(tmp_path):
               rec("tests/test_math.py::test_sub", "setup", "skipped")]
     write(tmp_path / "log.jsonl", "\n".join(lines) + "\n")
     s = run(["--reports", str(tmp_path / "log.jsonl"), "--kind", "e2e=@e2e"])
-    assert kinds(s, "tests") == {"e2e": 2, "acceptance": 0, "unit": 2}
+    assert kinds(s, "tests") == {"e2e": 2, "unit": 2}                     # no acceptance test: no acceptance row
     assert outcomes(s, "e2e")["passed"] == 2 and kinds(s, "tests_flaky")["e2e"] == 1
     assert outcomes(s, "unit") == {"passed": 0, "failed": 0, "error": 1, "skipped": 1}     # a teardown failure is an error
 
@@ -145,7 +145,7 @@ def test_kind_rules_in_order_with_names_and_ignore(tmp_path):
                                      "tests.helpers.test_h::test_h": "passed"}))
     s = run(["--reports", str(tmp_path / "r.xml"), "--kind", "e2e=*::*_e2e_*", "--kind", "ignore=tests/helpers/*",
              "--kind", "smoke=nothing/*"])
-    assert kinds(s, "tests") == {"e2e": 1, "smoke": 0, "acceptance": 0, "unit": 1}
+    assert kinds(s, "tests") == {"e2e": 1, "unit": 1}                     # smoke is named but absent: not 0
 
 
 def test_runs_make_tests_flaky_and_confirmed(tmp_path):
@@ -181,7 +181,7 @@ def test_streams_are_file_names_without_digits(tmp_path):
     write(tmp_path / "unit-2.xml", junit({"t.unit.a::x": "passed"}), at=1_000_100)
     write(tmp_path / "e2e.xml", junit({"t.e2e.a::y": "passed"}), at=1_000_000)
     s = run(["--reports", str(tmp_path / "*.xml")])
-    assert kinds(s, "tests") == {"e2e": 1, "acceptance": 0, "unit": 1}          # unit-2 is unit-1's next run
+    assert kinds(s, "tests") == {"e2e": 1, "unit": 1}          # unit-2 is unit-1's next run
     assert outcomes(s, "unit")["passed"] == 1 and kinds(s, "tests_flaky")["unit"] == 1
 
 
@@ -218,18 +218,18 @@ def test_history_counts_tests_added_and_removed(tmp_path):
     glob = str(tmp_path / "r" / "*" / "tests.xml")
     argv = ["--reports", glob, "--history", str(hist)]
     s = run(argv)
-    assert kinds(s, "tests_added_total") == {"e2e": 0, "acceptance": 0, "unit": 0}       # counters from the start
+    assert kinds(s, "tests_added_total") == {}                              # nothing counted yet
     write(tmp_path / "r" / "1" / "tests.xml", junit({"t.unit.a::x": "passed", "t.e2e.a::y": "passed"}), at=1_000_000)
     s = run(argv)
-    assert kinds(s, "tests_added_total") == {"e2e": 1, "acceptance": 0, "unit": 1}
+    assert kinds(s, "tests_added_total") == {"e2e": 1, "unit": 1}
     write(tmp_path / "r" / "2" / "tests.xml", junit({"t.unit.a::x": "passed", "t.e2e.a::y": "passed", "t.e2e.a::z": "passed",
                                                      "t.e2e.b::w": "failed"}), at=1_000_100)
     write(tmp_path / "r" / "3" / "tests.xml", junit({"t.e2e.a::y": "passed", "t.e2e.a::z": "passed", "t.e2e.b::w": "passed"}),
           at=1_000_200)
     s = run(argv)                                           # two runs since the last round, tallied in order
-    assert kinds(s, "tests_added_total") == {"e2e": 3, "acceptance": 0, "unit": 1}
-    assert kinds(s, "tests_removed_total") == {"e2e": 0, "acceptance": 0, "unit": 1}
-    assert kinds(s, "tests") == {"e2e": 3, "acceptance": 0, "unit": 0}
+    assert kinds(s, "tests_added_total") == {"e2e": 3, "unit": 1}
+    assert kinds(s, "tests_removed_total") == {"e2e": 0, "unit": 1}
+    assert kinds(s, "tests") == {"e2e": 3}                                # every unit test removed: unit is absent
     write(tmp_path / "r" / "0" / "tests.xml", junit({"t.e2e.old::q": "passed"}), at=999_000)   # an older run found late
     s = run(argv)
     assert kinds(s, "tests_added_total")["e2e"] == 3 and kinds(s, "tests")["e2e"] == 3
