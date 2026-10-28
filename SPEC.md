@@ -552,6 +552,16 @@ remembered; successive windows overlap, so it measures stability as the window s
 independent confirmation. The Dynamics page and `orchestra sd discover` show the score beside each
 stock, and the stock's drawer every measurement.
 
+That score is the stock's **identity** trust: its accounting holds. Beside it, never folded into
+it, each measured stock records its **behaviour** trust (`sd/behaviour.py`,
+`sd/experiments/heldout.py`, `evidence.trust.behaviour`): the model run forward from half-way, two
+thirds and five sixths of its own window, its inputs held as a forward run holds them, against the
+measured level; the RMS miss over the level's spread (`error`), the same for the level held
+(`hold_error`), how the miss grows with the horizon (`growth`, `z`), and `score = 1 / (1 + error)`.
+The equations were fitted on the whole window, so it is held out in time, not in fitting. It is
+shown wherever the identity trust is, and a forward run widens each stock's band by it (in
+quadrature, `± z × growth × h`), so that the band covers the truth about as often as it says.
+
 Everything else is **left out, with the reason** (did not change, written in too few steps, no
 counters balance it and no net flow explains it, not needed by any balance, the same as another
 counter), recorded in the model version. Not yet: stocks no series measures,
@@ -619,6 +629,19 @@ discoveries the host publishes, as `orchestra-host` (its own events, so it write
   level, band and since; `data.diverged` every stock diverged now; `era` and `era_start`, so a
   listener tells a divergence after an announced change from an unexplained one (the
   unexplained-change test, docs/rationale/lifted-models.md §3.3). Needs `orchestra[sd]`.
+- `orchestra.model.stalled` and `orchestra.model.resumed` (`sd/stall.py`): work that stopped
+  moving, in the model's terms alone. From the same history (series read, no simulator), over the
+  last `[discovery] stall_after` (default 15 min): a **stock** is stalled when its level rose
+  while every outflow drained less than `[discovery] stall_share` (default 0.1) of its usual rate
+  (its mean over the history before that window) and at least one outflow usually drains it; a
+  **flow** is stalled when its usual rate is above zero and every rate within the window is zero.
+  One event per item, `subject` `stock:<id>` or `flow:<id>` (a listener wakes on one item:
+  `orchestra.model.stalled:stock:queue`), `data` `kind`, `id`, `name`, `since`, `window_s`, `per`
+  (the time unit of the rates), a stock's `level`, `rose_by` and `outflows` (`{flow, rate,
+  usual}`), a flow's `rate` and `usual`, `era`, `era_start`. Once per stall; `resumed` (the
+  stall's fields with `stalled_since`) when the item is judged again and moves. An item the
+  history does not cover on both sides of the window is not judged. What a stall means for the
+  work is the listener's to say (rule 1).
 
 **Predictions: the intended-effect test** (`sd/predictions.py`, `sd/verdict.py`, `sd/judge.py`;
 goal G13; docs/rationale/lifted-models.md §3.1 and §3.2). Before a machine changes the system it
@@ -746,11 +769,15 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   `<state>/sources/<name>.json` with the window inferred over (`sources/infer.py`,
   `sources/cache.py`). **Only the host's discovery and the CLI infer**; the web server and the
   judge read the cache. One round at a time across processes (a lock); a failed or partial round
-  is retried after 5 minutes, doubling to `infer_every`, while the cached definitions stand; a
-  round over a narrower window never replaces a broader one. A round has a budget
+  is retried after 5 minutes, four times longer each next time, while the cached definitions
+  stand; after three rounds that failed for their cost, or one refused because `match` selects
+  more than `max_names` (2,000) metric names (a big tenant is never listed whole), none runs until
+  the source's settings change. A round over a narrower window never replaces a broader one. A
+  source that declares `[[series]]` infers every 6 h unless `infer_every` says otherwise. A round has a budget
   (`infer_requests`, 1500; `infer_deadline`, 300 s) and its reads are **batched across families**
   (`sources/listing.py`: names from `label/__name__/values`, series in batches of names split on a
-  422, histogram buckets never listed; `sources/census.py`, `sources/survey.py`: samples, churn,
+  422 and stopped at the cap, histogram buckets never listed, a name over the limit across an HA
+  pair's replicas listed and read at one, what was too big remembered for a day; `sources/census.py`, `sources/survey.py`: samples, churn,
   duplicates in few queries; `sources/batch.py`: parts joined with `or`, tagged by
   `label_replace`, under the source's `series_per_query`). A family a round cannot read keeps the
   last round's verdict or is `unknown` and left out, never guessed. Families (names differing by a statistic
@@ -804,8 +831,14 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   `machine = <prefix>.<value>` from the machine label (a remote `machine` or `source` label is
   prefixed too), and the name `<prefix>:<name>`; one that collides with an own series is refused.
   Each source is read on its own, with a timeout per request, a deadline and a budget
-  (`max_requests`), at its request `rate` shared by every process (`sources/limits.py`); 429,
-  502, 503 and 504 are retried after `Retry-After` or a jittered backoff (`sources/transport.py`).
+  (`max_requests`), at its request `rate` and under its daily cap (`max_requests_per_day`), both
+  **per store** (its URL and tenant headers) and shared by every project and process on the
+  machine through `~/.orchestrator/stores/` (`sources/limits.py`); 429, 502, 503 and 504 are
+  retried after `Retry-After` or a jittered backoff (`sources/transport.py`). **Reads are
+  incremental** (`sources/readcache.py`): discovery keeps what it read in
+  `<state>/sources/<name>.reads.json` and asks only for the steps since (and five minutes before, further for late series),
+  reading the whole window again hourly; a read refused for its size is not asked again for an
+  hour, and one refused for its series is not split by time unless that sheds series.
   A source with at most a tenth of its definitions unread is **partial** (the rest used, the
   failed named); one that fails beyond that is **missing**, and the stretches of the window in
   which it returned nothing are its gaps. Every
@@ -816,7 +849,9 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   unit; each equation lists the sources of the series it was fitted on (`sd/provenance.py`). The
   Dynamics page shows each source's state and why a discovery was not saved, and a stock's drawer
   its source, query and origin; the web server reads remote stocks' levels and history through
-  the catalogue.
+  the catalogue **only while a page asks for them**, at discovery's step, from the host's read
+  cache and then only what is newer, in one round per source from its own share of the store's
+  rate (`web_share`), slowing down when the store throttles it.
 
 **Counted traffic** (`sources/traffic.py`; `docs/proposals/event-sources.md` §1–3). A series
 definition may say what it counts on another system's bus:
@@ -976,7 +1011,15 @@ model (AGENTS.md rule 9 keeps humans to reading it).
 - runs the event collector: replays the bus once at start, then follows it, recording the eras
   the bus begins and announcing each (`orchestra.era.started`, §4.3);
 - rediscovers the model every `[discovery] every`, within the current era, and then publishes
-  what is due about it (`orchestra.model.changed`, `.diverged`, `.returned`, §4.3);
+  what is due about it (`orchestra.model.changed`, `.diverged`, `.returned`, `.stalled`,
+  `.resumed`, §4.3);
+- says when a machine falls silent on the bus (`orchestra/quiet.py`): an instance with a cadence of
+  its own (at least 3 beats, the Machines page's rule, `orchestra/cadence.py`) silent longer than
+  it stays active by that cadence is announced once, `orchestra.machine.quiet` (`subject` the
+  machine; `data` `machine`, `instance`, `last_seen`, `usual_gap`, `quiet_for`, `mode`), until it is
+  heard again. Observed only: the one thing read from its announcement is its mode, and an
+  instance engaged ad hoc is never called quiet. Orchestra's host, and instances already quiet
+  when the host starts, are not announced;
 - records the predictions machines make of their changes as it follows the bus, and after each
   discovery judges those due and publishes the verdicts (`orchestra.prediction.judged`, §4.3);
 - keeps running the processes the project and the plugins declare (§5.1);
@@ -1154,6 +1197,8 @@ prior_for = "60m"       # how long a new era carries what it has not found of it
 announce_hold = 3       # discoveries a structure change holds before orchestra.model.changed
 announce_gap = "30m"    # the least time between two orchestra.model.changed
 diverge_after = "15m"   # how long a stock is out of its band before orchestra.model.diverged
+stall_after = "15m"     # how long a stock rises with its outflows stopped (or a flow stays at zero) before orchestra.model.stalled
+stall_share = 0.1       # an outflow below this share of its usual rate counts as stopped
 [[machines]]            # the commands `orchestra run` keeps running (§5.1)
 name = "telemetry"
 command = "python machines/telemetry.py"
@@ -1411,6 +1456,23 @@ A plugin may also ship a guide (`guide`: a markdown file in its package) written
 operator that configures it for the owner; `orchestra.guides.collect` and `/api/guides` return
 Orchestra's own guide (`orchestra/guide.md`: its settings, instruments, machines, the overlay)
 first, then each plugin's, and Orchestra reads nothing in them (PLUGINS.md §4.7.1).
+**A project's own plugins and overrides** (`orchestra/plugins.py`, `orchestra/overrides.py`;
+docs/proposals/agent-first-machines.md §10.1). Orchestra's environments are not editable installs,
+so a project patches in place. `.orchestra/plugins/<name>/__init__.py` (or `<name>.py`) is a plugin
+with the same contract, `plugin(project)`, loaded after the installed ones by file location as
+`orchestra_local.<name>`, never through `sys.path` (AGENTS.md rule 10). `.orchestra/overrides/<name>.py`
+replaces one attribute of an installed package: its header names `TARGET` (`module:attribute`),
+`PACKAGE` (`dist==version`, the version it was written against), `KIND` (`wrap`: `override(original)`
+is called once and returns what takes the attribute's place; `replace`: `override` itself takes
+it) and `ISSUE` (where the fix is asked upstream). It is applied only while that exact version is
+installed (otherwise **stale**, not applied, so it never outlives the fix), wherever plugin code
+runs: on every `plugins.load` and before a plugin command (`commands.run`, which is how the launcher
+starts plugin processes). Applied once; a changed file is applied again from the kept original; a
+removed or stale one is taken out. Each is reported in `/api/plugins` (`local`: name, file, status
+applied | stale | failed | loaded, error; an override's target, package, installed version and
+issue) and listed on the Core page. The limit: a copy taken with `from x import y` before the
+override was applied keeps the original.
+
 A plugin that fails, one whose name an earlier plugin took, a page at a path Orchestra serves, or
 a script or stylesheet missing from its static directory is left out and reported, never fatal. A plugin is
 the package's, not Orchestra's: its routes are its own, and Orchestra knows nothing of what they
@@ -1476,8 +1538,8 @@ orchestra/
   sd/        model, store, fit, series and live (sampling, when a series was written), balance,
              collinear and restate (a level's balance), units (a balance's terms in the level's
              unit), identify, accept and construction (the evidence a balance must show),
-             stocktrust, netnull and persistence (each stock's trust), ends, inputs, drivers (which stocks may
-             drive a flow), discover (conservation), attribute (machines associated with flows,
+             stocktrust, netnull and persistence (each stock's trust), behaviour (its projection's), ends, inputs,
+             drivers and driverchoice (which series may drive a flow, and which does), path, discover (conservation), attribute (machines associated with flows,
              as hypotheses), rates, strategies, simulate, rediscover, trust (each flow's
              spread and what is not trusted), provenance (where each series in a model came from), linearise and observability
              (which stocks what is measured determines), eras, prior and compare (eras, the

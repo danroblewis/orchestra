@@ -305,7 +305,7 @@ url = "{f.url}"
         return answer(endpoint, form)
     f.answer = one_busy
     p.config.raw["sources"][0]["series_per_query"] = 1          # one family a request, so one fails alone
-    cat = Catalogue(p, None)
+    cat = Catalogue(p, None, incremental=False)                   # the same window again, read whole
     cat.remotes["lab"]._sleep = lambda s: None
     r = cat.read(T0, NOW, 60.0)
     st = r.status["lab"]
@@ -313,7 +313,7 @@ url = "{f.url}"
     assert st["failed"] and all("gauge_03" in x for x in st["failed"]) and "HTTP 503" in st["failed"][0]
     assert any(n == "lab:gauge_00" for n, _, _ in r.dump) and not any(n == "lab:gauge_03" for n, _, _ in r.dump)
     f.answer = lambda endpoint, form: (_ for _ in ()).throw(Busy()) if endpoint == "query_range" else answer(endpoint, form)
-    r = Catalogue(p, None)
+    r = Catalogue(p, None, incremental=False)
     r.remotes["lab"]._sleep = lambda s: None
     gone = r.read(T0, NOW, 60.0)
     assert "lab" in gone.missing and "reads failed" in gone.missing["lab"]

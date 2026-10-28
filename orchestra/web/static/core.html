@@ -80,6 +80,10 @@
     <div id="cfg-files" class="proc"></div>
     <div id="cfg-keys" class="scroll" style="max-height:420px"></div>
   </div>
+  <div class="panel" id="local" style="margin-top:16px;display:none">
+    <h2 style="margin-top:0"><span>The project's own plugins and overrides</span><span class="hctl"><span class="muted" id="local-note"></span></span></h2>
+    <div id="local-list" class="scroll" style="max-height:300px"></div>
+  </div>
   <div class="logs">
     <h2><span>Logs</span><span class="hctl"><span class="muted" id="log-note"></span></span></h2>
     <div class="bar" id="log-bar"></div>
@@ -273,6 +277,20 @@ async function loadConfig() {
     $("cfg-keys").innerHTML = `<table class="ct"><tr><th>key</th><th>from</th><th>value</th></tr>${c.keys.map((k) => `<tr><td class="mono">${esc(k.key)}</td><td>${k.from === "overlay" ? "<b>overlay</b>" : "repository"}</td><td class="mono" style="word-break:break-all">${val(k)}</td></tr>`).join("")}${c.removed.map((r) => `<tr><td class="mono">${esc(r)}</td><td><b>overlay</b></td><td class="muted">removed (enabled = false)</td></tr>`).join("")}</table>`;
   } catch (e) { $("cfg-note").textContent = "cannot read: " + e; }
 }
+// the project's plugins and overrides (.orchestra/plugins/, .orchestra/overrides/), as the web
+// server loaded them; read from /api/plugins, never by this page's own probes (rule 8)
+async function loadLocal() {
+  try {
+    const { local } = await (await fetch("/api/plugins")).json();
+    if (!local || !local.length) { $("local").style.display = "none"; return; }
+    $("local").style.display = "";
+    const bad = local.filter((x) => !["applied", "loaded"].includes(x.status)).length;
+    $("local-note").textContent = `${local.length}${bad ? `, ${bad} not in effect` : ""}`;
+    const cls = (st) => st === "applied" || st === "loaded" ? "" : " class=\"probe bad\"";
+    $("local-list").innerHTML = `<table class="ct"><tr><th>what</th><th>file</th><th>target</th><th>package (installed)</th><th>issue</th><th>status</th></tr>${local.map((x) => `<tr><td>${esc(x.kind_of)} <b>${esc(x.name)}</b></td><td class="mono">${esc(x.file || "")}</td><td class="mono">${esc(x.target || "")}</td><td class="mono">${esc(x.package || "")}${x.installed ? ` (${esc(x.installed)})` : ""}</td><td>${esc(x.issue || "")}</td><td${cls(x.status)}>${esc(x.status)}${x.error ? `: ${esc(x.error)}` : ""}</td></tr>`).join("")}</table>`;
+  } catch (e) { $("local").style.display = "none"; }
+}
+loadLocal(); setInterval(loadLocal, 30000);
 loadConfig(); setInterval(loadConfig, 30000);
 setInterval(loadCatalog, 10000); setInterval(loadEvents, 10000);
 setInterval(refreshCore, 5000); setInterval(refreshLog, 3000); setInterval(refreshSources, 30000);

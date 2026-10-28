@@ -87,3 +87,4 @@ class Family:
 class Schema:
     families: list[Family]
     notes: list[str] = field(default_factory=list)
+    remembered: dict = field(default_factory=dict)  # what the listing found too big or listed at one replica (listing.py)

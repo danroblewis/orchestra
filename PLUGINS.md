@@ -132,6 +132,15 @@ declared, if anything, stands` and keeps running that plugin's processes and ins
 last knew them. A plugin whose `name` an earlier plugin already has is left out and reported the
 same way (`its name ... is taken by the plugin of entry point ...; left out`).
 
+**A project's own plugins.** Besides the entry points, `load` makes the plugins a project keeps in
+its repository, `.orchestra/plugins/<name>/__init__.py` (a package, which may import its own
+modules relatively) or `.orchestra/plugins/<name>.py`, each with `plugin(project)`. They are loaded
+by file location as `orchestra_local.<name>`, never through `sys.path` (AGENTS.md rule 10), after
+the installed ones (an installed plugin keeps its name), and reloaded only when one of their files
+changed. Before any plugin is made, the project's overrides (`.orchestra/overrides/*.py`,
+`orchestra/overrides.py`: a pinned replacement of one attribute of an installed package) are
+applied. `Loaded.local` and `/api/plugins` (`local`) report each with its status.
+
 Because the host calls your function on every `orchestra.toml` change, and builds your router each
 time only to throw it away, **`plugin(project)` must be cheap and have no side effects**. Open the
 bus or the store inside request handlers, not while building the `Plugin`.

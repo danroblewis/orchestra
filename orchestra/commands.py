@@ -19,7 +19,10 @@ else the first line of its module's docstring.
 
 A command that fails to load fails alone, with an error naming its entry point; the rest of the
 CLI works. A name that is one of Orchestra's own subcommands is refused, with a warning, and of
-two entry points with one name the first is kept."""
+two entry points with one name the first is kept.
+
+Before the call, the project's overrides (``.orchestra/overrides/``, ``orchestra.overrides``) are
+applied, so a plugin process the launcher starts as a command runs with them."""
 
 from __future__ import annotations
 
@@ -28,6 +31,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
+from pathlib import Path
 
 GROUP = "orchestra.commands"
 PROG_ENV = "ORCHESTRA_PROG"
@@ -75,6 +79,26 @@ def summary(ep) -> str:
     return lines[0] if lines else ""
 
 
+def apply_overrides(repo: str | None = None) -> list[dict]:
+    """The project's overrides (``orchestra.overrides``), applied before a plugin command runs: the
+    launcher starts plugin processes as commands, so their code runs patched too. No project (a
+    command run outside one, ``orchestra tasks init``) is nothing to apply; a broken one is said on
+    stderr, never fatal."""
+    from .config import CONFIG_FILE, ConfigError, find_repo_root
+    from .overrides import apply
+    try:
+        root = find_repo_root(Path(repo or os.environ.get("ORCHESTRA_REPO") or Path.cwd()))
+    except (ConfigError, OSError):
+        return []
+    if not (root / CONFIG_FILE).exists():
+        return []
+    out = apply(root)
+    for r in out:
+        if r["status"] != "applied":
+            print(f"orchestra: override {r['name']} not applied ({r['status']}): {r['error']}", file=sys.stderr)
+    return out
+
+
 def run(name: str, ep, argv: list[str], repo: str | None = None) -> int:
     """Load the command and call it with ``argv``; its exit code. Fails alone if it cannot load."""
     where = getattr(ep, "value", "?")
@@ -89,6 +113,7 @@ def run(name: str, ep, argv: list[str], repo: str | None = None) -> int:
     os.environ[PROG_ENV] = prog
     if repo:
         os.environ["ORCHESTRA_REPO"] = repo
+    apply_overrides(repo)
     saved = sys.argv
     sys.argv = [prog, *argv]
     try:

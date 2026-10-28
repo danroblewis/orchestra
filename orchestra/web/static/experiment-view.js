@@ -123,7 +123,7 @@ const ExperimentView = (() => {
       return `<div class="card"><h4>${esc(nm.stock(sid))} ${s.trusted ? '<span class="vs better">✓ trusted</span>' : '<span class="verdict side">⚠ not trusted</span>'}</h4>
         <div class="cap">starts at ${n(s.start.experiment ?? s.start.base)}${s.unit ? " " + esc(s.unit) : ""}; at +${dur(r.horizon_s)}: base ${last(s.base)}, experiment ${last(s.experiment)}${s.difference ? `; difference ${last(s.difference)}` : ""}</div>
         ${Charts.line(lines, { W: chartW(W), H: 190, tight: true, marks: [{ t: now, label: "now" }] })}
-        <div class="cap muted">${m.length ? `measured: the hour before the run${after ? ", and since (what happened)" : ""}` : "no measured level read for this stock"} · bands: 10–90% of ${r.band.members} runs</div>
+        <div class="cap muted">${m.length ? `measured: the hour before the run${after ? ", and since (what happened)" : ""}` : "no measured level read for this stock"} · bands: 10–90% of ${r.band.members} runs${(r.band.structural || {})[sid] ? ", widened by the model's held-out misses" : ""}${s.behaviour ? ` · behaviour ${(+s.behaviour.score).toFixed(2)} (${esc(s.behaviour.level)}): its runs from part-way through its window missed by ${(+s.behaviour.error).toFixed(2)} × the level's spread` : ""}</div>
         ${s.why.length ? `<ul class="why">${s.why.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}</div>`;
     }).join("");
     const rates = Object.entries(r.rates_now || {});

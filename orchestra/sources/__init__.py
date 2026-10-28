@@ -55,7 +55,8 @@ class Source(Protocol):
         """The label sets (with ``__name__``) of the series matching any of ``match`` that have
         samples in [start, end]; at most ``limit`` when it is not 0."""
 
-    def metadata(self) -> dict[str, dict]:
-        """Each metric's type, unit and help, where the store keeps them; {} when it keeps none."""
+    def metadata(self, names: list[str] | None = None) -> dict[str, dict]:
+        """Each metric's type, unit and help, where the store keeps them (of ``names`` only, when
+        given); {} when it keeps none."""
 
     def health(self) -> Health: ...

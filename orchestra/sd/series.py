@@ -255,6 +255,10 @@ def sample(dump, start: float, step: float, n: int, kinds: dict[str, Declared] |
         elif counter and steps_of(every := counted_every(pts, usual_interval(pts)), step) > 1 and every:
             # it counts every other read, steadily: a store's samples read on a finer grid (sd.coarse)
             ser.blocks = block_ends(moved_points(pts), start, step, n)
+        elif counter and said and steps_of(said.resolution_s, step) > 1:
+            # its source declared it slower than the grid (a counter read server-side once a minute):
+            # its counts arrive at its writes (sd.coarse)
+            ser.blocks = block_ends(pts, start, step, n)
         if said and said.direction and said.channel:
             ser.traffic = (said.direction, said.channel)
         ser.summary = bool(said and said.summary)

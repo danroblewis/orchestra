@@ -51,13 +51,18 @@ so the total "explains" them by containing them. The rule only keeps a driver ou
 read from the name, so two counts in one unit that are not part and total (a repository's bytes
 under the disk's free bytes) are kept apart too. A statistic is never tried: one a source
 summarised across reporters (an average, a maximum), and one whose name says it is a statistic
-(a word ``mean``, ``avg``, ``average``, ``median``, or a percentile such as ``p95``), such as a
-shelf's mean age: it summarises what is there and holds nothing; its changes follow whatever moves
-the things it averages. What is refuted stays an **input**, with the reason: a level whose net flow
+(``sd.properties.statistic``: ``mean``, ``max``, a percentile such as ``p95``), such as a shelf's
+mean age: it summarises what is there and holds nothing; its changes follow whatever moves the
+things it averages. Nor is a resource a process or host uses (``sd.properties.resource``: CPU,
+memory, threads, a load average, a utilisation): its work sets it at each moment, so a fit to the
+work's series explains it as well as a stock's and says nothing. What is refuted stays an **input**, with the reason: a level whose net flow
 nothing explains better than a constant (a random walk, a steady drift), or whose best form a
 refutation struck (the reason names it and the check), and one whose changes move with another
 series' changes (``SAME_MOVES``: a second measure of the same thing, or a function of it, such as
-a demand computed from a rating, is no store of its own).
+a demand computed from a rating, is no store of its own). Of two levels that are each other's copy
+(one quantity in two stores), one is tried as the stock (``first``: the finer, then the earlier
+written) and the other stays its input; when the first is no stock, the other is tried without it,
+so corroboration never deletes the stock.
 
 Every accepted driver is a correlation in the data, not an experiment: nothing here has moved the
 driver and watched the level answer.
@@ -77,6 +82,7 @@ from dataclasses import dataclass, field
 from . import stocktrust
 from .drivers import AIC_MARGIN, EVENTS_PER_PARAM
 from .model import Equation, Flow, Stock
+from .properties import resource, statistic
 from .resolution import steps_of
 from .series import series_key
 
@@ -87,7 +93,6 @@ FORGETS = 0.5         # a level that loses more than this share of itself from o
 ONE_WAY = 0.1         # a driver whose changes go the other way in fewer than this share of stretches only rises (or falls): it stands in for time
 MIN_NET_R2 = 0.4      # an accepted net flow explains at least this share of the level's changes: below it, noise moves the level more than the form does
 SHIFTED = 0.8         # a driver that, moved a quarter of the window earlier or later, still explains this share of what it explains in place is no cause
-STATISTICS = {"mean", "avg", "average", "median"}     # name words that say a level is a statistic of something (as are p50, p95, p99)
 NET_FLOW = "no counters balance it"     # the reason conservation gives a level these are tried on
 
 
@@ -274,12 +279,6 @@ def _part(level, d: Driver, starts: list[int], k: int) -> str:
     return f"{d.key} may be a part of it" if inside(dv, lv) else ""
 
 
-def statistic(name: str) -> bool:
-    """Whether a series' name says it is a statistic of something (a mean age, a median, a 95th
-    percentile): it summarises what is there, it does not hold it."""
-    return any(w in STATISTICS or (len(w) in (3, 4) and w[0] == "p" and w[1:].isdigit()) for w in name.split("_"))
-
-
 def _shift_null(d: Driver, own: bool, rows: list[list[float]], y: list[float], starts: list[int], k: int, n: int) -> tuple[float, float, float] | None:
     """What the driver explains of the level's changes beyond the rest of the form (its partial
     R²) in place and moved a quarter of the window earlier or later, whichever explains more, and
@@ -335,8 +334,10 @@ def _refuted(f: Fit, rows: list[list[float]], y: list[float], simpler: list[list
     return ""
 
 
-def fit(level, drivers: list[Driver], step: float, unit_s: float) -> tuple[Fit | None, str]:
-    """The level's net flow, or None and why it stays an input (said after conservation's reason)."""
+def fit(level, drivers: list[Driver], step: float, unit_s: float, defer: frozenset | set = frozenset()) -> tuple[Fit | None, str]:
+    """The level's net flow, or None and why it stays an input (said after conservation's reason).
+    ``defer``: drivers that are the level measured again but give way to it (``stocks``): passed
+    over, not a reason to keep the level an input."""
     n = len(level.values) - 1
     live = set(range(n)) if level.live is None else set(level.live)
     k0 = steps_of(level.resolution.seconds if level.resolution else None, step)
@@ -402,6 +403,8 @@ def fit(level, drivers: list[Driver], step: float, unit_s: float) -> tuple[Fit |
             parts.append(part)
             continue
         if why := _same(level, d, starts, y, k, n):
+            if d.key in defer or statistic(d.name):     # a copy that gives way, or a statistic of it (its maximum): not it again
+                continue
             same = (why, d)
             break
         consider(k, d, False)
@@ -460,33 +463,66 @@ def build(f: Fit, sid: str, title: str, writer: str | None, window: tuple[float,
     return Stock(sid, title, "level", ref, evidence), flows
 
 
+def copy_of(level, stocks: list, k: int):
+    """The first of ``stocks`` (levels already stocks by their net flow) that ``level`` is a copy
+    of: their changes over stretches of ``k`` steps explain each other at ``SAME_MOVES`` (one lag
+    read by group, by topic, and again through a recording rule)."""
+    n = len(level.values) - 1
+    live = set(range(n)) if level.live is None else set(level.live)
+    for other in stocks:
+        both = live & (set(range(n)) if other.live is None else set(other.live))
+        starts = _stretches(both, n, k)
+        if len(starts) >= 3 and _r2_alone([other.values[a + k] - other.values[a] for a in starts],
+                                          [level.values[a + k] - level.values[a] for a in starts]) >= SAME_MOVES:
+            return other
+    return None
+
+
+def first(s) -> tuple:
+    """Which of two copies of one quantity is tried as its stock: the finer resolution, then the one
+    written first, then by key."""
+    res = s.resolution.seconds if s.resolution and s.resolution.seconds else math.inf
+    return (res, s.points[0][0] if s.points else math.inf, s.key)
+
+
 def stocks(series: list, counted: list, sid_of: dict[str, str], inputs: dict[str, list[float]], input_refs: dict[str, dict],
            left_out: dict[str, str], step: float, unit_s: float, window: tuple[float, float], name_of, ref_of, writer_of,
-           measure=None) -> list:
+           measure=None, units: dict[str, str] | None = None) -> list:
     """The levels conservation left out because no counters balance them that are stocks by their
     fitted net flow, as (stock, its flows, the input name it had, its series). The others get their
     reason in ``left_out``. ``counted``: conservation's stocks' series; ``name_of(series)``: a new
     stock's id and title; ``ref_of(series)``: the model's reference to it; ``measure(level, fit,
-    drivers, step, unit_s)``: what the stock's trust is computed from (``sd.netnull.measured``)."""
+    drivers, step, unit_s)``: what the stock's trust is computed from (``sd.netnull.measured``);
+    ``units``: each series' unit (``sd.units``), by key."""
     key_of = {name: series_key(r["name"], r.get("labels") or {}) for name, r in input_refs.items()}
     drivers = [Driver(sid_of[c.key], c.values, c.resolution.seconds if c.resolution else None, c.key, c.name) for c in counted]
     drivers += [Driver(f"input:{name}", vals, input_refs[name].get("resolution_s"), key_of[name], input_refs[name]["name"])
                 for name, vals in inputs.items()]
     accepted = []
-    for s in series:
-        if s.counter or not left_out.get(s.key, "").startswith(NET_FLOW):
+    # of two copies of one quantity (two stores' sessions), each moves with the other; the first
+    # here is tried as the stock, the other is its copy (``first``: the finer, then the earlier
+    # written), and is tried in turn only when the first is no stock
+    tried = sorted((s for s in series if not s.counter and left_out.get(s.key, "").startswith(NET_FLOW)), key=first)
+    after = {s.key: {t.key for t in tried[i + 1:]} for i, s in enumerate(tried)}
+    no_stock: set[str] = set()                   # tried and not a stock: a later copy no longer defers to it
+    for s in tried:
+        no_stock.add(s.key)
+        if statistic(s.name, s.summary):        # sd.discover leaves these out before; a caller's own series may not
+            left_out[s.key] += ", and it is a statistic of what it measures (a mean, a maximum, a percentile): a summary, not a store"
             continue
-        if s.summary:
-            left_out[s.key] += ", and it is a statistic its source summarised across reporters (an average, a maximum): a summary, not a store"
-            continue
-        if statistic(s.name):
-            left_out[s.key] += ", and its name says it is a statistic (a mean, a median, a percentile) of what it measures: a summary, not a store"
+        if resource(s.name, (units or {}).get(s.key)):
+            left_out[s.key] += (", and it measures a resource a process or host uses (CPU, memory, threads, a utilisation): a property "
+                                "of the running process, set by its work, not an accumulation, so no net flow is fitted to it")
             continue
         mine = [d for d in drivers if d.name != s.name]
-        got, why = fit(s, mine, step, unit_s)
+        got, why = fit(s, mine, step, unit_s, after[s.key] | no_stock - {s.key})
+        if got is not None and (twin := copy_of(s, [lv for lv, _ in accepted], max(1, round(got.block_s / step)))):
+            got, why = None, (f"and its changes move with {twin.key}'s, a stock already: the same quantity measured again, "
+                              "so an input, not a second stock")
         if got is None:
             left_out[s.key] = f"{left_out[s.key]}, {why}"
         else:
+            no_stock.discard(s.key)
             if measure is not None:
                 got.notes.update(measure(s, got, mine, step, unit_s))
             accepted.append((s, got))

@@ -15,8 +15,15 @@ of their difference is the difference's), ``rel`` the flow's relative error as i
 in each model (``sd.trust.spread``; an equation an experiment wrote is declared, so ±50% until it
 is fitted).
 Each trajectory is the central run (the numbers as written) and the 10th and 90th percentiles of
-the members. Measured levels are taken as exact. The band is the parameters' uncertainty only, not
-the structure's: a missing flow widens no band, which is why "not trusted" is reported beside it.
+the members. Measured levels are taken as exact. The members carry the parameters' uncertainty
+only, which for a model whose structure is wrong is far too narrow (the metrics lab found the truth
+inside it a quarter of the time where it claims 80%). So each stock's band (the base's and the
+experiment's; not their difference, whose structural error mostly cancels) is widened, in
+quadrature, by ``z × growth × h`` at horizon ``h``: how far the model's runs from part-way
+through its own window missed the measured level (``sd.experiments.heldout``), as discovery saved
+it in the stock's trust (``trust["behaviour"]``), or measured on the history for a model saved
+without it. A level never below zero gets no band below zero. "Not trusted" is still reported
+beside it: a missing flow is not in any replay.
 
 **Limits.** Where a stock reaches 0 (its outflows are then cut to what it holds) or leaves the
 ``bounds`` given, in the central run and in what share of the members; ``new`` when the base does
@@ -39,6 +46,7 @@ import numpy as np
 from ..model import Model
 from ..trust import era_errors, spread, weak_flow
 from . import engine
+from .heldout import measure, widen
 from .history import hidden, holds, initial, levels_at, step_for, unit_s
 from .scenario import inputs as scenario_inputs
 
@@ -83,6 +91,24 @@ def era_error(model: Model, history: dict, now: float) -> dict[str, float]:
         return {}
     r = central(model, history, start, now, step_s=15.0)
     return era_errors(model, history, {sid: [[float(t), float(v)] for t, v in zip(r.t, r.levels[0, k])] for k, sid in enumerate(r.stocks)})
+
+
+def behaviour_of(model: Model, history: dict, now: float) -> dict[str, dict]:
+    """Each stock's held-out replay record: as discovery saved it in its trust, or, for a measured
+    stock without one (a model saved before it was measured), measured on this history over the
+    window the model was discovered on (never after it: what happened since is what a forward run
+    is judged by, ``sd.diverge``, and must not widen its own band)."""
+    out = {s.id: dict(b) for s in model.stocks if isinstance(b := ((s.evidence or {}).get("trust") or {}).get("behaviour"), dict)}
+    measured = history.get("stocks") or {}
+    disc = model.discovery or {}
+    if disc.get("end") is not None and any(s.id not in out and measured.get(s.id) for s in model.stocks):
+        start = max(float(history.get("start") if history.get("start") is not None else now), float(disc.get("fit_start") or 0.0))
+        try:
+            got = measure(model, history, start, min(now, float(disc["end"])), float(history.get("stock_step") or 60.0))
+        except (ValueError, ArithmeticError):
+            got = {}
+        out.update({sid: {**r, "from": "history"} for sid, r in got.items() if sid not in out})
+    return out
 
 
 def forward(base: Model, draft: Model, history: dict, scenario: dict | None = None, *, horizon_s: float = 3600.0,
@@ -208,13 +234,25 @@ def forward(base: Model, draft: Model, history: dict, scenario: dict | None = No
                 if end in stock_why:
                     stock_why[end].append(note)
 
+    # the structure's uncertainty: each stock's held-out replay error (sd.experiments.heldout), saved
+    # at discovery or measured on this history; the difference's band is left alone (base and
+    # experiment share the structure, and its error mostly cancels)
+    beh = behaviour_of(base, history, now)
+    t_keep = [offsets[i] for i in keep]
+
+    def widened(b: dict, sid: str, start: float | None) -> dict:
+        floor = start is not None and start >= 0 and all(v >= 0 for _, v in measured.get(sid) or [])
+        return widen(b, beh.get(sid), t_keep, unit, floor)
+
     def stock_row(sid: str) -> dict:
         st = next((s for s in draft.stocks if s.id == sid), None) or next(s for s in base.stocks if s.id == sid)
         row = {"name": st.name, "unit": st.unit, "start": {"base": lv_b.get(sid), "experiment": lv_d.get(sid)},
-               "base": band(A.levels[:, ids_b.index(sid)], keep) if sid in ids_b else None,
-               "experiment": band(B.levels[:, ids_d.index(sid)], keep) if sid in ids_d else None,
+               "base": widened(band(A.levels[:, ids_b.index(sid)], keep), sid, lv_b.get(sid)) if sid in ids_b else None,
+               "experiment": widened(band(B.levels[:, ids_d.index(sid)], keep), sid, lv_d.get(sid)) if sid in ids_d else None,
                "difference": band(B.levels[:, ids_d.index(sid)] - A.levels[:, ids_b.index(sid)], keep) if sid in ids_b and sid in ids_d else None,
                "trusted": not stock_why[sid], "why": stock_why[sid]}
+        if rec := beh.get(sid):
+            row["behaviour"] = {k: rec[k] for k in ("score", "level", "error", "hold_error", "beats_hold") if k in rec}
         return row
 
     rkeep = [min(i, steps - 1) for i in keep]
@@ -233,9 +271,12 @@ def forward(base: Model, draft: Model, history: dict, scenario: dict | None = No
                      "spread": {fid: {"rel": round(r, 4), "how": how, **({"base": {"rel": round(spreads_b[fid][0], 4), "how": spreads_b[fid][1]}}
                                                                           if fid in spreads_b and spreads_b[fid] != (r, how) else {})}
                                 for fid, (r, how) in spreads.items()},
+                     "structural": {sid: {"growth": round(r["growth"], 6), "z": r["z"], "from": r.get("from", "discovery")}
+                                    for sid, r in beh.items() if sid in want},
                      "how": "each flow's rate times exp(z·rel), z standard normal per member and flow, shared by the base and the "
                             "experiment; rel is the relative error its fit records (sd.trust), the experiment's (and the base's where it "
-                            "differs) given; levels now are taken as exact"}}
+                            "differs) given; levels now are taken as exact. Each stock's band is then widened, in quadrature, by "
+                            "z × growth × the horizon: how far its held-out replays missed (sd.experiments.heldout, 'structural')"}}
 
 
 def trajectories(result: dict) -> dict:

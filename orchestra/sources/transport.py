@@ -12,7 +12,9 @@
   ``PastDeadline`` at once.
 - **422, or a 4xx that says "too many"** is the store's size limit: ``TooBig``, never retried as
   it is (the caller asks for less). The limit it names (``over the limit of 2500 series``) is
-  kept in ``series_limit`` so later reads are sized under it.
+  kept in ``series_limit`` so later reads are sized under it. A refusal for the **series** a read
+  touches (``TooBig.by_series``) is helped by a shorter time range only when the series churn:
+  callers halve it once and go on only while that sheds series (``time_helps``).
 - Other 4xx and 5xx raise ``SourceError`` at once, named by the server and what it said (a load
   balancer's HTML page by its status only), never a credential."""
 
@@ -41,9 +43,39 @@ TOO_BIG = re.compile(r"(?i)too many|exceed|limit of|maximum number|max(imum)?[ _
 LIMIT_OF = re.compile(r"(?i)limit of (\d+) series")
 
 
+SERIES = re.compile(r"(?i)series")
+COUNT = re.compile(r"(?i)(\d[\d,]*) (?:unique |time ?)?series")
+CHURN_GAIN = 0.9             # a half of a refused read touching at least this share of its series: time does not help
+
+
 class TooBig(SourceError):
     """The store refused a read for its size (a per-query series limit): narrow it, do not retry it."""
 
+    @property
+    def by_series(self) -> bool:
+        """Refused for the series it touches (not its samples or points)."""
+        return bool(SERIES.search(str(self)))
+
+    @property
+    def matched(self) -> int | None:
+        """The series the store said the read touched, when it said (not the limit it named)."""
+        nums = [int(x.replace(",", "")) for x in COUNT.findall(str(self))]
+        limit = LIMIT_OF.search(str(self))
+        out = [n for n in nums if not limit or n != int(limit[1])]
+        return out[0] if out else None
+
+
+def time_helps(e: TooBig, before: TooBig | None) -> bool:
+    """Whether a read refused (``e``) may fit over a shorter time range: refused for its samples
+    or points, yes; for its series, only while halving the range sheds series (they churn): the
+    first refusal is halved once, and a half that still touches ``CHURN_GAIN`` of the series the
+    whole did (or says no count) is not halved again, so a stable metric over the limit costs two
+    refusals, not one per halving."""
+    if not e.by_series or before is None:
+        return True
+    if e.matched is None or before.matched is None:
+        return False
+    return e.matched < CHURN_GAIN * before.matched
 
 def retry_after(value: str | None, now: float | None = None) -> float | None:
     """Seconds to wait from a ``Retry-After`` header: a number of seconds or an HTTP date."""
@@ -90,6 +122,7 @@ class Transport:
         self.requests = 0
         self.points = 0
         self.retries = 0                      # requests asked again after a 429/5xx or a dropped connection
+        self.throttled = 0                    # 429s the store answered
         self.narrowed = 0                     # reads split because the store refused their size
         self.series_limit: int | None = None  # the per-query series limit the store named, once it refused one
         self._sleep = time.sleep
@@ -136,6 +169,7 @@ class Transport:
                     raw = r.read()
                 break
             except urllib.error.HTTPError as e:
+                self.throttled += e.code == 429
                 if e.code in RETRY and attempt < RETRIES:
                     self._wait(e, attempt, where, u)
                     continue

@@ -7,6 +7,8 @@ In an empty Orchestra it does little, on purpose:
 - it runs Orchestra's event collector: every event on the bus, from any machine, counted by type
   and source (``orchestra.collectors``). It replays the whole bus once at start, so the counters
   continue from the full history, then follows the bus;
+- it says when a machine falls silent past its own cadence on the bus (``orchestra.quiet``:
+  ``orchestra.machine.quiet``, subject the machine);
 - it records the eras the bus begins (``orchestra.sd.eras``: ``system.changed`` and the events
   ``[discovery] eras_from`` names) as it follows the bus, and announces each
   (``orchestra.era.started``);
@@ -16,7 +18,8 @@ In an empty Orchestra it does little, on purpose:
   overlap: each starts the interval after the last one started, or a fifth of the interval after
   it ended when it took longer (``pace``), and its log line says how long it took and whether
   the strategy was stopped at its deadline (``discovery_line``). After each discovery it announces what is due about the model (``orchestra.sd.announce``:
-  ``orchestra.model.changed``, ``orchestra.model.diverged``, ``orchestra.model.returned``);
+  ``orchestra.model.changed``, ``orchestra.model.diverged``, ``orchestra.model.returned``,
+  ``orchestra.model.stalled``, ``orchestra.model.resumed``);
 - it records the predictions machines make of their changes as it follows the bus
   (``orchestra.prediction.made``, ``orchestra.sd.predictions``), and after each discovery judges
   those that are due and publishes each verdict (``orchestra.prediction.judged``,
@@ -58,6 +61,7 @@ from .events import HOST, Events
 from .launcher import Launcher, Process
 from .metrics import Point
 from .metrics import for_project as metrics_for
+from .quiet import QUIET, QuietWatch
 
 HOST_LOG_MAX = 5_000_000
 ERAS_EVERY_S = 5.0              # how often the collector looks for events that begin an era
@@ -128,22 +132,38 @@ class Host:
         evs, offset = self.events.read(0, limit=10_000_000)
         rep = backfill(evs, project=self.project.key, store=store)
         col = EventCollector(self.project.key)
+        quiet = QuietWatch()
         for ev in evs:
             col.observe(ev)
+            quiet.observe(ev)
+        quiet.settle()
         self.log(f"collector: replayed {rep.events} events into {rep.points} points; following the bus")
         eras_at = 0.0
         while not self._stop.is_set():
             if time.time() - eras_at >= ERAS_EVERY_S:
                 eras_at = time.time()
                 self._eras()
+                self._quiet(quiet)
             self._stop.wait(self.collect_every)
             try:
                 new, offset = self.events.read(offset, limit=100_000)
+                for ev in new:
+                    quiet.observe(ev)
                 pts = collapse([p for ev in new for p in col.observe(ev)])
                 if pts:
                     store.write(pts)
             except Exception as e:  # noqa: BLE001 - keep following; the next read retries
                 self.log(f"collector: {type(e).__name__}: {e}")
+
+    def _quiet(self, watch: QuietWatch) -> None:
+        """Announce the machines that fell silent past their own cadence (``orchestra.quiet``)."""
+        try:
+            for d in watch.check():
+                self.events.publish(QUIET, d, subject=d["machine"])
+                self.log(f"machine {d['instance'] or d['machine']} quiet for {d['quiet_for']:.0f} s "
+                         f"(its usual gap {d['usual_gap']:.0f} s)")
+        except Exception as e:  # noqa: BLE001 - the next look retries
+            self.log(f"quiet: {type(e).__name__}: {e}")
 
     def _eras(self) -> None:
         """Record the eras begun since the last look, and announce them (``orchestra.sd.eras``);
@@ -176,25 +196,26 @@ class Host:
         from .sd.store import ModelStore
         from .sd.strategies import sd_installed
         from .sources.catalogue import Catalogue
-        from .web.background import history, stock_step
+        from .web.background import history, remote_refs, stock_step
 
         cfg = self.project.config
         hist = None
-        if sd_installed() and r.model.stocks:
+        if r.model.stocks or r.model.flows:         # reading series: stalls need no simulator, divergence does
             store, cat = metrics_for(self.project), Catalogue(self.project, metrics_for(self.project), infer=False)
-            step = stock_step(cfg.discovery_step)
-            readers: dict = {}
+            span = max(cfg.diverge_after, 3 * cfg.stall_after, 2 * cfg.discovery_every) + 600
+            # the remote series once, at discovery's step, over the whole span: what the discovery
+            # just read is in its read cache, so only the steps after it are asked for
+            read = cat.reader(r.at - span - 300, r.at, cfg.discovery_step, remote_refs(r.model))
 
             def raw(ref, start, end):
                 if ref.source and ref.source != "own":
-                    readers.setdefault((start, end), cat.reader(start, end, step))
-                    return readers[(start, end)](ref)
+                    return [(t, v) for t, v in read(ref) if start <= t <= end]
                 return store.raw(ref.name, ref.labels, start=start, end=end)
-            span = max(cfg.diverge_after, 2 * cfg.discovery_every) + 600
-            hist = history(r.model, raw, r.at, step, span_s=span)
+            hist = history(r.model, raw, r.at, stock_step(cfg.discovery_step), span_s=span)
         said = announce(ModelStore.for_state(self.project.state_dir), self.events.publish, r.model, r.at, hist,
                         hold=cfg.announce_hold, gap_s=cfg.announce_gap, after_s=cfg.diverge_after, every_s=cfg.discovery_every,
-                        era_start=r.model.discovery.get("era_start"))
+                        era_start=r.model.discovery.get("era_start"), stall_after=cfg.stall_after,
+                        stall_share=cfg.stall_share, diverge=sd_installed() and bool(r.model.stocks))
         if said:
             self.log(f"announced: {', '.join(said)}")
 
@@ -240,6 +261,9 @@ class Host:
                            [replace(c, owner=plug.name) for c in plug.collectors]) for plug in loaded.plugins}
         for err in loaded.errors:
             self.log(f"plugin {err['plugin']} failed to load: {err['error']}; what it last declared, if anything, stands")
+        for item in loaded.local:
+            if item["status"] not in ("applied", "loaded"):
+                self.log(f"local {item['kind_of']} {item['name']}: {item['status']}: {item['error']}")
         if loaded.errors:
             now = {**self._declared, **now}
         self._declared, self._loaded_for = now, mtime
