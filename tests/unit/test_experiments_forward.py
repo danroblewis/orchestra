@@ -157,10 +157,17 @@ def test_delay_and_smooth_follow_a_step_in_an_input():
     assert r["flows"]["in"]["base"]["central"][-1] == pytest.approx(2.0), "the base holds the input at its last value"
 
 
+def replayed_perfectly(m: Model) -> Model:
+    """The model as discovery would save it had its held-out replays matched the level exactly."""
+    for st in m.stocks:
+        st.evidence["trust"] = {"score": 1.0, "behaviour": {"score": 1.0, "error": 0.0, "growth": 0.0, "z": 1.0}}
+    return m
+
+
 def test_the_band_comes_from_the_recorded_error_and_holds_the_central_run():
     up = {"op": "set_params", "flow": "in", "params": {"c": 3.0}}
-    sure = run(queue(events=10_000.0), history(), up, horizon_s=3600, members=64)
-    loose = run(queue(events=25.0), history(), up, horizon_s=3600, members=64)
+    sure = run(replayed_perfectly(queue(events=10_000.0)), history(), up, horizon_s=3600, members=64)
+    loose = run(replayed_perfectly(queue(events=25.0)), history(), up, horizon_s=3600, members=64)
     assert loose["band"]["spread"]["out"]["rel"] == pytest.approx(1 / 5)          # sqrt(1 / 25 events)
     assert loose["band"]["spread"]["in"]["rel"] == 0.5, "the experiment's equation is declared: ±50% until it is fitted"
     width = lambda r, side: r["stocks"]["q"][side]["hi"][-1] - r["stocks"]["q"][side]["lo"][-1]
@@ -169,7 +176,30 @@ def test_the_band_comes_from_the_recorded_error_and_holds_the_central_run():
         for side in ("base", "experiment", "difference"):
             b = r["stocks"]["q"][side]
             assert b["lo"][-1] <= b["central"][-1] <= b["hi"][-1]
-    assert run(queue(events=25.0), history(), up, horizon_s=3600, members=64) == loose, "seeded: the same question, the same answer"
+    assert run(replayed_perfectly(queue(events=25.0)), history(), up, horizon_s=3600, members=64) == loose, \
+        "seeded: the same question, the same answer"
+
+
+def test_a_stock_its_own_replays_miss_gets_a_band_as_wide_as_the_misses():
+    # the model drifts from 5 toward its balance at 20 while the level stayed at 5: run from half,
+    # two thirds and five sixths of the hour it misses by up to ~10, growing with the horizon. The
+    # parameters alone (40,000 events) would give a band of a few hundredths; the band now covers
+    # the misses, and none of it goes below zero
+    m = queue(events=40_000.0)
+    m.discovery = {"start": 0.0, "end": 3600.0}           # discovered on the hour the history covers, saved without the record
+    r = run(m, history(), {"op": "set_params", "flow": "in", "params": {"c": C}}, horizon_s=3600, members=64)
+    b = r["stocks"]["q"]["base"]
+    assert b["central"][-1] > 15
+    assert b["lo"][-1] < 6 and b["hi"][-1] > b["central"][-1] + 5, b
+    assert min(b["lo"]) >= 0.0
+    st = r["band"]["structural"]["q"]
+    assert st["from"] == "history" and st["growth"] > 0
+    assert r["stocks"]["q"]["behaviour"]["error"] > 1 and not r["stocks"]["q"]["behaviour"]["beats_hold"]
+    # the difference's band is the parameters' alone: the structure's error is shared by both runs
+    same = run(replayed_perfectly(queue(events=40_000.0)), history(), {"op": "set_params", "flow": "in", "params": {"c": C}},
+               horizon_s=3600, members=64)
+    assert r["stocks"]["q"]["difference"] == same["stocks"]["q"]["difference"]
+    assert same["stocks"]["q"]["base"]["hi"][-1] - same["stocks"]["q"]["base"]["lo"][-1] < 1.0
 
 
 def test_a_stock_drained_below_zero_meets_its_floor():
