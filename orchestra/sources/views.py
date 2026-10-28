@@ -9,7 +9,7 @@ counts, which switch its type.
 | a native histogram | its count, a counter: ``histogram_count`` of the same (its ``_sum`` is not read, as for a classic one) |
 | a recording rule ``…:fn`` | ``fn by (G)`` of it (a sum of sums, a max of maxes; a sum of rates), as a rate when its name says rate, read with its own interval's lookback; in its base's family, it replaces the base's own view of that function; ``level:metric:fn`` is named by its full name, so it never takes an exporter's own ``metric_fn``. A rule over a counter (a rate, a sum) counts the same events as the counter: the counter is read, the rule left out and says why (only a ``count`` rule, of reporters, is read beside it). A rule is read at the value of a replica or scrape-job label its base is read at; one that lacks that label was summed across the copies and is left out for its base |
 | a timestamp, a clock, an info metric or a scrape's own series (``schema.UNREAD``) | none but an info metric's count of reporters: a sum of them means nothing |
-| any family with an identity label | ``count by (G)`` of one statistic: the pods reporting, a level; and its turnover, the pods that started and stopped reporting, as two counters that balance it exactly |
+| any family with an identity label | ``count by (G)`` of one statistic: the pods reporting, a level; and its turnover, the pods that started and stopped reporting, as two counters that balance it exactly (read from raw samples, so only for a family of at most ``series_per_query`` series: a bigger one is counted on the server only) |
 | any family | how many values of each grouping label report: ``count(count by (L) (…))`` |
 
 A count is made from one family per thing counted (the gauges' before a counter's), so the pods of
@@ -206,7 +206,7 @@ def views(fam: Family, spec: SourceSpec) -> list[Definition]:
             by_n = [fam.labels[c].real for c in plain + group]
             add(f"{base}_{who}s", "count", "level", _by("count", by_n, sel), group, inner=sel, agg="count",
                 stat=stat, unit=f"{who}s", origin=f"{who}s reporting{gtext}, counted from {fam.name}", counts=thing)
-            for view, verb in (("starts", "started"), ("stops", "stopped")):
+            for view, verb in (("starts", "started"), ("stops", "stopped")) if fam.series <= spec.series_per_query else ():
                 add(f"{base}_{who}s_{verb}_total", view, "counter", fam.selector(stat), group, stat=stat, unit=f"{who}s",
                     origin=f"{who}s that {verb} reporting{gtext}, from {fam.name}'s raw samples", counts=thing)
     for fn, rule in sorted(rules.items()):

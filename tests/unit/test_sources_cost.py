@@ -219,3 +219,12 @@ def test_a_source_that_declares_its_series_infers_less_often_unless_told():
            "series": [{"source": "a", "name": "q", "query": "sum(q)"}, {"source": "b", "name": "q", "query": "sum(q)"}]}
     a, b, c = load(raw, ".").sources
     assert a.infer_every == DECLARED_INFER_EVERY and b.infer_every == 1800 and c.infer_every == 3600
+
+
+def test_a_series_whose_newest_samples_are_late_is_read_again_from_its_last_point():
+    c = Clock(10_000.0)
+    cache = ReadCache("s", clock=c)
+    late = [({"job": "rabbit"}, [(t, 1.0) for t in range(6390, 9990 - 600 + 1, 30)])]    # ten minutes behind the others
+    cache.put("k", rows(6390, 9990, 30) + late, 6390, 9990, whole=True)
+    a, _ = cache.plan("k", 6690, 10_290, 30)
+    assert a == 9990 - 600 - 30                                          # from its newest point, not just the last five minutes

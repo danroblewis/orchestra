@@ -248,7 +248,7 @@ def test_a_source_whose_machine_label_is_machine_prefixes_it_once():
     from orchestra.sources.views import Definition
 
     class Store:
-        def query_range(self, query, start, end, step, until=None):
+        def query_range(self, query, start, end, step, until=None, **kw):
             return [({"__name__": "q", "machine": "app", "source": "app"}, [(start, 1.0)])]
 
     d = Definition(id="q", source="owner", name="q", family="q", view="sum_by", kind="level", query="q", resolution_s=60.0)

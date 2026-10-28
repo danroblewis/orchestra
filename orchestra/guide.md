@@ -271,7 +271,7 @@ store is too big to list, **no round runs until the `[[sources]]` entry changes*
 hour. A round over a shorter window than the cached one's never replaces it.
 
 **What a store is asked, and how often.** Discovery reads its window once, then only the steps
-since its last read (and two minutes before, for samples written late), reading the whole window
+since its last read (and five minutes before, further for a series whose newest samples are late), reading the whole window
 again hourly; the web server reads other stores only while a page shows their levels, history or
 counted traffic, starting from what the host's discovery read, and slows down when the store
 throttles it. A read the store refused for its size is not asked again for an hour.
