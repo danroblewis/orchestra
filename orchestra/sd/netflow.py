@@ -74,6 +74,7 @@ import itertools
 import math
 from dataclasses import dataclass, field
 
+from . import stocktrust
 from .drivers import AIC_MARGIN, EVENTS_PER_PARAM
 from .model import Equation, Flow, Stock
 from .resolution import steps_of
@@ -454,16 +455,19 @@ def build(f: Fit, sid: str, title: str, writer: str | None, window: tuple[float,
                                                  "driver": f.driver.ref if f.driver else None, "r2": round(f.r2, 4),
                                                  "stretch_s": f.block_s, "stretches": f.blocks, "changes": f.changes,
                                                  "aic": round(f.aic, 3), "aic_constant": round(f.aic_constant, 3),
-                                                 "forms_tried": f.tried, **({"t_level": round(f.t_own, 2)} if f.t_own is not None else {})}}
+                                                 "forms_tried": f.tried, **({"t_level": round(f.t_own, 2)} if f.t_own is not None else {})},
+                "trust": stocktrust.net_flow(f.notes, f.r2)}
     return Stock(sid, title, "level", ref, evidence), flows
 
 
 def stocks(series: list, counted: list, sid_of: dict[str, str], inputs: dict[str, list[float]], input_refs: dict[str, dict],
-           left_out: dict[str, str], step: float, unit_s: float, window: tuple[float, float], name_of, ref_of, writer_of) -> list:
+           left_out: dict[str, str], step: float, unit_s: float, window: tuple[float, float], name_of, ref_of, writer_of,
+           measure=None) -> list:
     """The levels conservation left out because no counters balance them that are stocks by their
     fitted net flow, as (stock, its flows, the input name it had, its series). The others get their
     reason in ``left_out``. ``counted``: conservation's stocks' series; ``name_of(series)``: a new
-    stock's id and title; ``ref_of(series)``: the model's reference to it."""
+    stock's id and title; ``ref_of(series)``: the model's reference to it; ``measure(level, fit,
+    drivers, step, unit_s)``: what the stock's trust is computed from (``sd.netnull.measured``)."""
     key_of = {name: series_key(r["name"], r.get("labels") or {}) for name, r in input_refs.items()}
     drivers = [Driver(sid_of[c.key], c.values, c.resolution.seconds if c.resolution else None, c.key, c.name) for c in counted]
     drivers += [Driver(f"input:{name}", vals, input_refs[name].get("resolution_s"), key_of[name], input_refs[name]["name"])
@@ -478,10 +482,13 @@ def stocks(series: list, counted: list, sid_of: dict[str, str], inputs: dict[str
         if statistic(s.name):
             left_out[s.key] += ", and its name says it is a statistic (a mean, a median, a percentile) of what it measures: a summary, not a store"
             continue
-        got, why = fit(s, [d for d in drivers if d.name != s.name], step, unit_s)
+        mine = [d for d in drivers if d.name != s.name]
+        got, why = fit(s, mine, step, unit_s)
         if got is None:
             left_out[s.key] = f"{left_out[s.key]}, {why}"
         else:
+            if measure is not None:
+                got.notes.update(measure(s, got, mine, step, unit_s))
             accepted.append((s, got))
     named = {s.key: name_of(s) for s, _ in accepted}
     as_input = {f"input:{name}": named[k][0] for name, k in key_of.items() if k in named}

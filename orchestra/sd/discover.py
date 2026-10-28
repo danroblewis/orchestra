@@ -20,8 +20,14 @@ equation of each flow, and the machine behind each flow:
    replaces one of them, and enters only to explain the residual they leave; every counter is
    searched only when the machine's own do not balance it. A channel's backlog (counted traffic,
    ``orchestra.sources.traffic``) is first balanced by its own traffic: what was produced into the
-   channel, less what its own consumer took (``channel_balance``). A level is kept only if the balance
-   fits (R² ≥ ``MIN_R2``); everything else is left out, with the reason. With every balance
+   channel, less what its own consumer took (``channel_balance``). Only counters in the level's own
+   unit are searched (``sd.units``: seconds never balance a queue). A level is kept only if the
+   balance fits (R² ≥ ``MIN_R2``) and, once every balance is restated and twins are joined, on
+   evidence that holds (``sd.accept``, ``sd.identify``): its counters chosen again on each half of
+   the window, and, short of exact, its choice on one half predicting the other, its running residual
+   reproducing the level, and a shift null of the same search priced against it. A count of reporters
+   balanced by its own turnover is a balance by construction (``sd.construction``). Every stock records
+   how far to trust it (``sd.stocktrust``); everything else is left out, with the reason. With every balance
    known, a counter that stands in for others gives way to them (``sd.restate``: Orchestra's
    event counter to the machine counters it sums, another machine's copy to the machine's own,
    two machines' counts of one flow to one). Two levels that change alike in nearly every step,
@@ -76,6 +82,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from itertools import accumulate, pairwise
 
+from .accept import accepted, stock_trust
 from .attribute import associate, candidates
 from .balance import MIN_EVENTS, MIN_GAIN, LeastSquares, balance, columns, fit_of
 from .drivers import AIC_MARGIN, EVENTS_PER_PARAM, behind, co_counting
@@ -96,6 +103,7 @@ from .live import (
 )
 from .model import Equation, Flow, Machine, Model, SeriesRef, Stock
 from .netflow import stocks as net_flow_stocks
+from .netnull import measured as net_evidence
 from .parsimony import fewer_counters
 from .passing import passages
 from .resolution import LINEAR, intervals_with, real_points, steps_of
@@ -110,6 +118,7 @@ from .series import (
     sum_instances,
     writer_of,
 )
+from .units import unit_of
 
 MIN_R2 = 0.9            # how well a balance must fit for a level to count as a stock
 FLAG_EXACT = 0.97         # a two-valued level is a stock only if its balance is exact in this share of steps
@@ -610,6 +619,17 @@ def _parts_of_one(a: Series, b: Series) -> bool:
     return ia != ib
 
 
+def _one_reading(a: Series, b: Series) -> bool:
+    """Two levels of one name grouped by different labels that read the same at every step and
+    were live alike: one split by a label that has a single value here, and its total (the lag of
+    the one group that reads a topic, by group and by topic). Two parts of one grouping (two
+    regions) are never this, however equal: they differ in a value, not in what they are grouped by."""
+    if a.name != b.name or set(_identity(a.labels)) == set(_identity(b.labels)) or a.live != b.live:
+        return False
+    n = min(len(a.values), len(b.values))
+    return any(a.deltas) and all(abs(a.values[i] - b.values[i]) <= 1e-9 * max(1.0, abs(a.values[i])) for i in range(n))
+
+
 def barred_counters(levels: list[Series], counters: list[Series]) -> dict[str, set[str]]:
     """For each level, the counters that belong to another level of the same name: a counter that
     has a different value of a label the level also has (``region="us-west"`` for the eu-west
@@ -645,6 +665,8 @@ def _apart(a_terms: list, b_terms: list, a_exact: float, b_exact: float, same_fl
 def _twins(a: Series, b: Series, a_terms: list, b_terms: list, same_flow, a_exact: float = 0.0, b_exact: float = 0.0) -> bool:
     if a.traffic and b.traffic and a.traffic[0] == b.traffic[0] == "backlog":
         return False            # two queues a source declared: never one stock measured twice, however alike (one consumer acks both at once)
+    if _one_reading(a, b):
+        return True
     if _parts_of_one(a, b):
         return False
     if _equal_steps(a, b) >= TWIN_STEPS or _same_balance(a_terms, b_terms, same_flow):
@@ -762,8 +784,12 @@ def twin_levels(found: list, left_out: dict[str, str], same_flow) -> tuple[list,
     return kept, dict(twins)
 
 
-def discover(dump, *, start: float, end: float, step: float, time_unit: str = "minute", kinds: dict | None = None) -> Model:
-    """The model the metrics imply over [start, end], with how it was found in ``model.discovery``."""
+def discover(dump, *, start: float, end: float, step: float, time_unit: str = "minute", kinds: dict | None = None,
+             provenance: dict | None = None) -> Model:
+    """The model the metrics imply over [start, end], with how it was found in ``model.discovery``.
+    ``provenance`` (by series key): what each series' source said of it (its unit, its view), when
+    another store was read (``orchestra.sources``)."""
+    provenance = provenance or {}
     n = max(2, int((end - start) // step))
     series, summed = sum_instances(sample(dump, start, step, n, kinds))
     on_bus = candidates(series)    # each machine's event counts: what a flow may be associated with (sd.attribute)
@@ -825,6 +851,12 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     masks: dict[str, list[int]] = {}              # the steps each level's balance was found on
     solvers: dict[tuple, LeastSquares] = {}       # least squares over the counters a level may use, per set of steps
     barred = barred_counters([s for s in series if not s.counter], counters)
+    # a balance adds counters with coefficients of ±1, so only counters in the level's own unit may
+    # be its terms: seconds never balance a queue, nor bytes a count (sd.units)
+    unit = {s.key: unit_of(s.name, s.labels, (provenance.get(s.key) or {}).get("unit")) for s in series}
+    for s in series:
+        if not s.counter and (other := {c.key for c in counters if unit[c.key] != unit[s.key]}):
+            barred[s.key] = barred.get(s.key, set()) | other
 
     def fits(s: Series, r2: float, exact: float) -> bool:
         """A balance a level may be a stock on: a level that only ever takes two values is usually
@@ -926,12 +958,16 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         if exact >= FLAG_EXACT or not any(c.key in taken for c, _ in terms):
             kept.append((s, terms, r2, exact))
             continue
-        terms2, r2b, exact2 = balance(s, free, None, masks[s.key])
+        terms2, r2b, exact2 = balance(s, [c for c in free if c.key not in barred.get(s.key, ())], None, masks[s.key])
         if terms2 and r2b >= MIN_R2:
             kept.append((s, terms2, r2b, exact2))
         else:
             left_out[s.key] = f"only an accumulator of other stocks' flows (R² {r2b:.2f} with counters of its own)"
     found, twins = twin_levels(kept, left_out, lambda a, b: same_flow(a, b, n))
+    # a balance is identified only by evidence that holds out of sample and beats chance (sd.identify);
+    # a count of reporters and its own turnover is a balance by construction, no evidence at all
+    found, identified, constructed_, refused = accepted(found, counters, barred, masks, provenance, left_out,
+                                                         lambda a, b: same_flow(a, b, n) or lagged_flow(a, b))
     # a state each item leaves within a step is empty at almost every step of the grid, so the
     # chain through it runs past it (sd.hops) or ends at outside and begins again there
     # (sd.passing); joined through it
@@ -947,11 +983,11 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     levels = [s for s in levels if all(s is not h.level for h in hopped)]
     passed = {}
     joined_through = passages(found + [(h.level, h.terms, 1.0, 1.0) for h in hopped], counters, levels, copies=copies,
-                              apart=lambda a, b: counts_apart(a, b, named), **where)
+                              apart=lambda a, b: counts_apart(a, b, named) or unit[a.key] != unit[b.key], **where)
     for p in hopped + joined_through:
         masks[p.level.key] = balance_steps(p.level, [c for c, _ in p.terms])
-        r2, exact = fit_of(p.level, p.terms, masks[p.level.key]) if p.measured else (1.0, 1.0)
-        found.append((p.level, p.terms, max(0.0, r2), exact))
+        r2, exact = fit_of(p.level, p.terms, masks[p.level.key]) if p.measured else (None, None)   # an unmeasured state has no fit to report
+        found.append((p.level, p.terms, None if r2 is None else max(0.0, r2), exact))
         left_out.pop(p.level.key, None)
         passed[p.level.key] = p
     stocks, sid_of, ids = [], {}, set()
@@ -963,14 +999,21 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         if carried:
             held[sid] = {"minutes": round(carried / 60, 2), "at_end_minutes": round(at_end / 60, 2)}
         p = passed.get(s.key)
+        by_cons = s.key in constructed_
+        unfit = by_cons or r2 is None           # no R² that is evidence: a balance by construction, or no series measures the level
         stocks.append(Stock(sid, _title(s), "items", ref(s) if not p or p.measured else None,
-                            {"balance_r2": round(r2, 4), "exact_steps": round(exact, 4), "steps": n, "balance_steps": len(masks[s.key]),
+                            {"balance_r2": None if unfit else round(r2, 4), "exact_steps": None if unfit else round(exact, 4),
+                             "steps": n, "balance_steps": len(masks[s.key]),
+                             **({"by_construction": True} if by_cons else {}),
+                             **({"measured": False} if p and not p.measured else {}),
+                             **({"identification": identified[s.key].record()} if s.key in identified else {}),
+                             "trust": stock_trust(s, exact, identified, by_cons, p),
                              "written_by": writer_of(s), "accumulator": all(sign > 0 for _, sign in terms),
                              "balance": [{"series": c.key, "sign": sign} for c, sign in terms],
                              "held_minutes": round(carried / 60, 2),
                              **({"balance_r2_level": round(fit_of(s, terms, masks[s.key])[0], 4),
                                  "balance_on": "traffic: the balance's error against what went in"}
-                                if s.traffic and s.traffic[0] == "backlog" and r2 > fit_of(s, terms, masks[s.key])[0] + 1e-6 else {}),
+                                if not unfit and s.traffic and s.traffic[0] == "backlog" and r2 > fit_of(s, terms, masks[s.key])[0] + 1e-6 else {}),
                              **({"twins": twins[s.key]} if s.key in twins else {}), **(p.evidence() if p else {})}))
     # a counter in two balances connects those stocks (sd.ends: contested ends and co-flows)
     fid_of = {c.key: unique_id(_slug(c), writer_of(c), ids) for c in counters}
@@ -1001,7 +1044,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     net_flows: list[Flow] = []
     for st, made, was_input, lv in net_flow_stocks(series, [s for s, _, _, _ in found], sid_of, inputs, input_refs, left_out, step,
                                                    unit_s, (since, end), lambda x: (unique_id(_slug(x), writer_of(x), ids), _title(x)),
-                                                   ref, writer_of):
+                                                   ref, writer_of, measure=net_evidence):
         stocks.append(st)
         net_flows += made
         sources.pop(f"input:{was_input}", None)
@@ -1102,7 +1145,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                        "gaps": [[a, b] for (_, a), (b, _) in pairwise(live)] if found else [],
                        "step": step, "sampled": sampled, "series": len(series), "inputs": input_refs, "held": held,
                        "resolution": {x.key: x.resolution.record() for x in series if x.resolution},
-                       "stocks": len(stocks), "flows": len(flows), "min_r2": MIN_R2,
+                       "stocks": sum(1 for st in stocks if not st.evidence.get("by_construction")), "flows": len(flows), "min_r2": MIN_R2,
+                       "by_construction": sorted(sid_of[k] for k in constructed_ if k in sid_of),
+                       "refused": refused,
                        "left_out": dict(sorted(left_out.items()))}
     return model
 
