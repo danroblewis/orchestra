@@ -340,6 +340,8 @@ url = "http://127.0.0.1:8428"
 | `announce_hold` | whole number | `3` | How many discoveries in a row a structure change must hold before Orchestra publishes `orchestra.model.changed`. |
 | `announce_gap` | duration | `"30m"` | The least time between two `orchestra.model.changed`. |
 | `diverge_after` | duration | `"15m"` | How long a stock must stay outside its predicted band before `orchestra.model.diverged`. |
+| `stall_after` | duration | `"15m"` | How long a stock must rise with its outflows stopped, or a flow stay at zero, before `orchestra.model.stalled`. |
+| `stall_share` | number, 0 to under 1 | `0.1` | An outflow below this share of its usual rate counts as stopped. |
 
 ```toml
 [discovery]
@@ -1417,6 +1419,9 @@ The host records each era once (`e1`, `e2`, ...) and announces it as `orchestra.
 | `orchestra.model.changed` | Stocks, flows or loops were added or removed, and the new structure held for `announce_hold` discoveries in a row; at most one per `announce_gap`. A flip that comes back is never announced. | `added` and `removed`, each `{stocks, flows, loops}` as ids; `era`, `held`, `first_seen` |
 | `orchestra.model.diverged` | A stock's measured level stayed outside the band the model predicted for at least `diverge_after`. | `stocks`: each with `stock`, `gap` (how far from the predicted level, in half-widths of the band), `level`, `central`, `lo`, `hi`, `since`; `diverged`: every stock diverged now; `era`, `era_start` |
 | `orchestra.model.returned` | A diverged stock is back inside its band. | as `diverged`, with `diverged_since` |
+| `orchestra.model.stalled` | A stock rose over `stall_after` while every outflow drained below `stall_share` of its usual rate; or a flow usually above zero stayed at zero. One per item; `subject` `stock:<id>` or `flow:<id>`. Needs no simulator. | `kind`, `id`, `name`, `since`, `window_s`, `per`; a stock's `level`, `rose_by`, `outflows` (`flow`, `rate`, `usual`); a flow's `rate`, `usual`; `era`, `era_start` |
+| `orchestra.model.resumed` | A stalled stock or flow moves again. | as `stalled`, with `stalled_since` |
+| `orchestra.machine.quiet` | An instance with a cadence of its own (3 beats or more) has been silent longer than its cadence allows (the Machines page calls it quiet). Not for instances announced ad hoc. Once until it is heard again. `subject`: the machine. | `machine`, `instance`, `last_seen`, `usual_gap`, `quiet_for`, `mode` |
 
 A divergence soon after an era began is expected (the change did something); one with no era
 behind it is a lead: something changed that nobody announced.
