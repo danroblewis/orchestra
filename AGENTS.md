@@ -52,8 +52,12 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    2026-10-27.)
 3. **Every event carries the CloudEvents envelope.** `orchestra.events`
    writes it; Orchestra reads the envelope and never the `data` payload, which
-   belongs to the machines that use it. Counted traffic is never turned into
-   events: no envelope is made from a count.
+   belongs to the machines that use it. The exceptions are Orchestra's own
+   event types that machines publish to it: `orchestra.machine.started` (rule
+   2's announcement) and `orchestra.prediction.made` (a machine's prediction of
+   a change's effect, which Orchestra records and judges; the owner,
+   2026-10-27). Counted traffic is never turned into events: no envelope is made
+   from a count.
 4. **There is one system and one model.** Never split topics, models or views
    per package or per domain. Packages and metadata label; they never
    separate. The model changes by new versions; past versions stay readable.
