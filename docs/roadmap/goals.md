@@ -247,6 +247,30 @@ the change did what was intended.
     rise in failures.
 - **Acceptance:** on the sample, adding e2e tests raises the e2e stock, breaking one shows a
   regression, and a flaky test that the gate reruns is counted.
+- **Built (2026-10-27).**
+  - **The instrument** (`orchestra/instruments/test_reports.py`, USING_ORCHESTRA.md §3.4), one
+    `[[collect]]` entry, standard library only. It reads JUnit XML and pytest's report log and prints
+    `tests{kind}`, `test_outcomes{kind,outcome}`, `tests_flaky{kind}`, `tests_confirmed{kind}`,
+    `tests_duration_seconds{kind}` and `test_report_files{state}`. With `--history` it also prints
+    the counters `tests_added_total{kind}` and `tests_removed_total{kind}`, which balance the test
+    count. Kinds are told by path glob, `path::name` or marker.
+    - **Flaky:** failed and passed within the stream's last `--window` runs, or passed on a rerun.
+    - **Confirmed:** passed in each of its last `--confirm` runs, none flaky.
+  - **The gate** (`orchestra-tasking`). `[gate] rerun_failures = N` reruns a failed stage spec, and
+    a pass on a rerun lands, marked flaky. Each run's reports are kept, with `gate.xml` for its
+    stages. The record counts `tasks_gate_runs_total`, `tasks_gate_reruns_total` and
+    `tasks_gate_flaky_stages_total` through `tasks.tickets`. A second plugin instrument,
+    `tasks.tests`, runs the test-report instrument over the gate's reports.
+  - **Accepted** end to end in `orchestra-tasking` (`tests/e2e/test_test_health_e2e.py`), through a
+    real `orchestra run` with the demo's shell worker:
+    - three e2e tests landed raise the e2e count from 1 to 4;
+    - a broken test shows a failure;
+    - a test failing on its first run lands on the rerun, counted flaky by the record and the
+      instrument.
+  - **Discovery:** a replay (`tests/unit/test_test_reports_discovery.py`) finds the e2e count a
+    stock balanced by tests added and removed (R² 1.0).
+  - **Not yet:** the run on the dummy agents themselves. That test belongs in `orchestra-agents`,
+    as G13's does.
 
 ### G15. A self-improving worker kind
 - **What:** story 1's R-learning loop made real.
@@ -270,7 +294,7 @@ the change did what was intended.
 | G8–G10 | To be planned |
 | G11–G12 | Built 2026-10-27 in Orchestra's core: eras with the previous era as the prior, the boundary comparison, the model's own events |
 | G13 | Built 2026-10-27 in Orchestra's core: predictions recorded on the bus, judged per era by lifted-models §3.1, `orchestra.prediction.judged`; the dummy-agent e2e is still to be written in `orchestra-agents` |
-| G14 | After G6 lands in the task system |
+| G14 | Built 2026-10-27: the test-report instrument in Orchestra, the gate's reruns and test reports in the task system; the dummy-agent e2e is still to be written in `orchestra-agents` |
 | G15 | After G3, G11 and G13 |
 
 Related work already in flight (2026-10-27):
