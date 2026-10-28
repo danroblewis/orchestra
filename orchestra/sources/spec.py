@@ -82,7 +82,7 @@ class SourceSpec:
     queries_script: str | None = None
     script_timeout: float = 20.0
     timeout: float = 30.0
-    deadline: float = 120.0             # for one discovery's reads from this source, all told
+    deadline: float = 120.0             # for one discovery's reads from this source; a fresh inference's probes get as long again
     max_points: int = 11000             # per series per request; longer ranges are read in chunks
     concurrency: int = 4
     infer_every: float = 3600.0

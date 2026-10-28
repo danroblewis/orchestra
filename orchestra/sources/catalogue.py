@@ -93,18 +93,17 @@ class Catalogue:
     def _remote(self, spec: SourceSpec, start: float, end: float, step: float, own_names: set[str], out: Reading) -> None:
         src = self.remotes[spec.name]
         began, before = time.monotonic(), (src.requests, src.points)
-        until = began + spec.deadline                   # for the inference and the reads, all told
         st: dict = {"where": spec.where(), "auth": src.auth.describe(), "prefix": spec.prefix}
         out.status[spec.name] = st
         try:
-            inf = self.inference(spec.name, start, end, until=until)
+            inf = self.inference(spec.name, start, end)   # a fresh inference (rare: it is cached) has a deadline of its own
         except Exception as e:  # noqa: BLE001 - one source's failure never ends the discovery of the others
             st.update(ok=False, error=f"inference failed: {why(e)}")
             out.missing[spec.name] = st["error"]
             return
         st.update(inferred_at=inf.at, definitions=len(inf.kept), left_out=len(inf.left_out), script=inf.script,
                   inference_error=inf.error)
-        results, errors = self._read_all(spec, inf.kept, start, end, step, until)
+        results, errors = self._read_all(spec, inf.kept, start, end, step, time.monotonic() + spec.deadline)
         times: list[float] = []
         n = 0
         refused: list[str] = []
