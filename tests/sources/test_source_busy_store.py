@@ -166,7 +166,7 @@ def test_probes_past_the_deadline_leave_their_candidates_out_and_the_round_parti
         assert inf.partial and any("not probed this round" in d.why for d in inf.left_out)
         assert not any("jobs_done" in d.query for d in inf.kept) and inf.kept
         _Late.late = ("queue_depth", "jobs_done", "pods_running")
-        with pytest.raises(SourceError, match="narrow match, or raise infer_deadline"):
+        with pytest.raises(SourceError, match=r"narrow match on the \[\[sources\]\] entry to fewer families"):
             infer(_Late(spec), spec, [], tmp_path, now - 3600, now)
     finally:
         _Late.late = ("jobs_done",)

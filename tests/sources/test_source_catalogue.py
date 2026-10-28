@@ -72,7 +72,7 @@ def test_a_missing_source_is_recorded_and_saves_no_version(tmp_path, monkeypatch
         first = rediscover(p, for_project(p))
         assert first.version == 1
         fake.fail_status = 503                         # the store is down: inference falls back to its cache, the reads fail
-        down = rediscover(p, for_project(p))
+        down = rediscover(p, for_project(p), now=time.time() + 600)   # the next discovery: the new steps cannot be read
     finally:
         fake.close()
     assert down.version is None and "rig" in down.model.discovery["not_saved"]
@@ -156,7 +156,7 @@ def test_a_store_that_holds_nothing_after_a_sleep_keeps_the_definitions_and_save
         good.at -= 7200                                # the laptop slept past infer_every
         save(p.state_dir, good)
         fake.dump = []                                 # and the store holds nothing in the window
-        empty = rediscover(p, for_project(p))
+        empty = rediscover(p, for_project(p), now=time.time() + 4 * 3600 + 60)   # (the window after the sleep: none of it read before)
         assert empty.version is None and "returned no series" in empty.model.discovery["not_saved"]
         st = empty.model.discovery["sources"]["rig"]
         assert not st["ok"] and st["gaps"] and st["definitions"] == len(good.kept) and "kept 0 definitions" in st["inference_error"]

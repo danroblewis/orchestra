@@ -191,9 +191,9 @@ def _aliases(real: set[str], spec: SourceSpec) -> dict[str, str]:
 
 
 def read(source: Source, spec: SourceSpec, start: float, end: float, *, until: float | None = None,
-         known: dict[str, dict] | None = None) -> Schema:
+         known: dict[str, dict] | None = None, remembered: dict | None = None) -> Schema:
     """The families of what ``spec.match`` selects, with aliases, roles and resolution, read by
     ``until`` (``time.monotonic()``); ``known``: the last round's families by name, which a family
     that cannot be read this round keeps (``survey.py``)."""
     from .survey import survey
-    return survey(source, spec, start, end, until=until, known=known)
+    return survey(source, spec, start, end, until=until, known=known, remembered=remembered)

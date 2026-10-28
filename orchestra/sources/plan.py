@@ -23,7 +23,8 @@ from __future__ import annotations
 import math
 
 from . import Source
-from .batch import Part, run
+from .batch import OVER_LIMIT, Part, run
+from .readcache import ReadCache
 from .regroup import BASES, derive, expr, fine_by
 from .views import Definition
 
@@ -77,10 +78,37 @@ def read_form(d: Definition, step: float) -> tuple[str, str, float] | None:
     return None
 
 
+def _runs(source: Source, ps: list[Part], start: float, end: float, step: float, until: float | None, concurrency: int,
+          cache: ReadCache | None, resettle: float) -> tuple[dict, dict]:
+    """``run`` over [start, end], or, with a cache, only over what it does not keep of each part
+    (``readcache.plan``: parts that need the same stretch are read together), spliced in."""
+    if cache is None:
+        return run(source, ps, start, end, step, until, concurrency)
+    key = lambda p: f"q|{step:g}|{p.expr}"
+    spans: dict[tuple[float, float], list[Part]] = {}
+    failed: dict = {}
+    for p in ps:
+        if why := cache.refusal(key(p)):          # refused for its size lately: not asked again yet
+            failed[p.key] = why
+        elif (sp := cache.plan(key(p), start, end, step, resettle)) is not None:
+            spans.setdefault(sp, []).append(p)
+    for (a, b), pp in spans.items():
+        g, f = run(source, pp, a, b, step, until, concurrency)
+        failed.update(f)
+        for p in pp:
+            if p.key in g:
+                cache.put(key(p), g[p.key], a, b, whole=a <= start + 1e-6)
+            elif f.get(p.key, "").startswith(OVER_LIMIT):
+                cache.refuse(key(p), f[p.key])
+    return {p.key: cache.get(key(p), start, end) for p in ps if p.key not in failed}, failed
+
+
 def shared(source: Source, defs: list[Definition], forms: dict[str, tuple[str, str, float]], starts: dict[float, float], end: float,
-           until: float | None = None, concurrency: int = 4) -> tuple[dict[str, list], dict[str, str]]:
+           until: float | None = None, concurrency: int = 4, cache: ReadCache | None = None,
+           resettle: float = 0.0) -> tuple[dict[str, list], dict[str, str]]:
     """Every definition of ``forms`` (id -> inner, aggregation, step) read from ``starts[step]`` to
-    ``end``: its rows by id, and why for those that could not be read."""
+    ``end``: its rows by id, and why for those that could not be read. With a ``cache``, only what
+    it does not keep is asked for (``readcache.py``)."""
     by_id = {d.id: d for d in defs}
     groups: dict[tuple[str, float], list[Definition]] = {}
     for i, (inner, _, step) in forms.items():
@@ -94,7 +122,7 @@ def shared(source: Source, defs: list[Definition], forms: dict[str, tuple[str, s
     got: dict = {}
     failed: dict = {}
     for step, ps in parts.items():
-        g, f = run(source, ps, starts[step], end, step, until, concurrency)
+        g, f = _runs(source, ps, starts[step], end, step, until, concurrency, cache, resettle)
         got.update(g)
         failed.update(f)
     out: dict[str, list] = {}
