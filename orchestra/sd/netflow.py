@@ -51,9 +51,11 @@ so the total "explains" them by containing them. The rule only keeps a driver ou
 read from the name, so two counts in one unit that are not part and total (a repository's bytes
 under the disk's free bytes) are kept apart too. A statistic is never tried: one a source
 summarised across reporters (an average, a maximum), and one whose name says it is a statistic
-(a word ``mean``, ``avg``, ``average``, ``median``, or a percentile such as ``p95``), such as a
-shelf's mean age: it summarises what is there and holds nothing; its changes follow whatever moves
-the things it averages. What is refuted stays an **input**, with the reason: a level whose net flow
+(``sd.properties.statistic``: ``mean``, ``max``, a percentile such as ``p95``), such as a shelf's
+mean age: it summarises what is there and holds nothing; its changes follow whatever moves the
+things it averages. Nor is a resource a process or host uses (``sd.properties.resource``: CPU,
+memory, threads, a load average, a utilisation): its work sets it at each moment, so a fit to the
+work's series explains it as well as a stock's and says nothing. What is refuted stays an **input**, with the reason: a level whose net flow
 nothing explains better than a constant (a random walk, a steady drift), or whose best form a
 refutation struck (the reason names it and the check), and one whose changes move with another
 series' changes (``SAME_MOVES``: a second measure of the same thing, or a function of it, such as
@@ -77,6 +79,7 @@ from dataclasses import dataclass, field
 from . import stocktrust
 from .drivers import AIC_MARGIN, EVENTS_PER_PARAM
 from .model import Equation, Flow, Stock
+from .properties import resource, statistic
 from .resolution import steps_of
 from .series import series_key
 
@@ -87,7 +90,6 @@ FORGETS = 0.5         # a level that loses more than this share of itself from o
 ONE_WAY = 0.1         # a driver whose changes go the other way in fewer than this share of stretches only rises (or falls): it stands in for time
 MIN_NET_R2 = 0.4      # an accepted net flow explains at least this share of the level's changes: below it, noise moves the level more than the form does
 SHIFTED = 0.8         # a driver that, moved a quarter of the window earlier or later, still explains this share of what it explains in place is no cause
-STATISTICS = {"mean", "avg", "average", "median"}     # name words that say a level is a statistic of something (as are p50, p95, p99)
 NET_FLOW = "no counters balance it"     # the reason conservation gives a level these are tried on
 
 
@@ -274,12 +276,6 @@ def _part(level, d: Driver, starts: list[int], k: int) -> str:
     return f"{d.key} may be a part of it" if inside(dv, lv) else ""
 
 
-def statistic(name: str) -> bool:
-    """Whether a series' name says it is a statistic of something (a mean age, a median, a 95th
-    percentile): it summarises what is there, it does not hold it."""
-    return any(w in STATISTICS or (len(w) in (3, 4) and w[0] == "p" and w[1:].isdigit()) for w in name.split("_"))
-
-
 def _shift_null(d: Driver, own: bool, rows: list[list[float]], y: list[float], starts: list[int], k: int, n: int) -> tuple[float, float, float] | None:
     """What the driver explains of the level's changes beyond the rest of the form (its partial
     R²) in place and moved a quarter of the window earlier or later, whichever explains more, and
@@ -462,12 +458,13 @@ def build(f: Fit, sid: str, title: str, writer: str | None, window: tuple[float,
 
 def stocks(series: list, counted: list, sid_of: dict[str, str], inputs: dict[str, list[float]], input_refs: dict[str, dict],
            left_out: dict[str, str], step: float, unit_s: float, window: tuple[float, float], name_of, ref_of, writer_of,
-           measure=None) -> list:
+           measure=None, units: dict[str, str] | None = None) -> list:
     """The levels conservation left out because no counters balance them that are stocks by their
     fitted net flow, as (stock, its flows, the input name it had, its series). The others get their
     reason in ``left_out``. ``counted``: conservation's stocks' series; ``name_of(series)``: a new
     stock's id and title; ``ref_of(series)``: the model's reference to it; ``measure(level, fit,
-    drivers, step, unit_s)``: what the stock's trust is computed from (``sd.netnull.measured``)."""
+    drivers, step, unit_s)``: what the stock's trust is computed from (``sd.netnull.measured``);
+    ``units``: each series' unit (``sd.units``), by key."""
     key_of = {name: series_key(r["name"], r.get("labels") or {}) for name, r in input_refs.items()}
     drivers = [Driver(sid_of[c.key], c.values, c.resolution.seconds if c.resolution else None, c.key, c.name) for c in counted]
     drivers += [Driver(f"input:{name}", vals, input_refs[name].get("resolution_s"), key_of[name], input_refs[name]["name"])
@@ -476,11 +473,12 @@ def stocks(series: list, counted: list, sid_of: dict[str, str], inputs: dict[str
     for s in series:
         if s.counter or not left_out.get(s.key, "").startswith(NET_FLOW):
             continue
-        if s.summary:
-            left_out[s.key] += ", and it is a statistic its source summarised across reporters (an average, a maximum): a summary, not a store"
+        if statistic(s.name, s.summary):        # sd.discover leaves these out before; a caller's own series may not
+            left_out[s.key] += ", and it is a statistic of what it measures (a mean, a maximum, a percentile): a summary, not a store"
             continue
-        if statistic(s.name):
-            left_out[s.key] += ", and its name says it is a statistic (a mean, a median, a percentile) of what it measures: a summary, not a store"
+        if resource(s.name, (units or {}).get(s.key)):
+            left_out[s.key] += (", and it measures a resource a process or host uses (CPU, memory, threads, a utilisation): a property "
+                                "of the running process, set by its work, not an accumulation, so no net flow is fitted to it")
             continue
         mine = [d for d in drivers if d.name != s.name]
         got, why = fit(s, mine, step, unit_s)

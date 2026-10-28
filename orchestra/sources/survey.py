@@ -2,7 +2,9 @@
 at once (``census.py``):
 
 1. list names and series (``listing.py``) and the metadata, and group families (``schema.py``);
-2. sample a few series of each (raw, the window): interval, native histograms, behaviour;
+2. sample a few series of each (raw, the window): interval, native histograms, behaviour; when
+   fewer than two of those picked report through half the window (a listing by day names pods
+   long replaced), the ones with most samples in it are picked instead (``census.live``);
 3. for the families the window cannot judge (it only rose), the same series over ``history``;
    for those whose samples are all 1, their extremes (an info metric);
 4. each label's role: identity, unit, constant, or grouping when its values do not churn;
@@ -27,6 +29,7 @@ from .checks import (
     is_object,
     is_unit,
     pick,
+    pick_live,
 )
 from .duplicates import duplicated
 from .family import UNREAD, Family, LabelInfo, Schema
@@ -35,6 +38,10 @@ from .schema import SKIP_LABELS, _aliases, _group
 from .spec import SourceSpec
 
 RETYPABLE = ("gauge", "counter")
+
+
+def span(pts: list) -> float:
+    return pts[-1][0] - pts[0][0] if len(pts) >= 2 else 0.0
 
 
 def known_record(f: Family) -> dict:
@@ -82,6 +89,19 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
     picks = {f.name: pick(f.first_metric(), one_of[f.name], PICKS if f.name in judged else 3) for f in families}
     rule_picks = {(f.name, r["metric"]): pick(r["metric"], names.get(r["metric"], []), 3) for f in families for r in f.rollups.values()}
     raw, bad = census.raw(source, {**picks, **rule_picks}, start, end, until, conc)
+    gone = {f.name: (f.first_metric(), 2 * (PICKS if f.name in judged else 3), max(1, len(one_of[f.name]))) for f in families
+            if f.name not in bad and picks[f.name][0] != f.first_metric() and sum(span(p) >= (end - start) / 2 for p in raw.get(f.name, [])) < 2}
+    if gone:                     # the picks named series gone or short-lived (a listing by day, pods replaced): pick those that report through the window
+        alive, _ = census.live(source, gone, start, end, until, conc)
+        repick = {n: pick_live(gone[n][0], [lab for lab in sets if not families_by[n].stat_label or
+                                            lab.get(families_by[n].stat_label) == next(iter(families_by[n].stat_values.values()), None)],
+                               one_of[n])
+                  for n, sets in alive.items() if sets}
+        if repick:
+            again, bad_again = census.raw(source, repick, start, end, until, conc)
+            for n, sel in repick.items():
+                if n not in bad_again and again.get(n):
+                    picks[n], raw[n] = sel, again[n]
     for fam in families:
         if fam.name in bad:
             failed[fam.name] = f"its samples: {bad[fam.name]}"
@@ -124,7 +144,8 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
             kind, why, evidence = hk, (f"{hwhy}, over the last {spec.history / 3600:g} h" if hk else ""), long[n]
         new = {"delta": "counter"}.get(kind, kind) if kind else base
         prev = (known.get(n) or {}).get("kind")
-        if prev in RETYPABLE and new in RETYPABLE and prev != new and decides(evidence) != new:
+        sampled = (known.get(n) or {}).get("resolution_s") is not None    # a verdict made without samples judged nothing
+        if sampled and prev in RETYPABLE and new in RETYPABLE and prev != new and decides(evidence) != new:
             k = known[n]
             fam.kind, fam.retyped, fam.counter_form = prev, k.get("retyped"), k.get("counter_form", "")
             fam.notes.append(f"kept a {prev}, as judged before: this round's samples do not decide it is a {new}")
