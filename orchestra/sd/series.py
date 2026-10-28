@@ -23,10 +23,8 @@ from .live import (
     usual_interval,
 )
 from .resolution import (
-    LINEAR,
     Resolution,
     block_ends,
-    interpolate,
     measure,
     observed_every,
     real_points,
@@ -194,8 +192,7 @@ def mark_live(ser: Series, machine_alive: list[tuple[float, float]] | None, star
 
 
 def sample(dump, start: float, step: float, n: int, kinds: dict[str, Declared] | None = None) -> list[Series]:
-    """Every series on the grid, each read at its own resolution (``sd.resolution``): a count or a
-    state with its last value held, a smooth measurement linearly between its real points. Leading
+    """Every series on the grid, each with its last value held (``sd.resolution``). Leading
     steps before a gauge's first point take its first value; before a counter's first point nothing
     had been counted (a counter written when it moves starts at its first event, and that event
     moved the gauges written beside it), unless it is a counter read from elsewhere, whose first
@@ -218,8 +215,6 @@ def sample(dump, start: float, step: float, n: int, kinds: dict[str, Declared] |
             vals.append(first if last is None else last)
         counter = said.kind == "counter" if said else _is_counter(name, vals)
         res = measure(pts, counter, said.resolution_s if said else None, counter and on_events(pts))
-        if res.read == LINEAR:
-            vals = [first if v is None else v for v in interpolate(pts, times)]
         ser = Series(name, dict(labels), pts, vals, counter, resolution=res)
         if not counter and steps_of(observed_every(pts, res, said.resolution_s if said else None), step) > 1:
             ser.blocks = block_ends(real_points(pts, res.read), start, step, n)

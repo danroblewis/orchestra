@@ -110,7 +110,12 @@ diverge_after = "15m"
 The defaults suit a system that runs all day. A level becomes a stock only after it has been
 written for half the window, changed in at least 5 steps, with counters that counted at least 5
 events each: so the first model appears about an hour after instruments start, and a series that
-changes for a few seconds at a time is invisible on a 30 s grid. A demo wants a short window and
+changes for a few seconds at a time is invisible on a 30 s grid. Its balance must also hold on
+evidence, not on R² alone: chosen again on each half of the window, reproducing the level over
+time, beating the same search on the level shifted in time, on enough points; and every stock
+carries a trust score from 0 to 1 (`evidence.trust`: its weakest measurement), shown beside it on
+the Dynamics page. Read the score before acting on a stock: a net flow at 0.2 is a correlation
+the data happen to show, not a finding. A demo wants a short window and
 a fine step (`window = "10m"`, `step = "5s"`); a slow system (tickets, deploys) a longer window.
 `every` below a minute costs CPU for little: discovery's deadline is 80% of it. Discoveries never
 overlap: the host starts one every `every`, or a fifth of `every` after the last one ended when it
@@ -279,7 +284,11 @@ label, per-pod series, recording rules beside their bases. Look before declaring
    is a cumulative from another system's start is fine too. A stock and its flows must count the
    same things: `queue_depth{queue="orders"}` with `processed_total{service="payments"}` is a
    mismatched stock, and the model's fit will say so with a large error. Narrow both to one label
-   value, or group both by the same label.
+   value, or group both by the same label. Discovery never adds counters in another unit to a
+   level (seconds to a queue, bytes to a count, KiB to bytes): it reads the unit from a `unit`
+   label, the store's metadata, or the name's suffix (`_seconds`, `_bytes`; `_count` counts), so
+   name pinned series with their unit, and never sum a gauge over a label that holds units
+   (`resource="cpu"` beside `resource="memory"`).
 7. **Pin what inference does not rank.** `infer_source` lists what it keeps and what it left out
    with why. When it left out the series the question needs, or kept a view you would not use,
    pin it with `[[series]]` and a plain name for what it measures:
@@ -424,6 +433,8 @@ the test-report instrument's `--run '...'` the same holds: write `uv run pytest`
 - Two series of one quantity (a metric and its recording rule) double a flow; read one.
 - A stock and its flows must count the same things, grouped by the same labels.
 - The model needs about an hour of data before it shows stocks.
+- A stock's R² is not its credibility; its trust score is. A count of pods balanced by its own
+  started and stopped counts is exact by construction and scores 0; a hidden state has no R².
 - `[events]`, `[metrics]`, `[web]`, `[discovery]` need a restart; instruments and machines don't.
 - A secret in either file is wrong; a private value goes to the overlay, a credential to the
   environment.
