@@ -904,7 +904,9 @@ project's `[[machines]]` entry never takes a plugin process's place; a project e
 after a pause that doubles with each exit within a minute of starting (1 s up to 60 s); after five
 failures (non-zero exits) in a row, each within a minute of starting, it is given up on, which the
 host's log, the process's log and the bus (`orchestra.process.gave_up`) say. It is tried again when
-its entry changes or the host restarts. The host also publishes `orchestra.process.started` and
+its entry changes or the host restarts. A plugin's process may name the settings it reads at start
+(`Process.config_keys`, dotted keys of the merged configuration): a change under them restarts
+it, and tries again one given up on. The host also publishes `orchestra.process.started` and
 `orchestra.process.exited`. It re-reads the configuration (`orchestra.toml` with the private
 overlay merged, §8) whenever either file changes, appears or goes (checked every second): a new entry starts, a removed one stops, a changed one restarts. The plugins are then
 asked again for their processes (the config read first, since a plugin reads its own sections), so
@@ -1113,8 +1115,11 @@ created `0600` on its first change). In the overlay an entry merges whole, so `a
 starts from the repository's entry of that name, and `remove_entry` there writes
 `enabled = false` when the repository has the entry. Each change edits the target's text through
 `tomlkit` (comments and layout kept), then reads the merged result as Orchestra does (its
-settings, `[[machines]]`, `[[collect]]`, `[[scrape]]`) and as the caller's `check` does (a
-plugin's own reader): one that makes any of them say something new is refused with what they said.
+settings, `[[machines]]`, `[[collect]]`, `[[scrape]]`), as every loaded plugin's `Plugin.check`
+does (each judging only its own sections; what it says is prefixed with its name) and as the
+caller's `check` does: one that makes any of them say something new is refused with what they
+said. A plugin that does not load, or whose check fails, refuses nothing and is listed in the
+change's `warnings`; the plugins are loaded for this once per process.
 It is written whole, `project.config` is reloaded, and a `Change` is returned: the file, its text
 before and after, one line of what changed (no values for the overlay), and the keys of the merged
 configuration whose value changed (none, with a note, when the overlay's value still wins).

@@ -376,3 +376,46 @@ def test_a_plugin_s_processes_follow_its_section_in_orchestra_toml(project):
     finally:
         host.stop()
         t.join(timeout=20)
+
+
+def test_a_process_is_restarted_when_the_settings_it_names_change(project):
+    """A plugin's process that reads its settings once names them (``config_keys``): a change under
+    them restarts it, a change elsewhere does not, and one given up on is tried again."""
+    from orchestra.launcher import fingerprint
+
+    out = project.repo_root / "starts.txt"
+    code = (f"import tomllib; v = tomllib.load(open('orchestra.toml', 'rb')).get('tools', {{}}).get('every', 0)\n"
+            f"open({str(out)!r}, 'a').write(f'{{v}}\\n')\nif v == 'bad': raise SystemExit(2)\n"
+            "import time\nwhile True: time.sleep(0.1)")
+
+    def write(text):
+        path = project.repo_root / "orchestra.toml"
+        path.write_text('[metrics]\nurl = "file"\n' + text)
+        t = time.time() + next(_later)
+        os.utime(path, (t, t))
+
+    def starts():
+        return out.read_text().split() if out.exists() else []
+
+    write('[tools]\nevery = "1s"\n')
+    la, _, _ = launcher(project, give_up_after=2,
+                        plugin_processes=lambda: [Process("helper", [PY, "-c", code], owner="tools",
+                                                          config_keys=["tools"])])
+    try:
+        until(lambda: starts() == ["1s"], la)
+        write('[tools]\nevery = "1s"\n\n[other]\nx = 1\n')          # not its settings: left running
+        for _ in range(20):
+            la.tick()
+            time.sleep(0.01)
+        assert starts() == ["1s"]
+        write('[tools]\nevery = "2s"\n')                              # its settings: restarted
+        until(lambda: starts() == ["1s", "2s"] and la.runs["tools.helper"].state == "running", la)
+        write('[tools]\nevery = "bad"\n')
+        until(lambda: la.runs["tools.helper"].state == "gave_up", la)
+        write('[tools]\nevery = "3s"\n')                              # fixed: tried again
+        until(lambda: starts()[-1] == "3s" and la.runs["tools.helper"].state == "running", la)
+    finally:
+        la.stop_all()
+    assert fingerprint({"a": {"b": 1}}, ["a.b"]) != fingerprint({"a": {"b": 2}}, ["a.b"])
+    assert fingerprint({}, ["a.b"]) != fingerprint({"a": {"b": None, "c": 1}}, ["a"]) and fingerprint({}, []) == ""
+    assert check(Process("x", "true", config_keys="tools")) is not None

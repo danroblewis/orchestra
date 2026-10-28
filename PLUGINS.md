@@ -226,6 +226,7 @@ class Plugin:
     processes: list[Process] = field(default_factory=list)   # what `orchestra run` starts for it
     collectors: list[Collector] = field(default_factory=list)   # what `orchestra run` scrapes or runs for measurements
     guide: Path | None = None   # a markdown file in the package: how to configure the plugin, for an AI operator
+    check: Callable[[dict, Path | None], list[str]] | None = None   # (merged raw, repo root) -> problems with its sections
 
 # orchestra/launcher.py
 @dataclass
@@ -235,6 +236,8 @@ class Process:
     restart: str = "always"
     owner: str = "project"         # "project", or the plugin that declared it
     stop_grace_s: float | None = None   # from SIGTERM to SIGKILL when stopping it; None: STOP_GRACE_S
+    config_keys: list[str] = field(default_factory=list)   # dotted keys of the configuration it reads when it
+                                                           # starts: a change under any of them restarts it
 
 # orchestra/collect/spec.py
 @dataclass(frozen=True)
@@ -252,8 +255,8 @@ class Collector:
     def collect(cls, name: str, command: str, **kw) -> Collector: ...
 ```
 
-That is the whole interface. There is no hook for CLI commands, config schemas or lifecycle
-callbacks (§13).
+That is the whole interface. There is no hook for config schemas or lifecycle callbacks (§13);
+CLI commands are an entry point of their own (§4.10).
 
 ### 4.1 `name`
 
@@ -368,6 +371,7 @@ What `orchestra run` keeps running for the plugin, the same `Process` as a proje
 | `command` | A list of arguments (preferred), or a string split like a shell would split it (`shlex`) but **not** run by a shell. |
 | `restart` | `always` (the default), `on-failure` or `never`. |
 | `stop_grace_s` | Seconds from SIGTERM to SIGKILL; `None` means 10. Make it longer than your own shutdown. |
+| `config_keys` | Dotted keys of the merged configuration the process reads when it starts (`["bridges.github"]`). When the value under any of them changes, the launcher restarts it, and one it gave up on is tried again. Leave it empty if the process follows its settings itself (`config_stamp`, §4.9). |
 | `owner` | Do not set it. The host sets it to the plugin's name. |
 
 How the launcher runs it (`orchestra/launcher.py`):
@@ -378,9 +382,11 @@ How the launcher runs it (`orchestra/launcher.py`):
   `<state>/logs/machines/<plugin>.<name>.log` (rotated at 5 MB);
 - restarted after it exits (per `restart`), after a pause that doubles with each quick exit, up to
   a minute. After 5 failing exits in a row, each within 60 s of starting, it is given up on
-  (`orchestra.process.gave_up`), until its declaration changes or `orchestra run` restarts;
+  (`orchestra.process.gave_up`), until its declaration or the settings under its `config_keys`
+  change, or `orchestra run` restarts;
 - stopped with SIGTERM to its group, then SIGKILL after its grace, when the host stops, or when the
-  plugin no longer declares it, or declares it differently (a different argv or restart);
+  plugin no longer declares it, or declares it differently (a different argv or restart), or the
+  settings under its `config_keys` change (it is then started again with them);
 - published by the host as `orchestra.process.started` / `exited` / `gave_up` (source
   `orchestra-host`, `data.owner` = your plugin's name), and listed on the Core page.
 
@@ -399,11 +405,14 @@ The usual pattern is to declare processes only when the project configures the p
 
 ```python
 configured = section(project.config.raw, "github") is not None
-processes=[Process("github", [sys.executable, "-m", "orchestra_bridges", "github"], stop_grace_s=10)] if configured else []
+processes=[Process("github", [sys.executable, "-m", "orchestra_bridges", "github"], stop_grace_s=10,
+                   config_keys=["bridges.github", "bridges.people"])] if configured else []
 ```
 
 Since the host asks again whenever `orchestra.toml` changes, adding the section starts the
-process within seconds and removing it stops the process. The walkthrough shows this working
+process within seconds and removing it stops the process. A process whose command never changes
+(its settings are read from the configuration, not passed in argv) names its section in
+`config_keys`, or a changed setting never reaches it. The walkthrough shows this working
 (§9.6).
 
 ### 4.7 `collectors`: instruments
@@ -474,8 +483,9 @@ what an operator that has read the owner's repository needs to choose well:
   served, the git remote) and what to do when it is not there.
 - **The pitfalls**: defaults that bite (a 10 s timeout on a test suite), states that stop
   progress (a failing base branch pauses landing), gaps that are not zeros.
-- **How to check a setting took**: the `check` your plugin passes to `config_edit` (what it
-  refuses), and where the result shows when it runs (a page, an API route, a log).
+- **How to check a setting took**: what your `Plugin.check` refuses (§4.7.2; `config_edit` runs
+  it on every change, so the operator passes nothing), and where the result shows when it runs (a
+  page, an API route, a log).
 - **Which choices belong to the human**, so the operator asks rather than decides: letting agents
   change code, pushing, anything that acts as the owner (messages, comments, approvals),
   credentials (never in a configuration file), and cost.
@@ -484,6 +494,29 @@ what an operator that has read the owner's repository needs to choose well:
   naming a key that does not exist (Orchestra's `tests/unit/test_guides.py` does this for its own).
 
 Keep it short and accurate: a few hundred lines at most, every key read from your config code.
+
+### 4.7.2 `check`: what your plugin refuses in a configuration
+
+`check(raw, repo_root) -> list[str]` says what is wrong with your sections of a merged
+configuration (`raw`, the repository's `orchestra.toml` with the overlay over it; `repo_root`, to
+resolve relative paths, may be `None`), one sentence per problem, empty when nothing is.
+`project.config_edit` runs every loaded plugin's check on every change, beside Orchestra's own
+readers and any `check=` its caller passes: a change after which any of them says something it
+did not say before is refused, with the plugin's name before what it said (`bridges: [bridges.github]
+repos ...`). So a Supervisor changing your settings never has to know your reader.
+
+- **Judge only your own sections**, and **an absent section is no problem**: otherwise removing
+  it, or any change in a project that does not use you, would be refused.
+- Use your own reader (the one your processes use), so what passes the check also starts.
+- Keep it cheap and pure: no network, no files outside `repo_root`, no state.
+- A plugin that fails to load, or a check that raises or returns something other than a list of
+  strings, refuses nothing: it is reported in the `Change`'s `warnings`. Orchestra loads the
+  plugins for this once per process, the first time a change is checked.
+
+```python
+from .config import problems
+return Plugin("heartbeat", ..., check=lambda raw, repo_root: problems(raw, repo_root))
+```
 
 ### 4.8 `scripts` and `stylesheets`
 
@@ -522,13 +555,13 @@ edit.set("heartbeat.every", "10s")                                   # target="r
 edit.set("desk.channels", ["#mine"], target="overlay")              # the owner's, out of the repository
 edit.add_entry("machines", {"name": "pager", "command": "machines/pager.sh"}, target="overlay")
 edit.remove_entry("machines", "pager", target="overlay")
-c = edit.set("heartbeat.every", "1s", check=my_reader, dry_run=True)  # refused if my_reader objects
+c = edit.set("heartbeat.every", "1s", dry_run=True)                # refused if any plugin's check objects
 edit.apply(c)                                                        # ... written later; edit.restore(c) undoes it
 ```
 
-Each returns a `Change` (`file`, `before`, `after`, `what`, `keys`, `note`), has kept the file's
-comments, has refused a result Orchestra's readers or your `check` object to, and has reloaded
-`project.config`. Committing a change to `orchestra.toml` is yours to decide; the overlay is never
+Each returns a `Change` (`file`, `before`, `after`, `what`, `keys`, `note`, `warnings`), has kept
+the file's comments, has refused a result Orchestra's readers, any plugin's `check` (§4.7.2) or a
+`check=` passed to it object to, and has reloaded `project.config`. Committing a change to `orchestra.toml` is yours to decide; the overlay is never
 committed. Personal settings (identities, channels, templates) belong in the overlay, the
 project's in the repository.
 
@@ -974,8 +1007,11 @@ def plugin(project) -> Plugin:
     scrapes = [(s, url) for s in configured if (url := metrics_url(section(raw, s), PORTS.get(s)))]
     return Plugin(
         "bridges",
-        processes=[Process(s, [sys.executable, "-m", "orchestra_bridges", s], stop_grace_s=10) for s in configured],
-        collectors=[Collector.scrape(s, url, every_s=SCRAPE_EVERY_S) for s, url in scrapes])
+        processes=[Process(s, [sys.executable, "-m", "orchestra_bridges", s], stop_grace_s=10,
+                           config_keys=[f"bridges.{s}", "bridges.people"]) for s in configured],
+        collectors=[Collector.scrape(s, url, every_s=SCRAPE_EVERY_S) for s, url in scrapes],
+        guide=Path(__file__).parent / "guide.md",
+        check=lambda raw, repo_root: check(raw, repo_root=None))
 ```
 
 It has **no pages, router or scripts**: what the bridges show is Orchestra's own Machines page
@@ -1774,7 +1810,7 @@ Gaps and inconsistencies in the plugin interface on `main` today. This is a list
    bridges, is invisible there. Its processes show on the Core page, its instruments on the
    Instruments page, its declared machines on the Machines page, and its stylesheets nowhere.
 4. **No config registry or namespacing.** Sections are read from `raw` by convention, so two
-   packages can claim one section undetected. The task system claims generic names (`[project]`,
+   packages can claim one section undetected (each plugin's `check` judges only what it reads). The task system claims generic names (`[project]`,
    `[gate]`, `[staging]`).
 5. **Plugin names are not checked against the name pattern.** A name that fails it only shows up
    as a launcher log line (and as left-out instruments in the host's log). `load` reports errors

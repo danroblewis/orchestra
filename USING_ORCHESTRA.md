@@ -1323,7 +1323,7 @@ stateDiagram-v2
   host's log, in the process's log
   (`gave up after 5 failures in a row, each within 60 s of starting`), and on the bus
   (`orchestra.process.gave_up`). It is tried again when its entry changes or `orchestra run`
-  restarts.
+  restarts; a plugin's process, also when the settings it names (`config_keys`) change.
 - **A change to `orchestra.toml`** is seen within a second: an entry added starts, one removed
   stops, and one whose `command` or `restart` changed is stopped and started again. A change to
   `stop_grace` alone applies the next time it is stopped. A change to the program itself takes
