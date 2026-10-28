@@ -14,6 +14,7 @@ from orchestra.config import init_project
 from orchestra.events import Events
 from orchestra.metrics import for_project
 from orchestra.web.app import create_app
+from orchestra.web.auth import bearer
 from orchestra.web.machines import machines_view
 
 
@@ -40,7 +41,7 @@ def test_a_detector_is_an_instrument_not_a_machine(project, tmp_path):
     out = (tmp_path / "host.out").open("w")
     host = subprocess.Popen([sys.executable, "-m", "orchestra", "--repo", str(project.repo_root), "run"],
                             stdout=out, stderr=subprocess.STDOUT)
-    web = TestClient(create_app(project))
+    web = TestClient(create_app(project), headers=bearer(project))
     try:
         store = for_project(project)
         end = time.time() + 30

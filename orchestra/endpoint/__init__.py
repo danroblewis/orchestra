@@ -21,11 +21,9 @@ process can neither publish nor read."""
 
 from __future__ import annotations
 
-import os
-import secrets
-
 from .. import runtime
 from ..config import ConfigError, Project
+from ..tokens import owner_only
 
 ENV_URL = "ORCHESTRA_EVENTS_ENDPOINT"
 ENV_TOKEN = "ORCHESTRA_EVENTS_TOKEN"
@@ -40,20 +38,7 @@ def token_file(project: Project):
 def token(project: Project) -> str:
     """The project's token, made the first time it is asked for (owner-only), and kept, so a
     machine the host did not launch keeps working across the host's restarts."""
-    path = token_file(project)
-    try:
-        return path.read_text(encoding="utf-8").strip()
-    except FileNotFoundError:
-        pass
-    project.state_dir.mkdir(parents=True, exist_ok=True)
-    made = secrets.token_urlsafe(32)
-    try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:                   # another process made it first: theirs stands
-        return path.read_text(encoding="utf-8").strip()
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(made + "\n")
-    return made
+    return owner_only(token_file(project))
 
 
 def listen_address(value) -> tuple[str, int] | None:

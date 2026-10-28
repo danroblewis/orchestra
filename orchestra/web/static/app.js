@@ -93,6 +93,27 @@ const CORE_PAGES = [["/", "Dashboard"], ["/machines", "Machines"], ["/instrument
   }
 })();
 
+// The session (web/auth.py): a request this server refuses for want of a login goes to the login
+// page and back here after; a browser logged in with the cookie gets a "log out" button in the nav.
+(function session() {
+  const plain = window.fetch.bind(window);
+  window.fetch = async (...args) => {
+    const r = await plain(...args);
+    if (r.status === 401 && new URL(r.url, location.href).origin === location.origin) {
+      location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search + location.hash);
+    }
+    return r;
+  };
+  plain("/api/session").then((r) => (r.ok ? r.json() : null)).then((s) => {
+    const nav = $("nav");
+    if (!nav || !s || s.via !== "cookie") return;
+    const f = document.createElement("form");
+    f.method = "post"; f.action = "/logout"; f.style.margin = "0";
+    f.innerHTML = '<button class="ctl" type="submit" title="end this browser\'s session">log out</button>';
+    nav.appendChild(f);
+  }).catch(() => {});
+})();
+
 // This fills in the project label on every page, and adds the installed plugins' pages
 // (orchestra/plugins.py) after Orchestra's own.
 fetch("/api/project").then((r) => r.json()).then((p) => { const el = $("proj"); if (el) el.textContent = p.key; }).catch(() => {});

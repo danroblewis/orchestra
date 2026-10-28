@@ -761,6 +761,7 @@ keeps its own harness (`~/orchestra-agents/SPEC.md`).
     orchestra.local.toml         the private configuration overlay, if the owner writes one (§8)
     runtime.json                 the hosts', the launcher's, the events endpoint's, the web server's, the launched processes' and the instruments' records
     events.token                 the events endpoint's token (§3.1), readable by its owner only
+    web.token                    the web UI's token (§10.2), readable by its owner only
     events.jsonl                 the event log, when [events] url = "file"
     metrics.jsonl                the metrics, when [metrics] url = "file"
     model/vNNNN.json             the model's versions
@@ -785,6 +786,8 @@ url = "file"            # or redis://, amqp://, kafka://
 listen = "127.0.0.1:0"  # the events endpoint (§3.1): host:port, port 0 picked by the system; "off"
 [metrics]
 url = "file"            # or http://host:8428 (VictoriaMetrics)
+[web]
+auth = "on"             # the web UI asks for the project's token (§10.2); "off" only on a loopback bind
 [discovery]             # strategy, window, step, every, [discovery.options]
 strategy = "kalman_lna"
 [[machines]]            # the commands `orchestra run` keeps running (§5.1)
@@ -873,7 +876,8 @@ since, and `restore(change)` puts the file back. Orchestra commits nothing: comm
 |---|---|
 | `orchestra init` | Register the repository and write `orchestra.toml` |
 | `orchestra run` | Run the bootstrap host, the processes the project and plugins declare, and the instruments |
-| `orchestra web [--port]` | Serve the web UI |
+| `orchestra web [--port] [--host]` | Serve the web UI, behind the web token (§10.2); print a link that logs in |
+| `orchestra web token [--rotate]` | Print the web token; `--rotate` replaces it and ends every session |
 | `orchestra events info\|endpoint [--env]\|copy --to URL` | The event log; where the events endpoint is, and its token (§3.1) |
 | `orchestra metrics backfill\|series` | Replay the log into event counters; list series |
 | `orchestra sd discover [--strategy S] [--minutes N] [--step-s S]\|show\|fit\|versions` | The model: discover it from the metrics, show, refit, list versions |
@@ -1004,7 +1008,43 @@ the pages, which the navigation adds after Orchestra's own, and any plugin that 
 A plugin that fails, one whose name an earlier plugin took, a page at a path Orchestra serves, or
 a script or stylesheet missing from its static directory is left out and reported, never fatal. A plugin is
 the package's, not Orchestra's: its routes are its own, and Orchestra knows nothing of what they
-mean.
+mean. They are behind the same login as Orchestra's (§10.2), and a plugin adds no route outside it.
+
+### 10.2 Authentication
+
+Anyone who reaches the web UI could otherwise use every page and every plugin's writes, and a
+server on `127.0.0.1` is reached by more than its owner: a tunnel or proxy on the same computer
+publishes it, other local users reach it, and any web page a browser visits can send it requests.
+So every route asks for the project's **web token**: Orchestra's pages and `/api/*`, the static
+files, the websocket, and every plugin's pages, static directory and router. `GET /health` alone
+is open. One ASGI middleware in front of the whole app checks it (`web/auth.py`); no page and no
+plugin does, so none can forget to, and the Core page stays independent of the model and the
+plugins (rule 8).
+
+- **The token** is the project's, made the first time it is needed and kept in
+  `<state>/web.token`, readable by its owner only, never in the configuration. It is not the
+  events endpoint's token (§3.1): a machine that may publish may not use the UI. `orchestra web`
+  prints it, with a link that logs in (the token after `#`, which the browser keeps);
+  `orchestra web token` prints it again, and `--rotate` replaces it, taking effect at once.
+- **Browsers** log in once at `/login` and keep a session cookie, `orchestra_<key>`: the expiry
+  signed with HMAC-SHA256 under a key derived from the token (so a rotation ends every session),
+  HttpOnly, SameSite=Strict, 14 days, Secure when reached over HTTPS. `POST /logout` drops it.
+  **Programs** send `Authorization: Bearer <token>` on every request.
+- **CSRF.** A request carried by the cookie that is not GET, HEAD or OPTIONS, and every websocket,
+  must come from the server's own origin: `Origin` (or `Referer`) names the `Host` that was asked,
+  and `Sec-Fetch-Site` is neither `cross-site` nor `same-site`; otherwise `403`, before any handler
+  runs. A bearer request needs no check, since a browser never sends that header by itself.
+- **Guessing.** Five wrong tokens (login or bearer) within a minute from one peer address, and
+  further tries answer `429` until the oldest is a minute old. The peer is the connection's, never
+  `X-Forwarded-For` (uvicorn runs with `proxy_headers=False`); a logged-in browser is not affected.
+- **Behind a tunnel** it works unchanged: the tunnel passes `Host` through, so the page's `Origin`
+  matches it. Forwarded headers decide nothing, except that `X-Forwarded-Proto: https` marks the
+  cookie Secure.
+- **`[web] auth = "off"`** serves without a login, and only on a loopback bind (`orchestra web`
+  refuses to start otherwise). It is not the default even there, for the reasons above. When off,
+  a request with a forwarding header (`Forwarded`, `X-Forwarded-*`, `X-Real-IP`, `Cf-*`) or a
+  `Host` that is not a loopback name is refused, as is an unsafe request from another origin, so a
+  tunnel or a rebinding DNS name in front of it finds it closed.
 
 ---
 
@@ -1012,7 +1052,7 @@ mean.
 
 ```
 orchestra/
-  cli.py  config.py  overlay.py  config_edit.py  toml_text.py  events.py  runtime.py  host.py  launcher.py  collectors.py  plugins.py
+  cli.py  config.py  overlay.py  config_edit.py  toml_text.py  events.py  runtime.py  host.py  launcher.py  collectors.py  plugins.py  tokens.py
   bus/       file, redis_streams, rabbitmq_streams, kafka
   endpoint/  the events endpoint (§3.1): the token and the record, validate, server
   collect/   instruments, a project's and the plugins' collectors and scrapes: spec, fetch,
@@ -1028,7 +1068,7 @@ orchestra/
              provenance (where each series in a model came from), linearise and observability
              (which stocks what is measured determines)
   sdlab/     SD Lab's discovery research: ~70 strategies (needs the sd extra)
-  web/       app, core, core_explore, machines, instruments, traffic (counted traffic), dynamics, static/
+  web/       app, auth (the login, §10.2), core, core_explore, machines, instruments, traffic (counted traffic), dynamics, static/
 tests/
   unit/  bus/  metrics/  sources/  acceptance/
 ```

@@ -74,6 +74,6 @@ outside (`docs/roadmap/use-cases.md`).
 uv run python -m pytest                     # unit, and the file backends
 ORCHESTRA_TEST_REDIS_URL=redis://127.0.0.1:6379/15 uv run python -m pytest tests/bus   # see tests/bus/README.md
 tests/sources/rig/rig.sh start              # a store to read in place; see tests/sources/README.md
-python scripts/acceptance_target.py --port 8123 &
-ORCHESTRA_TARGET_URL=http://127.0.0.1:8123 uv run python -m pytest tests/acceptance
+python scripts/acceptance_target.py --port 8123 &   # prints ORCHESTRA_TARGET_TOKEN to export
+ORCHESTRA_TARGET_URL=http://127.0.0.1:8123 ORCHESTRA_TARGET_TOKEN=<token> uv run python -m pytest tests/acceptance
 ```

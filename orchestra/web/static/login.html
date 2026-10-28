@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orchestra · Log in</title>
+<!-- Served by the auth middleware (orchestra/web/auth.py) before anything else is open, so it
+     carries its own styles: the same colours as style.css. -->
+<style>
+  :root { --bg:#0b0d12; --panel:#12151c; --panel2:#181c25; --panel3:#1f2430; --border:#262b37; --border2:#333a49;
+          --text:#e7eaf0; --text2:#aeb6c4; --muted:#6f7889; --accent:#6ea8fe; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace }
+  * { box-sizing:border-box }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.45 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif }
+  nav { display:flex; align-items:center; padding:0 16px; height:44px; border-bottom:1px solid var(--border); background:var(--panel); font-weight:600 }
+  main { max-width:440px; margin:12vh auto 0; padding:0 16px }
+  .panel { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:18px 20px }
+  h1 { font-size:15px; margin:0 0 6px } p { color:var(--text2); margin:0 0 14px; font-size:12.5px }
+  label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:6px }
+  input { width:100%; background:var(--panel3); color:var(--text); border:1px solid var(--border2); border-radius:8px; padding:8px 10px; font:12.5px var(--mono) }
+  input:focus { outline:none; border-color:var(--accent) }
+  button { margin-top:12px; background:var(--panel3); color:var(--text); border:1px solid var(--accent); border-radius:8px; font:inherit; font-weight:600; padding:6px 16px; cursor:pointer }
+  code { font-family:var(--mono); font-size:12px; color:var(--text) }
+  .err { color:#ff7b72; margin:10px 0 0; font-size:12.5px } .none { display:none }
+</style>
+</head>
+<body>
+<nav>Orchestra</nav>
+<main>
+  <form class="panel" method="post" action="/login">
+    <h1>Log in</h1>
+    <p>Paste this project's web token. On the computer Orchestra runs on, <code>orchestra web token</code> prints it.</p>
+    <label for="token">Token</label>
+    <input id="token" name="token" type="password" autocomplete="current-password" autofocus required>
+    <input type="hidden" name="next" value="{{next}}">
+    <button type="submit">Log in</button>
+    <div class="{{error_class}}" role="alert">{{error}}</div>
+  </form>
+</main>
+<script>
+  // A link printed by `orchestra web` carries the token after '#', which a browser never sends:
+  // fill it in, drop it from the address bar and log in.
+  (function () {
+    const m = /(?:^#|&)token=([^&]+)/.exec(location.hash);
+    if (m) {
+      history.replaceState(null, "", location.pathname + location.search);
+      document.getElementById("token").value = decodeURIComponent(m[1]);
+      document.forms[0].submit();
+      return;
+    }
+    // A SameSite=Strict cookie is not sent when another site links here; this page's own request
+    // sends it, so a browser already logged in goes straight on.
+    fetch("/api/session").then((r) => { if (r.ok) location.replace(document.querySelector("input[name=next]").value); }).catch(() => {});
+  })();
+</script>
+</body>
+</html>

@@ -52,6 +52,7 @@ class Config:
 
     events_url: str | None = None      # [events] url: file (default), redis://, amqp://, kafka://
     events_listen: Any = None          # [events] listen: where the host serves the events endpoint ("127.0.0.1:0" unless given; "off")
+    web_auth: Any = None               # [web] auth: "on" (default) or "off" (only on a loopback bind; orchestra/web/auth.py)
     metrics_url: str | None = None     # [metrics] url: file (default) or http://host:port (VictoriaMetrics)
     discovery_strategy: str | None = None   # [discovery] strategy: conservation, or an SD Lab strategy (default: kalman_lna when installed)
     discovery_window: float = 3600.0        # [discovery] window: how far back each discovery looks
@@ -71,6 +72,7 @@ class Config:
         return cls(
             events_url=(raw.get("events", {}) or {}).get("url"),
             events_listen=(raw.get("events", {}) or {}).get("listen"),
+            web_auth=(raw.get("web", {}) or {}).get("auth"),
             metrics_url=(raw.get("metrics", {}) or {}).get("url"),
             discovery_strategy=(raw.get("discovery", {}) or {}).get("strategy"),
             discovery_window=parse_duration((raw.get("discovery", {}) or {}).get("window"), 3600.0),
@@ -90,6 +92,9 @@ url = "file"             # file (default), redis://host:6379/0, amqp://user:pass
 
 [metrics]
 url = "file"             # file (default) or http://host:8428 (VictoriaMetrics)
+
+[web]
+# auth = "on"            # `orchestra web` asks for the project's token (`orchestra web token`); "off" only on a loopback bind
 
 [discovery]              # how the model is discovered from the metrics
 # strategy = "kalman_lna" # conservation (Orchestra's own), or an SD Lab strategy (needs orchestra[sd])

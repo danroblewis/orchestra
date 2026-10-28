@@ -14,6 +14,7 @@ from orchestra.sd.store import ModelStore
 
 def test_a_discovered_remote_series_with_a_machine_label_makes_no_machine(tmp_path, monkeypatch):
     from orchestra.web.app import create_app
+    from orchestra.web.auth import bearer
 
     monkeypatch.setenv("ORCHESTRATOR_HOME", str(tmp_path / "home"))
     (tmp_path / "repo").mkdir()
@@ -25,7 +26,7 @@ def test_a_discovered_remote_series_with_a_machine_label_makes_no_machine(tmp_pa
                   flows=[Flow("started", "started", None, "pods", counter=started)],
                   machines=[Machine("rig.search", "rig.search", "machine", attributed=["started"], observed_by=[pods, started])])
     ModelStore.for_state(project.state_dir).write_discovery(model)
-    c = TestClient(create_app(project))
+    c = TestClient(create_app(project), headers=bearer(project))
     deadline = time.time() + 15
     while time.time() < deadline:
         got = c.get("/api/machines").json()

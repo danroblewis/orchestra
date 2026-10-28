@@ -38,10 +38,11 @@ def test_for_repo_writes_to_the_projects_store_with_its_label(project, monkeypat
 
 def test_the_catalogue_and_core_page_show_a_programs_series(project):
     from orchestra.web.app import create_app
+    from orchestra.web.auth import bearer
 
     for_repo(project.repo_root).write([Point("disk_free_bytes", 5e9 - i, time.time() - 60 * i, {"machine": "telemetry"}) for i in range(5)])
     for_project(project).write([Point("bitcoin_price_usd", 1.0, time.time(), {"machine": "telemetry"})])    # no project label
-    c = TestClient(create_app(project))
+    c = TestClient(create_app(project), headers=bearer(project))
     cat = c.get("/api/core/metrics/catalog").json()
     assert cat["ok"] and [m["name"] for m in cat["metrics"]] == ["disk_free_bytes"]
     assert cat["metrics"][0]["points"] == 5 and cat["metrics"][0]["labels"]["machine"]["values"] == ["telemetry"]

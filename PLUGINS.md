@@ -303,6 +303,30 @@ The router is built in the web server's process. To see edits to `orchestra.toml
 in the handler (`project.reload_config()`, which merges the private overlay too; the task system
 does it in a router dependency, `Depends(fresh)`).
 
+### 4.4.1 Your routes are behind Orchestra's login
+
+`orchestra web` puts every route behind the project's web token (`orchestra/web/auth.py`,
+USING_ORCHESTRA.md "Logging in to the web UI"): your pages, your static directory, your router,
+and the websocket. It does this in one middleware in front of the whole app, so a plugin adds
+nothing and cannot forget it:
+
+- a request reaches your handler only when it carries a valid session cookie or
+  `Authorization: Bearer <web token>`. Never check the token yourself, and never add a route meant
+  to be reached without it (a webhook, a status page, a "public" API). Mounting a second app, a
+  `StaticFiles` of your own outside `static`, or a server on another port to get around the login
+  is not allowed. Something that must be reached from outside belongs in a process of its own
+  (`processes`) with its own authentication, and says so in the plugin's docs;
+- a `POST`, `PUT` or `DELETE` carried by the cookie must come from Orchestra's origin (an `Origin`
+  or `Referer` naming the host that was asked, and no cross-site `Sec-Fetch-Site`), or it answers
+  `403` before your handler runs. A browser's `fetch` from your page sends `Origin` by itself, so a
+  same-origin page needs nothing. Keep your own checks (the outbox requires
+  `Content-Type: application/json`): they add to Orchestra's, never replace them;
+- a fetch from your page that gets `401` (the session ended) sends the browser to the login page
+  when `app.js` is loaded, and back after it;
+- in tests, give the client the token: `TestClient(create_app(project), headers=bearer(project))`
+  (`from orchestra.web.auth import bearer`); a program that calls your routes sends the same
+  header, with `orchestra web token`'s token.
+
 ### 4.5 `machines`: declared machines
 
 `Declared(id, kind, mode, listens_for)` lists a machine the package provides, so the Machines page
@@ -687,6 +711,8 @@ These follow from AGENTS.md. The plugins' own `AGENTS.md` files repeat them.
 - **read `data` it does not own** (rule 3), and must not ask Orchestra to. Orchestra reads only the
   envelope and its own `orchestra.*` events;
 - **turn counted traffic into events** (rule 3);
+- **add a route reachable without the web token**, or bypass Orchestra's login in any other way
+  (§4.4.1);
 - **touch a backend or Orchestra's files directly** (rule 5). Events go through
   `orchestra.events.Events` or the events endpoint, metrics through `orchestra.metrics`, config through
   `orchestra.config` (`project.config` to read, `project.config_edit` to change; never open

@@ -114,7 +114,7 @@ Each component, its module, and what it depends on:
 | **Discovery** | `orchestra/sd/` (`rediscover.py`, `discover.py`, `strategies.py`, `netflow.py`, `attribute.py`, and helpers), `orchestra/sdlab/` | Builds the model from the series without being told what anything is. `sd/discover.py` is Orchestra's own "conservation" step; `sd/strategies.py` can add one of SD Lab's strategies on top. `sd/attribute.py` infers which machines may be associated with each flow, as hypotheses from their event counts. | sources (the catalogue), model store; `numpy` and friends for SD Lab (`sd` extra) |
 | **Observability** | `orchestra/sd/observability.py`, `orchestra/sd/linearise.py` | Reads the model, never changes it: linearises it at the last hour's mean levels and says which stocks the series and counters determine, through what, and which new instrument would determine the rest (with parameters seen only in combination, and controllability as a weak structural note). `orchestra sd observability`, `/api/dynamics/observability`. | the model; `numpy` (`sd` extra) |
 | **Model store** | `orchestra/sd/store.py`, `orchestra/sd/model.py` | The one model and its versions: `<state>/model/vNNNN.json`, plus the latest discovery cached in `model/discovered.json`. | the state directory |
-| **Web** | `orchestra/web/` | `orchestra web`: a FastAPI app with the Dashboard, Core, Machines, Instruments and Dynamics pages, and plugin pages. Background threads keep caches warm so page requests stay cheap. | bus, metrics, runtime, model store, sources, plugins |
+| **Web** | `orchestra/web/` | `orchestra web`: a FastAPI app with the Dashboard, Core, Machines, Instruments and Dynamics pages, and plugin pages. Background threads keep caches warm so page requests stay cheap. Every route, a plugin's too, is behind the project's web token (`<state>/web.token`), checked by one middleware (`web/auth.py`). | bus, metrics, runtime, model store, sources, plugins |
 | **CLI** | `orchestra/cli.py` | `init`, `run`, `web`, `events info\|endpoint\|copy`, `metrics backfill\|series`, `sd discover\|show\|fit\|versions\|observability`, `sources check\|infer\|preview`. | the rest, imported on use |
 | **Plugins** | `orchestra/plugins.py` | Loads packages registered in the entry-point group `orchestra.plugins`. A plugin adds pages, a static directory, an API router, every-page scripts and stylesheets, declared machines, processes and instruments (`collectors`). One that fails to load, or whose name another plugin took, is reported and left out. | launcher (`Process`), collect (`Collector`) |
 
@@ -576,6 +576,7 @@ flowchart TD
   KEY --> P10["orchestra.local.toml: the private overlay, if any"]
   KEY --> P2["runtime.json: hosts, launcher, events_endpoint, web, processes, instruments"]
   KEY --> P9["events.token: the events endpoint's token, owner-only"]
+  KEY --> P11["web.token: the web UI's token, owner-only"]
   KEY --> P3[".lock and discovery.lock"]
   KEY --> P4["events.jsonl, when events url is file"]
   KEY --> P5["metrics.jsonl, when metrics url is file"]
@@ -688,6 +689,42 @@ a POST only because the question is a JSON body; it saves no version and writes 
 callers are machines' tools (the agents' comes later, in `~/orchestra-agents`) and
 `orchestra sd whatif`.
 
+**Authentication** (`web/auth.py`) is the app's outermost middleware, a plain ASGI one, so it is in
+front of every route: Orchestra's pages and `/api/*`, the static files, the websocket, and every
+plugin's pages, static directory and router, mounted before or after it. Only `GET /health` is
+open. The credential is the project's web token, `<state>/web.token` (owner-only, made on first
+use, re-read when the file changes; `orchestra/tokens.py` makes it and the events endpoint's).
+
+```mermaid
+flowchart TD
+  R["request (http or websocket)"] --> H{"/health?"}
+  H -- yes --> APP["the app"]
+  H -- no --> OFF{"[web] auth off?<br/>(loopback bind only)"}
+  OFF -- yes --> PX{"forwarding header, or Host<br/>not a loopback name, or<br/>an unsafe request from<br/>another origin?"}
+  PX -- yes --> F403["403"]
+  PX -- no --> APP
+  OFF -- no --> B{"Authorization: Bearer?"}
+  B -- "right token" --> APP
+  B -- "wrong (counts a failure)" --> F401["401; 429 after 5 a minute<br/>from one peer address"]
+  B -- none --> C{"valid session cookie?"}
+  C -- yes --> CS{"unsafe method or websocket:<br/>Origin/Referer names the Host,<br/>Sec-Fetch-Site not cross/same-site?"}
+  CS -- yes --> APP
+  CS -- no --> F403
+  C -- no --> L["a page: 303 to /login?next=…<br/>else 401"]
+```
+
+- **Session cookie**: `orchestra_<key>` (per project, since cookies ignore the port), value
+  `v1.<expiry>.<HMAC-SHA256>`, keyed by an HMAC of the token, so rotating the token ends every
+  session. HttpOnly, SameSite=Strict, Path=/, 14 days; Secure when the browser came over HTTPS
+  (the scheme, or `X-Forwarded-Proto: https` from a tunnel: the flag only, never a decision to
+  admit). `/login` (GET the form, POST the token) and `POST /logout` are answered by the
+  middleware itself, and `/api/session` says whether and how a request is logged in.
+- **Peers**: `orchestra web` runs uvicorn with `proxy_headers=False`, so the peer and the scheme
+  are the socket's. The limit on wrong tokens counts by that address, never `X-Forwarded-For`; a
+  valid cookie still passes while its address is limited.
+- **Rule 8**: the middleware imports only the configuration and the token file, so the Core page
+  is behind the login and still independent of the model and the plugins.
+
 The Dynamics page reads the host's cached discovery (`model/discovered.json`) or a saved version.
 It never discovers on request, except when the "rediscover now" button is pressed. The Core page
 is built to keep working when the rest of Orchestra does not: `web/core.py` and
@@ -700,7 +737,8 @@ configuration, and every probe runs in a thread pool with a time limit.
 |---|---|---|
 | `orchestra init` | Registers the repository and writes a starter `orchestra.toml`. | `orchestra.toml`, state directory |
 | `orchestra run [--once]` | Runs the bootstrap host. | runtime record, bus, metrics, model, logs |
-| `orchestra web [--port --host]` | Serves the web UI (default `127.0.0.1:8000`). | `web` in the runtime record |
+| `orchestra web [--port --host]` | Serves the web UI (default `127.0.0.1:8000`) behind the web token, and prints a link that logs in. | `web` in the runtime record; `web.token`, if it did not exist |
+| `orchestra web token [--rotate]` | Prints the web token; `--rotate` replaces it, ending every session. | `web.token` |
 | `orchestra events info` | Says which backend holds the log, how many events it has, and where the events endpoint is. | nothing |
 | `orchestra events endpoint [--env]` | Prints the events endpoint's URL and the token's file, or `export` lines for both. | `events.token`, if it did not exist |
 | `orchestra events copy --to URL [--force]` | Copies the event log to another backend. | the target bus |

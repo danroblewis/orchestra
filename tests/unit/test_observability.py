@@ -169,11 +169,12 @@ def test_the_command_and_the_endpoint_report_on_the_current_model(project, capsy
     from orchestra.cli import main
     from orchestra.sd.store import ModelStore
     from orchestra.web.app import create_app
+    from orchestra.web.auth import bearer
     ModelStore.for_state(project.state_dir).save(two_stocks())
     assert main(["--repo", str(project.repo_root), "sd", "observability"]) == 0
     out = capsys.readouterr().out
     assert "1 of 2 stock levels determined" in out and "hidden stock y: NOT determined" in out
     assert main(["--repo", str(project.repo_root), "sd", "observability", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["rank"] == 1
-    d = TestClient(create_app(project)).get("/api/dynamics/observability").json()
+    d = TestClient(create_app(project), headers=bearer(project)).get("/api/dynamics/observability").json()
     assert d["ok"] and d["rank"] == 1 and by_id(d)["y"]["would_determine"] == ["series on y", "counter on out_y"]

@@ -192,9 +192,10 @@ def test_the_stamp_changes_when_the_overlay_appears_changes_or_goes(project):
 
 def test_api_project_shows_where_each_key_came_from(project):
     from orchestra.web.app import create_app
+    from orchestra.web.auth import bearer
     write(project.overlay_file, '[overlay]\nsecret = ["desk.token_name"]\n[desk]\nme = "U1"\ntoken_name = "WORK_SLACK"\n'
                                 '[metrics]\nurl = "file"\n')
-    body = TestClient(create_app(project)).get("/api/project").json()
+    body = TestClient(create_app(project), headers=bearer(project)).get("/api/project").json()
     assert body["key"] == project.key
     files = {f["role"]: f for f in body["config"]["files"]}
     assert files["overlay"]["exists"] and files["overlay"]["named_by"] == "state directory"
@@ -207,7 +208,8 @@ def test_api_project_shows_where_each_key_came_from(project):
 
 def test_api_project_without_an_overlay(project):
     from orchestra.web.app import create_app
-    body = TestClient(create_app(project)).get("/api/project").json()
+    from orchestra.web.auth import bearer
+    body = TestClient(create_app(project), headers=bearer(project)).get("/api/project").json()
     assert not {f["role"]: f for f in body["config"]["files"]}["overlay"]["exists"]
     assert all(r["from"] == "repo" for r in body["config"]["keys"]) and body["config"]["removed"] == []
 
