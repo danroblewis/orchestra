@@ -1294,6 +1294,10 @@ frame, a few words for the Dashboard's machine list, and the machine's dialog). 
 own stylesheets, files from its static directory that every page links in its head after
 Orchestra's (`stylesheets`): Orchestra's has nothing of any package's domain. `/api/plugins` lists
 the pages, which the navigation adds after Orchestra's own, and any plugin that failed to load.
+A plugin may also ship a guide (`guide`: a markdown file in its package) written for an AI
+operator that configures it for the owner; `orchestra.guides.collect` and `/api/guides` return
+Orchestra's own guide (`orchestra/guide.md`: its settings, instruments, machines, the overlay)
+first, then each plugin's, and Orchestra reads nothing in them (PLUGINS.md §4.7.1).
 A plugin that fails, one whose name an earlier plugin took, a page at a path Orchestra serves, or
 a script or stylesheet missing from its static directory is left out and reported, never fatal. A plugin is
 the package's, not Orchestra's: its routes are its own, and Orchestra knows nothing of what they

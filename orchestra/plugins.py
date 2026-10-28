@@ -37,7 +37,12 @@ The web app mounts what it returns:
   announced for them) (``orchestra.collect.spec.Collector``: ``Collector.scrape(name, url, ...)`` or
   ``Collector.collect(name, command, ...)``), run like the project's ``[[scrape]]`` and
   ``[[collect]]`` entries and named ``<plugin>.<name>``; a project entry of that name takes the
-  place of the plugin's.
+  place of the plugin's;
+- its ``guide``, optionally: a markdown file shipped in its package, written for an AI operator
+  (the Supervisor) that configures the plugin for the owner: what each setting is for, when to
+  choose each value, the pitfalls, how to check a setting took, and which choices are the
+  human's. Orchestra serves it with its own (``orchestra.guides``, ``/api/guides``) and reads
+  nothing in it.
 
 A machine belongs to a package when its announcement says so (``package`` in
 ``orchestra.machine.started``) or the package declares it. The package's every-page script may
@@ -91,6 +96,7 @@ class Plugin:
     machines: list[Declared] = field(default_factory=list)
     processes: list[Process] = field(default_factory=list)   # what `orchestra run` starts for it
     collectors: list[Collector] = field(default_factory=list)   # what `orchestra run` scrapes or runs for measurements
+    guide: Path | None = None   # a markdown file in the package: how to configure the plugin, for an AI operator
 
 
 @dataclass
