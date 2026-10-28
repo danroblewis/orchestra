@@ -295,6 +295,21 @@ A plugin may declare machines (`Plugin.machines`). A declaration is a placeholde
 machine nobody has seen yet, fills in the package and kind of one that did not announce them, and
 says nothing about flows. What is observed always wins (`mount_plugins.declare` in `web/app.py`).
 
+A machine comes to exist in one of three ways, and Orchestra treats them alike: it sees a `source`
+on the bus.
+
+| How the machine comes to exist | Who writes it | Its `source` | Example |
+|---|---|---|---|
+| The target repository's own code publishes under its own source | the repository's author: a program, a script, a service | the machine's own name, through the events endpoint or the Python helper (`orchestra.events.Events`) | `baker/2`, `machines/billing.sh` as `billing` |
+| A bridge relays another system's actors | the bridge (a plugin, `orchestra-bridges`) | each actor of the other system | `person.<login>` for a GitHub user |
+| The Agents plugin runs a configured agent | the owner or the Supervisor configures it (role, harness, model, engagement, permissions); the agents' host runs it | the agent's name or instance | `supervisor`, `worker/1` |
+
+The provider is never the machine. The program that publishes for a machine (a bridge relaying
+actors, the agents' host running agents, the task system's scheduler standing in for each role's
+queue) is infrastructure: it never announces itself, never publishes under its own name, never
+writes metrics directly (its plugin declares an instrument that reads them), and acts on the bus
+only as the machines it implements (`AGENTS.md` rule 2, `PLUGINS.md` §6.1).
+
 The event map is drawn in the browser. `static/netgraph.js` draws it, `static/loops.js` finds its
 feedback loops (an independent set of cycles through each strongly connected part of the graph),
 and `static/edge-color.js` colours the lines.
@@ -730,6 +745,10 @@ the entry-point group `orchestra.plugins`. The function takes the project and re
 | `processes` | `launcher.Process` entries that `orchestra run` keeps running as `<plugin>.<name>`. |
 | `collectors` | Instruments (`collect.spec.Collector`: `Collector.scrape(name, url, ...)`, `Collector.collect(name, command, ...)`) that `orchestra run` reads like the project's own, named `<plugin>.<name>`. A project entry of the same name wins, and the host logs that. Not machines. |
 
+A plugin's processes are infrastructure, never machines in their own right: the task system's
+scheduler publishes as the role queues, gate and askers it stands in for, the agents' host as the
+agents it runs, and each declares an instrument for its measurements (`AGENTS.md` rule 2).
+
 Plugins are loaded in two places. The web app loads them once at start (`web/app.py:mount_plugins`).
 The host loads them again each time `orchestra.toml` or the private overlay changes, to ask for their processes
 (`Host._plugin_processes`) and instruments. A plugin that raises, one whose name an earlier plugin
@@ -747,7 +766,7 @@ divided.
 | # | Rule, in short | Where it is held |
 |---|---|---|
 | 1 | No tickets, tasks or AI in the core | The core modules handle only envelopes, series, processes and models. `collectors.py` counts events by `type` and `source` and nothing else. Agents' harnesses live in `~/orchestra-agents`. |
-| 2 | Machines are outside, known by their events | `web/machines.py` builds machines, and their liveness, from envelopes only; a series' `machine` label never makes a machine, an instance, or a machine active, and the Machines page reads no metrics. Of `data`, it reads only `orchestra.machine.started` announcements, and ignores the host's old ones for instruments. Plugin declarations fill in only unseen machines (`web/app.py:declare`). `web/machine_logs.py` reads a log only inside the repository or the state directory. `launcher.py` knows processes, not machines. Counted machines come only from `sources/traffic.py`. |
+| 2 | Machines are outside, known by their events | `web/machines.py` builds machines, and their liveness, from envelopes only; a series' `machine` label never makes a machine, an instance, or a machine active, and the Machines page reads no metrics. Of `data`, it reads only `orchestra.machine.started` announcements, and ignores the host's old ones for instruments. Plugin declarations fill in only unseen machines (`web/app.py:declare`). `web/machine_logs.py` reads a log only inside the repository or the state directory. `launcher.py` knows processes, not machines. Counted machines come only from `sources/traffic.py`. That a plugin's infrastructure process (scheduler, host, runtime, relay) is no machine is held by each plugin's conformance test (orchestra-tasking's `test_handoffs_e2e.py`, orchestra-agents' `test_host_is_no_machine.py`), not by the core, which cannot tell a provider from a machine. |
 | 3 | Every event carries the CloudEvents envelope | `events.envelope` is the only place events are built. `Events.publish` always uses it, and the events endpoint publishes only through it, passing `data` on unread. `event_time` and `event_source` read older flat events too. Counted traffic is read as series and never turned into events. |
 | 4 | One system, one model | One `ModelStore` per state directory, with one sequence of versions. Discovery runs over every series of the project at once. Package and group are labels on the Machines page, never separate views. |
 | 5 | State in `~/.orchestrator/<key>/`; bus and metrics in their stores | `config.Project` names every state path. Events go through `Events` over an `EventBus`, metrics through `MetricsStore`, the model through `ModelStore`, process records through `runtime`. `bus.stream_name` keeps Orchestra's own namespace. The `Source` protocol (`sources/__init__.py`) has only read methods. |
