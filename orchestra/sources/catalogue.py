@@ -90,7 +90,8 @@ def summary(d: Definition) -> bool:
 def provenance(spec: SourceSpec, d: Definition, traffic: dict | None = None, resolution_s: float | None = None) -> dict:
     return {"source": spec.name, "query": d.query, "kind": d.kind, "origin": list(d.origin),
             "resolution_s": d.resolution_s if resolution_s is None else resolution_s,
-            "unit": d.unit, **({"unit_label": d.unit_label} if d.unit_label else {}), "view": d.view, "family": d.family, "flags": list(d.flags), **({"traffic": traffic} if traffic else {})}
+            "unit": d.unit, **({"unit_label": d.unit_label} if d.unit_label else {}), "view": d.view, "family": d.family, "flags": list(d.flags), **({"traffic": traffic} if traffic else {}),
+            **({"stock": dict(d.stock)} if d.stock else {})}
 
 
 def _failures(failed: dict[str, str], names: dict[str, str], total: int, deadline: float) -> str:

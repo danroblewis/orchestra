@@ -314,7 +314,17 @@ Conservation (`sd/discover.py`):
    `resolution_s` and `read` on every `SeriesRef`); a source's reporting interval is a floor. A
    level written less often than the grid is balanced on the stretches between its writes, each
    compared with what the counters counted between those two instants, not on single steps
-   (`units`, `Block`), and never on the stretches between its changes, which are no observations; Liveness is the machine's, not the series': a machine is
+   (`units`, `Block`), and never on the stretches between its changes, which are no observations.
+   A counter on a schedule that moves only every few writes, steadily (a store reporting once a
+   minute, read every 30 s), is as fine as its moves (`counted_every`); a level whose balance needs
+   such a counter is balanced on the stretches between that counter's writes (`sd/coarse.py`),
+   every series read at the same two instants from its own points, and a balance judged on a slow
+   counter's writes whose misses are timing (they cancel from one
+   stretch to the next: lag-1 autocorrelation −0.3 or less) fits at R² 0.5 rather than 0.9 (its
+   held-out bar 0.25 when both halves chose its counters), its other evidence unchanged. A series on a schedule whose last sample
+   is a little before the window's end (a late store, `settle`) has data only until it
+   (`arrived_until`): a balance it is in is judged only on the steps before, where all its series
+   have data, never on steps that read it as unchanged (`sd/live.py` `arrived`). Liveness is the machine's, not the series': a machine is
    alive between writes (any of its series, or Orchestra's count of an event it published) no
    further apart than ten times the interval of its fastest series written on a schedule (at
    least a minute); a longer silence is it down or not yet started. A machine none of whose
@@ -400,7 +410,11 @@ Conservation (`sd/discover.py`):
    steps either held something (a copy a moment behind, balanced by its own machine's
    counters), are one stock measured twice, unless each is balanced exactly by counters none of
    which counts the other's events (two services' pods in one region, alike through the region's
-   outage, are two stocks): the machine whose counters make the balance keeps it, the other is recorded as its
+   outage, are two stocks), and only when the levels themselves match (their changes spread
+   within 20% of each other, and their difference is in most steps within half the level's spread,
+   a tenth of its size or a step's change) or they are one series read twice (one name, a source's
+   prefix aside, and the same labels): two warehouses drained in proportion to one order stream
+   change in step and are two stocks (`levels_match`): the machine whose counters make the balance keeps it, the other is recorded as its
    twin (never two backlogs a source declared: two queues one consumer acknowledges at once change
    alike and are still two). A level that only fills is a stock when its balance is exact, whatever feeds it (a
    terminal state, where other stocks' outflows end); one the system's flows explain only
@@ -776,7 +790,11 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   every family's coarsest up to 60% of the cap, then the rest best first, splits whose groups
   move apart leading. Each definition records the grouping labels it merges. A pin bypasses the
   ranking, not the cap. What is left out is kept with its score and why. A hand-written
-  `[[series]]` (source, name, query, kind level|counter|rate, unit) is always read.
+  `[[series]]` (source, name, query, kind level|counter|rate, unit) is always read. A
+  `[[series]]` may declare a stock (`stock = "<name>"`, `role = "level" | "inflow" | "outflow"`):
+  discovery tries the declared counters as that level's balance before any search, and judges it
+  by the same evidence (`sd/pins.py`; it records `declared`, its origin, and is searched like any
+  level when it does not fit).
 - **Reading** (`sources/catalogue.py`, `sources/fetch.py`, `sources/plan.py`): every definition is
   read for exactly discovery's window, on its grid but never finer than the series' resolution;
   each family once per aggregation at the finest grouping its views need, every view derived

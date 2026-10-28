@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from itertools import pairwise
 from statistics import pstdev
 
 from .balance import MIN_EVENTS, LeastSquares, balance, balance_of, columns, fit_of
@@ -43,6 +44,8 @@ UNITS_PER_TERM = 6       # ... and this many per counter it uses
 NULL_SHIFTS = 9          # circular shifts of the level against the counters in the null
 ALIKE = 0.9              # two counters whose changes correlate this well on a half are one choice there (requests and the messages they produce)
 FLAG_EXACT = 0.97        # the share of units a balance explains exactly to keep every counter without the halves' vote (as sd.discover)
+JITTER_R2 = 0.5          # a balance whose misses are timing (``timing_limited``) fits at this R² on changes, not sd.discover.MIN_R2
+JITTER_RHO = -0.3        # ... when its misses' lag-1 autocorrelation is this negative or more: what one unit missed, the next made up
 
 
 @dataclass
@@ -62,8 +65,15 @@ class Identification:
     cum_steady: float | None = None                 # ... less a steady unmeasured flow (the residual's mean)
     p_null: float | None = None
     null_r2: list = field(default_factory=list)
+    misses_rho: float | None = None                 # the lag-1 autocorrelation of what it misses per unit (timing_limited)
     why: str = ""                                   # why it is not identified (empty: it is)
     declared: bool = False                          # the source declared the balance (a channel and its traffic): no search to price
+    pinned: bool = False                            # the operator declared it (sd.pins): tested, not chosen
+
+    @property
+    def timing(self) -> bool:
+        """Its misses are timing (``timing_limited``): it fits at ``JITTER_R2``, not only at ``MIN_R2``."""
+        return self.r2 >= JITTER_R2 and self.misses_rho is not None and self.misses_rho <= JITTER_RHO
 
     @property
     def is_exact(self) -> bool:
@@ -74,8 +84,8 @@ class Identification:
     def record(self) -> dict:
         return {"units": self.units, "held_out_r2": _round(self.held_out_r2), "halves_r2": _round(self.halves_r2),
                 "exact_moved": _round(self.exact_moved), "stable": self.stable,
-                "cum_residual_ratio": _round(self.cum_ratio), "cum_residual_steady": _round(self.cum_steady), "p_null": _round(self.p_null), "null_shifts": len(self.null_r2),
-                **({"declared": True} if self.declared else {}),
+                "cum_residual_ratio": _round(self.cum_ratio), "misses_rho": _round(self.misses_rho), "cum_residual_steady": _round(self.cum_steady), "p_null": _round(self.p_null), "null_shifts": len(self.null_r2),
+                **({"declared": True} if self.declared else {}), **({"pinned": True} if self.pinned else {}),
                 "null_r2_max": _round(max(self.null_r2)) if self.null_r2 else None,
                 "halves": [[f"{'+' if sg > 0 else '-'}{c.key}" for c, sg in h] for h in self.halves],
                 **({"dropped": [f"{'+' if sg > 0 else '-'}{c.key}" for c, sg in self.dropped]} if self.dropped else {})}
@@ -133,6 +143,42 @@ def cum_ratio(level, terms: list, steps: list[int], steady: bool = False) -> flo
     return pstdev(run) / spread if spread > 0 else math.inf
 
 
+def misses_rho(level, terms: list, steps: list[int]) -> float | None:
+    """The lag-1 autocorrelation of what the balance misses per unit; None on fewer than
+    ``MIN_UNITS`` units or with no misses."""
+    us = units(level.blocks, steps)
+    if len(us) < MIN_UNITS:
+        return None
+    r = [pick(level, u) - sum(sign * pick(c, u) for c, sign in terms) for u in us]
+    m = sum(r) / len(r)
+    r = [x - m for x in r]
+    var = sum(x * x for x in r)
+    return sum(a * b for a, b in pairwise(r)) / var if var > 0 else None
+
+
+def two_clocks(level, terms: list) -> bool:
+    """Whether a balance is judged on the writes of a counter slower than its level (``sd.coarse``):
+    the level read at instants another store chose, a counter whose count was taken some time in
+    the minute before. Only then are its misses taken for timing (``timing_limited``): on one clock,
+    a balance that misses unit by unit is missing something, and a level read on a finer grid than
+    its own samples (its changes in every other step) misses every other step whatever balances it."""
+    return level.blocks is not None and any(c.blocks for c, _ in terms)
+
+
+def timing_limited(level, terms: list, steps: list[int], r2: float) -> bool:
+    """Whether a balance's misses are timing, not a missing flow: they cancel from one unit to the
+    next (lag-1 autocorrelation ``JITTER_RHO`` or below), and it fits at ``JITTER_R2`` at least. Two
+    stores scrape at their own instants, and a counter reported once a minute was read some time in
+    that minute: an event counted a moment late in one unit shows in the next. On a level whose
+    changes are nearly steady (a queue growing by 440 a minute, ± 35), that jitter is a large
+    share of their variance, so R² on changes stays low however exactly the counters hold over the
+    hour; whether they do is the running residual's test (``cum_ratio``), which still applies."""
+    if not terms or r2 < JITTER_R2:
+        return False
+    rho = misses_rho(level, terms, steps)
+    return rho is not None and rho <= JITTER_RHO
+
+
 def _corr(a: list[float], b: list[float]) -> float:
     n = len(a)
     if n < 3:
@@ -163,17 +209,22 @@ def _votes(level, c, steps: list[int]) -> bool:
 
 
 def identify(level, terms: list, r2: float, exact: float, pool: list, steps: list[int], solver, same=lambda a, b: False,
-             shifts: int = NULL_SHIFTS, declared: bool = False) -> Identification:
+             shifts: int = NULL_SHIFTS, declared: bool = False, pinned: bool = False, clocks: bool = False) -> Identification:
     """The evidence for a level's balance (``terms``, found over ``steps`` among ``pool``), and the
     balance after the halves' vote. ``solver(level, pool, steps)`` is the counters' least squares
     over those steps (cached by the caller: it is the same for every level live in the same steps);
     ``same(a, b)``: two counters of the same events. ``declared``: the balance is the one its source
     declared (a channel's backlog and its own traffic, ``sd.discover.channel_balance``), not chosen
     by a search, so there is no choice for the halves to repeat or for the null to price: only its
-    units and how it reproduces the level are measured."""
+    units and how it reproduces the level are measured. ``pinned``: the operator declared it
+    (``sd.pins``): nothing was chosen, so the halves test the declared counters themselves (their fit
+    on each half is the held-out evidence) and the null moves the level against those counters
+    alone; the gates are the same as for a balance found by search. ``clocks``: its series were read
+    on two clocks (``two_clocks``), so its misses may be timing (``misses_rho``)."""
     n_units = unit_count(level, steps)
-    got = Identification(list(terms), r2, exact, n_units, declared=declared)
+    got = Identification(list(terms), r2, exact, n_units, declared=declared, pinned=pinned)
     got.exact_moved, got.moved = exact_moved(level, terms, steps)
+    got.misses_rho = misses_rho(level, terms, steps) if terms and clocks else None
     if n_units < (need := needed_units(len(terms), got.is_exact)):
         got.why = (f"judged on {n_units} unit{'s' if n_units != 1 else ''} (steps, or stretches between its writes) for "
                    f"{len(terms)} counter{'s' if len(terms) != 1 else ''}: fewer than the {need} it takes to tell "
@@ -185,6 +236,8 @@ def identify(level, terms: list, r2: float, exact: float, pool: list, steps: lis
         return got
     h = len(steps) // 2
     halves = [steps[:h], steps[h:]]
+    if pinned:
+        return _tested(got, level, terms, steps, halves, shifts)
     picks = []
     for half in halves:
         t, _, _ = balance(level, pool, solver(level, pool, half), half) if unit_count(level, half) >= MIN_UNITS else ([], 0.0, 0.0)
@@ -217,12 +270,50 @@ def identify(level, terms: list, r2: float, exact: float, pool: list, steps: lis
     got.halves_r2 = min(own) if own else None
     if got.dropped:
         got.exact_moved, got.moved = exact_moved(level, got.terms, steps)
+        got.misses_rho = misses_rho(level, got.terms, steps) if got.terms and clocks else None
     got.null_r2 = shift_null(level, pool, steps, solver, shifts)
     if got.null_r2:
         got.p_null = (1 + sum(1 for v in got.null_r2 if v >= r2 - 1e-9)) / (1 + len(got.null_r2))
     if not got.terms:
         got.why = "no counter of its balance was chosen again on both halves of the window: coincidences of the whole window"
     return got
+
+
+def _tested(got: Identification, level, terms: list, steps: list[int], halves: list, shifts: int) -> Identification:
+    """The evidence for a declared balance: its fit on each half (where the level moved and enough
+    units fall), the level reproduced, and the shift null of the declared counters alone."""
+    own = [fit_of(level, terms, half)[0] for half in halves
+           if sum(1 for i in half if level.deltas[i]) >= MIN_EVENTS and unit_count(level, half) >= MIN_UNITS]
+    got.halves_r2 = got.held_out_r2 = min(own) if own else None
+    got.halves = [list(terms) for _ in halves]
+    got.stable = True
+    got.cum_ratio = cum_ratio(level, terms, steps)
+    got.cum_steady = cum_ratio(level, terms, steps, steady=True)
+    got.null_r2 = fixed_null(level, terms, steps, shifts)
+    if got.null_r2:
+        got.p_null = (1 + sum(1 for v in got.null_r2 if v >= got.r2 - 1e-9)) / (1 + len(got.null_r2))
+    return got
+
+
+def fixed_null(level, terms: list, steps: list[int], shifts: int) -> list[float]:
+    """The R² of the same counters against the level moved circularly in time (as ``shift_null``,
+    with nothing searched): how well the declared balance fits a level it has nothing to do with."""
+    us = units(level.blocks, steps)
+    n = len(us)
+    if n < 2 * MIN_UNITS:
+        return []
+    y = [pick(level, u) for u in us]
+    x = [sum(sign * pick(c, u) for c, sign in terms) for u in us]
+    out = []
+    for k in range(shifts):
+        off = round(n * (0.1 + 0.8 * k / max(1, shifts - 1)))
+        if off <= 0 or off >= n:
+            continue
+        ys = y[off:] + y[:off]
+        mean = sum(ys) / n
+        sst = sum((v - mean) ** 2 for v in ys) or 1e-12
+        out.append(1 - sum((v - w) ** 2 for v, w in zip(ys, x)) / sst)
+    return out
 
 
 def shift_null(level, pool: list, steps: list[int], solver, shifts: int) -> list[float]:
