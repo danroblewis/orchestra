@@ -126,15 +126,21 @@ def cmd_sd(args) -> int:
         print(f"{r.strategy}, over the last {m.discovery['window_s'] / 60:g} min in {m.discovery['step_s']:g} s steps: {len(m.stocks)} stocks, "
               f"{len(m.flows)} flows, {len(m.machines)} machines")
         for st in m.stocks:
+            tr = st.evidence.get("trust") or {}
+            trust = f"; trust {tr['score']:.2f} ({tr['level']}, weakest: {tr.get('weakest') or '—'})" if tr else ""
             if nf := st.evidence.get("net_flow"):
                 print(f"  stock {st.id}: no counters; net flow fitted as {nf['form']}   (R² {nf['r2']:.3f} over {nf['stretches']} "
-                      f"stretches of {nf['stretch_s']:g} s)")
+                      f"stretches of {nf['stretch_s']:g} s{trust})")
                 continue
             if "balance" not in st.evidence:
-                print(f"  stock {st.id}: hidden (found by {r.strategy}, measured by no series)")
+                print(f"  stock {st.id}: hidden (found by {r.strategy}, measured by no series{trust})")
                 continue
             terms = " ".join(("+ " if b["sign"] > 0 else "− ") + b["series"] for b in st.evidence["balance"])
-            print(f"  stock {st.id}: Δ = {terms}   (R² {st.evidence['balance_r2']:.3f}, exact in {st.evidence['exact_steps']:.0%} of steps)")
+            if st.evidence.get("balance_r2") is None:
+                why = "by construction: a count and its own turnover" if st.evidence.get("by_construction") else "measured by no series"
+                print(f"  stock {st.id}: Δ = {terms}   ({why}{trust})")
+                continue
+            print(f"  stock {st.id}: Δ = {terms}   (R² {st.evidence['balance_r2']:.3f}, exact in {st.evidence['exact_steps']:.0%} of steps{trust})")
         print("left out:")
         for k, why in m.discovery["left_out"].items():
             print(f"  {k}: {why}")

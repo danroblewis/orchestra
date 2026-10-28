@@ -107,6 +107,16 @@ const Live = (() => {
     return `<div>net flow</div><div>no counters measure it: fitted as <span class="num">${esc(nf.form)}</span><br><span class="muted">${fit}</span>${untested}
       ${ev.sdlab_rejected ? `<br><span class="muted">SD Lab's flows not used: ${esc(ev.sdlab_rejected)}</span>` : ""}</div>`;
   }
+  // how far to trust the stock (sd/stocktrust.py): each measurement of its evidence, the weakest as its score
+  function trustRows(t) {
+    const pct = (x) => (x == null ? "—" : (+x).toFixed(2));
+    const parts = Object.entries(t.components || {}).map(([k, v]) => `${esc(k.replace("_", " "))} ${pct(v)}`).join(" · ");
+    const facts = [t.p_null != null ? `shift null p ${pct(t.p_null)}` : "", t.held_out_r2 != null ? `held-out R² ${pct(t.held_out_r2)}` : "",
+      t.cum_residual_ratio != null ? `running residual ${pct(t.cum_residual_ratio)} × the level's spread` : "", t.units != null ? `${t.units} units` : "",
+      t.persistence != null ? `found the same way in ${Math.round(100 * t.persistence)}% of the last ${t.persistence_of} discoveries` : ""].filter(Boolean).join(" · ");
+    return `<div>trust</div><div><b>${pct(t.score)}</b> ${esc(t.level)} <span class="muted">(${esc(t.kind.replace("_", " "))}; the weakest of: ${parts})</span>
+      ${facts ? `<br><span class="muted">${facts}</span>` : ""}${(t.why || []).map((w) => `<br><span class="muted">${esc(w)}</span>`).join("")}</div>`;
+  }
   function openStock(id) {
     const s = MODEL.stocks.find((x) => x.id === id), io = flowsOf(id), ev = s.evidence || {};
     const rate = (f) => `${fmt(recentRate(f.id))}${per()}`;
@@ -125,8 +135,9 @@ const Live = (() => {
       ${s.series && s.series.source && s.series.source !== "own" ? `<div>read from</div><div>source <b>${esc(s.series.source)}</b><div class="num" style="font-size:11.5px">${esc(s.series.query || "")}</div><div class="muted" style="font-size:11.5px">${esc((s.series.origin || []).join(" → "))}</div></div>` : ""}
       ${s.series && s.series.traffic ? `<div>counted</div><div>${esc(trafficText(s.series.traffic))}</div>` : ""}
       ${s.series && resOf(MODEL.discovery, keyOf(s.series)) ? `<div>resolution</div><div>${esc(resOf(MODEL.discovery, keyOf(s.series)))} <span class="muted">(its usual gap between real points, and how it was read between them)</span></div>` : ""}
-      ${ev.balance ? `<div>balance</div><div class="num">Δ = ${ev.balance.map((b) => `${b.sign > 0 ? "+" : "−"} ${esc(b.series)}`).join(" ")}<br><span class="muted">R² ${ev.balance_r2} · exact in ${Math.round(100 * ev.exact_steps)}% of steps${ev.balance_r2_level != null ? ` · judged on the traffic through it (R² on the level itself ${ev.balance_r2_level})` : ""}</span></div>` : ""}
-      ${ev.net_flow ? netFlowRows(s, ev, io) : ""}</div>
+      ${ev.balance ? `<div>balance</div><div class="num">Δ = ${ev.balance.map((b) => `${b.sign > 0 ? "+" : "−"} ${esc(b.series)}`).join(" ")}<br><span class="muted">${ev.balance_r2 == null ? (ev.by_construction ? "by construction: a count of reporters and its own turnover, so no evidence" : "measured by no series: no fit to report") : `R² ${ev.balance_r2} · exact in ${Math.round(100 * ev.exact_steps)}% of steps`}${ev.balance_r2_level != null ? ` · judged on the traffic through it (R² on the level itself ${ev.balance_r2_level})` : ""}</span></div>` : ""}
+      ${ev.net_flow ? netFlowRows(s, ev, io) : ""}
+      ${ev.trust ? trustRows(ev.trust) : ""}</div>
       <h4 style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">Level: measured, as the equations run it, and projected
         <label class="muted" style="font-weight:400;font-size:11.5px">project <input id="sim-h" type="number" min="1" max="1440" value="${horizon()}" style="width:58px"> min ahead</label></h4>
       <div id="sim-chart"><div class="muted">running the equations…</div></div><div id="sim-note" class="muted" style="font-size:11.5px"></div>
