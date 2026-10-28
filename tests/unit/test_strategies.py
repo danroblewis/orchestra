@@ -291,13 +291,16 @@ def test_an_sdlab_strategy_adds_nothing_where_the_counters_balance_exactly(tmp_p
 
 
 def test_an_unmeasured_flow_is_kept_where_a_stock_is_not_balanced_exactly(tmp_path, monkeypatch):
-    # b gets one item a minute from a supplier no counter measures: its balance is not exact, so
-    # a residual flow into it is kept, as unmeasured, with its origin and SD Lab's rate per minute
+    # b's gauge reads one high now and then (scraped a moment off its counters): its balance is not
+    # exact, so a residual flow into it is kept, as unmeasured, with its origin and SD Lab's rate per
+    # minute. (Until 2026-10-28 b got an item a minute from a supplier no counter measured; its
+    # counters no longer reproduce such a level, which drifts from them by more than it moves, so it is
+    # no conservation stock now: sd.accept.CUM_RATIO.)
     store = FileMetrics(tmp_path / "m.jsonl")
     rates = {"a_in_total": 6.0, "a_out_total": 5.0, "b_in_total": 5.0, "b_out_total": 5.0}
     machines = dict.fromkeys([*rates, "a", "b"], "m")
     start, end = write(store, 90, random.Random(6), rates, {"a": {"a_in_total": 1, "a_out_total": -1}, "b": {"b_in_total": 1, "b_out_total": -1}},
-                       machines, initial={"a": 30, "b": 30}, extra=lambda t, v: [Point("b", v["b"] + int(t - T0) // 60, t, {"project": "p", "machine": "m"})])
+                       machines, initial={"a": 30, "b": 30}, extra=lambda t, v: [Point("b", v["b"] + (1 if int(t - T0) // 30 % 7 == 0 else 0), t, {"project": "p", "machine": "m"})])
     flows = [{"from": None, "to": "b", "rate": {"form": "constant", "value": 0.5}}, {"from": None, "to": "a", "rate": {"form": "constant", "value": 0.1}}]
     seen = {}
     monkeypatch.setattr("orchestra.sd.strategies.run_strategy", _fake(seen, flows))

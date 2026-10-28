@@ -1,11 +1,14 @@
 """Each series' real resolution, and how it is read between its points.
 
-A series is known only at its real points. How often those come is its **resolution**: the usual
-gap between them. A count or a state (a counter, or a level that only takes whole values: orders
-by state, pods, people in a line) is read with its last value held, because it stays what it was
-until it is written again; a smooth measurement (a temperature, a price, a load: any value that is
-not whole) is read linearly between its real points. How the series is read and how fine it is
-are separate questions.
+A series is known only at its points. How often its value changes is its **resolution**: the
+usual gap between the points where it changed. Every series is read with its last value held
+until it is written again: a count or a state stays what it was, and so does a measurement, as far
+as anything observed says. A measurement is not drawn as a line between the points where it changed
+(the rule until 2026-10-28): a gauge written every 30 s that changed twice in an hour was read as two
+long ramps, which any counter that rose steadily matched, and its balance was judged on the two
+stretches between its changes, at R² 1.000 whatever the counters were (the metrics lab, review r1
+F3 and F9). A repeat of the value it had is an observation that nothing changed, not a gap to fill.
+How the series is read and how fine it is are separate questions.
 
 Every write is a real point only of a counter, and of a level written as things happen: no
 schedule (``sd.live.usual_interval`` finds none in at least ``ENOUGH`` writes: bursts, then
@@ -23,8 +26,8 @@ choice is made per series and recorded (``Resolution``), and a resolution a sour
 remote store's reporting interval) is a floor.
 
 Discovery uses the resolution three ways (``sd.discover``): a level written less often than the
-grid is balanced on the stretches between its observations (``blocks``, ``observed_every``: a
-count's writes, a measurement's changes), not on every step; a driver slower
+grid is balanced on the stretches between its writes (``blocks``, ``observed_every``), not on
+every step, and never on the stretches between its changes, which are no observations; a driver slower
 than the grid needs as many of its own intervals holding a flow's events as a form needs events
 (``intervals_with``); and a level's net flow is fitted on a grid no finer than every series it
 reads (``sd.netflow``)."""
@@ -38,7 +41,7 @@ from statistics import median
 
 from .live import usual_interval
 
-HOLD, LINEAR = "hold", "linear"
+HOLD, LINEAR = "hold", "linear"     # how a series is read (always HOLD); LINEAR names a measurement's changes (``real_points``)
 SLOW = 1.5          # a series is slower than the grid when its resolution is this many steps or more
 ENOUGH = 10         # writes it takes to tell a schedule from writes as things happen (``sd.live.usual_interval``)
 
@@ -46,7 +49,7 @@ ENOUGH = 10         # writes it takes to tell a schedule from writes as things h
 @dataclass(frozen=True)
 class Resolution:
     seconds: float | None      # the usual gap between real points; None: written as things happen, as fine as its events
-    read: str                  # HOLD (counts and states) or LINEAR (smooth measurements)
+    read: str                  # HOLD: every series is read with its last value held
 
     def record(self) -> dict:
         return {"resolution_s": None if self.seconds is None else round(self.seconds, 3), "read": self.read}
@@ -80,49 +83,29 @@ def measure(points: list[tuple[float, float]], counter: bool, declared: float | 
             on_events: bool = False) -> Resolution:
     """A series' resolution and read. ``declared``: a resolution its source reported, a floor;
     ``on_events``: a counter written only when it moves (no schedule)."""
-    read = HOLD if counter or whole(points) else LINEAR
+    smooth = not counter and not whole(points)      # a measurement, not a count: its changes say its resolution
     interval = usual_interval(points)
     seconds: float | None
     if counter:
         seconds = None if on_events else interval
-    elif read == HOLD and interval is None and len(points) >= ENOUGH and 2 * len(real_points(points, LINEAR)) > len(points):
+    elif not smooth and interval is None and len(points) >= ENOUGH and 2 * len(real_points(points, LINEAR)) > len(points):
         seconds = None                  # a count written as things happen: every write is one
     else:
         changes = [b - a for (a, _), (b, _) in pairwise(real_points(points, LINEAR))]
-        enough = len(changes) >= 2 and (read == LINEAR or len(points) >= ENOUGH or steady(changes))
+        enough = len(changes) >= 2 and (smooth or len(points) >= ENOUGH or steady(changes))
         seconds = median(changes) if enough else interval
     if declared:
         seconds = max(seconds or 0.0, float(declared))
-    return Resolution(seconds, read)
+    return Resolution(seconds, HOLD)
 
 
 def observed_every(points: list[tuple[float, float]], res: Resolution, declared: float | None = None) -> float | None:
-    """How far apart a level's observations are, for its balance (``blocks``): a measurement's are
-    its changes (its resolution); a count's are its writes, a repeat included (the shelf still holds
-    three), on the interval it is written on, however seldom it changes."""
-    if res.read == LINEAR:
-        return res.seconds
+    """How far apart a level's observations are, for its balance (``blocks``): its writes, a repeat
+    included (the shelf still holds three; the gauge still reads 4.2), on the interval it is written
+    on, however seldom it changes. The stretches between its changes are no observations: a level
+    polled every 30 s that changed twice in an hour was seen 120 times, not twice."""
     seconds = usual_interval(points)
     return max(seconds or 0.0, float(declared)) if declared else seconds
-
-
-def interpolate(points: list[tuple[float, float]], times: list[float]) -> list[float | None]:
-    """A measurement's value at each time, linear between its real points: before its first point
-    nothing (None), after its last the last value."""
-    real = real_points(points, LINEAR)
-    out: list[float | None] = []
-    j = 0
-    for t in times:
-        while j < len(real) and real[j][0] <= t:
-            j += 1
-        if j == 0:
-            out.append(None)
-        elif j == len(real):
-            out.append(real[-1][1])
-        else:
-            (t0, v0), (t1, v1) = real[j - 1], real[j]
-            out.append(v0 + (v1 - v0) * (t - t0) / (t1 - t0) if t1 > t0 else v1)
-    return out
 
 
 def steps_of(seconds: float | None, step: float) -> int:

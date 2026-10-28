@@ -1,11 +1,12 @@
-"""Each series is read at its own resolution: counts and states held, smooth measurements linear
-between their real points; a slow level is balanced between its writes; a slow series drives no
-fast flow; and discovery is fast enough for hours of a few hundred series at a fine step."""
+"""Each series is read at its own resolution, its last value held (a measurement is never drawn as a
+ramp between the points where it changed: review r1 F9); a slow level is balanced between its
+writes, never between its changes; a slow series drives no fast flow; and discovery is fast enough
+for hours of a few hundred series at a fine step."""
 
 import random
 
 from orchestra.sd.discover import discover
-from orchestra.sd.resolution import HOLD, LINEAR, measure
+from orchestra.sd.resolution import HOLD, measure, observed_every
 from orchestra.sd.series import Series, sample
 
 T0 = 1_800_000_000.0
@@ -25,10 +26,12 @@ def test_counts_are_held_and_measurements_resolved_by_their_changes():
     assert measure([(T0 + 30 * i, float(i % 7)) for i in range(100)], False).seconds == 30.0
     # a counter written only when it moves: as fine as its events
     assert measure([(T0 + 7 * i * i, float(i)) for i in range(20)], True, on_events=True).seconds is None
-    # a temperature polled every minute that its feed changes every half hour: linear, 30 min
+    # a temperature polled every minute that its feed changes every half hour: held, 30 min
     feed = [(T0 + 60 * i, 10.0 + 0.37 * (i // 30)) for i in range(240)]
     r = measure(feed, False)
-    assert r.read == LINEAR and abs(r.seconds - 1800) < 1e-6
+    assert r.read == HOLD and abs(r.seconds - 1800) < 1e-6
+    # ... but it is observed every minute: its balance is judged between its writes, not its changes
+    assert observed_every(feed, r) == 60.0
     # a resolution its source declared is a floor
     assert measure(count, False, declared=60.0).seconds == 120.0
     assert measure(count, False, declared=600.0).seconds == 600.0
@@ -71,12 +74,21 @@ def test_a_count_written_only_when_it_moves_is_as_fine_as_its_events():
     assert measure(pts, False).seconds is None
 
 
-def test_a_measurement_is_read_linearly_between_its_real_points():
+def test_a_measurement_is_held_between_its_points_never_drawn_as_a_ramp():
     pts = [(T0 + 60 * i, 1.5 if i < 30 else 4.5) for i in range(61)]     # one change, at 30 min
     [s] = sample([("temp", {}, pts)], T0, 600.0, 6)
-    assert s.resolution.read == LINEAR
-    # from its first point to the point where it changed, a ramp: 1.5 at 0, 4.5 at 30 min
-    assert s.values[:4] == [1.5, 2.5, 3.5, 4.5]
+    assert s.resolution.read == HOLD
+    # written every minute and 1.5 every time until 30 min: it was 1.5, not on its way to 4.5
+    assert s.values[:4] == [1.5, 1.5, 1.5, 4.5]
+
+
+def test_a_gauge_polled_often_that_changed_twice_is_balanced_on_every_step():
+    # written every 30 s, changed twice in the hour (a pod's resource requests): 120 observations,
+    # not two stretches between changes on which any two counters balance it exactly
+    pts = [(T0 + 30 * i, 2.5e8 if i < 40 else (5.1e8 if i < 90 else 3.3e8)) for i in range(121)]
+    [s] = sample([("requests_bytes", {}, pts)], T0, 30.0, 120)
+    assert s.blocks is None
+    assert sum(1 for d in s.deltas if d) == 2
 
 
 def _queue(rng: random.Random, minutes: int, write_every: float):

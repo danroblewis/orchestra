@@ -27,7 +27,8 @@ def test_a_level_that_stepped_once_is_not_a_flag():
     left = m.discovery["left_out"]
     for key in ('day_length_minutes{machine="sky"}', 'day_length_exact_minutes{machine="sky"}'):
         assert not left[key].startswith("a flag") and "changed" in left[key] and "too few" in left[key], left[key]
-    assert "only 1 time" in left['day_length_exact_minutes{machine="sky"}']
+    # held, not interpolated into a ramp: the step is one change, in one step
+    assert "changed in only 1 step" in left['day_length_exact_minutes{machine="sky"}']
     assert {r["name"] for r in m.discovery["inputs"].values()} >= {"day_length_minutes", "day_length_exact_minutes"}
     assert left['oven_busy{machine="oven"}'].startswith("a flag")
     assert "oven_busy" not in {r["name"] for r in m.discovery["inputs"].values()}
