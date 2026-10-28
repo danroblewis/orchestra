@@ -80,7 +80,7 @@ Orchestra.panels = (() => {
 // Orchestra's own pages, in nav order: the one list every page's nav is built from, plugin pages
 // included, so a page added here appears everywhere (a page's static links are only the fallback
 // before this script runs).
-const CORE_PAGES = [["/", "Dashboard"], ["/machines", "Machines"], ["/instruments", "Instruments"], ["/dynamics", "Dynamics"], ["/core", "Core"]];
+const CORE_PAGES = [["/", "Dashboard"], ["/machines", "Machines"], ["/instruments", "Instruments"], ["/dynamics", "Dynamics"], ["/experiments", "Experiments"], ["/core", "Core"]];
 (function coreNav() {
   const nav = $("nav"), at = $("proj");
   if (!nav || !at) return;

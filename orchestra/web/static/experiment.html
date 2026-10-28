@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en" class="themed">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orchestra · Experiment</title>
+<link rel="stylesheet" href="/static/style.css?v={{v}}">
+<link rel="stylesheet" href="/static/experiments.css?v={{v}}">
+</head>
+<body>
+<nav id="nav"><a href="/">Dashboard</a><a href="/machines">Machines</a><a href="/instruments">Instruments</a><a href="/dynamics">Dynamics</a><a href="/experiments" class="on">Experiments</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
+<div class="xwrap">
+  <div style="font-size:12px;margin-bottom:6px"><a href="/experiments">← Experiments</a></div>
+  <div id="head"><div class="empty">reading the experiment…</div></div>
+  <div class="panel sect" id="pred-p" style="display:none"><h2><span>The prediction it became</span></h2><div id="pred"></div></div>
+  <div class="panel sect" id="diff-p" style="display:none"><h2><span>Its edits, against the base</span><span class="count" id="nchanges"></span></h2><div id="diff"></div></div>
+  <div class="panel sect" id="runs-p" style="display:none"><h2><span>Runs</span><span class="count" id="nruns"></span></h2><div class="runs" id="runs"></div><div id="run"></div></div>
+  <div class="panel sect" id="log-p" style="display:none"><h2><span>The edit log: every batch, in order</span><span class="count" id="nlog"></span></h2><div id="log"></div></div>
+</div>
+<script src="/static/app.js?v={{v}}"></script>
+<script src="/static/charts.js?v={{v}}"></script>
+<script src="/static/predictions.js?v={{v}}"></script>
+<script src="/static/experiment-view.js?v={{v}}"></script>
+<script>
+// One experiment (/api/experiments/<id>, .../diff, .../runs/<run>, .../prediction): read-only.
+const V = ExperimentView, EID = decodeURIComponent(location.pathname.split("/").filter(Boolean)[1] || "");
+let X = null, NM = null, RUN = null, RUNDATA = {};
+const get = (p) => fetch(p).then((r) => r.json());
+function head(x) {
+  const lb = x.base.label || {};
+  const ver = lb.version != null ? `version ${lb.version}` : lb.latest_discovery_at ? `the latest discovery, ${V.when(lb.latest_discovery_at)}${lb.current_version ? ` (after version ${lb.current_version})` : ""}` : "—";
+  const era = x.base.era ? `<a href="/dynamics?era=${encodeURIComponent(x.base.era)}">era ${esc(x.base.era)}</a>` : "before any era";
+  return `<div class="xhead"><h1>${esc(x.title)}</h1><span class="st ${esc(x.status)}">${esc(x.status)}</span><span class="muted num" style="font-size:11.5px">${esc(x.id)}</span></div>
+    ${x.purpose ? `<div class="purpose-big">${esc(x.purpose)}</div>` : ""}
+    <div class="meta"><div>machine</div><div><a href="/machines#${encodeURIComponent(x.owner)}">${esc(x.owner)}</a></div>
+      <div>base</div><div>the model as of ${esc(ver)} · ${era}</div>
+      ${x.origin && x.origin.experiment ? `<div>made by</div><div>the inverse solver, from <a href="/experiments/${esc(x.origin.experiment)}">${esc(x.origin.experiment)}</a></div>` : ""}
+      <div>created</div><div>${V.when(x.created_at)} <span class="muted">· last changed ${V.when(x.updated_at)}</span></div></div>`;
+}
+function runChips() {
+  const rs = X.runs || [];
+  $("nruns").textContent = rs.length;
+  $("runs-p").style.display = "";
+  if (!rs.length) { $("runs").innerHTML = ""; $("run").innerHTML = '<div class="empty">Not run yet.</div>'; return; }
+  $("runs").innerHTML = rs.slice().reverse().map((r) => `<a href="#${esc(r.id)}" class="${r.id === RUN ? "on" : ""}" onclick="pick('${esc(r.id)}');return false"><span class="kind">${esc(r.mode)}</span>${V.when(r.at)}${chipNote(r)}</a>`).join("");
+}
+function chipNote(r) {
+  const s = r.summary || {};
+  if (r.mode === "forward") return ` <span class="muted">· ${V.dur(s.horizon_s)}</span>${s.trusted ? "" : ' <span title="not trusted">⚠</span>'}${s.limits ? ` <span title="limits hit">⛔ ${s.limits}</span>` : ""}`;
+  if (r.mode === "replay") return s.stocks ? ` <span class="muted">· ${s.stocks.worse + (s.flows ? s.flows.worse : 0)} worse</span>` : "";
+  return `${s.ambiguous ? ' <span title="ambiguous">⚠ ambiguous</span>' : ""}${s.reached === false ? ' <span class="muted">· not reached</span>' : ""}`;
+}
+function pick(rid) { RUN = rid; history.replaceState(null, "", "#" + rid); runChips(); showRun(); }
+async function showRun() {
+  const el = $("run"), rid = RUN;
+  if (!RUNDATA[rid]) {
+    el.innerHTML = '<div class="empty">reading the run…</div>';
+    const d = await get(`/api/experiments/${EID}/runs/${rid}`);
+    if (!d.ok) { el.innerHTML = `<div class="empty">${esc(d.error)}</div>`; return; }
+    const extra = {};
+    if (d.run.mode === "forward") { const m = await get(`/api/experiments/${EID}/runs/${rid}/measured`).catch(() => null); extra.measured = m && m.ok ? m.stocks : null; extra.note = m && !m.ok ? m.error : null; }
+    if (d.run.mode === "inverse" && d.run.result.experiment) { const s = await get(`/api/experiments/${d.run.result.experiment}/diff`).catch(() => null); extra.solved = s && s.ok ? s.diff : null; }
+    RUNDATA[rid] = { run: d.run, ...extra };
+  }
+  if (rid !== RUN) return;
+  const r = RUNDATA[rid], W = el.clientWidth > 900 ? (el.clientWidth - 12) / 2 - 26 : el.clientWidth - 26;
+  const by = r.run.by !== X.owner ? ` <span class="muted">· run by ${esc(r.run.by)}</span>` : "";
+  el.innerHTML = `<div class="cap muted">${esc(r.run.mode)} run ${esc(r.run.id)}, ${V.when(r.run.at)}, ${r.run.elapsed_s} s${by}</div>`
+    + (r.run.mode === "forward" ? V.forward(r.run, r.measured, NM, W) + (r.note ? `<div class="cap muted">${esc(r.note)}</div>` : "")
+      : r.run.mode === "replay" ? V.replay(r.run, NM, W) : V.inverse(r.run, NM, r.solved));
+}
+async function load() {
+  const d = await get(`/api/experiments/${encodeURIComponent(EID)}?base=true`);
+  if (!d.ok) { $("head").innerHTML = `<div class="empty">${esc(d.error)}</div>`; return; }
+  X = d.experiment; NM = V.namesOf(X);
+  document.title = `Orchestra · ${X.title}`;
+  $("head").innerHTML = head(X);
+  const df = await get(`/api/experiments/${EID}/diff`);
+  $("diff-p").style.display = "";
+  $("nchanges").textContent = `${X.changes} change${X.changes === 1 ? "" : "s"}`;
+  $("diff").innerHTML = df.ok ? V.diff(df.diff, NM) : `<div class="empty">${esc(df.error)}</div>`;
+  $("log-p").style.display = "";
+  const refused = X.log.filter((b) => b.ok === false).length;
+  $("nlog").textContent = `${X.log.length} entr${X.log.length === 1 ? "y" : "ies"}${refused ? `, ${refused} refused` : ""}`;
+  $("log").innerHTML = V.log(X.log, NM);
+  if (X.prediction) {
+    const p = await get(`/api/experiments/${EID}/prediction`);
+    $("pred-p").style.display = "";
+    $("pred").innerHTML = p.ok ? V.prediction(p.prediction, X.prediction, NM) : `<div class="empty">${esc(p.error)}</div>`;
+  }
+  const rs = X.runs || [];
+  const want = location.hash.slice(1);
+  RUN = rs.some((r) => r.id === want) ? want : rs.length ? rs[rs.length - 1].id : null;
+  runChips();
+  if (RUN) showRun();
+}
+let lastW = 0;
+window.addEventListener("resize", () => { const w = $("run").clientWidth; if (RUN && Math.abs(w - lastW) > 40) { lastW = w; clearTimeout(window._rt); window._rt = setTimeout(showRun, 150); } });
+load();
+</script>
+</body>
+</html>

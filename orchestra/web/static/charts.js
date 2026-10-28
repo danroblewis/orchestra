@@ -13,9 +13,11 @@ const Charts = (() => {
   // W is the drawing width in pixels: pass the container's width so text and lines keep their size.
   // A line may be dashed (``dash``: an SVG dash array); ``marks`` are labelled vertical lines
   // ([{t, label}], such as "now"). ``tight`` fits the y axis to the lines' own range instead of
-  // always including zero
+  // always including zero. A line may carry a ``band`` ([[t, lo, hi]]: a forecast's 10–90% range),
+  // drawn as a light fill in its colour behind the lines and read out on hover. A colour may be a
+  // CSS variable (``var(--x)``): strokes are set as styles, so a page's theme can change them
   function line(lines, { unit = "", H = 200, W = 720, marks = [], tight = false } = {}) {
-    const pts = lines.flatMap((l) => l.points);
+    const pts = lines.flatMap((l) => [...l.points, ...(l.band || []).flatMap(([t, a, b]) => [[t, a], [t, b]])]);
     if (!pts.length) return `<div class="empty">no points in this range</div>`;
     W = Math.max(320, Math.round(W));
     const L = 46, B = 18, T = 6, R = 8;
@@ -28,9 +30,10 @@ const Charts = (() => {
     const ticks = [lo, lo + span / 2, hi].map((v) => `<line class="ax" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke-dasharray="2 4"/><text x="${L - 4}" y="${y(v) + 3}" text-anchor="end">${num(v)}</text>`).join("");
     const xt = [0, 0.5, 1].map((f) => `<text x="${L + (W - L - R) * f}" y="${H - 4}" text-anchor="${f === 0 ? "start" : f === 1 ? "end" : "middle"}">${tlabel(t0 + (t1 - t0) * f, t1 - t0)}</text>`).join("");
     const mk = marks.filter((m) => m.t >= t0 && m.t <= t1).map((m) => `<line class="ax" x1="${x(m.t)}" x2="${x(m.t)}" y1="${T}" y2="${H - B}" stroke-dasharray="3 3"/><text x="${x(m.t) + 3}" y="${T + 10}">${esc(m.label)}</text>`).join("");
-    const paths = lines.map((l, i) => `<path data-i="${i}" stroke="${colorOf(l, i)}"${l.dash ? ` stroke-dasharray="${l.dash}"` : ""} d="${l.points.map(([t, v], j) => (j ? "L" : "M") + x(t).toFixed(1) + "," + y(v).toFixed(1)).join(" ")}"/>`).join("");
-    return `<svg class="chart" data-cid="${id}" viewBox="0 0 ${W} ${H}">${ticks}${xt}${mk}<g class="lines">${paths}</g><g class="hov"></g><rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/></svg>
-      <div class="ckeys" data-for="${id}">${lines.map((l, i) => `<span data-i="${i}"><i style="${l.dash ? `background:none;border-top:2px dashed ${colorOf(l, i)};height:0` : `background:${colorOf(l, i)}`}"></i>${esc(l.label)}</span>`).join("")}${unit ? `<span class="muted">${esc(unit)}</span>` : ""}</div>`;
+    const bands = lines.map((l, i) => (l.band && l.band.length > 1 ? `<path class="band" data-i="${i}" style="fill:${colorOf(l, i)}" d="${l.band.map(([t, , b], j) => (j ? "L" : "M") + x(t).toFixed(1) + "," + y(b).toFixed(1)).join(" ")} ${l.band.slice().reverse().map(([t, a]) => "L" + x(t).toFixed(1) + "," + y(a).toFixed(1)).join(" ")} Z"/>` : "")).join("");
+    const paths = lines.map((l, i) => `<path data-i="${i}" style="stroke:${colorOf(l, i)}"${l.dash ? ` stroke-dasharray="${l.dash}"` : ""} d="${l.points.map(([t, v], j) => (j ? "L" : "M") + x(t).toFixed(1) + "," + y(v).toFixed(1)).join(" ")}"/>`).join("");
+    return `<svg class="chart" data-cid="${id}" viewBox="0 0 ${W} ${H}">${ticks}${xt}${mk}<g class="bands">${bands}</g><g class="lines">${paths}</g><g class="hov"></g><rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/></svg>
+      <div class="ckeys" data-for="${id}">${lines.map((l, i) => `<span data-i="${i}"><i style="${l.dash ? `background:none;border-top:2px dashed ${colorOf(l, i)};height:0` : `background:${colorOf(l, i)}`}${l.band ? `;box-shadow:0 0 0 3px color-mix(in srgb, ${colorOf(l, i)} 25%, transparent)` : ""}"></i>${esc(l.label)}</span>`).join("")}${unit ? `<span class="muted">${esc(unit)}</span>` : ""}</div>`;
   }
 
   function spark(points, { unit = "", w = 300, h = 34, cls = "", note = null, label = "" } = {}) {
@@ -50,6 +53,7 @@ const Charts = (() => {
     while (b - a > 1) { const m = (a + b) >> 1; if (points[m][0] < t) a = m; else b = m; }
     return Math.abs(points[a][0] - t) <= Math.abs(points[b][0] - t) ? points[a] : points[b];
   }
+  const bandAt = (l, t) => { const b = (l.band || []).find((r) => r[0] === t); return b ? `<span class="muted"> (${num(b[1])}–${num(b[2])})</span>` : ""; };
   let tip = null;
   function tipEl() {
     if (!tip) { tip = document.createElement("div"); tip.className = "charttip"; document.body.appendChild(tip); }
@@ -68,11 +72,11 @@ const Charts = (() => {
     const at = hits.filter((h) => h.p[0] === tt || c.lines.length > 1);
     const X = c.x(tt);
     svg.querySelector("g.hov").innerHTML = `<line x1="${X}" x2="${X}" y1="${c.T}" y2="${c.H - c.B}" class="xh"/>`
-      + (c.dots ? at.map((h) => `<circle cx="${c.x(h.p[0])}" cy="${c.y(h.p[1])}" r="3.2" fill="${colorOf(h.l, h.i)}"/>`).join("") : "");
+      + (c.dots ? at.map((h) => `<circle cx="${c.x(h.p[0])}" cy="${c.y(h.p[1])}" r="3.2" style="fill:${colorOf(h.l, h.i)}"/>`).join("") : "");
     const rows = at.slice().sort((a, b) => b.p[1] - a.p[1]).slice(0, 14);
     const el = tipEl();
     el.innerHTML = `<div class="tt">${new Date(tt * 1000).toLocaleString()}</div>` + rows.map((h) =>
-      `<div class="tr">${c.lines.length > 1 ? `<i style="background:${colorOf(h.l, h.i)}"></i>` : ""}<span class="tl">${esc(h.l.label)}</span><b>${num(h.p[1])}${esc(c.unit && c.lines.length === 1 ? c.unit : "")}</b></div>`).join("")
+      `<div class="tr">${c.lines.length > 1 ? `<i style="background:${colorOf(h.l, h.i)}"></i>` : ""}<span class="tl">${esc(h.l.label)}</span><b>${num(h.p[1])}${esc(c.unit && c.lines.length === 1 ? c.unit : "")}</b>${bandAt(h.l, h.p[0])}</div>`).join("")
       + (at.length > rows.length ? `<div class="muted">+${at.length - rows.length} more</div>` : "");
     el.style.display = "block";
     const r = el.getBoundingClientRect();

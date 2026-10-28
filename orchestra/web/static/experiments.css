@@ -1,0 +1,118 @@
+/* The Experiments pages (experiments.html, experiment.html). They follow the viewer's light or
+   dark setting: a page that has class="themed" on <html> takes the light tokens below when the
+   browser prefers light (data-theme="light" or "dark" on <html> overrides it); the other pages
+   stay dark. Series colours are roles, set as tokens per theme: measured (ink), base (blue),
+   experiment (orange), from the dataviz reference palette, validated for both surfaces. */
+:root {
+  --s-measured:#cbd5e1; --s-base:#3987e5; --s-exp:#d95926;
+  --good:#0ca30c; --bad:#d03b3b; --warn:#fab219;
+  --good-ink:#86efac; --bad-ink:#fca5a5; --warn-ink:#fcd34d;
+  --warn-bg:#2a2208; --bad-bg:#2a0f0f; --good-bg:#0f2a1a; --code-bg:#07090d;
+}
+@media (prefers-color-scheme: light) {
+  :root.themed:not([data-theme="dark"]) {
+    color-scheme:light;
+    --bg:#f5f6f8; --panel:#ffffff; --panel2:#ffffff; --panel3:#eef0f4; --border:#dfe3ea; --border2:#c5ccd8;
+    --text:#0f172a; --text2:#3f4b5e; --muted:#5f6b7d; --accent:#1d5fd0;
+    --s-measured:#334155; --s-base:#2a78d6; --s-exp:#eb6834;
+    --good-ink:#106b10; --bad-ink:#a32121; --warn-ink:#7a5200;
+    --warn-bg:#fff6dd; --bad-bg:#fdecec; --good-bg:#e9f7e9; --code-bg:#f3f5f8;
+  }
+}
+:root.themed[data-theme="light"] {
+  color-scheme:light;
+  --bg:#f5f6f8; --panel:#ffffff; --panel2:#ffffff; --panel3:#eef0f4; --border:#dfe3ea; --border2:#c5ccd8;
+  --text:#0f172a; --text2:#3f4b5e; --muted:#5f6b7d; --accent:#1d5fd0;
+  --s-measured:#334155; --s-base:#2a78d6; --s-exp:#eb6834;
+  --good-ink:#106b10; --bad-ink:#a32121; --warn-ink:#7a5200;
+  --warn-bg:#fff6dd; --bad-bg:#fdecec; --good-bg:#e9f7e9; --code-bg:#f3f5f8;
+}
+:root.themed { color-scheme:dark } :root.themed body { background:var(--bg); color:var(--text) }
+
+.xwrap { max-width:1280px; margin:0 auto; padding:16px 20px 40px }
+.xwrap .intro { font-size:12.5px; color:var(--text2); margin:0 0 12px; max-width:980px }
+.xwrap h1 { font-size:17px; margin:0 } .xwrap h3 { font-size:13px; margin:14px 0 6px }
+.xwrap code, .eq { font-family:var(--mono); font-size:12px }
+.eq { background:var(--code-bg); border:1px solid var(--border); border-radius:5px; padding:1px 6px; overflow-wrap:anywhere; display:inline-block; max-width:100% }
+
+/* tags: status, run kind, verdict, better/same/worse. Each carries a mark or a word, never colour alone */
+.st, .kind, .verdict, .vs { display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.03em; border:1px solid var(--border2); border-radius:4px; padding:0 5px; white-space:nowrap; color:var(--text2) }
+.st.draft { color:var(--accent); border-color:var(--accent) } .st.committed { color:var(--good-ink); border-color:var(--good) } .st.discarded { color:var(--muted); border-style:dashed }
+.kind { font-weight:600; text-transform:uppercase; font-size:10px }
+.verdict.passed, .vs.better { color:var(--good-ink); border-color:var(--good); background:var(--good-bg) }
+.verdict.side, .verdict.wrong, .verdict.undecided, .verdict.interrupted { color:var(--warn-ink); border-color:var(--warn); background:var(--warn-bg) }
+.verdict.none, .vs.worse { color:var(--bad-ink); border-color:var(--bad); background:var(--bad-bg) }
+.verdict.waiting, .vs.same { color:var(--text2) }
+
+/* the list */
+.filters { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin:0 0 12px; font-size:12px; color:var(--text2) }
+.filters select { background:var(--panel3); color:var(--text); border:1px solid var(--border2); border-radius:6px; font:inherit; padding:2px 6px; max-width:100% }
+table.xl { width:100%; border-collapse:collapse; font-size:12.5px }
+table.xl th { text-align:left; color:var(--muted); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; padding:6px 8px; border-bottom:1px solid var(--border) }
+table.xl td { padding:8px; border-bottom:1px solid var(--border); vertical-align:top }
+table.xl tr.row:hover td { background:var(--panel3) }
+table.xl .title a { font-weight:600; color:var(--text); text-decoration:none } table.xl .title a:hover { color:var(--accent); text-decoration:underline }
+table.xl .purpose { color:var(--text2); font-size:12px; margin-top:2px } table.xl .sub { color:var(--muted); font-size:11px } table.xl .sub a { color:var(--accent); font-weight:400 }
+table.xl td.nw { white-space:nowrap }
+@media (max-width: 760px) {
+  .xwrap { padding:12px 12px 32px }
+  table.xl thead { display:none } table.xl, table.xl tbody, table.xl tr, table.xl td { display:block; width:100% }
+  table.xl tr.row { border:1px solid var(--border); border-radius:10px; margin:0 0 10px; padding:6px 10px; background:var(--panel2) }
+  table.xl td { border:0; padding:3px 0 } table.xl td[data-h]::before { content:attr(data-h) " "; color:var(--muted); font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; margin-right:4px }
+}
+
+/* one experiment */
+.xhead { display:flex; flex-wrap:wrap; gap:6px 12px; align-items:baseline; margin-bottom:4px }
+.meta { display:grid; grid-template-columns:auto 1fr; gap:3px 14px; font-size:12.5px; margin:8px 0 0 } .meta > div:nth-child(odd) { color:var(--muted) }
+.purpose-big { font-size:13.5px; color:var(--text2); margin:4px 0 0; max-width:900px }
+.sect { margin-top:14px } .sect > h2 { margin-top:0 }
+.callout { border-radius:8px; padding:8px 12px; margin:8px 0; font-size:12.5px; border:1px solid var(--border2); border-left-width:4px }
+.callout.warn { background:var(--warn-bg); border-color:var(--warn); color:var(--text) } .callout.bad { background:var(--bad-bg); border-color:var(--bad); color:var(--text) }
+.callout.good { background:var(--good-bg); border-color:var(--good); color:var(--text) }
+.callout b.h { display:block; margin-bottom:3px } .callout ul { margin:4px 0 0; padding-left:18px } .callout li { margin:2px 0 }
+.scroll { overflow-x:auto; max-width:100% }
+table.dt { width:100%; border-collapse:collapse; font-size:12px } table.dt th { text-align:left; color:var(--muted); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; padding:4px 6px; border-bottom:1px solid var(--border) }
+table.dt td { padding:5px 6px; border-bottom:1px solid var(--border); vertical-align:top } table.dt td.num { font-family:var(--mono); white-space:nowrap; text-align:right } table.dt th.num { text-align:right }
+
+/* the equation diff: before and after side by side (stacked on a phone) */
+.diff { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:0; border:1px solid var(--border); border-radius:8px; overflow:hidden; margin:6px 0 }
+.diff > div { padding:6px 10px; min-width:0 } .diff .lbl { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-bottom:2px }
+.diff .before { background:var(--bad-bg); border-right:1px solid var(--border) } .diff .after { background:var(--good-bg) }
+.diff .none { color:var(--muted); font-style:italic; font-size:12px }
+.diff .params { font-family:var(--mono); font-size:11.5px; color:var(--text2); margin-top:3px; overflow-wrap:anywhere } .diff .params .chg { color:var(--text); font-weight:700 }
+.dhead { font-size:12.5px; margin-top:10px } .dhead .what { color:var(--muted); font-size:11.5px }
+@media (max-width: 760px) { .diff { grid-template-columns:minmax(0, 1fr) } .diff .before { border-right:0; border-bottom:1px solid var(--border) } }
+
+/* the edit log */
+.log { border-left:2px solid var(--border2); margin:4px 0 0 4px; padding-left:12px }
+.log .b { position:relative; margin:0 0 10px; font-size:12px } .log .b::before { content:""; position:absolute; left:-18px; top:4px; width:10px; height:10px; border-radius:50%; background:var(--panel); border:2px solid var(--good) }
+.log .b.refused::before { border-color:var(--bad); background:var(--bad) } .log .b.mark::before { border-color:var(--muted) }
+.log .b .when { color:var(--muted); font-size:11px } .log .op { font-family:var(--mono); font-size:11.5px; margin:2px 0 0 4px; overflow-wrap:anywhere } .log .op.failed { color:var(--bad-ink); font-weight:700 }
+.log .err { color:var(--bad-ink); margin-top:2px }
+
+/* runs */
+.runs { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 10px }
+.runs a { display:inline-flex; gap:6px; align-items:center; font-size:12px; color:var(--text2); background:var(--panel3); border:1px solid var(--border2); border-radius:6px; padding:3px 9px; text-decoration:none }
+.runs a.on { color:var(--text); border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent) }
+.grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap:12px }
+.card { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:10px 12px; min-width:0 }
+.card h4 { margin:0 0 2px; font-size:13px; display:flex; gap:8px; align-items:baseline; flex-wrap:wrap } .card .cap { font-size:11.5px; color:var(--text2); margin:2px 0 4px }
+.card .why { font-size:11.5px; color:var(--warn-ink); margin:4px 0 0; padding-left:16px } .card .why li { margin:1px 0 }
+.tally { display:flex; flex-wrap:wrap; gap:6px 16px; font-size:12.5px; margin:6px 0 }
+.ratio { display:inline-block; height:8px; border-radius:4px; vertical-align:middle; margin-left:6px; background:var(--s-exp); min-width:2px }
+
+/* charts (charts.js) on these pages */
+svg.chart { width:100%; height:auto; min-height:0; display:block } .chart .ax { stroke:var(--border2); stroke-width:1 }
+.chart text { fill:var(--muted); font-size:10px; font-family:var(--mono) } .chart path { fill:none; stroke-width:2 } .chart path.band { fill-opacity:.16; stroke:none }
+svg.chart.focus path { opacity:.15 } svg.chart.focus path.on { opacity:1; stroke-width:2.6 }
+.ckeys { display:flex; flex-wrap:wrap; gap:4px 12px; font-size:11px; color:var(--text2); margin-top:4px } .ckeys i { display:inline-block; width:12px; height:3px; border-radius:2px; margin-right:5px; vertical-align:middle }
+.charttip { display:none; position:fixed; z-index:70; pointer-events:none; background:var(--panel2); color:var(--text); border:1px solid var(--border2); border-radius:8px; padding:6px 9px; font-size:11.5px; box-shadow:0 8px 24px #0005; max-width:min(420px, 92vw) }
+.charttip .tt { color:var(--muted); font-size:10.5px; margin-bottom:3px } .charttip .tr { display:flex; align-items:center; gap:6px; white-space:nowrap } .charttip .tr i { width:9px; height:3px; border-radius:2px; flex:none }
+.charttip .tl { color:var(--text2); font-family:var(--mono); font-size:11px } .charttip .tr b { margin-left:auto; padding-left:12px; font-family:var(--mono) }
+svg .xh { stroke:var(--text2); stroke-width:1; stroke-dasharray:3 3; vector-effect:non-scaling-stroke }
+
+/* predictions (predictions.js) */
+.pred { margin:4px 0; padding:4px 8px; border-left:3px solid var(--border2); font-size:12.5px } .preds .ev, .pred .ev { margin:2px 0 0 10px; font-size:11.5px; color:var(--text2) }
+.pred.passed { border-color:var(--good) } .pred.side, .pred.wrong, .pred.interrupted, .pred.undecided { border-color:var(--warn) } .pred.none { border-color:var(--bad) }
+.pred .unpred { color:var(--warn-ink) }
+details.how { font-size:11.5px; color:var(--muted); margin-top:6px } details.how summary { font-size:11.5px; color:var(--muted) }

@@ -1,4 +1,4 @@
-"""The web UI: Dashboard, Machines, Instruments, Dynamics and Core. Read-only for humans: nothing here
+"""The web UI: Dashboard, Machines, Instruments, Dynamics, Experiments and Core. Read-only for humans: nothing here
 changes the system (AGENTS.md rule 9). Every route, a plugin's too, is behind the project's web token
 (web/auth.py), which the app's outermost middleware checks."""
 
@@ -275,10 +275,19 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         except ExperimentError as e:
             return JSONResponse({"ok": False, "error": str(e)}, status_code=e.status)
 
+    @app.get("/experiments", response_class=HTMLResponse)
+    async def experiments_page() -> str:
+        return page("experiments.html")
+
+    @app.get("/experiments/{eid}", response_class=HTMLResponse)
+    async def experiment_page(eid: str) -> str:
+        return page("experiment.html")
+
     @app.get("/api/experiments")
-    def experiments_list(owner: str | None = None, status: str | None = None):
-        """Every experiment: who made it, its title, status, base, runs and prediction."""
-        return answered(lambda: experiments().list(owner, status))
+    def experiments_list(owner: str | None = None, status: str | None = None, era: str | None = None):
+        """Every experiment: who made it, its title and purpose, status, base, latest run and the
+        verdict of its prediction; ``era``: those made on its model or predicting its change."""
+        return answered(lambda: experiments().list(owner, status, era))
 
     @app.get("/api/experiments/{eid}")
     def experiment_one(eid: str, base: bool = False):
@@ -297,6 +306,11 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     def experiment_run(eid: str, rid: str):
         """One run in full: forward (trajectories and band), replay (observed against simulated, scores) or inverse."""
         return answered(lambda: experiments().run_result(eid, rid))
+
+    @app.get("/api/experiments/{eid}/runs/{rid}/measured")
+    def experiment_run_measured(eid: str, rid: str, before_s: float = 3600.0):
+        """A forward run's stocks as measured: before its now, and since (up to its horizon or the present)."""
+        return answered(lambda: experiments().measured(eid, rid, before_s))
 
     @app.get("/api/experiments/{eid}/prediction")
     def experiment_prediction(eid: str):

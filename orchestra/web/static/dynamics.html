@@ -52,12 +52,14 @@
   .eratl button.cur { border-color:#7c3aed } .eratl button.on { background:#4c1d95; color:var(--text) }
   .preds { margin-top:8px } .preds .pred { margin:4px 0; padding:4px 6px; border-left:3px solid var(--border2) } .preds .ev { margin:1px 0 0 10px; font-size:11px }
   .preds .pred.passed { border-color:#22c55e } .preds .pred.side, .preds .pred.wrong { border-color:#f59e0b } .preds .pred.none { border-color:#ef4444 }
+  .eraexp { margin:4px 0 } .verdict { font-size:10.5px; font-weight:700; border:1px solid var(--border2); border-radius:4px; padding:0 5px; white-space:nowrap }
+  .verdict.passed { color:#86efac; border-color:#166534 } .verdict.side, .verdict.wrong { color:#fcd34d; border-color:#92400e } .verdict.none { color:#fca5a5; border-color:#7f1d1d }
   .erachg div { margin:2px 0 } .erachg .chg { color:#fcd34d } .erachg .gone { color:#fca5a5 } .erachg .new { color:#86efac }
   .tables h3 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:12px 0 6px }
 </style>
 </head>
 <body>
-<nav id="nav"><a href="/">Dashboard</a><a href="/machines">Machines</a><a href="/instruments">Instruments</a><a href="/dynamics" class="on">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
+<nav id="nav"><a href="/">Dashboard</a><a href="/machines">Machines</a><a href="/instruments">Instruments</a><a href="/dynamics" class="on">Dynamics</a><a href="/experiments">Experiments</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="dynwrap">
   <div class="intro">The system dynamics model of the system Orchestra covers. There is one model; it changes over time, and each change is kept as a version. Stocks are measured quantities (each bound to a series in the metrics store), flows move material between them with equations fitted from the history, and machines (programs, AI agents and people, known by their events) are associated with flows only as hypotheses, from their events matching a flow's counter. A flow may have several, or none yet; the associations never change an equation. Every equation says whether it was fitted or only declared.</div>
   <div class="dynhead"><h1 id="mname">The system</h1><span class="ver" id="ver"></span><span class="sum" id="sum"></span>
@@ -97,12 +99,13 @@
 <script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
 <script src="/static/sd-layout.js?v={{v}}"></script>
 <script src="/static/charts.js?v={{v}}"></script>
+<script src="/static/predictions.js?v={{v}}"></script>
 <script>
 // one colour per machine, the same every time for the same id
 const MPAL = ["#60a5fa", "#f59e0b", "#e879f9", "#22c55e", "#f87171", "#38bdf8", "#facc15", "#a78bfa", "#fb923c"];
 const mcolor = (id) => { if (!id || id === "none") return "#94a3b8"; let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return MPAL[h % MPAL.length]; };
 let MODEL = null, VERSION = null;   // null: follow the current version
-let ERA = null;                     // null: the current era; else a past era's id ("none": before any era)
+let ERA = new URLSearchParams(location.search).get("era");   // null: the current era; else a past era's id ("none": before any era); /dynamics?era= links here
 const nice = (s) => (s || "outside").toLowerCase().replace(/_/g, " ");
 // stocks and flows by what tells them apart (SDGraph.names); the model's ``name`` is the full record
 const stockName = (id) => SDGraph.stockName(MODEL, id), flowName = (f) => SDGraph.flowName(MODEL, f);
@@ -309,6 +312,7 @@ function tables() {
 function erasBar() {
   const m = MODEL, eras = m.eras_recorded || [];
   if (!eras.length && !(m.predictions || []).length) { $("eras").style.display = "none"; return; }
+  if (!EXPS) { loadExperiments().then(erasBar); EXPS = []; }
   $("eras").style.display = "";
   const now = Date.now() / 1000, shown = m.era ?? "none", current = m.current_era ?? "none";
   const segs = [{ id: "none", label: "before any era", start: null }, ...eras];
@@ -320,43 +324,33 @@ function erasBar() {
   const head = e ? `era <b>${esc(e.id)}</b>${e.id === current ? " (current)" : ' <span class="past">· a past era</span>'}: began ${esc(ago(now - e.start))} ago, when ${esc(e.label)}${e.subject ? ` changed <span class="ty">${esc(e.subject)}</span>` : ""}`
     : "the time before any era";
   $("eras").innerHTML = `<div><span class="muted">Eras: a new one begins when a machine says it changed the system (<code>system.changed</code>, or <code>[discovery] eras_from</code>); each is discovered from its own data, with the era before as its prior.</span></div>
-    ${eras.length ? `<div class="eratl">${bar}</div><div>${head}</div><div class="erachg">${eraChanges(m)}</div>` : ""}${eraPredictions(m)}`;
+    ${eras.length ? `<div class="eratl">${bar}</div><div>${head}</div>${eraExperiments(shown)}<div class="erachg">${eraChanges(m)}</div>` : ""}${eraPredictions(m)}`;
 }
 // Predictions (sd/predictions.py, sd/judge.py): what the machine that made the era's change said
-// it would do, and the verdict once the horizon passed: the intended-effect test.
-const VERDICT_CLASS = { "passed": "passed", "side effect": "side", "model wrong elsewhere": "wrong", "no effect": "none" };
-function expectText(e) {
-  if (e.kind === "factor") return `${nice(e.flow)}${e.param ? "." + e.param : ""} ×${e.factor}`;
-  if (e.kind === "unchanged") return `${nice(e.flow)} unchanged`;
-  if (e.kind === "level") return ["below", "above"].filter((w) => w in e).map((w) => `${nice(e.stock)} ${w} ${e[w]}`).join(" and ");
-  if (e.id == null) return `a new flow ${e.from ? nice(e.from) : "outside"} → ${e.to ? nice(e.to) : "outside"} ${e.kind}`;
-  return `${e.part} ${nice(e.id)} ${e.kind}`;
-}
+// it would do, and the verdict once the horizon passed: the intended-effect test (drawn by
+// static/predictions.js, as on the Experiments page). A prediction a committed experiment became
+// links to it.
 function eraPredictions(m) {
   const ps = m.predictions || [];
   if (!ps.length) return "";
-  const dur = (s) => s >= 3600 ? `${+(s / 3600).toFixed(1)} h` : `${Math.round(s / 60)} min`;
-  const one = (p) => {
-    if (p.status === "invalid") return `<div class="pred none">${esc(p.source || "?")}: an invalid prediction: ${esc(p.why)}</div>`;
-    const what = p.expect.length ? p.expect.map(expectText).map(esc).join(", ") : "nothing changes (the null test)";
-    const head = `<b>${esc(p.source || "?")}</b> predicted: ${what}, judged ${dur(p.horizon_s)} after the change`;
-    if (p.status !== "judged") return `<div class="pred">${head} · <span class="muted">${p.era ? "waiting for the horizon" : "waiting for its change to begin an era"}</span></div>`;
-    const v = p.verdict, ev = [];
-    for (const s of v.expectations || []) {
-      const nums = (s.params || []).map((n) => `${esc(n.param)} ${num(n.before, true)} → ${num(n.after, true)} (z ${n.z ?? "∞"}${n.predicted != null ? `; predicted ${num(n.predicted, true)}, z ${n.z_predicted ?? "∞"}` : ""})`).join("; ");
-      const law = s.law ? `its form changed; the old law expects ${s.law.expected} events, ${s.law.events} counted (z ${s.law.z})` : "";
-      ev.push(`${esc(expectText(s))}: <b>${esc(s.status)}</b>${nums ? " · " + nums : ""}${law ? " · " + law : ""}${s.level != null ? ` · mean level ${num(s.level, true)}` : ""}`);
-    }
-    for (const u of v.unpredicted || []) ev.push(`not predicted: ${esc(u.part)} ${esc(nice(u.id))} ${esc(u.status)}${u.param ? ` (${esc(u.param)} ${num(u.before, true)} → ${num(u.after, true)}, z ${u.z ?? "∞"})` : ""}`);
-    const st = v.stocks || {};
-    if ((st.rows || []).length) ev.push(`stocks against the ${st.from === "prediction" ? "predicted" : "simulated"} run: ` + st.rows.map((r) => `${esc(stockName(r.stock))} ${num(r.level, true)} against ${num(r.central, true)} (z ${r.z}${r.out ? ", out" : ""})`).join("; "));
-    else if (st.reason) ev.push(`stocks not simulated (${esc(st.reason)})`);
-    const fc = v.false_change;
-    if (fc) ev.push(`a number changed at |z| ≥ ${fc.z}; false changes ${(100 * fc.nominal).toFixed(2)}% a number nominally${fc.measured != null ? `, ${Math.round(100 * fc.measured)}% of ${fc.flows} flows between the previous era's halves` : ""}`);
-    const verdict = v.verdict === "interrupted" ? `interrupted by era ${esc(v.interrupted_by)} (so far: ${esc(v.partial || "nothing")})` : esc(v.verdict);
-    return `<div class="pred ${VERDICT_CLASS[v.partial || v.verdict] || ""}">${head} · <b>${verdict}</b>${v.late ? ' <span class="muted">(made after the change)</span>' : ""}${ev.map((x) => `<div class="ev">${x}</div>`).join("")}</div>`;
-  };
-  return `<div class="preds"><div><b>Predictions</b> <span class="muted">made before the change, judged against the boundary's comparison and the stocks' simulated runs (<code>orchestra sd predictions</code>)</span></div>${ps.map(one).join("")}</div>`;
+  const byPred = Object.fromEntries((EXPS || []).filter((x) => x.prediction).map((x) => [x.prediction, x]));
+  const link = (p) => { const x = byPred[p.id]; return x ? ` · from experiment <a href="/experiments/${esc(x.id)}">${esc(x.title)}</a>` : ""; };
+  const names = { stock: (id) => stockName(id), flow: (id) => { const f = m.flows.find((x) => x.id === id); return f ? flowName(f) : nice(id); } };
+  return `<div class="preds"><div><b>Predictions</b> <span class="muted">made before the change, judged against the boundary's comparison and the stocks' simulated runs</span></div>${ps.map((p) => Predictions.one(p, { names, link })).join("")}</div>`;
+}
+// The experiments tied to an era (/api/experiments?era=): made on its model, or predicting the
+// change that began it. Read once a minute; the eras bar links to them.
+let EXPS = null, EXPS_AT = 0;
+async function loadExperiments() {
+  if (EXPS && Date.now() - EXPS_AT < 60000) return;
+  try { const d = await (await fetch("/api/experiments")).json(); EXPS = d.ok ? d.experiments : []; EXPS_AT = Date.now(); } catch (e) { EXPS = EXPS || []; }
+}
+function eraExperiments(era) {
+  const on = (EXPS || []).filter((x) => (x.base.era || "none") === era), pred = (EXPS || []).filter((x) => x.verdict && x.verdict.era === era);
+  if (!on.length && !pred.length) return "";
+  const q = `/experiments?era=${encodeURIComponent(era)}`;
+  return `<div class="eraexp"><b>Experiments</b>: ${on.length ? `<a href="${q}">${on.length} made on this era's model</a>` : "none made on this era's model"}${pred.length
+    ? ` · its change was predicted by ${pred.map((x) => `<a href="/experiments/${esc(x.id)}">${esc(x.title)}</a> ${Predictions.badge(x.verdict.verdict, x.verdict.partial)}`).join(", ")}` : ""}</div>`;
 }
 function eraChanges(m) {
   const c = (m.discovery || {}).era_comparison;

@@ -126,7 +126,7 @@ Each component, its module, and what it depends on:
 | **Observability** | `orchestra/sd/observability.py`, `orchestra/sd/linearise.py` | Reads the model, never changes it: linearises it at the last hour's mean levels and says which stocks the series and counters determine, through what, and which new instrument would determine the rest (with parameters seen only in combination, and controllability as a weak structural note). `GET /observability` on the events endpoint, `/api/dynamics/observability`. | the model; `numpy` (`sd` extra) |
 | **Experiments** | `orchestra/sd/experiments/` | A staged, editable copy of the model that machines change and run: the equation language every rate is written in (`language`, `forms`, `compile`), its stepper (`engine`), the record and its edits (`store`, `edits`, `views`), the three runs (`forward`, `replay`, `inverse`, with `fabricate` for the inverse's uniqueness check), the bridge to predictions (`expect`), and the Python API (`api`, `reads`). | model store, metrics (through the sources' catalogue), predictions; `numpy` (`sd` extra) |
 | **Model store** | `orchestra/sd/store.py`, `orchestra/sd/model.py` | The one model and its versions: `<state>/model/vNNNN.json`, plus the latest discovery cached in `model/discovered.json`. | the state directory |
-| **Web** | `orchestra/web/` | `orchestra web`: a FastAPI app with the Dashboard, Core, Machines, Instruments and Dynamics pages, and plugin pages. Background threads keep caches warm so page requests stay cheap. Every route, a plugin's too, is behind the project's web token (`<state>/web.token`), checked by one middleware (`web/auth.py`). | bus, metrics, runtime, model store, sources, plugins |
+| **Web** | `orchestra/web/` | `orchestra web`: a FastAPI app with the Dashboard, Core, Machines, Instruments, Dynamics and Experiments pages, and plugin pages. Background threads keep caches warm so page requests stay cheap. Every route, a plugin's too, is behind the project's web token (`<state>/web.token`), checked by one middleware (`web/auth.py`). | bus, metrics, runtime, model store, sources, plugins |
 | **CLI** | `orchestra/cli.py` | `init`, `run`, `web`, `events info\|endpoint\|copy`, `metrics backfill\|series`, `sd discover\|show\|fit\|versions\|predictions`, `sources check\|infer\|preview`. | the rest, imported on use |
 | **Plugins** | `orchestra/plugins.py` | Loads packages registered in the entry-point group `orchestra.plugins`. A plugin adds pages, a static directory, an API router, every-page scripts and stylesheets, declared machines, processes and instruments (`collectors`). One that fails to load, or whose name another plugin took, is reported and left out. | launcher (`Process`), collect (`Collector`) |
 
@@ -866,7 +866,7 @@ Both backends refuse points stamped more than 60 s in the future. The conformanc
 
 ## The web UI
 
-`orchestra web` (`orchestra/web/app.py`) serves five pages of its own, plus any plugin pages. The
+`orchestra web` (`orchestra/web/app.py`) serves six pages of its own, plus any plugin pages. The
 pages are read-only for humans. Two background threads (`web/background.py`) keep caches warm,
 so most page requests do no expensive work:
 
@@ -885,12 +885,16 @@ so most page requests do no expensive work:
 | **Machines** (`/machines`) | Every machine seen on the bus (and counted-traffic machines and plugin placeholders), its instances, mode and kind, whether it is active, the event map with hand-offs and counted traffic, communication loops, and a dialog per machine with its series, last events (envelopes only) and log tail. With eras, the map and cards are the current era's by default (`MachineIndex(since, until)`; `/api/machines?era=<id>\|none\|all`). | `web/machines.py`, `web/traffic.py`, `web/machine_logs.py`, `static/netgraph.js`, `static/loops.js` |
 | **Instruments** (`/instruments`) | What measures the system, apart from the machines: each `[[collect]]`, `[[scrape]]` and `[[sources]]` entry (and a plugin's), with its kind (script, URL, source), target, interval, last write and points, failures, last error and log. Read from the runtime record's `instruments` and `orchestra.toml`, never by running an instrument. `/api/instruments`, `/api/instruments/<name>/log`. | `web/instruments.py`, `static/instruments.html` |
 | **Dynamics** (`/dynamics`) | The model as a stock-and-flow graph, with feedback loops marked balancing or reinforcing, history charts, each stock's and flow's drawer (a flow's lists each machine hypothesis with its why, or "no machine associated yet"), a flows table with "machines (hypotheses)" and their confidence, a simulation from the start of the era and a projection forward, and stepping through saved versions. With eras, a timeline picks the era (`/api/dynamics/model?era=`) and lists what changed at its start (before → after, appeared, disappeared, carried from the prior). "Rediscover now" runs discovery in the background. | `web/dynamics.py`, `sd/simulate.py`, `static/sd-graph.js`, `static/sd-layout.js`, `static/layout-worker.js` |
+| **Experiments** (`/experiments`, `/experiments/<id>`) | What machines did with the model. The list: each experiment's machine (linking to its card), title and purpose, status, base version and era, latest run and when, and its prediction's verdict; filtered by machine, status and era (`?owner=&status=&era=`; an era's are those made on its model or predicting the change that began it). One experiment: the prediction it became (expectation, change id, era, verdict and evidence), its edits as an equation diff against the base (before and after side by side), its runs (forward: each stock's base and experiment trajectories with their bands, the hour measured before "now" and what was measured since, limits and not-trusted reasons in callouts above the charts; replay: measured against both simulations per stock and each flow's fit, better, same or worse; inverse: targets, holds, the changes found and the new draft's diff, side effects by size, alternatives, the uniqueness check and an `ambiguous` warning), and the edit log in order with refused batches. These pages follow the browser's light or dark setting (`class="themed"`, `static/experiments.css`); the others are dark. | `static/experiments.html`, `static/experiment.html`, `static/experiment-view.js` (pure renderers, tested in Node by `tests/pages/experiments_render.mjs`), `static/predictions.js` (shared with Dynamics), `static/charts.js` (bands) |
 
-**Experiments** are read under `/api/experiments` (the list, one experiment, its diff, its runs,
-one run in full, its prediction and verdict) and the eras under `/api/dynamics/eras`, through the
-same `Experiments` class the machines use; there is no route that makes, edits, runs or commits
-one (rule 9). The pages that show them come next (Phase 3). What used to be "what if" (`POST
-/api/dynamics/whatif`) was removed on 2026-10-27: a machine asks an experiment.
+**Experiments** are read under `/api/experiments` (the list, with each one's latest run and verdict,
+`?owner=&status=&era=`; one experiment, its diff, its runs, one run in full, a forward run's
+measured levels (`.../runs/<run>/measured`: the stocks before its now and since, up to its horizon
+or the present, read from the metrics store on request) and its prediction and verdict) and the
+eras under `/api/dynamics/eras`, through the same `Experiments` class the machines use; there is
+no route that makes, edits, runs or commits one (rule 9). The Dynamics page links each era to the
+experiments tied to it and each prediction to the experiment it came from. What used to be "what
+if" (`POST /api/dynamics/whatif`) was removed on 2026-10-27: a machine asks an experiment.
 
 **Authentication** (`web/auth.py`) is the app's outermost middleware, a plain ASGI one, so it is in
 front of every route: Orchestra's pages and `/api/*`, the static files, the websocket, and every

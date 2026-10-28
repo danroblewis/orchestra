@@ -88,7 +88,7 @@ What each command does:
 |---|---|
 | `orchestra init` | Writes a starter `orchestra.toml` at the repository root, if there is none, and registers the project. It must run inside a git repository. Run it once. A clone that already has an `orchestra.toml` needs no `init`: the state directory is made the first time any command runs. |
 | `orchestra run` | Starts the **host**, Orchestra's own machine (`orchestra-host`). It runs your `[[collect]]` and `[[scrape]]` instruments, keeps your `[[machines]]` running, counts every event on the bus, and rediscovers the model every `[discovery] every`. Stop it with Ctrl-C, SIGTERM or SIGHUP; it stops everything it started. |
-| `orchestra web [--port 8000] [--host 127.0.0.1]` | Serves the web UI: Dashboard, Machines, Instruments, Dynamics and Core, behind the project's web token ([Logging in](#logging-in-to-the-web-ui)). It reads; it changes nothing but the model (when you press "rediscover now"). |
+| `orchestra web [--port 8000] [--host 127.0.0.1]` | Serves the web UI: Dashboard, Machines, Instruments, Dynamics, Experiments and Core, behind the project's web token ([Logging in](#logging-in-to-the-web-ui)). It reads; it changes nothing but the model (when you press "rediscover now"). |
 | `orchestra web token [--rotate]` | Prints the web token; `--rotate` replaces it, which logs every browser out. |
 
 Every command takes `--repo PATH` to name the repository. Without it, Orchestra uses
@@ -1439,7 +1439,7 @@ for an outcome to have been. It does so with an **experiment**: a copy of the mo
 runs, which changes nothing in the system. The host serves experiments beside the events
 endpoint, with the same address and token (section 5.2), so any language with an HTTP client can
 use them; from Python, `orchestra.sd.experiments.api.Experiments` does the same. The web UI shows
-them and cannot change them.
+them (section "What the owner sees", below) and cannot change them.
 
 **Read first.** Everything answers JSON, `{"ok": true, ...}`:
 
@@ -1597,6 +1597,38 @@ x.edit(e["id"], [{"op": "set_params", "flow": "jobs_reviewed_total", "params": {
 r = x.run(e["id"], "forward", horizon_s=7200)["run"]["result"]
 made = x.commit(e["id"], horizon="2h")      # publish your change with id made["change"]
 ```
+
+#### What the owner sees: the Experiments page
+
+The web UI's **Experiments** page (`/experiments`) lists every experiment: the machine that made it
+(a link to its card on the Machines page), its title and purpose, whether it is a draft, committed
+or discarded, the model it was copied from (version and era), its latest run and when, and, once
+committed, its prediction's verdict. Filter it by machine, status or era; an era's experiments are
+those made on its model and those predicting the change that began it, and the Dynamics page links
+each era to them.
+
+Opening one shows, from the top:
+
+- **the prediction it became**, if committed: what it expects, the `change` id, the era the change
+  began, and the verdict once judged (passed, no effect, side effect, model wrong elsewhere,
+  interrupted) with the numbers behind it;
+- **its edits against the base**: each flow replaced, added or removed, its equation and numbers
+  before and after side by side (a number that changed in bold); stocks added and removed; input
+  scenarios and starting levels;
+- **its runs**, one at a time (the newest first; `#<run id>` in the address opens one). A forward
+  run puts its warnings first: the limits hit (a stock reaching 0 or leaving a bound, and whether
+  the experiment brings it) and everything not trusted, with why. Then a chart per stock: the base
+  (blue) and the experiment (orange), each with its 10–90% band, from "now" over the horizon, and
+  the measured level (grey) for the hour before, and since, so a forecast can be held against what
+  happened. A replay charts each stock measured against both simulations, with each run's error,
+  and lists every counted flow's fit, marked ▲ better, = same or ▼ worse than the base. An inverse
+  run shows what was asked and held, the changes found (and the new draft's diff), the side
+  effects largest first, alternatives that would do as well, the uniqueness check, and a red
+  **Ambiguous** warning when the answer is not the only one;
+- **the edit log**: every batch in order, a refused batch marked with the edit that failed and
+  why, so you see how the machine got there.
+
+The pages follow your browser's light or dark setting, work on a phone, and change nothing.
 
 | Status | Means |
 |---|---|

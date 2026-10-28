@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en" class="themed">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orchestra · Experiments</title>
+<link rel="stylesheet" href="/static/style.css?v={{v}}">
+<link rel="stylesheet" href="/static/experiments.css?v={{v}}">
+</head>
+<body>
+<nav id="nav"><a href="/">Dashboard</a><a href="/machines">Machines</a><a href="/instruments">Instruments</a><a href="/dynamics">Dynamics</a><a href="/experiments" class="on">Experiments</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
+<div class="xwrap">
+  <div class="xhead"><h1>Experiments</h1><span class="muted" id="count"></span></div>
+  <div class="intro">What machines did with the model. An experiment is a copy of the model a machine edits and runs: <b>forward</b> (what a change would do from now), <b>replay</b> (whether an equation explains a past window) or <b>inverse</b> (what would have had to differ for an outcome). A committed experiment is a prediction of a change, judged once the change has run its horizon. Machines make and run them; this page only shows them.</div>
+  <div class="filters">
+    <label>machine <select id="f-owner"><option value="">any</option></select></label>
+    <label>status <select id="f-status"><option value="">any</option><option>draft</option><option>committed</option><option>discarded</option></select></label>
+    <label>era <select id="f-era"><option value="">any</option></select></label>
+    <span class="muted" id="f-note"></span>
+  </div>
+  <div id="list"><div class="empty">reading the experiments…</div></div>
+</div>
+<script src="/static/app.js?v={{v}}"></script>
+<script src="/static/charts.js?v={{v}}"></script>
+<script src="/static/predictions.js?v={{v}}"></script>
+<script src="/static/experiment-view.js?v={{v}}"></script>
+<script>
+// The list (/api/experiments?owner=&status=&era=): the filters live in the address, so a link
+// (the Dynamics page's, for an era) opens it filtered.
+const Q = new URLSearchParams(location.search);
+let ALL = [], ERAS = [], FIRST = true;
+const { when } = ExperimentView;
+function rowHtml(x) {
+  const base = x.base || {}, lb = base.label || {};
+  const ver = lb.version != null ? `version ${lb.version}` : lb.latest_discovery_at ? `discovered ${when(lb.latest_discovery_at)}` : "—";
+  const era = base.era ? `<a href="/dynamics?era=${encodeURIComponent(base.era)}">era ${esc(base.era)}</a>` : '<span class="muted">before any era</span>';
+  const run = x.last_run ? `<span class="kind">${esc(x.last_run.mode)}</span> <span class="sub">${when(x.last_run.at)}</span>${x.runs > 1 ? ` <span class="sub">· ${x.runs} runs</span>` : ""}` : '<span class="muted">not run</span>';
+  const v = x.verdict;
+  const verdict = v ? `${Predictions.badge(v.status === "judged" ? v.verdict : null, v.partial)}${v.era ? ` <span class="sub">of <a href="/dynamics?era=${encodeURIComponent(v.era)}">era ${esc(v.era)}</a>'s change</span>` : ""}` : '<span class="muted">—</span>';
+  const origin = x.origin && x.origin.experiment ? `<div class="sub">made by the inverse solver from <a href="/experiments/${esc(x.origin.experiment)}">${esc(x.origin.experiment)}</a></div>` : "";
+  return `<tr class="row"><td class="title"><a href="/experiments/${esc(x.id)}">${esc(x.title)}</a>${x.purpose ? `<div class="purpose">${esc(x.purpose)}</div>` : ""}${origin}</td>
+    <td data-h="machine" class="nw"><a href="/machines#${encodeURIComponent(x.owner)}">${esc(x.owner)}</a></td>
+    <td data-h="status"><span class="st ${esc(x.status)}">${esc(x.status)}</span></td>
+    <td data-h="base">${era}<div class="sub">${esc(ver)}</div></td>
+    <td data-h="latest run">${run}</td>
+    <td data-h="prediction">${verdict}</td></tr>`;
+}
+function fill(sel, values) {
+  const el = $(sel), cur = FIRST ? Q.get(sel.slice(2)) || "" : el.value;
+  el.innerHTML = `<option value="">any</option>` + values.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join("");
+  el.value = cur;
+}
+function draw() {
+  const owner = $("f-owner").value, status = $("f-status").value, era = $("f-era").value;
+  const rows = ALL.filter((x) => (!owner || x.owner === owner) && (!status || x.status === status)
+    && (!era || (x.base.era || "none") === era || (x.verdict && x.verdict.era === era)));
+  $("count").textContent = `${rows.length} of ${ALL.length}`;
+  $("list").innerHTML = rows.length ? `<table class="xl"><thead><tr><th>experiment</th><th>machine</th><th>status</th><th>base</th><th>latest run</th><th>prediction</th></tr></thead><tbody>${rows.slice().reverse().map(rowHtml).join("")}</tbody></table>`
+    : `<div class="empty">${ALL.length ? "No experiment matches these filters." : "No experiments yet. A machine makes one through the Python API (Experiments) or the events endpoint's HTTP API (POST /experiments)."}</div>`;
+  $("f-note").textContent = era ? "an era's: made on its model, or predicting the change that began it" : "";
+}
+function setQ() {
+  const q = new URLSearchParams();
+  for (const k of ["owner", "status", "era"]) if ($("f-" + k).value) q.set(k, $("f-" + k).value);
+  history.replaceState(null, "", location.pathname + (q.toString() ? "?" + q : ""));
+  draw();
+}
+async function load() {
+  try {
+    const [d, e] = await Promise.all([fetch("/api/experiments").then((r) => r.json()), fetch("/api/dynamics/eras").then((r) => r.json()).catch(() => ({}))]);
+    if (!d.ok) { $("list").innerHTML = `<div class="empty">${esc(d.error)}</div>`; return; }
+    ALL = d.experiments; ERAS = (e && e.eras) || [];
+    fill("f-owner", [...new Set(ALL.map((x) => x.owner))].sort().map((o) => [o, o]));
+    if (FIRST) $("f-status").value = Q.get("status") || "";
+    fill("f-era", [["none", "before any era"], ...ERAS.map((x) => [x.id, `${x.id}: ${x.label}`])]);
+    FIRST = false;
+    draw();
+  } catch (err) { $("list").innerHTML = `<div class="empty">could not read the experiments: ${esc(err)}</div>`; }
+}
+for (const k of ["owner", "status", "era"]) $("f-" + k).addEventListener("change", setQ);
+load();
+setInterval(() => { if (!document.hidden) load(); }, 30000);
+</script>
+</body>
+</html>
