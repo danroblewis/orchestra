@@ -1,4 +1,5 @@
-"""The events endpoint's HTTP server, run by the host that launches (``orchestra.host``).
+"""The events endpoint's HTTP server, run by the host that launches (``orchestra.host``): the
+events, and beside them the model and experiments (``api.py``), behind one token.
 
 A stdlib ``ThreadingHTTPServer``, one thread per request, so a long poll never holds up a publish.
 Everything goes through the ``Events`` it is given: it never touches a bus backend itself

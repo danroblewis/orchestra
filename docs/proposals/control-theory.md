@@ -502,7 +502,8 @@ glossary plus the one rename.**
   Use SD Lab's analysis and python-control on the linearised model. Done when UC-1 and the SD Lab
   control cases 213–215 are labelled as the ladder labels them.
 
-  **Built (2026-10-27), the observability part:** `orchestra sd observability` and
+  **Built (2026-10-27), the observability part:** `GET /observability` on the events endpoint
+  (the `orchestra sd observability` command it began as was removed the same day) and
   `/api/dynamics/observability` (`sd/observability.py`, numpy only, no python-control) say which
   stocks the series and counters determine, through what, and which new instrument would determine
   the rest, with parameters seen only in combination; identifiability against the ladder's labels

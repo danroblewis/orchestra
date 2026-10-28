@@ -194,6 +194,19 @@ read the token, so can neither publish nor read. Anyone who can read the state d
 already write the file bus or the runtime record; the token adds no power beyond the Python
 helper's.
 
+**The model and experiments over HTTP** (`endpoint/api.py`). The same server, behind the same
+token, serves the model and experiments (§4.5) to a machine in any language: `GET /language`,
+`/model?version=&raw=` (equations in the language), `/model/versions`, `/eras` (each era's
+versions and the last boundary's comparison), `/observability`, `/series?ids=&start=&end=&span_s=
+&points=&limit=&after=` (each series summarised, its points on request, at most 5,000 a series
+and 20,000 an answer, paged by `after`), `/predictions[/<id>]`, `/experiments?owner=&status=`,
+`/experiments/<id>[/diff|/runs[/<run>]|/prediction]`; and `POST /equations/check`,
+`/experiments` (create), `/experiments/<id>/edits`, `/runs` (forward, replay, inverse), `/commit`
+and `/discard`, each body naming the machine's `source`. They answer what the Python API
+(`sd.experiments.api.Experiments`) answers: `{"ok": true, ...}`, or `{"ok": false, "error"}` with
+400, 403 (not the owner), 404, 409 (not a draft) or 422 (an edit or equation refused, with the
+edit's `index`). Other methods are refused (405).
+
 **How this fits rule 9.** Publishing is a machine's normal job, not a human's control of the
 system: the endpoint is the bus, reached over HTTP, exactly as the Python helper is the bus reached
 from Python. The web UI and the CLI gain no write: `orchestra events endpoint` only prints where
@@ -527,8 +540,8 @@ discoveries the host publishes, as `orchestra-host` (its own events, so it write
   announcement; a flip that comes back within the hold is never announced. Versions are saved as
   before, unaffected.
 - `orchestra.model.diverged` and `orchestra.model.returned`: at each discovery the model
-  predicts every stock from its level now (`sd/whatif.py`, no intervention: the central run and
-  its 10–90% band), its band widened by the Poisson spread of its flows' events since. A stock's
+  predicts every stock from its level now (`sd/experiments/forward.py`, no change: the central
+  run and its 10–90% band), its band widened by the Poisson spread of its flows' events since. A stock's
   **gap** is its level less the central prediction, in half-widths of that band, judged against
   the oldest prediction that still reaches now (so a wrong rate shows as a growing gap). A stock
   is out past 2 half-widths and **diverged** once it has been out at every check for `[discovery]
@@ -543,16 +556,19 @@ says what the change will do, as edits of the model, and once the change has run
 Orchestra judges it against what the era's discovery found.
 
 - **Recording.** The machine publishes `orchestra.prediction.made` from its own `source`
-  (directly, over the events endpoint, with `orchestra sd predict`, or with
-  `sd.predictions.Predictions`, which publish it for it). `data`: `change`, the id of the event
-  that will make the change (chosen beforehand: the change is then published with that `id`);
-  `expect`, a list of edits, each `{"flow", "factor"}` (its rate × r; `"param"` for one number; 0
-  is the flow disappearing), `{"flow", "unchanged": true}`, `{"flow"|"stock"|"loop", "appears"|
-  "disappears": true}`, `{"from", "to", "appears": true}` (a new flow between two stocks, `null`
-  for outside), `{"stock", "below"|"above"}` (its mean level over the horizon's second half);
-  `[]` is the **null test**, the change should change nothing; `horizon_s` (or `horizon`, a
-  duration); optionally `trajectories`, the predictor's own what-if run of the stocks
-  (`{"t": [seconds after the change], "stocks": {id: {central, lo, hi}}}`). The prediction is an
+  (directly over the events endpoint, with `sd.predictions.Predictions`, or by committing an
+  experiment, §4.5, which publish it for it). `data`: `change`, the id of the event that will
+  make the change (chosen beforehand: the change is then published with that `id`); `expect`, a
+  list of edits, each `{"flow", "factor"}` (its rate × r; `"param"` for one number; 0 is the
+  flow disappearing), `{"flow", "unchanged": true}`, `{"flow", "equation", "params"}` (the flow's
+  whole rate becomes this equation, in the equation language of §4.5), `{"flow"|"stock"|"loop",
+  "appears"|"disappears": true}`, `{"from", "to", "appears": true}` (a new flow between two
+  stocks, `null` for outside; with `equation` and `params`, the rate it will have), `{"stock",
+  "below"|"above"}` (its mean level over the horizon's second half); `[]` is the **null test**,
+  the change should change nothing; `horizon_s` (or `horizon`, a duration); optionally
+  `trajectories`, the predictor's own forward run of the stocks (`{"t": [seconds after the
+  change], "stocks": {id: {central, lo, hi}}}`). An equation is checked for its syntax when the
+  prediction is made, and against the model when it is judged. The prediction is an
   Orchestra type rather than a file Orchestra is handed so that one path serves every machine and
   the event log itself shows it came before the change. The host records each once, by its id,
   in `model/predictions.json` as it follows the bus (`waiting`; `invalid` with the reason when
@@ -572,14 +588,18 @@ Orchestra judges it against what the era's discovery found.
   noise, so a flow whose **form changed** is judged by its law: the previous era's equation, run
   over the era's measured levels, predicts the era's count of its events, and a form change whose
   old law still predicts the count (Poisson, widened by the fit's dispersion and the old numbers'
-  error, within 2 standard errors) is no change. Appearing and disappearing parts are read from
-  the comparison (a flow still carried, not found in the era since it began, counts as gone).
+  error, within 2 standard errors) is no change. An expected **equation** is judged by its law
+  the same way: the predicted equation, run over the era's measured levels and inputs, must
+  predict the era's count (met); when it does not but the previous era's law still does, it is
+  absent; when neither does, different. Appearing and disappearing parts are read from the
+  comparison (a flow still carried, not found in the era since it began, counts as gone).
 - **Unpredicted changes**: every other flow that changed, changed form (and whose old law fails)
   or appeared or disappeared, and every stock or loop that appeared or disappeared, except the
   stocks at the ends of a flow predicted to appear or disappear and the loops through them.
 - **The stocks** are run from their levels at the change over the horizon: with the
-  prediction's own trajectories when given, else the previous era's model with the predicted
-  edits (`sd/whatif.py`; needs `orchestra[sd]`). A stock moved as simulated when its mean level
+  prediction's own trajectories when given, else the previous era's model run forward with the
+  predicted edits applied as a draft (`sd/experiments/expect.py`, `forward.py`; needs
+  `orchestra[sd]`). A stock moved as simulated when its mean level
   over the horizon's second half is within 2 standard errors of the run, the error being the run's
   band and the spread of single readings about it (readings minutes apart are far from
   independent, and an error of their mean is too narrow: on synthetic queues it failed a third of
@@ -602,8 +622,8 @@ Orchestra judges it against what the era's discovery found.
   `false_change`, and when interrupted `interrupted_by` and `partial`. Numbers, ids and codes,
   no prose.
 
-**Observability** (`sd/observability.py`, `sd/linearise.py`; `orchestra sd observability`,
-`/api/dynamics/observability`) says which stocks what is measured determines. The model is
+**Observability** (`sd/observability.py`, `sd/linearise.py`; `GET /observability` on the events
+endpoint, `/api/dynamics/observability`) says which stocks what is measured determines. The model is
 linearised at its recent operating point (the mean levels and inputs of the last hour; a hidden
 stock at 0): `dx/dt ≈ S·R·x`, with `S` the flows' ends and `R` each rate's slopes on the levels,
 taken from the rates as the simulator computes them. The sensors are the stocks bound to a series
@@ -622,24 +642,8 @@ are named, and so is every flow taken as an outside input because it has no equa
 stock determined through a counter is determined only as far as that flow's equation, a hypothesis,
 is right.
 
-**What if** (`sd/whatif.py`, goal G5): the model asked about a change. From the measured levels
-now, the model is run `horizon` ahead twice, stepped as the Dynamics page's projection is: as it
-is (the baseline) and with **interventions** applied from now: a flow's rate scaled or added to, a
-stock's level set, a measured input set or scaled, one number of a flow's rate set. The answer
-gives, per stock, both trajectories and their difference, each as the run with the fitted numbers
-and a **band** (10th–90th percentile of runs with every flow's rate multiplied by `exp(z · rel)`,
-`rel` the relative error its fit records: `sqrt(dispersion / events)` for a Poisson fit, the slope's
-relative error at its R² for a least-squares net flow, `1/sqrt(events)` but at least 0.1 for an SD
-Lab rate, 0.5 assumed for a declared equation; the same draws for both runs; `sd/trust.py`). The
-band is the parameters' uncertainty only. **Limits:** where a stock reaches 0 (the floor: its
-outflows are cut to what it holds) or leaves bounds the caller gives, in the central run and in
-what share of the runs, and whether the change brings it. **Not trusted here**, with the reason:
-a flow that is declared, a net flow, replayed, fitted on few events (a stock is not condemned by a
-flow carrying under a tenth of its busiest one), over a short time or at low R²; a stock touched
-by one, hidden, without a level now, or whose model run since the era began misses its measured
-level by more than the level's own spread (the stand-in for a validation bar); and a run that
-leaves the observed range (extrapolation). It is a reading of the model: it saves no version and
-writes no metric. `orchestra sd whatif` and `POST /api/dynamics/whatif` (§10) give the same answer.
+What a change would do is asked of an **experiment** (§4.5), which replaced the scale-and-add
+"what if" (and `orchestra sd whatif`, `POST /api/dynamics/whatif`) on 2026-10-27.
 
 ### 4.4 Other stores (sources)
 
@@ -748,6 +752,110 @@ infer` runs an inference round and prints the families, what was kept and what w
 `orchestra sources preview QUERY [--source NAME]` reads a query's fan-out with sparklines. Not yet
 built (the proposal's slices 2 and 3): the cache of settled chunks, the data script, fingerprints
 and `sd verify`, the Sources page, command/OAuth2/SigV4 auth, SQL sources.
+
+### 4.5 Experiments
+
+`orchestra/sd/experiments/`; goals G5, G13 and G16. An **experiment** is a staged, editable copy
+of the model that any machine (an AI agent or any other program) changes and runs, to see what a
+change would do before making it, to test whether an equation explains what happened, or to ask
+what would have had to be different for an outcome to have been. Machines use it through the
+Python API (`sd.experiments.api.Experiments`) or the HTTP API beside the events endpoint (§3.1);
+the web UI only reads it (§10; AGENTS.md rule 9).
+
+**The equation language** (`language.py`). One written form for a flow's rate, which a machine
+reads and writes alike: an expression in Python's syntax, per the model's time unit, over stock
+ids (their levels), measured inputs (their values), the equation's named **parameters** (given
+beside it: `{"equation": "k * min(waiting, 2 * bakers)", "params": {"k": 0.4}}`) and numbers; `+
+- * / **`, unary minus, one comparison (1 or 0); and the functions `min`, `max`, `abs`, `exp`,
+`log` (natural), `sqrt`, `clip`, `if_then_else`, `zidz`, `lookup(x, [[x0, y0], …])`, `smooth(x,
+tau)`, `delay(x, tau)`, `observed()` (the flow's own measured rate) and SD Lab's (Vensim's)
+`ceil`, `floor`, `integer`, `power`, `modulo`, `quantum`, `ln`, `log10`, the trigonometric
+functions, `xidz`, `and_`, `or_`, `not_`. A name that is not a plain identifier, or is both a
+stock and an input, is written `stock("id")` or `input("name")`. The text is parsed with Python's
+`ast` into numpy closures; nothing is passed to `eval`, every name is checked against the model,
+and the parse reports what the equation reads. A rate below 0 is 0; one that is not a number is
+0 and counted. **Units are not checked.**
+
+Every equation the model holds renders in the language and round-trips (`forms.py`): `c`,
+`k * X`, `c + k * X` for the classic forms; SD Lab's rates with their numbers named as
+`Equation.params` names them (`c + k1 * A + k2 * B`, `(goal - X) / time`, `(<expr>) /
+per_step_of_time_unit`, effects as `clip` and `lookup` factors, a sum of parts as `max(0, …) +
+…`); `observed()` for a flow with no equation. An equation written in the language is kept as
+written (form `expr`, `spec: {"language": "orchestra", "text"}`), except the classic forms
+written exactly so, which stay those forms.
+
+**The engine** (`engine.py`) steps a model written in the language as SD Lab's simulator steps
+the Dynamics page's projection (Euler steps; a stock's outflows share what it holds; levels
+floored at 0; inputs held between points), for many columns at once (a band's members, an
+inverse solver's candidates), with parameters set per column.
+
+**The record** (`store.py`), `<state>/experiments/<id>.json`: `owner` (the machine's source;
+only it edits, commits or discards; anyone reads and runs), `title`, `purpose`, `status`
+(`draft`, `committed`, `discarded`), `base` (the model it was copied from, whole, with its label:
+by default the current era's latest model, the host's latest discovery; or a saved version),
+`draft`, `scenario`, `log` (every batch of edits, accepted or refused, with who and when), `runs`
+(each run in full in `<id>.runs/<run>.json`), `prediction` once committed, and `origin` for a
+draft the inverse solver made.
+
+**Edits** (`edits.py`), applied as a batch, all or none: `add_flow`, `replace_flow` (a whole
+equation, and optionally new ends), `remove_flow`, `set_params`, `add_stock` (a hidden stock with
+an initial level), `remove_stock`, `set_level` (where a forward run starts a stock), `set_input`
+(a forward run's scenario for an input: hold, value, scale, step, ramp or a series) and
+`load_model` (the whole draft, in a simple form or as Orchestra writes models). Each is checked:
+ids, ends that are stocks, equations that parse and read only what the draft has, parameters all
+used; the whole draft again at the end. A refused batch changes nothing and says which edit and
+why. **Origins** (AGENTS.md rule 6): an equation an edit writes is `declared`, with method
+`experiment <id> by <source>`; one a `load_model` writes as the base has it keeps the base's own.
+`views.diff` says what a draft changed of its base.
+
+**Three runs**, each recorded with the experiment:
+
+- **forward** (`forward.py`): the base and the draft from the measured levels now, `horizon_s`
+  ahead; each stock's and flow's trajectory as the central run and a band (10th–90th percentile
+  of runs with every flow's rate × `exp(z · rel)`, `rel` its recorded relative error,
+  `sd/trust.py`: `sqrt(dispersion / events)` for a Poisson fit, the slope's error at its R² for a
+  net flow, `1/sqrt(events)` but at least 0.1 for an SD Lab rate, 0.5 for a declared equation,
+  so every equation an experiment wrote; z shared by id between the two runs); the **limits**
+  (a stock reaching 0, or leaving bounds the caller gives, in the central run and in what share of
+  the runs, and whether the experiment brings it); **not trusted here**, with the reason (a flow
+  declared, carried from the prior, a net flow, replayed, fitted on few events, over a short time
+  or at low R²; a stock touched by one, hidden, without a level now, whose base run since the era
+  began misses its measured level by more than its own spread, whose run leaves the observed
+  range, or one of whose changed flows runs outside what was seen);
+- **replay** (`replay.py`): both over a past window (`start`/`end`, `span_s`, or an `era`),
+  driven by its measured inputs and `observed()` flows, from the levels measured at its start,
+  against what was measured: per stock the run's error over the level's spread, per counted flow
+  the equation's one-step fit on the measured levels (Poisson deviance, and the share of a
+  constant rate's deviance it removes), and the experiment against the base (better, same,
+  worse). This is the backtest of an equation and the counterfactual replay;
+- **inverse** (`inverse.py`): targets over a past window (a stock's mean `scale`d from the base
+  replay's, its mean `level`, its highest `below` or lowest `above` a bound, a flow's `scale` or
+  `total`; several at once) and holds (a flow's equation kept, a series' history kept); greedy
+  forward selection finds the smallest set of changes (factors on numbers or whole rates, and
+  optionally a new inflow or outflow of a target stock) under which a replay meets the targets
+  within 5% and keeps the holds, the count of changes as the penalty and the base as the prior
+  (D4), all candidates of a step run as columns of one batch, under a deadline (`deadline_s`, at
+  most 300). It answers with a new draft (the caller's), whether the targets were reached (or the
+  best approach), the **side effects** (every stock and flow not named that moved more than 5%,
+  with how much), **alternatives** of the same size that also reach them, and a **uniqueness
+  check**: the base and the solved model each fabricate the window's data (Poisson counts,
+  `fabricate.py`), conservation discovers a model from each, and each flow's law is tested on the
+  counterfactual data; the flows whose laws changed should be the solved ones. `ambiguous` when an
+  alternative reaches the targets or the check disagrees. Its limits are said in the module: one
+  change ahead (a pair that only works together is missed), factors between 1/10 and 10, a
+  deterministic replay (the check is what says whether the data could show the solution), no new
+  hidden stock as a candidate, and anything not targeted or held may move.
+
+**Commit** (`api.commit`): a committed experiment becomes a G13 prediction (§4.3) of the change
+its owner will make, published from its owner's source with the experiment's id as `subject`: a
+flow whose classic numbers alone changed expects each `{"flow", "param", "factor"}`, any other
+changed flow its whole `{"flow", "equation", "params"}`, a removed flow `disappears`, an added one
+`{"from", "to", "appears", "equation", "params"}`; hidden stocks are not stated (no series could
+show them). Its forward run over the horizon is the prediction's `trajectories`. The machine then
+publishes its change carrying the returned `change` id, and the host judges it as any prediction.
+
+Nothing here changes a machine, the model or a metric: an experiment is a statement about the
+model (AGENTS.md rule 9 keeps humans to reading it).
 
 ---
 
@@ -897,6 +1005,8 @@ keeps its own harness (`~/orchestra-agents/SPEC.md`).
     metrics.jsonl                the metrics, when [metrics] url = "file"
     model/vNNNN.json             the model's versions
     model/eras.json, announce.json, predictions.json   the eras recorded, what the host last announced, the predictions and their verdicts (§4.3)
+    experiments/<id>.json        each experiment: its base, draft, scenario, edit log, runs and prediction (§4.5)
+    experiments/<id>.runs/<run>.json   each run of it in full
     sources/<name>.json          each source's latest inference: its definitions, what was left out, its families (§4.4)
     logs/orchestra-host.log
     logs/machines/<name>.log     each launched process's output (§5.1)
@@ -1018,11 +1128,12 @@ since, and `restore(change)` puts the file back. Orchestra commits nothing: comm
 | `orchestra events info\|endpoint [--env]\|copy --to URL` | The event log; where the events endpoint is, and its token (§3.1) |
 | `orchestra metrics backfill\|series` | Replay the log into event counters; list series |
 | `orchestra sd discover [--strategy S] [--minutes N] [--step-s S]\|show\|fit\|versions` | The model: discover it from the metrics, show, refit, list versions |
-| `orchestra sd whatif --flow F --scale X [--horizon 2h] [--stocks A,B] [--json]` | What the model says a change would do (§4.3, "What if"); read only |
-| `orchestra sd eras [--json]` | The eras recorded, each with its versions, and what changed at the current era's boundary (§4.3); read only |
-| `orchestra sd predict --source M [--change ID] --expect EDIT… \| --null [--horizon 1h] [--simulate] [--json]` | Record what a change will do before it is made (§4.3, "Predictions"): `EDIT` is `FLOW x2`, `FLOW unchanged`, `flow\|stock\|loop ID appears\|disappears`, `flow A->B appears`, `STOCK below\|above X` or a JSON object; publishes `orchestra.prediction.made` from `M` and prints the id the change must carry |
 | `orchestra sd predictions [--json]` | The predictions recorded and their verdicts, by era; read only |
 | `orchestra sources check\|infer\|preview QUERY` | Other stores (§4.4): probe them, infer what to read, read a query's fan-out |
+
+`orchestra sd whatif`, `sd predict`, `sd eras` and `sd observability` were removed on 2026-10-27
+(the owner does not use command lines): machines ask what a change would do, predict, and read the
+eras and the observability report through the APIs (§3.1, §4.5), and the web UI shows them.
 
 ---
 
@@ -1092,11 +1203,14 @@ The model's graph frames **the system**. There is one system: every stock and au
 inside it, and only the environment (the clouds flows come from and go to) is outside, so what
 crosses the frame is what the model does not explain. Subsystems (perhaps feedback loops in boxes
 of their own) are a later question. A **rediscover now** button reruns discovery in the background (an observation: it
-re-reads the metrics and may save a version, as the host does every 5 minutes). **What if** (`POST /api/dynamics/whatif`,
-§4.3) is an API, not a page: a JSON question (interventions, stocks, horizon) answered from the
-web server's cached history with the same JSON `orchestra sd whatif --json` prints. It is an
-observation, not a change (AGENTS.md rule 9): it changes no machine, saves no version and writes
-no metric.
+re-reads the metrics and may save a version, as the host does every 5 minutes). **Experiments**
+(§4.5) are read under `/api/experiments` (the list; `?owner=&status=`), `/api/experiments/<id>`
+(its draft with equations in the language, scenario, edit log, runs and prediction),
+`.../diff`, `.../runs`, `.../runs/<run>` (a forward run's trajectories and band, a replay's
+observed against simulated and its scores, an inverse run's changes, side effects, alternatives
+and uniqueness check) and `.../prediction` (the prediction and its verdict), and the eras under
+`/api/dynamics/eras`: the data the experiment pages will show. The web UI changes none (AGENTS.md
+rule 9): machines make and run experiments.
 
 Both graphs are drawn by one renderer (`static/netgraph.js`). The Dynamics graph is laid out by
 ELK's layered algorithm (`static/sd-layout.js`: the system as a box of its own, in layers along
@@ -1204,7 +1318,7 @@ plugins (rule 8).
 orchestra/
   cli.py  config.py  overlay.py  config_edit.py  toml_text.py  events.py  runtime.py  host.py  launcher.py  collectors.py  plugins.py  tokens.py
   bus/       file, redis_streams, rabbitmq_streams, kafka
-  endpoint/  the events endpoint (§3.1): the token and the record, validate, server
+  endpoint/  the events endpoint (§3.1): the token and the record, validate, server, api (the model and experiments)
   collect/   instruments, a project's and the plugins' collectors and scrapes: spec, fetch,
              exposition (the Prometheus text format), round, runner
   metrics/   file, victoria, promql
@@ -1213,13 +1327,15 @@ orchestra/
   sd/        model, store, fit, series and live (sampling, when a series was written), balance,
              collinear and restate (a level's balance), ends, inputs, drivers (which stocks may
              drive a flow), discover (conservation), attribute (machines associated with flows,
-             as hypotheses), rates, strategies, simulate, rediscover, whatif (and trust,
-             whatif_report: a change's prediction, its band and what is not trusted),
-             provenance (where each series in a model came from), linearise and observability
+             as hypotheses), rates, strategies, simulate, rediscover, trust (each flow's
+             spread and what is not trusted), provenance (where each series in a model came from), linearise and observability
              (which stocks what is measured determines), eras, prior and compare (eras, the
              previous era's model as a prior, the boundary before → after), loops, announce and
              diverge (the model's own events), predictions, verdict, judge and predictions_report
              (the intended-effect test: the record, its rules, when and from what, the CLI's text)
+    experiments/  §4.5: language, forms, compile, engine (the equation language and its
+             stepper), store, edits, views, history, scenario, forward, replay, inverse,
+             fabricate, expect (to and from predictions), reads, api (the Python API)
   sdlab/     SD Lab's discovery research: ~70 strategies (needs the sd extra)
   web/       app, auth (the login, §10.2), core, core_explore, machines, instruments, traffic (counted traffic), dynamics, static/
 tests/
