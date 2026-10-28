@@ -34,6 +34,24 @@ def test_root_from_subdirectory_and_worktree(repo, tmp_path):
     assert find_repo_root(wt / "a" if (wt / "a").exists() else wt) == repo.resolve()
 
 
+def test_worktree_of_a_bare_clone_is_its_own_root(repo, tmp_path):
+    """A bare clone in <dir>/.git with worktrees beside it: <dir> has no files, so
+    each worktree is the project, never the bare clone's directory."""
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    git("clone", "-q", "--bare", str(repo), str(bare / ".git"), cwd=tmp_path)
+    wt = tmp_path / "worktree_1"
+    git("worktree", "add", "-q", str(wt), "main", cwd=bare / ".git")
+    (wt / "sub").mkdir()
+    assert find_repo_root(wt) == wt.resolve()
+    assert find_repo_root(wt / "sub") == wt.resolve()
+    named = tmp_path / "service.git"         # a bare clone named the usual way
+    git("clone", "-q", "--bare", str(repo), str(named), cwd=tmp_path)
+    wt2 = tmp_path / "worktree_2"
+    git("worktree", "add", "-q", "-b", "other", str(wt2), "main", cwd=named)
+    assert find_repo_root(wt2) == wt2.resolve()
+
+
 def test_not_a_repo(tmp_path):
     with pytest.raises(ConfigError):
         find_repo_root(tmp_path)
