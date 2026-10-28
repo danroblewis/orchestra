@@ -272,7 +272,9 @@ def find_repo_root(start: Path) -> Path:
 
     Uses git itself, so it works from any subdirectory and from inside a linked
     worktree: a worktree resolves to the repository it belongs to, since that is
-    the project Orchestra manages."""
+    the project Orchestra manages. A bare repository has no working tree to be the
+    project (a bare clone in ``<dir>/.git`` with worktrees beside it, a common way to
+    work), so each of its worktrees is a project of its own."""
     start = Path(start).resolve()
     probe = start if start.is_dir() else start.parent
     p = subprocess.run(["git", "-C", str(probe), "rev-parse", "--git-common-dir"],
@@ -282,7 +284,9 @@ def find_repo_root(start: Path) -> Path:
     common = Path(p.stdout.strip())
     if not common.is_absolute():
         common = (probe / common).resolve()
-    if common.name == ".git":
+    bare = subprocess.run(["git", "--git-dir", str(common), "rev-parse", "--is-bare-repository"],
+                          capture_output=True, text=True, check=False).stdout.strip() == "true"
+    if common.name == ".git" and not bare:
         return common.parent.resolve()
     top = subprocess.run(["git", "-C", str(probe), "rev-parse", "--show-toplevel"],
                          capture_output=True, text=True, check=False).stdout.strip()
