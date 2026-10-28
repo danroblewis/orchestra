@@ -10,7 +10,9 @@ A **passage** joins them. Its counters are ins and outs: at least one in drains 
 outside, at least one out fills another stock from outside, each claimed by that one stock
 alone (an event that moves two machines' stocks says nothing of which material passes), and any
 other counter in it (one no balance used, or another such drain or fill) is free to join if
-the drain's or the fill's machine wrote it. No in and out but the drain and the fill count the
+the drain's or the fill's machine wrote it; a counter no machine is known to write (another
+store's series without a machine label) never joins, since nothing then ties it to the passage
+but its total, and among dozens of busy counters some always add up. No in and out but the drain and the fill count the
 same events (a pair that cancels would let any two flows pass), and Orchestra's event counters,
 stand-ins for the machines' own, take no part. They count the same items:
 their totals agree, and the outs' running total is never ahead of the ins' nor more than a step
@@ -121,9 +123,11 @@ def _best(o: Series, fills: list[Series], pool: list[tuple[Series, int]], total:
         for p in fills:
             if p is o or apart(o, p):
                 continue
-            for extra in combinations([(c, r) for c, r in pool if c is not o and c is not p], size):
-                if len({c.key for c, _ in extra}) < size or any(writer_of(c) not in (writer_of(o), writer_of(p)) for c, _ in extra) \
-                        or any(apart(c, x) for c, _ in extra for x in (o, p)):
+            ends = (writer_of(o), writer_of(p))
+            joinable = [(c, r) for c, r in pool if c is not o and c is not p and writer_of(c) is not None and writer_of(c) in ends
+                        and not apart(c, o) and not apart(c, p)]          # the same test per counter, before the combinations
+            for extra in combinations(joinable, size):
+                if len({c.key for c, _ in extra}) < size:
                     continue
                 ins = [o, *(c for c, r in extra if r > 0)]
                 outs = [p, *(c for c, r in extra if r < 0)]
