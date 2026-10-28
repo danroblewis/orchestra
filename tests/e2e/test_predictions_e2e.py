@@ -6,8 +6,8 @@ clockwork would settle at one level, and a level that never moves balances nothi
 knows nothing of Orchestra's library: after a few minutes it predicts, over the events endpoint,
 that its change will double the arrivals (``orchestra.prediction.made``), doubles them, and
 announces the change (``config.changed``, carrying the id its prediction named). A second
-prediction about the same change, made with ``orchestra sd predict`` by another machine, says
-only that the per-job rate of work is unchanged. The host rediscovers every 20 s; once the horizon
+prediction about the same change, made through the Python API (``sd.predictions.Predictions``) by
+another machine, says only that the per-job rate of work is unchanged. The host rediscovers every 20 s; once the horizon
 has passed it judges both: the first passes, and the second is a side effect, naming the arrivals
 it did not predict.
 
@@ -128,10 +128,10 @@ def test_the_host_judges_a_machines_prediction_of_its_change(tmp_path, monkeypat
     host = subprocess.Popen([*orch, "run"], stdout=out.open("w"), stderr=subprocess.STDOUT, env={**os.environ})
     bus = Events.for_project(project)
     try:
-        cli = subprocess.run([*orch, "sd", "predict", "--source", "tester", "--change", "change-1",
-                              "--expect", "queue_jobs_done_total unchanged", "--horizon", f"{HORIZON_S}s"],
-                             capture_output=True, text=True, check=True).stdout
-        assert "the change must carry the id change-1" in cli
+        from orchestra.sd.predictions import Predictions
+        said = Predictions(project, source="tester").record([{"flow": "queue_jobs_done_total", "unchanged": True}], HORIZON_S,
+                                                             change="change-1")
+        assert said["change"] == "change-1" and said["status"] == "waiting"
 
         def verdicts():
             return {e["data"]["prediction"]: e for e in bus.read(0, 1_000_000)[0] if e["type"] == "orchestra.prediction.judged"}

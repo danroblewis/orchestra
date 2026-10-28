@@ -134,63 +134,6 @@ def _eras(models, args) -> int:
     return 0
 
 
-def _predict(project: Project, models, args) -> int:
-    """Record a prediction of a change (sd/predictions.py): published as orchestra.prediction.made
-    from ``--source``, judged by the host once the change has begun an era and the horizon passed."""
-    import json
-
-    from .config import parse_duration
-    from .sd import predictions as P
-
-    try:
-        if not args.source:
-            raise P.PredictionError("--source: the machine making the change (whose prediction it is)")
-        expect = [P.parse(x) for x in args.expect]
-        if bool(expect) == bool(args.null):
-            raise P.PredictionError("say what the change will do (--expect, repeated), or --null for a change that should "
-                                    "change nothing")
-        horizon = parse_duration(args.horizon, 3600.0)
-    except (P.PredictionError, ConfigError) as e:
-        print(f"orchestra sd predict: {e}", file=sys.stderr)
-        return 2
-    traj = None
-    if args.simulate:
-        from .metrics import for_project as metrics_for
-        from .sd.judge import reader
-        from .sd.strategies import sd_installed
-        from .sd.whatif import load, what_if
-        from .web.background import history, stock_step
-
-        if not sd_installed():
-            print("orchestra sd predict: --simulate needs orchestra[sd] installed", file=sys.stderr)
-            return 2
-        model, _ = load(models)
-        if model is None or not model.stocks:
-            print("orchestra sd predict: --simulate: no model yet", file=sys.stderr)
-            return 1
-        raw = reader(project, metrics_for(project))
-        h = history(model, raw, time.time(), stock_step(project.config.discovery_step))
-        try:
-            traj = P.trajectories_from(what_if(model, h, P.interventions(expect, {f.id for f in model.flows}), horizon_s=horizon))
-        except ValueError as e:
-            print(f"orchestra sd predict: --simulate: {e}", file=sys.stderr)
-            return 2
-    try:
-        made = P.Predictions(project, source=args.source).record(expect, horizon, change=args.change, trajectories=traj)
-    except P.PredictionError as e:
-        print(f"orchestra sd predict: {e}", file=sys.stderr)
-        return 2
-    if args.json:
-        print(json.dumps(made))
-        return 0
-    from .sd.predictions_report import expectation
-    print(f"prediction {made['id']} recorded (orchestra.prediction.made from {made['source']}): "
-          + (", ".join(expectation(x) for x in made["expect"]) or "nothing changes (the null test)"))
-    print(f"the change must carry the id {made['change']} and begin an era (system.changed, or what [discovery] eras_from names);"
-          f" it is judged {horizon / 60:g} min after it" + (", against the simulated run" if traj else ""))
-    return 0
-
-
 def _predictions(models, args) -> int:
     """The predictions recorded and their verdicts, by era (sd/predictions.py, sd/judge.py)."""
     import json
@@ -241,12 +184,8 @@ def cmd_sd(args) -> int:
             print(f"era {m.era} (from {_when(m.discovery.get('era_start'))}); `orchestra sd eras` compares it with its prior")
         print(f"saved as version {r.version}" if r.version else "structure unchanged: no new version")
         args.version = None
-    if args.action == "whatif":
-        return cmd_whatif(args, project, models)
     if args.action == "eras":
         return _eras(models, args)
-    if args.action == "predict":
-        return _predict(project, models, args)
     if args.action == "predictions":
         return _predictions(models, args)
     if args.action == "observability":
@@ -334,53 +273,6 @@ def _observability(project: Project, models, args) -> int:
         return 0
     print(f"{m.name} ({which})")
     print("\n".join(lines(r)))
-    return 0
-
-
-def cmd_whatif(args, project, models) -> int:
-    """What the model says a change would do (sd/whatif.py): read only; nothing is saved or written."""
-    import json
-
-    from .config import parse_duration
-    from .metrics import for_project as metrics_for
-    from .sd import whatif_report as report
-    from .sd.strategies import sd_installed
-    from .sd.whatif import load, what_if
-    from .sources.catalogue import Catalogue
-    from .web.background import history, stock_step
-
-    if not sd_installed():
-        print("whatif needs orchestra[sd] installed", file=sys.stderr)
-        return 2
-    try:
-        ivs = report.interventions(args.flow, args.scale, args.add, args.set_stock, args.input, args.input_scale, args.param)
-        bounds = report.bounds(args.bound)
-        horizon_s = parse_duration(args.horizon, 3600.0)
-    except (ValueError, ConfigError) as e:
-        print(f"orchestra sd whatif: {e}", file=sys.stderr)
-        return 2
-    model, label = load(models, args.version)
-    if model is None:
-        print("no model yet")
-        return 1
-    store = metrics_for(project)
-    cat = Catalogue(project, store)
-    step = stock_step(project.config.discovery_step)
-
-    def raw(ref, start, end):
-        if ref.source and ref.source != "own":
-            return cat.reader(start, end, step)(ref)
-        return store.raw(ref.name, ref.labels, start=start, end=end)
-
-    h = history(model, raw, time.time(), step)
-    try:
-        r = what_if(model, h, ivs, stocks=[s for s in (args.stocks or "").split(",") if s] or None,
-                    horizon_s=horizon_s, step_s=args.step_s, members=args.members, seed=args.seed,
-                    bounds=bounds, label=label)
-    except ValueError as e:
-        print(f"orchestra sd whatif: {e}", file=sys.stderr)
-        return 2
-    print(json.dumps(r) if args.json else "\n".join(report.table(r)))
     return 0
 
 
@@ -483,42 +375,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(fn=cmd_metrics)
 
     s = sub.add_parser("sd", help="the system dynamics model: discover it from the metrics, show it, fit it, list its versions, "
-                       "say which stocks what is measured determines, ask what a change would do (whatif), list the eras and what changed (eras), "
-                       "record what a change will do before it is made (predict) and list the predictions and their verdicts (predictions)")
-    s.add_argument("action", choices=["show", "fit", "versions", "discover", "observability", "whatif", "eras", "predict", "predictions"])
+                       "say which stocks what is measured determines, list the eras and what changed (eras), and list the "
+                       "predictions and their verdicts (predictions). Machines ask the model what a change would do through "
+                       "experiments (sd.experiments)")
+    s.add_argument("action", choices=["show", "fit", "versions", "discover", "observability", "eras", "predictions"])
     s.add_argument("--minutes", type=float, help="for discover: the window, in minutes back from now (default: [discovery] window)")
-    s.add_argument("--step-s", dest="step_s", type=float, help="for discover: seconds per step (default: [discovery] step); "
-                   "for whatif: the simulation's step (default 15 s, longer for long horizons)")
+    s.add_argument("--step-s", dest="step_s", type=float, help="for discover: seconds per step (default: [discovery] step)")
     s.add_argument("--strategy", help="for discover: conservation or an SD Lab strategy (default: [discovery] strategy)")
-    s.add_argument("--version", type=int, help="for show, fit, observability and whatif: this past version (default: the current one; "
-                   "for observability and whatif, the latest discovery)")
+    s.add_argument("--version", type=int, help="for show, fit and observability: this past version (default: the current one; "
+                   "for observability, the latest discovery)")
     s.add_argument("--step", type=float, default=1.0, help="for fit: hours per step (default 1)")
-    s.add_argument("--json", action="store_true", help="for observability, whatif, eras, predict and predictions: the answer as JSON")
-    w = s.add_argument_group("whatif", "what the model says a change would do, against no change (read only)")
-    w.add_argument("--flow", help="the flow --scale and --add change")
-    w.add_argument("--scale", type=float, help="multiply the flow's rate by this")
-    w.add_argument("--add", type=float, help="add this much per time unit to the flow's rate")
-    w.add_argument("--set-stock", dest="set_stock", action="append", default=[], metavar="STOCK=LEVEL", help="start a stock at this level")
-    w.add_argument("--input", action="append", default=[], metavar="NAME=VALUE", help="hold a measured input at this value")
-    w.add_argument("--input-scale", dest="input_scale", action="append", default=[], metavar="NAME=FACTOR",
-                   help="hold a measured input at its last value times this")
-    w.add_argument("--param", action="append", default=[], metavar="FLOW.PARAM=VALUE", help="set one number of a flow's rate")
-    w.add_argument("--horizon", default="1h", help="how far ahead (a duration: 30m, 2h; default 1h); for predict, how long "
-                   "after the change to judge it")
-    w.add_argument("--stocks", help="comma-separated stock ids to report (default: all)")
-    w.add_argument("--bound", action="append", default=[], metavar="STOCK=LO:HI", help="report where a stock leaves these bounds")
-    w.add_argument("--members", type=int, default=24, help="runs in the uncertainty band (default 24)")
-    w.add_argument("--seed", type=int, default=0, help="the band's random seed (default 0)")
-    w = s.add_argument_group("predict", "record what a change will do, before it is made; judged once it has begun an era "
-                             "and --horizon has passed (the intended-effect test)")
-    w.add_argument("--source", help="the machine making the change: the prediction is its")
-    w.add_argument("--change", help="the id the change event will carry, or carries (default: a new one, printed)")
-    w.add_argument("--expect", action="append", default=[], metavar="EDIT",
-                   help="an expected edit of the model, repeated: 'FLOW x2', 'FLOW unchanged', 'flow|stock|loop ID appears|disappears', "
-                        "'flow A->B appears', 'STOCK below|above X', or a JSON object")
-    w.add_argument("--null", action="store_true", help="the null test: the change should change nothing")
-    w.add_argument("--simulate", action="store_true", help="attach the current model's what-if run of the expected edits "
-                   "(needs orchestra[sd]); without it the host simulates the previous era's model when it judges")
+    s.add_argument("--json", action="store_true", help="for observability, eras and predictions: the answer as JSON")
     s.set_defaults(fn=cmd_sd)
 
     s = sub.add_parser("sources", help="other time-series stores ([[sources]]): check them, infer what to read, preview a query")

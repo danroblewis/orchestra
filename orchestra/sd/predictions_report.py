@@ -68,7 +68,7 @@ def verdict_lines(v: dict) -> list[str]:
 def lines(predictions: list[dict], eras: list) -> list[str]:
     if not predictions:
         return [("no predictions yet: a machine records one before its change (orchestra.prediction.made; "
-                 "`orchestra sd predict`; sd.predictions.Predictions)")]
+                 "an experiment committed, sd.experiments; sd.predictions.Predictions)")]
     by_era = {e.cause: e for e in eras if e.cause}
     groups: dict[str, list[dict]] = {}
     for p in predictions:

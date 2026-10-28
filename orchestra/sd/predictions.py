@@ -7,8 +7,9 @@ publishes ``orchestra.prediction.made`` before the change. It is Orchestra's own
 rule 3 forbids reading the data of other machines' event types; this one is Orchestra's
 contract, published by the machine that predicts, so its ``source`` says who). It goes on the bus
 rather than into a file so that one path serves every machine (in process through ``Predictions``,
-from a shell through ``orchestra sd predict``, from any language through the events endpoint) and
-the event log itself shows the prediction came before the change. ``data``:
+from any language through the events endpoint, and by committing an experiment,
+``sd.experiments``) and the event log itself shows the prediction came before the change.
+``data``:
 
 - ``change``: the id of the event that makes the change. The machine may choose it before the
   change exists (``Predictions.record`` makes one when not given) and publish the change with
@@ -17,17 +18,19 @@ the event log itself shows the prediction came before the change. ``data``:
 - ``expect``: the predicted effect as edits of the model, each one of
   ``{"flow": F, "factor": r}`` (the rate times r; ``"param": p`` for one of its numbers; a factor
   of 0 is the flow disappearing), ``{"flow": F, "unchanged": true}``,
+  ``{"flow": F, "equation": text, "params": {...}}`` (the flow's whole rate becomes this
+  equation, in the equation language: ``sd.experiments.language``),
   ``{"flow" | "stock" | "loop": id, "appears" | "disappears": true}``,
   ``{"from": A, "to": B, "appears": true}`` (a new flow between two stocks, ``null`` for outside,
-  when its id is not known yet), and ``{"stock": S, "below": x}`` / ``{"stock": S, "above": x}``
-  (its level over the horizon's second half). An empty list is the **null test**: the change
-  should change nothing;
+  when its id is not known yet; with ``equation`` and ``params``, the rate it will have), and
+  ``{"stock": S, "below": x}`` / ``{"stock": S, "above": x}`` (its level over the horizon's
+  second half). An empty list is the **null test**: the change should change nothing;
 - ``horizon_s``: how long after the change to judge it (``horizon``, a duration such as ``"30m"``,
   is accepted too);
-- optionally ``trajectories``: what the predictor's own "what if" (G5, ``sd.whatif``) said the
-  stocks would do, as ``{"t": [seconds after the change], "stocks": {id: {"central", "lo",
-  "hi"}}}`` (``trajectories_from`` makes it from a ``what_if`` result). Without them Orchestra
-  simulates the previous era's model with the predicted edits when it judges.
+- optionally ``trajectories``: what the predictor's own forward run (G5, ``sd.experiments``) said
+  the stocks would do, as ``{"t": [seconds after the change], "stocks": {id: {"central", "lo",
+  "hi"}}}`` (``sd.experiments.forward.trajectories`` makes it from a forward run). Without them
+  Orchestra runs the previous era's model with the predicted edits forward when it judges.
 
 **The record.** ``sync`` follows the bus from where it last stopped and records each prediction
 once, by its event's id, in the model store's ``predictions.json`` (in the state directory): its
@@ -77,16 +80,31 @@ def _end(v, name: str) -> str | None:
     return None if v is None else _id(v, name)
 
 
+def _equation(e: dict) -> dict:
+    """An expectation's equation and parameters, checked for syntax (its names are checked
+    against the model when it is judged)."""
+    from .experiments.language import EquationError, syntax
+
+    try:
+        p = syntax(e.get("equation"), e.get("params"))
+    except EquationError as err:
+        raise PredictionError(f"equation: {err}") from None
+    return {"equation": p.text, "params": dict(p.params)}
+
+
 def plain(e: dict) -> dict:
     """An expectation in its one shape (``kind``) written back as ``expect`` takes it."""
     k = e.get("kind")
+    eq = {"equation": e["equation"], "params": e.get("params") or {}} if "equation" in e else {}
     if k == "factor":
         return {"flow": e.get("flow"), "factor": e.get("factor"), **({"param": e["param"]} if "param" in e else {})}
     if k == "unchanged":
         return {"flow": e.get("flow"), "unchanged": True}
+    if k == "equation":
+        return {"flow": e.get("flow"), **eq}
     if k in ("appears", "disappears"):
         if e.get("part") == "flow" and e.get("id") is None:
-            return {"from": e.get("from"), "to": e.get("to"), k: True}
+            return {"from": e.get("from"), "to": e.get("to"), k: True, **eq}
         return {e.get("part") or "flow": e.get("id"), k: True}
     if k == "level":
         return {"stock": e.get("stock"), **{w: e[w] for w in ("below", "above") if w in e}}
@@ -102,10 +120,17 @@ def expectation(e) -> dict:
         if e.get("part") not in (None, *PARTS):
             raise PredictionError(f"unknown part {e.get('part')!r} in {e!r}")
         return expectation(plain(e))
-    known = {"flow", "stock", "loop", "param", "factor", "unchanged", "appears", "disappears", "from", "to", "below", "above"}
+    known = {"flow", "stock", "loop", "param", "factor", "unchanged", "appears", "disappears", "from", "to", "below", "above",
+             "equation", "params"}
     if extra := sorted(set(e) - known):
         raise PredictionError(f"unknown field{'s' if len(extra) > 1 else ''} {', '.join(extra)} in {e!r}")
     named = [p for p in PARTS if p in e]
+    if "params" in e and "equation" not in e:
+        raise PredictionError(f"params go with an equation: {e!r}")
+    if "equation" in e and not e.get("appears"):
+        if named != ["flow"] or set(e) - {"flow", "equation", "params"}:
+            raise PredictionError(f"an equation is said of one flow: {{\"flow\": F, \"equation\": ..., \"params\": ...}}, not {e!r}")
+        return {"kind": "equation", "flow": _id(e["flow"], "flow"), **_equation(e)}
     if "factor" in e:
         if named != ["flow"]:
             raise PredictionError(f"a factor is a flow's: {e!r}")
@@ -123,12 +148,16 @@ def expectation(e) -> dict:
     for kind in ("appears", "disappears"):
         if e.get(kind) is True:
             if len(named) == 1:
+                if "equation" in e:
+                    raise PredictionError(f"a new flow's equation goes with its ends (from, to), not its id: {e!r}")
                 return {"kind": kind, "part": named[0], "id": _id(e[named[0]], named[0])}
             if not named and kind == "appears" and ("from" in e or "to" in e):
                 a, b = _end(e.get("from"), "from"), _end(e.get("to"), "to")
                 if a is None and b is None:
                     raise PredictionError(f"a new flow has at least one end in a stock: {e!r}")
-                return {"kind": "appears", "part": "flow", "from": a, "to": b}
+                return {"kind": "appears", "part": "flow", "from": a, "to": b, **(_equation(e) if "equation" in e else {})}
+            if "equation" in e:
+                raise PredictionError(f"an appearing flow's equation goes with its ends (from, to): {e!r}")
             raise PredictionError(f"{kind} names one flow, stock or loop{' (or a new flow from and to stocks)' if kind == 'appears' else ''}: {e!r}")
     if "below" in e or "above" in e:
         if named != ["stock"]:
@@ -138,7 +167,7 @@ def expectation(e) -> dict:
             if k in e:
                 out[k] = _number(e[k], k)
         return out
-    raise PredictionError(f"say what is expected of it (factor, unchanged, appears, disappears, below or above): {e!r}")
+    raise PredictionError(f"say what is expected of it (factor, unchanged, equation, appears, disappears, below or above): {e!r}")
 
 
 def _trajectories(t) -> dict:
@@ -234,25 +263,6 @@ def of_era(predictions: list[dict], era) -> list[dict]:
     return [p for p in predictions if era is not None and p.get("change") and p.get("change") == era.cause]
 
 
-def interventions(expect: list[dict], flows: set[str] | None = None) -> list[dict]:
-    """The predicted edits a "what if" (``sd.whatif``) can run: a factor on a whole flow's rate,
-    and a flow that disappears (its rate times 0); only on ``flows`` when given."""
-    out = []
-    for e in expect:
-        if e["kind"] == "factor" and "param" not in e:
-            out.append({"kind": "scale_flow", "flow": e["flow"], "factor": e["factor"]})
-        elif e["kind"] == "disappears" and e["part"] == "flow" and e.get("id"):
-            out.append({"kind": "scale_flow", "flow": e["id"], "factor": 0.0})
-    return [iv for iv in out if flows is None or iv["flow"] in flows]
-
-
-def trajectories_from(what_if_result: dict) -> dict:
-    """A prediction's ``trajectories`` from a ``sd.whatif.what_if`` result: each stock's run with
-    the interventions, from the time the change is made."""
-    return {"t": list(what_if_result["t"]),
-            "stocks": {sid: {k: list(s["intervention"][k]) for k in ("central", "lo", "hi")} for sid, s in what_if_result["stocks"].items()}}
-
-
 class Predictions:
     """The Python API (plugins, and the machines that use Orchestra as a library): record a
     prediction for the machine ``source`` and read verdicts, through Orchestra's objects only.
@@ -298,41 +308,3 @@ class Predictions:
     def verdict(self, pid: str) -> dict | None:
         p = self.get(pid)
         return (p or {}).get("verdict")
-
-
-def parse(text: str) -> dict:
-    """One expectation as ``orchestra sd predict --expect`` writes it, checked (``expectation``):
-
-    - ``FLOW x2`` (or ``×2``, ``*2``): the flow's rate times 2;
-    - ``FLOW unchanged``;
-    - ``flow ID appears`` (``stock``, ``loop``; ``disappears``), or ``flow A->B appears`` for a
-      new flow between two stocks (``outside`` for none);
-    - ``STOCK below 6``, ``STOCK above 6``;
-    - a JSON object, as in ``expect`` (``{"flow": "f", "param": "k", "factor": 2}``)."""
-    import json
-
-    t = (text or "").strip()
-    if t.startswith("{"):
-        try:
-            return expectation(json.loads(t))
-        except ValueError as e:
-            raise PredictionError(f"{text!r}: {e}") from None
-    w = t.split()
-    try:
-        if len(w) == 2 and w[1][:1] in ("x", "×", "*") and len(w[1]) > 1:
-            return expectation({"flow": w[0], "factor": float(w[1][1:])})
-        if len(w) == 2 and w[1] == "unchanged":
-            return expectation({"flow": w[0], "unchanged": True})
-        if len(w) == 3 and w[0] in PARTS and w[2] in ("appears", "disappears"):
-            if w[0] == "flow" and "->" in w[1] and w[2] == "appears":
-                a, b = (None if x in ("outside", "") else x for x in w[1].split("->", 1))
-                return expectation({"from": a, "to": b, "appears": True})
-            return expectation({w[0]: w[1], w[2]: True})
-        if len(w) == 3 and w[1] in ("below", "above"):
-            return expectation({"stock": w[0], w[1]: float(w[2])})
-    except ValueError as e:
-        if isinstance(e, PredictionError):
-            raise
-        raise PredictionError(f"{text!r}: {e}") from None
-    raise PredictionError(f"{text!r}: expected 'FLOW x2', 'FLOW unchanged', 'flow|stock|loop ID appears|disappears', "
-                          "'flow A->B appears', 'STOCK below|above X', or a JSON object")
