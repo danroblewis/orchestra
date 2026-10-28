@@ -67,6 +67,8 @@ def conservation(idn, exact: float) -> dict:
         why.append("counters only the whole window chose were dropped: " + ", ".join(c.key for c, _ in idn.dropped))
     if idn.declared:
         why.append("its source declared it a channel's backlog and its traffic: a balance by declaration, not chosen by a search")
+    if getattr(idn, "pinned", False):
+        why.append("declared in [[series]] as a stock's level and flows: a hypothesis tested by the same evidence, not chosen by a search")
     if idn.stable is False and not idn.is_exact:
         why.append("the halves of the window chose different counters: its flows are not identified")
     return scored("conservation", {

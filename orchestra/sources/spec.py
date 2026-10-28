@@ -23,6 +23,14 @@ name = "checkout_errors"
 query = 'sum(rate(http_errors_total{svc="checkout"}[5m]))'
 kind = "rate"
 
+[[series]]                                  # a stock's level and its flows, declared: discovery
+source = "work"                             # tries them as that stock's balance first, and judges
+name = "email_backlog"                      # them by the same evidence as any (sd.pins)
+query = 'sum(queue_messages{queue="email"})'
+kind = "level"
+stock = "email_queue"
+role = "level"                              # or "inflow" / "outflow" (kind = "counter")
+
 [[series]]                                  # a counter read from raw samples, reset-safe, summed by
 source = "work"                             # labels, and marked as counted traffic (traffic.py)
 name = "orders_published_total"
@@ -117,6 +125,7 @@ class DeclaredSeries:
     by: list[str] | None = None         # a select's counters are summed by these labels (as the store spells them)
     traffic: dict | None = None         # counted traffic (traffic.py)
     preset: str | None = None           # the preset it came from
+    stock: dict | None = None           # {"name", "role"}: the operator's hypothesis that it is a stock's level, inflow or outflow
 
 
 @dataclass
@@ -194,7 +203,24 @@ def _series(r: dict) -> DeclaredSeries:
         raise ValueError("by = [labels] goes with a select")
     traffic = counted.parse(r["traffic"], kind) if r.get("traffic") is not None else None
     return DeclaredSeries(r.get("source"), name, str(query or select), kind, r.get("unit"),
-                          list(by or []) if select else None, traffic, r.get("preset"))
+                          list(by or []) if select else None, traffic, r.get("preset"), _stock(r, kind))
+
+
+ROLES = {"level": "level", "inflow": "counter", "outflow": "counter"}
+
+
+def _stock(r: dict, kind: str) -> dict | None:
+    """A declared stock: ``stock = "<name>"`` with ``role`` = ``level``, ``inflow`` or ``outflow``.
+    The series that share a name are one stock's level and flows, a hypothesis discovery tests first
+    (``sd.pins``); raises ``ValueError`` with what it needs."""
+    stock, role = r.get("stock"), r.get("role")
+    if stock is None and role is None:
+        return None
+    if not isinstance(stock, str) or not NAME.match(stock) or role not in ROLES:
+        raise ValueError(f"stock = \"<name>\" (lower-case letters, digits, _) goes with role = one of {', '.join(ROLES)}")
+    if ROLES[role] != kind:
+        raise ValueError(f"role = \"{role}\" needs kind = \"{ROLES[role]}\", not {kind!r}")
+    return {"name": stock, "role": role}
 
 
 def load(raw: dict, repo_root: Path) -> Specs:

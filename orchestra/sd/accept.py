@@ -7,9 +7,16 @@ a stock's only when the evidence for it holds (``sd.identify``):
 - its counters are chosen again on each half of the window, or are of the same events as those
   chosen (counters only the whole window chose are dropped, and the rest must still fit at
   ``MIN_R2``);
+- a balance the operator declared (``sd.pins``) is chosen by no search: nothing is dropped, its
+  fit on each half is its held-out evidence, and its shift null moves the level against the
+  declared counters alone; otherwise it passes the same gates;
+- it fits at ``MIN_R2``, or, judged on a slow counter's writes (``identify.two_clocks``), its misses are timing (``identify.timing_limited``: they cancel from one unit
+  to the next) and it fits at ``identify.JITTER_R2``;
 - it is exact (``Identification.is_exact``: in ``identify.FLAG_EXACT`` of the units anything moved in),
   or, short of exact:
-  - its choice on one half predicts the other half at R² ``HELD_OUT`` or better, both ways;
+  - its choice on one half predicts the other half at R² ``HELD_OUT`` or better, both ways
+    (``HELD_OUT_TIMING`` for a balance whose misses are timing, when both halves chose its counters:
+    timing holds R² down on each half as on the whole);
   - it reproduces the level over time: the running total of what it misses spreads no more than
     ``CUM_RATIO`` of the level's own spread;
   - the shift null (the level moved in time against the same counters, searched the same way)
@@ -33,11 +40,12 @@ from __future__ import annotations
 from . import stocktrust
 from .balance import LeastSquares, columns
 from .construction import constructed, no_place
-from .identify import identify
+from .identify import identify, two_clocks
 from .netflow import NET_FLOW
 
 MIN_R2 = 0.9            # as sd.discover: a balance must fit this well, after the halves' vote
 HELD_OUT = 0.5          # short of exact: its choice on each half predicts the other at least this well
+HELD_OUT_TIMING = 0.25  # ... a balance whose misses are timing (identify.timing_limited), when both halves chose its counters
 CUM_RATIO = 0.5         # ... its running residual spreads no more than this share of the level's spread
 P_NULL = 0.2            # ... and the shift null fits as well in no more than this share of shifts
 
@@ -46,12 +54,13 @@ def gate(idn) -> str:
     """Why an identified balance is still no stock's, or nothing."""
     if idn.why:
         return idn.why
-    if idn.r2 < MIN_R2:
+    if idn.r2 < MIN_R2 and not idn.timing:
         return (f"without the counters only the whole window chose ({', '.join(c.key for c, _ in idn.dropped)}) it fits at "
                 f"R² {idn.r2:.2f}")
     if idn.is_exact or idn.declared:
         return ""
-    if idn.held_out_r2 is not None and idn.held_out_r2 < HELD_OUT:
+    timing = idn.timing and idn.stable is not False      # its R² on changes is held down by timing, not by a wrong choice
+    if idn.held_out_r2 is not None and idn.held_out_r2 < (HELD_OUT_TIMING if timing else HELD_OUT):
         return f"chosen on either half of the window, it predicts the other half at R² {idn.held_out_r2:.2f}"
     if idn.cum_ratio is not None and idn.cum_ratio > CUM_RATIO:
         return (f"it does not reproduce the level: the running total of what it misses spreads {idn.cum_ratio:.2f} times "
@@ -62,10 +71,11 @@ def gate(idn) -> str:
     return ""
 
 
-def accepted(found: list, counters: list, barred: dict, masks: dict, provenance: dict, left_out: dict, same
-             ) -> tuple[list, dict, set, dict]:
+def accepted(found: list, counters: list, barred: dict, masks: dict, provenance: dict, left_out: dict, same,
+             pinned: set | frozenset = frozenset()) -> tuple[list, dict, set, dict]:
     """The balances accepted as stocks', each level's identification, the levels balanced by
-    construction, and what was recorded of each refused balance (by level key)."""
+    construction, and what was recorded of each refused balance (by level key). ``pinned``: the
+    levels whose balance the operator declared (``sd.pins``), tested rather than chosen."""
     solvers: dict[tuple, LeastSquares] = {}
 
     def solver(level, pool: list, steps: list[int]) -> LeastSquares:
@@ -86,7 +96,8 @@ def accepted(found: list, counters: list, barred: dict, masks: dict, provenance:
             continue
         pool = [c for c in counters if c.key not in barred.get(s.key, ())]
         declared = bool(s.traffic and s.traffic[0] == "backlog" and all(c.traffic and c.traffic[1] == s.traffic[1] for c, _ in terms))
-        idn = identify(s, terms, r2, exact, pool, masks[s.key], solver, same, declared=declared)
+        idn = identify(s, terms, r2, exact, pool, masks[s.key], solver, same, declared=declared, pinned=s.key in pinned,
+                       clocks=two_clocks(s, terms))
         if why := gate(idn):
             shown = " ".join(f"{'+' if sg > 0 else '−'}{c.key}" for c, sg in terms)
             left_out[s.key] = f"{NET_FLOW} on evidence that holds ({shown} fits at R² {r2:.2f}, but {why})"
