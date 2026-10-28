@@ -269,6 +269,11 @@ function leftOut(lo) {
     return `<details ${g.startsWith("changed") ? "open" : ""}><summary>${esc(g)} <span class="count">${groups[g].length}</span></summary><table class="dt">${rows}</table></details>`;
   }).join("");
 }
+// how far to trust a stock (sd/stocktrust.py): the weakest of its measured evidence, 0 to 1
+function trustText(ev) {
+  const t = ev.trust;
+  return t ? ` · trust ${t.score.toFixed(2)} (${esc(t.level)}${t.weakest ? `; weakest: ${esc(t.weakest.replace("_", " "))}` : ""})` : "";
+}
 // a stock no counters balance: its net flow fitted by least squares, or SD Lab's flows where they
 // predicted the level better on held-out data (conservation_fit names the fit they replaced)
 function netFlowLine(s, ev) {
@@ -280,7 +285,7 @@ function netFlowLine(s, ev) {
     return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">no counters; SD Lab's flows, which predicted it better on held-out data:</span> ${mine}
       <div class="muted">least squares alone fitted ${esc(nf.form)} (${fit}), not used</div>${MODEL.flows.some((f) => (f.to === s.id || f.from === s.id) && SDGraph.correlational(MODEL, f)) ? `<div class="muted">${esc(SDGraph.UNTESTED)}</div>` : ""}</div>`;
   }
-  return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">no counters; its net flow fitted as</span> <span class="ty">${esc(nf.form)}</span> <span class="muted">${fit}</span>${driver}
+  return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">no counters; its net flow fitted as</span> <span class="ty">${esc(nf.form)}</span> <span class="muted">${fit}${trustText(ev)}</span>${driver}
     ${ev.sdlab_rejected ? `<div class="muted">SD Lab's flows not used: ${esc(ev.sdlab_rejected)}</div>` : ""}</div>`;
 }
 function tables() {
@@ -300,7 +305,7 @@ function tables() {
   $("found").innerHTML = d.left_out ? `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d))} A level is a stock when counters balance it (R² ≥ ${d.min_r2}), or, with no counters, when the other series explain how it changes better than a steady drift does.</div>`
     + (d.end && d.step ? `<div class="muted" style="font-size:12px;margin-bottom:6px">${plainWindow(d.end - d.start, d.step)}</div>` : "") + sourcesNote(d)
     + m.stocks.map((s) => { const ev = s.evidence || {};
-      if (ev.balance) return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">changes by</span> ${ev.balance.map((b) => `<span class="ty">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join(" ")} <span class="muted">R² ${ev.balance_r2.toFixed(3)} · exact in ${Math.round(100 * ev.exact_steps)}% of steps</span></div>`;
+      if (ev.balance) return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">changes by</span> ${ev.balance.map((b) => `<span class="ty">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join(" ")} <span class="muted">${ev.balance_r2 == null ? (ev.by_construction ? "by construction: a count and its own turnover, no evidence" : "measured by no series") : `R² ${ev.balance_r2.toFixed(3)} · exact in ${Math.round(100 * ev.exact_steps)}% of steps`}${trustText(ev)}</span></div>`;
       if (ev.net_flow) return netFlowLine(s, ev);
       return ""; }).join("")
     + `<h3>Left out <span class="count">${Object.keys(d.left_out).length} of ${d.looked_at ?? "?"}</span></h3>` + leftOut(d.left_out) : '<div class="muted">This version was declared, not discovered.</div>';

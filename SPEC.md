@@ -304,15 +304,17 @@ seconds apart sample the same grid and agree.
 Conservation (`sd/discover.py`):
 1. every series is sampled onto a grid of steps, read at its own resolution, and marked with when
    it was live (`sd/series.py`, `sd/resolution.py`, `sd/live.py`). A series' **resolution** is the
-   usual gap between its real points: a count or a state (a counter, or a level of whole values)
-   is read with its last value held, every write a real point, and one written only when it
-   changes is as fine as its events; a smooth measurement (any value not whole) is read linearly
-   between its real points, a repeat of the value it had being the same observation polled again
-   (a feed that changes every half hour, polled every minute, has a resolution of half an hour).
-   The choice is made per series and recorded (`discovery.resolution`, and `resolution_s` and
-   `read` on every `SeriesRef`); a source's reporting interval is a floor. A level slower than the
-   grid is balanced on the stretches between its writes, each compared with what the counters
-   counted between those two instants, not on single steps (`units`, `Block`); Liveness is the machine's, not the series': a machine is
+   usual gap between the points where it changed: a count or a state written only when it changes
+   is as fine as its events, and a measurement polled every minute that its feed changes every half
+   hour has a resolution of half an hour. Every series is read with its last value held: a repeat of
+   the value it had is an observation that nothing changed, never a gap to draw a line across (until
+   2026-10-28 a smooth measurement was read linearly between its changes, and a gauge polled every
+   30 s that changed twice in an hour became two ramps any steadily rising counter matched: the
+   metrics lab's review r1, F9). The resolution is recorded (`discovery.resolution`, and
+   `resolution_s` and `read` on every `SeriesRef`); a source's reporting interval is a floor. A
+   level written less often than the grid is balanced on the stretches between its writes, each
+   compared with what the counters counted between those two instants, not on single steps
+   (`units`, `Block`), and never on the stretches between its changes, which are no observations; Liveness is the machine's, not the series': a machine is
    alive between writes (any of its series, or Orchestra's count of an event it published) no
    further apart than ten times the interval of its fastest series written on a schedule (at
    least a minute); a longer silence is it down or not yet started. A machine none of whose
@@ -348,7 +350,11 @@ Conservation (`sd/discover.py`):
    instance (an ``instance`` label, or ``source`` ``baker/3``) are summed into one per machine,
    and a flow from such a sum is measured by every instance's series;
 2. a level is a **stock** when counters, added or subtracted, balance its changes
-   (`Δlevel ≈ Σ inflows − Σ outflows`, R² ≥ 0.9). A level that only takes two values is
+   (`Δlevel ≈ Σ inflows − Σ outflows`, R² ≥ 0.9) on evidence that holds (`sd/identify.py`,
+   `sd/accept.py`; below). Every counter in a balance is in the level's own unit (`sd/units.py`:
+   a `unit` label, the unit the source declared, or the name's by Prometheus' convention, `_count`
+   counting observations): coefficients are ±1, so CPU seconds never balance a queue of messages,
+   nor bytes a count, nor KiB bytes. A level that only takes two values is
    usually a flag (busy or not) and is a stock only when its balance is exact in 97% of steps (a
    shelf that holds nothing or one item). A level that changed in fewer than 5 steps is no
    stock, and a counter that counted fewer than 5 events carries no balance (on three steps a
@@ -398,7 +404,39 @@ Conservation (`sd/discover.py`):
    twin (never two backlogs a source declared: two queues one consumer acknowledges at once change
    alike and are still two). A level that only fills is a stock when its balance is exact, whatever feeds it (a
    terminal state, where other stocks' outflows end); one the system's flows explain only
-   roughly is a tally of activity unless counters no ordinary stock uses balance it;
+   roughly is a tally of activity unless counters no ordinary stock uses balance it.
+
+   R² on a level's changes does not identify a balance: chosen from thousands of signed pairs, a
+   balance picks up counters that explain a per cent or two of any level by chance (a GC count,
+   CPU seconds, the scrapes of `/metrics`), and a proxy that moves with the true flow step by step
+   (requests for the messages they produce) fits as well while drifting from it (the metrics lab's
+   review r1, F1, F2 and F7). So each balance is **identified** (`sd/identify.py`) and kept only on
+   the evidence (`sd/accept.py`), measured on the lab's ten windows and their nulls:
+   - **units**: judged on at least 12 units (steps, or stretches between a slow level's writes),
+     and 6 per counter; an exact balance on at least 5, and 2 per counter (a queue a few minutes
+     into an era);
+   - **the halves' vote**: the balance is searched again on each half of the window; a counter of it
+     that the search on a half the level and the counter moved in did not choose again (nor a
+     counter of the same events, or one whose changes correlate 0.9 with it there) is dropped, and
+     the rest must still fit at R² 0.9;
+   - **exact** (97% of the units anything moved in explained to within half an event, on at least 5
+     of them) is its own proof: a coincidence is not exact for an hour. Short of exact, the balance
+     each half chose must predict the other half at R² 0.5 or better, its running residual must
+     spread no more than half the level's own spread (the level reproduced over time: a true
+     balance's misses are timing and cancel, a proxy's accumulate), and the **shift null** (the
+     level moved circularly in time against the same counters, 9 shifts, searched the same way)
+     must fit as well in no more than a fifth of the shifts. A balance its source declared (a
+     channel's backlog and its own traffic) is chosen by no search: only its units and running
+     residual are measured.
+   A level whose balance fails is left out with the reason (`discovery.refused` keeps each refused
+   balance's measurements), and its net flow is still fitted. A **count of reporters balanced by
+   its own turnover** (`orchestra/sources/views.py`'s `count`, `starts` and `stops`, passed as the
+   reading's provenance) is exact by construction, so no evidence (`sd/construction.py`): it is a
+   stock only as a count of pods in a place (a deployment, node, namespace, service, job, phase or
+   condition), marked `by_construction` with no R² and not counted in `discovery.stocks`; split by
+   what happened to a request (an HTTP status code, a method, an outcome) it is left out. A hidden
+   state (no series measures it, step 3) records no R² either (`balance_r2` null, `measured`
+   false);
 3. a counter that leaves one stock and enters another is a **flow** between them; otherwise it
    comes from or goes to outside. A counter that drains no stock and that several stocks each take
    as an inflow, explaining at least a quarter of each one's changes, is a **copy**: every event
@@ -481,6 +519,24 @@ an outflow proportional to the stock (`−b × level`), origin `fitted`, method 
 no counter and no machine associated; with an SD Lab strategy its flows take their place. A hidden
 stock an SD Lab strategy finds says what it is: something in the system not measured or not
 understood yet.
+
+Every stock records **how far to trust it** (`sd/stocktrust.py`, `evidence.trust`), measured at
+discovery and saved with the model version: the kind of evidence it stands on (`conservation`,
+`net_flow`, `passage`, `unmeasured`, `by_construction`), each measurement, and the weakest as one
+`score` from 0 to 1 with a `level` (high from 0.8, medium from 0.5, low from 0.2, else very low)
+and why. A balance's: the shift null (1 at the least p-value its shifts can give, 0 at p = 1), the
+held-out R² (an exact balance's own R² on each half), the level reproduced (one less the running
+residual's spread over the level's), its units (`1 − e^(−units/20)`), and whether both halves chose
+the same counters (0.6 when not: its flows are not identified). A net flow's (`sd/netnull.py`): the
+same, for its fitted form, with the shift null refitting the whole procedure over the same drivers on
+the level moved in time, and its R². Hidden states and counts by construction score 0. Net-flow
+stocks are kept, whatever their score: a coincidental driver is the data's to cure with more
+relevant series (the owner, 2026-10-27), and its low trust says so. The host also records each
+stock's **persistence** (`sd/persistence.py`): the share of the last 12 discoveries that found it
+with the same counters (or the same net-flow form and driver), a component of the score once 3 are
+remembered; successive windows overlap, so it measures stability as the window slides, not
+independent confirmation. The Dynamics page and `orchestra sd discover` show the score beside each
+stock, and the stock's drawer every measurement.
 
 Everything else is **left out, with the reason** (did not change, written in too few steps, no
 counters balance it and no net flow explains it, not needed by any balance, the same as another
@@ -1375,7 +1431,9 @@ orchestra/
   sources/   other stores, read in place: spec, preset, auth, prometheus, own, schema, views,
              transform, rank, infer, fetch, traffic (counted traffic), catalogue, report (the CLI's text)
   sd/        model, store, fit, series and live (sampling, when a series was written), balance,
-             collinear and restate (a level's balance), ends, inputs, drivers (which stocks may
+             collinear and restate (a level's balance), units (a balance's terms in the level's
+             unit), identify, accept and construction (the evidence a balance must show),
+             stocktrust, netnull and persistence (each stock's trust), ends, inputs, drivers (which stocks may
              drive a flow), discover (conservation), attribute (machines associated with flows,
              as hypotheses), rates, strategies, simulate, rediscover, trust (each flow's
              spread and what is not trusted), provenance (where each series in a model came from), linearise and observability
