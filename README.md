@@ -36,14 +36,24 @@ GitHub; a plugin is loaded only if it is installed beside the `orchestra` comman
 ```bash
 uv tool install 'orchestra[sd] @ git+https://github.com/danroblewis/orchestra@main' \
     --with 'orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking' \
-    --with 'orchestra-desk @ git+ssh://git@github.com/danroblewis/orchestra-desk'
+    --with-executables-from orchestra-tasking \
+    --with 'orchestra-desk @ git+ssh://git@github.com/danroblewis/orchestra-desk' \
+    --with-executables-from orchestra-desk
+uv tool update-shell        # once: puts ~/.local/bin on the PATH (open a new terminal after)
 orchestra --help
 ```
 
 Name Orchestra exactly as the plugins do, `git+https://github.com/danroblewis/orchestra@main`:
 pip refuses two different URLs for one package. The plugins' repositories are private, so they come
-over SSH with your GitHub key; add `--with` for each one you want (`orchestra-bridges`,
-`orchestra-outbox`, `orchestra-agents`). To take newer commits, run the same command again with
+over SSH with your GitHub key; add a `--with` for each one you want (`orchestra-bridges`,
+`orchestra-outbox`, `orchestra-agents`). `--with` alone loads a plugin into Orchestra but does not
+put its own command on the PATH; `--with-executables-from <plugin>` does, for the plugins that
+have one (`tasking`, `orchestra-desk`, `orchestra-agents`, `orchestra-outbox`). The commands land in `~/.local/bin`,
+which `uv tool update-shell` adds to the PATH (`uv tool dir --bin` says where they are).
+
+The command is the whole of what is installed: running `uv tool install` again replaces the tool,
+and a plugin whose `--with` is left out is uninstalled. `uv tool list --show-with` shows what is
+there. To take newer commits, run the same command again, every `--with` included, with
 `--reinstall --refresh`. Into a virtual environment instead, with `uv pip` or `pip`:
 
 ```bash

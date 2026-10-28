@@ -90,7 +90,9 @@ That is all the registration there is.
   `pip install -e`) again.
 - **Same environment.** If Orchestra is installed as a tool, the plugin goes into that tool's
   environment, for example `uv tool install 'orchestra @ git+https://github.com/danroblewis/orchestra@main'
-  --with /path/to/plugin` (README, "Install"). Each plugin's repository has its own `.venv`, with
+  --with /path/to/plugin` (README, "Install"), and `--with-executables-from <plugin>` when the
+  plugin has a command of its own to put on the PATH. Installing the tool again replaces it: a
+  plugin whose `--with` is left out is uninstalled. Each plugin's repository has its own `.venv`, with
   Orchestra from GitHub at the commit its `uv.lock` pins, and runs `orchestra` from there.
 
 `orchestra.plugins.load(project)` calls each entry point's function and keeps what it returns. It

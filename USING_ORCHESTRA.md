@@ -53,9 +53,13 @@ uv tool install /path/to/orchestra            # or from a checkout
 ```
 
 Plugins go into the same environment with `--with` (README, "Install"), for example
-`--with 'orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking'`. Plugins
-name Orchestra as `git+https://github.com/danroblewis/orchestra@main`, so install Orchestra by that
-exact URL beside them: pip refuses two different URLs for one package.
+`--with 'orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking'`, plus
+`--with-executables-from orchestra-tasking` for the plugin's own command (`tasking`) to be put on
+the PATH too. Plugins name Orchestra as `git+https://github.com/danroblewis/orchestra@main`, so
+install Orchestra by that exact URL beside them: pip refuses two different URLs for one package.
+Running `uv tool install` again replaces the whole tool: give every plugin's `--with` each time, or
+the ones left out are uninstalled. The commands go into `~/.local/bin`; `uv tool update-shell`
+puts it on the PATH.
 
 Extras add optional parts:
 
