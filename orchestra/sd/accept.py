@@ -20,7 +20,12 @@ a stock's only when the evidence for it holds (``sd.identify``):
   - it reproduces the level over time: the running total of what it misses spreads no more than
     ``CUM_RATIO`` of the level's own spread;
   - the shift null (the level moved in time against the same counters, searched the same way)
-    fits as well in no more than ``P_NULL`` of the shifts.
+    fits as well in no more than ``P_NULL`` of the shifts;
+  - its halves chose the same counters (``Identification.stable``), unless its misses are timing:
+    a balance on a slow counter's writes is judged on a few dozen stretches, and each half's own
+    search among them is noisier than the balance (the email queue across two stores). Over the
+    lab's 24 windows, no balance of a true stock's own flows was unstable and inexact on one store;
+    every one that was is a decoy's, a junk counter's or a coincidence of two byte counts.
 
 A level whose balance fails is left out with the reason, which begins as every unbalanced level's
 does (``sd.netflow.NET_FLOW``), so its net flow is still fitted: it may be a stock, honestly labelled
@@ -62,6 +67,9 @@ def gate(idn) -> str:
     timing = idn.timing and idn.stable is not False      # its R² on changes is held down by timing, not by a wrong choice
     if idn.held_out_r2 is not None and idn.held_out_r2 < (HELD_OUT_TIMING if timing else HELD_OUT):
         return f"chosen on either half of the window, it predicts the other half at R² {idn.held_out_r2:.2f}"
+    if idn.stable is False and not idn.timing:
+        return ("the halves of the window chose different counters for it, and it is not exact: which counters are its flows "
+                "is not identified")
     if idn.cum_ratio is not None and idn.cum_ratio > CUM_RATIO:
         return (f"it does not reproduce the level: the running total of what it misses spreads {idn.cum_ratio:.2f} times "
                 "as wide as the level")
