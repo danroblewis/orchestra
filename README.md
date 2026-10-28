@@ -28,6 +28,9 @@ there yet (`docs/roadmap/use-cases.md`, UC-3b, is the sample that will).
 - `SPEC.md` is the design of what exists.
 - `AGENTS.md` is the list of rules that must not be broken.
 
+
+**New here? Start with [QUICKSTART.md](QUICKSTART.md).**
+
 ## Install
 
 Nothing needs cloning. Orchestra and the plugins you want go into one environment straight from
