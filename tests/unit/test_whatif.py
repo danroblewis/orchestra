@@ -278,11 +278,12 @@ def test_the_endpoint_answers_what_the_function_answers_and_changes_nothing(tmp_
     from orchestra.sd.store import ModelStore
     from orchestra.sd.whatif import what_if as run
     from orchestra.web.app import create_app
+    from orchestra.web.auth import bearer
 
     project, m = _project(tmp_path, monkeypatch)
     models = ModelStore.for_state(project.state_dir)
     before = sorted((p.name, p.stat().st_mtime) for p in models.dir.iterdir())
-    c = TestClient(create_app(project))
+    c = TestClient(create_app(project), headers=bearer(project))
     body = {"interventions": [{"kind": "scale_flow", "flow": "in", "factor": 1.5}], "horizon_s": 1800, "members": 8,
             "bounds": {"q": [None, 30]}}
     deadline = time.time() + 30

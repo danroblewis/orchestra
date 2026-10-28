@@ -50,7 +50,8 @@ def test_a_plugin_adds_pages_static_files_and_routes_and_a_broken_one_is_reporte
         raise RuntimeError("no database")
     monkeypatch.setattr(plugins, "entry_points", lambda group: [EntryPoint("bakery", a_plugin(tmp_path)), EntryPoint("bad", broken)])
     from orchestra.web.app import create_app
-    c = TestClient(create_app(project))
+    from orchestra.web.auth import bearer
+    c = TestClient(create_app(project), headers=bearer(project))
     page = c.get("/bakery")
     assert page.status_code == 200 and "bakery of " in page.text and "{{v}}" not in page.text
     assert c.get("/plugins/bakery/static/graph.js").text == "// graph"

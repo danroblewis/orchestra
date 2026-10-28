@@ -70,7 +70,7 @@ project.
 cd my_project                  # any git repository
 orchestra init                 # writes orchestra.toml and registers the project
 orchestra run &                # the host: instruments, launcher, event counter, discovery
-orchestra web                  # the UI on http://127.0.0.1:8000
+orchestra web                  # the UI on http://127.0.0.1:8000; prints a link that logs you in
 ```
 
 `orchestra init` prints the project key and where its state lives:
@@ -88,7 +88,8 @@ What each command does:
 |---|---|
 | `orchestra init` | Writes a starter `orchestra.toml` at the repository root, if there is none, and registers the project. It must run inside a git repository. Run it once. A clone that already has an `orchestra.toml` needs no `init`: the state directory is made the first time any command runs. |
 | `orchestra run` | Starts the **host**, Orchestra's own machine (`orchestra-host`). It runs your `[[collect]]` and `[[scrape]]` instruments, keeps your `[[machines]]` running, counts every event on the bus, and rediscovers the model every `[discovery] every`. Stop it with Ctrl-C, SIGTERM or SIGHUP; it stops everything it started. |
-| `orchestra web [--port 8000] [--host 127.0.0.1]` | Serves the web UI: Dashboard, Machines, Instruments, Dynamics and Core. It reads; it changes nothing but the model (when you press "rediscover now"). |
+| `orchestra web [--port 8000] [--host 127.0.0.1]` | Serves the web UI: Dashboard, Machines, Instruments, Dynamics and Core, behind the project's web token ([Logging in](#logging-in-to-the-web-ui)). It reads; it changes nothing but the model (when you press "rediscover now"). |
+| `orchestra web token [--rotate]` | Prints the web token; `--rotate` replaces it, which logs every browser out. |
 
 Every command takes `--repo PATH` to name the repository. Without it, Orchestra uses
 `ORCHESTRA_REPO`, then the current directory. From a subdirectory, or from a linked git worktree,
@@ -96,6 +97,61 @@ Orchestra finds the main repository's root: a worktree is the same project as it
 
 Only one host launches for a project. A second `orchestra run` started while one is running
 counts events and rediscovers, but starts no processes and no instruments. It says so in its log.
+
+### Logging in to the web UI
+
+Every page and every API of `orchestra web`, a plugin's included, asks for the project's **web
+token**. Only `GET /health` answers without it. The token is made the first time it is needed and
+kept in `<state>/web.token`, readable by you only. It is never in `orchestra.toml`.
+
+`orchestra web` prints it when it starts, with a link that logs you in:
+
+```
+orchestra web: http://127.0.0.1:8000/
+  log in:  http://127.0.0.1:8000/login#token=Qm9...
+  token:   Qm9...  (again: `orchestra web token`; kept in /home/me/.orchestrator/my_project-1a2b3c4d/web.token)
+```
+
+- **In a browser,** open the link, or open any page and paste the token into the login page. The
+  token after `#` never leaves the browser; the login page sends it once. The browser then keeps a
+  session cookie for 14 days. "log out" at the right of the nav ends it.
+- **From a program,** send the token on every request: `Authorization: Bearer <token>`.
+  `curl -H "Authorization: Bearer $(orchestra web token)" http://127.0.0.1:8000/api/core`.
+- **To lock everyone out,** run `orchestra web token --rotate`. The new token takes effect at once,
+  without a restart: every browser must log in again, and every program needs the new token.
+
+The web token is not the events endpoint's token (`events.token`, §5.2). A machine that can
+publish events cannot use the web UI with its token, and the other way round.
+
+**Refusals.** A page asked for without a login goes to the login page and comes back after it. An
+API asked for without one answers `401`. Five wrong tokens within a minute from one address (at the
+login page, or as a bearer token) and further tries answer `429` for the rest of that minute. A
+browser that is already logged in keeps working. A request that changes something (`POST`, `PUT`,
+`DELETE`) with the session cookie must come from Orchestra's own pages; one sent by another site
+answers `403`.
+
+**Through a tunnel or a reverse proxy.** Start `orchestra web` as usual and point the tunnel at
+it: `cloudflared tunnel --url http://127.0.0.1:8000`. Open the tunnel's address with `/login`
+(`https://<name>.trycloudflare.com/login`) and paste the token. Do not open the printed
+`127.0.0.1` link there: it logs in the browser on this computer only. The tunnel must pass the
+`Host` header on unchanged, as `cloudflared` does; a proxy that rewrites it to `127.0.0.1` makes
+every change from the page answer `403`. The cookie is marked `Secure` when the browser reached the
+server over HTTPS. Orchestra never trusts `X-Forwarded-For`: the limit on wrong tokens counts the
+address the connection comes from, which behind a tunnel is the tunnel's, shared by everyone.
+
+**`[web] auth`.** On by default, on every address. Loopback is not private: a tunnel or a proxy on
+the same computer makes a server on `127.0.0.1` public, other users of the computer reach it, and
+any web page you visit can send requests to it. To serve without a login, on this computer only:
+
+```toml
+[web]
+auth = "off"     # "on" (default) or "off"
+```
+
+`off` is refused, and `orchestra web` does not start, unless `--host` is a loopback address
+(`127.0.0.1`, `::1`, `localhost`). Even then, a request that came through a proxy or a tunnel (it
+has a forwarding header, such as `X-Forwarded-For` or `Cf-Connecting-Ip`, or names a host other than
+a loopback address) answers `403`, so a tunnel in front of it is closed, not open.
 
 ### The project key and where state lives
 

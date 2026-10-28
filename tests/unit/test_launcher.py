@@ -223,6 +223,7 @@ def test_the_host_launches_the_project_and_plugin_processes_and_stops_them(proje
     from orchestra.host import Host
     from orchestra.plugins import Plugin
     from orchestra.web.app import create_app
+    from orchestra.web.auth import bearer
 
     class EntryPoint:
         name = "tools"
@@ -240,7 +241,7 @@ def test_the_host_launches_the_project_and_plugin_processes_and_stops_them(proje
         procs = runtime.read(project)["processes"]
         assert procs["tools.helper"]["owner"] == "tools"
         pids = [r["pid"] for r in procs.values()]
-        c = TestClient(create_app(project))                         # the Core page shows them and their logs
+        c = TestClient(create_app(project), headers=bearer(project))                         # the Core page shows them and their logs
         assert {p["name"]: p["alive"] for p in c.get("/api/core").json()["host"]["processes"]} == {"tools.helper": True, "telemetry": True}
         assert {"process:tools.helper", "process:telemetry"} <= {s["id"] for s in c.get("/api/core/logs/sources").json()["sources"]}
         assert any("started" in ln for ln in c.get("/api/core/logs", params={"source": "process:telemetry"}).json()["lines"])

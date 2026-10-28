@@ -1,5 +1,6 @@
 """The web UI: Dashboard, Machines, Instruments, Dynamics and Core. Read-only for humans: nothing here
-changes the system (AGENTS.md rule 9)."""
+changes the system (AGENTS.md rule 9). Every route, a plugin's too, is behind the project's web token
+(web/auth.py), which the app's outermost middleware checks."""
 
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from .. import runtime
 from ..config import Project
 from ..events import Events
+from .auth import AuthMiddleware, enabled
 from .background import Refresher
 from .core import CoreProbe
 from .core_explore import Explorer
@@ -37,8 +39,11 @@ def render(file: Path, stylesheets: list[str]) -> str:
     return html[:at] + links + html[at:] if at >= 0 else links + html
 
 
-def create_app(project: Project) -> FastAPI:
+def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
+    """The app, as served on ``host``: whether it asks for the token follows ``[web] auth`` and
+    whether ``host`` is a loopback address (web/auth.py)."""
     app = FastAPI(title="Orchestra")
+    auth_on = enabled(project, host)
     events = Events.for_project(project)
     core = CoreProbe(project, events)
     explore = Explorer(core)
@@ -50,6 +55,11 @@ def create_app(project: Project) -> FastAPI:
         resp = await call_next(request)
         resp.headers["Cache-Control"] = "no-store"
         return resp
+
+    @app.get("/health")
+    def health() -> dict:
+        """Whether the web server is up: the one route open without the token."""
+        return {"ok": True}
 
     stylesheets: list[str] = []   # the plugins', filled in by mount_plugins
 
@@ -388,6 +398,7 @@ def create_app(project: Project) -> FastAPI:
             return
 
     declare = mount_plugins(app, project, stylesheets)
+    app.add_middleware(AuthMiddleware, project=project, on=auth_on)   # added last: the outermost, in front of every route
     return app
 
 

@@ -18,6 +18,7 @@ from orchestra import endpoint
 from orchestra.config import init_project
 from orchestra.events import Events
 from orchestra.web.app import create_app
+from orchestra.web.auth import bearer
 
 BAKER = textwrap.dedent('''\
     import sys
@@ -116,7 +117,7 @@ def test_machines_publish_and_read_events_over_http_without_the_library(project,
         assert heated[0]["source"] == "oven" and heated[0]["data"] == {"celsius": 220}
         assert '"oven-heated-1"' in (logs / "oven.log").read_text()  # what curl read back
 
-        web = TestClient(create_app(project))
+        web = TestClient(create_app(project), headers=bearer(project))
         view = until(lambda: (v := web.get("/api/machines").json()).get("ok")
                      and {"baker", "oven"} <= {m["id"] for m in v["machines"]} and v,
                      why="the Machines page did not show the machines")

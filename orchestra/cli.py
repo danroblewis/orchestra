@@ -40,14 +40,35 @@ def cmd_run(args) -> int:
 
 
 def cmd_web(args) -> int:
+    from .web import auth
+
+    project = _project(args)
+    if args.action == "token":
+        tok = auth.rotate_token(project) if args.rotate else auth.token(project)
+        if args.rotate:
+            print("a new token: every browser must log in again, and programs need the new one", file=sys.stderr)
+        print(tok)
+        return 0
+    try:
+        on = auth.enabled(project, args.host)
+    except ConfigError as e:
+        sys.exit(f"orchestra: {e}")
     import uvicorn
 
     from .web.app import create_app
 
-    project = _project(args)
+    shown = {"0.0.0.0": "127.0.0.1", "": "127.0.0.1", "::": "[::1]"}.get(args.host, f"[{args.host}]" if ":" in args.host else args.host)
+    url = f"http://{shown}:{args.port}"
+    if on:
+        tok = auth.token(project)
+        print(f"orchestra web: {url}/\n  log in:  {url}/login#token={tok}\n  token:   {tok}  "
+              f"(again: `orchestra web token`; kept in {auth.token_file(project)})", flush=True)
+    else:
+        print(f"orchestra web: {url}/  ([web] auth = \"off\": no login, and only requests from this computer are served)", flush=True)
     runtime.update(project, lambda d: d.__setitem__("web", {"port": args.port, "pid": os.getpid(), "since": time.time()}))
     try:
-        uvicorn.run(create_app(project), host=args.host, port=args.port, log_level="warning")
+        # proxy_headers off: the client and scheme are the socket's, never a forwarded header's
+        uvicorn.run(create_app(project, args.host), host=args.host, port=args.port, log_level="warning", proxy_headers=False)
     finally:
         runtime.update(project, lambda d: d.pop("web", None) if (d.get("web") or {}).get("pid") == os.getpid() else None)
     return 0
@@ -370,9 +391,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--once", action="store_true", help="start, record one heartbeat, stop")
     s.set_defaults(fn=cmd_run)
 
-    s = sub.add_parser("web", help="serve the web UI")
+    s = sub.add_parser("web", help="serve the web UI (behind the project's web token), or print the token")
+    s.add_argument("action", nargs="?", choices=["serve", "token"], default="serve",
+                   help="serve (default), or token: print the token the web UI asks for")
     s.add_argument("--port", type=int, default=8000)
     s.add_argument("--host", default="127.0.0.1")
+    s.add_argument("--rotate", action="store_true", help="for token: replace it; every session ends")
     s.set_defaults(fn=cmd_web)
 
     s = sub.add_parser("metrics", help="the metrics store: backfill event counters from the log, list series")
