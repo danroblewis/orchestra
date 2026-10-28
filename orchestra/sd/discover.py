@@ -77,15 +77,14 @@ from __future__ import annotations
 
 import math
 import re
-from bisect import bisect_left, bisect_right
 from collections import defaultdict
-from dataclasses import dataclass
 from itertools import accumulate, pairwise
 
 from .accept import accepted, stock_trust
 from .attribute import associate, candidates
 from .balance import MIN_EVENTS, MIN_GAIN, LeastSquares, balance, columns, fit_of
 from .coarse import coarse, on_writes, slowest
+from .driverchoice import adjacency, choose
 from .drivers import AIC_MARGIN, EVENTS_PER_PARAM, behind, co_counting
 from .ends import claims, moves
 from .hops import split_hops
@@ -109,6 +108,9 @@ from .netflow import stocks as net_flow_stocks
 from .netnull import measured as net_evidence
 from .parsimony import fewer_counters
 from .passing import passages
+from .path import Path
+from .path import by_level as _by_level
+from .path import nelder_mead as _nelder_mead
 from .pins import declared as declared_stocks
 from .properties import statistic
 from .resolution import LINEAR, intervals_with, real_points, steps_of
@@ -243,98 +245,6 @@ def _loglik(y: list[float], mu: list[float]) -> float:
     return ll
 
 
-def _nelder_mead(f, x0: list[float], scale: list[float], iters: int = 400) -> list[float]:
-    """Minimise f over a few parameters; small and dependency-free."""
-    n = len(x0)
-    pts = [list(x0)] + [[x0[i] + (scale[i] if i == j else 0.0) for i in range(n)] for j in range(n)]
-    vals = [f(p) for p in pts]
-    for _ in range(iters):
-        order = sorted(range(n + 1), key=lambda i: vals[i])
-        pts, vals = [pts[i] for i in order], [vals[i] for i in order]
-        cen = [sum(p[i] for p in pts[:-1]) / n for i in range(n)]
-        ref = [cen[i] + (cen[i] - pts[-1][i]) for i in range(n)]
-        fr = f(ref)
-        if fr < vals[0]:
-            exp = [cen[i] + 2 * (cen[i] - pts[-1][i]) for i in range(n)]
-            fe = f(exp)
-            pts[-1], vals[-1] = (exp, fe) if fe < fr else (ref, fr)
-        elif fr < vals[-2]:
-            pts[-1], vals[-1] = ref, fr
-        else:
-            con = [cen[i] + 0.5 * (pts[-1][i] - cen[i]) for i in range(n)]
-            fc = f(con)
-            if fc < vals[-1]:
-                pts[-1], vals[-1] = con, fc
-            else:
-                pts = [pts[0]] + [[pts[0][i] + 0.5 * (p[i] - pts[0][i]) for i in range(n)] for p in pts[1:]]
-                vals = [vals[0]] + [f(p) for p in pts[1:]]
-        if max(vals) - min(vals) < 1e-9:
-            break
-    return pts[min(range(n + 1), key=lambda i: vals[i])]
-
-
-@dataclass
-class Path:
-    """A stock's level over the window, as the fitter needs it: the level just before any instant,
-    and how long it spent at each level (in the model's time unit)."""
-
-    times: list[float]
-    values: list[float]
-    time_at: dict[float, float]
-    live: list[tuple[float, float]]
-    unit_s: float
-
-    @classmethod
-    def of(cls, points: list[tuple[float, float]], live: list[tuple[float, float]], unit_s: float) -> Path:
-        """The path, counting time only inside ``live`` (when every series involved was written)."""
-        times, values = [p[0] for p in points], [p[1] for p in points]
-        time_at: dict[float, float] = defaultdict(float)
-        for start, end in live:
-            i = bisect_right(times, start) - 1
-            level = values[i] if i >= 0 else (values[0] if values else 0.0)
-            t0 = start
-            for t, v in points[max(0, i + 1):]:
-                if t >= end:
-                    break
-                time_at[level] += (t - t0) / unit_s
-                t0, level = t, v
-            time_at[level] += (end - t0) / unit_s
-        return cls(times, values, dict(time_at), list(live), unit_s)
-
-    def before(self, t: float) -> float:
-        """The level just before ``t``: what an event at ``t`` saw."""
-        i = bisect_left(self.times, t) - 1
-        return self.values[i] if i >= 0 else (self.values[0] if self.values else 0.0)
-
-    def integral(self, c: float, k: float) -> float:
-        """∫ max(0, c + k × level) dt over the window: a rate stops at zero (``fit_flow`` says
-        when the data have shown that floor and when they have not)."""
-        return sum(d * max(0.0, c + k * x) for x, d in self.time_at.items())
-
-    def expected(self, a: float, b: float, c: float, k: float) -> float:
-        """∫ max(0, c + k × level) dt over [a, b) within the live time: the events due between two
-        instants, following the level between them."""
-        total = 0.0
-        for start, end in self.live:
-            lo, hi = max(a, start), min(b, end)
-            if hi <= lo:
-                continue
-            i = bisect_right(self.times, lo) - 1
-            level, t0 = (self.values[i] if i >= 0 else (self.values[0] if self.values else 0.0)), lo
-            for t, v in zip(self.times[i + 1:], self.values[i + 1:]):
-                if t >= hi:
-                    break
-                total += (t - t0) * max(0.0, c + k * level)
-                t0, level = t, v
-            total += (hi - t0) * max(0.0, c + k * level)
-        return total / self.unit_s
-
-    def below_zero(self, c: float, k: float) -> tuple[float | None, float]:
-        """The lowest level the stock held at which c + k × level is below zero, and how long it
-        held all such levels (in the model's time unit)."""
-        neg = [x for x in self.time_at if c + k * x < -1e-9]
-        return (min(neg) if neg else None), sum(self.time_at[x] for x in neg)
-
 
 def events_of(points: list[tuple[float, float]], live: list[tuple[float, float]]) -> list[tuple[float, float]]:
     """A counter's increments inside the live time, as (time, count); a drop is a reset. Before
@@ -352,7 +262,7 @@ def events_of(points: list[tuple[float, float]], live: list[tuple[float, float]]
 
 def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, Path], src: str | None,
              drivers: set[str] | None = None, slow: dict[str, float] | None = None, start: float = 0.0,
-             fills: set[str] | None = None) -> list[dict]:
+             fills: set[str] | None = None, near: dict[str, int] | None = None) -> list[dict]:
     """Every candidate form for one flow, the chosen one first, scored with the exact
     point-process likelihood: each event against the rate just before it, the rate integrated
     over the stocks' actual paths:
@@ -380,9 +290,14 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
     with it reads the flow's effect as its cause (a publisher fitted as publishing faster the
     fuller a queue its own messages fill); such a form is rejected.
 
-    The chosen form is the plain one (constant, or proportional to the flow's own source) with the
-    lowest AIC, unless another beats it by at least ``AIC_MARGIN``: a second parameter, or a
-    reading of another stock, must earn its place, and a tie goes to the plain form. A line's rate stops
+    The flow's own form is the plain one (constant, or proportional to the flow's own source) with
+    the lowest AIC, unless a line in its source beats it by at least ``AIC_MARGIN`` (in
+    quasi-likelihood: the events' bursts discount it) and survives the refutations of
+    ``sd.driverchoice``: a second parameter must earn its place, and a tie goes to the plain form.
+    A form that reads another series (a driver) is chosen over it only when it also pays for the
+    search and survives the same refutations (a trend in time, the other half of the window, the
+    driver read away from the events); ties among survivors go to the series nearest the flow by
+    name and labels (``near``). The chosen form's ``driver`` says what was tried and why. A line's rate stops
     at zero, and the line may go below it only where the data have shown that nothing flows: at
     levels the stock held long enough for ``MIN_EVENTS`` events to be due at the flow's mean rate
     (a shelf kept full for an hour, with no order placed). Where it held them too briefly for
@@ -445,21 +360,11 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
     for cand in cands:
         cand["aic"] = 2 * cand["k"] - 2 * cand["loglik"] if math.isfinite(cand["loglik"]) else math.inf
     plain = min((c for c in cands if c["k"] == 1 and c["inputs"] in ([], [src])), key=lambda c: c["aic"])
-    best = min((c for c in cands if "rejected" not in c), key=lambda c: c["aic"])
-    if best is not plain and best["aic"] > plain["aic"] - AIC_MARGIN:
-        best = plain
+    # a line in the source, or another series, must earn its place (another series against the size
+    # of the search too) and survive the refutations (sd.driverchoice); what was found is kept either way
+    best, evidence = choose(cands, plain, src, paths, events, next(iter(paths.values())).unit_s, near) if paths else (plain, {})
+    best["driver"] = evidence
     return [best, *sorted((c for c in cands if c is not best), key=lambda c: ("rejected" in c, c["aic"]))]
-
-
-def _by_level(events: list[tuple[float, float]], xs: list[float]) -> list[tuple[float, float]]:
-    """The events' counts summed by the level each saw: Σ count × log(c + k × level) over events
-    is the same sum over levels, and a stock holds few levels (a count of pods, a queue's length)
-    while it sees many events, so the likelihood the fitters evaluate thousands of times costs a
-    pass over the levels, not the events."""
-    out: dict[float, float] = {}
-    for (_, d), x in zip(events, xs, strict=True):
-        out[x] = out.get(x, 0.0) + d
-    return list(out.items())
 
 
 def _follows(events: list[tuple[float, float]], p: Path, c0: float, span: float) -> str:
@@ -1169,6 +1074,10 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     for mv in flow_moves:
         grouped[mv.counter.key].append(mv)
     series_of = {sid_of[s.key]: s for s, _, _, _ in found}
+    # what each series a rate may read says of itself (name, labels, unit): a tie-break between drivers (sd.driverchoice)
+    described = {sid_of[s.key]: (s.name, s.labels, unit.get(s.key)) for s in [*series_of.values(), *found_net]}
+    described.update({f"input:{k}": (r["name"], r.get("labels") or {}, unit_of(r["name"], r.get("labels") or {}))
+                      for k, r in input_refs.items()})
     windows: list[tuple[float, float]] = []
     path_cache: dict = {}
     for mvs in grouped.values():
@@ -1192,8 +1101,10 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         barred = co_counting(c, ends, found, sid_of, steps_live, lambda a, b: same_flow(a, b, n))
         events = events_of(c.points, live)
         src = mvs[0].src
+        near = {pid: adjacency(c.name, c.labels, *described[pid][:2], described[pid][2] == unit.get(c.key))
+                for pid in paths if pid in described}
         best, *rest = fit_flow(events, live_s / unit_s, paths, src, set(paths) - accumulators - set(barred), slow, start,
-                               {mv.dst for mv in mvs if mv.dst})
+                               {mv.dst for mv in mvs if mv.dst}, near)
         best["dispersion"] = dispersion(events, live, best, paths, unit_s)
         other = lambda x, src=src: f"_{x['inputs'][0]}" if x["inputs"] and x["inputs"] != [src] else ""   # a form in another stock says which
         alt = {f"aic_{x['form']}{other(x)}": round(x["aic"], 2) for x in rest[:4]}
@@ -1203,6 +1114,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         q = {"events": float(sum(y)), "loglik": round(best["loglik"], 3), "aic": round(best["aic"], 3),
              "dispersion": round(best["dispersion"], 3), "steps": float(len(steps_live)), "live_minutes": round(live_s / 60, 2), **alt}
         for mv in mvs:
+            if best.get("driver"):
+                mv.evidence["driver"] = best["driver"]
             if barred:
                 mv.evidence["not_drivers"] = barred
             if c.key in same_as:             # the counters of the same events this one stands for (one flow, measured twice)

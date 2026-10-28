@@ -511,6 +511,14 @@ The steps in detail. Constants are named so they can be found in the code.
    - A driver slower than the grid counts its own intervals, not events.
    - A stock that only fills may not drive anything, and neither may a stock whose balance counts
      the flow's own events.
+   - The search is priced and the winner refuted (`sd/driverchoice.py`): in quasi-likelihood (the
+     log-likelihood over the events' dispersion), a driver must beat the flow's own form by
+     `AIC_MARGIN + 2 ln m` for the `m` driver forms tried, beat a steady trend in time by the
+     same, predict each half of the window from the other better than the own form and the trend
+     (its slope keeping its sign), and lose most of its gain when read ⅛–⅜ of the window away. A
+     line in the flow's own source that falls as the source grows faces the same tests. Ties go to
+     the series nearest the flow by unit, labels and name. When nothing survives the flow keeps
+     its own form ("rate not explained"); `flow.evidence["driver"]` records what was tried and why.
 
    A linear form on another stock is an **influence**: the link that closes feedback loops.
 10. **Association with machines** (`sd/attribute.py`). Which machines may be associated with
