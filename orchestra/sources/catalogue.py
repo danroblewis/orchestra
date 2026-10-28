@@ -44,6 +44,7 @@ from .fetch import read as read_definition
 from .infer import Inference
 from .limits import Budget, RateLimit
 from .own import OWN, OwnSource
+from .plan import read_resolution
 from .prometheus import PrometheusSource
 from .spec import SourceSpec, Specs, for_project
 from .transform import TransformError
@@ -86,8 +87,9 @@ def summary(d: Definition) -> bool:
     return d.view in SUMMARIES or (d.view == "rollup" and d.name.endswith(("_avg", "_max", "_min")))
 
 
-def provenance(spec: SourceSpec, d: Definition, traffic: dict | None = None) -> dict:
-    return {"source": spec.name, "query": d.query, "kind": d.kind, "origin": list(d.origin), "resolution_s": d.resolution_s,
+def provenance(spec: SourceSpec, d: Definition, traffic: dict | None = None, resolution_s: float | None = None) -> dict:
+    return {"source": spec.name, "query": d.query, "kind": d.kind, "origin": list(d.origin),
+            "resolution_s": d.resolution_s if resolution_s is None else resolution_s,
             "unit": d.unit, **({"unit_label": d.unit_label} if d.unit_label else {}), "view": d.view, "family": d.family, "flags": list(d.flags), **({"traffic": traffic} if traffic else {})}
 
 
@@ -160,8 +162,8 @@ class Catalogue:
                 out.kinds[key] = Declared("counter" if d.kind in ("counter", "rate") else "level",
                                           baseline=d.kind == "counter" and d.view != "increments",
                                           direction=(counted or {}).get("direction"), channel=(counted or {}).get("channel"),
-                                          resolution_s=d.resolution_s, summary=summary(d))
-                out.provenance[key] = provenance(spec, d, counted)
+                                          resolution_s=read_resolution(d, step), summary=summary(d))
+                out.provenance[key] = provenance(spec, d, counted, read_resolution(d, step))
                 if counted:
                     out.traffic[key] = counted
                 times += [t for t, _ in pts]

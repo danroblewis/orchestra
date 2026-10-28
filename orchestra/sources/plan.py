@@ -58,6 +58,12 @@ def counter_step(step: float, resolution_s: float | None) -> float:
     return grid_step(step, 2 * (resolution_s or 0.0) or None)
 
 
+def read_resolution(d: Definition, step: float) -> float | None:
+    """How often a definition's read has a point: a counter read server-side, every S (its grid);
+    anything else, its own reporting interval."""
+    return counter_step(step, d.resolution_s) if d.agg == "increase" and d.inner else d.resolution_s
+
+
 def read_form(d: Definition, step: float) -> tuple[str, str, float] | None:
     """(inner, aggregation, step) of a definition's read; None when it is read on its own."""
     if d.agg == "increase" and d.inner:
