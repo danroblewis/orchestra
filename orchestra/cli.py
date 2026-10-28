@@ -92,48 +92,6 @@ def cmd_metrics(args) -> int:
     return 0
 
 
-def _eras(models, args) -> int:
-    """The eras recorded (sd/eras.py), each with its model's versions, and what changed at the
-    current era's boundary (sd/compare.py)."""
-    import json
-
-    from .sd import eras as era_record
-
-    eras = era_record.recorded(models)
-    versions = models.versions()
-    cached = models.latest_discovery()
-    comparison = (cached[1].discovery.get("era_comparison") if cached else None) or None
-    if args.json:
-        print(json.dumps({"eras": [vars(e) for e in eras], "current": cached[1].era if cached else None,
-                          "versions": {e: [v["version"] for v in versions if v.get("era") == e] for e in [None, *(x.id for x in eras)]},
-                          "comparison": comparison}, indent=1, default=str))
-        return 0
-    if not eras:
-        print("no eras yet: none has begun (system.changed, or an event [discovery] eras_from names; recorded by the host as it "
-              "follows the bus, and by `orchestra sd discover`)")
-        return 0
-    for e in [None, *eras]:
-        vs = [f"v{v['version']}" for v in versions if v.get("era") == (e.id if e else None)]
-        head = f"{e.id:<5} from {_when(e.start)}  {e.label}" + (f"  subject {e.subject}" if e.subject else "") if e else "-     before any era"
-        mark = "  (current)" if cached and cached[1].era == (e.id if e else None) else ""
-        print(f"{head}{mark}" + (f"\n      versions: {', '.join(vs)}" if vs else ""))
-    if comparison:
-        print(f"\nat the start of era {comparison['to']}, against era {comparison['from'] or 'before any era'}:")
-        for f in comparison["flows"]:
-            if f["status"] in ("changed", "unchanged"):
-                nums = "; ".join(f"{n['param']} {n['before']:.4g} → {n['after']:.4g} (z {n['z']})" for n in f.get("params", []))
-                print(f"  flow {f['id']}: {f['status']}: {nums}")
-            else:
-                print(f"  flow {f['id']}: {f['status']}" + (f" ({f['why']})" if f.get("why") else ""))
-        for kind in ("appeared", "disappeared", "carried"):
-            if comparison["stocks"].get(kind):
-                print(f"  stocks {kind}: {', '.join(comparison['stocks'][kind])}")
-        for kind in ("appeared", "disappeared"):
-            if comparison["loops"].get(kind):
-                print(f"  loops {kind}: {', '.join(comparison['loops'][kind])}")
-    return 0
-
-
 def _predictions(models, args) -> int:
     """The predictions recorded and their verdicts, by era (sd/predictions.py, sd/judge.py)."""
     import json
@@ -181,15 +139,11 @@ def cmd_sd(args) -> int:
         for k, why in m.discovery["left_out"].items():
             print(f"  {k}: {why}")
         if m.era:
-            print(f"era {m.era} (from {_when(m.discovery.get('era_start'))}); `orchestra sd eras` compares it with its prior")
+            print(f"era {m.era} (from {_when(m.discovery.get('era_start'))}); the Dynamics page compares it with its prior")
         print(f"saved as version {r.version}" if r.version else "structure unchanged: no new version")
         args.version = None
-    if args.action == "eras":
-        return _eras(models, args)
     if args.action == "predictions":
         return _predictions(models, args)
-    if args.action == "observability":
-        return _observability(project, models, args)
     if args.action == "versions":
         for v in models.versions():
             era = f"  era {v['era']}" if v.get("era") else ""
@@ -232,47 +186,6 @@ def cmd_sd(args) -> int:
     print("\nmachines (attributed flows are hypotheses):")
     for mc in m.machines:
         print(f"  {mc.id:<20} {mc.kind:<8} flows: {', '.join(mc.attributed) or '-'}")
-    return 0
-
-
-def _observability(project: Project, models, args) -> int:
-    """Which stocks what is measured determines (sd/observability.py), at the last hour's mean levels."""
-    import json
-
-    from .metrics import for_project as metrics_for
-    from .sd.observability import lines, operating_point, report
-    from .sd.strategies import sd_installed
-    from .sources.catalogue import Catalogue
-    from .web.background import history, stock_step
-
-    if not sd_installed():
-        sys.exit("orchestra: the observability report needs orchestra[sd] installed")
-    if args.version is None and (cached := models.latest_discovery()) and cached[1].stocks:
-        m, which = cached[1], "the latest discovery"
-    else:
-        m, which = models.load(args.version), f"version {args.version or models.current_version()}"
-    if m is None:
-        print("no model yet")
-        return 1
-    store = metrics_for(project)
-    cat = Catalogue(project, store)
-    step = stock_step(project.config.discovery_step)
-    readers: dict = {}
-
-    def raw(ref, start: float, end: float):
-        if ref.source and ref.source != "own":
-            if (start, end) not in readers:
-                readers[(start, end)] = cat.reader(start, end, step)
-            return readers[(start, end)](ref)
-        return store.raw(ref.name, ref.labels, start=start, end=end)
-
-    levels, inputs, point = operating_point(history(m, raw, time.time(), step))
-    r = report(m, levels, inputs, point=point)
-    if args.json:
-        print(json.dumps(r, indent=1))
-        return 0
-    print(f"{m.name} ({which})")
-    print("\n".join(lines(r)))
     return 0
 
 
@@ -375,17 +288,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(fn=cmd_metrics)
 
     s = sub.add_parser("sd", help="the system dynamics model: discover it from the metrics, show it, fit it, list its versions, "
-                       "say which stocks what is measured determines, list the eras and what changed (eras), and list the "
-                       "predictions and their verdicts (predictions). Machines ask the model what a change would do through "
-                       "experiments (sd.experiments)")
-    s.add_argument("action", choices=["show", "fit", "versions", "discover", "observability", "eras", "predictions"])
+                       "and list the predictions and their verdicts (predictions). Machines ask the model what a change would do "
+                       "through experiments (the events endpoint's HTTP API, or sd.experiments.api.Experiments; USING_ORCHESTRA.md §5.9)")
+    s.add_argument("action", choices=["show", "fit", "versions", "discover", "predictions"])
     s.add_argument("--minutes", type=float, help="for discover: the window, in minutes back from now (default: [discovery] window)")
     s.add_argument("--step-s", dest="step_s", type=float, help="for discover: seconds per step (default: [discovery] step)")
     s.add_argument("--strategy", help="for discover: conservation or an SD Lab strategy (default: [discovery] strategy)")
-    s.add_argument("--version", type=int, help="for show, fit and observability: this past version (default: the current one; "
-                   "for observability, the latest discovery)")
+    s.add_argument("--version", type=int, help="for show and fit: this past version (default: the current one)")
     s.add_argument("--step", type=float, default=1.0, help="for fit: hours per step (default 1)")
-    s.add_argument("--json", action="store_true", help="for observability, eras and predictions: the answer as JSON")
+    s.add_argument("--json", action="store_true", help="for predictions: the answer as JSON")
     s.set_defaults(fn=cmd_sd)
 
     s = sub.add_parser("sources", help="other time-series stores ([[sources]]): check them, infer what to read, preview a query")

@@ -254,6 +254,55 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         except Exception as e:  # noqa: BLE001 - reported to the caller
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
+    @app.get("/api/dynamics/eras")
+    def dynamics_eras() -> dict:
+        """The eras, each era's versions, and what changed at the last boundary (sd/compare.py)."""
+        from ..sd.experiments.reads import eras
+        return eras(bg.models)
+
+    # ---- Experiments (sd/experiments/): machines make and run them (the events endpoint's HTTP
+    # API, the Python API); here they are only read (AGENTS.md rule 9)
+    def experiments():
+        from ..sd.experiments.api import Experiments
+        return Experiments(project, metrics=core.metrics)
+
+    def answered(fn):
+        from fastapi.responses import JSONResponse
+
+        from ..sd.experiments.api import ExperimentError
+        try:
+            return fn()
+        except ExperimentError as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=e.status)
+
+    @app.get("/api/experiments")
+    def experiments_list(owner: str | None = None, status: str | None = None):
+        """Every experiment: who made it, its title, status, base, runs and prediction."""
+        return answered(lambda: experiments().list(owner, status))
+
+    @app.get("/api/experiments/{eid}")
+    def experiment_one(eid: str, base: bool = False):
+        """One experiment: its draft (equations in the language), scenario, edit log, runs and prediction."""
+        return answered(lambda: experiments().get(eid, base))
+
+    @app.get("/api/experiments/{eid}/diff")
+    def experiment_diff(eid: str):
+        return answered(lambda: experiments().diff(eid))
+
+    @app.get("/api/experiments/{eid}/runs")
+    def experiment_runs(eid: str):
+        return answered(lambda: experiments().runs(eid))
+
+    @app.get("/api/experiments/{eid}/runs/{rid}")
+    def experiment_run(eid: str, rid: str):
+        """One run in full: forward (trajectories and band), replay (observed against simulated, scores) or inverse."""
+        return answered(lambda: experiments().run_result(eid, rid))
+
+    @app.get("/api/experiments/{eid}/prediction")
+    def experiment_prediction(eid: str):
+        """The prediction a committed experiment became, with its verdict once judged."""
+        return answered(lambda: experiments().prediction(eid))
+
     @app.get("/api/machines")
     def machines(era: str | None = None) -> dict:
         """The machines seen on the bus and who publishes and listens for what, and the machines,

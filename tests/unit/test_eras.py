@@ -197,7 +197,7 @@ def test_the_event_map_differs_before_and_after_a_change_that_adds_a_machine():
     assert "idle" not in {m["id"] for m in second["machines"]}, "an announcement before the era is no activity in it"
 
 
-def test_the_dynamics_api_and_the_cli_show_each_era(tmp_path, monkeypatch, capsys):
+def test_the_dynamics_api_and_the_machines_api_show_each_era(tmp_path, monkeypatch, capsys):
     import subprocess
 
     from orchestra.cli import main
@@ -225,12 +225,17 @@ def test_the_dynamics_api_and_the_cli_show_each_era(tmp_path, monkeypatch, capsy
     assert before["era"] is None and before["version"] < now["current"]
     assert not model_view(p, era="e9")["ok"]
 
+    from orchestra.sd.experiments.api import Experiments
+    got = Experiments(p).eras()
+    assert [e["id"] for e in got["eras"]] == ["e1"] and got["current"] == "e1" and got["eras"][0]["subject"] == "workers"
+    status = {f["id"]: f["status"] for f in got["comparison"]["flows"]}
+    assert status["jobs_arrived_total"] == "changed" and status["jobs_done_total"] == "unchanged"
+    assert got["versions"]["e1"] and got["versions"]["None"], "each era's versions"
     monkeypatch.chdir(repo)
     monkeypatch.setattr("sys.argv", ["orchestra", "sd", "eras"])
-    assert main() == 0
-    out = capsys.readouterr().out
-    assert "e1    from" in out and "system.changed from ops  subject workers  (current)" in out
-    assert "flow jobs_arrived_total: changed: c " in out and "flow jobs_done_total: unchanged" in out
+    with pytest.raises(SystemExit):
+        main()
+    assert "invalid choice: 'eras'" in capsys.readouterr().err, "the command is gone: the eras are read through the APIs"
 
 
 def test_the_host_records_an_era_and_announces_it(tmp_path, monkeypatch):

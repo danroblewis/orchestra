@@ -372,55 +372,6 @@ def report(model: Model, levels: dict[str, float] | None = None, inputs: dict[st
             "caveats": caveats}
 
 
-def lines(r: dict) -> list[str]:
-    """The report as text, for the command line."""
-    out = [f"observability: {r['rank']} of {r['states']} stock levels determined by what is measured"
-           + ("" if r["observable"] else f"; {r['states'] - r['rank']} undetermined direction(s)"),
-           f"  sensors: {len(r['sensors'])}; hidden stocks: {', '.join(r['hidden']) or 'none'}", ""]
-    for s in r["stocks"]:
-        tag = "hidden " if s["hidden"] else ""
-        if s["determined"]:
-            if s["hidden"]:
-                out.append(f"  {tag}stock {s['id']}: determined — {s['why']}")
-                if s["relies_on"]:
-                    out.append(f"      relies on: {'; '.join(s['relies_on'])}")
-            continue
-        out.append(f"  {tag}stock {s['id']}: NOT determined — {s['why']}")
-        if s.get("would_determine"):
-            out.append(f"      measuring would fix it: {'; '.join(s['would_determine'])}")
-        elif "would_determine" in s:
-            out.append("      no single new series or counter fixes it")
-        if s.get("coincidence"):
-            out.append(f"      {s['coincidence']}")
-    measured = [s for s in r["stocks"] if not s["hidden"]]
-    if measured:
-        out.append(f"  measured directly: {', '.join(s['id'] for s in measured)}")
-        spare = [s for s in measured if s.get("without_its_series")]
-        if spare:
-            out.append("  determined even without their own series (through the counters and the equations):")
-            out += [f"    {s['id']}: {s['without_its_series']}" for s in spare]
-        only = [s["id"] for s in measured if "without_its_series" in s and not s["without_its_series"]]
-        if only:
-            out.append(f"  determined only by their own series (it is their only instrument): {', '.join(only)}")
-    for d in r["directions"]:
-        out.append(f"  undetermined: {d['text']}")
-    if r["combinations"]:
-        out += ["", "parameters that cannot be told apart:"]
-        out += [f"  {', '.join(c['params'])}: {c['why']}" for c in r["combinations"]]
-    c = r["controllability"]
-    out += ["", "controllability (structural and weak: floors and caps are ignored; it says what is connected, not what can be steered):"]
-    if c["flows"]:
-        out.append(f"  the {len(c['flows'])} flows machines are hypothesised to affect connect to {len(c['movable'])} of "
-                   f"{r['states']} stocks; not to: {', '.join(c['unreachable']) or 'none'}")
-    else:
-        out.append("  no machine is hypothesised to affect any flow")
-    grows = [m for m in r["modes"] if m["kind"] != "decays"]
-    if grows:
-        out += ["", f"modes that do not decay: {len(grows)} ({'; '.join(sorted({m['kind'] for m in grows}))})"]
-    out += ["", "caveats:"] + [f"  - {c}" for c in r["caveats"]]
-    return out
-
-
 def operating_point(history: dict | None) -> tuple[dict[str, float], dict[str, float], str]:
     """The mean of each stock's level and each input over a history (``web.background.history``)."""
     if not history:
