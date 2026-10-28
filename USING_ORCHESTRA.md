@@ -47,9 +47,15 @@ Contents:
 Orchestra needs Python 3.12 or newer and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-uv tool install /path/to/orchestra            # the `orchestra` command
-uv tool install '/path/to/orchestra[sd]'      # the same, with SD Lab's discovery strategies
+uv tool install 'orchestra @ git+https://github.com/danroblewis/orchestra@main'       # the `orchestra` command
+uv tool install 'orchestra[sd] @ git+https://github.com/danroblewis/orchestra@main'   # the same, with SD Lab's discovery strategies
+uv tool install /path/to/orchestra            # or from a checkout
 ```
+
+Plugins go into the same environment with `--with` (README, "Install"), for example
+`--with 'orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking'`. Plugins
+name Orchestra as `git+https://github.com/danroblewis/orchestra@main`, so install Orchestra by that
+exact URL beside them: pip refuses two different URLs for one package.
 
 Extras add optional parts:
 
