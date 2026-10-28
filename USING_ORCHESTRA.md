@@ -828,6 +828,62 @@ Not built yet: command, OAuth2 and SigV4 auth; SQL sources; a Sources page. Coun
 (producers and consumers on another system's bus, known by counts) is in
 [SPEC §2 and §4.4](SPEC.md).
 
+### 3.4 Counting your tests: the test-report instrument
+
+Orchestra ships one ready-made script instrument, `orchestra/instruments/test_reports.py`. It
+reads the reports your test runner writes and prints how many tests there are of each kind (unit,
+acceptance, e2e), how they came out, which are flaky and which are confirmed. The growth in tests
+is then a stock in the model, and a regression is a rise in failures. It imports nothing from
+Orchestra, so you can also copy the file into your repository and run it with any Python 3.12.
+
+**Adopt it in one entry.** Have your runner write JUnit XML (pytest `--junitxml=reports/<run>/tests.xml`,
+Jest's `jest-junit`, Maven Surefire, `go-junit-report`) or pytest's report log
+(`--report-log`, from `pytest-reportlog`), then:
+
+```toml
+[[collect]]
+name = "tests"
+command = "python -m orchestra.instruments.test_reports --reports reports/*/*.xml --history .git/test-reports.json"
+every = "60s"
+```
+
+Use a `python` that has Orchestra installed (section 5.5, "Which `python` runs it"), or the copied
+file's path. Try it first: `python -m orchestra.instruments.test_reports --reports 'reports/*/*.xml'`.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--reports GLOB` | required, repeatable | Report files, relative to the repository root. `~`, `$VARS` and `**` work. |
+| `--kind KIND=PATTERN` | repeatable | A kind rule, tried in order before the defaults `e2e=*e2e*`, `acceptance=*acceptance*`, `unit=*`. The pattern is a glob over the test's path (JUnit's `file`, else its `classname` with dots as slashes; pytest's node id file), over `path::name` when it has `::`, or a marker when it starts with `@` (`e2e=@e2e`, from pytest's report log only). The kind `ignore` drops what it matches. |
+| `--window N` | 10 | Runs per stream read and judged for flakiness. |
+| `--confirm N` | 3 | Consecutive passing runs that confirm a test. |
+| `--history FILE` | none | Where the instrument keeps the runs it has seen and its counters. Needed when your runner overwrites one file per run, and for the counters below. Put it outside version control (`.git/` works in a plain clone). |
+
+**Runs.** A report's *stream* is its file name with its digits ignored: `reports/<run>/tests.xml`
+files are one stream, and so are `unit-1712.xml` and `unit-1713.xml`. Each file is one run of its
+stream, ordered by modification time, and the newest file that can be read is the current run.
+
+**What it prints** (all gauges, one per kind, zero for a kind with no tests):
+
+| Series | Meaning |
+|---|---|
+| `tests{kind}` | Tests in the current runs. |
+| `test_outcomes{kind, outcome}` | By outcome: `passed`, `failed`, `error`, `skipped`. |
+| `tests_flaky{kind}` | Current tests that are **flaky**: within the last `--window` runs of their stream they both failed (or erred) and passed, or a report marks them passing on a rerun (Surefire's `flakyFailure`, pytest-rerunfailures' `rerun`, or the same case reported twice in one file, failed then passed). |
+| `tests_confirmed{kind}` | Current tests that are **confirmed**: they passed in each of their last `--confirm` runs, consecutively, and none of those runs marked them flaky. A new test is unconfirmed until it has passed that many runs; one failure unconfirms it until it has again. |
+| `tests_duration_seconds{kind}` | The time the kind's tests took in their current runs. |
+| `test_report_files{state}` | Report files `read` and `unreadable` this round. |
+| `tests_added_total{kind}`, `tests_removed_total{kind}` | With `--history` only: counters of the tests that appeared in, or disappeared from, a stream's run since its previous run. They balance `tests`, which is what lets discovery find the test count a stock, with writing tests and deleting them as its flows. |
+
+**Missing and partial reports.** A report that cannot be read (being written, empty, not JUnit or
+a report log, over 50 MB) is skipped, counted under `test_report_files{state="unreadable"}`, and
+named in the instrument's log; its stream's previous run stands. With no readable report at all
+it prints only `test_report_files` (and the counters, with `--history`): a repository that has
+not run its tests yet has no test count, not a count of zero. Its arguments wrong, it exits 2,
+and the round counts as a failure (section 3.1).
+
+**A merge gate's reports.** The task system's merge gate keeps each run's reports and declares
+this instrument for them itself (`orchestra-tasking`, its README).
+
 ---
 
 ## 4. Name series so discovery can use them
