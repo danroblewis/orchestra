@@ -164,6 +164,69 @@ marked as such. This is goal G1, and every other goal's tests depend on it.
 - **Needs:** G5 and the model's version comparisons.
 - **Acceptance:** to be written when planned.
 
+## Leverage: machines improving the system through its model (the owner, 2026-10-27)
+
+The control-engineering half of "both ways": machines change the system, and the model says whether
+the change did what was intended.
+
+### G11. Eras: a new era when a machine changes the system
+- **What:** when a machine changes how the system works, a new era begins. Examples: a prompt or
+  role edited, a configuration changed, a worker kind added, a deploy. The model is fitted per
+  era, so the eras can be compared.
+- **Who marks it:** the change is announced by the machine that made it, as an event on the bus.
+  Orchestra knows no domain (rule 1), so which event types start an era is configuration, plus
+  the generic events Orchestra already sees, such as `config.changed`.
+- **Acceptance:** a change event starts an era. Discovery fits the eras separately, and the
+  Dynamics page shows them on a timeline. A rate that changed at an era boundary is reported as
+  changed, with before and after values.
+
+### G12. The model says when it changes, and when reality leaves its predictions
+- **What:** Orchestra publishes events of its own:
+  - **a structure change:** a stock, flow or loop appeared or disappeared;
+  - **a divergence:** observed levels left the predicted band for longer than a set time.
+  
+  Other machines can listen. The pipeline manager (G10) and the Desk would. While the model
+  still churns, the events are rate-limited, so they don't fire on every flip.
+- **Acceptance:** a scripted change to a dummy-run system produces exactly one structure-change
+  event. A system pushed off its prediction produces a divergence event naming the stocks and
+  the size of the gap.
+
+### G13. The intended-effect test: "better than evals"
+- **What:** a change states its predicted effect before it is made, as a "what if" (G5) on the
+  current model, and the prediction is recorded with its horizon. When the horizon passes, the
+  system is rediscovered for the new era and judged by `docs/rationale/lifted-models.md` §3.1:
+  - **passed:** the predicted edit appears and the stocks move as simulated;
+  - **model wrong elsewhere:** the edit appears but the stocks don't move as simulated;
+  - **no effect:** no edit appears;
+  - **side effect:** a different edit appears.
+  
+  The null test (§3.2) covers changes that should not change behaviour.
+- **Acceptance:** with dummy agents, a scripted change that really improves a rate is judged
+  passed; one that changes nothing, no effect; one that moves another stock, side effect.
+
+### G14. Test health as instruments
+- **What:** counts of tests by kind (unit, acceptance, e2e) and by outcome (passing, failing,
+  skipped, flaky), confirmed acceptance and e2e tests, and the merge gate's reruns of flaky tests.
+  - **Instruments:** a script reading the test runner's report (JUnit XML or pytest's), supplied
+    for the target repo; the task system adds gate reruns to its own instrument.
+  - **What the model shows:** growth in tests is a stock, and a regression shows as a drop or a
+    rise in failures.
+- **Acceptance:** on the sample, adding e2e tests raises the e2e stock, breaking one shows a
+  regression, and a flaky test that the gate reruns is counted.
+
+### G15. A self-improving worker kind
+- **What:** story 1's R-learning loop made real.
+  - **The curator:** a configured agent maintains a worker kind's prompt and playbook (G3), e.g.
+    the "frontend" worker's. It learns from rejected and reworked tickets.
+  - **Each edit:** starts an era (G11) and carries a prediction (G13).
+  - **The outcome:** the worker kind's first-try pass rate. Its stock is the playbook, measured by
+    its size and its freshness against the code.
+  - **The model** shows the learning, decay and overload loops, and whether each edit helped.
+- **Needs:** G3, G11 and G13, and the agents' "what if" tool (G5).
+- **Acceptance:** with dummy agents whose success depends on a playbook file, the curator's edits
+  raise the first-try rate. The intended-effect test passes for a helpful edit and fails for a
+  useless one.
+
 ## Status
 
 | Goal | Status |
@@ -171,6 +234,9 @@ marked as such. This is goal G1, and every other goal's tests depend on it.
 | G1–G5 | In progress from 2026-10-27 |
 | G6–G7 | After G1 and G3 |
 | G8–G10 | To be planned |
+| G11–G13 | Started 2026-10-27 (Orchestra core: eras, model events, intended-effect test) |
+| G14 | After G6 lands in the task system |
+| G15 | After G3, G11 and G13 |
 
 Related work already in flight (2026-10-27):
 - agent tool permissions enforced;
