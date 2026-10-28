@@ -229,6 +229,31 @@ queues, consumer groups, pod phases), and each definition says what it merges (`
 (3 values)` in `infer_source`): a total you need split is one to pin or a reason to narrow. `settle = "30s"` for a
 VictoriaMetrics with its default latency offset. A refused source counts as missing, and then
 discovery saves no model version until it is fixed: check `GET /api/instruments` `errors`. A
+source most of whose reads arrived is **partial**, not missing: when at most a tenth of its
+definitions could not be read, the rest are used, the failed ones are named in the source's
+status (`failed`), and the version is saved.
+
+How hard a store is leaned on, per source (defaults shown; none of these changes what is
+inferred, so changing one keeps the cached definitions):
+
+```toml
+[[sources]]
+name = "work"
+url = "https://tenant.example/data/metrics"
+auth = { bearer_env = "WORK_TOKEN" }
+rate = 5                  # requests a second, shared by the host and the web server
+burst = 10
+max_requests = 1000       # per discovery's reads, retries included
+infer_requests = 1500     # per inference round, retries included
+infer_deadline = "300s"   # per inference round, the schema's reads included
+series_per_query = 2000   # the most series one batched read touches; below the store's limit
+```
+
+Only the host's discovery and `orchestra sources infer` infer; the web server and the judge read
+the cached definitions (an hour old by default, `infer_every`). A round that fails, or could not
+read everything, is tried again after 5 minutes, then 10, 20, up to `infer_every`, never at once;
+the definitions before it stand meanwhile. A round over a shorter window than the cached one's
+never replaces it. `history = "24h"` is how far back a family's type is judged (below). A
 `[[series]]` entry (`source`, `name`, `query` or `select`, `kind = "level" | "counter" | "rate"`)
 pins one definition the inference would not rank.
 
@@ -251,9 +276,15 @@ label, per-pod series, recording rules beside their bases. Look before declaring
    "counter" that falls by halves is read as a gauge; Unix timestamps (`…_created`,
    `…_start_time_seconds`), clocks (`…_uptime_seconds`), info metrics (always 1) and Prometheus'
    own `up` and `scrape_*` are read as neither. A recording rule's name is a hint too: one named
-   a rate of a utilisation is a gauge, and a rule is read on its own evaluation interval. Check
-   `retyped` against what you know of the exporter; where it is wrong, pin the series. A counter
-   is a flow (read as increments or a rate); a gauge may be a stock.
+   a rate of a utilisation is a gauge, and a rule is read on its own evaluation interval. A family
+   that only rose in the hour is judged over the last day too (`history`): a counter that resets
+   once a day is a counter, a queue named for events (`sidekiq_retries`) that drains outside the
+   incident is a gauge. Once judged, a type changes only when the samples decide it (a fall by
+   part says gauge, a reset says counter), never on a name. A gauge whose samples are each a count
+   of their own (OpenTelemetry's delta temporality: never negative, not carried from sample to
+   sample) is read as counts; a native histogram is read by its count. Check `retyped` against
+   what you know of the exporter; where it is wrong, pin the series. A counter is a flow (read as
+   its increase each step); a gauge may be a stock.
 3. **Find the stock candidates.** A good stock is a gauge of an amount that accumulates and
    drains (a queue's depth, items in progress, open tickets, a balance), with counters beside it
    that fill and drain it (`enqueued_total`, `processed_total`). Discovery makes a stock of a level
@@ -269,12 +300,18 @@ label, per-pod series, recording rules beside their bases. Look before declaring
 5. **Watch for duplicates.** One quantity is often stored several ways: a base metric and its
    recording rules (`job:http_requests:rate5m`), a histogram's `_count` and a separate
    `requests_total`, the same gauge from two exporters. Inference reads a family once when two
-   scrape jobs (or Prometheus replicas) hold the same series (`notes`: `job=… only repeats
-   job=…`), and keeps one of two families equal at every point and one count of the same pods;
+   scrape jobs (or Prometheus replicas) scrape the same targets (`notes`: `job=… only repeats
+   job=…`: the same instances, an `ip-10-0-1-1` host name matching `10.0.1.1:9100`, and the same
+   counts each quarter of the window), reads a counter rather than a rule over it (the rule is left
+   out naming the counter), and keeps one of two families equal at every point and one count of the same pods;
    what it cannot see (two exporters that disagree a little) is yours. Read one of each quantity:
    two flows that count the same events make discovery see twice the flow, and a stock balanced
    by one while the other is read too will not balance.
-6. **Check units and windows.** A gauge reported every 5 minutes cannot show a change inside one
+6. **Check units and windows.** A label that names a unit (`unit`, `resource`, or values like
+   `cpu`/`memory`) is kept in every view, so cores are never added to bytes; each definition
+   carries its unit (the store's metadata, else the name's suffix). A level is read with a
+   lookback of two and a half reporting intervals (at least one plus 30 s), so a missed scrape is
+   no dip. A gauge reported every 5 minutes cannot show a change inside one
    discovery step; a counter that resets every deploy is fine (increments are reset-safe), one that
    is a cumulative from another system's start is fine too. A stock and its flows must count the
    same things: `queue_depth{queue="orders"}` with `processed_total{service="payments"}` is a
@@ -357,12 +394,15 @@ each pin), or narrow `match` to the families you did not pin.
   delay (one written a minute late, on VictoriaMetrics: `settle = "90s"`); one sampled once a
   minute cannot show a change inside a minute.
 - **A busy store** answers 429 or 503 when rate-limited or overloaded, 422 when a query touches too
-  many series, 400 when a range asks for too many points. Never lower the cap or raise a limit to
-  fit: narrow the read. A `match` per family you need, with label matchers on a metric that is too
-  big alone; on a slow store (a second a request) every family costs a few requests to infer and
-  the probes have the source's `deadline` (120 s), so narrow first and raise `deadline` or
-  `concurrency` only then, never past what the store's rate limit allows. What could not be read
-  is in `infer_source`'s notes.
+  many series, 400 when a range asks for too many points. Orchestra waits out a 429 or 503 for
+  its `Retry-After` (every reader of the source pauses with it), splits a batch the store refuses
+  for its size and remembers the limit the store named, and reads at `rate` requests a second.
+  Inference batches its reads across families: a tenant of a few hundred metric names costs one
+  or two hundred requests to infer and a handful a discovery. Never lower the cap or raise a
+  limit to fit: narrow the read. A metric too big for one query alone is named in
+  `infer_source`'s notes (narrow `match` with label matchers, or pin it); a family that could not
+  be read in a round keeps what the last round found of it, or is `unknown` and left out, never
+  guessed. Lower `rate` when the store's owner gives Orchestra less than 5 requests a second.
 - **Credentials by reference.** A token the owner keeps in a file is
   `auth = { bearer_file = "~/path/to/token" }` (or `header = { name = "API-Token", value_file = "…" }`
   for a store that wants its own header); one in the environment is `bearer_env`. Never read the
