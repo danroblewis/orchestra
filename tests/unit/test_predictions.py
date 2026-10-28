@@ -383,6 +383,8 @@ def test_predict_on_the_command_line_judged_by_the_host_shown_by_the_cli_and_the
     assert [x["id"] for x in m["predictions"]] == [pid, other["id"]], "the era's, and those still waiting for their change"
     assert m["predictions"][0]["verdict"]["verdict"] == "passed" and m["predictions"][1]["era"] is None
     assert model_view(p, era="none")["model"]["predictions"] == [], "not the era before"
-    web = TestClient(create_app(p))
+    from orchestra.web.auth import bearer
+
+    web = TestClient(create_app(p), headers=bearer(p))
     assert [x["id"] for x in web.get("/api/dynamics/predictions?era=e1").json()["predictions"]] == [pid]
     assert [x["id"] for x in web.get("/api/dynamics/predictions?era=none").json()["predictions"]] == [other["id"]], "not yet matched"
