@@ -325,7 +325,7 @@ def test_a_stock_whose_balance_counts_the_flows_own_events_does_not_drive_it(tmp
     assert {s.id for s in m.stocks} == {"orders_waiting", "takers_free"}, m.discovery["left_out"]
     f = m.flow("orders_placed_total")
     eq = f.current()
-    assert eq.inputs == ["input:yelp_rating"], (eq.form, eq.inputs, eq.quality)
+    assert eq.inputs == ["input:yelp_rating"], (eq.form, eq.inputs, f.evidence.get("driver"))
     assert "orders_taken_total" in f.evidence["not_drivers"]["takers_free"], f.evidence
 
 

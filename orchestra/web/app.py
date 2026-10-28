@@ -159,6 +159,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
 
     @app.get("/api/dynamics/model")
     def dynamics_model(version: int | None = None, era: str | None = None) -> dict:
+        bg.want("remote")                           # a page shows the levels: read remote ones while it does
         return model_view(project, version, bg.levels, bg.levels_error, era=era)
 
     @app.get("/api/dynamics/predictions")
@@ -218,6 +219,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     @app.get("/api/dynamics/history")
     def dynamics_history() -> dict:
         """The model's recent history (stock levels, flow rates), from the background cache."""
+        bg.want("remote")
         if not bg.ready("history"):
             return {"ok": False, "error": "reading the history for the first time…"}
         return {"ok": True, **bg.history, "error": bg.errors.get("history")}
@@ -229,6 +231,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         from ..sd.strategies import sd_installed
         if not sd_installed():
             return {"ok": False, "error": "simulating needs orchestra[sd] installed"}
+        bg.want("remote")
         if not bg.ready("history") or not bg.history:
             return {"ok": False, "error": "reading the history for the first time…"}
         from ..sd.simulate import simulate
@@ -250,6 +253,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         if model is None or not model.stocks:
             return {"ok": False, "error": "there is no model yet"}
         from ..sd.observability import operating_point, report
+        bg.want("remote")
         levels, inputs, point = operating_point(bg.history if bg.ready("history") else None)
         try:
             return report(model, levels, inputs, point=point)
@@ -326,6 +330,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         reads, never a read of the bus or a source on request, except a past era's first (then
         kept). ``era``: the current era by default (sd/eras.py), an era's id, ``none`` (before
         any era) or ``all``."""
+        bg.want("counted")                          # counted traffic is read from other stores while a page shows it
         if not bg.ready("index"):
             return {"ok": False, "error": "reading the event bus for the first time…", "warming": True}
         idx = bg.era_index(era)
@@ -470,8 +475,9 @@ def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
 
     @app.get("/api/plugins")
     def plugin_list() -> dict:
-        """The installed plugins' pages (for the navigation) and any that failed to load."""
-        return {"ok": True, "pages": pages, "scripts": scripts, "errors": errors}
+        """The installed plugins' pages (for the navigation), any that failed to load, and the
+        project's own plugins and overrides as they were loaded (``local``; the Core page lists them)."""
+        return {"ok": True, "pages": pages, "scripts": scripts, "errors": errors, "local": loaded.local}
 
     @app.get("/api/guides")
     def guides() -> dict:

@@ -115,7 +115,14 @@ const Live = (() => {
       t.cum_residual_ratio != null ? `running residual ${pct(t.cum_residual_ratio)} × the level's spread` : "", t.units != null ? `${t.units} units` : "",
       t.persistence != null ? `found the same way in ${Math.round(100 * t.persistence)}% of the last ${t.persistence_of} discoveries` : ""].filter(Boolean).join(" · ");
     return `<div>trust</div><div><b>${pct(t.score)}</b> ${esc(t.level)} <span class="muted">(${esc(t.kind.replace("_", " "))}; the weakest of: ${parts})</span>
-      ${facts ? `<br><span class="muted">${facts}</span>` : ""}${(t.why || []).map((w) => `<br><span class="muted">${esc(w)}</span>`).join("")}</div>`;
+      ${facts ? `<br><span class="muted">${facts}</span>` : ""}${(t.why || []).map((w) => `<br><span class="muted">${esc(w)}</span>`).join("")}</div>
+      ${t.behaviour ? behaviourRows(t.behaviour) : ""}`;
+  }
+  // how far to trust the stock's projection (sd/experiments/heldout.py): the model run forward from part-way through its window
+  function behaviourRows(b) {
+    const pct = (x) => (x == null ? "—" : (+x).toFixed(2));
+    return `<div>behaviour</div><div><b>${pct(b.score)}</b> ${esc(b.level)} <span class="muted">(its own runs from part-way through the window miss the level by ${pct(b.error)} × its spread; holding the level, ${pct(b.hold_error)})</span>
+      ${(b.why || []).map((w) => `<br><span class="muted">${esc(w)}</span>`).join("")}</div>`;
   }
   function openStock(id) {
     const s = MODEL.stocks.find((x) => x.id === id), io = flowsOf(id), ev = s.evidence || {};
