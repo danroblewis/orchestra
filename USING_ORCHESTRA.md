@@ -846,33 +846,87 @@ acceptance, e2e), how they came out, which are flaky and which are confirmed. Th
 is then a stock in the model, and a regression is a rise in failures. It imports nothing from
 Orchestra, so you can also copy the file into your repository and run it with any Python 3.12.
 
-**Adopt it in one entry.** Have your runner write JUnit XML (pytest `--junitxml=reports/<run>/tests.xml`,
-Jest's `jest-junit`, Maven Surefire, `go-junit-report`) or pytest's report log
-(`--report-log`, from `pytest-reportlog`), then:
+**Adopt it in one entry.** Let it run your tests:
 
 ```toml
 [[collect]]
 name = "tests"
-command = "python -m orchestra.instruments.test_reports --reports reports/*/*.xml --history .git/test-reports.json"
-every = "60s"
+command = "python -m orchestra.instruments.test_reports --run 'uv run pytest -q' --kind acceptance=@acceptance"
+every = "5m"
+timeout = "4m"         # how long a round may take: the default, 10 s, is short for a test suite
 ```
 
 `python` here is the Python Orchestra runs in (section 5.5, "Which `python` runs it"), so the
-module is found; a copied file is run by its path. Try it first: `python -m orchestra.instruments.test_reports --reports 'reports/*/*.xml'`.
+module is found; a copied file is run by its path. Inside `--run`, `uv run pytest` runs your
+project's own environment. Try it first, in the repository root:
+`python -m orchestra.instruments.test_reports --run 'uv run pytest -q'`.
+
+**Run mode** (`--run CMD`). Each round the instrument runs CMD by the shell in the repository
+root and reads the report that run writes to a fresh temporary file, so it never counts an old
+report again when a run fails to write one (with `;` in a shell command it would; with `&&` a
+run with failing tests would count nothing, since pytest then exits 1). CMD's own output is
+captured, never mixed into the series. The report's path is given to CMD one of two ways:
+
+- CMD contains `{report}`: it is replaced by the path, for any runner that writes JUnit XML or a
+  pytest report log (`--run 'JEST_JUNIT_OUTPUT_FILE={report} npx jest --reporters=jest-junit'`);
+- otherwise CMD must end in a pytest command, and `--junitxml=<file> -p _orchestra_test_markers`
+  is appended. The plugin is a few lines the instrument writes beside the report: it records each
+  test's markers in the report, so `--kind KIND=@marker` works (a plain `pytest --junitxml`
+  report carries no markers).
+
+Each round it prints `test_run_result{result}` (1 for this round's result: `reported`,
+`no_report`, `unreadable` or `timed_out`; 0 for the others), `test_run_exit_code` (pytest: 0 all
+passed, 1 some failed, 2 interrupted, 5 no tests) and `test_run_duration_seconds`. Only a run that
+wrote a readable report prints the test series below; one that did not prints none of them (a gap
+in the graphs, not a fall to zero) and writes its output's last lines to the instrument's log.
+A run is killed after `--run-timeout`, which by default stays under the entry's `timeout` (that
+less a fifth, at most 5 s), so the instrument still prints its result.
+
+**Reports mode** (`--reports GLOB`), for reports something else writes (CI, a merge gate): have
+your runner write JUnit XML (pytest `--junitxml=reports/<run>/tests.xml`, Jest's `jest-junit`,
+Maven Surefire, `go-junit-report`) or pytest's report log (`--report-log`, from
+`pytest-reportlog`), and give the files to `--reports`. Add `--max-age` so a report left behind by
+an old run is not current.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--reports GLOB` | required, repeatable | Report files, relative to the repository root. `~`, `$VARS` and `**` work. |
-| `--kind KIND=PATTERN` | repeatable | A kind rule, tried in order before the defaults `e2e=*e2e*`, `acceptance=*acceptance*`, `unit=*`. The pattern is a glob over the test's path (JUnit's `file`, else its `classname` with dots as slashes; pytest's node id file), over `path::name` when it has `::`, or a marker when it starts with `@` (`e2e=@e2e`, from pytest's report log only). The kind `ignore` drops what it matches. |
+| `--run CMD` | one of `--run` and `--reports` | Run the tests (above). |
+| `--run-timeout DURATION` | under the entry's `timeout` | Kill the run after this long (`90s`, `3m`). |
+| `--reports GLOB` | repeatable | Report files, relative to the repository root. `~`, `$VARS` and `**` work. |
+| `--max-age DURATION` | none | With `--reports`: a stream whose newest report is older than this prints nothing, and counts under `test_report_files{state="stale"}`. |
+| `--kind KIND=PATTERN` | repeatable | A kind rule, tried in order before the defaults `e2e=*e2e*`, `acceptance=*acceptance*`, `unit=*`. The pattern is a glob over the test's path (JUnit's `file`, else its `classname` with dots as slashes; pytest's node id file), over `path::name` when it has `::`, or a marker when it starts with `@` (`e2e=@e2e`: from `--run`'s reports or pytest's report log; a marker rule over reports with no markers matches nothing, and the log says so). The kind `ignore` drops what it matches. |
 | `--window N` | 10 | Runs per stream read and judged for flakiness. |
 | `--confirm N` | 3 | Consecutive passing runs that confirm a test. |
-| `--history FILE` | none | Where the instrument keeps the runs it has seen and its counters. Needed when your runner overwrites one file per run, and for the counters below. Put it outside version control (`.git/` works in a plain clone). |
+| `--history FILE` | none | Where the instrument keeps the runs it has seen and its counters. Needed for flakiness and confirmation across rounds when each round has one report (run mode, or a runner that overwrites one file), and for the counters below. Put it outside version control (`.git/` works in a plain clone). |
 
 **Runs.** A report's *stream* is its file name with its digits ignored: `reports/<run>/tests.xml`
 files are one stream, and so are `unit-1712.xml` and `unit-1713.xml`. Each file is one run of its
 stream, ordered by modification time, and the newest file that can be read is the current run.
+In run mode each round's report is one run of the stream `run.xml`.
 
-**What it prints** (all gauges, one per kind, zero for a kind with no tests):
+**Absent is not zero.** A kind is printed only when a current run has tests of that kind. A kind
+that this round's runs do not have (a quick run without e2e, a project with no e2e tests) prints
+nothing, not zeros, whether `--kind` names it or an earlier run had it; otherwise its series would
+flap between 0 and its real count, and the model would see tests vanish and return. Within a
+printed kind, zeros are real: `test_outcomes{kind="unit",outcome="failed"} 0`. To measure kinds
+on different schedules, use two entries, each running its own subset; each point carries its
+entry's `instrument=<name>`, so their series never collide:
+
+```toml
+[[collect]]
+name = "tests-unit"
+command = "python -m orchestra.instruments.test_reports --run 'uv run pytest -q tests/unit'"
+every = "5m"
+timeout = "2m"
+
+[[collect]]
+name = "tests-e2e"
+command = "python -m orchestra.instruments.test_reports --run 'uv run pytest -q tests/e2e'"
+every = "1h"
+timeout = "20m"
+```
+
+**What it prints** (gauges, one per kind present):
 
 | Series | Meaning |
 |---|---|
@@ -881,15 +935,15 @@ stream, ordered by modification time, and the newest file that can be read is th
 | `tests_flaky{kind}` | Current tests that are **flaky**: within the last `--window` runs of their stream they both failed (or erred) and passed, or a report marks them passing on a rerun (Surefire's `flakyFailure`, pytest-rerunfailures' `rerun`, or the same case reported twice in one file, failed then passed). |
 | `tests_confirmed{kind}` | Current tests that are **confirmed**: they passed in each of their last `--confirm` runs, consecutively, and none of those runs marked them flaky. A new test is unconfirmed until it has passed that many runs; one failure unconfirms it until it has again. |
 | `tests_duration_seconds{kind}` | The time the kind's tests took in their current runs. |
-| `test_report_files{state}` | Report files `read` and `unreadable` this round. |
-| `tests_added_total{kind}`, `tests_removed_total{kind}` | With `--history` only: counters of the tests that appeared in, or disappeared from, a stream's run since its previous run. They balance `tests`, which is what lets discovery find the test count a stock, with writing tests and deleting them as its flows. |
+| `test_report_files{state}` | Report files `read` and `unreadable` this round (and `stale`, with `--max-age`). |
+| `tests_added_total{kind}`, `tests_removed_total{kind}` | With `--history` only, for every kind they have counted: counters of the tests that appeared in, or disappeared from, a stream's run since its previous run. They balance `tests`, which is what lets discovery find the test count a stock, with writing tests and deleting them as its flows. |
 
 **Missing and partial reports.** A report that cannot be read (being written, empty, not JUnit or
 a report log, over 50 MB) is skipped, counted under `test_report_files{state="unreadable"}`, and
-named in the instrument's log; its stream's previous run stands. With no readable report at all
-it prints only `test_report_files` (and the counters, with `--history`): a repository that has
-not run its tests yet has no test count, not a count of zero. Its arguments wrong, it exits 2,
-and the round counts as a failure (section 3.1).
+named in the instrument's log; in reports mode its stream's previous run stands. With no current
+report it prints none of the test series (only the run's result, `test_report_files` and, with
+`--history`, the counters): a repository whose tests did not run has no test count, not a count
+of zero. Its arguments wrong, it exits 2, and the round counts as a failure (section 3.1).
 
 **A merge gate's reports.** The task system's merge gate keeps each run's reports and declares
 this instrument for them itself (`orchestra-tasking`, its README).

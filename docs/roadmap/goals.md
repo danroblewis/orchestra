@@ -292,6 +292,10 @@ the change did what was intended.
     - a broken test shows a failure;
     - a test failing on its first run lands on the rerun, counted flaky by the record and the
       instrument.
+  - **Run mode and absent kinds (2026-10-28).** `--run CMD` runs the tests itself and reads the
+    fresh report (pytest's markers recorded by an injected plugin), printing the run's result and
+    no test series when it wrote none; `--max-age` for `--reports`. A kind a current run does not
+    have prints nothing, never zeros (absent is not zero).
   - **Discovery:** a replay (`tests/unit/test_test_reports_discovery.py`) finds the e2e count a
     stock balanced by tests added and removed (R² 1.0).
   - **Not yet:** the run on the dummy agents themselves. That test belongs in `orchestra-agents`,

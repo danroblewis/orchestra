@@ -1,7 +1,7 @@
 """Getting a collector's text: its command's standard output, or its URL's body.
 
-A command runs in the repository root with ``ORCHESTRA_REPO`` (the root) and
-``ORCHESTRA_MACHINE_LOG`` (its log) set, in a process group of its own, its standard error going
+A command runs in the repository root with ``ORCHESTRA_REPO`` (the root),
+``ORCHESTRA_MACHINE_LOG`` (its log) and ``ORCHESTRA_COLLECT_TIMEOUT`` (its timeout, in seconds) set, in a process group of its own, its standard error going
 to its log. It fails when it exits non-zero, outlasts its timeout (its group is then killed) or
 cannot be started. A URL fails on anything but a 200, or when the server is silent for longer
 than the timeout (it bounds each wait, not the whole transfer). Either fails when the text is
@@ -30,7 +30,8 @@ class Failed(Exception):
 
 def run_command(c: Collector, repo: Path, log: Path, stop: threading.Event | None = None) -> str:
     """The command's standard output; raises ``Failed`` saying why there is none."""
-    env = {**os.environ, "ORCHESTRA_REPO": str(repo), "ORCHESTRA_MACHINE_LOG": str(log)}
+    env = {**os.environ, "ORCHESTRA_REPO": str(repo), "ORCHESTRA_MACHINE_LOG": str(log),
+           "ORCHESTRA_COLLECT_TIMEOUT": f"{c.timeout_s:g}"}
     log.parent.mkdir(parents=True, exist_ok=True)
     try:
         with log.open("ab") as err:

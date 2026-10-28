@@ -23,6 +23,7 @@ def test_a_command_that_prints_two_series(tmp_path):
                                       'echo "disk_free_bytes{volume=\\"/\\"} 100"\n'
                                       'echo "repo_dir $(basename "$ORCHESTRA_REPO") 1"\n'   # not a sample: skipped
                                       'echo "files_total 3 1761500000000"\n'
+                                      'echo "timeout_s $ORCHESTRA_COLLECT_TIMEOUT"\n'      # its own timeout, passed in
                                       'echo oops >&2\n')
     log = tmp_path / "logs" / "disk.log"
     r = collect(Collector("disk", "collect", cmd, 60, 5), tmp_path, "proj", log)
@@ -31,6 +32,7 @@ def test_a_command_that_prints_two_series(tmp_path):
     assert by["disk_free_bytes"].labels == {"volume": "/", "project": "proj", "instrument": "disk"}
     assert by["disk_free_bytes"].value == 100.0 and abs(by["disk_free_bytes"].ts - time.time()) < 5
     assert by["files_total"].ts == 1761500000.0
+    assert by["timeout_s"].value == 5
     assert len(r.bad) == 1
     assert "oops" in log.read_text()                                     # standard error goes to its log
 

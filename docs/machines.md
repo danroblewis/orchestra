@@ -50,7 +50,7 @@ timeout = "20s"                  # how long one run may take (default 10 s, neve
 ```
 
 Every `every`, `orchestra run` runs the command in the repository root, with `ORCHESTRA_REPO` (the
-root) and `ORCHESTRA_MACHINE_LOG` (its log) set, reads its standard output (below), and writes each
+root), `ORCHESTRA_MACHINE_LOG` (its log) and `ORCHESTRA_COLLECT_TIMEOUT` (its timeout, in seconds) set, reads its standard output (below), and writes each
 series to the project's store with two labels added: `project` and `instrument = "disk"` (which
 instrument measured it). Its standard error goes to its log, `<state>/logs/instruments/disk.log`,
 with a line per run saying how many points it wrote. The command is not run by a shell: a file in the repository is named with a slash
@@ -65,8 +65,8 @@ The collector appears on the Instruments page as `disk`, a script, with its targ
 its last write and its log. Nothing is announced on the bus for it, and it is not a machine. A
 test of it is a test of a script: run it and check what it prints.
 
-**A ready-made one: your tests.** `python -m orchestra.instruments.test_reports --reports
-'reports/*/*.xml'` reads the JUnit XML (or pytest report log) your test runner writes and prints
+**A ready-made one: your tests.** `python -m orchestra.instruments.test_reports --run 'uv run
+pytest -q'` runs your tests, reads the JUnit XML report the run writes and prints
 the tests by kind and outcome, the flaky and the confirmed ones, and with `--history` counters of
 tests added and removed, so the test count can be a stock. One `[[collect]]` entry adopts it
 (`USING_ORCHESTRA.md` section 3.4).
