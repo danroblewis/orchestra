@@ -4,7 +4,7 @@ A project declares them in ``orchestra.toml``::
 
     [[machines]]
     name = "telemetry"                               # letters, digits, . _ -
-    command = "python machines/telemetry.py"         # split like a shell would, not run by one
+    command = "python machines/telemetry.py"         # split like a shell would, not run by one; `python` is Orchestra's
     restart = "always"                               # always (the default) | on-failure | never
     stop_grace = 10                                  # seconds from SIGTERM to SIGKILL (default 10)
 
@@ -25,6 +25,11 @@ in the runtime record under ``processes`` for the Core page. A plugin's processe
 ``<plugin>.<name>`` there and in their logs' names, so a project's ``[[machines]]`` never collide
 with them.
 
+A command whose first word is ``python`` or ``python3`` runs with the Python Orchestra runs in
+(``sys.executable``, ``own_python``), so a plugin's modules and Orchestra's own are importable
+whatever is first on the PATH; any other interpreter is named by its path (``.venv/bin/python``) or
+run through ``uv run python``. ``[[collect]]`` commands follow the same rule.
+
 Orchestra starts commands and knows nothing else of them: a process is not a machine to it until
 it publishes (AGENTS.md rules 1 and 2)."""
 
@@ -35,6 +40,7 @@ import re
 import shlex
 import signal
 import subprocess
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -53,6 +59,16 @@ GIVE_UP_AFTER = 5        # failures in a row, each within STABLE_S of starting
 BACKOFF_MAX = 60.0
 STOP_GRACE_S = 10.0      # after SIGTERM, before SIGKILL
 LOG_MAX = 5_000_000
+PYTHONS = ("python", "python3")   # a command's first word that means the Python Orchestra runs in
+
+
+def own_python(argv: list[str]) -> list[str]:
+    """``argv`` with a first word of ``python`` or ``python3`` replaced by the Python Orchestra runs in,
+    so the command imports what Orchestra can (its plugins, ``orchestra`` itself) rather than
+    whatever Python is first on the PATH (often none, or another one)."""
+    if argv and argv[0] in PYTHONS and sys.executable:
+        return [sys.executable, *argv[1:]]
+    return argv
 
 
 @dataclass
@@ -64,7 +80,7 @@ class Process:
     stop_grace_s: float | None = None   # from SIGTERM to SIGKILL when stopping it; None: STOP_GRACE_S
 
     def argv(self) -> list[str]:
-        return shlex.split(self.command) if isinstance(self.command, str) else [str(a) for a in self.command]
+        return own_python(shlex.split(self.command) if isinstance(self.command, str) else [str(a) for a in self.command])
 
     def same(self, other: Process) -> bool:
         return self.argv() == other.argv() and self.restart == other.restart

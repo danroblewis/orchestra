@@ -857,8 +857,8 @@ command = "python -m orchestra.instruments.test_reports --reports reports/*/*.xm
 every = "60s"
 ```
 
-Use a `python` that has Orchestra installed (section 5.5, "Which `python` runs it"), or the copied
-file's path. Try it first: `python -m orchestra.instruments.test_reports --reports 'reports/*/*.xml'`.
+`python` here is the Python Orchestra runs in (section 5.5, "Which `python` runs it"), so the
+module is found; a copied file is run by its path. Try it first: `python -m orchestra.instruments.test_reports --reports 'reports/*/*.xml'`.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -1218,9 +1218,12 @@ environment is `orchestra run`'s, plus:
 | `ORCHESTRA_EVENTS_ENDPOINT`, `ORCHESTRA_EVENTS_TOKEN` | The events endpoint and its token ([§5.2](#52-publishing-and-reading-events)), unless `[events] listen = "off"`. |
 | `PYTHONUNBUFFERED` | `1`, so a Python program's output reaches its log at once. |
 
-`python` in a command is whatever `python` is on the `PATH` `orchestra run` was started with.
-Name an interpreter by its full path, use `python3`, or use `uv run python ...` when the
-project's `pyproject.toml` lists what the program needs.
+**Which `python` runs it.** A command whose first word is `python` or `python3` runs with the
+Python Orchestra runs in (after `uv tool install`, the tool's own), whatever is first on the
+`PATH`, so Orchestra and its plugins are importable (`python -m tasking.machines.shell_worker`).
+Any other interpreter is named by its path (`.venv/bin/python`, `/usr/bin/python3`), or run with
+`uv run python ...` when the project's `pyproject.toml` lists what the program needs. `[[collect]]`
+commands follow the same rule.
 
 **What happens when it exits.**
 

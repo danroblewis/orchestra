@@ -195,9 +195,33 @@ def test_a_toml_that_does_not_parse_keeps_what_runs(project):
         la.stop_all()
 
 
+def test_python_is_the_python_orchestra_runs_in(project, monkeypatch):
+    """A first word python or python3 runs with sys.executable, whatever is first on the PATH (here
+    a `python` that only fails), so what Orchestra imports, the program imports."""
+    fake = project.repo_root / "fakebin"
+    fake.mkdir()
+    for name in ("python", "python3"):
+        (fake / name).write_text("#!/bin/sh\nexit 9\n")
+        (fake / name).chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake}{os.pathsep}{os.environ['PATH']}")
+    out = project.repo_root / "which.txt"
+    code = f"import sys, orchestra; open({str(out)!r}, 'w').write(sys.executable)"
+    path = project.repo_root / "orchestra.toml"
+    path.write_text(f'[metrics]\nurl = "file"\n\n[[machines]]\nname = "py"\ncommand = {_toml_list(["python3", "-c", code])}\n'
+                    'restart = "never"\n')
+    la, _, _ = launcher(project)
+    try:
+        until(lambda: out.exists() and out.read_text(), la)
+        assert out.read_text() == PY
+    finally:
+        la.stop_all()
+    assert Process("a", "python3.11 x.py").argv() == ["python3.11", "x.py"]       # only python and python3
+    assert Process("a", ["python", "-m", "x"]).argv() == [PY, "-m", "x"]
+
+
 def test_check_and_from_toml():
     assert check(Process("ok", "uv run python x.py")) is None
-    assert Process("ok", "python 'a b.py' --n 2").argv() == ["python", "a b.py", "--n", "2"]
+    assert Process("ok", "python 'a b.py' --n 2").argv() == [PY, "a b.py", "--n", "2"]
     assert "unterminated" in check(Process("q", "python 'a")).lower() or "quotation" in check(Process("q", "python 'a")).lower()
     with pytest.raises(TypeError, match=r"\[\[machines\]\]"):
         from_toml({"machines": {"name": "x"}})

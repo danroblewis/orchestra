@@ -152,9 +152,11 @@ The Core page lists what the host runs, with each process's state, restarts and 
 A plugin's processes run under the name `<plugin>.<name>`, so a name of yours never replaces one
 of theirs; a `[[machines]]` name of that form is refused.
 
-**Which `python` runs it.** The command runs with the `PATH` that `orchestra run` was started with.
-Give an interpreter's full path, or `uv run python ...` when the project's own `pyproject.toml`
-lists what the program needs.
+**Which `python` runs it.** A first word `python` or `python3` is the Python Orchestra runs in,
+whatever is first on the `PATH` `orchestra run` was started with, so Orchestra and its plugins
+are importable. Give any other interpreter's full path (`.venv/bin/python`), or use `uv run python
+...` when the project's own `pyproject.toml` lists what the program needs. A `[[collect]]`
+command follows the same rule.
 
 ## Naming
 

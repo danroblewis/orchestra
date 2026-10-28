@@ -84,13 +84,15 @@ them locally. Series that live in another store (Prometheus, VictoriaMetrics, Mi
 are read in place by naming it under `[[sources]]` (SPEC §4.4); `orchestra sources infer` shows
 what Orchestra will read from it.
 
-Machines are your programs, and none needs to import Orchestra. A script that prints its
-measurements in the Prometheus text format (`disk_free_bytes 1.2e11`, one per line) is a machine:
-declare it under `[[collect]]` in `orchestra.toml` and `orchestra run` runs it on an interval and
-writes what it prints, labelled `machine=<name>`, to the project's store. A program that already
-serves Prometheus metrics is declared under `[[scrape]]` with its URL. A program that should run all
-the time goes under `[[machines]]` and `orchestra run` keeps it running. Their series appear on the
-Machines page and in the Core explorers, and discovery reads them. Events go over HTTP: `orchestra
+Machines are your programs, and none needs to import Orchestra. Measurements come from
+instruments, which are not machines: a script that prints measurements in the Prometheus text
+format (`disk_free_bytes 1.2e11`, one per line) is declared under `[[collect]]` in
+`orchestra.toml`, and `orchestra run` runs it on an interval and writes what it prints, labelled
+`instrument=<name>`, to the project's store; a program that already serves Prometheus metrics is
+read under `[[scrape]]` with its URL. Instruments are listed on the Instruments page, their series
+in the Core explorers, and discovery reads them. A program that should run all the time goes under
+`[[machines]]` and `orchestra run` keeps it running (a first word `python` or `python3` is the
+Python Orchestra runs in). Events go over HTTP: `orchestra
 run` serves `POST /events` and `GET /events` and hands each process it launches the address and
 a token (`ORCHESTRA_EVENTS_ENDPOINT`, `ORCHESTRA_EVENTS_TOKEN`), so `curl` is enough. Python
 programs may use the optional helpers instead (`orchestra.events.Events.publish`,

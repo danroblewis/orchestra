@@ -1,5 +1,6 @@
 """``[[collect]]`` entries as ``orchestra.toml`` gives them (orchestra/collect/spec.py)."""
 
+import sys
 import tomllib
 
 from orchestra.collect.round import collect
@@ -22,8 +23,18 @@ def test_a_command_may_be_a_list_of_words_run_as_they_are(tmp_path):
 
 
 def test_a_string_command_is_split_like_a_shell_would():
-    [c], errors = parsed('[[collect]]\nname = "x"\ncommand = "python3 tools/x.py --gate"\n')
-    assert errors == [] and c.argv() == ["python3", "tools/x.py", "--gate"] and c.shown == "python3 tools/x.py --gate"
+    [c], errors = parsed('[[collect]]\nname = "x"\ncommand = "tools/x.sh --gate \'a b\'"\n')
+    assert errors == [] and c.argv() == ["tools/x.sh", "--gate", "a b"] and c.shown == "tools/x.sh --gate 'a b'"
+
+
+def test_python_is_the_python_orchestra_runs_in():
+    found, _ = parsed('[[collect]]\nname = "a"\ncommand = "python3 tools/x.py"\n'
+                      '[[collect]]\nname = "b"\ncommand = ["python", "-m", "orchestra.instruments.test_reports"]\n'
+                      '[[collect]]\nname = "c"\ncommand = "python3.11 tools/x.py"\n')
+    assert [c.argv() for c in found] == [[sys.executable, "tools/x.py"],
+                                         [sys.executable, "-m", "orchestra.instruments.test_reports"],
+                                         ["python3.11", "tools/x.py"]]        # only python and python3
+    assert found[0].shown == "python3 tools/x.py"                          # shown as written
 
 
 def test_a_bad_command_says_what_it_must_be():

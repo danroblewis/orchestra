@@ -6,6 +6,7 @@ URL), and those the plugins declare (``Plugin.collectors``).
     [[collect]]
     name = "disk"                    # the instrument's id: letters, digits, . _ -
     command = "machines/disk.sh"     # split like a shell would, not run by one; or a list, ["machines/disk.sh", "-v"]
+                                     # (a first word python or python3 is the Python Orchestra runs in)
     every = "60s"                    # how often (default 60 s)
     timeout = "20s"                  # how long one round may take (default 10 s, never more than every)
 
@@ -26,7 +27,7 @@ from dataclasses import dataclass, replace
 
 from ..config import ConfigError, parse_duration
 from ..events import HOST
-from ..launcher import NAME
+from ..launcher import NAME, own_python
 
 EVERY_S = 60.0
 TIMEOUT_S = 10.0
@@ -67,8 +68,9 @@ class Collector:
 
     def argv(self) -> list[str]:
         """The command's words: a string is split like a shell would (not run by one), a list is
-        taken as it is."""
-        return list(self.target) if isinstance(self.target, tuple) else shlex.split(self.target)
+        taken as it is; a first word of ``python`` or ``python3`` is Orchestra's own Python
+        (``launcher.own_python``)."""
+        return own_python(list(self.target) if isinstance(self.target, tuple) else shlex.split(self.target))
 
 
 def check(c: Collector, accepted: Iterable[Collector]) -> str | None:

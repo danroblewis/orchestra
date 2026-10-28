@@ -887,7 +887,10 @@ restart = "always"                                  # always (default) | on-fail
 stop_grace = 10                                     # seconds from SIGTERM to SIGKILL (default 10)
 ```
 
-and a plugin in `Plugin.processes` (§10.1). The host starts each in the repository root, in a
+and a plugin in `Plugin.processes` (§10.1). A command's first word `python` or `python3` is the
+Python Orchestra runs in (`sys.executable`, `launcher.own_python`), whatever is first on the PATH,
+so Orchestra and the plugins are importable; a `[[collect]]` command follows the same rule, and
+either may be a string or a list of words. The host starts each in the repository root, in a
 process group of its own, with `ORCHESTRA_REPO` (the root) and `ORCHESTRA_MACHINE_LOG` (its log,
 `<state>/logs/machines/<name>.log`, which receives its output) set, and, while the events
 endpoint serves (§3.1), `ORCHESTRA_EVENTS_ENDPOINT` (its URL) and `ORCHESTRA_EVENTS_TOKEN`. A plugin's processes are named
