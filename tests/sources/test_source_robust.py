@@ -316,3 +316,42 @@ url = "{f.url}"
     r.remotes["lab"]._sleep = lambda s: None
     gone = r.read(T0, NOW, 60.0)
     assert "lab" in gone.missing and "reads failed" in gone.missing["lab"]
+
+
+def test_a_counter_read_server_side_is_declared_at_the_grid_it_was_read_on(tmp_path, monkeypatch, made):
+    """A counter scraped every 30 s is read on a 60 s grid (two samples a step): discovery must
+    expect a point every 60 s, or it takes every other step for a silence."""
+    from helpers import project
+
+    from orchestra.sources.catalogue import Catalogue
+    f = made([("jobs_total", {"queue": q}, every(30, lambda s, k=k: k * s)) for k, q in enumerate("ab", 1)]
+             + [("queue_depth", {"queue": q}, every(30, lambda s, k=k: (k * s / 30) % 9)) for k, q in enumerate("ab", 1)])
+    p = project(tmp_path, monkeypatch, f"""
+[discovery]
+window = "60m"
+step = "30s"
+
+[[sources]]
+name = "lab"
+url = "{f.url}"
+""")
+    r = Catalogue(p, None).read(T0, NOW, 30.0)
+    counter = next(k for k in r.kinds if k.startswith("lab:jobs_total"))
+    level = next(k for k in r.kinds if k.startswith("lab:queue_depth"))
+    assert r.kinds[counter].resolution_s == 60.0 and r.provenance[counter]["resolution_s"] == 60.0
+    assert r.kinds[level].resolution_s == 30.0
+    pts = next(p for n, lab, p in r.dump if n == "lab:jobs_total" and not lab)
+    assert {b - a for (a, _), (b, _) in zip(pts, pts[1:], strict=False)} == {60.0}
+
+
+def test_a_counter_that_began_inside_the_window_starts_there(made, tmp_path):
+    """Pods started 50 minutes into the hour: their counter's running total starts one step before
+    its first increase, not at the window's start (a 0 there would read as a write, then silence)."""
+    f = made([("cart_requests_total", {"pod": "new"}, every(15, lambda s: 2 * s, start=T0 + 3000))])
+    src = quick(spec_for(f, tmp_path))
+    d = _counter_defn([])
+    d.query = d.inner = d.name = d.family = "cart_requests_total"
+    got, errors = read_many(src, [d], "lab", None, T0 + 60, NOW, 30.0)
+    (_, _, pts, _), = got["c0"]
+    assert not errors and pts[0][0] >= T0 + 3000 - 30 and pts[0][1] == 0.0
+    assert all(b - a == 30.0 for (a, _), (b, _) in zip(pts, pts[1:], strict=False))

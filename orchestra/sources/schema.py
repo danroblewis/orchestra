@@ -34,8 +34,9 @@ what their samples say they are.
    family the window cannot judge is judged over the source's longer ``history`` too, and a type
    once judged changes only when the samples decide it, never on a name alone. A metric typed a
    histogram with no classic parts is a **native histogram**, read by its count.
-6. **Units.** The store's metadata, else the name's suffix (``_bytes``, ``_seconds``, ``_total``):
-   each definition carries its unit, and its unit label when a label says it.
+6. **Units.** The store's metadata, else the name, read as discovery reads it (``sd.units``:
+   ``_bytes``, ``_seconds``, a ``_count`` of observations, ``count`` for a name with no unit
+   word): every definition carries its unit, and its unit label when a label says it.
 
 Every read of samples is batched across families (``census.py``, ``survey.py``). A family that
 cannot be read in a round (a refusal that outlasted the retries, the round's deadline or budget)
@@ -50,7 +51,8 @@ from __future__ import annotations
 import re
 
 from . import Labels, Source
-from .checks import COLLECTION_LABELS, name_unit
+from ..sd.units import from_name
+from .checks import COLLECTION_LABELS
 from .family import UNREAD, Family, LabelInfo, Schema, stat_name
 from .spec import SourceSpec
 
@@ -61,7 +63,7 @@ STAT_LABELS = ("stat", "statistic", "quantile")
 HIST_PART = re.compile(r"^(?P<base>.+)_(?P<part>bucket|count|sum)$")
 ROLLUP = re.compile(r"^(?:(?P<level>[a-zA-Z_][a-zA-Z0-9_]*):)?(?P<base>[a-zA-Z_][a-zA-Z0-9_]*):"
                     r"(?P<ops>(?P<fn>sum|avg|max|min|count)(?:_(?:rate|irate|increase)[a-zA-Z0-9_]*)?|(?P<rfn>rate|irate|increase)[a-zA-Z0-9_]*)$")
-SKIP_LABELS = {"__name__", "le"}
+SKIP_LABELS = {"__name__"}
 INTENSIVE = re.compile(r"(?i)latency|duration|seconds|ratio|percent|utili[sz]ation|temperature|_p\d\d")
 SCRAPE_SERIES = {"up", "scrape_duration_seconds", "scrape_samples_scraped", "scrape_samples_post_metric_relabeling", "scrape_series_added",
                  "scrape_timeout_seconds", "scrape_sample_limit", "scrape_body_size_bytes"}   # Prometheus' own, one per target per scrape
@@ -170,7 +172,7 @@ def _group(names: dict[str, list[Labels]], meta: dict[str, dict]) -> list[Family
         if fam.name in SCRAPE_SERIES:
             fam.kind, fam.retyped = "scrape", "Prometheus' own series about each scrape: a measurement of the collection, not of the system"
         md = meta.get(fam.first_metric()) or {}
-        fam.unit = fam.unit or md.get("unit") or name_unit(fam.first_metric().removesuffix("_count")) or None
+        fam.unit = fam.unit or md.get("unit") or from_name(fam.first_metric())   # discovery's reading of a name (sd.units)
         fam.help = fam.help or md.get("help") or None
     return out
 

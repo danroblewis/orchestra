@@ -1,7 +1,6 @@
 """What a family's labels and listing say of it, without reading its samples (``schema.py``):
 which series to sample (``pick``), its reporting interval from samples read, whether a label
-names one object rather than a group (``is_object``), whether it names a unit (``is_unit``), and
-the unit a metric's name gives (``name_unit``). The reads themselves, batched across families,
+names one object rather than a group (``is_object``), and whether it names a unit (``is_unit``). The reads themselves, batched across families,
 are ``census.py``."""
 
 from __future__ import annotations
@@ -19,13 +18,10 @@ OBJECT_LABEL = re.compile(r"(?i)(?:^|_)(?:u?uid|guid|id|ip|mac|hostname|nodename
 COLLECTION_LABELS = {"job", "prometheus", "prometheus_replica", "replica", "__replica__", "scrape_job", "exported_job"}   # labels the collection adds
 OBJECT_VALUE = re.compile(r"(?i)^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{12,}|"
                           r"\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?|[a-z][a-z0-9+.-]*://.*|v?\d+\.\d+(?:\.\d+)?(?:[-+.].*)?)$")
-UNIT_LABELS = {"unit", "units", "resource"}
+UNIT_LABELS = {"unit", "units", "resource", "le", "type"}   # never summed across (review-r1-stats F8)
 UNIT_VALUES = {"byte", "bytes", "core", "cores", "cpu", "memory", "second", "seconds", "ms", "milliseconds", "ratio", "percent",
                "celsius", "kib", "mib", "gib", "kb", "mb", "gb", "count", "requests", "integer", "ephemeral_storage", "pods",
                "nvidia_com_gpu", "storage", "hugepages_2mi", "hugepages_1gi"}
-NAME_UNITS = (("_bytes_total", "bytes"), ("_bytes", "bytes"), ("_seconds_total", "seconds"), ("_seconds", "seconds"),
-              ("_milliseconds", "milliseconds"), ("_cores", "cores"), ("_cpu", "cores"), ("_ratio", "ratio"),
-              ("_percent", "percent"), ("_celsius", "celsius"), ("_total", "events"))
 PICKS = 6                   # series whose raw samples are read, at most, for a family's interval and behaviour
 DUPLICATE_POINTS = 30       # points of the window at which a label's values are compared (duplicates.py)
 DUPLICATE_SERIES = 5000     # a family with more series is not checked for a duplicating label
@@ -80,14 +76,9 @@ def is_object(canonical: str, real: str, values: set[str]) -> bool:
 
 
 def is_unit(canonical: str, real: str, values: set[str]) -> bool:
-    """Whether a label says what unit each series is in (``unit``, ``resource``, or values that are
-    units: ``cpu``/``memory``, ``core``/``byte``): a sum over it adds cores to bytes."""
+    """Whether a label says what unit or kind of quantity each series is (``unit``, ``resource``,
+    ``le``, ``type``, or values that are units: ``cpu``/``memory``, ``core``/``byte``): a sum over it
+    adds cores to bytes, or one bucket's count to another's."""
     if canonical in UNIT_LABELS or real in UNIT_LABELS:
         return True
     return len(values) > 1 and all(v.lower().replace(".", "_").replace("/", "_") in UNIT_VALUES for v in values)
-
-
-def name_unit(name: str) -> str | None:
-    """The unit a metric's name ends with, by Prometheus' naming convention."""
-    n = name.lower()
-    return next((u for suffix, u in NAME_UNITS if n.endswith(suffix)), None)
