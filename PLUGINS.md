@@ -418,7 +418,7 @@ collectors=[Collector.scrape("slack", f"http://{slack.get('host', '127.0.0.1')}:
 ```
 
 An instrument says nothing about which machine does the work it measures. A machine is
-associated with a flow only by inference from its events (§4.5, §6.4).
+associated with a flow only by inference from its events (§4.5, §6.5).
 
 ### 4.8 `scripts` and `stylesheets`
 
@@ -543,7 +543,40 @@ metrics. Measurements of the running system come from instruments (rule 7), kept
 machines so they can test what we believe about them. `docs/machines.md` covers measurements in
 full. This section covers what a plugin's machines in particular need.
 
-### 6.1 Identity: sources and instances
+### 6.1 The provider is never the machine
+
+A plugin often provides machines without being one. A target repository's own code is a machine
+by publishing under its own source; a bridge relays another system's actors as machines; the
+Agents plugin runs configured agents as machines. In each case the program that does the
+publishing is infrastructure, and the rule (AGENTS.md rule 2) is the same for every plugin:
+
+**A plugin's infrastructure processes (schedulers, hosts, runtimes, relays) are never machines.**
+
+- They **never announce themselves**: no `orchestra.machine.started` with their own source, and
+  no `Plugin.machines` declaration for them.
+- They **never publish under their own name**. Everything they put on the bus goes out as the
+  machine whose act it is or whose responsibility they implement at that moment: the task
+  system's scheduler publishes offers as `worker` or `reviewer`, answers as the asker and gate
+  acts as `merge_gate`; the agents' host publishes a session's events as the agent's instance
+  and a team's probe as the team's lead. Guard it in your own `publish`: refuse your process's
+  own name, as `tasking/events.py` and `orchestra_agents/events.py` do.
+- They **never write metrics directly**. Keep the counts in your own record and declare an
+  instrument (`Plugin.collectors`, §4.7) that prints them: `tasks.tickets` (`tasking metrics`),
+  `agents.turns` (`orchestra-agents metrics`). Keep series names stable across such a change;
+  the instrument adds `instrument=<plugin>.<name>`.
+- They **act only as the machines they implement**, and each of those machines announces what
+  it listens for: what the infrastructure watches on the machine's behalf is the machine's
+  subscription (the agents' Supervisor lists `gate.landed`, because the host watches landings
+  for it; the task system announces, as `worker`, what makes the worker's queue offer work).
+  Orchestra then draws every edge to the machine that reacts.
+
+Write a conformance test that fails when your infrastructure announces itself or publishes as
+itself, and check `/api/machines` after an end-to-end run: no node, edge or hand-off names it.
+The existing ones: orchestra-tasking's `tests/e2e/test_handoffs_e2e.py` (no event, node, edge or
+metric of `task_scheduler`), and orchestra-agents' `tests/unit/test_host_is_no_machine.py` and
+`test_the_agents_host_is_no_machine` in its `tests/e2e/test_dummy_demo_e2e.py`.
+
+### 6.2 Identity: sources and instances
 
 A machine is its CloudEvents `source`. Several instances of one machine publish as
 `<machine>/<instance>` (`worker/1`, `worker/2`; Orchestra splits at the first `/`). Open your bus handle with your source:
@@ -555,7 +588,7 @@ events = Events.for_project(project, source="heartbeat")
 `Events.for_project(project)` without `source=` publishes as **`orchestra-host`**, Orchestra's own
 machine.
 
-### 6.2 Announcing: `orchestra.machine.started`
+### 6.3 Announcing: `orchestra.machine.started`
 
 When an instance starts, it announces itself. This is Orchestra's own event type, so Orchestra
 reads its `data` (`web/machines.py`):
@@ -573,7 +606,7 @@ reads its `data` (`web/machines.py`):
 Announcements are not counted as beats when Orchestra judges whether a machine is active. A
 machine stays active while its events keep coming at their usual cadence.
 
-### 6.3 Publishing and listening
+### 6.4 Publishing and listening
 
 ```python
 events.publish("heartbeat.pong", {"after_beats": 6}, subject="by-hand", causationid=ping["id"])
@@ -593,7 +626,7 @@ evs, offset = events.after(offset)        # every event after offset, in order; 
   the events endpoint instead: the launcher gives it `ORCHESTRA_EVENTS_ENDPOINT` and
   `ORCHESTRA_EVENTS_TOKEN`, as it does every process (`USING_ORCHESTRA.md` §5.2).
 
-### 6.4 Metrics
+### 6.5 Metrics
 
 The metrics store is filled by instruments. For what a plugin's process counts, the way is to
 serve it on `/metrics` in the Prometheus text format and declare the scrape in `Plugin.collectors`
@@ -624,7 +657,7 @@ associate a machine with a flow. Orchestra's only series derived from the event 
   of one type step by step (`orchestra/sd/attribute.py`). A match is a correlation in time, not a
   cause. A flow with none reads "no machine associated yet".
 
-### 6.5 The whole path, in order
+### 6.6 The whole path, in order
 
 ```mermaid
 sequenceDiagram
@@ -707,7 +740,10 @@ These follow from AGENTS.md. The plugins' own `AGENTS.md` files repeat them.
 - declare which flows a machine affects. There is no way to, by design: that association is only
   inferred (rule 6);
 - treat an instrument as a machine. A collector measures; it is not announced, and its name says
-  nothing about who does the work (rule 7).
+  nothing about who does the work (rule 7);
+- **make its infrastructure a machine** (rule 2, §6.1). A scheduler, host, runtime or relay never
+  announces itself, never publishes under its own name, never writes metrics directly, and acts
+  only as the machines it implements.
 
 ---
 
@@ -778,35 +814,46 @@ def plugin(orchestra_project) -> Plugin:
     project = Project.of(orchestra_project)
     return Plugin("agents", [Page("/agents", "Agents", STATIC / "agents.html")], STATIC, router(project),
                   scripts=["attention.js", "machine-cards.js"], stylesheets=["agents.css"],
-                  machines=declared(project), processes=processes(project))
+                  machines=declared(project), processes=processes(project), collectors=collectors(project))
 
 
 def processes(project) -> list[Process]:
     return ([Process("host", [sys.executable, "-m", "orchestra_agents", "run", "--wait"], stop_grace_s=STOP_GRACE_S)]
-            if "agents" in project.orchestra.config.raw else [])
+            if set_up(project) else [])
+
+
+def collectors(project) -> list[Collector]:
+    if not set_up(project):
+        return []
+    step = max(1.0, float(project.orchestra.config.discovery_step))
+    return [Collector.collect("turns", f"{shlex.quote(sys.executable)} -m orchestra_agents metrics", every_s=step, timeout_s=min(step, 10.0))]
 
 
 def declared(project) -> list[Declared]:
-    out = [Declared("agents", "program", "continuous")]
-    for a in all_agents(project).values():
-        out.append(Declared(a.name, "agent", "continuous" if a.resident else "ad hoc", sorted({w.split(":")[0] for w in a.wake_on})))
-    return out
+    work = project.config.work
+    return [Declared(a.name, "agent", "continuous" if a.resident else "ad hoc", listens_for(a, work))
+            for a in all_agents(project).values()]
 ```
 
 | Field | What it registers |
 |---|---|
 | `pages` | `/agents` ("Agents"): roles, agents, teams, wake-ups |
-| `scripts` | `attention.js` (the way to the Supervisor chat on every page) and `machine-cards.js`, which loads `agents.js` on demand (transcripts, chat, session chips) and registers `Orchestra.machineCards.register("agents", ...)`: resident agents as a row, workers and reviewers as the tickets they are on, the host as a line |
+| `scripts` | `attention.js` (the way to the Supervisor chat on every page) and `machine-cards.js`, which loads `agents.js` on demand (transcripts, chat, session chips) and registers `Orchestra.machineCards.register("agents", ...)`: resident agents as a row, workers and reviewers as the tickets they are on; the host has no card |
 | `stylesheets` | `agents.css` |
-| `router` | `GET /org`, `/state`, `/agents`, `/agents/{name}`, `/roles/{name}`, `/teams/{name}`, `/attention`, `/sessions/{id}/transcript`; `POST /attention/seen`, and `POST /supervisor`: the one human write, the Supervisor chat (rule 9) |
-| `machines` | the host `agents` (program, continuous), and each configured agent (kind `agent`; continuous when resident, ad hoc otherwise; its wake-up event types as `listens_for`) |
+| `router` | `GET /org`, `/state`, `/agents`, `/agents/{name}`, `/roles/{name}`, `/teams/{name}`, `/attention`, `/sessions/{id}/transcript`, `/metrics` (the measurements as Prometheus text); `POST /attention/seen`, and `POST /supervisor`: the one human write, the Supervisor chat (rule 9) |
+| `machines` | each configured agent (kind `agent`; continuous when resident, ad hoc otherwise; `listens_for` as it announces itself). The host is no machine and is not declared |
 | `processes` | `agents.host`, only when `orchestra.toml` has `[agents]`; `stop_grace_s=30`, longer than the host's worst-case shutdown (20 s), so Orchestra never kills it halfway and orphans its sessions |
+| `collectors` | `agents.turns`: `orchestra-agents metrics` every discovery step, printing `agents_working{role,machine}`, `agent_turns_started_total{role,machine}` and `agent_turns_finished_total{role,machine}` from the agents' runtime record |
 
-The host announces itself (`package: "agents"`, `kind: "program"`, `listens_for:
-["gate.landed", "request.done", "review.approved", "ticket.created"]`: a ticket's end, by which it
-archives the ticket's sessions, and the human's tickets), and announces each agent instance it starts as `worker/1`,
-`reviewer/1`, ... with `kind: "agent"` and extra fields (`role`, `harness`, `model`) that reach
-the card as `m.about`. State: `~/.orchestrator/<key>/agents/`; the organisation's records are in
+The plugin provides an implementation of a machine (the AI agent), the means to configure one
+(roles, harness, model, engagement, permissions), a shared runtime that runs the configured
+agents (the host) and UI additions. The host is no machine (§6.1): it never announces itself,
+never publishes as `agents` and writes no metrics. It announces each agent instance it starts, as
+that instance (`supervisor`, `worker/1`, `reviewer/1`, ...), with `kind: "agent"`, the events the
+host watches on the agent's behalf as `listens_for` (its `wake_on`, the answers to its own
+requests, and for the Supervisor the end of the tickets it created for the human and
+`ticket.created`), and extra fields (`role`, `harness`, `model`) that reach the card as
+`m.about`. State: `~/.orchestrator/<key>/agents/`; the organisation's records are in
 the repository under `.orchestra/`.
 
 ### 8.3 The bridges: `orchestra-bridges`, plugin `bridges`
@@ -833,7 +880,9 @@ Orchestra's own Machines page and series. It declares one process and one machin
 with the actor as the source (`person.<login>`), announcing each actor first with `kind: "person"`
 (or `program` for a bot) and `package: "bridges"`. It writes its own series through
 `orchestra.metrics`, and keeps no state of its own: it rebuilds everything from its events and
-series at start.
+series at start. Under §6.1 the declared machine `bridges.github`, any announcement or event the
+bridge makes under its own name, and its direct metric writes are departures still to remove:
+the bridge is a relay, and only the actors it relays are machines.
 
 On the unmerged `slack-bridge` branch, the plugin declares one process and one machine per
 configured system (`SYSTEMS = ("github", "slack")`). The Slack bridge serves `/metrics` instead of

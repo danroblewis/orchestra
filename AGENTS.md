@@ -42,7 +42,14 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    commands a project (`[[machines]]` in `orchestra.toml`) or a plugin
    (`Plugin.processes`) declares and knows them only as processes (a name, a
    command, a pid, an exit code): a process is a machine only by what it
-   publishes.
+   publishes. **The provider is never the machine:** a plugin's
+   infrastructure processes (schedulers, hosts, runtimes, relays) are never
+   machines. They never announce themselves, never publish under their own
+   name and never write metrics directly (the plugin declares an instrument,
+   `Plugin.collectors`, that reads them); they act on the bus only as the
+   machines they implement, each of which announces what it listens for.
+   (The task system's scheduler, decision D17; the agents' host,
+   2026-10-27.)
 3. **Every event carries the CloudEvents envelope.** `orchestra.events`
    writes it; Orchestra reads the envelope and never the `data` payload, which
    belongs to the machines that use it. Counted traffic is never turned into

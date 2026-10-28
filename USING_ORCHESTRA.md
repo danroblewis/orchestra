@@ -836,6 +836,21 @@ not seen yet, never override what is observed, and say nothing about flows.
 
 Orchestra's own machine is `orchestra-host`.
 
+A machine comes to exist in one of three ways. Orchestra sees the same thing in each, a `source`
+on the bus:
+
+| How the machine comes to exist | Who writes it | Its `source` | Example |
+|---|---|---|---|
+| The target repository's own code publishes under its own source | the repository's author: a program, a script, a service | the machine's own name, through the events endpoint or the Python helper (`orchestra.events.Events`) | `baker/2`, `machines/billing.sh` as `billing` |
+| A bridge relays another system's actors | the bridge (a plugin, `orchestra-bridges`) | each actor of the other system | `person.<login>` for a GitHub user |
+| The Agents plugin runs a configured agent | the owner or the Supervisor configures it (role, harness, model, engagement, permissions); the agents' host runs it | the agent's name or instance | `supervisor`, `worker/1` |
+
+The provider is never the machine. A bridge, the agents' host or a task system's scheduler is the
+program that publishes *for* machines: it never announces itself, never publishes under its own
+name and writes no metrics of its own (its plugin's instrument reads them). On the Machines page
+you see `supervisor` and `person.alice`, never `agents` or the bridge. When you write your own
+machine, publish as the machine, not as the script or service that hosts it.
+
 ### 5.2 Publishing and reading events
 
 A machine publishes and reads events over HTTP, through the **events endpoint** `orchestra run`
