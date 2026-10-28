@@ -306,7 +306,10 @@ kind = "counter"
 ```
 
 Preview each pinned query first (`preview_query`): a query that returns many series, or none, is
-wrong before discovery ever reads it.
+wrong before discovery ever reads it. A pin is read **beside** what inference keeps, not instead of
+it: once you have translated a store into pinned series, set `infer = false` on its `[[sources]]`
+entry, so only the pinned series are read (otherwise the raw family is read too, a duplicate of
+each pin), or narrow `match` to the families you did not pin.
 
 8. **Translate into quantities of the system.** Discovery wants levels that are amounts held
    (backlogs, queues, inventories, connections, sessions) and counters of what fills and drains
