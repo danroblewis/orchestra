@@ -41,6 +41,24 @@ def test_an_announced_name_and_group_are_read_and_the_latest_announcement_stands
     assert (seen["person.cy"]["name"], seen["person.cy"]["group"]) == ("Cy", None)
 
 
+def test_one_machine_made_of_an_agent_and_a_program_shows_both_and_neither_erases_the_other():
+    """The coordinator is an AI agent (its own announcement: package, harness, model) and a
+    plugin's dispatch acting as it (``coordinator/dispatch``: only what it listens for and what it
+    is). One machine: what it listens for is the union, its kind says both, and the dispatch's bare
+    announcement, whenever it comes, erases neither the agent's package nor the rest of its card."""
+    started = lambda src, t, **d: {"type": "orchestra.machine.started", "source": src, "time": t, "data": d}
+    agent = started("coordinator", "2026-09-21T13:46:40Z", package="agents", mode="continuous", kind="agent",
+                    listens_for=["task.attention_needed", "request.done"], harness="dummy", model="m")
+    dispatch = started("coordinator/dispatch", "2026-09-21T13:46:41Z", mode="continuous", kind="program",
+                       listens_for=["ticket.created", "task.released"])
+    for evs in ([agent, dispatch], [dispatch, agent]):
+        [c] = [m for m in machines_view(evs, now=T0)["machines"] if m["id"] == "coordinator"]
+        assert c["subscribes"] == ["request.done", "task.attention_needed", "task.released", "ticket.created"]
+        assert c["kind"] == "agent ×1, program ×1" and c["package"] == "agents"
+        assert c["about"] == {"harness": "dummy", "model": "m"}
+        assert [i["id"] for i in c["instances"]] == ["dispatch"]
+
+
 def iso(t: float) -> str:
     return datetime.fromtimestamp(t, UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 

@@ -20,9 +20,13 @@ Everything here is observed, or announced by the machine itself:
   ``orchestra.machine.subscribed`` with ``data.types`` is read too). A group labels machines and
   groups them on the page, never separates them (AGENTS.md rule 4). How it is engaged and what
   kind it is belong to each **instance** (its latest announcement stands): a machine whose
-  instances differ says so (``agent ×2, program ×1``), never just the last one to announce. For the
-  rest the machine's latest announcement stands, and what is left of it is passed to the
-  package's card unread;
+  instances differ says so (``agent ×2, program ×1``), never just the last one to announce. So
+  does the rest: each instance's latest announcement stands, so one that drops its name or group
+  has none, and the machine shows the package, name and group of the instance that announced one
+  latest, and passes what is left of its instances' announcements (the latest instance's over the
+  others) to the package's card unread. An instance that announces only what it listens for and
+  what it is (a part of a machine implemented elsewhere: a plugin's dispatch acting as the
+  coordinator) so never erases what another instance said of the machine;
 - **publishes**: the event types its instances emitted, with counts (all time and the last day);
 - **flows**: the flows of the latest discovery the machine is hypothesised to be associated with
   (``sd.attribute``: its events match a flow's counter in time), each with its confidence and
@@ -101,10 +105,9 @@ class MachineIndex:
         self.mode: dict[str, dict[str, str]] = defaultdict(dict)        # machine -> instance -> how it said it is engaged
         self.kind: dict[str, dict[str, str]] = defaultdict(dict)        # machine -> instance -> what it said it is (program, agent, person, ...)
         self.beats: dict[str, dict[str, deque]] = defaultdict(dict)     # machine -> instance -> its last event times
-        self.package: dict[str, str] = {}                                # machine -> the package it announced it belongs to
-        self.name: dict[str, str] = {}                                   # machine -> the name it announced, to show it by
-        self.group: dict[str, str] = {}                                  # machine -> the group it announced (group, or else team)
-        self.about: dict[str, dict] = {}                                 # machine -> the rest of its last announcement (opaque)
+        # machine -> instance -> its package, name, group (group, or else team) and the rest of its
+        # latest announcement (opaque), in the order of the instances' latest announcements
+        self.cards: dict[str, OrderedDict[str, dict]] = defaultdict(OrderedDict)
         self.instances: dict[str, dict[str, dict]] = defaultdict(dict)  # machine -> instance -> first/last seen
         self.logs: dict[str, dict[str, str]] = defaultdict(dict)        # machine -> instance -> announced log path
         self.latest: dict[str, deque] = defaultdict(lambda: deque(maxlen=RECENT))  # machine -> its last events' envelopes
@@ -178,25 +181,23 @@ class MachineIndex:
 
     def _announced(self, ev: dict, machine: str, instance: str | None) -> None:
         """What an instance says of itself: what it listens for, how it is engaged, its kind,
-        package, name, group and log."""
+        and its card (package, name, group, details), kept per instance so one that says less
+        erases nothing another said; and its log."""
         key = instance or ""
         d = ev.get("data") or {}
         self.subs[machine].update(d.get("listens_for") or d.get("types") or [])
         for field, into in (("mode", self.mode), ("kind", self.kind)):
             if isinstance(d.get(field), str) and d[field]:
                 into[machine][key] = d[field]
+        card = self.cards[machine].pop(key, {})
+        self.cards[machine][key] = card                     # the latest to announce comes last
         if isinstance(d.get("package"), str) and d["package"]:
-            self.package[machine] = d["package"]
-        if ev["type"] == "orchestra.machine.started":       # the latest says the name and group, or that there are none
-            name = d.get("name") if isinstance(d.get("name"), str) and d["name"] else None
-            group = next((d[k] for k in ("group", "team") if isinstance(d.get(k), str) and d[k]), None)
-            for value, into in ((name, self.name), (group, self.group)):
-                if value:
-                    into[machine] = value
-                else:
-                    into.pop(machine, None)
-        self.about[machine] = {k: v for k, v in d.items() if k not in ("mode", "listens_for", "types", "log", "package", "kind", "name", "group")
-                               and isinstance(v, str | int | float | bool | type(None) | list)}
+            card["package"] = d["package"]
+        if ev["type"] == "orchestra.machine.started":       # the instance's latest says its name and group, or that there are none
+            card["name"] = d.get("name") if isinstance(d.get("name"), str) and d["name"] else None
+            card["group"] = next((d[k] for k in ("group", "team") if isinstance(d.get(k), str) and d[k]), None)
+        card["about"] = {k: v for k, v in d.items() if k not in ("mode", "listens_for", "types", "log", "package", "kind", "name", "group")
+                         and isinstance(v, str | int | float | bool | type(None) | list)}
         if isinstance(d.get("log"), str) and d["log"]:
             self.logs[machine][instance or ""] = d["log"]
 
@@ -241,10 +242,12 @@ class MachineIndex:
                 last = max((v["last"] for v in self.instances[m].values()), default=None)
                 first = min((v["first"] for v in self.instances[m].values()), default=None)
                 kinds = Counter(self.kind[m].values())
+                cards = list(self.cards[m].values()) if m in self.cards else []
+                said = {f: next((c[f] for c in reversed(cards) if c.get(f)), None) for f in ("package", "name", "group")}
+                about = {k: v for c in cards for k, v in c.get("about", {}).items()}
                 machines.append({"id": m, "bootstrap": m == HOST, "mode": of_instances(Counter(self.mode[m].values())),
                                  "kind": of_instances(kinds) or ("program" if m == HOST else None), "kinds": dict(kinds),
-                                 "package": self.package.get(m), "name": self.name.get(m), "group": self.group.get(m),
-                                 "about": self.about.get(m, {}), "publishes": pubs,
+                                 **said, "about": about, "publishes": pubs,
                                  "subscribes": sorted(self.subs.get(m, ())), "flows": flows.get(m, []),
                                  "logs": sorted(i or m for i in self.logs.get(m, {})),
                                  "instances": [i for i in insts if i["id"] != m] if any(k for k in self.instances[m]) else [],

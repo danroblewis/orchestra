@@ -961,7 +961,9 @@ Read-only for humans. Navigation: Dashboard, Machines, Instruments, Dynamics, Co
   host's CPU, GPU, memory and disk). A package adds panels of its own (`Orchestra.panels`, from its
   every-page script; §10.1).
 - **Machines:** every machine seen on the bus (never one a series names, never an instrument) with its instances, how each is engaged and what kind
-  it is (a machine whose instances differ says so: agent ×2, program ×1), whether it is active (last
+  it is (a machine whose instances differ says so: agent ×2, program ×1; what it listens for is the union over its
+  instances, and its package, name and card are each instance's latest, so an instance that says less erases nothing
+  another said), whether it is active (last
   seen, by its own events alone, within two and a half beats of its own cadence and at least two
   minutes; the cadence is the gap observed between its bursts of events, so a job that runs
   rarely is active between its runs; never by a write to a series, whatever its labels, and never
