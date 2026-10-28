@@ -11,10 +11,10 @@ the level's change to 0.7% over the hour).
 So a level's balance is also searched on the stretches between a slow counter's writes
 (``sd.resolution.Block``): there every series is read at the same two instants from its own points
 (a counter, what it counted between them; a level, its value at each), so a fast level and a slow
-counter are compared on a common grid, the slower one's. A level whose balance on steps is exact
+counter are compared on a common grid, the slower one's. A level whose balance on steps fits
 needs no other grid. The coarse balance is kept when it uses a slow counter and fits where the
-balance on steps does not, or better; the level is then judged on those stretches throughout
-(``Series.blocks``), its identification included. The steps after the slow counter's last write
+balance on steps does not (a balance that fits on steps is the finer evidence); the level is then
+judged on those stretches throughout (``Series.blocks``), its identification included. The steps after the slow counter's last write
 are no stretch: what it counted there has not arrived (``sd.series.arrived_until``)."""
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ from dataclasses import replace
 from .balance import LeastSquares, balance, columns
 
 PATTERNS = 2            # the most common write patterns among the slow counters tried (one per store and phase, as a rule)
-EXACT = 0.97            # a balance on steps exact in this share of them needs no other grid
 
 
 def patterns(counters: list) -> list[list[tuple[int, float]]]:
@@ -48,12 +47,12 @@ def slowest(terms: list) -> list[tuple[int, float]] | None:
 
 
 def coarse(level, counters: list, steps: list[int], got: tuple, fits, solvers: dict, key: tuple) -> tuple:
-    """The level's balance on the stretches between slow counters' writes, when it is better than
-    ``got`` (its balance on steps: terms, R², exact share) and uses a slow counter; the level then
+    """The level's balance on the stretches between slow counters' writes, when ``got`` (its balance
+    on steps: terms, R², exact share) does not fit and the coarse one does, with a slow counter; the level then
     takes those stretches as its units (``level.blocks``). ``solvers`` caches the counters' least
     squares by ``key`` and pattern."""
     terms, r2, exact = got
-    if level.blocks is not None or (terms and exact >= EXACT):
+    if level.blocks is not None or (terms and fits(level, r2, exact, terms, steps)):
         return got
     best = None
     for pattern in patterns(counters):
@@ -64,7 +63,7 @@ def coarse(level, counters: list, steps: list[int], got: tuple, fits, solvers: d
         t, r, e = balance(view, counters, solvers[k], steps)
         if any(c.blocks for c, _ in t) and fits(view, r, e, t, steps) and (best is None or r > best[2]):
             best = (pattern, t, r, e)
-    if best is None or (terms and fits(level, r2, exact, terms, steps) and best[2] <= r2):
+    if best is None:
         return got
     level.blocks = best[0]
     return best[1], best[2], best[3]
