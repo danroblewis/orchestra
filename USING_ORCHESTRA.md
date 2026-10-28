@@ -203,6 +203,12 @@ every = "5m"
 read within a second, as for `orchestra.toml` alone. Plugins see the merged configuration
 (`project.config.raw`) and need not know there is an overlay.
 
+A plugin that changes configuration for you (the agents' Supervisor, when you ask it in the chat)
+does it through Orchestra (`project.config_edit`, SPEC §8.2) and says which file it changes: your
+own settings (identities, channels, templates) go to the overlay, the project's to
+`orchestra.toml`. The overlay is created on its first change, readable only by you, and never
+committed. You can always edit either file by hand as well.
+
 To see where each key came from, open the Core page's Configuration panel, or
 `GET /api/project`: it names both files and lists each key (`events.url`, `machines[pager]`)
 with `"from": "repo"` or `"overlay"` and its value, except that a key the overlay marks secret has

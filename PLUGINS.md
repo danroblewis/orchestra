@@ -79,8 +79,10 @@ That is all the registration there is.
 - **Read the configuration from `project.config.raw`.** It is `orchestra.toml` with the owner's
   private overlay merged over it (SPEC §8.1), so a section the owner keeps out of a shared
   repository reaches the plugin there, and the host loads the plugins again when either file
-  changes. A plugin that parses `<repo>/orchestra.toml` itself misses the overlay: use
-  `project.config.raw`, or `project.read_config()` for a fresh read.
+  changes. **A plugin reads and changes configuration only through Orchestra's objects, never by
+  opening, parsing or editing `orchestra.toml` (or the overlay) itself** (AGENTS.md rule 10): read
+  `project.config.raw`, follow changes with `project.config_stamp()` and
+  `project.reload_config()`, and change settings with `project.config_edit` (§4.9).
 - **Read from installed metadata.** `importlib.metadata.entry_points(group="orchestra.plugins")`
   reads the entry points from the installed package's `entry_points.txt`, so the plugin must be
   installed in the same environment as Orchestra. An editable install picks up code changes
@@ -439,8 +441,31 @@ A plugin reads its own sections from `raw` and validates them itself. Raise
 `"60s"`-style values. The host re-reads the config (`project.reload_config()`) before it asks the
 plugins for processes.
 
-Name your section after your plugin (`[bridges.github]`, `[agents]`, `[heartbeat]`). Nothing stops
-two packages from claiming the same section (§13).
+Never open `orchestra.toml` yourself (`project.repo_root / "orchestra.toml"`): you would miss the
+private overlay (SPEC §8.1). A process of your own (`Plugin.processes`) calls
+`orchestra.config.load_project()` and reads `project.config.raw` the same way; to follow edits it
+compares `project.config_stamp()` with the last one it saw and calls `project.reload_config()` when
+it differs. Name your section after your plugin (`[bridges.github]`, `[agents]`, `[heartbeat]`).
+Nothing stops two packages from claiming the same section (§13).
+
+To change a setting, use `project.config_edit` (`orchestra/config_edit.py`, SPEC §8.2), never a
+text edit of your own:
+
+```python
+edit = project.config_edit
+edit.set("heartbeat.every", "10s")                                   # target="repo": orchestra.toml
+edit.set("desk.channels", ["#mine"], target="overlay")              # the owner's, out of the repository
+edit.add_entry("machines", {"name": "pager", "command": "machines/pager.sh"}, target="overlay")
+edit.remove_entry("machines", "pager", target="overlay")
+c = edit.set("heartbeat.every", "1s", check=my_reader, dry_run=True)  # refused if my_reader objects
+edit.apply(c)                                                        # ... written later; edit.restore(c) undoes it
+```
+
+Each returns a `Change` (`file`, `before`, `after`, `what`, `keys`, `note`), has kept the file's
+comments, has refused a result Orchestra's readers or your `check` object to, and has reloaded
+`project.config`. Committing a change to `orchestra.toml` is yours to decide; the overlay is never
+committed. Personal settings (identities, channels, templates) belong in the overlay, the
+project's in the repository.
 
 ### 4.10 CLI commands
 
@@ -646,7 +671,8 @@ These follow from AGENTS.md. The plugins' own `AGENTS.md` files repeat them.
 - add pages, routes, panels and machine cards, and give humans a way to change the system. **Rule
   9: humans change the system only through plugins.** Orchestra's own UI and CLI are read-only
   except for rediscovering the model. The paths that exist are the agents' Supervisor chat (which
-  edits `orchestra.toml` through its tools, after which the host restarts processes accordingly)
+  changes the configuration through its tools, by `project.config_edit`, in `orchestra.toml` or
+  the owner's overlay, after which the host restarts processes accordingly)
   and the task system's operator controls (pause pickup, capacity, stop a ticket's holder;
   `docs/roadmap/decisions.md` D1);
 - read the `data` of `orchestra.machine.started` (an Orchestra event type) and of event types that
@@ -663,7 +689,8 @@ These follow from AGENTS.md. The plugins' own `AGENTS.md` files repeat them.
 - **turn counted traffic into events** (rule 3);
 - **touch a backend or Orchestra's files directly** (rule 5). Events go through
   `orchestra.events.Events` or the events endpoint, metrics through `orchestra.metrics`, config through
-  `orchestra.config`. Never open the JSONL files, Redis or VictoriaMetrics yourself, and never
+  `orchestra.config` (`project.config` to read, `project.config_edit` to change; never open
+  `orchestra.toml` or the overlay). Never open the JSONL files, Redis or VictoriaMetrics yourself, and never
   write Orchestra's `runtime.json`, `events.jsonl` or `metrics.jsonl`. Other stores
   (`[[sources]]`) are read only, through `orchestra.sources`;
 - **keep state anywhere but its own place**: `~/.orchestrator/<key>/<plugin>/`
@@ -722,7 +749,7 @@ def collectors(project: Project) -> list[Collector]:
 | `pages` | `/tickets` ("Tickets"): the ticket graph |
 | `static`, `scripts` | one loader, `tasks-boot.js`, which loads `tasks.js`, then `attention.js` (the blocked-ticket banner) and `tasks-panel.js` (the Tasks panel, `Orchestra.panels.register({id: "tasks", ...})`) |
 | `stylesheets` | `tasks.css` |
-| `router` | `/api/plugins/tasks/state`, `/board`, `/attention`, `/tickets/{id}`, `/metrics` (the measurements as Prometheus text), and `POST /control` (operator controls, published as the machine `task_web`). A router dependency re-reads `orchestra.toml` on every request, so the capacity ceiling is live |
+| `router` | `/api/plugins/tasks/state`, `/board`, `/attention`, `/tickets/{id}`, `/metrics` (the measurements as Prometheus text), and `POST /control` (operator controls, published as the machine `task_web`). A router dependency reloads the configuration (`project.reload_config()`, the overlay merged) on every request, so the capacity ceiling is live |
 | `machines` | none. The scheduler is no machine (below); `task_web` and `merge_gate` appear once seen |
 | `processes` | `tasks.scheduler`, only when `orchestra.toml` has `[project]` or `[tasks]` |
 | `collectors` | `tasks.tickets`: `tasking metrics` every discovery step, printing `tasks_tickets{state}`, `tasks_tickets_created_total{by}`, `tasks_ticket_transitions_total{from,to,by}` and `tasks_worktrees{state}` from the task system's record. A command rather than a scrape of `/metrics`, because `orchestra run` does not know the web server's port; the text is the same |
@@ -748,16 +775,15 @@ agents = "orchestra_agents.web:plugin"
 # orchestra_agents/web.py
 def plugin(orchestra_project) -> Plugin:
     """The plugin for the repository Orchestra serves (its entry point, in pyproject.toml)."""
-    project = load_project(orchestra_project.repo_root)
+    project = Project.of(orchestra_project)
     return Plugin("agents", [Page("/agents", "Agents", STATIC / "agents.html")], STATIC, router(project),
                   scripts=["attention.js", "machine-cards.js"], stylesheets=["agents.css"],
                   machines=declared(project), processes=processes(project))
 
 
 def processes(project) -> list[Process]:
-    raw = tomllib.loads((project.repo_root / "orchestra.toml").read_text(encoding="utf-8"))
     return ([Process("host", [sys.executable, "-m", "orchestra_agents", "run", "--wait"], stop_grace_s=STOP_GRACE_S)]
-            if "agents" in raw else [])
+            if "agents" in project.orchestra.config.raw else [])
 
 
 def declared(project) -> list[Declared]:
@@ -1605,12 +1631,10 @@ Gaps and inconsistencies in the plugin interface on `main` today. This is a list
 9. **`{{v}}` reflects only Orchestra's static files**, so `?v={{v}}` on a plugin's own assets
    never changes when the plugin's files change. The `Cache-Control: no-store` header on every
    response makes this harmless today.
-10. **The plugins read their config in different ways.** The bridges read `project.config.raw`.
-    The agents re-read `orchestra.toml` from disk with `tomllib` in `processes()`, and build a
-    second project with `load_project(repo_root)`, although the host has just reloaded the config
-    it passes in.
 
 Closed on 2026-10-27: a plugin can declare scrapes and collects (`collectors`, §4.7); two plugins
 with one `name` are detected, and the second is left out and reported (§4.1); a script or
 stylesheet missing from `static` is reported (§4.8); and instrument names are their own
-namespace, so a collector sharing a process's name is no longer a conflict (§4.7).
+namespace, so a collector sharing a process's name is no longer a conflict (§4.7). And the plugins
+read and change their configuration only through Orchestra's objects (`project.config`,
+`project.config_edit`, §4.9): none of them opens `orchestra.toml` itself any more.

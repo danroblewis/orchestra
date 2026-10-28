@@ -13,6 +13,7 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "psutil>=5.9",
+    "tomlkit>=0.13",   # config_edit: a change to orchestra.toml or the overlay keeps the file's comments
 ]
 
 [project.optional-dependencies]

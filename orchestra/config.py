@@ -213,6 +213,13 @@ class Project:
     def reload_config(self) -> None:
         self.config = self.read_config()
 
+    @property
+    def config_edit(self):
+        """How the configuration is changed, in ``orchestra.toml`` or the private overlay
+        (``orchestra.config_edit.ConfigEdit``): the only way, for Orchestra and every plugin."""
+        from .config_edit import ConfigEdit
+        return ConfigEdit(self)
+
 
 def find_repo_root(start: Path) -> Path:
     """The main repository root containing ``start``.
