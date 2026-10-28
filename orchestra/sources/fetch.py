@@ -16,7 +16,9 @@
   made from: the series that started and stopped reporting, so the count is a stock its two
   counters balance exactly. One raw read serves every turnover of one selector.
 - The **generated views** of a family are read together, once per aggregation at the finest
-  grouping, every family's in few requests (``plan.py``): ``read_many``.
+  grouping, every family's in few requests (``plan.py``): ``read_many``; so are queries as written
+  (declared, or a script's), each a tagged part of a batched read on its grid (``batch.py``). With a ``ReadCache``,
+  a window read before is asked for only from where the cache ends (``readcache.py``).
 - A **count** (views ``count`` and ``distinct``) reads 0 for a group at the steps it has no
   reporters while another group of the same count has some (``zero_fill``).
 - A **rate** (a query of per-second rates) is integrated over each step into a running total
@@ -38,8 +40,11 @@ from concurrent.futures import ThreadPoolExecutor
 from itertools import pairwise
 
 from . import Labels, PastDeadline, Points, Source, SourceError
-from .plan import grid_step, read_form, shared
+from .batch import OVER_LIMIT, Part
+from .plan import grid_step, kept_run, read_form, shared
+from .readcache import ReadCache
 from .traffic import resolve
+from .transport import TooBig
 from .views import Definition, lookback
 
 __all__ = ["grid_step", "read", "read_many"]
@@ -165,15 +170,51 @@ def accumulate(rows: list[tuple[Labels, Points]], t0: float, step: float) -> lis
     return out
 
 
+def _kept_select(source: Source, sel: str, a: float, end: float, until: float | None, cache: ReadCache | None,
+                 resettle: float) -> list[tuple[Labels, Points]]:
+    """Raw samples of ``sel`` in [a, end]; with a cache, only those it does not keep are asked for."""
+    if cache is None:
+        return source.select(sel, a, end, until=until)
+    k = f"s|{sel}"
+    if why := cache.refusal(k):
+        raise SourceError(why)
+    if (sp := cache.plan(k, a, end, 0.0, resettle)) is not None:
+        try:
+            got = source.select(sel, sp[0], sp[1], until=until)
+        except TooBig as e:
+            cache.refuse(k, f"{OVER_LIMIT}: {e}")
+            raise
+        cache.put(k, got, sp[0], sp[1], whole=sp[0] <= a + 1e-6)
+    return cache.get(k, a, end)
+
+
+def _kept_range(source: Source, query: str, a: float, end: float, q: float, until: float | None, cache: ReadCache | None,
+                resettle: float) -> list[tuple[Labels, Points]]:
+    """``query`` on the grid of ``q`` over [a, end]; with a cache, only what it does not keep."""
+    if cache is None:
+        return source.query_range(query, a, end, q, until=until)
+    k = f"q|{q:g}|{query}"
+    if why := cache.refusal(k):
+        raise SourceError(why)
+    if (sp := cache.plan(k, a, end, q, resettle)) is not None:
+        try:
+            got = source.query_range(query, sp[0], sp[1], q, until=until)
+        except TooBig as e:
+            cache.refuse(k, f"{OVER_LIMIT}: {e}")
+            raise
+        cache.put(k, got, sp[0], sp[1], whole=sp[0] <= a + 1e-6)
+    return cache.get(k, a, end)
+
+
 def _raw(source: Source, d: Definition, start: float, end: float, step: float, until: float | None,
-         selects: dict | None = None) -> list[tuple[Labels, Points]]:
+         selects: dict | None = None, cache: ReadCache | None = None, resettle: float = 0.0) -> list[tuple[Labels, Points]]:
     """A definition read on its own: a declared counter or a turnover from raw samples (each
     selector once, through ``selects``), a query as written on discovery's grid."""
     def select(sel: str, a: float) -> list:
         if selects is None:
-            return source.select(sel, a, end, until=until)
+            return _kept_select(source, sel, a, end, until, cache, resettle)
         if (sel, a) not in selects:
-            selects[(sel, a)] = source.select(sel, a, end, until=until)
+            selects[(sel, a)] = _kept_select(source, sel, a, end, until, cache, resettle)
         return selects[(sel, a)]
     if d.view == "increments":
         res = d.resolution_s or 0.0
@@ -182,7 +223,7 @@ def _raw(source: Source, d: Definition, start: float, end: float, step: float, u
         w = lookback(d.resolution_s)
         return turnover(select(d.query, start - w), d.by_real, w, start, end, d.view == "stops")
     q = grid_step(step, d.resolution_s)
-    return source.query_range(d.query, math.floor(start / q) * q, end, q, until=until)
+    return _kept_range(source, d.query, math.floor(start / q) * q, end, q, until, cache, resettle)
 
 
 def _finish(d: Definition, got: list[tuple[Labels, Points]], prefix: str, machine: str | None,
@@ -212,26 +253,39 @@ def _finish(d: Definition, got: list[tuple[Labels, Points]], prefix: str, machin
 
 def read_many(source: Source, defs: list[Definition], prefix: str, machine: str | None, start: float, end: float,
               step: float, producers: dict[str, str] | None = None, until: float | None = None,
-              concurrency: int = 4) -> tuple[dict[str, list[tuple[str, Labels, Points, dict | None]]], dict[str, str]]:
+              concurrency: int = 4, cache: ReadCache | None = None,
+              resettle: float = 0.0) -> tuple[dict[str, list[tuple[str, Labels, Points, dict | None]]], dict[str, str]]:
     """Every definition read for the window: the result series by definition id (name, labels,
     points, what it counts when traffic), and why for those that could not be read. ``until``:
-    the deadline (``time.monotonic()``), past which no request is made."""
+    the deadline (``time.monotonic()``), past which no request is made. With a ``cache``
+    (``readcache.py``), only what it does not keep of the window is asked for."""
     forms = {d.id: f for d in defs if (f := read_form(d, step)) is not None}
     starts = {q: math.floor(start / q) * q for _, _, q in forms.values()}
-    rows, errors = shared(source, defs, forms, starts, end, until, concurrency) if forms else ({}, {})
+    rows, errors = shared(source, defs, forms, starts, end, until, concurrency, cache, resettle) if forms else ({}, {})
     out: dict[str, list] = {}
+    out_rows: dict[str, list] = {}
     by_id = {d.id: d for d in defs}
     for i, got in rows.items():
         d = by_id[i]
         if d.agg == "increase":
             got = accumulate(got, starts[forms[i][2]], forms[i][2])
         out[i] = _finish(d, got, prefix, machine, producers)
+    written = [d for d in defs if d.id not in forms and d.view not in ("increments", "starts", "stops") and d.query]
+    if written:                              # queries as written: together too, each a part on its own grid
+        by_q: dict[float, list[Part]] = {}
+        for d in written:
+            by_q.setdefault(grid_step(step, d.resolution_s), []).append(Part(d.id, d.query, max(1, d.est_series or d.touched or 1)))
+        for q, parts in by_q.items():
+            got, bad = kept_run(source, parts, math.floor(start / q) * q, end, q, until, concurrency, cache, resettle)
+            for i, rows_of in got.items():
+                out_rows[i] = rows_of
+            errors.update(bad)
     selects: dict = {}
-    alone = [d for d in defs if d.id not in forms]
+    alone = [d for d in defs if d.id not in forms and d.id not in out_rows and d.id not in errors]
 
     def one(d: Definition):
         try:
-            return d.id, _finish(d, _raw(source, d, start, end, step, until, selects), prefix, machine, producers), None
+            return d.id, _finish(d, _raw(source, d, start, end, step, until, selects, cache, resettle), prefix, machine, producers), None
         except SourceError as e:
             return d.id, None, e
     with ThreadPoolExecutor(max(1, concurrency)) as pool:
@@ -240,6 +294,8 @@ def read_many(source: Source, defs: list[Definition], prefix: str, machine: str 
                 errors[i] = str(e) if not isinstance(e, PastDeadline) else f"late: {e}"
             else:
                 out[i] = got
+    for i, got in out_rows.items():
+        out[i] = _finish(by_id[i], got, prefix, machine, producers)
     return out, errors
 
 

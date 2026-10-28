@@ -769,11 +769,15 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   `<state>/sources/<name>.json` with the window inferred over (`sources/infer.py`,
   `sources/cache.py`). **Only the host's discovery and the CLI infer**; the web server and the
   judge read the cache. One round at a time across processes (a lock); a failed or partial round
-  is retried after 5 minutes, doubling to `infer_every`, while the cached definitions stand; a
-  round over a narrower window never replaces a broader one. A round has a budget
+  is retried after 5 minutes, four times longer each next time, while the cached definitions
+  stand; after three rounds that failed for their cost, or one refused because `match` selects
+  more than `max_names` (2,000) metric names (a big tenant is never listed whole), none runs until
+  the source's settings change. A round over a narrower window never replaces a broader one. A
+  source that declares `[[series]]` infers every 6 h unless `infer_every` says otherwise. A round has a budget
   (`infer_requests`, 1500; `infer_deadline`, 300 s) and its reads are **batched across families**
   (`sources/listing.py`: names from `label/__name__/values`, series in batches of names split on a
-  422, histogram buckets never listed; `sources/census.py`, `sources/survey.py`: samples, churn,
+  422 and stopped at the cap, histogram buckets never listed, a name over the limit across an HA
+  pair's replicas listed and read at one, what was too big remembered for a day; `sources/census.py`, `sources/survey.py`: samples, churn,
   duplicates in few queries; `sources/batch.py`: parts joined with `or`, tagged by
   `label_replace`, under the source's `series_per_query`). A family a round cannot read keeps the
   last round's verdict or is `unknown` and left out, never guessed. Families (names differing by a statistic
@@ -827,8 +831,14 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   `machine = <prefix>.<value>` from the machine label (a remote `machine` or `source` label is
   prefixed too), and the name `<prefix>:<name>`; one that collides with an own series is refused.
   Each source is read on its own, with a timeout per request, a deadline and a budget
-  (`max_requests`), at its request `rate` shared by every process (`sources/limits.py`); 429,
-  502, 503 and 504 are retried after `Retry-After` or a jittered backoff (`sources/transport.py`).
+  (`max_requests`), at its request `rate` and under its daily cap (`max_requests_per_day`), both
+  **per store** (its URL and tenant headers) and shared by every project and process on the
+  machine through `~/.orchestrator/stores/` (`sources/limits.py`); 429, 502, 503 and 504 are
+  retried after `Retry-After` or a jittered backoff (`sources/transport.py`). **Reads are
+  incremental** (`sources/readcache.py`): discovery keeps what it read in
+  `<state>/sources/<name>.reads.json` and asks only for the steps since (and five minutes before, further for late series),
+  reading the whole window again hourly; a read refused for its size is not asked again for an
+  hour, and one refused for its series is not split by time unless that sheds series.
   A source with at most a tenth of its definitions unread is **partial** (the rest used, the
   failed named); one that fails beyond that is **missing**, and the stretches of the window in
   which it returned nothing are its gaps. Every
@@ -839,7 +849,9 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   unit; each equation lists the sources of the series it was fitted on (`sd/provenance.py`). The
   Dynamics page shows each source's state and why a discovery was not saved, and a stock's drawer
   its source, query and origin; the web server reads remote stocks' levels and history through
-  the catalogue.
+  the catalogue **only while a page asks for them**, at discovery's step, from the host's read
+  cache and then only what is newer, in one round per source from its own share of the store's
+  rate (`web_share`), slowing down when the store throttles it.
 
 **Counted traffic** (`sources/traffic.py`; `docs/proposals/event-sources.md` §1–3). A series
 definition may say what it counts on another system's bus:

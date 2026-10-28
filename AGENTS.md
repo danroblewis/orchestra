@@ -62,7 +62,9 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    per package or per domain. Packages and metadata label; they never
    separate. The model changes by new versions; past versions stay readable.
 5. **State lives in `~/.orchestrator/<key>/`, except the event log and the
-   metrics, which live in the configured bus and metrics store.** Events go
+   metrics, which live in the configured bus and metrics store, and what every
+   project on the machine shares about another store it reads (its request
+   rate and daily count, `~/.orchestrator/stores/<store>/`, `sources/limits.py`).** Events go
    through `orchestra.events.Events` over an `orchestra.bus.EventBus`; metrics
    through `orchestra.metrics.MetricsStore`; the model through
    `orchestra.sd.store.ModelStore`; process records through

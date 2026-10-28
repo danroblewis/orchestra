@@ -52,13 +52,19 @@ NOMINAL = round(math.erfc(Z / math.sqrt(2)), 4)          # two-sided, per number
 
 
 def reader(project, metrics):
+    """``raw(ref, start, end)``: a series' points, from the own store or through its source; a
+    remote definition read once per window, and only what the read cache does not keep. Reads the
+    host's inference; never starts one."""
     from ..sources.catalogue import Catalogue
 
-    cat = Catalogue(project, metrics)
+    cat = Catalogue(project, metrics, infer=False)
+    readers: dict = {}
 
     def raw(ref, start, end):
         if ref.source and ref.source != "own":
-            return cat.read_ref(ref, start, end, project.config.discovery_step)
+            if (start, end) not in readers:
+                readers[(start, end)] = cat.reader(start, end, project.config.discovery_step)
+            return readers[(start, end)](ref)
         return metrics.raw(ref.name, ref.labels, start=start, end=end)
     return raw
 
@@ -172,7 +178,7 @@ def false_change(project, metrics, prev_start: float | None, start: float, compa
     try:
         halves = []
         for s, e in ((a, mid), (mid, b)):
-            reading = Catalogue(project, metrics).read(s, e, step)
+            reading = Catalogue(project, metrics, infer=False).read(s, e, step, keep=False)
             halves.append(discover_with(reading.dump, start=s, end=e, step=step, strategy=configured_strategy(project),
                                         options=cfg.discovery_options, deadline=0.4 * cfg.discovery_every, kinds=reading.kinds))
     except Exception:  # noqa: BLE001 - the rate is reported unmeasured

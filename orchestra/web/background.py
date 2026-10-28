@@ -21,9 +21,16 @@ levels never wait on a remote source, which may take up to its timeout:
   channels and edges.
 
 A stock or flow bound to a series in another store (``SeriesRef.source``, from ``[[sources]]``)
-is read through the sources' catalogue (``orchestra.sources.catalogue``) for the same window,
-each definition once per round however many stocks and flows are bound to its series. A source
-that fails leaves its stocks without a level and records why (``errors["source <name>"]``);
+is read through the sources' catalogue (``orchestra.sources.catalogue``), and **only while a page
+asks for it**: an endpoint that shows remote levels, history or counted traffic calls ``want``,
+and the reads go on for ``WANT_S`` after the last ask; with no page open, no other store is read.
+Each round reads every bound definition at once (one ``read_many`` per source, at discovery's
+step: the levels discovery saw), from the web server's own share of the store's rate and daily
+cap under a small budget (``Catalogue(share=True)``), and asks only for what is newer than what it
+holds: the host's last discovery's reads first (``readcache.py``), then the steps since its own
+last round. Levels and history come from the same round. A round the store throttles (a 429)
+doubles the time to the next, up to ``REMOTE_MAX_EVERY_S``; a round without one restores it. A
+source that fails leaves its stocks without a level and records why (``errors["source <name>"]``);
 every other stock's level and history still update.
 
 Endpoints read the caches and report how old they are. The model itself is rediscovered by the
@@ -49,6 +56,9 @@ FLOWS_EVERY_S = 60.0
 COUNTED_EVERY_S = 60.0
 LEVELS_EVERY_S = 15.0
 HISTORY_EVERY_S = 15.0
+REMOTE_EVERY_S = 15.0        # remote levels and history, while a page asks for them
+REMOTE_MAX_EVERY_S = 300.0   # ... at most this far apart when the store throttles
+WANT_S = 120.0               # how long a page's ask keeps remote reads going
 HISTORY_S = 3600.0
 STOCK_STEP_S = 15.0          # at most: finer when the project's discovery step is
 FLOW_STEP_S = 30.0
@@ -71,10 +81,21 @@ class Refresher:
         self.counted: dict | None = None                    # counted traffic, summarised (traffic.summarise)
         self.at: dict[str, float] = {}
         self.errors: dict[str, str] = {}
-        self.catalogue = Catalogue(project, metrics, infer=False)    # reads the host's inference, never starts one
+        self.catalogue = Catalogue(project, metrics, infer=False, share=True)    # reads the host's inference, never starts one
+        self.wanted: dict[str, float] = {}                  # "remote", "counted" -> when a page last asked for them
+        self.remote_every = REMOTE_EVERY_S
+        self._remote = None                                 # (start, end, read) of the last remote round
         self._stop = threading.Event()
         threading.Thread(target=self._run, name="web-refresher", daemon=True).start()
         threading.Thread(target=self._run_remote, name="web-refresher-sources", daemon=True).start()
+
+    def want(self, what: str = "remote") -> None:
+        """A page shows remote levels and history (``remote``) or counted traffic (``counted``):
+        read them while it does."""
+        self.wanted[what] = time.time()
+
+    def _wanted(self, what: str) -> bool:
+        return time.time() - self.wanted.get(what, float("-inf")) < WANT_S
 
     @property
     def levels(self) -> dict[str, dict]:
@@ -143,17 +164,15 @@ class Refresher:
         return cached[1] if cached and cached[1].stocks else self.models.load()
 
     def raw_for_round(self):
-        """``raw(ref, start, end)``: a series' points in [start, end], from the own store or
-        through its source; a remote definition is read once per window in a round, however many
-        stocks and flows are bound to its series."""
-        readers: dict[tuple[float, float], object] = {}
-        step = stock_step(self.project.config.discovery_step)
+        """``raw(ref, start, end)``: a series' points in [start, end], from the own store, or, for
+        a remote series, from the last remote round (``_remote_round``): never a read of its own."""
+        remote = self._remote
 
         def raw(ref, start: float, end: float) -> list[tuple[float, float]]:
             if ref.source and ref.source != "own":
-                if (start, end) not in readers:
-                    readers[(start, end)] = self.catalogue.reader(start, end, step)
-                return readers[(start, end)](ref)
+                if remote is None:
+                    return []
+                return [(t, v) for t, v in remote[2](ref) if start <= t <= end]
             return self.metrics.raw(ref.name, ref.labels, start=start, end=end)
         return raw
 
@@ -175,18 +194,29 @@ class Refresher:
                     out[s.id] = {"t": last[0], "v": last[1]}
         self.own_levels = out
 
-    def _remote_levels(self) -> None:
-        """The levels of the stocks bound to another store's series."""
+    def _remote_round(self) -> None:
+        """Every remote series the model is bound to, over the history's window, in one round per
+        source (``Catalogue.reader`` with the refs), asking only for what is newer than what is
+        held; then the levels of the stocks bound to them. A 429 slows the next round."""
         model = self.model()
+        refs = remote_refs(model) if model is not None else []
+        if not refs:
+            self._remote, self.remote_levels = None, {}
+            return
+        now = time.time()
+        before = sum(src.throttled for src in self.catalogue.remotes.values())
+        read = self.catalogue.reader(now - HISTORY_S - 300, now, self.project.config.discovery_step, refs)
+        self._remote = (now - HISTORY_S - 300, now, read)
+        throttled = sum(src.throttled for src in self.catalogue.remotes.values()) - before
+        self.remote_every = min(REMOTE_MAX_EVERY_S, 2 * self.remote_every) if throttled else REMOTE_EVERY_S
         out = {}
-        if model is not None:
-            now = time.time()
-            raw = self.raw_for_round()
-            for s in model.stocks:
-                if s.series and s.series.source not in (None, "own") and (pts := raw(s.series, now - 900, now)):
-                    out[s.id] = {"t": pts[-1][0], "v": pts[-1][1]}
-            self._note_sources()
+        raw = self.raw_for_round()
+        for s in model.stocks:
+            if s.series and s.series.source not in (None, "own") and (pts := raw(s.series, now - 900, now)):
+                out[s.id] = {"t": pts[-1][0], "v": pts[-1][1]}
+        self._note_sources()
         self.remote_levels = out
+        self.at.pop("history", None)                # the history takes the new reads in at once
 
     def _history(self) -> None:
         """Each stock's level every ``stock_step``, and each flow's rate (per the model's time
@@ -207,9 +237,10 @@ class Refresher:
 
     def _run_remote(self) -> None:
         while not self._stop.is_set():
-            self._do("counted", COUNTED_EVERY_S, self._counted)
-            if self.catalogue.specs.sources:
-                self._do("remote_levels", LEVELS_EVERY_S, self._remote_levels)
+            if self.catalogue.specs.sources and self._wanted("counted"):
+                self._do("counted", max(COUNTED_EVERY_S, self.remote_every), self._counted)
+            if self.catalogue.specs.sources and self._wanted("remote"):
+                self._do("remote_levels", self.remote_every, self._remote_round)
             self._do("history", HISTORY_EVERY_S, self._history)
             self._stop.wait(1.0)
 
@@ -218,6 +249,15 @@ class Refresher:
 
     def stop(self) -> None:
         self._stop.set()
+
+
+def remote_refs(model) -> list:
+    """The series in other stores the model's stocks, flows and measured inputs are bound to."""
+    refs = [s.series for s in model.stocks if s.series]
+    for f in model.flows:
+        refs += f.measured_by or ([f.counter] if f.counter else [])
+    refs += [SeriesRef(r["name"], r["labels"], source=r.get("source")) for r in (model.discovery.get("inputs") or {}).values()]
+    return [r for r in refs if r.source and r.source != "own"]
 
 
 def stock_step(discovery_step: float) -> float:
