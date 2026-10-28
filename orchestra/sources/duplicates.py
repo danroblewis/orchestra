@@ -9,10 +9,10 @@
    target (its ``instance`` without the port, an ``ip-10-0-1-1`` host name read as its address,
    or a ``node``/``hostname`` label naming it: ``target``) with the same values of the labels both
    values' series carry. Two jobs scraping different nodes never pair, whatever their values. The
-   pairs are then checked by their data: a counter by its **increments** (its total is no
-   evidence: two large counters agree to 0.5% whatever their rates), a gauge by its values, each
-   within ``TOLERANCE`` or the series' own step-to-step change, at ``AGREE`` of the points (a
-   scrape offset makes a few differ). Equal constants prove nothing (two deployments of 2 pods
+   pairs are then checked by their data: a counter by its **increase over each quarter of the
+   window** (its total is no evidence: two large counters agree to 0.5% whatever their rates), a
+   gauge by its values, each within ``TOLERANCE`` or the series' own step-to-step change, at
+   ``AGREE`` of the points (a scrape offset makes a few differ). Equal constants prove nothing (two deployments of 2 pods
    each), so it takes a series that moves or two different series that match.
 2. **Counts of the same things** (``same_shape``): the pods of a service are counted from every
    family they report, under each family's own labels; two counts whose series match at almost
@@ -28,6 +28,7 @@ from statistics import median
 
 TOLERANCE = 0.005       # relative, per point
 AGREE = 0.8             # of the points both pair members have
+COUNTER_TOLERANCE = 0.05   # relative, on a counter's increase over a quarter of the window
 SHAPE_AGREE = 0.9       # of the points two counts have (and every point where either changes)
 TARGET_LABELS = ("node", "nodename", "hostname", "host", "agent_hostname", "kubernetes_node", "exported_instance")
 AWS_HOST = re.compile(r"^ip-(\d+)[-.](\d+)[-.](\d+)[-.](\d+)(?:\..*)?$")
@@ -70,15 +71,23 @@ def _increments(v: list[float | None]) -> list[float | None]:
 
 
 def _agree(a: list[float | None], b: list[float | None], counter: bool) -> bool:
-    """A pair's data agrees: a counter's increments, or a gauge's values, each within TOLERANCE
-    or the series' own typical step-to-step change, at AGREE of the points both have."""
+    """A pair's data agrees: a counter's increase over each quarter of the window within
+    ``COUNTER_TOLERANCE`` (two scrapes offset by seconds differ by a scrape's worth over a short
+    step, never over a quarter hour), or a gauge's values, each within TOLERANCE or the series' own
+    typical step-to-step change, at AGREE of the points both have."""
     if counter:
-        a, b = _increments(a), _increments(b)
+        both = [(x, y) for x, y in zip(_increments(a), _increments(b), strict=False) if x is not None and y is not None]
+        if len(both) < 4:
+            return False
+        q = len(both) / 4
+        blocks = [both[round(i * q):round((i + 1) * q)] for i in range(4)]
+        sums = [(sum(x for x, _ in blk), sum(y for _, y in blk)) for blk in blocks]
+        return all(abs(x - y) <= max(COUNTER_TOLERANCE * max(abs(x), abs(y)), 1e-9) for x, y in sums)
     both = [(x, y) for x, y in zip(a, b, strict=False) if x is not None and y is not None]
     if len(both) < 3:
         return False
-    steps = [abs(y - x) for x, y in zip([p for p, _ in both], [p for p, _ in both][1:], strict=False)]
-    slack = 0.0 if counter else (median(steps) if steps else 0.0)
+    steps = [abs(y - x) for x, y in pairwise([p for p, _ in both])]
+    slack = median(steps) if steps else 0.0
     ok = sum(abs(x - y) <= max(TOLERANCE * max(abs(x), abs(y)), slack, 1e-9) for x, y in both)
     return ok >= AGREE * len(both)
 
@@ -132,11 +141,14 @@ def _key(v: list[float | None]) -> tuple:
 
 
 def _lagged(both: list[tuple[float, float]], i: int) -> bool:
-    """Two counts that differ at ``i`` only because one saw the change a point earlier or later
-    (two exporters scraped apart)."""
-    p, q = both[i]
-    near = [both[j] for j in (i - 1, i + 1) if 0 <= j < len(both)]
-    return any(abs(p - b) <= 0.5 for _, b in near) or any(abs(q - a) <= 0.5 for a, _ in near)
+    """Two counts that differ at ``i`` only because one saw the change a point before the other
+    (two exporters scraped apart): one equals the other shifted by a point, on both sides of it."""
+    x, y = [p for p, _ in both], [q for _, q in both]
+    near = lambda a, b: abs(a - b) <= 0.5
+    for u, v in ((x, y), (y, x)):
+        if 0 < i < len(x) - 1 and near(u[i], v[i - 1]) and near(u[i + 1], v[i]):
+            return True
+    return False
 
 
 def same_shape(a: list[list[float | None]], b: list[list[float | None]], *, exact: bool = False) -> bool:
