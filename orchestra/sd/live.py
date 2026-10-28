@@ -186,6 +186,15 @@ def balance_steps(level, counters: list) -> list[int]:
     return list(range(len(level.values) - 1)) if steps is None else sorted(steps)
 
 
+def arrived(steps: list[int], series: list, start: float, step: float) -> list[int]:
+    """The steps in which every one of these series has data: none after the earliest of their
+    last observations, when a series' newest samples have not arrived yet (``sd.series.arrived_until``).
+    A balance is judged only where all its series have data; one late series never cuts the steps
+    of a balance it is not in."""
+    until = min((s.until for s in series if getattr(s, "until", None) is not None), default=None)
+    return steps if until is None else [i for i in steps if start + (i + 1) * step <= until + 1e-9]
+
+
 def length(intervals: list[tuple[float, float]]) -> float:
     return sum(b - a for a, b in intervals)
 

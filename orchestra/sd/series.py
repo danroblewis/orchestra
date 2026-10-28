@@ -13,6 +13,7 @@ from itertools import pairwise
 
 from ..metrics import step_sample
 from .live import (
+    RESTART_S,
     before_first_write,
     held,
     live_intervals,
@@ -25,7 +26,9 @@ from .live import (
 from .resolution import (
     Resolution,
     block_ends,
+    counted_every,
     measure,
+    moved_points,
     observed_every,
     real_points,
     steps_of,
@@ -101,8 +104,9 @@ class Series:
     live: list[int] | None = None                        # the grid steps whose change is measured: inside those intervals, and for a counter also before its first write; None: every step
     traffic: tuple[str, str] | None = None               # counted traffic: (direction, channel), when a definition said so
     resolution: Resolution | None = None                 # its real resolution and how it is read between points (sd.resolution)
-    blocks: list[tuple[int, float]] | None = None        # a level slower than the grid: the steps it was written in, and when (sd.resolution.units)
+    blocks: list[tuple[int, float]] | None = None        # a series slower than the grid: the steps it was written in, and when (sd.resolution.units)
     summary: bool = False                                # a statistic its source summarised across reporters (Declared.summary)
+    until: float | None = None                           # its data end here, a little before the window's (arrived_until): later steps are missing
 
     @property
     def key(self) -> str:
@@ -185,10 +189,40 @@ def mark_live(ser: Series, machine_alive: list[tuple[float, float]] | None, star
     elif usual_interval(ser.points) and not (ser.counter and on_events(ser.points)):
         ser.intervals = live_intervals(ser.points, start, end)
     if ser.intervals is not None:
+        ser.until = arrived_until(ser, ser.intervals, end)
         ser.live = steps_within(ser.intervals, start, step, n)
         if ser.counter:
             ser.live = sorted(set(ser.live) | set(before_first_write(ser.points, start, step, n)))
     return ser
+
+
+def last_observed(ser: Series) -> float | None:
+    """When a series was last observed: its last point, or for one sampled more seldom than it is
+    read (``sd.resolution.counted_every``), the last point where it moved (the repeats after it are
+    a store's newest steps filled with its last sample)."""
+    if not ser.points:
+        return None
+    if ser.blocks is not None and counted_every(ser.points, usual_interval(ser.points)) and (moved := moved_points(ser.points)):
+        return moved[-1][0]
+    return ser.points[-1][0]
+
+
+def arrived_until(ser: Series, intervals: list[tuple[float, float]], end: float) -> float | None:
+    """Until when a series on a schedule has data, when the window ends a little after its last
+    observation: its next sample has not arrived yet (a store a minute late, a source read
+    ``settle`` before now, a scrape every minute). Read as held, its last value would say nothing
+    changed and nothing was counted in the steps after, while a faster store's series beside it
+    moved: those steps are missing, not zero, for any balance it is in (``sd.live.arrived``). None
+    when it is not late: a longer silence is no lateness (``sd.live``: its writer stopped), and a
+    series written as things happen is never late (its silence is nothing happening)."""
+    u = usual_interval(ser.points)
+    last = last_observed(ser)
+    if not intervals or u is None or last is None or (ser.counter and ser.resolution and ser.resolution.seconds is None):
+        return None
+    late = end - last
+    if late <= 0 or late > min(live_limit(ser.resolution.seconds if ser.resolution and ser.resolution.seconds else u), RESTART_S):
+        return None
+    return last
 
 
 def sample(dump, start: float, step: float, n: int, kinds: dict[str, Declared] | None = None) -> list[Series]:
@@ -218,6 +252,9 @@ def sample(dump, start: float, step: float, n: int, kinds: dict[str, Declared] |
         ser = Series(name, dict(labels), pts, vals, counter, resolution=res)
         if not counter and steps_of(observed_every(pts, res, said.resolution_s if said else None), step) > 1:
             ser.blocks = block_ends(real_points(pts, res.read), start, step, n)
+        elif counter and steps_of(every := counted_every(pts, usual_interval(pts)), step) > 1 and every:
+            # it counts every other read, steadily: a store's samples read on a finer grid (sd.coarse)
+            ser.blocks = block_ends(moved_points(pts), start, step, n)
         if said and said.direction and said.channel:
             ser.traffic = (said.direction, said.channel)
         ser.summary = bool(said and said.summary)
@@ -270,6 +307,7 @@ def sum_instances(series: list[Series]) -> tuple[list[Series], dict[str, str]]:
             total += d
             points.append((t, total))
         merged = Series(name, dict(labels), points, values, True, members, resolution=members[0].resolution)
+        merged.until = min((m.until for m in members if m.until is not None), default=None)
         if all(m.intervals is not None for m in members):
             merged.intervals = union([iv for m in members for iv in m.intervals])
             merged.live = sorted({i for m in members for i in m.live})

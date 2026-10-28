@@ -85,11 +85,14 @@ from itertools import accumulate, pairwise
 from .accept import accepted, stock_trust
 from .attribute import associate, candidates
 from .balance import MIN_EVENTS, MIN_GAIN, LeastSquares, balance, columns, fit_of
+from .coarse import coarse, on_writes, slowest
 from .drivers import AIC_MARGIN, EVENTS_PER_PARAM, behind, co_counting
 from .ends import claims, moves
 from .hops import split_hops
+from .identify import timing_limited, two_clocks
 from .inputs import offered_inputs
 from .live import (
+    arrived,
     balance_steps,
     gone,
     held_for,
@@ -106,6 +109,7 @@ from .netflow import stocks as net_flow_stocks
 from .netnull import measured as net_evidence
 from .parsimony import fewer_counters
 from .passing import passages
+from .pins import declared as declared_stocks
 from .resolution import LINEAR, intervals_with, real_points, steps_of
 from .restate import split_event_counters, split_foreign_counters, unify_same_flows
 from .series import (
@@ -125,6 +129,9 @@ FLAG_EXACT = 0.97         # a two-valued level is a stock only if its balance is
 SAME_STEPS = 0.03          # counters that differ in no more than this share of steps are one
 TWIN_STEPS = 0.97          # levels whose changes are equal in this share of steps are one stock measured twice
 TWIN_CORR = 0.9            # ... or whose changes correlate this well (one a moment behind the other)
+TWIN_SCALE = 0.2           # ... and only when the levels themselves match: their spreads within this share of each other
+TWIN_OFFSET = 0.5          # ... and their difference, usually, within this share of the level's own spread (or a step's change)
+TWIN_SIZE = 0.1            # ... or of its size (three orphan files beside a shelf of forty)
 MIN_STEPS = 5              # a level live in fewer steps than this (while every counter was) cannot be balanced
 MIN_COVER = 0.5            # a level live for less than this share of the window's data is too new (or too broken) to be a stock yet
 DRIVER_COVER = 0.95        # a stock may drive a flow only if it was live for this share of the time the flow is fitted on
@@ -662,6 +669,47 @@ def _apart(a_terms: list, b_terms: list, a_exact: float, b_exact: float, same_fl
         not any(ca is cb or same_flow(ca, cb) or lagged_flow(ca, cb) for ca, _ in a_terms for cb, _ in b_terms)
 
 
+def _bare(name: str) -> str:
+    """A series' name without the prefix of the source it was read from (``shop:queue`` is ``queue``)."""
+    return name.rpartition(":")[2]
+
+
+def _same_series(a: Series, b: Series) -> bool:
+    """The same series by identity, read twice: one name (a source's prefix aside) and the same
+    labels of what it measures (two stores that both hold it, two addresses of one store)."""
+    return a.key != b.key and _bare(a.name) == _bare(b.name) and _identity(a.labels) == _identity(b.labels)
+
+
+def levels_match(a: Series, b: Series) -> bool:
+    """Whether two levels read alike as levels, not only as changes: on the steps both were live,
+    they spread alike over the window (within ``TWIN_SCALE``: a copy written every other step, or
+    a moment behind, spreads as the level does, where the spread of its changes would not), and
+    their difference is usually (in half the steps) within ``TWIN_OFFSET`` of the larger spread,
+    ``TWIN_SIZE`` of the larger level, or a step's change of either (a copy a moment behind). Two
+    warehouses drained in proportion to one order stream change in step (correlation 1.00) and are
+    two stocks: one holds 1.25 M units and loses 0.6 of the picks, the other 0.8 M and 0.4."""
+    n = min(len(a.values), len(b.values))
+    la, lb = _live_in(a, n - 1), _live_in(b, n - 1)
+    both = [i for i in range(n - 1) if la[i] and lb[i]]
+    if not both:
+        return False
+    va, vb = [a.values[i + 1] for i in both], [b.values[i + 1] for i in both]
+    sa, sb = _spread(va), _spread(vb)
+    if max(sa, sb) > 0 and abs(sa - sb) > TWIN_SCALE * max(sa, sb):
+        return False
+    size = max(abs(sorted(va)[len(va) // 2]), abs(sorted(vb)[len(vb) // 2]))
+    room = max(max(sa, sb) * TWIN_OFFSET, TWIN_SIZE * size)
+    near = sum(1 for k, i in enumerate(both)
+               if abs(va[k] - vb[k]) <= max(0.5, room, abs(a.deltas[i]), abs(b.deltas[i]),
+                                            abs(a.deltas[i - 1]) if i else 0.0, abs(b.deltas[i - 1]) if i else 0.0))
+    return near >= 0.5 * len(both)
+
+
+def _spread(xs: list[float]) -> float:
+    m = sum(xs) / max(1, len(xs))
+    return math.sqrt(sum((x - m) ** 2 for x in xs) / max(1, len(xs)))
+
+
 def _twins(a: Series, b: Series, a_terms: list, b_terms: list, same_flow, a_exact: float = 0.0, b_exact: float = 0.0) -> bool:
     if a.traffic and b.traffic and a.traffic[0] == b.traffic[0] == "backlog":
         return False            # two queues a source declared: never one stock measured twice, however alike (one consumer acks both at once)
@@ -669,6 +717,8 @@ def _twins(a: Series, b: Series, a_terms: list, b_terms: list, same_flow, a_exac
         return True
     if _parts_of_one(a, b):
         return False
+    if not (_same_series(a, b) or levels_match(a, b)):
+        return False            # alike in their changes, but two levels apart: two stocks (two warehouses, one order stream)
     if _equal_steps(a, b) >= TWIN_STEPS or _same_balance(a_terms, b_terms, same_flow):
         return True
     if _apart(a_terms, b_terms, a_exact, b_exact, same_flow):
@@ -751,16 +801,20 @@ def _same_balance(a: list, b: list, same_flow) -> bool:
     return len(a) == len(b) and all(any(sa == sb and (ca is cb or same_flow(ca, cb)) for cb, sb in b) for ca, sa in a)
 
 
-def twin_levels(found: list, left_out: dict[str, str], same_flow) -> tuple[list, dict[str, list[dict]]]:
+def twin_levels(found: list, left_out: dict[str, str], same_flow, declared: frozenset | set = frozenset()
+                ) -> tuple[list, dict[str, list[dict]]]:
     """One stock measured twice (a shelf counted by the shelf and by the board): two levels that
-    change alike in at least ``TWIN_STEPS`` of the steps, or that the same counters balance (two
+    read alike as levels (``levels_match``: the same scale, and apart by no more than their spread)
+    or are the same series read twice (``_same_series``), and that change alike in at least
+    ``TWIN_STEPS`` of the steps, or that the same counters balance (two
     machines' counts of the same events being the same counter), or, judged on the levels
     themselves, whose changes correlate by ``TWIN_CORR`` or whose values are equal in
     ``TWIN_STEPS`` of the steps either held something (the expo's view of the board's queue, a
-    moment behind it, whose balance takes the expo's own counters). The one kept is the machine's
-    whose counters make the balance, then the better balance, then the one more labels say (a queue
-    that reads the same as the total of all queues is that queue); the other is left out and
-    recorded as its twin, in the kept stock's evidence."""
+    moment behind it, whose balance takes the expo's own counters). The one kept is the one the
+    operator declared a stock (``declared``, sd.pins), then the machine's whose counters make the
+    balance, then the better balance, then the one more labels say (a queue that reads the same as
+    the total of all queues is that queue); the other is left out and recorded as its twin, in the
+    kept stock's evidence."""
     kept: list = []
     twins: dict[str, list[dict]] = defaultdict(list)
     for s, terms, r2, exact in found:
@@ -770,7 +824,8 @@ def twin_levels(found: list, left_out: dict[str, str], same_flow) -> tuple[list,
             continue
         o, oterms, or2, oexact = other
         # ... then the more specific level: a split that reads the same as its total names the thing
-        if (_owns(s, terms), exact, r2, len(_identity(s.labels))) > (_owns(o, oterms), oexact, or2, len(_identity(o.labels))):
+        if ((s.key in declared, _owns(s, terms), exact, r2, len(_identity(s.labels)))
+                > (o.key in declared, _owns(o, oterms), oexact, or2, len(_identity(o.labels)))):
             kept[kept.index(other)] = (s, terms, r2, exact)
             win, lose = s, o
             twins[s.key] = twins.pop(o.key, [])
@@ -860,13 +915,21 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         if not s.counter and (other := {c.key for c in counters if unit[c.key] != unit[s.key]}):
             barred[s.key] = barred.get(s.key, set()) | other
 
-    def fits(s: Series, r2: float, exact: float) -> bool:
+    # the stocks the operator declared ([[series]] stock and role): tried first, judged like any (sd.pins)
+    pins, pin_problems = declared_stocks(series, provenance)
+    pinned: list = []                             # declared balances that fit: kept out of the restatements below
+    pin_tried: dict[str, str] = {}                # a declared balance that did not fit, and how well it did
+
+    def fits(s: Series, r2: float, exact: float, terms: list | None = None, steps: list[int] | None = None) -> bool:
         """A balance a level may be a stock on: a level that only ever takes two values is usually
         a flag (a baker is busy or not: 0 and 1) or changed too seldom to tell (a day's length,
         612 then 613 minutes), and least squares will balance it with counters that merely move
         with it; it is a stock only when counters balance it exactly (a shelf that holds nothing
-        or one item)."""
-        return r2 >= MIN_R2 and (exact >= FLAG_EXACT or len({v for _, v in s.points}) > 2)
+        or one item). With its ``terms`` and ``steps``, a balance judged on a slow counter's writes
+        whose misses are timing fits at a lower R² (``sd.identify.two_clocks``, ``timing_limited``)."""
+        good = r2 >= MIN_R2 or (terms is not None and steps is not None and two_clocks(s, terms)
+                                and timing_limited(s, terms, steps, r2))
+        return good and (exact >= FLAG_EXACT or len({v for _, v in s.points}) > 2)
     for s in series:
         if s.counter:
             continue
@@ -889,6 +952,19 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                                "too few to tell a balance from coincidence")
             continue
         masks[s.key] = steps
+        if pin := pins.get(s.key):
+            # the declared counters, on the slowest one's writes when it is slower than the level,
+            # where all of them have data
+            view = on_writes(s, blocks) if s.blocks is None and (blocks := slowest(pin.terms)) else s
+            mine_steps = arrived(steps, [s, *(c for c, _ in pin.terms)], start, step)
+            r2, exact = fit_of(view, pin.terms, mine_steps)
+            if fits(view, r2, exact, pin.terms, mine_steps):
+                s.blocks = view.blocks
+                masks[s.key] = mine_steps
+                pinned.append((s, list(pin.terms), r2, exact))
+                continue
+            shown = " ".join(f"{'+' if sg > 0 else '−'}{c.key}" for c, sg in pin.terms)
+            pin_tried[s.key] = f"the balance declared for stock {pin.name} ({shown}) fits at R² {r2:.2f}"
         mine = [c for c in counters if c.key not in barred.get(s.key, ())]
         terms, r2, exact = channel_balance(s, mine, steps, fits)
         backlog = terms is not None                # a declared backlog its own traffic balances: never a flag
@@ -899,6 +975,15 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             if key not in solvers and mine:
                 solvers[key] = LeastSquares(columns(s, mine, steps))
             terms, r2, exact = balance(s, mine, solvers.get(key), steps)
+            # counters another store reports more seldom than the grid: also on their writes (sd.coarse)
+            if mine:
+                terms, r2, exact = coarse(s, mine, steps, (terms, r2, exact), fits, solvers, key)
+        # judged only where the level and its balance's counters all have data (sd.live.arrived)
+        if terms and (mine_steps := arrived(steps, [s, *(c for c, _ in terms)], start, step)) != steps:
+            masks[s.key] = steps = mine_steps
+            r2, exact = fit_of(s, terms, steps)
+            if backlog:                            # a backlog its traffic accounts for is judged on that traffic
+                r2 = max(r2, through_r2(s, terms, steps))
         values = {v for _, v in s.points}
         if len(values) <= 2 and not backlog and not (terms and fits(s, r2, exact)):
             if values == {0.0, 1.0}:
@@ -909,11 +994,11 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                                    f"({', '.join(f'{v:g}' for v in sorted(values))}): too few to tell a balance from coincidence, "
                                    "and no counters balance it exactly")
             continue
-        if terms and r2 >= MIN_R2:
+        if terms and (r2 >= MIN_R2 or (two_clocks(s, terms) and timing_limited(s, terms, steps, r2))):
             found.append((s, terms, r2, exact))
         else:
             why = f"no counters balance it (best R² {r2:.2f}" + (f" with {', '.join(c.key for c, _ in terms)}" if terms else "") + ")"
-            left_out[s.key] = why
+            left_out[s.key] = why + (f"; {pin_tried[s.key]}" if s.key in pin_tried else "")
     # with every balance known, the stand-ins give way (sd.restate); a counter no balance keeps
     # is recorded with why, below
     notes: dict[str, str] = {}
@@ -965,11 +1050,12 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             kept.append((s, terms2, r2b, exact2))
         else:
             left_out[s.key] = f"only an accumulator of other stocks' flows (R² {r2b:.2f} with counters of its own)"
-    found, twins = twin_levels(kept, left_out, lambda a, b: same_flow(a, b, n))
+    declared_keys = {s.key for s, _, _, _ in pinned}
+    found, twins = twin_levels(pinned + kept, left_out, lambda a, b: same_flow(a, b, n), declared_keys)
     # a balance is identified only by evidence that holds out of sample and beats chance (sd.identify);
     # a count of reporters and its own turnover is a balance by construction, no evidence at all
     found, identified, constructed_, refused = accepted(found, counters, barred, masks, provenance, left_out,
-                                                         lambda a, b: same_flow(a, b, n) or lagged_flow(a, b))
+                                                         lambda a, b: same_flow(a, b, n) or lagged_flow(a, b), declared_keys)
     # a state each item leaves within a step is empty at almost every step of the grid, so the
     # chain through it runs past it (sd.hops) or ends at outside and begins again there
     # (sd.passing); joined through it
@@ -1016,7 +1102,10 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                              **({"balance_r2_level": round(fit_of(s, terms, masks[s.key])[0], 4),
                                  "balance_on": "traffic: the balance's error against what went in"}
                                 if not unfit and s.traffic and s.traffic[0] == "backlog" and r2 > fit_of(s, terms, masks[s.key])[0] + 1e-6 else {}),
-                             **({"twins": twins[s.key]} if s.key in twins else {}), **(p.evidence() if p else {})}))
+                             **({"twins": twins[s.key]} if s.key in twins else {}), **(p.evidence() if p else {}),
+                             **({"declared": pins[s.key].record()} if s.key in declared_keys else {}),
+                             **({"balance_on": f"the stretches between the writes of its slowest series ({len(s.blocks)} in the window)"}
+                                if s.blocks and any(c.blocks for c, _ in terms) else {})}))
     # a counter in two balances connects those stocks (sd.ends: contested ends and co-flows)
     fid_of = {c.key: unique_id(_slug(c), writer_of(c), ids) for c in counters}
     by_counter = claims(found, sid_of, writer_of)
@@ -1150,6 +1239,12 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                        "stocks": sum(1 for st in stocks if not st.evidence.get("by_construction")), "flows": len(flows), "min_r2": MIN_R2,
                        "by_construction": sorted(sid_of[k] for k in constructed_ if k in sid_of),
                        "refused": refused,
+                       **({"declared": {"stocks": {p.name: {"level": p.level, **p.record(),
+                                                            "outcome": "a stock" if p.level in declared_keys and p.level in sid_of
+                                                            else left_out.get(p.level) or pin_tried.get(p.level) or "not a stock"}
+                                                   for p in pins.values()},
+                                        **({"problems": pin_problems} if pin_problems else {})}}
+                          if pins or pin_problems else {}),
                        "left_out": dict(sorted(left_out.items()))}
     return model
 

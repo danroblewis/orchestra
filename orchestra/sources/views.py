@@ -84,6 +84,7 @@ class Definition:
     unit_label: str | None = None  # the label that names each series' unit, when the family has one
     counter_form: str = ""       # "native": a native histogram, read by its count; "delta": each sample a count (family.py)
     left: str = ""               # left out before ranking, and why (a rule over a counter: the counter is read)
+    stock: dict = field(default_factory=dict)            # a declared stock's level or flow ({"name", "role"}; spec.DeclaredSeries)
 
 
 count_window = lookback
