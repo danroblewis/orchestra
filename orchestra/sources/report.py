@@ -48,7 +48,9 @@ def check(cat: Catalogue) -> list[str]:
     return out or ["no [[sources]] in orchestra.toml"]
 
 
-def infer(cat: Catalogue, project, only: str | None = None) -> list[str]:
+def infer(cat: Catalogue, project, only: str | None = None, *, refresh: bool = True) -> list[str]:
+    """What each source's inference keeps and leaves out. ``refresh=False``: a fresh cached
+    inference is reused, and a source whose inference is backing off or stopped is not asked."""
     now = time.time()
     start, end = aligned(now - project.config.discovery_window, now, project.config.discovery_step)
     out = []
@@ -56,7 +58,7 @@ def infer(cat: Catalogue, project, only: str | None = None) -> list[str]:
         if only and spec.name != only:
             continue
         try:
-            inf = cat.inference(spec.name, start, end, refresh=True)
+            inf = cat.inference(spec.name, start, end, refresh=refresh)
         except (SourceError, TransformError) as e:
             out.append(f"{spec.name}: inference failed: {e}")
             continue
