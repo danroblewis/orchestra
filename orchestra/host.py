@@ -12,8 +12,10 @@ In an empty Orchestra it does little, on purpose:
   (``orchestra.era.started``);
 - it rediscovers the model in the background (``orchestra.sd.rediscover``, with the strategy,
   window and interval in ``[discovery]``, within the current era), caches the result for
-  readers, and saves a new model version when the structure changed or an era began; after each
-  discovery it announces what is due about the model (``orchestra.sd.announce``:
+  readers, and saves a new model version when the structure changed or an era began. Runs never
+  overlap: each starts the interval after the last one started, or a fifth of the interval after
+  it ended when it took longer (``pace``), and its log line says how long it took and whether
+  the strategy was stopped at its deadline (``discovery_line``). After each discovery it announces what is due about the model (``orchestra.sd.announce``:
   ``orchestra.model.changed``, ``orchestra.model.diverged``, ``orchestra.model.returned``);
 - it records the predictions machines make of their changes as it follows the bus
   (``orchestra.prediction.made``, ``orchestra.sd.predictions``), and after each discovery judges
@@ -59,6 +61,32 @@ from .metrics import for_project as metrics_for
 
 HOST_LOG_MAX = 5_000_000
 ERAS_EVERY_S = 5.0              # how often the collector looks for events that begin an era
+LEAST_PAUSE = 0.2               # of [discovery] every: the least pause between one discovery's end and the next's start
+
+
+def pace(every: float, took: float) -> float:
+    """The pause before the next discovery: the rest of the interval, so discoveries start every
+    ``every`` while they take less; never less than ``LEAST_PAUSE`` of it, so one that takes
+    longer than the interval is followed by a pause, never by the next at once. Discoveries never
+    overlap: the next starts only after this one ended (and the project's lock keeps the CLI's
+    and the page's out too)."""
+    return max(every - took, LEAST_PAUSE * every)
+
+
+def discovery_line(r, took: float, every: float) -> str:
+    """The host's log line for one discovery: what it found, whether it was saved, how long it
+    took, and, when the strategy was stopped at its deadline or the run outlasted the interval,
+    that too."""
+    not_saved = r.model.discovery.get("not_saved")
+    what = f"saved as version {r.version}" if r.version else (f"not saved: {not_saved}" if not_saved else "structure unchanged")
+    line = (f"discovery ({r.strategy}): {len(r.model.stocks)} stocks, {len(r.model.flows)} flows"
+            f"{', era ' + r.model.era if r.model.era else ''}; {what}; took {took:.0f} s")
+    sdlab = str(r.model.discovery.get("sdlab") or "")
+    if "deadline" in sdlab:
+        line += f"; {r.strategy} {sdlab}"
+    if took > every:
+        line += f"; longer than [discovery] every ({every:g} s): the next starts {pace(every, took):.0f} s after this one ended"
+    return line
 
 
 class Host:
@@ -175,15 +203,15 @@ class Host:
         due about it."""
         from .sd.rediscover import Busy, rediscover
 
-        wait = 5.0                                    # soon after starting, then every interval
+        wait = 5.0                                    # soon after starting, then every interval (pace)
         while not self._stop.wait(wait):
-            wait = self.project.config.discovery_every
+            every = self.project.config.discovery_every
+            wait, began = every, time.monotonic()
             try:
                 r = rediscover(self.project, metrics_for(self.project), skip_if_busy=True, events=self.events)
-                not_saved = r.model.discovery.get("not_saved")
-                what = f"saved as version {r.version}" if r.version else (f"not saved: {not_saved}" if not_saved else "structure unchanged")
-                self.log(f"discovery ({r.strategy}): {len(r.model.stocks)} stocks, {len(r.model.flows)} flows"
-                         f"{', era ' + r.model.era if r.model.era else ''}; {what}")
+                took = time.monotonic() - began
+                wait = pace(every, took)
+                self.log(discovery_line(r, took, every))
                 try:
                     self._announce(r)
                 except Exception as e:  # noqa: BLE001 - the next discovery tries again
