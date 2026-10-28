@@ -241,7 +241,7 @@ class Draft:
                 raise EditError(f"model.flows[{i}]: an object with id, from, to, equation and params")
             fid = _id(f.get("id"), f"model.flows[{i}].id")
             b = base_flows.get(fid)
-            if b is not None and (b.src, b.dst) == (f.get("from"), f.get("to")) and flow_text(b, bn) == (f.get("equation"), f.get("params") or {}):
+            if b is not None and (b.src, b.dst) == (f.get("from"), f.get("to")) and _text(b, bn) == (f.get("equation"), f.get("params") or {}):
                 self.model.flows.append(copy.deepcopy(b))           # as the base has it: its own origin
                 continue
             self.add_flow({k: v for k, v in f.items() if k in OPS["add_flow"]})
@@ -292,6 +292,13 @@ class Draft:
                 raise EditError(f"flow {f.id}: {e}") from None
 
 
+def _text(f: Flow, names: Names) -> tuple[str, dict] | None:
+    try:
+        return flow_text(f, names)
+    except EquationError:
+        return None
+
+
 def apply(model: Model, scenario: dict, base: Model, edits, eid: str, source: str) -> Draft:
     """The draft after every edit of the batch, or EditError (with the edit's ``index``) and
     nothing changed."""
@@ -305,10 +312,11 @@ def apply(model: Model, scenario: dict, base: Model, edits, eid: str, source: st
             if extra := sorted(set(e) - {"op"} - OPS[e["op"]]):
                 raise EditError(f"{e['op']}: unknown field{'s' if len(extra) > 1 else ''} {', '.join(extra)}")
             getattr(d, e["op"])(e)
-        except EditError as err:
-            raise EditError(f"edit {i} ({e.get('op') if isinstance(e, dict) else e!r}): {err}", i) from None
+        except (EditError, EquationError) as err:
+            what = e.get("op") if isinstance(e, dict) else repr(e)
+            raise EditError(f"edit {i} ({what}): {err}", i) from None
     try:
         d.check()
-    except EditError as err:
+    except (EditError, EquationError) as err:
         raise EditError(f"after the batch: {err}") from None
     return d

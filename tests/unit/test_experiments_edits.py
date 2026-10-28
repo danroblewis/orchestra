@@ -117,3 +117,13 @@ def test_load_model_replaces_the_draft_keeping_what_the_base_has_as_it_was():
     assert [r["id"] for r in x["flows"]["removed"]] == ["side"] and x["stocks"]["added"] == [{"id": "parked", "initial": 2.0}]
     again = edit({"op": "load_model", "model": chain().to_json()})
     assert diff(chain(), again.model)["edits"] == 0, "a model as Orchestra writes it loads too"
+
+
+def test_an_equation_the_language_cannot_render_refuses_the_edit_and_does_not_fail():
+    from orchestra.sd.model import Equation
+
+    m = chain()
+    m.flow("side").equations = [Equation("mystery", {"q": 1.0}, "fitted")]
+    with pytest.raises(EditError, match="edit 0 \\(set_params\\): an equation of form 'mystery' has no rendering") as e:
+        apply(m, {}, m, [{"op": "set_params", "flow": "side", "params": {"q": 2.0}}], EID, "curator")
+    assert e.value.index == 0
