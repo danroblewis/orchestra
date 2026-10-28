@@ -3,6 +3,8 @@ of metrics is read in tens of requests, not thousands.
 
 - ``raw``: the raw samples of a few series of each family over the window (its interval and
   behaviour), several small families in one read.
+- ``live``: for the families whose sampled series had no samples in the window (a listing by day
+  names series long gone, or pods that lived a minute), which of their series report through it.
 - ``history``: the same series coarsely (every ``history / HISTORY_POINTS``) over the source's
   ``history`` (a day by default), for the families the window cannot judge: one that only rose
   in it may be a queue that fills in incidents and drains otherwise, or a counter that resets
@@ -45,6 +47,20 @@ def raw(source: Source, picks: dict[str, tuple[str, int]], start: float, end: fl
             else:
                 out[k] = [sorted(pts) for _, pts in got.get(sel, []) if pts]
     return out, bad
+
+
+def live(source: Source, metrics: dict[str, tuple[str, int, int]], start: float, end: float, until: float | None,
+         concurrency: int) -> tuple[dict[str, list[Labels]], dict[str, str]]:
+    """``metrics``: key -> (metric, n, listed): the labels of the ``n`` series of the metric with the
+    most samples in the window; ``listed``, the series the listing named, sizes the read."""
+    w = f"{int(end - start) + 1}s"
+    got, failed = run(source, [Part(k, f"count_over_time({m}[{w}])", listed) for k, (m, _, listed) in metrics.items()],
+                      end, end, 60.0, until, concurrency)
+    out = {}
+    for k, rows in got.items():
+        most = sorted(rows, key=lambda r: (-(r[1][-1][1] if r[1] else 0.0), sorted(r[0].items())))
+        out[k] = [{a: b for a, b in lab.items() if a != "__name__"} for lab, _ in most[:metrics[k][1]]]
+    return out, failed
 
 
 def history(source: Source, picks: dict[str, tuple[str, int]], end: float, span: float, until: float | None,
