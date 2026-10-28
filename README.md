@@ -37,29 +37,27 @@ Nothing needs cloning. Orchestra and the plugins you want go into one environmen
 GitHub; a plugin is loaded only if it is installed beside the `orchestra` command:
 
 ```bash
-uv tool install 'orchestra[sd] @ git+https://github.com/danroblewis/orchestra@main' --with 'orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking'
+uv tool install 'orchestra[sd,tasking,agents,bridges,desk,outbox] @ git+https://github.com/danroblewis/orchestra@main'
 uv tool update-shell        # once: puts ~/.local/bin on the PATH (open a new terminal after)
 orchestra --help            # Orchestra's commands, and each installed plugin's: orchestra tasks ...
 ```
 
-Name Orchestra exactly as the plugins do, `git+https://github.com/danroblewis/orchestra@main`:
-pip refuses two different URLs for one package. The plugins' repositories are private, so they come
-over SSH with your GitHub key; add a `--with` for each one you want (`orchestra-bridges`,
-`orchestra-outbox`, `orchestra-agents`, `orchestra-desk`). A plugin's command line is a subcommand
-of `orchestra`, named for the plugin (`orchestra tasks`, `orchestra agents`, `orchestra desk`,
-`orchestra outbox`, `orchestra bridges`), so `--with` is all a plugin needs. The one command,
+`sd` is the system dynamics discovery; each other extra is a plugin, a package of its own in its
+own repository (`orchestra-tasking`, `orchestra-agents`, `orchestra-bridges`, `orchestra-desk`,
+`orchestra-outbox`), which the extra installs beside Orchestra. Name only the ones you want. A
+plugin's command line is a subcommand of `orchestra`, named for the plugin (`orchestra tasks`,
+`orchestra agents`, `orchestra desk`, `orchestra outbox`, `orchestra bridges`). The one command,
 `orchestra`, lands in `~/.local/bin`, which `uv tool update-shell` adds to the PATH (`uv tool dir
 --bin` says where it is).
 
-The command is the whole of what is installed: running `uv tool install` again replaces the tool,
-and a plugin whose `--with` is left out is uninstalled. `uv tool list --show-with` shows what is
-there. To take newer commits, run the same command again, every `--with` included, with
+The command is the whole of what is installed: running `uv tool install`
+again replaces the tool, and a plugin left out of the brackets is uninstalled. `uv tool list
+--show-with` shows what is there. To take newer commits, run the same command again with
 `--reinstall --refresh`. Into a virtual environment instead, with `uv pip` or `pip`:
 
 ```bash
 uv venv .venv && source .venv/bin/activate
-uv pip install 'orchestra[sd] @ git+https://github.com/danroblewis/orchestra@main' \
-    'orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking'
+uv pip install 'orchestra[sd,tasking] @ git+https://github.com/danroblewis/orchestra@main'
 ```
 
 Orchestra alone from a checkout: `uv tool install /path/to/orchestra` (or `-e` for an editable one).

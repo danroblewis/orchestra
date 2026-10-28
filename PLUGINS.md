@@ -1081,7 +1081,7 @@ name = "orchestra-heartbeat"
 version = "0.1.0"
 description = "A minimal Orchestra plugin: one machine that beats, answers pings, and is shown on its own page."
 requires-python = ">=3.12"
-dependencies = ["orchestra @ git+https://github.com/danroblewis/orchestra@main", "fastapi>=0.115"]
+dependencies = ["orchestra>=1.0.0a1,<1.0.0rc0", "fastapi>=0.115"]   # never PyPI's unrelated `orchestra`
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "httpx>=0.27"]
@@ -1090,8 +1090,9 @@ dev = ["pytest>=8.0", "httpx>=0.27"]
 [project.entry-points."orchestra.plugins"]
 heartbeat = "heartbeat.plugin:plugin"
 
-[tool.hatch.metadata]
-allow-direct-references = true      # hatchling refuses a `name @ url` dependency without it
+[tool.uv]
+# this repository's own environment only; installed as a dependency, the plugin takes the Orchestra it is installed with
+override-dependencies = ["orchestra @ git+https://github.com/danroblewis/orchestra@main"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["heartbeat"]
@@ -1100,13 +1101,20 @@ packages = ["heartbeat"]
 testpaths = ["tests"]
 ```
 
-Orchestra is a direct reference to its GitHub repository (PEP 508), not a `[tool.uv.sources]`
-entry, for two reasons. pip reads it too, where it would ignore uv's sources and look for another
-`orchestra` on PyPI. And a uv workspace can still replace it with a local checkout, which it cannot
-do to a member's own git source. `uv lock` pins the commit; `uv lock --upgrade-package orchestra`
-takes the newest `main`. Use the same URL, `@main` included, in every plugin: pip refuses two
-different URLs for one package in one environment. A dependency on another plugin, whose repository is
-private, goes over SSH: `"orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking"`.
+A plugin asks for Orchestra by name and version only, never by URL. Whoever installs it supplies
+Orchestra: a user installs `orchestra[heartbeat] @ git+https://github.com/danroblewis/orchestra@main`
+(an extra in Orchestra's own `pyproject.toml` names the plugin's repository), or `--with` the plugin
+beside an Orchestra from any branch or checkout. A URL here would conflict with every Orchestra
+installed from anywhere else, Orchestra's own checkout included. The range matters: an unrelated
+package called `orchestra` is on PyPI (1.0.0 to 1.0.61), and `>=1.0.0a1,<1.0.0rc0` admits none of
+its versions, so a plugin installed without Orchestra fails instead of pulling it in (`<1.0.0`
+would also shut out our own 1.0.0a1: a pre-release of 1.0.0). Raise the range with Orchestra's
+version. `[tool.uv] override-dependencies` gives the plugin's own environment Orchestra from
+GitHub; uv reads it only at the root, never when the plugin is installed as a dependency
+(`[tool.uv.sources]` would not do: uv applies a git dependency's sources). An override replaces
+every `orchestra` requirement, extras included, so name the dev extras' in it
+(`orchestra[sd] @ git+…`). `uv lock` pins the commit; `uv lock --upgrade-package orchestra` takes
+the newest `main`.
 
 To run the plugin against an Orchestra checkout with uncommitted changes, lay it over the
 environment for one command, `uv run --with-editable /path/to/orchestra python -m pytest`; each
@@ -1692,8 +1700,9 @@ How it stands today:
 
 - Orchestra is `1.0.0a1`. The plugin interface has **no version number** of its own and no
   compatibility check. A plugin is a `Plugin` dataclass instance, and that is the contract.
-- The plugins depend on `orchestra @ git+https://github.com/danroblewis/orchestra@main`, and each
-  one's `uv.lock` pins the commit. They run against that commit until `uv lock --upgrade-package
+- The plugins depend on `orchestra>=1.0.0a1,<1.0.0rc0`, from GitHub `main` in their own
+  environments (`[tool.uv] override-dependencies`), and each one's `uv.lock` pins the commit. Orchestra's extras (`tasking`,
+  `agents`, `bridges`, `desk`, `outbox`) install them from their repositories. They run against that commit until `uv lock --upgrade-package
   orchestra` moves it, or against a local checkout laid over them (`uv run --with-editable`).
 - The interface changes in lockstep with its users. For example, `Declared` lost its
   `description` field in orchestra_2 `6d80b787`, and the agents dropped the argument the same day
