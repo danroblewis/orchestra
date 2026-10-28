@@ -552,6 +552,16 @@ remembered; successive windows overlap, so it measures stability as the window s
 independent confirmation. The Dynamics page and `orchestra sd discover` show the score beside each
 stock, and the stock's drawer every measurement.
 
+That score is the stock's **identity** trust: its accounting holds. Beside it, never folded into
+it, each measured stock records its **behaviour** trust (`sd/behaviour.py`,
+`sd/experiments/heldout.py`, `evidence.trust.behaviour`): the model run forward from half-way, two
+thirds and five sixths of its own window, its inputs held as a forward run holds them, against the
+measured level; the RMS miss over the level's spread (`error`), the same for the level held
+(`hold_error`), how the miss grows with the horizon (`growth`, `z`), and `score = 1 / (1 + error)`.
+The equations were fitted on the whole window, so it is held out in time, not in fitting. It is
+shown wherever the identity trust is, and a forward run widens each stock's band by it (in
+quadrature, `± z × growth × h`), so that the band covers the truth about as often as it says.
+
 Everything else is **left out, with the reason** (did not change, written in too few steps, no
 counters balance it and no net flow explains it, not needed by any balance, the same as another
 counter), recorded in the model version. Not yet: stocks no series measures,
@@ -1476,8 +1486,8 @@ orchestra/
   sd/        model, store, fit, series and live (sampling, when a series was written), balance,
              collinear and restate (a level's balance), units (a balance's terms in the level's
              unit), identify, accept and construction (the evidence a balance must show),
-             stocktrust, netnull and persistence (each stock's trust), ends, inputs, drivers (which stocks may
-             drive a flow), discover (conservation), attribute (machines associated with flows,
+             stocktrust, netnull and persistence (each stock's trust), behaviour (its projection's), ends, inputs,
+             drivers and driverchoice (which series may drive a flow, and which does), path, discover (conservation), attribute (machines associated with flows,
              as hypotheses), rates, strategies, simulate, rediscover, trust (each flow's
              spread and what is not trusted), provenance (where each series in a model came from), linearise and observability
              (which stocks what is measured determines), eras, prior and compare (eras, the

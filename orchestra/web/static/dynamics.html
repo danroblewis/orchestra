@@ -269,10 +269,12 @@ function leftOut(lo) {
     return `<details ${g.startsWith("changed") ? "open" : ""}><summary>${esc(g)} <span class="count">${groups[g].length}</span></summary><table class="dt">${rows}</table></details>`;
   }).join("");
 }
-// how far to trust a stock (sd/stocktrust.py): the weakest of its measured evidence, 0 to 1
+// how far to trust a stock (sd/stocktrust.py): the weakest of its measured evidence, 0 to 1; and its projection beside it (behaviour)
 function trustText(ev) {
   const t = ev.trust;
-  return t ? ` · trust ${t.score.toFixed(2)} (${esc(t.level)}${t.weakest ? `; weakest: ${esc(t.weakest.replace("_", " "))}` : ""})` : "";
+  const b = t && t.behaviour;
+  return t ? ` · trust ${t.score.toFixed(2)} (${esc(t.level)}${t.weakest ? `; weakest: ${esc(t.weakest.replace("_", " "))}` : ""})`
+    + (b ? ` · behaviour ${b.score.toFixed(2)} (${esc(b.level)}; replay off by ${b.error.toFixed(2)} × its spread)` : "") : "";
 }
 // a stock no counters balance: its net flow fitted by least squares, or SD Lab's flows where they
 // predicted the level better on held-out data (conservation_fit names the fit they replaced)

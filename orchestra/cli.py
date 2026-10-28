@@ -128,6 +128,8 @@ def cmd_sd(args) -> int:
         for st in m.stocks:
             tr = st.evidence.get("trust") or {}
             trust = f"; trust {tr['score']:.2f} ({tr['level']}, weakest: {tr.get('weakest') or '—'})" if tr else ""
+            if b := tr.get("behaviour"):
+                trust += f"; behaviour {b['score']:.2f} ({b['level']}, replay off by {b['error']:.2f}× its spread)"
             if nf := st.evidence.get("net_flow"):
                 print(f"  stock {st.id}: no counters; net flow fitted as {nf['form']}   (R² {nf['r2']:.3f} over {nf['stretches']} "
                       f"stretches of {nf['stretch_s']:g} s{trust})")
