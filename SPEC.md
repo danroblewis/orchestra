@@ -1299,6 +1299,13 @@ a script or stylesheet missing from its static directory is left out and reporte
 the package's, not Orchestra's: its routes are its own, and Orchestra knows nothing of what they
 mean. They are behind the same login as Orchestra's (§10.2), and a plugin adds no route outside it.
 
+A plugin's command line is a subcommand of `orchestra` (`orchestra/commands.py`): an entry point in
+the group `orchestra.commands`, named for the plugin, naming `main(argv: list[str]) -> int | None`,
+which `orchestra <name> [args...]` calls with the rest of argv (`ORCHESTRA_PROG` and `sys.argv[0]`
+set to `orchestra <name>`). It is apart from `orchestra.plugins` because it is given no project and
+must work before one exists. One that fails to load fails alone; a name of Orchestra's own
+subcommands is refused with a warning. Plugins ship no console scripts of their own.
+
 ### 10.2 Authentication
 
 Anyone who reaches the web UI could otherwise use every page and every plugin's writes, and a
@@ -1341,7 +1348,7 @@ plugins (rule 8).
 
 ```
 orchestra/
-  cli.py  config.py  overlay.py  config_edit.py  toml_text.py  events.py  runtime.py  host.py  launcher.py  collectors.py  plugins.py  tokens.py
+  cli.py  commands.py  config.py  overlay.py  config_edit.py  toml_text.py  events.py  runtime.py  host.py  launcher.py  collectors.py  plugins.py  tokens.py
   bus/       file, redis_streams, rabbitmq_streams, kafka
   endpoint/  the events endpoint (§3.1): the token and the record, validate, server, api (the model and experiments)
   collect/   instruments, a project's and the plugins' collectors and scrapes: spec, fetch,
