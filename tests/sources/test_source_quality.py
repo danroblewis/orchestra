@@ -81,7 +81,7 @@ def test_a_recording_rule_is_read_on_its_own_interval(store):
     fam = families(src, spec)["http_requests_total"]
     assert fam.resolution_s == 15.0 and fam.rollups["rate"]["resolution_s"] == 60.0
     rule = next(d for d in views(fam, spec) if d.view == "rollup")
-    assert "[91s]" in rule.query and rule.resolution_s == 60.0
+    assert "[151s]" in rule.query and rule.resolution_s == 60.0
     got = read_definition(src, rule, "lab", None, T0 + 600, END - 60, 30.0)
     (_, _, pts, _), = got
     assert len(pts) == len(range(int(T0 + 600), int(END - 60) + 1, 60))   # on its own 60 s grid, a value at every step

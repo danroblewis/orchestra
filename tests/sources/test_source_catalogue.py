@@ -9,16 +9,15 @@ import json
 import math
 import time
 
-from fake_prometheus import FakePrometheus
+from fake_prometheus import Busy, FakePrometheus
 from helpers import project, source_toml, world
 
 from orchestra.metrics import Point, for_project
-from orchestra.metrics.promql import PromQLError
 from orchestra.sd.rediscover import aligned, rediscover
 from orchestra.sd.series import Declared, sample
 from orchestra.sd.store import ModelStore
+from orchestra.sources.cache import cached, save
 from orchestra.sources.catalogue import Catalogue
-from orchestra.sources.infer import cached, save
 from orchestra.web.dynamics import model_view
 
 
@@ -179,9 +178,9 @@ def test_a_round_that_fails_midway_is_not_cached_and_the_old_definitions_stand(t
     fake = FakePrometheus(dump)
     answer = fake.answer
 
-    def probe_fails(endpoint, form):                  # the probes of the max views (the schema reads no max)
-        if endpoint == "query_range" and (form.get("query") or [""])[0].startswith("max"):
-            raise PromQLError("injected probe failure")
+    def probe_fails(endpoint, form):                  # every probe stays busy (at the series' resolution; the schema reads coarser)
+        if endpoint == "query_range" and float((form.get("step") or ["0"])[0]) < 200:
+            raise Busy("injected probe failure")
         return answer(endpoint, form)
 
     try:
@@ -196,7 +195,7 @@ def test_a_round_that_fails_midway_is_not_cached_and_the_old_definitions_stand(t
     finally:
         fake.close()
     assert "inference failed" in listing.error and "injected failure" in listing.error
-    assert "inference failed" in probing.error and "probes failed" in probing.error and "injected probe failure" in probing.error
+    assert "inference failed" in probing.error and "probes could not be made" in probing.error and "HTTP 503" in probing.error
     for again in (listing, probing):
         assert [d.id for d in again.kept] == [d.id for d in good.kept]
     assert (p.state_dir / "sources" / "rig.json").read_text() == before
@@ -214,7 +213,7 @@ def test_a_source_answering_in_another_shape_is_only_that_source_missing(tmp_pat
         fake.answer = lambda endpoint, form: None                   # {"status": "success", "data": null}
         fresh = rediscover(p, store)
         fake.answer = answer
-        Catalogue(p, store).inference("rig", end - 7200, end)       # a good round cached
+        Catalogue(p, store).inference("rig", end - 7200, end, refresh=True)   # a good round cached (at once: not waiting out the failure)
         fake.answer = lambda endpoint, form: {"resultType": "matrix", "result": None} if endpoint != "series" else answer(endpoint, form)
         cached_defs = rediscover(p, store)
     finally:

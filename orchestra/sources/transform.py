@@ -7,9 +7,9 @@ In:  ``{"source": "work", "candidates": [{"id", "family", "stat", "view", "group
 
 Out: a list of ``{"id", "queries": [{"name", "query", "kind"?, "unit"?, "labels"?}], "reason"?,
 "pin"?}``. An empty ``queries`` drops the candidate (the reason is kept); a candidate not
-mentioned is kept; ``"id": null`` adds a definition of the script's own. For a counter read from
-raw samples (view ``increments``) the query is the selector, and a rewrite of it stays one unless
-it names another kind.
+mentioned is kept; ``"id": null`` adds a definition of the script's own. For an inferred counter
+(view ``increments``) the query is the selector; a rewrite of it is read from raw samples, as a
+declared one is, unless it names another kind. A rewritten query is read as written, on its own.
 
 The script runs from the repository root with a timeout, like a ``[[collect]]`` command: any
 executable (a ``.py`` file that is not executable runs with this Python). A failure (non-zero
@@ -27,6 +27,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from ..launcher import child_env
+from ..sd.units import from_name
 from .spec import KINDS, NAME, SourceSpec
 from .views import Definition
 
@@ -74,8 +75,10 @@ def _from_script(base: Definition, q: dict, n: str, who: str, spec: SourceSpec) 
     if not NAME.match(name) or not isinstance(query, str) or not query.strip() or (kind is not None and kind not in KINDS):
         raise TransformError(f"{who}: a rewrite needs a name (lower-case letters, digits, _), a query, and a kind in {sorted(KINDS)}")
     raw_counter = base.view == "increments" and kind in (None, "counter")
+    same = query == base.query and kind in (None, base.kind)      # a rename: still read as generated (plan.py)
     return replace(base, id=f"{base.id}.{n}" if base.id else f"script.{n}", name=name, query=query,
-                   kind=kind or base.kind, unit=q.get("unit") or base.unit, view=base.view if raw_counter else "script",
+                   inner=base.inner if same else "", agg=base.agg if same else "", agg_labels=list(base.agg_labels) if same else [],
+                   kind=kind or base.kind, unit=q.get("unit") or (base.unit if same else None) or from_name(name), view=base.view if raw_counter else "script",
                    extra_labels={str(k): str(v) for k, v in (q.get("labels") or {}).items()},
                    origin=[*base.origin, f"rewritten by {who}" if base.id else f"added by {who}"],
                    flags=list(base.flags), rename=dict(base.rename) or spec.aliases())

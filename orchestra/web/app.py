@@ -195,10 +195,12 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
 
         def go():
             from ..sd.rediscover import rediscover
+            from ..sources.catalogue import reading_only
             try:
-                r = rediscover(project, core.metrics, strategy=body.get("strategy") or None, options=body.get("options"),
-                               window_s=body.get("window_s") or None, step_s=body.get("step_s") or None,
-                               note="discovered on request: the structure changed")
+                with reading_only():                # another store's definitions are the host's to infer
+                    r = rediscover(project, core.metrics, strategy=body.get("strategy") or None, options=body.get("options"),
+                                   window_s=body.get("window_s") or None, step_s=body.get("step_s") or None,
+                                   note="discovered on request: the structure changed")
                 rediscovery.update(result={"at": r.at, "stocks": len(r.model.stocks), "flows": len(r.model.flows), "version": r.version,
                                            "strategy": r.strategy, "compute_ms": r.model.discovery.get("compute_ms")}, error=None)
             except Exception as e:  # noqa: BLE001 - reported to the page
