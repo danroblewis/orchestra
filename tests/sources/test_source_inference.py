@@ -159,7 +159,7 @@ def test_the_cap_holds_across_families(fake, tmp_path):
 
 
 def test_inference_is_cached_and_survives_a_failing_round(fake, tmp_path):
-    from orchestra.sources.infer import definitions
+    from orchestra.sources.cache import definitions
     spec = spec_for(fake.url, tmp_path)
     src = PrometheusSource(spec)
     first = definitions(src, spec, [], tmp_path, tmp_path / "state", END - 7200, END)

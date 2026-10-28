@@ -27,7 +27,8 @@ that fails leaves its stocks without a level and records why (``errors["source <
 every other stock's level and history still update.
 
 Endpoints read the caches and report how old they are. The model itself is rediscovered by the
-bootstrap host, not here (``orchestra.host``); this only reads what the host cached."""
+bootstrap host, not here (``orchestra.host``); this only reads what the host cached, and so are a
+source's definitions: the catalogue here never starts an inference round (``sources.cache``)."""
 
 from __future__ import annotations
 
@@ -70,7 +71,7 @@ class Refresher:
         self.counted: dict | None = None                    # counted traffic, summarised (traffic.summarise)
         self.at: dict[str, float] = {}
         self.errors: dict[str, str] = {}
-        self.catalogue = Catalogue(project, metrics)
+        self.catalogue = Catalogue(project, metrics, infer=False)    # reads the host's inference, never starts one
         self._stop = threading.Event()
         threading.Thread(target=self._run, name="web-refresher", daemon=True).start()
         threading.Thread(target=self._run_remote, name="web-refresher-sources", daemon=True).start()

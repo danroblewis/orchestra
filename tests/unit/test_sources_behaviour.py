@@ -200,3 +200,74 @@ def test_a_rule_and_an_exporter_metric_never_share_a_name():
         names = {x.family: x.name for x in (a, b)}
         assert names == {"kafka_consumergroup_lag_sum": "kafka_consumergroup_lag_sum",
                          "kafka_consumergroup_lag": "kafka_consumergroup_lag_sum__kafka_consumergroup_lag"}
+
+
+# The statistics review's cases (review-r1-stats F10, F11)
+
+
+def test_a_crash_looping_counter_is_a_counter():
+    """An untyped request counter restarting every 8 minutes, each restart scraped after the new
+    process counted a little (13% of the last value)."""
+    v, out = 0.0, []
+    for i in range(240):
+        v = 0.13 * v if i and i % 32 == 0 else v + 5
+        out.append(v)
+    assert classify("api_requests", None, None, [series(out)])[0] == "counter"
+
+
+def test_a_delta_gauge_is_read_as_counts_of_its_own():
+    """OTel delta temporality pushed as a gauge: each sample is the requests since the last."""
+    vals = [(i * 7919) % 13 + (i * 104729) % 5 for i in range(120)]
+    kind, why = classify("checkoutRequests", "gauge", None, [series(vals)])
+    assert kind == "delta" and "delta" in why
+    assert classify("http_requests_per_second", "gauge", None, [series(vals)])[0] is None    # a rate is no count
+    assert classify("http_requests_in_flight", "gauge", None, [series(vals)])[0] is None     # an amount held
+
+
+def test_decides_only_on_what_the_samples_show():
+    from orchestra.sources.behaviour import decides
+    assert decides([series([1, 2, 3, 2.5, 4, 3, 5, 4.2])]) == "gauge"
+    assert decides([series([10, 20, 30, 2, 12, 22])]) == "counter"
+    assert decides([series([10, 20, 30, 40])]) == ""           # only rose: a counter or a filling level; the name cannot tell
+
+
+def test_two_deployments_that_differ_only_at_a_rollout_are_two():
+    steady = _grid(*([3] * 30))
+    surge = _grid(*([3] * 14 + [4] + [3] * 15))
+    assert not same_shape([surge], [steady]) and not same_shape([steady, surge], [steady, steady])
+    lagged = _grid(*([3] * 14 + [4] * 16))
+    early = _grid(*([3] * 13 + [4] * 17))
+    assert same_shape([lagged], [early])                       # the same pods, seen a scrape apart
+
+
+def test_two_jobs_scraping_different_nodes_are_not_one():
+    """A half-migrated fleet: A, B under one job, C, D under the other; totals alike, rates not."""
+    grid = lambda v, r: [v + r * k for k in range(30)]
+    a = [({"job": "node-exporter", "instance": "10.0.1.1:9100"}, grid(3.0e12, 8.4e8)),
+         ({"job": "node-exporter", "instance": "10.0.1.2:9100"}, grid(4.0e12, 4.2e8))]
+    b = [({"job": "integrations/node_exporter", "instance": "10.0.1.3:9100"}, grid(3.0e12, 4.2e8)),
+         ({"job": "integrations/node_exporter", "instance": "10.0.1.4:9100"}, grid(4.0e12, 1.26e9))]
+    assert duplicated(a + b, "job", counter=True) is None
+    same = [({"job": "integrations/node_exporter", "instance": "ip-10-0-1-1"}, grid(3.0e12, 8.4e8)),
+            ({"job": "integrations/node_exporter", "instance": "ip-10-0-1-2"}, grid(4.0e12, 4.2e8))]
+    assert duplicated(a + same, "job", counter=True) == ("integrations/node_exporter", ["node-exporter"])
+    faster = [({"job": "integrations/node_exporter", "instance": "ip-10-0-1-1"}, grid(3.0e12, 2.1e9)),
+              ({"job": "integrations/node_exporter", "instance": "ip-10-0-1-2"}, grid(4.0e12, 4.2e8))]
+    assert duplicated(a + faster, "job", counter=True) is None    # the same targets, but not the same counts
+
+
+def test_labels_that_name_units_or_kinds_are_never_summed_across():
+    from orchestra.sources.checks import is_unit
+    for label in ("unit", "resource", "le", "type"):
+        assert is_unit(label, label, {"a", "b"})
+    assert is_unit("kind", "kind", {"cpu", "memory"}) and not is_unit("queue", "queue", {"orders", "emails"})
+
+
+def test_a_counter_split_earns_credit_from_a_lag_split_by_it_and_another_label(tmp_path):
+    """The lag by consumer group and topic moves apart: the produced offsets by topic can balance
+    each topic's part of it, so they rank like a split that matters."""
+    from orchestra.sources.rank import stock_splits
+    info = {c: {"real": c, "role": "grouping", "cardinality": 3} for c in ("consumergroup", "topic")}
+    lag = Definition(id="l", source="lab", name="lag", family="lag", view="rollup", kind="level", query="",
+                     group_by=["consumergroup", "topic"], labels_info=info)
+    assert stock_splits([lag], {"l": {"apart": 0.8}}) == {"consumergroup": 0.792, "topic": 0.792}

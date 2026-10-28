@@ -2,8 +2,9 @@
 the store's metadata, checked against how its raw samples behave; a name is only a hint.
 
 - A **counter typed a gauge** (or untyped): every sampled series never falls except by a few
-  **resets** (a drop to at most ``RESET_FRACTION`` of the value before, at most ``RESETS`` of the
-  intervals: a process restarting from about zero now and then, not a queue drained in batches),
+  **resets** (a drop to at most ``RESET_FRACTION`` of the value before, so a restart scraped after
+  the new process counted a little is one, at most ``RESETS`` of the intervals: a process
+  restarting now and then, crash-looping even, not a queue drained in batches every few minutes),
   and rises in at least ``RISING`` of its sample intervals. Data alone cannot tell a counter from
   an amount that only grew in the window (a disk filling, a queue nobody consumes), so the name
   breaks the tie, by Prometheus' convention that a name ends with what it measures: an amount held
@@ -15,6 +16,17 @@ the store's metadata, checked against how its raw samples behave; a name is only
   level hides (a Kafka topic's offsets are its messages produced).
 - A **gauge typed a counter**: a typed counter that falls ``PARTIAL_DROPS`` times or more by less
   than half (not to about zero) is not counting anything (a ``…_pending_total`` that is a queue).
+- A **delta** (``delta``): a gauge whose samples are each a count of events since the last (OTel's
+  delta temporality, pushed as a gauge: ``checkoutRequests``): never negative, its name says
+  events and not a rate, and its values do not carry over from one sample to the next (their
+  lag-one autocorrelation is under ``DELTA_AUTOCORR``), unlike any level. Its sum over each step
+  is the events of that step.
+
+The window decides little: a queue named for events (``sidekiq_retries``) that only grew in an
+incident hour, a counter that reset once in a day. So a family's type is judged over a long,
+coarse history as well (``schema.py``), and once judged it changes only when the data decide
+(``decides``: partial drops say a level, a reset with nothing else falling says a counter), never
+on a name alone.
 - A **timestamp**: values that are Unix times (seconds or milliseconds, from twenty years before
   the sample to a day after it) and a name or help that says time (``…_created``,
   ``…_start_time_seconds``, ``…_timestamp…``, help "Unix …"). A sum of timestamps means nothing.
@@ -33,8 +45,10 @@ from itertools import pairwise
 
 from . import Points
 
-RESET_FRACTION = 0.1
-RESETS = 0.02           # of the intervals, at most (and one in any case)
+RESET_FRACTION = 0.5
+RESETS = 0.04           # of the intervals, at most (and one in any case): a crash loop every 8 minutes is 3%
+DELTA_AUTOCORR = 0.3
+RATE_NAME = re.compile(r"(?i)rate|per_?sec|per_?second|_ps$|per_?minute")
 RISING = 0.2
 PARTIAL_DROPS = 3
 AMOUNT = {"bytes", "size", "used", "usage", "avail", "available", "free", "capacity", "limit", "limits", "memory", "length",
@@ -110,6 +124,35 @@ def clock(series: list[Points]) -> bool:
     return n >= 5 and good >= 0.8 * n
 
 
+def decides(series: list[Points]) -> str:
+    """What the samples alone say, whatever the name: "gauge" when it fell by part
+    ``PARTIAL_DROPS`` times, "counter" when it reset and otherwise never fell, else ""."""
+    if partial_drops(series) >= PARTIAL_DROPS:
+        return "gauge"
+    ok, reset, _ = counter_like(series)
+    return "counter" if ok and reset else ""
+
+
+def _autocorr(v: list[float]) -> float:
+    n = len(v)
+    m = sum(v) / n
+    var = sum((x - m) ** 2 for x in v)
+    if var <= 0:
+        return 1.0
+    return sum((a - m) * (b - m) for a, b in pairwise(v)) / var
+
+
+def delta(name: str, typ: str | None, series: list[Points]) -> bool:
+    """Whether a gauge's samples are each a count since the last (delta temporality)."""
+    if typ == "counter" or amount(name) or not events(name) or RATE_NAME.search(name):
+        return False
+    vals = [[v for _, v in p] for p in series if len(p) >= 20]
+    if not vals or any(v < 0 for vs in vals for v in vs) or counter_like(series)[0]:
+        return False
+    moving = [vs for vs in vals if len(set(vs)) > 2]
+    return bool(moving) and all(_autocorr(vs) < DELTA_AUTOCORR for vs in moving)
+
+
 def classify(name: str, typ: str | None, help_: str | None, series: list[Points], *, low: float | None = None,
              high: float | None = None) -> tuple[str | None, str]:
     """A family's kind from its samples (``series``: raw samples of a few of its series) and, when
@@ -132,6 +175,9 @@ def classify(name: str, typ: str | None, help_: str | None, series: list[Points]
         return None, ""
     if typ not in (None, "", "gauge", "unknown", "untyped") or n < 10:
         return None, ""
+    if delta(name, typ, series):
+        return "delta", (f"typed {typ}" if typ else "untyped") + ", but each sample is a count of its own (never negative, "\
+            "not carried from one sample to the next) and its name says events: a delta, summed over each step"
     ok, reset, rises = counter_like(series)
     if not ok or rises < RISING * n or amount(name) or not (reset or events(name)):
         return None, ""

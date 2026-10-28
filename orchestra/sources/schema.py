@@ -22,13 +22,26 @@ what their samples say they are.
    it has more than ``HIGH_CARDINALITY`` values; a label with one value is **constant**; the rest
    are **grouping** labels (service, queue, phase). A grouping label whose values only repeat each
    other's series (two scrape jobs of one exporter: ``duplicates.py``) is read at one value.
+   A label that names a **unit** (``unit``, ``resource``, or values such as ``cpu``/``memory``:
+   ``checks.is_unit``) is kept in every view, never summed across.
 4. **Resolution.** The reporting interval, from a raw read of a few series: the largest of their
    median gaps between samples. A recording rule's is its own (rules are evaluated on their own
    interval, often slower than their base is scraped).
 5. **Behaviour.** The same samples check the family's type (``behaviour.py``): a gauge that only
    rises but by resets is a counter, a counter that falls by halves is a gauge, and timestamps,
    clocks and info metrics are read as neither levels nor flows; nor are Prometheus' own series
-   about each scrape (``up``, ``scrape_*``: ``SCRAPE_SERIES``), which measure the collection.
+   about each scrape (``up``, ``scrape_*``: ``SCRAPE_SERIES``), which measure the collection. A
+   family the window cannot judge is judged over the source's longer ``history`` too, and a type
+   once judged changes only when the samples decide it, never on a name alone. A metric typed a
+   histogram with no classic parts is a **native histogram**, read by its count.
+6. **Units.** The store's metadata, else the name, read as discovery reads it (``sd.units``:
+   ``_bytes``, ``_seconds``, a ``_count`` of observations, ``count`` for a name with no unit
+   word): every definition carries its unit, and its unit label when a label says it.
+
+Every read of samples is batched across families (``census.py``, ``survey.py``). A family that
+cannot be read in a round (a refusal that outlasted the retries, the round's deadline or budget)
+**keeps what the last round found of it**; one never judged is **unknown**, listed and left out,
+never given a type its data did not show.
 
 The store's series listing may count values by day (VictoriaMetrics' index), so cardinality and
 churn are measured from samples within the window instead."""
@@ -37,18 +50,9 @@ from __future__ import annotations
 
 import re
 
-from . import Labels, Source, SourceError
-from .checks import (
-    CHURN,
-    COLLECTION_LABELS,
-    HIGH_CARDINALITY,
-    behave,
-    churn,
-    dedupe,
-    interval,
-    is_object,
-    samples,
-)
+from ..sd.units import from_name
+from . import Labels, Source
+from .checks import COLLECTION_LABELS
 from .family import UNREAD, Family, LabelInfo, Schema, stat_name
 from .spec import SourceSpec
 
@@ -59,11 +63,10 @@ STAT_LABELS = ("stat", "statistic", "quantile")
 HIST_PART = re.compile(r"^(?P<base>.+)_(?P<part>bucket|count|sum)$")
 ROLLUP = re.compile(r"^(?:(?P<level>[a-zA-Z_][a-zA-Z0-9_]*):)?(?P<base>[a-zA-Z_][a-zA-Z0-9_]*):"
                     r"(?P<ops>(?P<fn>sum|avg|max|min|count)(?:_(?:rate|irate|increase)[a-zA-Z0-9_]*)?|(?P<rfn>rate|irate|increase)[a-zA-Z0-9_]*)$")
-SKIP_LABELS = {"__name__", "le"}
+SKIP_LABELS = {"__name__"}
 INTENSIVE = re.compile(r"(?i)latency|duration|seconds|ratio|percent|utili[sz]ation|temperature|_p\d\d")
 SCRAPE_SERIES = {"up", "scrape_duration_seconds", "scrape_samples_scraped", "scrape_samples_post_metric_relabeling", "scrape_series_added",
                  "scrape_timeout_seconds", "scrape_sample_limit", "scrape_body_size_bytes"}   # Prometheus' own, one per target per scrape
-SCHEMA_LIMIT = 20000        # label sets read from the listing
 
 
 
@@ -154,10 +157,13 @@ def _group(names: dict[str, list[Labels]], meta: dict[str, dict]) -> list[Family
     for n in sorted(set(names) - taken):
         typ = (meta.get(n) or {}).get("type")
         stat_label = next((s for s in STAT_LABELS if any(s in lab for lab in names[n])), None)
-        kind = "counter" if typ == "counter" or (typ in (None, "", "unknown") and n.endswith("_total")) else "gauge"
+        kind = "counter" if typ in ("counter", "histogram") or (typ in (None, "", "unknown") and n.endswith("_total")) else "gauge"
         if stat_label:
             kind = "gauge"
         fam = Family(n, kind, {n: None}, stat_label)
+        if typ == "histogram" and not stat_label:          # typed a histogram with no _bucket/_count: a native one
+            fam.counter_form = "native"
+            fam.help = "a native histogram, read by its count; its sum is not read"
         if stat_label:
             fam.stat_values = {stat_name(lab[stat_label]): lab[stat_label] for lab in names[n] if stat_label in lab}
         out.append(fam)
@@ -166,7 +172,7 @@ def _group(names: dict[str, list[Labels]], meta: dict[str, dict]) -> list[Family
         if fam.name in SCRAPE_SERIES:
             fam.kind, fam.retyped = "scrape", "Prometheus' own series about each scrape: a measurement of the collection, not of the system"
         md = meta.get(fam.first_metric()) or {}
-        fam.unit = fam.unit or md.get("unit") or None
+        fam.unit = fam.unit or md.get("unit") or from_name(fam.first_metric())   # discovery's reading of a name (sd.units)
         fam.help = fam.help or md.get("help") or None
     return out
 
@@ -184,56 +190,10 @@ def _aliases(real: set[str], spec: SourceSpec) -> dict[str, str]:
     return out
 
 
-def read(source: Source, spec: SourceSpec, start: float, end: float) -> Schema:
-    """The families of what ``spec.match`` selects, with aliases, roles and resolution."""
-    sets = source.series(spec.match, start, end, SCHEMA_LIMIT)
-    notes = [f"the listing was cut at {SCHEMA_LIMIT} series; narrow match to infer from all"] if len(sets) >= SCHEMA_LIMIT else []
-    names: dict[str, list[Labels]] = {}
-    for lab in sets:
-        n = lab.get("__name__")
-        if n:
-            names.setdefault(n, []).append({k: v for k, v in lab.items() if k != "__name__"})
-    meta = source.metadata()
-    families = _group(names, meta)
-    for fam in families:
-        fam_sets = [lab for m in fam.metrics for lab in names.get(m, [])]
-        real = {k for lab in fam_sets for k in lab} - SKIP_LABELS - ({fam.stat_label} if fam.stat_label else set())
-        one = [lab for lab in names.get(fam.first_metric(), []) if not fam.stat_label or lab.get(fam.stat_label) == next(iter(fam.stat_values.values()), None)]
-        fam.series = len({tuple(sorted((k, v) for k, v in lab.items() if k != fam.stat_label)) for lab in one}) or len(fam_sets)
-        judged = fam.kind in ("gauge", "counter") and not fam.stats
-        try:
-            raw = samples(source, [{"__name__": fam.first_metric(), **x} for x in one or fam_sets], start, end, more=judged)
-            fam.resolution_s = interval(raw)
-            if judged and raw:
-                behave(source, fam, raw, (meta.get(fam.first_metric()) or {}).get("type"), start, end)
-            for rule in fam.rollups.values():
-                rule["resolution_s"] = interval(samples(source, [{"__name__": rule["metric"], **x} for x in names.get(rule["metric"], [])],
-                                                         start, end))
-        except SourceError as e:
-            notes.append(f"{fam.name}: could not read its samples: {e}")
-        r = 1.5 * (fam.resolution_s or 60.0)
-        sel = fam.selector(fam.stats[0] if fam.stats else None)
-        for canonical, rl in _aliases(real, spec).items():
-            values = {lab[rl] for lab in fam_sets if rl in lab}
-            if canonical in spec.identity or (len(values) > 1 and is_object(canonical, rl, values)):
-                fam.labels[canonical] = LabelInfo(rl, len(values), 0.0, "identity")
-                continue
-            if len(values) <= 1:
-                fam.labels[canonical] = LabelInfo(rl, len(values), 0.0, "constant")
-                if values:
-                    fam.constants[canonical] = next(iter(values))
-                continue
-            try:
-                card, churned = churn(source, sel, rl, r, start, end)
-            except SourceError as e:
-                notes.append(f"{fam.name}: could not measure {rl}'s churn: {e}")
-                card, churned = len(values), 0.0
-            role = "identity" if (churned >= CHURN and card > 3) or card > HIGH_CARDINALITY else ("grouping" if card > 1 else "constant")
-            fam.labels[canonical] = LabelInfo(rl, card, churned, role)
-            if role == "constant" and len(values) == 1:
-                fam.constants[canonical] = next(iter(values))
-        try:
-            dedupe(source, fam, start, end)
-        except SourceError as e:
-            notes.append(f"{fam.name}: could not compare its labels' values: {e}")
-    return Schema(families, notes)
+def read(source: Source, spec: SourceSpec, start: float, end: float, *, until: float | None = None,
+         known: dict[str, dict] | None = None) -> Schema:
+    """The families of what ``spec.match`` selects, with aliases, roles and resolution, read by
+    ``until`` (``time.monotonic()``); ``known``: the last round's families by name, which a family
+    that cannot be read this round keeps (``survey.py``)."""
+    from .survey import survey
+    return survey(source, spec, start, end, until=until, known=known)

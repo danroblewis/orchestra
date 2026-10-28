@@ -93,6 +93,13 @@ class SourceSpec:
     deadline: float = 120.0             # for one discovery's reads from this source, all told
     max_points: int = 11000             # per series per request; longer ranges are read in chunks
     concurrency: int = 4
+    rate: float = 5.0                   # requests a second to this source, from every process of the project
+    burst: float = 10.0                 # ... in bursts of at most this many
+    max_requests: int = 1000            # per discovery's reads from this source, retries included
+    infer_requests: int = 1500          # per inference round, retries included
+    infer_deadline: float = 300.0       # for one inference round, the schema's reads included
+    series_per_query: int = 2000        # the most series one batched read may touch (under the store's per-query limit)
+    history: float = 86400.0            # how far back a family's type (counter or gauge) is judged, coarsely
     infer_every: float = 3600.0
     insecure: bool = False
     infer: bool = True                  # False: read only the declared series (a preset's), never the schema
@@ -187,6 +194,9 @@ def _source(raw: dict, repo_root: Path) -> SourceSpec:
         queries_script=transform.get("queries"), script_timeout=parse_duration(transform.get("timeout"), 20.0),
         timeout=parse_duration(raw.get("timeout"), 30.0), deadline=parse_duration(raw.get("deadline"), 120.0),
         max_points=int(raw.get("max_points", 11000)), concurrency=max(1, int(raw.get("concurrency", 4))),
+        rate=float(raw.get("rate", 5.0)), burst=float(raw.get("burst", 10.0)), max_requests=int(raw.get("max_requests", 1000)),
+        infer_requests=int(raw.get("infer_requests", 1500)), infer_deadline=parse_duration(raw.get("infer_deadline"), 300.0),
+        series_per_query=max(1, int(raw.get("series_per_query", 2000))), history=parse_duration(raw.get("history"), 86400.0),
         infer_every=parse_duration(raw.get("infer_every"), 3600.0), insecure=bool(raw.get("insecure", False)),
         infer=bool(raw.get("infer", True)), settle=parse_duration(raw.get("settle"), 0.0), producers={str(k): v for k, v in producers.items()}, preset=raw.get("preset"))
 

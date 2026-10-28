@@ -3,7 +3,10 @@ language of their own (the default file store). VictoriaMetrics answers PromQL i
 
 Supported: selectors with ``=``, ``!=``, ``=~``, ``!~``; ``rate``, ``increase``, ``delta``,
 ``*_over_time`` (avg, min, max, sum, count, last) over ``[duration]``; ``sum``, ``avg``, ``min``,
-``max``, ``count`` with ``by``/``without``; and arithmetic with a number (``* 3600``).
+``max``, ``count`` with ``by``/``without``; arithmetic with a number (``* 3600``);
+``label_replace(v, "dst", "replacement", "src", "regex")``; and ``a or b`` (every series of ``a``,
+and those of ``b`` whose labels no series of ``a`` has), which is how several reads go in one
+request (``orchestra.sources.batch``).
 
 Values at each step are the last sample at or before it, carried forward without limit, as the
 file store's ``range`` does. ``increase`` is the value at t minus the value at t − d (counter resets
@@ -63,9 +66,16 @@ class _Parser:
         return kind, v
 
     def parse(self):
-        e = self.expr()
+        e = self.union()
         if self.i != len(self.t):
             raise PromQLError(f"unexpected {self.peek()[1]!r}")
+        return e
+
+    def union(self):
+        e = self.expr()
+        while self.peek() == ("id", "or"):
+            self.take()
+            e = ("or", e, self.expr())
         return e
 
     def expr(self):
@@ -96,7 +106,7 @@ class _Parser:
         kind, v = self.peek()
         if v == "(":
             self.take()
-            e = self.expr()
+            e = self.union()
             self.take(")")
             return e
         if kind == "num":
@@ -105,7 +115,7 @@ class _Parser:
             self.take()
             grp = self._grouping()
             self.take("(")
-            inner = self.expr()
+            inner = self.union()
             self.take(")")
             grp = grp or self._grouping()
             return ("agg", v, grp, inner)
@@ -119,6 +129,19 @@ class _Parser:
             self.take(")")
             d = d.strip("[] ")
             return ("range", v, sel, float(d[:-1]) * UNITS[d[-1]])
+        if kind == "id" and v == "label_replace" and self.peek(1)[1] == "(":
+            self.take()
+            self.take("(")
+            inner = self.union()
+            args = []
+            for _ in range(4):
+                self.take(",")
+                k, a = self.take()
+                if k != "str":
+                    raise PromQLError("label_replace needs four quoted strings after the vector")
+                args.append(a[1:-1].encode().decode("unicode_escape"))
+            self.take(")")
+            return ("label_replace", inner, *args)
         if kind == "id" and self.peek(1)[1] == "(":
             raise PromQLError(f"{v}() is not supported by this store")
         return ("sel", self.selector())
@@ -205,6 +228,24 @@ def _eval(node, dump, steps) -> list[tuple[dict, list[float | None]]]:
             if _match(sel, name, labels):
                 ts, vs = [p[0] for p in pts], [p[1] for p in pts]
                 out.append((dict(labels), [_window(fn, ts, vs, t, d) for t in steps]))
+        return out
+    if kind == "or":
+        left = _eval(node[1], dump, steps)
+        seen = {tuple(sorted(lab.items())) for lab, _ in left}
+        return left + [(lab, v) for lab, v in _eval(node[2], dump, steps) if tuple(sorted(lab.items())) not in seen]
+    if kind == "label_replace":
+        _, inner, dst, rep, src, rx = node
+        out = []
+        for lab, vals in _eval(inner, dump, steps):
+            m = re.fullmatch(rx, lab.get(src, ""))
+            if m:
+                lab = dict(lab)
+                new = m.expand(re.sub(r"\$(\d+)", r"\\\1", rep))
+                if new:
+                    lab[dst] = new
+                else:
+                    lab.pop(dst, None)
+            out.append((lab, vals))
         return out
     if kind == "arith":
         _, op, inner, n = node
