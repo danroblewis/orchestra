@@ -224,6 +224,73 @@ discovery saves no model version until it is fixed: check `GET /api/instruments`
 `[[series]]` entry (`source`, `name`, `query` or `select`, `kind = "level" | "counter" | "rate"`)
 pins one definition the inference would not rank.
 
+### Reading another store's schema
+
+A company's store is rarely organised for this: thousands of names, several spellings of one
+label, per-pod series, recording rules beside their bases. Look before declaring anything
+(`orchestra sources check|infer|preview`, or the Supervisor's `check_sources`, `source_schema`,
+`preview_query` and `infer_source`, which take a `url` and `auth` before a source exists):
+
+1. **Start from the owner's question, not the store.** Name the few things whose amount or flow
+   the question is about (requests waiting, jobs queued, orders shipped) and search the names for
+   them (`match = ['{__name__=~".*queue.*|.*backlog.*"}']`). A store read whole fills the 200-series
+   cap with whatever ranks first.
+2. **Tell counters from gauges by behaviour, not only by name.** The metadata's `type` when the
+   store keeps it; else `_total`, `_count`, `_sum` and `_bucket` are counters, and anything else
+   is a gauge until `preview_query` shows it: a series that only rises (with drops to zero at
+   restarts) is a counter whatever it is called. A counter is a flow (read as increments or a
+   rate); a gauge may be a stock. A `_created` series is a timestamp, not a measurement.
+3. **Find the stock candidates.** A good stock is a gauge of an amount that accumulates and
+   drains (a queue's depth, items in progress, open tickets, a balance), with counters beside it
+   that fill and drain it (`enqueued_total`, `processed_total`). Discovery makes a stock of a level
+   whose changes the counters explain; a level with no counter that moves with it is a measured
+   input at best. Rates and ratios (latency, utilisation, `_p95`, percent) are never stocks:
+   they are intensive (the views take their max or average, never a sum).
+4. **Mind the labels.** `source_schema` shows each label's number of values. A label with many
+   values (pod, instance, request id, path, user) multiplies series: sum it away (it is an
+   `identity` label by default for pod, instance and container; name others in `identity`), unless
+   it names the thing the model is about (`service`, `queue`). Several spellings of one label
+   (`service`, `app`, `k8s_app`) are one `[sources.labels]` entry.
+5. **Watch for duplicates.** One quantity is often stored several ways: a base metric and its
+   recording rules (`job:http_requests:rate5m`), a histogram's `_count` and a separate
+   `requests_total`, the same gauge from two exporters. Read one of each quantity: two flows that
+   count the same events make discovery see twice the flow, and a stock balanced by one while the
+   other is read too will not balance.
+6. **Check units and windows.** A gauge reported every 5 minutes cannot show a change inside one
+   discovery step; a counter that resets every deploy is fine (increments are reset-safe), one that
+   is a cumulative from another system's start is fine too. A stock and its flows must count the
+   same things: `queue_depth{queue="orders"}` with `processed_total{service="payments"}` is a
+   mismatched stock, and the model's fit will say so with a large error. Narrow both to one label
+   value, or group both by the same label.
+7. **Pin what inference does not rank.** `infer_source` lists what it keeps and what it left out
+   with why. When it left out the series the question needs, or kept a view you would not use,
+   pin it with `[[series]]` and a plain name for what it measures:
+
+```toml
+[[sources]]
+name = "work"
+url = "https://tenant.example/data/metrics"
+auth = { bearer_env = "WORK_TOKEN" }
+match = ['{__name__=~"queue_depth|orders_processed_total"}']
+
+[[series]]
+source = "work"
+name = "orders_queue"                         # the name discovery sees: <prefix>:orders_queue
+query = 'sum(queue_depth{queue="orders"})'
+kind = "level"
+
+[[series]]
+source = "work"
+name = "orders_processed_total"
+select = 'orders_processed_total{service="payments"}'   # raw samples, read as increments
+by = []
+kind = "counter"
+```
+
+Preview each pinned query first (`preview_query`): a query that returns many series, or none, is
+wrong before discovery ever reads it. Reading a paid or shared store is the owner's choice: say what
+you will read and how often.
+
 ## `[[machines]]`: commands kept running
 
 ```toml
@@ -271,6 +338,8 @@ the test-report instrument's `--run '...'` the same holds: write `uv run pytest`
 - Bare `python` is Orchestra's Python, not the project's.
 - Absent test kinds and missing reports are gaps, not zeros.
 - A refused `[[sources]]` entry stops model versions being saved.
+- Two series of one quantity (a metric and its recording rule) double a flow; read one.
+- A stock and its flows must count the same things, grouped by the same labels.
 - The model needs about an hour of data before it shows stocks.
 - `[events]`, `[metrics]`, `[web]`, `[discovery]` need a restart; instruments and machines don't.
 - A secret in either file is wrong; a private value goes to the overlay, a credential to the
