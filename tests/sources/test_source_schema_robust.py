@@ -124,7 +124,7 @@ def test_a_native_histogram_is_read_by_its_count(store):
 def test_cpu_and_memory_are_never_summed_together(store):
     dump = [("kube_pod_container_resource_requests", {"pod": f"p{i}", "resource": r, "unit": u}, every(30, lambda s, v=v: v))
             for i in range(3) for r, u, v in (("cpu", "core", 0.5), ("memory", "byte", 2**30))]
-    f, src, spec = store(dump)
+    _, src, spec = store(dump)
     fam = fams(src, spec)["kube_pod_container_resource_requests"]
     assert fam.labels["resource"].role == "unit" and fam.labels["unit"].role == "unit"
     sums = [d for d in views(fam, spec) if d.view == "sum_by"]
@@ -135,7 +135,7 @@ def test_cpu_and_memory_are_never_summed_together(store):
 
 def test_one_missed_scrape_never_dips_a_sum(store):
     dump = [("frontend_sessions_active", {"pod": f"p{i}"}, every(15, lambda s: 100.0, skip=(1200 + 15 * i,))) for i in range(4)]
-    f, src, spec = store(dump)
+    _, src, spec = store(dump)
     fam = fams(src, spec)["frontend_sessions_active"]
     total = next(d for d in views(fam, spec) if d.view == "sum_by" and not d.group_by)
     total.id = "s"
@@ -168,7 +168,7 @@ def test_two_jobs_are_one_only_when_they_scrape_the_same_targets(store):
 def test_a_rate_rule_and_its_counter_are_one_flow(store, tmp_path):
     dump = [("http_requests_total", {"pod": p, "job": "frontend"}, every(15, lambda s: 5 * s)) for p in ("a", "b")]
     dump += [("job:http_requests:rate5m", {"job": "frontend"}, every(60, lambda s: 10.0, start=T0 + 7))]
-    f, src, spec = store(dump)
+    _, src, spec = store(dump)
     inf = infer(src, spec, [], tmp_path, T0, NOW)
     assert any(d.view == "increments" and d.family == "http_requests_total" for d in inf.kept)
     rule = [d for d in inf.left_out if d.view == "rollup"]
@@ -179,7 +179,7 @@ def test_a_rate_rule_and_its_counter_are_one_flow(store, tmp_path):
 def test_units_come_from_the_metadata_or_the_name(store):
     dump = [("node_memory_MemFree_bytes", {}, every(15, lambda s: 1e9 - s)), ("process_cpu_seconds_total", {}, every(15, lambda s: s)),
             ("queue_depth", {}, every(15, lambda s: s % 7))]
-    f, src, spec = store(dump, {"queue_depth": [{"type": "gauge", "unit": "messages", "help": ""}]})
+    _, src, spec = store(dump, {"queue_depth": [{"type": "gauge", "unit": "messages", "help": ""}]})
     got = fams(src, spec)
     assert (got["node_memory_MemFree_bytes"].unit, got["process_cpu_seconds_total"].unit, got["queue_depth"].unit) == \
         ("bytes", "seconds", "messages")
