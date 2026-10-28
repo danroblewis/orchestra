@@ -17,7 +17,10 @@ current era (``sd.rediscover``), and the previous era's model is its prior (``sd
       eras_from = ["config.changed", "role.changed:source=supervisor", "gate.landed:subject=orchestra.toml"]
 
   The default is ``["config.changed"]``, what the Supervisor publishes when it changes the
-  configuration; ``[]`` leaves only ``system.changed``.
+  configuration; ``[]`` leaves only ``system.changed``. A change of what is measured only (an
+  instrument or a source added) is no change to the system, and the Supervisor announces it as
+  ``instruments.changed``, which begins none: an era begun there would drop the history a new
+  source brings.
 
 Orchestra's own events (types beginning ``orchestra.``) never begin one.
 
