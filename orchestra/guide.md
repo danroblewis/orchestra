@@ -22,7 +22,7 @@ metrics live**, and **how the model is discovered**.
   name whole; `{ name = "x", enabled = false }` in the overlay removes the repository's `x`.
   `[overlay] secret = ["desk.me"]` hides those values from pages (private, not a credential).
 - **Credentials never go in either file.** They come from environment variables or files outside
-  the repository (`[[sources]]` `auth = { bearer_env = "..." }`). A literal secret in a
+  the repository (`[[sources]]` `auth = { bearer_file = "~/..." }` or `{ bearer_env = "..." }`). A literal secret in a
   `[[sources]]` entry refuses the source.
 - Sections Orchestra does not know are ignored: each plugin keeps its own section here.
 
@@ -69,7 +69,8 @@ Propose these, say what follows from each, and wait for the owner:
 - `[web] auth = "off"`, or any `listen` off loopback: who can reach the system.
 - Committing a change to `orchestra.toml` (Orchestra never commits), and anything that pushes.
 - Anything with cost: a test suite run every few minutes on a laptop, a long e2e suite, a
-  `[[sources]]` read of a paid store, instruments that hit paid APIs.
+  `[[sources]]` read of a store that bills per query, instruments that hit paid APIs. (Reading a
+  store the owner asked you to connect is not one: it is observation; see "Two stores, and a busy one".)
 - Credentials: which environment variable or file holds one. Never ask for the value itself.
 - Anything a plugin's guide marks as the human's (letting agents change code, outbound messages).
 
@@ -305,8 +306,73 @@ kind = "counter"
 ```
 
 Preview each pinned query first (`preview_query`): a query that returns many series, or none, is
-wrong before discovery ever reads it. Reading a paid or shared store is the owner's choice: say what
-you will read and how often.
+wrong before discovery ever reads it. A pin is read **beside** what inference keeps, not instead of
+it: once you have translated a store into pinned series, set `infer = false` on its `[[sources]]`
+entry, so only the pinned series are read (otherwise the raw family is read too, a duplicate of
+each pin), or narrow `match` to the families you did not pin.
+
+8. **Translate into quantities of the system.** Discovery wants levels that are amounts held
+   (backlogs, queues, inventories, connections, sessions) and counters of what fills and drains
+   them, each counting the same things. A pinned query is how a store's naming becomes that:
+   - a consumer's backlog: its lag gauge summed over partitions, or the offsets produced less the
+     offsets consumed (offsets are counters even when typed gauges: their rates are the flows);
+   - a pool or a set of connections: the active gauge, with the opened and closed counters as its
+     flows (a counter need not end in `_total`: `…_destroy` is one);
+   - a stock with an outflow nobody measures: pin the level and the inflow, and say the outflow is
+     the residual. Never invent the missing series;
+   - a gauge that only rises between resets someone makes (a "since reset" or "today" count) is a
+     counter: read it as increments (`select`), never as a stock whose outflow is the reset;
+   - a delta written as a gauge (OpenTelemetry's delta temporality: each sample is the count in its
+     interval) is a flow: `sum_over_time(x[5m]) / 300` with `kind = "rate"`, never a level and
+     never `rate()` of it;
+   - a metric renamed during the history: both names in one selector (`{__name__=~"old|new"}`),
+     one flow; a label whose values changed case: a case-insensitive matcher
+     (`outcome=~"(?i)success"`), not two families;
+   - one environment: select production explicitly (`env="prod"`). A staging or test twin is never
+     summed in and never a stock of its own. Exporters spell the environment label differently
+     (`env`, `environment`, `deployment_environment`) and its values too (`prod`, `production`,
+     `prd`): read the values, not only the name;
+   - units: two exporters of one quantity may disagree (bytes and KiB, messages and orders, a
+     help text that names the wrong unit); compare them with `preview_query` over one window, and
+     read one, in the unit you name it in (`…_bytes`);
+   - latencies, quantiles, histogram buckets (including VictoriaMetrics' `vmrange` ones), ratios,
+     flags, timestamps and an exporter's own scrape or query timings are not quantities of the
+     system: never stocks;
+   - labels that change with every request or sample (trace or request ids) are identity: sum
+     them away, or leave the metric out.
+
+### Two stores, and a busy one
+
+- **One store, one entry.** One store is often reachable at several addresses (direct, behind a
+  gateway with a token, a regional front). Configure one: two would read every series twice.
+  The same names, label values and latest values (`preview_query` of a few) mean one store.
+- **Two stores of one system** are two `[[sources]]` entries, each named for what it is. They
+  often hold one quantity under different names (the platform's exporter and a team's own).
+  Read each quantity once: pin the better copy (finer resolution, fewer gaps, production
+  explicit) and leave the other out, or keep it only as a check you look at. Two copies of a
+  stock become two stocks; two copies of a flow double it. A label may mean different things in
+  different stores (`cluster` the Kubernetes cluster in one, the Kafka cluster in another): alias
+  labels per source, never across stores.
+- **Late and coarse stores.** A store that writes its samples late needs `settle` above that
+  delay (one written a minute late, on VictoriaMetrics: `settle = "90s"`); one sampled once a
+  minute cannot show a change inside a minute.
+- **A busy store** answers 429 or 503 when rate-limited or overloaded, 422 when a query touches too
+  many series, 400 when a range asks for too many points. Never lower the cap or raise a limit to
+  fit: narrow the read. A `match` per family you need, with label matchers on a metric that is too
+  big alone; on a slow store (a second a request) every family costs a few requests to infer and
+  the probes have the source's `deadline` (120 s), so narrow first and raise `deadline` or
+  `concurrency` only then, never past what the store's rate limit allows. What could not be read
+  is in `infer_source`'s notes.
+- **Credentials by reference.** A token the owner keeps in a file is
+  `auth = { bearer_file = "~/path/to/token" }` (or `header = { name = "API-Token", value_file = "…" }`
+  for a store that wants its own header); one in the environment is `bearer_env`. Never read the
+  file, copy the token or put it in a command: the tools read it when they ask the store.
+
+Connecting a store the owner asked for is observation: Orchestra reads it and never writes, and it
+needs no further go-ahead. Choose a narrow selection from the owner's question, declare it, check
+it, and say what you chose. Ask only what you cannot find out: where the credential is, when the
+store refuses without one and nobody said; which environment is production, when the data cannot
+tell. A store that bills per query is the owner's choice before it is read at all.
 
 ## `[[machines]]`: commands kept running
 
