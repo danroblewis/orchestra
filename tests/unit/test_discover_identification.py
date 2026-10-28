@@ -249,3 +249,15 @@ def test_a_level_split_by_a_one_valued_label_and_its_total_are_one_stock():
     two = [("lag", {"instrument": "lab", "group": g}, list(lv)) for g in ("a", "b")]
     m = discover([_counter("in_total", ins), _counter("out_total", outs), *two], start=T0, end=T0 + N * STEP, step=STEP)
     assert len([s for s in m.stocks if s.series and s.series.name == "lag"]) == 2
+
+
+def test_of_a_total_and_the_one_part_that_moves_the_part_is_kept():
+    # at night the email queue is empty and the dead-letter queue is all the total holds: the two read
+    # the same, and the stock is the dead-letter queue, which the labels name
+    rng = random.Random(10)
+    ins, outs, lv = _queue(rng)
+    dump = [_counter("in_total", ins), _counter("out_total", outs), ("queue_messages", {"instrument": "lab"}, lv),
+            ("queue_messages", {"instrument": "lab", "queue": "dlq"}, list(lv))]
+    m = discover(dump, start=T0, end=T0 + N * STEP, step=STEP)
+    [st] = [s for s in m.stocks if s.series and s.series.name == "queue_messages"]
+    assert st.series.labels.get("queue") == "dlq" and len(st.evidence["twins"]) == 1

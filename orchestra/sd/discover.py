@@ -758,8 +758,9 @@ def twin_levels(found: list, left_out: dict[str, str], same_flow) -> tuple[list,
     themselves, whose changes correlate by ``TWIN_CORR`` or whose values are equal in
     ``TWIN_STEPS`` of the steps either held something (the expo's view of the board's queue, a
     moment behind it, whose balance takes the expo's own counters). The one kept is the machine's
-    whose counters make the balance, then the better balance; the other is left out and recorded
-    as its twin, in the kept stock's evidence."""
+    whose counters make the balance, then the better balance, then the one more labels say (a queue
+    that reads the same as the total of all queues is that queue); the other is left out and
+    recorded as its twin, in the kept stock's evidence."""
     kept: list = []
     twins: dict[str, list[dict]] = defaultdict(list)
     for s, terms, r2, exact in found:
@@ -768,7 +769,8 @@ def twin_levels(found: list, left_out: dict[str, str], same_flow) -> tuple[list,
             kept.append((s, terms, r2, exact))
             continue
         o, oterms, or2, oexact = other
-        if (_owns(s, terms), exact, r2) > (_owns(o, oterms), oexact, or2):
+        # ... then the more specific level: a split that reads the same as its total names the thing
+        if (_owns(s, terms), exact, r2, len(_identity(s.labels))) > (_owns(o, oterms), oexact, or2, len(_identity(o.labels))):
             kept[kept.index(other)] = (s, terms, r2, exact)
             win, lose = s, o
             twins[s.key] = twins.pop(o.key, [])
