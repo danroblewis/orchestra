@@ -11,10 +11,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
+from itertools import pairwise
 from pathlib import Path
 
 from . import Source, SourceError
@@ -25,6 +27,7 @@ from .transform import TransformError, apply, script_id
 from .views import Definition, one_count_per_thing, views
 
 PROBE_POINTS = 1000          # at most, per series: a probe reads at the series' own resolution, so a change that lasts a few samples is seen
+SHAPE_POINTS = 30            # a probe's series, kept at this many points, to compare counts (duplicates.same_shape)
 
 
 @dataclass
@@ -71,9 +74,51 @@ def _declared(spec: SourceSpec, declared: list[DeclaredSeries]) -> list[Definiti
             for i, x in enumerate(declared) if x.source == spec.name]
 
 
+def _corr(a: list[float], b: list[float]) -> float:
+    n = len(a)
+    if n < 3:
+        return 1.0
+    ma, mb = sum(a) / n, sum(b) / n
+    va, vb = sum((x - ma) ** 2 for x in a), sum((y - mb) ** 2 for y in b)
+    if va <= 0 or vb <= 0:
+        return 1.0
+    return sum((x - ma) * (y - mb) for x, y in zip(a, b, strict=True)) / (va * vb) ** 0.5
+
+
+def apart(got: list[tuple[dict, list]], start: float, end: float) -> float:
+    """How far a grouping's groups move on their own, 0 to 1: one less the least correlation
+    between the changes of two of them (of the eight that vary most), over ``SHAPE_POINTS``
+    stretches of the window (coarse enough that a sample's noise does not decide it). 0 when fewer
+    than two groups move: one that moves beside flat ones says nothing its total does not."""
+    diffs = []
+    for v in shape(got, start, end):
+        d = [0.0 if a is None or b is None else b - a for a, b in pairwise(v)]
+        if any(d):
+            diffs.append(d)
+    diffs = sorted(diffs, key=lambda d: -sum(x * x for x in d))[:8]
+    least = min((_corr(a, b) for i, a in enumerate(diffs) for b in diffs[i + 1:]), default=1.0)
+    return round(min(1.0, max(0.0, 1.0 - least)), 3)
+
+
+def shape(got: list[tuple[dict, list]], start: float, end: float) -> list[list[float | None]]:
+    """Each series at ``SHAPE_POINTS`` points of the window: its last value at or before each."""
+    grid = [start + (end - start) * k / (SHAPE_POINTS - 1) for k in range(SHAPE_POINTS)]
+    out = []
+    for _, pts in got:
+        pts, vals, i, last = sorted(pts), [], 0, None
+        for g in grid:
+            while i < len(pts) and pts[i][0] <= g + 1e-6:
+                last = pts[i][1]
+                i += 1
+            vals.append(last)
+        out.append(vals)
+    return out
+
+
 def probe(source: Source, d: Definition, start: float, end: float, until: float | None = None) -> dict:
     """A read of the window at the series' resolution (coarser only past PROBE_POINTS): how many
-    series a candidate yields, and whether any moves."""
+    series a candidate yields, whether any moves, how far its groups move on their own
+    (``apart``), its least value, and, for a count, a counter or a sum, its series' shape."""
     step = max(d.resolution_s or 60.0, (end - start) / PROBE_POINTS)
     q = d.query
     if d.view in ("starts", "stops"):                   # they move when the count does
@@ -84,7 +129,26 @@ def probe(source: Source, d: Definition, start: float, end: float, until: float 
         got = source.query_range(q, start, end, step, until=until)
     except SourceError as e:
         return {"series": 0, "moves": False, "error": str(e)}
-    return {"series": len(got), "moves": any(len({v for _, v in pts}) > 1 for _, pts in got)}
+    out = {"series": len(got), "moves": any(len({v for _, v in pts}) > 1 for _, pts in got),
+           "min": min((v for _, pts in got for _, v in pts), default=None), "apart": apart(got, start, end) if len(got) > 1 else 0.0}
+    if d.view in ("count", "distinct", "increments", "sum_by", "rollup"):
+        out["shape"] = shape(got, start, end)
+    return out
+
+
+def unique_names(defs: list[Definition]) -> None:
+    """Two families' definitions never share a name and a grouping (they would be one series to
+    discovery): the one whose family is the name keeps it, else the first family by name; the
+    others are named after their family as well. Stable: it depends on the definitions only."""
+    by: dict[tuple, list[Definition]] = {}
+    for d in defs:
+        by.setdefault((d.name, tuple(d.group_by)), []).append(d)
+    for (name, _), ds in by.items():
+        fams = sorted({d.family for d in ds}, key=lambda f: (re.sub(r"[^a-z0-9_]+", "_", f.lower()).strip("_") != name, f))
+        for d in ds:
+            if d.family != fams[0]:
+                d.name = f"{name}__{re.sub(r'[^a-z0-9_]+', '_', d.family.lower()).strip('_')}"
+                d.flags.append(f"named after its family too: {fams[0]} gives a series of the same name")
 
 
 def infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path,
@@ -97,8 +161,10 @@ def infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo
     inf.notes = list(schema.notes)
     inf.families = [{"name": f.name, "kind": f.kind, "metrics": list(f.metrics), "stats": f.stats, "series": f.series,
                      "resolution_s": f.resolution_s, "rollup": f.rollup, "rollups": sorted(r["metric"] for r in f.rollups.values()),
-                     "labels": {c: asdict(i) for c, i in f.labels.items()}} for f in schema.families]
+                     "labels": {c: asdict(i) for c, i in f.labels.items()}, "retyped": f.retyped, "notes": list(f.notes),
+                     "where": dict(f.where)} for f in schema.families]
     cands = one_count_per_thing([d for fam in schema.families for d in views(fam, spec)], schema.families)
+    unique_names(cands)
     for i, d in enumerate(cands):
         d.id = f"c{i}"
     if spec.queries_script:
@@ -108,6 +174,10 @@ def infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo
         probes = dict(zip([d.id for d in cands], pool.map(lambda d: probe(source, d, start, end, until), cands), strict=True))
     if failed := [p["error"] for p in probes.values() if p.get("error")]:
         raise SourceError(f"{len(failed)} of {len(probes)} probes failed; the first: {failed[0]}")
+    for d in cands:
+        if d.kind == "rate" and (probes[d.id].get("min") or 0.0) < 0:     # its name says a rate; its data, which went below 0, says not
+            d.kind = "level"
+            d.flags.append("named a rate, but it went below zero: read as a level")
     kept, left = rank(cands, spec, probes)
     inf.kept = _declared(spec, declared) + kept
     inf.left_out += left
