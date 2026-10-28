@@ -1,15 +1,15 @@
 # Agent-first machines: the Supervisor grows, then splits
 
-Status: proposal, not built, for review. Written 2026-10-28 from the owner's thinking of the same
-day. Nothing in the code or the other documents is changed by this file. It builds on:
+Status: phase one built, 2026-10-28 (§16); the owner's decisions are D20 in
+`docs/roadmap/decisions.md`. Written 2026-10-28 from the owner's thinking of the same day. It builds on:
 - the ghost-machine path (`environment-and-ghost-machines.md` §3: observe, fit, write, shadow, swap, verify; H3's "shadow and swap");
 - the custom roles, agents and teams in orchestra-agents (`teams-and-roles.md`, Stages 1 and 2);
 - the model's own events and predictions (G12, G13), and eras (G11);
 - the outbox (`~/orchestra-outbox`);
 - decisions D17–D19.
 
-The defaults marked **proposed** below are not yet confirmed by the owner. §15 lists the open
-questions.
+The defaults marked **proposed** below were proposals; §15 says which the owner decided (D20) and
+how, and §16 what was built and where it departs from this text.
 
 ## 0. The owner's thinking (2026-10-28)
 
@@ -600,6 +600,16 @@ In order; each lands in the repository that owns the concept.
 
 ## 15. Open questions for the owner
 
+**Answered 2026-10-28 (D20):** 1 (Sonnet for the Supervisor, Haiku for the narrow machines it
+creates), 3 (a side branch when the checkout is dirty), 4 (the Supervisor writes patches itself
+for now, and carries the self-healing duties; a Steward may split off later), 5 (an upstream issue
+through a new `github.issue_create` sender, approval always the owner's; the rest not yet), 6
+(the core events, in Orchestra), 7 (every 30 minutes, cheap when nothing is wrong, a daily
+spending cap), 8 (not one threshold: the owner's set of signals, §16). Also decided: specs are in
+`.orchestra/machines/<name>/` ("just machines", so 9 too), machines propose their own splits, and
+splits and merges are judged by cohesion and coupling on the event map. Still open: 2 (whether a
+split asks first; moot until the split exists), 10, 11.
+
 1. **The Supervisor's model.** Sonnet by default (proposed), with Opus for splits if Sonnet's
    fail grading, decided by the model matrix (§8)? Haiku for the narrow machines it creates?
 2. **Autonomy.** May the Supervisor create machines and edit its own duties without asking, as
@@ -626,3 +636,50 @@ In order; each lands in the repository that owns the concept.
     a new plugin, or a library of reference machines in orchestra-agents?
 11. **The gate waiting for a verdict.** Is a gate that holds a worktree up to two minutes for the
     pipeline manager's verdict acceptable under D17, given that the alternative loses the retry?
+
+## 16. Phase one, as built (2026-10-28)
+
+**Orchestra.** `orchestra.model.stalled` and `orchestra.model.resumed` (`sd/stall.py`, after each
+discovery, from the history alone, no simulator: a stock that rose while every outflow fell under
+`[discovery] stall_share` of its usual rate over `stall_after`, or a flow that stopped; subject
+`stock:<id>` or `flow:<id>`), and `orchestra.machine.quiet` (`quiet.py`, in the host's bus
+follower: an instance with a cadence silent past the Machines page's own rule, skipping ad hoc
+instances). Project-local plugins (`.orchestra/plugins/`) and overrides (`.orchestra/overrides/`,
+pinned to the installed version, reported stale otherwise) are loaded by file wherever plugins load
+and before a plugin command; AGENTS.md rule 10 has the sentence of §10.1. Not built:
+`orchestra.instrument.failing` (the review round reads the instruments' health from the runtime
+record instead).
+
+**orchestra-outbox.** `github.issue_create`, a kind of which can never be `auto`.
+
+**orchestra-agents** (its SPEC §12). Departures from this text:
+
+- **Built-in duties stay the plugin's.** §4.1 had the built-in prompt copied into the project's
+  `duties/` on first run. That would freeze each project's copy while the plugin's prompt keeps
+  improving, so the built-in duties (`talk_to_owner`, `setup`, `hand_to_planner`) are listed in
+  `machine.toml` with `builtin = true` and their text stays in the plugin; the starting duties
+  written into the project are the new ones, `keep_flow` and `review_round`, with `role.md` and
+  `ledger.md`. The fixed core is a separate prompt prepended to every Supervisor turn.
+- **Duties are added by chat** because the fixed core says a standing instruction is a duty
+  (`add_duty` in the same turn, the owner's words as the reason); the dummy harness does the same
+  for "from now on, ...".
+- **The review cadence is the spec's** (`[review] every`, 30 minutes); the **budgets and the day's
+  cap on self-edits are the owner's**, in `[agents]` (`review_usd_per_day`, `review_turns_per_day`,
+  `spec_changes_per_day`), since the Supervisor must not raise its own.
+- **Every fix carries a prediction** through `predict_fix`, which records the expected effect
+  without an experiment; fixes without one are a review round's finding.
+- **Patches**: §10.2's recommendation (overrides through tickets) was overruled by the owner: the
+  Supervisor writes them. A patch to the project's code is written in a scratch worktree on
+  `supervisor/patch-<name>` and lands through a ticket the Coordinator plans (the gate cannot land
+  a branch it did not make); an override is committed directly, never of Orchestra or the agents.
+- **The overload signals** are measured each round and served as `agent_load{machine, signal}` by
+  the plugin's instrument. The Supervisor holds about a hundred tools, so the tool signal crosses at
+  once and the first round writes a split proposal; it is written at most weekly for the same
+  signals.
+
+**Next (the split phase):** `split_machine` and `merge_machine` with the tool-subset check and the
+hand-off wiring (§7.2–7.3); merge signals (idle share, hand-off chatter) measured as split signals
+are now; the transcript instrument (tool co-use, sequence share) for cohesion from what a machine
+does rather than what its spec says; the sample project and chaos suite (§8) with the model
+matrix; `orchestra.instrument.failing`; the Agents page showing duties, verdicts and proposals.
+
