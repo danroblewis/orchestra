@@ -60,6 +60,11 @@ Everything here is observed, or announced by the machine itself:
   outside, whose log says who changed what but never who reads). The last machine and its last
   ``TRAIL`` event types per subject are kept for the latest ``SUBJECTS``.
 
+**Per era** (``sd.eras``): an index may keep only the events of one stretch of time
+(``since``, ``until``: an era's start and the next one's), so the map of an era is drawn from
+that era's events alone, as its model is discovered from its data alone. An announcement made before
+the era still says what a machine is and listens for; it makes no machine active in the era.
+
 The index reads the bus incrementally: the whole log once, then only what is new, so a refresh
 costs one small read however long the log is. Events from before the envelope have no
 ``source``; they are counted, not attributed."""
@@ -86,8 +91,9 @@ TRAIL = 4            # a machine's last event types about a subject, kept for cr
 
 
 class MachineIndex:
-    def __init__(self, events):
+    def __init__(self, events, since: float | None = None, until: float | None = None):
         self.events = events
+        self.since, self.until = since, until               # only the events in [since, until): one era
         self.offset = 0
         self.total: dict[str, Counter] = defaultdict(Counter)            # machine -> type -> count
         self.recent: dict[tuple[str, str], deque] = defaultdict(deque)   # (machine, type) -> times in the last day
@@ -121,6 +127,17 @@ class MachineIndex:
             self.offset = end
 
     def _fold(self, ev: dict) -> None:
+        if self.since is not None or self.until is not None:
+            t = event_time(ev)
+            if t is None or (self.until is not None and t >= self.until):
+                return
+            if self.since is not None and t < self.since:
+                # before the era: an announcement still says what a machine is and listens for,
+                # but is no activity in the era
+                machine, instance = machine_and_instance(ev.get("source"))
+                if machine and ev.get("type") in ANNOUNCE and not for_an_instrument(ev):
+                    self._announced(ev, machine, instance)
+                return
         machine, instance = machine_and_instance(ev.get("source"))
         if not machine:
             self.unattributed += 1
@@ -138,25 +155,7 @@ class MachineIndex:
         if not burst and (not beats or seen > beats[-1]):
             beats.append(seen)
         if ev.get("type") in ANNOUNCE:
-            d = ev.get("data") or {}
-            self.subs[machine].update(d.get("listens_for") or d.get("types") or [])
-            for field, into in (("mode", self.mode), ("kind", self.kind)):
-                if isinstance(d.get(field), str) and d[field]:
-                    into[machine][key] = d[field]
-            if isinstance(d.get("package"), str) and d["package"]:
-                self.package[machine] = d["package"]
-            if ev["type"] == "orchestra.machine.started":       # the latest says the name and group, or that there are none
-                name = d.get("name") if isinstance(d.get("name"), str) and d["name"] else None
-                group = next((d[k] for k in ("group", "team") if isinstance(d.get(k), str) and d[k]), None)
-                for value, into in ((name, self.name), (group, self.group)):
-                    if value:
-                        into[machine] = value
-                    else:
-                        into.pop(machine, None)
-            self.about[machine] = {k: v for k, v in d.items() if k not in ("mode", "listens_for", "types", "log", "package", "kind", "name", "group")
-                                   and isinstance(v, str | int | float | bool | type(None) | list)}
-            if isinstance(d.get("log"), str) and d["log"]:
-                self.logs[machine][instance or ""] = d["log"]
+            self._announced(ev, machine, instance)
             return
         subject = ev.get("subject")
         if subject:
@@ -176,6 +175,30 @@ class MachineIndex:
         self.total[machine][ev["type"]] += 1
         self.recent[(machine, ev["type"])].append(t)
         self.latest[machine].append({"t": t, "type": ev["type"], "instance": instance, "subject": ev.get("subject"), "id": ev.get("id")})
+
+    def _announced(self, ev: dict, machine: str, instance: str | None) -> None:
+        """What an instance says of itself: what it listens for, how it is engaged, its kind,
+        package, name, group and log."""
+        key = instance or ""
+        d = ev.get("data") or {}
+        self.subs[machine].update(d.get("listens_for") or d.get("types") or [])
+        for field, into in (("mode", self.mode), ("kind", self.kind)):
+            if isinstance(d.get(field), str) and d[field]:
+                into[machine][key] = d[field]
+        if isinstance(d.get("package"), str) and d["package"]:
+            self.package[machine] = d["package"]
+        if ev["type"] == "orchestra.machine.started":       # the latest says the name and group, or that there are none
+            name = d.get("name") if isinstance(d.get("name"), str) and d["name"] else None
+            group = next((d[k] for k in ("group", "team") if isinstance(d.get(k), str) and d[k]), None)
+            for value, into in ((name, self.name), (group, self.group)):
+                if value:
+                    into[machine] = value
+                else:
+                    into.pop(machine, None)
+        self.about[machine] = {k: v for k, v in d.items() if k not in ("mode", "listens_for", "types", "log", "package", "kind", "name", "group")
+                               and isinstance(v, str | int | float | bool | type(None) | list)}
+        if isinstance(d.get("log"), str) and d["log"]:
+            self.logs[machine][instance or ""] = d["log"]
 
     def events_of(self, machine: str) -> list[dict]:
         """The machine's last events, newest first (envelopes only)."""
@@ -198,7 +221,9 @@ class MachineIndex:
                 while q and q[0] < now - DAY:
                     q.popleft()
             # machines are what the bus shows; a series labelled with a name makes no machine
-            ids = sorted(set(self.total) | set(self.subs) | set(self.instances) | {HOST}, key=lambda m: (m != HOST, m))
+            # (in an era, only those active in it: an announcement before it describes, it does not make one)
+            seen = set(self.total) | set(self.instances) | ({HOST} if self.since is not None else set(self.subs) | {HOST})
+            ids = sorted(seen, key=lambda m: (m != HOST, m))
             machines = []
             for m in ids:
                 pubs = []
@@ -278,8 +303,9 @@ class _ListBus:
         return self.evs[since:][-limit:], len(self.evs)
 
 
-def machines_view(events: list[dict], now: float | None = None, flows: dict[str, list[dict]] | None = None) -> dict:
-    """The view over a given list of events (for tests and one-off use)."""
-    idx = MachineIndex(_ListBus(events))
+def machines_view(events: list[dict], now: float | None = None, flows: dict[str, list[dict]] | None = None,
+                  since: float | None = None, until: float | None = None) -> dict:
+    """The view over a given list of events (for tests and one-off use), within [since, until)."""
+    idx = MachineIndex(_ListBus(events), since, until)
     idx.update()
     return idx.view(now, flows)

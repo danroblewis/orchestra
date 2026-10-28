@@ -20,7 +20,7 @@ from ..events import Events
 from .background import Refresher
 from .core import CoreProbe
 from .core_explore import Explorer
-from .dynamics import model_view
+from .dynamics import era_eras, model_view
 from .traffic import merge as merge_counted
 
 STATIC = Path(__file__).parent / "static"
@@ -148,8 +148,8 @@ def create_app(project: Project) -> FastAPI:
         return page("dynamics.html")
 
     @app.get("/api/dynamics/model")
-    def dynamics_model(version: int | None = None) -> dict:
-        return model_view(project, version, bg.levels, bg.levels_error)
+    def dynamics_model(version: int | None = None, era: str | None = None) -> dict:
+        return model_view(project, version, bg.levels, bg.levels_error, era=era)
 
     rediscovery: dict = {"running": False}
 
@@ -274,13 +274,19 @@ def create_app(project: Project) -> FastAPI:
         return {"ok": True, **r}
 
     @app.get("/api/machines")
-    def machines() -> dict:
+    def machines(era: str | None = None) -> dict:
         """The machines seen on the bus and who publishes and listens for what, and the machines,
         channels and counted edges known from counted traffic: from the web server's background
-        reads, never a read of the bus or a source on request."""
+        reads, never a read of the bus or a source on request, except a past era's first (then
+        kept). ``era``: the current era by default (sd/eras.py), an era's id, ``none`` (before
+        any era) or ``all``."""
         if not bg.ready("index"):
             return {"ok": False, "error": "reading the event bus for the first time…", "warming": True}
-        out = {"ok": True, **bg.index.view(flows=bg.flows)}
+        idx = bg.era_index(era)
+        if idx is None:
+            return {"ok": False, "error": f"there is no era {era}"}
+        out = {"ok": True, **idx.view(flows=bg.flows), "era": era or bg.era, "current_era": bg.era,
+               "eras": [vars(e) for e in era_eras(project)]}
         merge_counted(out, bg.counted, time.time())
         if bg.counted and bg.counted.get("failed"):
             out["counted_failed"] = bg.counted["failed"]

@@ -7,9 +7,14 @@ In an empty Orchestra it does little, on purpose:
 - it runs Orchestra's event collector: every event on the bus, from any machine, counted by type
   and source (``orchestra.collectors``). It replays the whole bus once at start, so the counters
   continue from the full history, then follows the bus;
+- it records the eras the bus begins (``orchestra.sd.eras``: ``system.changed`` and the events
+  ``[discovery] eras_from`` names) as it follows the bus, and announces each
+  (``orchestra.era.started``);
 - it rediscovers the model in the background (``orchestra.sd.rediscover``, with the strategy,
-  window and interval in ``[discovery]``), caches the result for readers, and saves a new model
-  version when the structure changed;
+  window and interval in ``[discovery]``, within the current era), caches the result for
+  readers, and saves a new model version when the structure changed or an era began; after each
+  discovery it announces what is due about the model (``orchestra.sd.announce``:
+  ``orchestra.model.changed``, ``orchestra.model.diverged``, ``orchestra.model.returned``);
 - it keeps running the commands the project declares (``[[machines]]`` in ``orchestra.toml``) and
   the plugins declare (``Plugin.processes``), through ``orchestra.launcher``, and stops them when
   it stops. Only one host launches for a project (``launcher`` in the runtime record): a second one, started while the
@@ -49,6 +54,7 @@ from .metrics import Point
 from .metrics import for_project as metrics_for
 
 HOST_LOG_MAX = 5_000_000
+ERAS_EVERY_S = 5.0              # how often the collector looks for events that begin an era
 
 
 class Host:
@@ -93,7 +99,11 @@ class Host:
         for ev in evs:
             col.observe(ev)
         self.log(f"collector: replayed {rep.events} events into {rep.points} points; following the bus")
+        eras_at = 0.0
         while not self._stop.is_set():
+            if time.time() - eras_at >= ERAS_EVERY_S:
+                eras_at = time.time()
+                self._eras()
             self._stop.wait(self.collect_every)
             try:
                 new, offset = self.events.read(offset, limit=100_000)
@@ -103,18 +113,64 @@ class Host:
             except Exception as e:  # noqa: BLE001 - keep following; the next read retries
                 self.log(f"collector: {type(e).__name__}: {e}")
 
+    def _eras(self) -> None:
+        """Record the eras begun since the last look, and announce them (``orchestra.sd.eras``)."""
+        from .sd import eras
+        from .sd.store import ModelStore
+        try:
+            _, new = eras.sync(ModelStore.for_state(self.project.state_dir), self.events, self.project.config.eras_from,
+                               self.events.publish)
+            for e in new:
+                self.log(f"era {e.id} began: {e.label}")
+        except Exception as e:  # noqa: BLE001 - the next look retries
+            self.log(f"eras: {type(e).__name__}: {e}")
+
+    def _announce(self, r) -> None:
+        """What is due about the model after a discovery (``orchestra.sd.announce``)."""
+        from .sd.announce import announce
+        from .sd.store import ModelStore
+        from .sd.strategies import sd_installed
+        from .sources.catalogue import Catalogue
+        from .web.background import history, stock_step
+
+        cfg = self.project.config
+        hist = None
+        if sd_installed() and r.model.stocks:
+            store, cat = metrics_for(self.project), Catalogue(self.project, metrics_for(self.project))
+            step = stock_step(cfg.discovery_step)
+            readers: dict = {}
+
+            def raw(ref, start, end):
+                if ref.source and ref.source != "own":
+                    readers.setdefault((start, end), cat.reader(start, end, step))
+                    return readers[(start, end)](ref)
+                return store.raw(ref.name, ref.labels, start=start, end=end)
+            span = max(cfg.diverge_after, 2 * cfg.discovery_every) + 600
+            hist = history(r.model, raw, r.at, step, span_s=span)
+        said = announce(ModelStore.for_state(self.project.state_dir), self.events.publish, r.model, r.at, hist,
+                        hold=cfg.announce_hold, gap_s=cfg.announce_gap, after_s=cfg.diverge_after, every_s=cfg.discovery_every,
+                        era_start=r.model.discovery.get("era_start"))
+        if said:
+            self.log(f"announced: {', '.join(said)}")
+
     def _discover(self) -> None:
-        """Rediscover the model every interval (``orchestra.sd.rediscover``)."""
+        """Rediscover the model every interval (``orchestra.sd.rediscover``), then announce what is
+        due about it."""
         from .sd.rediscover import Busy, rediscover
 
         wait = 5.0                                    # soon after starting, then every interval
         while not self._stop.wait(wait):
             wait = self.project.config.discovery_every
             try:
-                r = rediscover(self.project, metrics_for(self.project), skip_if_busy=True)
+                r = rediscover(self.project, metrics_for(self.project), skip_if_busy=True, events=self.events)
                 not_saved = r.model.discovery.get("not_saved")
                 what = f"saved as version {r.version}" if r.version else (f"not saved: {not_saved}" if not_saved else "structure unchanged")
-                self.log(f"discovery ({r.strategy}): {len(r.model.stocks)} stocks, {len(r.model.flows)} flows; {what}")
+                self.log(f"discovery ({r.strategy}): {len(r.model.stocks)} stocks, {len(r.model.flows)} flows"
+                         f"{', era ' + r.model.era if r.model.era else ''}; {what}")
+                try:
+                    self._announce(r)
+                except Exception as e:  # noqa: BLE001 - the next discovery tries again
+                    self.log(f"announce: {type(e).__name__}: {e}")
             except Busy:                              # the CLI or the web page is discovering: theirs will do
                 self.log("discovery: skipped, another process is discovering this project")
             except Exception as e:  # noqa: BLE001 - try again next interval

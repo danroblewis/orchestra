@@ -58,6 +58,11 @@ class Config:
     discovery_step: float = 30.0            # [discovery] step: the grid it samples on
     discovery_every: float = 300.0          # [discovery] every: how often the host rediscovers
     discovery_options: dict[str, Any] = field(default_factory=dict)   # [discovery.options]: passed to the strategy
+    eras_from: list[str] = field(default_factory=lambda: ["config.changed"])   # [discovery] eras_from: events that begin an era, besides system.changed (sd.eras)
+    prior_for: float | None = None          # [discovery] prior_for: how long a new era carries what it has not found of its prior (default: the window)
+    announce_hold: int = 3                  # [discovery] announce_hold: discoveries a structure change must hold before orchestra.model.changed
+    announce_gap: float = 1800.0            # [discovery] announce_gap: the least time between two orchestra.model.changed
+    diverge_after: float = 900.0            # [discovery] diverge_after: how long a stock is out of its band before orchestra.model.diverged
     raw: dict[str, Any] = field(default_factory=dict)   # the whole configuration, the overlay merged in
     layers: Layers | None = None       # what the private overlay did (orchestra/overlay.py); None: no overlay
 
@@ -68,6 +73,16 @@ class Config:
 
     @classmethod
     def from_raw(cls, raw: dict[str, Any], layers: Layers | None = None) -> Config:
+        from .sd.eras import DEFAULT_FROM, FilterError, check
+
+        disc = raw.get("discovery", {}) or {}
+        try:
+            eras_from = check(disc.get("eras_from", DEFAULT_FROM))
+        except FilterError as e:
+            raise ConfigError(f"[discovery] {e}") from None
+        hold = disc.get("announce_hold", 3)
+        if not isinstance(hold, int) or isinstance(hold, bool) or hold < 1:
+            raise ConfigError(f"[discovery] announce_hold must be a whole number of discoveries, at least 1, not {hold!r}")
         return cls(
             events_url=(raw.get("events", {}) or {}).get("url"),
             events_listen=(raw.get("events", {}) or {}).get("listen"),
@@ -77,6 +92,11 @@ class Config:
             discovery_step=parse_duration((raw.get("discovery", {}) or {}).get("step"), 30.0),
             discovery_every=parse_duration((raw.get("discovery", {}) or {}).get("every"), 300.0),
             discovery_options=dict((raw.get("discovery", {}) or {}).get("options") or {}),
+            eras_from=eras_from,
+            prior_for=parse_duration(disc["prior_for"], 0.0) if disc.get("prior_for") is not None else None,
+            announce_hold=hold,
+            announce_gap=parse_duration(disc.get("announce_gap"), 1800.0),
+            diverge_after=parse_duration(disc.get("diverge_after"), 900.0),
             raw=raw,
             layers=layers,
         )
@@ -96,6 +116,11 @@ url = "file"             # file (default) or http://host:8428 (VictoriaMetrics)
 window = "60m"           # how far back each discovery looks
 step = "30s"             # the grid it samples on
 every = "5m"             # how often the host rediscovers
+# eras_from = ["config.changed"]  # events that begin an era (besides system.changed): type[:source=…,subject=…]
+# prior_for = "60m"      # how long a new era carries what it has not yet found of the era before (default: window)
+# announce_hold = 3      # discoveries a structure change must hold before orchestra.model.changed
+# announce_gap = "30m"   # the least time between two orchestra.model.changed
+# diverge_after = "15m"  # how long a stock is outside its predicted band before orchestra.model.diverged
 # [discovery.options]    # passed to the strategy as they are
 
 # The programs `orchestra run` keeps running (docs/machines.md in Orchestra's repository). A command

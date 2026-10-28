@@ -47,7 +47,7 @@ Orchestra.machineList = () => (MACHINES && MACHINES.machines) || [];
 Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 9 }, mount(body, ui) {
   async function refresh() {
     try {
-      MACHINES = await (await fetch("/api/machines")).json();
+      MACHINES = await (await fetch("/api/machines?era=all")).json();
       $("conn").textContent = "live";
       if (!MACHINES.ok) { body.innerHTML = `<div class="empty">${esc(MACHINES.error)}</div>`; return; }
       const run = MACHINES.machines.filter((m) => !m.unseen && (m.mode === "continuous" || m.active));

@@ -12,7 +12,11 @@ Principles (docs/proposals/system-dynamics-core.md, docs/proposals/orchestra-ker
   machines: a machine is associated with flows only as hypotheses, inferred from its events
   (``sd.attribute``), with their evidence; it may be associated with none, and several with one
   flow. A machine never defines a flow's equation.
-- An **era** is a stretch of time with one configuration; fits are per era.
+- An **era** is a stretch of time with one configuration: it begins when a machine announces
+  that it changed the system (``sd.eras``), and it is the window the model is discovered in. A
+  model is the model of one era (``Model.era``); the previous era's model is its prior
+  (``sd.prior``), and every part that still rests on the prior says so (``Equation.prior``,
+  ``evidence["prior"]``).
 
 The JSON form follows SD Lab's model format (MODEL.md) where the concepts coincide (stocks, flows
 with from/to, machines) and adds what Orchestra needs (series bindings, equation origins, machine
@@ -58,6 +62,7 @@ class Equation:
     inputs: list[str] = field(default_factory=list)            # what the form reads: stock ids, or input:<name> for a measured input
     spec: dict[str, Any] = field(default_factory=dict)         # the full rate as SD Lab writes it (terms, effects, expr), when it found it
     sources: list[str] = field(default_factory=list)           # where the series it was fitted on came from (own, or a [[sources]] name)
+    prior: dict[str, Any] = field(default_factory=dict)        # what it takes from the previous era's model (sd.prior): era, weight, params
 
 
 @dataclass
@@ -76,7 +81,7 @@ class Flow:
     src: str | None                     # stock id, or None for outside
     dst: str | None
     counter: SeriesRef | None = None    # cumulative count of what moved
-    equations: list[Equation] = field(default_factory=list)   # one per era once fitted
+    equations: list[Equation] = field(default_factory=list)   # the last is current; each records the era it was fitted in
     measured_by: list[SeriesRef] = field(default_factory=list)  # every counter it sums, when several flows look like one from the levels
     evidence: dict[str, Any] = field(default_factory=dict)      # how its ends were chosen, when discovered: other stocks' claims, co-flows
 
@@ -97,9 +102,17 @@ class Machine:
 
 @dataclass
 class Era:
+    """A stretch of time that began when a machine changed the system (``sd.eras``): ``label`` is
+    the cause event's type and source, ``cause`` its id; ``type``, ``source`` and ``subject`` are
+    its envelope's. Nothing of its ``data`` is read."""
+
     id: str
     start: float
     label: str
+    cause: str | None = None
+    type: str | None = None
+    source: str | None = None
+    subject: str | None = None
 
 
 @dataclass
@@ -111,7 +124,8 @@ class Model:
     stocks: list[Stock] = field(default_factory=list)
     flows: list[Flow] = field(default_factory=list)
     machines: list[Machine] = field(default_factory=list)
-    eras: list[Era] = field(default_factory=list)
+    eras: list[Era] = field(default_factory=list)            # every era recorded when it was discovered, oldest first
+    era: str | None = None                                    # the era this is the model of (None: before any era began)
     discovery: dict[str, Any] = field(default_factory=dict)   # when discovered: window, step, what was left out and why
 
     def stock(self, sid: str) -> Stock:
@@ -145,6 +159,7 @@ class Model:
                               [SeriesRef(**r) for r in m.get("observed_by", [])], bool(m.get("bootstrap", False)))
                       for m in d.get("machines", [])],      # past versions carry "engagement": [] too, which nothing fills: ignored
             eras=[Era(**e) for e in d.get("eras", [])],
+            era=d.get("era"),
             discovery=dict(d.get("discovery") or {}),
         )
 

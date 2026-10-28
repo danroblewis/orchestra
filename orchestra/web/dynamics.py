@@ -3,12 +3,17 @@ it or at a past version, with each flow's equation and the machines associated w
 hypotheses (``sd.attribute``). Nothing here
 queries the metrics store or discovers anything: it reads files and the web server's caches.
 
+Eras (``sd.eras``): the page shows the current era's model by default, and any past era's last
+saved version when asked (``era``), with every era recorded, for its timeline, and what changed
+at the current era's boundary (``discovery["era_comparison"]``, ``sd.compare``).
+
 Version 1 renders the model and steps through its history. Simulation, prospective versions,
 comparisons with observed metrics, collectors and sub-models come later
 (docs/proposals/orchestra-kernel.md)."""
 
 from __future__ import annotations
 
+from ..sd import eras as era_record
 from ..sd.store import ModelStore
 
 NONE = "no machine associated yet"
@@ -26,7 +31,13 @@ def looked_at(discovery: dict) -> int:
     return int(discovery.get("series") or 0) + early
 
 
-def model_view(project, version: int | None = None, levels: dict | None = None, levels_error: str | None = None) -> dict:
+def era_eras(project) -> list:
+    """Every era recorded for the project, by start."""
+    return era_record.recorded(ModelStore.for_state(project.state_dir))
+
+
+def model_view(project, version: int | None = None, levels: dict | None = None, levels_error: str | None = None,
+               era: str | None = None) -> dict:
     """The model to show: a past version when asked; otherwise the host's latest discovery (cached
     by ``orchestra run``; nothing is discovered here), else the current version. ``levels`` are the
     stocks' current levels, read in the background by the web server. With no model yet, the
@@ -36,12 +47,17 @@ def model_view(project, version: int | None = None, levels: dict | None = None, 
     versions = store.versions()
     current = versions[-1]["version"] if versions else None
     as_of, live = None, False
+    cached = store.latest_discovery()
+    if era is not None and version is None and not (cached and (cached[1].era or "none") == era):
+        found = store.of_era(None if era == "none" else era)
+        if found is None:
+            return {"ok": False, "error": f"no saved version of era {era}"}
+        version = found[0]
     if version is not None:
         model = store.load(version)
         if model is None:
             return {"ok": False, "error": f"there is no version {version}"}
     else:
-        cached = store.latest_discovery()
         if cached and not cached[1].stocks and not versions:
             d = cached[1].discovery
             n = looked_at(d)
@@ -66,6 +82,8 @@ def model_view(project, version: int | None = None, levels: dict | None = None, 
     out["versions"] = versions
     out["live"] = live                       # the latest discovery, which may be newer than any version
     out["as_of"] = as_of
+    out["eras_recorded"] = [vars(e) for e in era_record.recorded(store)]
+    out["current_era"] = cached[1].era if cached else None
     owners: dict[str, list[str]] = {}
     for m in model.machines:
         for fid in m.attributed:

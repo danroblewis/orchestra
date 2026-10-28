@@ -19,7 +19,8 @@ Every spread is capped at ``CAP``.
 
 **Not trusted.** A flow is not trusted when it is declared (an assumption), a net flow (no counter
 measures it), replayed, fitted on fewer than ``MIN_EVENTS`` events or over less than
-``MIN_MINUTES``, at R² below ``MIN_R2``, or one SD Lab found no flow for in the levels. A stock is
+``MIN_MINUTES``, at R² below ``MIN_R2``, one SD Lab found no flow for in the levels, or one carried
+from the previous era's model that this era has not measured yet (origin ``prior``, ``sd.prior``). A stock is
 not trusted when a flow into or out of it is not, when it is hidden (no series measures it, so it
 starts at 0), when it has no measured level now, or when the model's own run since the era began
 (``sd.simulate``) misses its measured level by more than the level's own variation
@@ -86,6 +87,9 @@ def weak_flow(f: Flow, replayed: bool) -> list[str]:
     why = []
     if e.origin == "declared":
         why.append("declared: an assumption, never fitted")
+    if e.origin == "prior":
+        why.append(f"carried from the previous era's model (era {(e.prior or {}).get('era') or 'before any era'}): "
+                   "not yet measured in this era")
     if f.evidence.get("net_flow_of"):
         why.append("a net flow: no counter measures it; fitted from how the level changed")
     q = e.quality or {}

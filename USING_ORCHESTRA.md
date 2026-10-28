@@ -264,6 +264,11 @@ url = "http://127.0.0.1:8428"
 | `step` | duration | `"30s"` | The grid discovery samples on: the finest change it sees. |
 | `every` | duration | `"5m"` (300 s) | How often the host rediscovers. An SD Lab strategy gets 80% of this as its deadline. |
 | `[discovery.options]` | table | empty | Passed to the strategy as it is. |
+| `eras_from` | array of strings | `["config.changed"]` | Events that begin an era, besides `system.changed`, which always does (section 5.7). Each is an event type or a glob of types, optionally with `:source=…` and `subject=…` globs, comma-separated: `"role.changed:source=supervisor"`. Only the envelope is matched, never `data`. `[]` leaves only `system.changed`. |
+| `prior_for` | duration | the window | How long a new era carries the parts of the previous era's model it has not found yet. |
+| `announce_hold` | whole number | `3` | How many discoveries in a row a structure change must hold before Orchestra publishes `orchestra.model.changed`. |
+| `announce_gap` | duration | `"30m"` | The least time between two `orchestra.model.changed`. |
+| `diverge_after` | duration | `"15m"` | How long a stock must stay outside its predicted band before `orchestra.model.diverged`. |
 
 ```toml
 [discovery]
@@ -1185,6 +1190,49 @@ last-seen up to a minute old.
 
 ---
 
+### 5.7 Marking a change to the system: `system.changed`
+
+When a machine changes how the system works (it edits a prompt or a role, changes the
+configuration, adds a worker kind, deploys), it says so, and a new **era** begins. Each era is
+discovered from its own data: after the change it is a different system, and what came before is
+not evidence for it. The previous era's model is its prior until the new era has enough data of
+its own, and the Dynamics page and `orchestra sd eras` say what changed at the boundary: each
+rate before and after, with its uncertainty, and what appeared or disappeared.
+
+Publish `system.changed` from the machine that made the change, with what it changed as the
+`subject` if you like. Orchestra reads only the envelope; `data` is yours:
+
+```bash
+curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/events" \
+  -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"type": "system.changed", "source": "deployer", "subject": "billing",
+       "data": {"version": "2.4.1", "why": "faster invoicing"}}'
+```
+
+Events you already publish can begin eras too, without a new event: name them in `[discovery]
+eras_from` (section 2), by type and optionally by source and subject:
+
+```toml
+[discovery]
+eras_from = ["config.changed", "role.changed:source=supervisor", "deploy.finished:subject=billing*"]
+```
+
+The host records each era once (`e1`, `e2`, ...) and announces it as `orchestra.era.started`
+(`subject`: the era; `causationid`: your event's id). Orchestra's own events never begin one.
+
+**What Orchestra says about its model.** Machines can listen for these, published by
+`orchestra-host`:
+
+| Type | When | `data` |
+|---|---|---|
+| `orchestra.era.started` | An era began. | `era`, `start`, `label`, `cause` (`id`, `type`, `source`, `subject`) |
+| `orchestra.model.changed` | Stocks, flows or loops were added or removed, and the new structure held for `announce_hold` discoveries in a row; at most one per `announce_gap`. A flip that comes back is never announced. | `added` and `removed`, each `{stocks, flows, loops}` as ids; `era`, `held`, `first_seen` |
+| `orchestra.model.diverged` | A stock's measured level stayed outside the band the model predicted for at least `diverge_after`. | `stocks`: each with `stock`, `gap` (how far from the predicted level, in half-widths of the band), `level`, `central`, `lo`, `hi`, `since`; `diverged`: every stock diverged now; `era`, `era_start` |
+| `orchestra.model.returned` | A diverged stock is back inside its band. | as `diverged`, with `diverged_since` |
+
+A divergence soon after an era began is expected (the change did something); one with no era
+behind it is a lead: something changed that nobody announced.
+
 ## 6. What Orchestra does with your data
 
 ```mermaid
@@ -1228,6 +1276,8 @@ on a grid of `step`:
 4. Machines are **associated** with flows, only as hypotheses inferred from their events on the
    bus (below).
 5. Everything else is **left out, with the reason**, recorded in the model.
+6. The window never reaches back past the start of the current **era** (section 5.7): each era
+   is discovered from its own data, with the era before as its prior, and compared with it.
 
 With an SD Lab strategy, conservation runs first; the SD Lab strategy then explains only what
 counters do not balance exactly. A hidden stock or an unexplained flow it finds is a question

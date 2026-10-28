@@ -242,9 +242,11 @@ failures and last error, and its log.
 ### 4.3 The model
 
 `orchestra/sd/`: stocks (each bound to a series), flows (each bound to a counter), equations
-(each with its **origin**: `fitted`, `discovered` or `declared`, and its quality), the machines
-associated with flows as hypotheses, and eras. There is **one model** per project; every change is saved as a new
-version (`<state>/model/vNNNN.json`), the highest is current, and past versions stay readable.
+(each with its **origin**: `fitted`, `discovered`, `declared`, or `prior` for one carried from the
+previous era's model, and its quality), the machines associated with flows as hypotheses, and eras.
+There is **one model** per project; every change is saved as a new version
+(`<state>/model/vNNNN.json`), the highest is current, and past versions stay readable. Each version
+is the model of one era (below).
 
 **Fitting** (`sd/fit.py`): each flow's count per step is Poisson with mean `c × time`
 (constant) or `k × the source stock's level × time` (proportional, the exact integral of the
@@ -465,7 +467,7 @@ understood yet.
 Everything else is **left out, with the reason** (did not change, written in too few steps, no
 counters balance it and no net flow explains it, not needed by any balance, the same as another
 counter), recorded in the model version. Not yet: stocks no series measures,
-delays, non-linear forms, eras. The bakery (`~/orchestra-bakery`, its own repository) is a toy
+delays, non-linear forms. The bakery (`~/orchestra-bakery`, its own repository) is a toy
 system it is tested on.
 
 Discovery reads every series through one catalogue (§4.4): the own store's as they are, and each
@@ -474,6 +476,61 @@ level a definition named) overrides the name rule (`sd.series.Declared`), and a 
 another store was counting before the window began, so its first sample is a baseline, not
 events. When a source is missing the discovery is cached for the page with the reason, and never
 saved as a version (§4.4).
+
+**Eras** (`sd/eras.py`, `sd/prior.py`, `sd/compare.py`; goal G11). After a machine changes how
+the system works (a prompt or role edited, the configuration changed, a deploy) it is a different
+system, so a new **era** begins, and the era is the window the model is discovered in:
+
+- **What begins one.** Orchestra knows no domain, so it is told, by the envelope alone (never
+  `data`): `system.changed`, the generic mark any machine publishes when it changed the system
+  (`source`: the machine; `subject`: what it changed, optionally), always does; `[discovery]
+  eras_from` names more, as filters `type[:source=glob,subject=glob]` (default
+  `["config.changed"]`, what the Supervisor publishes when it changes the configuration).
+  Orchestra's own events (`orchestra.*`) never do. The host records each such event once as an
+  era `e1`, `e2`, … (`model/eras.json`: start, label `type from source`, the cause event's id,
+  type, source and subject) and announces it, `orchestra.era.started` (subject the era's id,
+  `causationid` the cause's id). Before the first era there is none.
+- **Discovery within the era.** The window is `[discovery] window`, but never reaching back
+  past the current era's start: what came before is not evidence for the new system. An era
+  younger than two steps is not discovered; its model is its prior.
+- **The prior** (decision D4). The previous era's model is the new era's prior: its last
+  discovery is saved as a version when the era begins (so it stays readable), and what the era
+  discovers is merged with it (`sd/prior.py`). A flow in both, in the same form, keeps the era's
+  form and its numbers pulled towards the prior's by a prior worth 20 events against the events
+  the era counted (`Equation.prior`: the prior's era, weight, numbers, and the era's own); with
+  fewer than 20 events in another form, the prior's equation stands (origin `prior`). A stock or
+  flow only the prior has is carried (origin `prior`, `evidence.prior`) while the era is younger
+  than `[discovery] prior_for` (default: the window), then dropped. So early in an era the model
+  is mostly its prior, and the era's own evidence takes over as it accumulates.
+- **The comparison** at the boundary (`sd/compare.py`, `discovery.era_comparison`): stocks,
+  flows and loops that appeared or disappeared (and the ones still carried), each flow's form if
+  it changed, and for each of a flow's numbers, before → after (the era's own number) with
+  their standard errors (`sd/trust.py`'s spread times the number) and `z`, the difference over its
+  standard error: changed when `|z| ≥ 2`. This is what the intended-effect test (G13) judges.
+- **One model.** The structure is never split by era: each era has its versions of the one model
+  (`Model.era`), with every era recorded in it (`Model.eras`). A version is saved when the
+  structure changed or an era began.
+
+**The model's own events** (`sd/announce.py`, `sd/diverge.py`; goal G12). After each of its
+discoveries the host publishes, as `orchestra-host` (its own events, so it writes their `data`):
+
+- `orchestra.model.changed`: stocks, flows or loops added or removed (`data.added`,
+  `data.removed`: `{stocks, flows, loops}` as ids; `era`, `held`, `first_seen`). Discovery churns,
+  so a structure is announced only after it has held for `[discovery] announce_hold` discoveries
+  in a row (default 3), against the structure last announced (the host's first discovery sets it,
+  unannounced), and at least `[discovery] announce_gap` (default 30 min) after the last
+  announcement; a flip that comes back within the hold is never announced. Versions are saved as
+  before, unaffected.
+- `orchestra.model.diverged` and `orchestra.model.returned`: at each discovery the model
+  predicts every stock from its level now (`sd/whatif.py`, no intervention: the central run and
+  its 10–90% band), its band widened by the Poisson spread of its flows' events since. A stock's
+  **gap** is its level less the central prediction, in half-widths of that band, judged against
+  the oldest prediction that still reaches now (so a wrong rate shows as a growing gap). A stock
+  is out past 2 half-widths and **diverged** once it has been out at every check for `[discovery]
+  diverge_after` (default 15 min); it **returns** inside 1. `data.stocks` names each with its gap,
+  level, band and since; `data.diverged` every stock diverged now; `era` and `era_start`, so a
+  listener tells a divergence after an announced change from an unexplained one (the
+  unexplained-change test, docs/rationale/lifted-models.md §3.3). Needs `orchestra[sd]`.
 
 **Observability** (`sd/observability.py`, `sd/linearise.py`; `orchestra sd observability`,
 `/api/dynamics/observability`) says which stocks what is measured determines. The model is
@@ -630,8 +687,10 @@ and `sd verify`, the Sources page, command/OAuth2/SigV4 auth, SQL sources.
 - registers itself in `<state>/runtime.json` (`hosts`, by pid) and logs to `<state>/logs/orchestra-host.log`;
 - publishes `orchestra.host.started` and `orchestra.host.stopped`;
 - writes `orchestra_host_up{machine="orchestra-host"}` every interval;
-- runs the event collector: replays the bus once at start, then follows it;
-- rediscovers the model every `[discovery] every`;
+- runs the event collector: replays the bus once at start, then follows it, recording the eras
+  the bus begins and announcing each (`orchestra.era.started`, §4.3);
+- rediscovers the model every `[discovery] every`, within the current era, and then publishes
+  what is due about it (`orchestra.model.changed`, `.diverged`, `.returned`, §4.3);
 - keeps running the processes the project and the plugins declare (§5.1);
 - serves the events endpoint (§3.1) while it launches;
 - runs the instruments the project and the plugins declare (§5.2).
@@ -787,6 +846,11 @@ listen = "127.0.0.1:0"  # the events endpoint (§3.1): host:port, port 0 picked 
 url = "file"            # or http://host:8428 (VictoriaMetrics)
 [discovery]             # strategy, window, step, every, [discovery.options]
 strategy = "kalman_lna"
+eras_from = ["config.changed", "role.changed:source=supervisor"]   # begin an era, besides system.changed (§4.3)
+prior_for = "60m"       # how long a new era carries what it has not found of its prior (default: window)
+announce_hold = 3       # discoveries a structure change holds before orchestra.model.changed
+announce_gap = "30m"    # the least time between two orchestra.model.changed
+diverge_after = "15m"   # how long a stock is out of its band before orchestra.model.diverged
 [[machines]]            # the commands `orchestra run` keeps running (§5.1)
 name = "telemetry"
 command = "python machines/telemetry.py"
@@ -878,6 +942,7 @@ since, and `restore(change)` puts the file back. Orchestra commits nothing: comm
 | `orchestra metrics backfill\|series` | Replay the log into event counters; list series |
 | `orchestra sd discover [--strategy S] [--minutes N] [--step-s S]\|show\|fit\|versions` | The model: discover it from the metrics, show, refit, list versions |
 | `orchestra sd whatif --flow F --scale X [--horizon 2h] [--stocks A,B] [--json]` | What the model says a change would do (§4.3, "What if"); read only |
+| `orchestra sd eras [--json]` | The eras recorded, each with its versions, and what changed at the current era's boundary (§4.3); read only |
 | `orchestra sources check\|infer\|preview QUERY` | Other stores (§4.4): probe them, infer what to read, read a query's fan-out |
 
 ---
@@ -915,7 +980,10 @@ backlogs per channel; its last seen is its last interval with a nonzero count (a
 minutes, which allows for the store's scrape interval and the minute between reads). Clicking a machine
   (its card or its node) opens its dialog: instances, what it publishes and listens for, its
   hypothesised flows with their evidence, its last events (envelopes only) and the tail of its announced log,
-  refreshed while open.
+  refreshed while open. With eras recorded (§4.3) the map and the cards are of the current era by
+  default, from its events alone (an announcement before it still says what a machine is and listens
+  for); a menu picks a past era, the time before any, or all time
+  (`/api/machines?era=`).
 - **Instruments:** every instrument (`web/instruments.py`): a script (`[[collect]]`), a URL
   (`[[scrape]]`) or a source (`[[sources]]`), the project's and the plugins', with its target, how
   often it is read, its last write and how many points, its failures and last error, and its log;
@@ -929,7 +997,10 @@ minutes, which allows for the store's scrape interval and the minute between rea
   levels at the start of the era to now, and from now a horizon the viewer chooses; flows with no
   form the simulator steps are replayed from their observed rates, and named. Its flows are split
   into what fills it and what drains it (drawn below zero). It shows the host's latest discovery
-  and steps through saved versions. It says in plain words what the window and the step are and
+  and steps through saved versions. With eras recorded, a timeline of them picks the era shown (a
+  past era's last version: `/api/dynamics/model?era=`), and under it what changed at the era's
+  start (before → after, appeared, disappeared, carried from the prior); each flow says how much
+  of it is the prior's and how it changed. It says in plain words what the window and the step are and
   what each decides, shows each series' resolution and read (held or linear) beside it in the
   stocks table and the list of what was left out, and a stock's drawer its resolution, its balance
   or, for a stock no counters balance, its fitted net flow.
@@ -1026,7 +1097,9 @@ orchestra/
              as hypotheses), rates, strategies, simulate, rediscover, whatif (and trust,
              whatif_report: a change's prediction, its band and what is not trusted),
              provenance (where each series in a model came from), linearise and observability
-             (which stocks what is measured determines)
+             (which stocks what is measured determines), eras, prior and compare (eras, the
+             previous era's model as a prior, the boundary before → after), loops, announce and
+             diverge (the model's own events)
   sdlab/     SD Lab's discovery research: ~70 strategies (needs the sd extra)
   web/       app, core, core_explore, machines, instruments, traffic (counted traffic), dynamics, static/
 tests/
