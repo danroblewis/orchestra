@@ -193,3 +193,32 @@ def test_a_family_too_big_to_compare_its_replicas_is_read_at_one_never_summed_ac
     assert fam["where"] == {"prometheus_replica": "a"} and any("names a replica of an HA pair" in n for n in fam["notes"])
     reads = [d for d in inf.kept if d.family == "http_requests_total" and d.view == "increments"]
     assert reads and all('prometheus_replica="a"' in d.query and "prometheus_replica" not in d.group_by for d in reads)
+
+
+def test_queries_written_by_hand_are_read_together_and_one_the_store_rejects_fails_alone(made, tmp_path, monkeypatch):
+    dump = [("queue_depth", {"queue": q}, every(15, lambda s, q=q: 10 + (s // 60) % 7 + len(q))) for q in ("email", "orders", "dlq")]
+    f = made(dump)
+    series = "".join(f'\n[[series]]\nsource = "lab"\nname = "{q}_depth"\nquery = \'sum(queue_depth{{queue="{q}"}})\'\nkind = "level"\n'
+                     for q in ("email", "orders", "dlq"))
+    p = project(tmp_path, monkeypatch, toml(f.url, "infer = false") + series)
+    r = Catalogue(p, None).read(T0, NOW, 60.0)
+    assert r.status["lab"]["ok"] and r.status["lab"]["requests"] == 1 and len(r.dump) == 3
+    bad = series + '\n[[series]]\nsource = "lab"\nname = "broken"\nquery = "sum(queue_depth{"\nkind = "level"\n'
+    (tmp_path / "b").mkdir()
+    p = project(tmp_path / "b", monkeypatch, toml(f.url, "infer = false") + bad)
+    r = Catalogue(p, None).read(T0, NOW, 60.0)
+    st = r.status["lab"]
+    assert len(r.dump) == 3 and st["failed"] and all("broken" in x for x in st["failed"])
+
+
+def test_a_family_bigger_than_a_batched_read_is_counted_on_the_server_never_turned_over_from_raw_samples(tmp_path):
+    from orchestra.sources.family import Family, LabelInfo
+    from orchestra.sources.views import views
+    spec = load({"sources": [{"name": "lab", "url": "http://127.0.0.1:9"}]}, tmp_path).sources[0]
+
+    def fam(n):
+        return Family("checkout_orders_total", "counter", {"checkout_orders_total": None}, series=n, resolution_s=15.0,
+                      labels={"pod": LabelInfo("pod", n, 0.5, "identity")})
+    small, burst = views(fam(40), spec), views(fam(spec.series_per_query + 120), spec)
+    assert {"count", "starts", "stops"} <= {d.view for d in small}
+    assert "count" in {d.view for d in burst} and not {"starts", "stops"} & {d.view for d in burst}

@@ -6,8 +6,9 @@ seconds: all but the newest steps were read before. A ``ReadCache`` keeps, per q
 result series' points and the stretch ``[a, b]`` they cover. A read of ``[start, end]`` then asks
 the store only for ``[b − resettle, end]`` (``plan``), aligned to the grid, and splices the answer
 in (``put``): the points it covers are replaced, the others kept. The re-read stretch
-(``resettle``: two steps, the source's ``settle``, and at least ``RESETTLE`` seconds) takes in
-samples written late. Everything is read whole again:
+(``resettle``: two steps, the source's ``settle``, and at least ``RESETTLE`` seconds, or back to
+the newest point of a series that stopped short of the end within ``LATE_BACK``: a job whose
+samples are written minutes late) takes in samples written late. Everything is read whole again:
 - when the cache does not reach back to the window's start, or does not meet its end;
 - every ``REFILL`` seconds (an hour), so samples written later than the re-read stretch are not
   missed for longer than that;
@@ -37,7 +38,8 @@ from pathlib import Path
 
 from . import Labels, Points
 
-RESETTLE = 120.0             # seconds re-read at the end of what is kept, at least: samples written late
+RESETTLE = 300.0             # seconds re-read at the end of what is kept, at least: samples written late
+LATE_BACK = 900.0            # ... and back to the newest point of a series that has none since, up to this far
 REFILL = 3600.0              # a kept entry is read whole again this long after it was
 
 
@@ -79,10 +81,13 @@ class ReadCache:
             e = self.entries.get(key)
             if (e is None or e.a > start + 1e-6 or e.b < start or self._clock() - e.filled > REFILL):
                 return start, end
-            if e.b >= end - 1e-6:
-                return None
+            if e.b >= (math.floor(end / step) * step if step > 0 else end) - 1e-6:
+                return None                     # no step of the grid since what is kept: nothing new to ask
             back = max(2 * step, resettle, RESETTLE)
-            a = max(start, math.floor((e.b - back) / step) * step) if step > 0 else max(start, e.b - back)
+            lasts = [max(pts) for _, pts in e.rows.values() if pts]
+            late = [t for t in lasts if e.b - LATE_BACK < t < e.b - back]   # series whose newest steps came late, or not yet
+            a = min([e.b - back, *(t - step for t in late)])
+            a = max(start, math.floor(a / step) * step) if step > 0 else max(start, a)
             return a, end
 
     def refusal(self, key: str) -> str | None:

@@ -78,7 +78,7 @@ def read_form(d: Definition, step: float) -> tuple[str, str, float] | None:
     return None
 
 
-def _runs(source: Source, ps: list[Part], start: float, end: float, step: float, until: float | None, concurrency: int,
+def kept_run(source: Source, ps: list[Part], start: float, end: float, step: float, until: float | None, concurrency: int,
           cache: ReadCache | None, resettle: float) -> tuple[dict, dict]:
     """``run`` over [start, end], or, with a cache, only over what it does not keep of each part
     (``readcache.plan``: parts that need the same stretch are read together), spliced in."""
@@ -122,7 +122,7 @@ def shared(source: Source, defs: list[Definition], forms: dict[str, tuple[str, s
     got: dict = {}
     failed: dict = {}
     for step, ps in parts.items():
-        g, f = _runs(source, ps, starts[step], end, step, until, concurrency, cache, resettle)
+        g, f = kept_run(source, ps, starts[step], end, step, until, concurrency, cache, resettle)
         got.update(g)
         failed.update(f)
     out: dict[str, list] = {}

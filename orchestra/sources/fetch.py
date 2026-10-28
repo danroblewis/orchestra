@@ -16,7 +16,8 @@
   made from: the series that started and stopped reporting, so the count is a stock its two
   counters balance exactly. One raw read serves every turnover of one selector.
 - The **generated views** of a family are read together, once per aggregation at the finest
-  grouping, every family's in few requests (``plan.py``): ``read_many``. With a ``ReadCache``,
+  grouping, every family's in few requests (``plan.py``): ``read_many``; so are queries as written
+  (declared, or a script's), each a tagged part of a batched read on its grid (``batch.py``). With a ``ReadCache``,
   a window read before is asked for only from where the cache ends (``readcache.py``).
 - A **count** (views ``count`` and ``distinct``) reads 0 for a group at the steps it has no
   reporters while another group of the same count has some (``zero_fill``).
@@ -39,8 +40,8 @@ from concurrent.futures import ThreadPoolExecutor
 from itertools import pairwise
 
 from . import Labels, PastDeadline, Points, Source, SourceError
-from .batch import OVER_LIMIT
-from .plan import grid_step, read_form, shared
+from .batch import OVER_LIMIT, Part
+from .plan import grid_step, kept_run, read_form, shared
 from .readcache import ReadCache
 from .traffic import resolve
 from .transport import TooBig
@@ -262,14 +263,25 @@ def read_many(source: Source, defs: list[Definition], prefix: str, machine: str 
     starts = {q: math.floor(start / q) * q for _, _, q in forms.values()}
     rows, errors = shared(source, defs, forms, starts, end, until, concurrency, cache, resettle) if forms else ({}, {})
     out: dict[str, list] = {}
+    out_rows: dict[str, list] = {}
     by_id = {d.id: d for d in defs}
     for i, got in rows.items():
         d = by_id[i]
         if d.agg == "increase":
             got = accumulate(got, starts[forms[i][2]], forms[i][2])
         out[i] = _finish(d, got, prefix, machine, producers)
+    written = [d for d in defs if d.id not in forms and d.view not in ("increments", "starts", "stops") and d.query]
+    if written:                              # queries as written: together too, each a part on its own grid
+        by_q: dict[float, list[Part]] = {}
+        for d in written:
+            by_q.setdefault(grid_step(step, d.resolution_s), []).append(Part(d.id, d.query, max(1, d.est_series or d.touched or 1)))
+        for q, parts in by_q.items():
+            got, bad = kept_run(source, parts, math.floor(start / q) * q, end, q, until, concurrency, cache, resettle)
+            for i, rows_of in got.items():
+                out_rows[i] = rows_of
+            errors.update(bad)
     selects: dict = {}
-    alone = [d for d in defs if d.id not in forms]
+    alone = [d for d in defs if d.id not in forms and d.id not in out_rows and d.id not in errors]
 
     def one(d: Definition):
         try:
@@ -282,6 +294,8 @@ def read_many(source: Source, defs: list[Definition], prefix: str, machine: str 
                 errors[i] = str(e) if not isinstance(e, PastDeadline) else f"late: {e}"
             else:
                 out[i] = got
+    for i, got in out_rows.items():
+        out[i] = _finish(by_id[i], got, prefix, machine, producers)
     return out, errors
 
 

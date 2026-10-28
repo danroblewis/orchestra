@@ -813,7 +813,7 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   machine through `~/.orchestrator/stores/` (`sources/limits.py`); 429, 502, 503 and 504 are
   retried after `Retry-After` or a jittered backoff (`sources/transport.py`). **Reads are
   incremental** (`sources/readcache.py`): discovery keeps what it read in
-  `<state>/sources/<name>.reads.json` and asks only for the steps since (and two minutes before),
+  `<state>/sources/<name>.reads.json` and asks only for the steps since (and five minutes before, further for late series),
   reading the whole window again hourly; a read refused for its size is not asked again for an
   hour, and one refused for its series is not split by time unless that sheds series.
   A source with at most a tenth of its definitions unread is **partial** (the rest used, the
