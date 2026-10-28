@@ -504,6 +504,31 @@ to run from how the app is served: a `Procfile`, `docker-compose.yml` services, 
 scripts in `package.json`, `[project.scripts]` in `pyproject.toml`, a `Makefile` `run` target,
 the README. A container needs its runtime; prefer the command the developers use locally.
 
+## Patching an installed plugin: `.orchestra/overrides/` and `.orchestra/plugins/`
+
+Orchestra's environment is not an editable install. To fix a bug in an installed plugin now, write
+`.orchestra/overrides/<name>.py` in the repository:
+
+```python
+TARGET = "tasking.gate:run_specs"            # module:attribute
+PACKAGE = "orchestra-tasking==0.9.2"         # the version installed now (pip show / importlib.metadata)
+KIND = "wrap"                                # wrap: override(original) returns the replacement; replace: override is it
+ISSUE = "danroblewis/orchestra-tasking#41"   # the upstream issue asking for the real fix
+def override(original):
+    def run_specs(*a, **kw):
+        ...
+    return run_specs
+```
+
+It is applied on the next plugin load (a change to `orchestra.toml`, or a restart of `orchestra
+run` and `orchestra web`) and before every plugin command, so a plugin process picks it up when it
+restarts. Check the Core page (or `GET /api/plugins`, `local`): `applied`, `stale` (another version
+is installed: the upstream fix may have landed; remove the override), or `failed` with the error.
+It patches the attribute on its module only: code that already took a copy (`from x import y`)
+keeps the original, so prefer a target that is looked up when called. A project's own plugin goes
+in `.orchestra/plugins/<name>/__init__.py` with `def plugin(project): return Plugin(...)`. Both are
+code: they land as the project's work mode says, and every override names its upstream issue.
+
 ## The `python` rule
 
 In every command Orchestra runs (`[[machines]]`, `[[collect]]`, a source's transform script),

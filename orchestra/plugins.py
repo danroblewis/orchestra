@@ -54,6 +54,16 @@ A machine belongs to a package when its announcement says so (``package`` in
 then draw that machine's card and its dialog (``Orchestra.machineCards`` in ``static/app.js``);
 any other machine gets Orchestra's own.
 
+**A project's own plugins** (``.orchestra/plugins/<name>/__init__.py``, or
+``.orchestra/plugins/<name>.py``) are loaded after the installed ones, with the same contract: the
+module's ``plugin(project)`` returns a ``Plugin``. They are loaded by file location as
+``orchestra_local.<name>`` (``importlib.util.spec_from_file_location``, a package with its own
+directory as its search path), never by adding to ``sys.path`` (AGENTS.md rule 10), and loaded
+again only when a file of theirs changed. Before any plugin is made, the project's overrides are
+applied (``orchestra.overrides``). Both are reported in ``Loaded.local`` (``/api/plugins``, shown on
+the Core page): each one's name, file, status and error, and an override's target, package, the
+version installed and the issue.
+
 A plugin that fails to load, one whose name an earlier plugin took, a page whose path Orchestra
 already serves, or a script or stylesheet not in its ``static``, is left out and reported
 (``Loaded.errors``, ``/api/plugins``), never fatal: the core stays up (rule 8)."""
@@ -61,6 +71,7 @@ already serves, or a script or stylesheet not in its ``static``, is left out and
 from __future__ import annotations
 
 import logging
+import sys
 import traceback
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -109,14 +120,72 @@ class Plugin:
 class Loaded:
     plugins: list[Plugin]
     errors: list[dict]
+    local: list[dict] = field(default_factory=list)   # the project's own plugins and overrides, as loaded
+
+
+LOCAL_DIR = Path(".orchestra") / "plugins"
+
+
+@dataclass
+class _LocalEntry:
+    """A project's plugin, found by file, standing where an entry point would."""
+    name: str
+    init: Path
+    package_dir: Path | None
+    _cache: dict = field(default_factory=dict)
+
+    def stamp(self) -> tuple:
+        files = sorted(self.package_dir.rglob("*.py")) if self.package_dir else [self.init]
+        return tuple((str(f), f.stat().st_mtime_ns, f.stat().st_size) for f in files)
+
+    def load(self):
+        from .overrides import load_file
+        stamp, key = self.stamp(), f"orchestra_local.{self.name}"
+        kept = _LOCAL_MODULES.get(key)
+        if kept is None or kept[0] != stamp:
+            for m in [m for m in sys.modules if m == key or m.startswith(key + ".")]:
+                sys.modules.pop(m, None)
+            kept = (stamp, load_file(key, self.init, self.package_dir))
+            _LOCAL_MODULES[key] = kept
+        fn = getattr(kept[1], "plugin", None)
+        if not callable(fn):
+            raise TypeError(f"{self.init} defines no plugin(project) function")
+        return fn
+
+
+_LOCAL_MODULES: dict[str, tuple] = {}
+
+
+def local_entries(repo_root: Path | None) -> list[_LocalEntry]:
+    """The project's own plugins: each directory with an ``__init__.py``, and each ``.py`` file, in
+    ``.orchestra/plugins/``."""
+    d = Path(repo_root) / LOCAL_DIR if repo_root else None
+    if d is None or not d.is_dir():
+        return []
+    out = []
+    for p in sorted(d.iterdir()):
+        if p.name.startswith(("_", ".")):
+            continue
+        if p.is_dir() and (p / "__init__.py").is_file():
+            out.append(_LocalEntry(p.name, p / "__init__.py", p))
+        elif p.is_file() and p.suffix == ".py":
+            out.append(_LocalEntry(p.stem, p, None))
+    return out
 
 
 def load(project, found: Callable[[], list] | None = None) -> Loaded:
-    """Every plugin installed with Orchestra, made for ``project``. ``found`` stands in for the
-    installed entry points (tests). Of two plugins with one name, the first is kept and the second
-    reported."""
+    """Every plugin installed with Orchestra, then the project's own, made for ``project``, after
+    the project's overrides are applied. ``found`` stands in for the installed entry points
+    (tests). Of two plugins with one name, the first is kept and the second reported."""
+    from . import overrides
+    root = getattr(project, "repo_root", None)
+    try:
+        local = overrides.apply(root)
+    except Exception as e:  # noqa: BLE001 - the overrides never take the plugins down
+        local = [{"kind_of": "override", "name": "*", "status": "failed", "error": f"{type(e).__name__}: {e}"}]
+    mine = local_entries(root)
     plugins, errors, by = [], [], {}
-    for ep in (found or (lambda: list(entry_points(group=GROUP))))():
+    for ep in [*(found or (lambda: list(entry_points(group=GROUP))))(), *mine]:
         try:
             p = ep.load()(project)
             if not isinstance(p, Plugin):
@@ -131,4 +200,8 @@ def load(project, found: Callable[[], list] | None = None) -> Loaded:
         except Exception as e:  # noqa: BLE001 - one broken plugin must not take the web app down
             log.warning("plugin %s failed to load: %s", ep.name, e)
             errors.append({"plugin": ep.name, "error": f"{type(e).__name__}: {e}", "trace": traceback.format_exc(limit=4)})
-    return Loaded(plugins, errors)
+    for ep in mine:
+        failed = next((e["error"] for e in errors if e["plugin"] == ep.name), None)
+        local.append({"kind_of": "plugin", "name": ep.name, "file": str(ep.init.relative_to(root)),
+                      "status": "failed" if failed else "loaded", "error": failed})
+    return Loaded(plugins, errors, local)
