@@ -59,7 +59,10 @@ work's series explains it as well as a stock's and says nothing. What is refuted
 nothing explains better than a constant (a random walk, a steady drift), or whose best form a
 refutation struck (the reason names it and the check), and one whose changes move with another
 series' changes (``SAME_MOVES``: a second measure of the same thing, or a function of it, such as
-a demand computed from a rating, is no store of its own).
+a demand computed from a rating, is no store of its own). Of two levels that are each other's copy
+(one quantity in two stores), one is tried as the stock (``first``: the finer, then the earlier
+written) and the other stays its input; when the first is no stock, the other is tried without it,
+so corroboration never deletes the stock.
 
 Every accepted driver is a correlation in the data, not an experiment: nothing here has moved the
 driver and watched the level answer.
@@ -331,8 +334,10 @@ def _refuted(f: Fit, rows: list[list[float]], y: list[float], simpler: list[list
     return ""
 
 
-def fit(level, drivers: list[Driver], step: float, unit_s: float) -> tuple[Fit | None, str]:
-    """The level's net flow, or None and why it stays an input (said after conservation's reason)."""
+def fit(level, drivers: list[Driver], step: float, unit_s: float, defer: frozenset | set = frozenset()) -> tuple[Fit | None, str]:
+    """The level's net flow, or None and why it stays an input (said after conservation's reason).
+    ``defer``: drivers that are the level measured again but give way to it (``stocks``): passed
+    over, not a reason to keep the level an input."""
     n = len(level.values) - 1
     live = set(range(n)) if level.live is None else set(level.live)
     k0 = steps_of(level.resolution.seconds if level.resolution else None, step)
@@ -398,6 +403,8 @@ def fit(level, drivers: list[Driver], step: float, unit_s: float) -> tuple[Fit |
             parts.append(part)
             continue
         if why := _same(level, d, starts, y, k, n):
+            if d.key in defer or statistic(d.name):     # a copy that gives way, or a statistic of it (its maximum): not it again
+                continue
             same = (why, d)
             break
         consider(k, d, False)
@@ -456,6 +463,28 @@ def build(f: Fit, sid: str, title: str, writer: str | None, window: tuple[float,
     return Stock(sid, title, "level", ref, evidence), flows
 
 
+def copy_of(level, stocks: list, k: int):
+    """The first of ``stocks`` (levels already stocks by their net flow) that ``level`` is a copy
+    of: their changes over stretches of ``k`` steps explain each other at ``SAME_MOVES`` (one lag
+    read by group, by topic, and again through a recording rule)."""
+    n = len(level.values) - 1
+    live = set(range(n)) if level.live is None else set(level.live)
+    for other in stocks:
+        both = live & (set(range(n)) if other.live is None else set(other.live))
+        starts = _stretches(both, n, k)
+        if len(starts) >= 3 and _r2_alone([other.values[a + k] - other.values[a] for a in starts],
+                                          [level.values[a + k] - level.values[a] for a in starts]) >= SAME_MOVES:
+            return other
+    return None
+
+
+def first(s) -> tuple:
+    """Which of two copies of one quantity is tried as its stock: the finer resolution, then the one
+    written first, then by key."""
+    res = s.resolution.seconds if s.resolution and s.resolution.seconds else math.inf
+    return (res, s.points[0][0] if s.points else math.inf, s.key)
+
+
 def stocks(series: list, counted: list, sid_of: dict[str, str], inputs: dict[str, list[float]], input_refs: dict[str, dict],
            left_out: dict[str, str], step: float, unit_s: float, window: tuple[float, float], name_of, ref_of, writer_of,
            measure=None, units: dict[str, str] | None = None) -> list:
@@ -470,9 +499,14 @@ def stocks(series: list, counted: list, sid_of: dict[str, str], inputs: dict[str
     drivers += [Driver(f"input:{name}", vals, input_refs[name].get("resolution_s"), key_of[name], input_refs[name]["name"])
                 for name, vals in inputs.items()]
     accepted = []
-    for s in series:
-        if s.counter or not left_out.get(s.key, "").startswith(NET_FLOW):
-            continue
+    # of two copies of one quantity (two stores' sessions), each moves with the other; the first
+    # here is tried as the stock, the other is its copy (``first``: the finer, then the earlier
+    # written), and is tried in turn only when the first is no stock
+    tried = sorted((s for s in series if not s.counter and left_out.get(s.key, "").startswith(NET_FLOW)), key=first)
+    after = {s.key: {t.key for t in tried[i + 1:]} for i, s in enumerate(tried)}
+    no_stock: set[str] = set()                   # tried and not a stock: a later copy no longer defers to it
+    for s in tried:
+        no_stock.add(s.key)
         if statistic(s.name, s.summary):        # sd.discover leaves these out before; a caller's own series may not
             left_out[s.key] += ", and it is a statistic of what it measures (a mean, a maximum, a percentile): a summary, not a store"
             continue
@@ -481,10 +515,14 @@ def stocks(series: list, counted: list, sid_of: dict[str, str], inputs: dict[str
                                 "of the running process, set by its work, not an accumulation, so no net flow is fitted to it")
             continue
         mine = [d for d in drivers if d.name != s.name]
-        got, why = fit(s, mine, step, unit_s)
+        got, why = fit(s, mine, step, unit_s, after[s.key] | no_stock - {s.key})
+        if got is not None and (twin := copy_of(s, [lv for lv, _ in accepted], max(1, round(got.block_s / step)))):
+            got, why = None, (f"and its changes move with {twin.key}'s, a stock already: the same quantity measured again, "
+                              "so an input, not a second stock")
         if got is None:
             left_out[s.key] = f"{left_out[s.key]}, {why}"
         else:
+            no_stock.discard(s.key)
             if measure is not None:
                 got.notes.update(measure(s, got, mine, step, unit_s))
             accepted.append((s, got))

@@ -1,7 +1,7 @@
 """A level no counters balance is a stock when the other series explain its net flow (a room's
 temperature pulled toward the weather outside, a backlog nobody counts filled by a demand),
 and stays an input when nothing explains it better than a constant (a random walk), or when it
-is another series measured again. It also stays an input when what explains it is only a smooth
+is another series measured again (of two copies, one is the stock). It also stays an input when what explains it is only a smooth
 series standing in for time (a tide against a power demand), when the driver is its own total, or
 when the level is an average (a mean age), which summarises and does not store."""
 
@@ -63,8 +63,10 @@ def test_a_random_walk_stays_an_input():
     assert why.startswith("no counters balance it") and "no other series explains its changes better than a constant" in why, why
 
 
-def test_a_level_measured_twice_is_an_input_not_two_stocks():
-    # the same room read by two collectors, one stamping a minute later than the other
+def test_a_level_measured_twice_is_one_stock_not_two_nor_none():
+    # the same room read by two collectors, one stamping a minute later than the other: the one
+    # written first is the stock, the other its copy (two stores' sessions: corroboration never
+    # deletes the stock; the metrics lab's review r2, F4)
     rng = random.Random(3)
     outside = _outside(rng)
     room = _room(outside, rng)
@@ -72,7 +74,7 @@ def test_a_level_measured_twice_is_an_input_not_two_stocks():
     dump = [("outside_celsius", {"machine": "weather"}, outside), ("room_celsius", {"machine": "thermostat"}, room),
             ("room_temperature", {"machine": "sensor"}, again)]
     m = discover(dump, start=T0, end=T0 + HOURS * 3600, step=5.0)
-    assert m.stocks == []
+    assert [s.id for s in m.stocks] == ["room_celsius"]
     assert "the same quantity measured again" in m.discovery["left_out"]['room_temperature{machine="sensor"}']
 
 

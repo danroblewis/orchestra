@@ -74,3 +74,20 @@ def test_bytes_and_messages_are_never_twins():
     assert len(kept) == 2 and not left
     kept, _ = twin_levels([(a, [], 1.0, 1.0), (b, [], 1.0, 1.0)], left, lambda x, y: False, unit={a.key: "count", b.key: "count"})
     assert len(kept) == 1
+
+
+def test_a_lag_balanced_by_offsets_read_once_a_minute_is_found_on_their_writes():
+    # a consumer lag read every 15 s; its topic's produced and consumed offsets read server-side
+    # every 30 s (declared so by the source). On steps the offsets move every other step; on their
+    # writes, produced less consumed is the lag's change exactly
+    rng = random.Random(4)
+    ins, outs, lv = _queue(rng)
+    slow = lambda incs: [(T0 + STEP * i, float(sum(incs[: i + 1]))) for i in range(0, N + 1, 2)]
+    dump = [("produced_total", {"instrument": "lab"}, slow(ins)), ("consumed_total", {"instrument": "lab"}, slow(outs)),
+            ("lag", {"instrument": "lab"}, lv)]
+    kinds = {'produced_total{instrument="lab"}': Declared("counter", resolution_s=2 * STEP),
+             'consumed_total{instrument="lab"}': Declared("counter", resolution_s=2 * STEP)}
+    m = discover(dump, start=T0, end=T0 + N * STEP, step=STEP, kinds=kinds)
+    [st] = m.stocks
+    assert {(b["series"], b["sign"]) for b in st.evidence["balance"]} == {('produced_total{instrument="lab"}', 1),
+                                                                         ('consumed_total{instrument="lab"}', -1)}

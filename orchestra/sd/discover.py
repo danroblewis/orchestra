@@ -1060,11 +1060,13 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         else:
             left_out[s.key] = f"only an accumulator of other stocks' flows (R² {r2b:.2f} with counters of its own)"
     declared_keys = {s.key for s, _, _, _ in pinned}
-    found, twins = twin_levels(pinned + kept, left_out, lambda a, b: same_flow(a, b, n), declared_keys, unit)
     # a balance is identified only by evidence that holds out of sample and beats chance (sd.identify);
     # a count of reporters and its own turnover is a balance by construction, no evidence at all
-    found, identified, constructed_, refused = accepted(found, counters, barred, masks, provenance, left_out,
+    found, identified, constructed_, refused = accepted(pinned + kept, counters, barred, masks, provenance, left_out,
                                                          lambda a, b: same_flow(a, b, n) or lagged_flow(a, b), declared_keys)
+    # twins are joined among the identified only: a copy that loses to a level identification then
+    # refuses would leave neither (the order backlog and a per-partition maximum)
+    found, twins = twin_levels(found, left_out, lambda a, b: same_flow(a, b, n), declared_keys, unit)
     # a state each item leaves within a step is empty at almost every step of the grid, so the
     # chain through it runs past it (sd.hops) or ends at outside and begins again there
     # (sd.passing); joined through it
