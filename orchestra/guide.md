@@ -105,7 +105,15 @@ eras_from = ["config.changed"]   # events that begin an era, besides system.chan
 announce_hold = 3          # discoveries a structure change must hold before orchestra.model.changed
 announce_gap = "30m"
 diverge_after = "15m"
+stall_after = "15m"        # a stock rising with its outflows stopped this long: orchestra.model.stalled
+stall_share = 0.1          # an outflow below this share of its usual rate counts as stopped
 ```
+
+`orchestra.model.stalled` (subject `stock:<id>` or `flow:<id>`) and `orchestra.machine.quiet`
+(subject the machine) are what a flow keeper wakes on. Lengthen `stall_after` for a slow system
+(tickets move in hours: `"2h"`), or stalls fire on ordinary pauses; never shorten it below a few
+`step`s. A stall needs the history on both sides of the window: a new stock is not judged for
+`stall_after` plus a little after it first appears.
 
 The defaults suit a system that runs all day. A level becomes a stock only after it has been
 written for half the window, changed in at least 5 steps, with counters that counted at least 5

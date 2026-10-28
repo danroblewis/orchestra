@@ -78,17 +78,13 @@ from __future__ import annotations
 import threading
 import time
 from collections import Counter, OrderedDict, defaultdict, deque
-from itertools import pairwise
-from statistics import median
 
+from ..cadence import BEATS, BURST_S, DAY, active_within, gaps
 from ..events import HOST, event_time, for_an_instrument, machine_and_instance
 
 ANNOUNCE = ("orchestra.machine.started", "orchestra.machine.subscribed")
-DAY = 86400.0
-ACTIVE_FLOOR_S = 120.0     # active within at least this, however fast its cadence
-ACTIVE_MARGIN = 2.5        # ... and within this many beats of its cadence: a round may be late, or one missed
-BEATS = 9                  # the last times kept to observe a cadence
-BURST_S = ACTIVE_FLOOR_S / ACTIVE_MARGIN   # an event this soon after the instance's previous one is in the same burst, not a new beat
+# the cadence rule (beats, bursts, how long an instance stays active) is orchestra/cadence.py's,
+# shared with the host's quiet watch (orchestra/quiet.py)
 RECENT = 60
 SUBJECTS = 50_000
 TRAIL = 4            # a machine's last event types about a subject, kept for crediting the hand-off
@@ -259,18 +255,6 @@ class MachineIndex:
             handoffs = [{"from": a, "via": ty, "to": b, "count": n, "day": len(self.recent_handoffs.get((a, ty, b), ()))}
                         for (a, ty, b), n in self.handoffs.most_common()]
             return {"machines": machines, "types": types, "edges": edges, "handoffs": handoffs, "unattributed_events": self.unattributed}
-
-
-def active_within(cadence: float | None) -> float:
-    """How long after it was last seen an instance with this cadence is still active (a cadence
-    longer than a day counts as a day)."""
-    return max(ACTIVE_FLOOR_S, ACTIVE_MARGIN * min(cadence, DAY)) if cadence else ACTIVE_FLOOR_S
-
-
-def gaps(times) -> float | None:
-    """The median gap between the last ``BEATS`` distinct times, or ``None`` with fewer than two."""
-    ts = sorted(set(times))[-BEATS:]
-    return median(b - a for a, b in pairwise(ts)) if len(ts) > 1 else None
 
 
 def of_instances(counts: Counter) -> str | None:
