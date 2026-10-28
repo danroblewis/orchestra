@@ -481,13 +481,17 @@ def dispersion(events: list[tuple[float, float]], live: list[tuple[float, float]
     changes (a start that ends the idle time it depends on) is wrong at every step's edge."""
     p, x = form["params"], (form["inputs"][0] if form["inputs"] else None)
     c, k = p.get("c", 0.0), p.get("k", 0.0)
-    times = [t for t, d in events for _ in range(int(d))]
-    if len(times) < 2:
+    at = [(t, int(d)) for t, d in events if int(d) > 0]
+    n = sum(d for _, d in at)                       # the events, one by one
+    if n < 2:
         return 1.0
     between = lambda a, b: paths[x].expected(a, b, c, k) if x else max(0.0, c) * sum(max(0.0, min(b, hi) - max(a, lo)) for lo, hi in live) / unit_s
-    gaps = [between(a, b) for a, b in pairwise(times)]
-    mean = sum(gaps) / len(gaps)
-    return sum((g - mean) ** 2 for g in gaps) / max(1, len(gaps) - 1) / max(mean * mean, 1e-12)
+    # events at one instant are apart by nothing: of the n − 1 gaps, all but those between
+    # instants are 0, so they are counted, not listed (a counter of bytes counts millions a step)
+    gaps = [between(a, b) for (a, _), (b, _) in pairwise(at)]
+    zeros = (n - 1) - len(gaps)
+    mean = sum(gaps) / (n - 1)
+    return (sum((g - mean) ** 2 for g in gaps) + zeros * mean * mean) / max(1, n - 2) / max(mean * mean, 1e-12)
 
 
 def too_short(s: Series, since: float, end: float, awake: list[tuple[float, float]]) -> str:

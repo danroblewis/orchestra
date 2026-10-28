@@ -123,10 +123,11 @@ def _best(o: Series, fills: list[Series], pool: list[tuple[Series, int]], total:
         for p in fills:
             if p is o or apart(o, p):
                 continue
-            for extra in combinations([(c, r) for c, r in pool if c is not o and c is not p], size):
-                if len({c.key for c, _ in extra}) < size or any(writer_of(c) is None or writer_of(c) not in (writer_of(o), writer_of(p))
-                                                                 for c, _ in extra) \
-                        or any(apart(c, x) for c, _ in extra for x in (o, p)):
+            ends = (writer_of(o), writer_of(p))
+            joinable = [(c, r) for c, r in pool if c is not o and c is not p and writer_of(c) is not None and writer_of(c) in ends
+                        and not apart(c, o) and not apart(c, p)]          # the same test per counter, before the combinations
+            for extra in combinations(joinable, size):
+                if len({c.key for c, _ in extra}) < size:
                     continue
                 ins = [o, *(c for c, r in extra if r > 0)]
                 outs = [p, *(c for c, r in extra if r < 0)]

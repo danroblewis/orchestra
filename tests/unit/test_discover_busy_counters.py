@@ -82,3 +82,27 @@ def test_a_counter_millions_of_times_the_level_does_not_hide_its_balance():
     assert sorted((b["series"], b["sign"]) for b in pool.evidence["balance"]) == [
         ("lab:envoy_cluster_upstream_cx_destroy", -1), ("lab:envoy_cluster_upstream_cx_total", 1)]
     assert pool.evidence["balance_r2"] > 0.999
+
+
+def test_dispersion_counts_events_at_one_instant_without_listing_them():
+    """A counter of bytes counts millions a step; the gaps between events at one instant are 0,
+    counted rather than listed, and the statistic is what listing them gave."""
+    from itertools import pairwise
+
+    from orchestra.sd.discover import dispersion
+
+    def listed(events, live, c, unit_s):
+        times = [t for t, d in events for _ in range(int(d))]
+        gaps = [max(0.0, c) * sum(max(0.0, min(b, hi) - max(a, lo)) for lo, hi in live) / unit_s for a, b in pairwise(times)]
+        mean = sum(gaps) / len(gaps)
+        return sum((g - mean) ** 2 for g in gaps) / max(1, len(gaps) - 1) / max(mean * mean, 1e-12)
+
+    rng = random.Random(3)
+    for _ in range(20):
+        events = sorted((rng.uniform(0, 3600), float(rng.choice([0, 1, 1, 2, 5, 0.5, 30]))) for _ in range(rng.randint(3, 200)))
+        if sum(int(d) for _, d in events) < 2:
+            continue
+        got = dispersion(events, [(0.0, 3600.0)], {"params": {"c": 2.0}, "inputs": []}, {}, 60.0)
+        assert math.isclose(got, listed(events, [(0.0, 3600.0)], 2.0, 60.0), rel_tol=1e-9)
+    big = [(30.0 * i, 6.3e6) for i in range(120)]                        # would be 756 million gaps listed
+    assert dispersion(big, [(0.0, 3600.0)], {"params": {"c": 1.0}, "inputs": []}, {}, 60.0) > 1
