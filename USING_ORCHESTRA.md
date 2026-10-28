@@ -1289,6 +1289,96 @@ The host records each era once (`e1`, `e2`, ...) and announces it as `orchestra.
 A divergence soon after an era began is expected (the change did something); one with no era
 behind it is a lead: something changed that nobody announced.
 
+### 5.8 Saying what a change will do: predictions
+
+Before a machine changes the system it can say what the change will do, and Orchestra tells it
+afterwards whether it did. This is the intended-effect test: the change's success is decided by
+what the system did, not by the machine that made it. The steps:
+
+1. **Choose the id your change event will carry**, any unique string.
+2. **Record the prediction**: publish `orchestra.prediction.made` from your machine's `source`,
+   with `data`:
+   - `change`: that id;
+   - `expect`: what the change will do, as edits of the model (the ids are the flows' and stocks'
+     on the Dynamics page):
+
+     | Edit | Means |
+     |---|---|
+     | `{"flow": "jobs_arrived_total", "factor": 2}` | the flow's rate doubles (`"param": "k"` for one of its numbers; `0` for the flow to go) |
+     | `{"flow": "jobs_done_total", "unchanged": true}` | this flow does not change |
+     | `{"flow": "f", "appears": true}`, `{"stock": "s", "disappears": true}` | a part appears or disappears (`loop` too) |
+     | `{"from": "jobs_waiting", "to": null, "appears": true}` | a new flow between two stocks (`null`: outside) |
+     | `{"stock": "jobs_waiting", "below": 6}` | the stock's mean level over the horizon's second half (`above` too) |
+
+     `[]` is the **null test**: the change (a refactor, an upgrade) should change nothing.
+   - `horizon_s` (or `horizon`, such as `"30m"`): how long after the change to judge it. Long
+     enough for the flows you name to count a few dozen events in the new era;
+   - optionally `trajectories`: your own "what if" run of the stocks from the change
+     (`{"t": [seconds after the change], "stocks": {"jobs_waiting": {"central": [...], "lo": [...],
+     "hi": [...]}}}`). Without it Orchestra runs the previous era's model with your edits.
+3. **Make the change**, and publish the event that begins its era (`system.changed`, or one
+   `[discovery] eras_from` names) with `"id"` set to the id you chose.
+
+```bash
+curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/events" \
+  -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"type": "orchestra.prediction.made", "source": "deployer", "subject": "billing",
+       "data": {"change": "deploy-2.4.1", "expect": [{"flow": "invoices_sent_total", "factor": 1.5}], "horizon": "2h"}}'
+# ... deploy ...
+curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/events" \
+  -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"type": "system.changed", "source": "deployer", "id": "deploy-2.4.1", "subject": "billing"}'
+```
+
+From a shell with the CLI, the same prediction, printing the id to carry (a new one when
+`--change` is not given); `--simulate` attaches the current model's what-if run:
+
+```bash
+orchestra sd predict --source deployer --change deploy-2.4.1 --expect "invoices_sent_total x1.5" --horizon 2h
+orchestra sd predict --source deployer --null --horizon 1h        # a change that should change nothing
+```
+
+`--expect` is repeated, one edit each: `FLOW x2`, `FLOW unchanged`, `flow|stock|loop ID
+appears|disappears`, `flow A->B appears`, `STOCK below|above X`, or a JSON object as above.
+
+From Python, in a plugin or a machine that uses the library:
+
+```python
+from orchestra.config import load_project
+from orchestra.events import Events
+from orchestra.sd.predictions import Predictions
+
+project = load_project()
+mine = Predictions(project, source="deployer")
+made = mine.record([{"flow": "invoices_sent_total", "factor": 1.5}], horizon="2h", subject="billing")
+Events.for_project(project, source="deployer").publish("system.changed", {"version": "2.4.1"}, id=made["change"])
+# later
+mine.get(made["id"])["status"]      # "waiting", then "judged"
+mine.verdict(made["id"])            # the verdict, as below
+```
+
+**The verdict.** The host judges the prediction after its first discovery at least the horizon
+after the change, and publishes `orchestra.prediction.judged` (`source` `orchestra-host`,
+`subject` and `causationid` the prediction's event id, `correlationid` the change's id). Listen
+for it, or read `orchestra sd predictions` or the Dynamics page, under the era. `data.verdict` is:
+
+| Verdict | Meaning |
+|---|---|
+| `passed` | What you predicted happened, and the stocks moved as the model said they would. |
+| `no effect` | A predicted edit did not appear: the change did not do what you thought, or did not take effect. |
+| `side effect` | Something you did not predict changed (`data.unpredicted` names it, with its numbers), or a predicted flow changed by another amount. |
+| `model wrong elsewhere` | What you predicted happened, but a stock did not move as the model said: the model of the rest of the system is wrong there (`data.stocks.rows`, `out`). |
+| `interrupted` | Another change began a new era before the horizon. `data.partial` is what could be judged until then. |
+| `undecided` | The new era still had no evidence of its own on a predicted flow at twice the horizon. |
+
+`data.expectations` gives each edit's `status` (`met`, `absent`, `different`, and for levels
+`missed`) with the numbers it was judged by: a flow's number before and after, `z` (the change
+over its standard error) and, for a factor, the predicted value and how far the result is from it.
+`data.false_change` says how often a change is reported where there was none: the threshold
+(`z`, 2), the nominal rate (`nominal`, 4.55% a number) and, when the era before was long enough,
+the share of flows flagged between its two halves (`measured`). A null test is worth what that
+rate is. `data.late` is true when the prediction was made after its change began.
+
 ## 6. What Orchestra does with your data
 
 ```mermaid

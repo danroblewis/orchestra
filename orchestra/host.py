@@ -15,6 +15,10 @@ In an empty Orchestra it does little, on purpose:
   readers, and saves a new model version when the structure changed or an era began; after each
   discovery it announces what is due about the model (``orchestra.sd.announce``:
   ``orchestra.model.changed``, ``orchestra.model.diverged``, ``orchestra.model.returned``);
+- it records the predictions machines make of their changes as it follows the bus
+  (``orchestra.prediction.made``, ``orchestra.sd.predictions``), and after each discovery judges
+  those that are due and publishes each verdict (``orchestra.prediction.judged``,
+  ``orchestra.sd.judge``);
 - it keeps running the commands the project declares (``[[machines]]`` in ``orchestra.toml``) and
   the plugins declare (``Plugin.processes``), through ``orchestra.launcher``, and stops them when
   it stops. Only one host launches for a project (``launcher`` in the runtime record): a second one, started while the
@@ -114,16 +118,29 @@ class Host:
                 self.log(f"collector: {type(e).__name__}: {e}")
 
     def _eras(self) -> None:
-        """Record the eras begun since the last look, and announce them (``orchestra.sd.eras``)."""
-        from .sd import eras
+        """Record the eras begun since the last look, and announce them (``orchestra.sd.eras``);
+        record the predictions made since (``orchestra.sd.predictions``)."""
+        from .sd import eras, predictions
         from .sd.store import ModelStore
+        store = ModelStore.for_state(self.project.state_dir)
         try:
-            _, new = eras.sync(ModelStore.for_state(self.project.state_dir), self.events, self.project.config.eras_from,
-                               self.events.publish)
+            _, new = eras.sync(store, self.events, self.project.config.eras_from, self.events.publish)
             for e in new:
                 self.log(f"era {e.id} began: {e.label}")
         except Exception as e:  # noqa: BLE001 - the next look retries
             self.log(f"eras: {type(e).__name__}: {e}")
+        try:
+            for p in predictions.sync(store, self.events)[1]:
+                self.log(f"prediction {p['id']} from {p['source']} about change {p.get('change')}: {p['status']}"
+                         + (f" ({p['why']})" if p.get("why") else ""))
+        except Exception as e:  # noqa: BLE001 - the next look retries
+            self.log(f"predictions: {type(e).__name__}: {e}")
+
+    def _judge(self, at: float) -> None:
+        """Judge the predictions that are due (``orchestra.sd.judge``) and publish the verdicts."""
+        from .sd.judge import judge_due
+        for v in judge_due(self.project, metrics_for(self.project), at, self.events.publish, events=self.events):
+            self.log(f"prediction {v['prediction']} judged: {v['verdict']} (era {v['era']})")
 
     def _announce(self, r) -> None:
         """What is due about the model after a discovery (``orchestra.sd.announce``)."""
@@ -171,6 +188,10 @@ class Host:
                     self._announce(r)
                 except Exception as e:  # noqa: BLE001 - the next discovery tries again
                     self.log(f"announce: {type(e).__name__}: {e}")
+                try:
+                    self._judge(r.at)
+                except Exception as e:  # noqa: BLE001 - the next discovery tries again
+                    self.log(f"predictions: {type(e).__name__}: {e}")
             except Busy:                              # the CLI or the web page is discovering: theirs will do
                 self.log("discovery: skipped, another process is discovering this project")
             except Exception as e:  # noqa: BLE001 - try again next interval

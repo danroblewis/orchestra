@@ -5,7 +5,9 @@ queries the metrics store or discovers anything: it reads files and the web serv
 
 Eras (``sd.eras``): the page shows the current era's model by default, and any past era's last
 saved version when asked (``era``), with every era recorded, for its timeline, and what changed
-at the current era's boundary (``discovery["era_comparison"]``, ``sd.compare``).
+at the current era's boundary (``discovery["era_comparison"]``, ``sd.compare``), and the
+predictions made of the change that began the era shown, with their verdicts (``sd.predictions``,
+``sd.judge``).
 
 Version 1 renders the model and steps through its history. Simulation, prospective versions,
 comparisons with observed metrics, collectors and sub-models come later
@@ -14,6 +16,7 @@ comparisons with observed metrics, collectors and sub-models come later
 from __future__ import annotations
 
 from ..sd import eras as era_record
+from ..sd import predictions as prediction_record
 from ..sd.store import ModelStore
 
 NONE = "no machine associated yet"
@@ -34,6 +37,17 @@ def looked_at(discovery: dict) -> int:
 def era_eras(project) -> list:
     """Every era recorded for the project, by start."""
     return era_record.recorded(ModelStore.for_state(project.state_dir))
+
+
+def predictions_view(project, era: str | None = None) -> dict:
+    """Every prediction recorded, with the era its change began (None: not yet matched); ``era``
+    keeps one era's (``"none"``: the unmatched)."""
+    store = ModelStore.for_state(project.state_dir)
+    by_cause = {e.cause: e.id for e in era_record.recorded(store) if e.cause}
+    out = [{**p, "era": by_cause.get(p.get("change"))} for p in prediction_record.recorded(store)]
+    if era is not None:
+        out = [p for p in out if (p["era"] or "none") == era]
+    return {"ok": True, "predictions": out}
 
 
 def model_view(project, version: int | None = None, levels: dict | None = None, levels_error: str | None = None,
@@ -84,6 +98,9 @@ def model_view(project, version: int | None = None, levels: dict | None = None, 
     out["as_of"] = as_of
     out["eras_recorded"] = [vars(e) for e in era_record.recorded(store)]
     out["current_era"] = cached[1].era if cached else None
+    preds = predictions_view(project)["predictions"]           # the shown era's, and with the current era those still waiting for their change
+    out["predictions"] = [p for p in preds if (p["era"] is not None and p["era"] == out.get("era"))
+                          or (p["era"] is None and out.get("era") == out["current_era"])]
     owners: dict[str, list[str]] = {}
     for m in model.machines:
         for fid in m.attributed:
