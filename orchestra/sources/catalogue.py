@@ -7,7 +7,19 @@ provenance (source, final query, origin, resolution), and each source's status. 
 fails (refused in ``orchestra.toml``, unreachable, unauthorized, a query it rejects, a script that
 fails with nothing cached, past its deadline) is **missing**: the reading says so and why, and the
 caller (``sd.rediscover``) discovers from what arrived but saves no version, so an outage neither
-churns versions nor deletes stocks. Every range is re-runnable: nothing assumes the last reading
+churns versions nor deletes stocks. A source most of whose reads arrived is **partial**, not
+missing: when at most ``PARTIAL`` of its definitions could not be read (a refusal that outlasted
+the retries, the round's deadline or budget), the rest are used, the failed ones are named in its
+status (``failed``), and discovery goes on. Credentials refused, or more failing, is missing.
+
+A source's reads in one discovery are one round: at most ``max_requests`` requests (retries
+included) by ``deadline``, at the source's request ``rate`` shared with every other process of the
+project (``limits.py``), the generated views read together (``fetch.read_many``).
+
+A catalogue made with ``infer=False``, or made inside ``reading_only()`` on the same thread (the web
+server's "rediscover" button runs so), reads the cached definitions and never starts an inference
+round: only the host and the CLI (``orchestra sd discover``, ``orchestra sources infer``) infer
+(``cache.py``). Every range is re-runnable: nothing assumes the last reading
 was recent, and the stretches of the window in which a source returned nothing are recorded as
 its gaps (a laptop that slept, a server that was down).
 
@@ -17,18 +29,22 @@ its provenance). ``counted`` reads only those definitions, for the Machines page
 
 from __future__ import annotations
 
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, wait
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..metrics import MetricsStore
 from ..sd.series import Declared, series_key
-from . import PastDeadline, SourceError
-from .fetch import grid_step
+from . import SourceError
+from .cache import definitions
+from .fetch import grid_step, read_many
 from .fetch import read as read_definition
-from .infer import Inference, definitions
+from .infer import Inference
+from .limits import Budget, RateLimit
 from .own import OWN, OwnSource
+from .plan import read_resolution
 from .prometheus import PrometheusSource
 from .spec import SourceSpec, Specs, for_project
 from .transform import TransformError
@@ -62,6 +78,7 @@ def why(e: Exception) -> str:
 
 
 SUMMARIES = {"avg_by", "upper_by", "max_by", "min_by"}       # views that summarise many reporters' values
+PARTIAL = 0.1               # of a source's definitions, at most, that may fail for the source to be partial, not missing
 
 
 def summary(d: Definition) -> bool:
@@ -70,17 +87,45 @@ def summary(d: Definition) -> bool:
     return d.view in SUMMARIES or (d.view == "rollup" and d.name.endswith(("_avg", "_max", "_min")))
 
 
-def provenance(spec: SourceSpec, d: Definition, traffic: dict | None = None) -> dict:
-    return {"source": spec.name, "query": d.query, "kind": d.kind, "origin": list(d.origin), "resolution_s": d.resolution_s,
-            "unit": d.unit, "view": d.view, "family": d.family, "flags": list(d.flags), **({"traffic": traffic} if traffic else {})}
+def provenance(spec: SourceSpec, d: Definition, traffic: dict | None = None, resolution_s: float | None = None) -> dict:
+    return {"source": spec.name, "query": d.query, "kind": d.kind, "origin": list(d.origin),
+            "resolution_s": d.resolution_s if resolution_s is None else resolution_s,
+            "unit": d.unit, **({"unit_label": d.unit_label} if d.unit_label else {}), "view": d.view, "family": d.family, "flags": list(d.flags), **({"traffic": traffic} if traffic else {})}
+
+
+def _failures(failed: dict[str, str], names: dict[str, str], total: int, deadline: float) -> str:
+    """What went wrong with a source's reads: those not done in time, then those that failed."""
+    late = [i for i, w in failed.items() if w.startswith("late: ")]
+    other = [i for i in failed if i not in late]
+    out = [f"{len(late)} of {total} reads were not done within the deadline of {deadline:g} s"] if late else []
+    if other:
+        first = other[0]
+        out.append(f"{len(other)} read{'s' if len(other) != 1 else ''} failed; the first: {names.get(first, first)}: {failed[first]}")
+    return "; ".join(out)
+
+
+_THREAD = threading.local()
+
+
+@contextmanager
+def reading_only():
+    """Catalogues made on this thread meanwhile, without ``infer=``, never start an inference round."""
+    was = getattr(_THREAD, "reading_only", False)
+    _THREAD.reading_only = True
+    try:
+        yield
+    finally:
+        _THREAD.reading_only = was
 
 
 class Catalogue:
-    def __init__(self, project, metrics: MetricsStore | None, specs: Specs | None = None):
+    def __init__(self, project, metrics: MetricsStore | None, specs: Specs | None = None, *, infer: bool | None = None):
         self.project = project
+        self.infer = (not getattr(_THREAD, "reading_only", False)) if infer is None else infer
         self.specs = specs if specs is not None else for_project(project)
         self.own = OwnSource(metrics, project.key) if metrics is not None else None
-        self.remotes = {s.name: PrometheusSource(s) for s in self.specs.sources}
+        rate = lambda s: RateLimit(s.rate, s.burst, Path(project.state_dir) / "sources" / f"{s.name}.rate")
+        self.remotes = {s.name: PrometheusSource(s, rate(s)) for s in self.specs.sources}
         self.errors: dict[str, str] = {}            # source -> why the last read of a model's series from it failed (reader)
 
     def spec(self, name: str) -> SourceSpec:
@@ -88,23 +133,22 @@ class Catalogue:
 
     def inference(self, name: str, start: float, end: float, *, refresh: bool = False, until: float | None = None) -> Inference:
         return definitions(self.remotes[name], self.spec(name), self.specs.declared, Path(self.project.repo_root),
-                           Path(self.project.state_dir), start, end, refresh=refresh, until=until)
+                           Path(self.project.state_dir), start, end, refresh=refresh, until=until, infer_ok=self.infer or refresh)
 
     def _remote(self, spec: SourceSpec, start: float, end: float, step: float, own_names: set[str], out: Reading) -> None:
         src = self.remotes[spec.name]
-        began, before = time.monotonic(), (src.requests, src.points)
-        until = began + spec.deadline                   # for the inference and the reads, all told
+        began, before = time.monotonic(), (src.requests, src.points, src.retries)
         st: dict = {"where": spec.where(), "auth": src.auth.describe(), "prefix": spec.prefix}
         out.status[spec.name] = st
         try:
-            inf = self.inference(spec.name, start, end, until=until)
+            inf = self.inference(spec.name, start, end)   # a fresh inference (rare: it is cached) has a deadline of its own
         except Exception as e:  # noqa: BLE001 - one source's failure never ends the discovery of the others
             st.update(ok=False, error=f"inference failed: {why(e)}")
             out.missing[spec.name] = st["error"]
             return
         st.update(inferred_at=inf.at, definitions=len(inf.kept), left_out=len(inf.left_out), script=inf.script,
                   inference_error=inf.error)
-        results, errors = self._read_all(spec, inf.kept, start, end, step, until)
+        results, failed = self._read_all(spec, inf.kept, start, end, step, time.monotonic() + spec.deadline)
         times: list[float] = []
         n = 0
         refused: list[str] = []
@@ -118,52 +162,44 @@ class Catalogue:
                 out.kinds[key] = Declared("counter" if d.kind in ("counter", "rate") else "level",
                                           baseline=d.kind == "counter" and d.view != "increments",
                                           direction=(counted or {}).get("direction"), channel=(counted or {}).get("channel"),
-                                          resolution_s=d.resolution_s, summary=summary(d))
-                out.provenance[key] = provenance(spec, d, counted)
+                                          resolution_s=read_resolution(d, step), summary=summary(d))
+                out.provenance[key] = provenance(spec, d, counted, read_resolution(d, step))
                 if counted:
                     out.traffic[key] = counted
                 times += [t for t, _ in pts]
                 n += 1
         q = min((grid_step(step, d.resolution_s) for d in inf.kept), default=step)
-        st.update(series=n, requests=src.requests - before[0], points=src.points - before[1],
+        st.update(series=n, requests=src.requests - before[0], points=src.points - before[1], retries=src.retries - before[2],
                   seconds=round(time.monotonic() - began, 2), gaps=gaps(times, start, end - spec.settle, q) if n else [],
                   refused_series=refused[:20])
-        if errors:
-            st.update(ok=False, error="; ".join(errors))
+        names = {d.id: d.name for d in inf.kept}
+        if failed:
+            st["failed"] = [f"{names.get(i, i)}: {w}" for i, w in sorted(failed.items(), key=lambda x: names.get(x[0], x[0]))]
+        refused_auth = any("refused the credentials" in w for w in failed.values())
+        if failed and (refused_auth or not n or len(failed) > PARTIAL * len(inf.kept)):
+            st.update(ok=False, error=_failures(failed, names, len(inf.kept), spec.deadline))
             out.missing[spec.name] = st["error"]
         elif inf.kept and not n:                    # the store answered with nothing: not a source to discover without
             st.update(ok=False, error="returned no series in the window", gaps=[[round(start, 3), round(end - spec.settle, 3)]])
             out.missing[spec.name] = st["error"]
         else:
-            st["ok"] = True
+            st.update(ok=True, partial=bool(failed))
+            if failed:
+                st["warning"] = "partial: " + _failures(failed, names, len(inf.kept), spec.deadline)
 
     def _read_all(self, spec: SourceSpec, defs: list[Definition], start: float, end: float, step: float,
-                  until: float | None = None) -> tuple[dict[str, list], list[str]]:
-        """Every definition read from its source at once, by ``until`` (the source's deadline from
-        now when not given), all of them ending ``settle`` before ``end``: the results by
-        definition id, and what went wrong (the reads not done in time, then the reads that
-        failed). A read still running at the deadline is left to stop at its next request."""
-        src, failed, results, late = self.remotes[spec.name], [], {}, 0
+                  until: float | None = None) -> tuple[dict[str, list], dict[str, str]]:
+        """Every definition read from its source, as one round (``max_requests`` by ``until``, the
+        source's deadline from now when not given), all of them ending ``settle`` before ``end``:
+        the results by definition id, and why by id for those that could not be read."""
+        src = self.remotes[spec.name]
         until = time.monotonic() + spec.deadline if until is None else until
-        end = end - spec.settle
-        pool = ThreadPoolExecutor(spec.concurrency)
-        futs = {pool.submit(read_definition, src, d, spec.prefix, spec.machine, start, end, step, spec.producers, until): d
-                for d in defs}
-        done, pending = wait(futs, timeout=max(0.0, until - time.monotonic()))
-        pool.shutdown(wait=False, cancel_futures=True)
-        late += len(pending)
-        for f in done:
-            d = futs[f]
-            try:
-                results[d.id] = f.result()
-            except PastDeadline:
-                late += 1
-            except Exception as e:  # noqa: BLE001 - that source is missing, with why
-                failed.append(f"{d.name}: {why(e)}")
-        errors = [f"{late} of {len(defs)} reads were not done within the deadline of {spec.deadline:g} s"] if late else []
-        if failed:
-            errors.append(f"{len(failed)} read{'s' if len(failed) != 1 else ''} failed; the first: {failed[0]}")
-        return results, errors
+        outer, src.budget = src.budget, Budget(spec.max_requests, until, "this discovery's reads")
+        try:
+            return read_many(src, defs, spec.prefix, spec.machine, start, end - spec.settle, step, spec.producers, until,
+                             spec.concurrency)
+        finally:
+            src.budget = outer
 
     def counted(self, start: float, end: float, step: float) -> tuple[list[dict], dict[str, str]]:
         """Every series of counted traffic over [start, end]: its source, name, labels, points,
@@ -176,9 +212,9 @@ class Catalogue:
             except Exception as e:  # noqa: BLE001 - that source is missing, with why
                 failed[spec.name] = why(e)
                 continue
-            results, errors = self._read_all(spec, defs, start, end, step, until) if defs else ({}, [])
+            results, errors = self._read_all(spec, defs, start, end, step, until) if defs else ({}, {})
             if errors:
-                failed[spec.name] = "; ".join(errors)
+                failed[spec.name] = _failures(errors, {d.id: d.name for d in defs}, len(defs), spec.deadline)
             for d in defs:
                 for name, labels, pts, counted in results.get(d.id, []):
                     out.append({"source": spec.name, "name": name, "labels": labels, "points": pts, "kind": d.kind, **counted})

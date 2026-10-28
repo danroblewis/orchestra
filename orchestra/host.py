@@ -181,7 +181,7 @@ class Host:
         cfg = self.project.config
         hist = None
         if sd_installed() and r.model.stocks:
-            store, cat = metrics_for(self.project), Catalogue(self.project, metrics_for(self.project))
+            store, cat = metrics_for(self.project), Catalogue(self.project, metrics_for(self.project), infer=False)
             step = stock_step(cfg.discovery_step)
             readers: dict = {}
 
