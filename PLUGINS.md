@@ -2,8 +2,8 @@
 
 A **plugin** is a Python package, installed beside Orchestra, that adds things to an Orchestra
 project: the programs `orchestra run` keeps running, the instruments it measures with, the
-machines the Machines page lists before they are first seen, and pages, API routes, Dashboard
-panels and machine cards in the web UI. The task system (`~/orchestra-tasking`), the AI agents
+machines the Machines page lists before they are first seen, pages, API routes, Dashboard
+panels and machine cards in the web UI, and a subcommand of the `orchestra` command line. The task system (`~/orchestra-tasking`), the AI agents
 (`~/orchestra-agents`) and the bridges (`~/orchestra-bridges`) are plugins.
 
 This guide is for an engineer building one. It covers the interface exactly as the code on `main`
@@ -52,6 +52,7 @@ machines gets the parts of Orchestra that a bare program cannot get by itself:
 | be measured by the project's instruments (`[[collect]]`, `[[scrape]]`) | list its machines on the Machines page before they first run (`machines`) |
 | | add pages and API routes to the web UI (`pages`, `router`) |
 | | draw its machines' cards and add Dashboard panels (`scripts`, `stylesheets`) |
+| | add `orchestra <name> ...` to the command line (entry point group `orchestra.commands`, §4.10) |
 
 A plugin adds nothing to the core. Orchestra never imports a plugin's modules by name, never reads
 its events' `data`, and never learns what its pages mean. The core treats a plugin as a few lists:
@@ -90,9 +91,9 @@ That is all the registration there is.
   `pip install -e`) again.
 - **Same environment.** If Orchestra is installed as a tool, the plugin goes into that tool's
   environment, for example `uv tool install 'orchestra @ git+https://github.com/danroblewis/orchestra@main'
-  --with /path/to/plugin` (README, "Install"), and `--with-executables-from <plugin>` when the
-  plugin has a command of its own to put on the PATH. Installing the tool again replaces it: a
-  plugin whose `--with` is left out is uninstalled. Each plugin's repository has its own `.venv`, with
+  --with /path/to/plugin` (README, "Install"). Its command line comes with it as `orchestra
+  <name>` (§4.10): there is no console script of its own to put on the PATH. Installing the tool
+  again replaces it: a plugin whose `--with` is left out is uninstalled. Each plugin's repository has its own `.venv`, with
   Orchestra from GitHub at the commit its `uv.lock` pins, and runs `orchestra` from there.
 
 `orchestra.plugins.load(project)` calls each entry point's function and keeps what it returns. It
@@ -385,9 +386,13 @@ How the launcher runs it (`orchestra/launcher.py`):
 Only one host launches per project (`launcher` in the runtime record). A second `orchestra run`
 for the same project starts nothing.
 
-Start Python processes with `sys.executable` (`[sys.executable, "-m", "yourpkg", ...]`). That is
-the interpreter running `orchestra run`, which is the environment your plugin is installed in. A
-bare `python` is whatever comes first on `PATH`.
+Start Python processes with `sys.executable`: `[sys.executable, "-m", "yourpkg", ...]`, or your
+plugin command through Orchestra's module, `[sys.executable, "-m", "orchestra", "<name>", "run",
+...]` (the same as `orchestra <name> run`, §4.10). `sys.executable` is the interpreter running
+`orchestra run`, which is the environment your plugin is installed in; a bare `python` in a
+command the launcher runs is that one too (SPEC §5.1), but a bare `orchestra` is whatever comes
+first on the `PATH`. **Never name a console script of your own** (`tasking run`): a plugin has
+none (§4.10), and one left on the `PATH` from an older install may be another environment's.
 
 The usual pattern is to declare processes only when the project configures the plugin:
 
@@ -493,12 +498,48 @@ comments, has refused a result Orchestra's readers or your `check` object to, an
 committed. Personal settings (identities, channels, templates) belong in the overlay, the
 project's in the repository.
 
-### 4.10 CLI commands
+### 4.10 CLI commands: `orchestra <name>`
 
-Orchestra's CLI has no extension point. Plugins ship their own console scripts in
-`[project.scripts]` (`tasking`, `orchestra-agents`) or a `__main__` (`python -m
-orchestra_bridges github --once`). Their processes are usually that same entry point
-(`python -m tasking run --wait`).
+A plugin's command line is a subcommand of `orchestra`, never a console script of its own
+(`orchestra/commands.py`). Declare it as an entry point in the group `orchestra.commands`, named
+for the plugin (`Plugin.name`), naming a callable that takes the arguments after the name:
+
+```toml
+# the plugin's pyproject.toml
+[project.entry-points."orchestra.commands"]
+tasks = "tasking.cli:main"
+```
+
+```python
+# tasking/cli.py
+"""The task system: tickets, the scheduler, the record."""   # the line `orchestra --help` shows
+
+def main(argv: list[str]) -> int | None:
+    p = argparse.ArgumentParser(prog=os.environ.get("ORCHESTRA_PROG"))   # "orchestra tasks"
+    ...
+```
+
+- `orchestra tasks add "x" --to y` calls `main(["add", "x", "--to", "y"])` and exits with what it
+  returns (`None` is 0). Raising `SystemExit`, as argparse does, works as usual.
+- Before the call, `ORCHESTRA_PROG` is set to `orchestra tasks` and so is `sys.argv[0]`: an
+  `argparse.ArgumentParser()` with no `prog` already shows `orchestra tasks` in its usage.
+- `orchestra --repo PATH tasks ...` sets `ORCHESTRA_REPO` to `PATH` for the command.
+- `orchestra --help` lists each plugin command with one line: the callable's `help` attribute if
+  it has one, else the first line of its module's docstring.
+- It is a group of its own, apart from `orchestra.plugins`, because a command must work before a
+  project exists (`orchestra tasks init`): it is given argv, never a project. Load the project
+  yourself when you need one (`orchestra.config.load_project`).
+- A command that fails to load fails alone (`orchestra: plugin command 'tasks' (tasking.cli:main)
+  failed to load: ...`, exit 1), and `orchestra --help` shows it as broken; the rest of the CLI
+  works. A name that is one of Orchestra's own subcommands (`init`, `run`, `web`, `metrics`, `sd`,
+  `sources`, `events`) is refused, with a warning on every `orchestra` command; of two entry points
+  with one name, the first is kept.
+
+Do not declare `[project.scripts]`: users install a plugin with `--with` alone (README,
+"Install"), and nothing of yours lands on the PATH. A `__main__` is still fine for your processes
+(`python -m orchestra_bridges github`). A process of yours runs either `[sys.executable, "-m",
+"yourpkg", ...]` or `[sys.executable, "-m", "orchestra", "<name>", "run", ...]` (`orchestra <name>
+run`; §4.6), never a console script.
 
 ---
 

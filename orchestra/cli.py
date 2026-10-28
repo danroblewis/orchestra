@@ -9,7 +9,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import __version__, runtime
+from . import __version__, commands, runtime
 from .config import ConfigError, Project, init_project, load_project
 from .events import Events
 
@@ -260,9 +260,13 @@ def cmd_events(args) -> int:
     return 0
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(plugin_help: dict[str, str] | None = None) -> argparse.ArgumentParser:
+    """Orchestra's own subcommands, and a line in the help for each plugin command (``plugin_help``:
+    name -> one line; they are run before parsing, by ``main``)."""
     p = argparse.ArgumentParser(prog="orchestra", description="Orchestra: an event bus, a metrics store, and a "
-                                "system dynamics model of the machines that use them")
+                                "system dynamics model of the machines that use them",
+                                epilog="plugin commands: orchestra <plugin> [args...] runs the command an installed "
+                                "plugin declares (entry point group orchestra.commands); orchestra <plugin> --help for its own")
     p.add_argument("--version", action="version", version=__version__)
     p.add_argument("--repo", help="repository root (default: ORCHESTRA_REPO or cwd)")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -314,11 +318,40 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--to", help="for copy: the target bus URL")
     s.add_argument("--force", action="store_true", help="for copy: append even if the target already has events")
     s.set_defaults(fn=cmd_events)
+
+    for name, line in (plugin_help or {}).items():
+        sub.add_parser(name, help=f"(plugin) {line}" if line else "(plugin)", add_help=False)
     return p
 
 
+def _command_word(argv: list[str]) -> tuple[int, str | None]:
+    """The index of the subcommand in ``argv`` and the ``--repo`` given before it; (-1, repo) when
+    an option other than ``--repo`` comes first (``--help``, ``--version``) or there is none."""
+    i, repo = 0, None
+    while i < len(argv):
+        a = argv[i]
+        if a == "--repo" and i + 1 < len(argv):
+            repo, i = argv[i + 1], i + 2
+        elif a.startswith("--repo="):
+            repo, i = a.split("=", 1)[1], i + 1
+        elif a.startswith("-"):
+            return -1, repo
+        else:
+            return i, repo
+    return -1, repo
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    argv = sys.argv[1:] if argv is None else list(argv)
+    found = commands.installed()
+    i, repo = _command_word(argv)
+    if i >= 0 and argv[i] in found.commands:
+        return commands.run(argv[i], found.commands[argv[i]], argv[i + 1:], repo)
+    for w in found.warnings:
+        print(f"orchestra: warning: {w}", file=sys.stderr)
+    wants_help = i < 0 and any(a in ("-h", "--help") for a in argv)
+    lines = {n: commands.summary(ep) if wants_help else "" for n, ep in found.commands.items()}
+    args = build_parser(lines).parse_args(argv)
     return args.fn(args)
 
 

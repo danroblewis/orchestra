@@ -53,13 +53,18 @@ uv tool install /path/to/orchestra            # or from a checkout
 ```
 
 Plugins go into the same environment with `--with` (README, "Install"), for example
-`--with 'orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking'`, plus
-`--with-executables-from orchestra-tasking` for the plugin's own command (`tasking`) to be put on
-the PATH too. Plugins name Orchestra as `git+https://github.com/danroblewis/orchestra@main`, so
+`--with 'orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking'`, in one line:
+
+```bash
+uv tool install 'orchestra[sd] @ git+https://github.com/danroblewis/orchestra@main' --with 'orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking'
+```
+
+A plugin's command line comes with it as a subcommand of `orchestra`, named for the plugin
+(`orchestra tasks ...`); `orchestra --help` lists the installed ones. Plugins name Orchestra as `git+https://github.com/danroblewis/orchestra@main`, so
 install Orchestra by that exact URL beside them: pip refuses two different URLs for one package.
 Running `uv tool install` again replaces the whole tool: give every plugin's `--with` each time, or
-the ones left out are uninstalled. The commands go into `~/.local/bin`; `uv tool update-shell`
-puts it on the PATH.
+the ones left out are uninstalled. The `orchestra` command goes into `~/.local/bin`; `uv tool
+update-shell` puts it on the PATH.
 
 Extras add optional parts:
 
@@ -2204,6 +2209,7 @@ printed it; `cat ~/.orchestrator/projects.json` lists every project's key.
 | `orchestra sources check` | Probe each source's endpoints and credentials. |
 | `orchestra sources infer [--source NAME]` | Run an inference round and print what is kept and left out. |
 | `orchestra sources preview QUERY [--source NAME] [--minutes N] [--step-s S]` | Read a query's fan-out, with sparklines. |
+| `orchestra <plugin> [ARGS...]` | An installed plugin's own command line (`orchestra tasks`, `orchestra agents`, ...); `orchestra --help` lists them, `orchestra <plugin> --help` shows one. PLUGINS.md §4.10. |
 
 Every command takes `--repo PATH`. Removed on 2026-10-27: `orchestra sd whatif`, `sd predict`,
 `sd eras` and `sd observability`; their data is read through the HTTP API (section 5.9).
