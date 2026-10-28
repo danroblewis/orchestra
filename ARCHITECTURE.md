@@ -643,6 +643,63 @@ The prediction a level is judged against is the oldest still within its horizon
 its 10-90% band widened by the Poisson spread of the stock's flows' events since. A model with a
 missing source announces nothing. Without `orchestra[sd]` divergence is not judged.
 
+### Predictions, and their verdicts
+
+A machine about to change the system says first what the change will do, and the host judges it
+once the change has run (goal G13, the intended-effect test of
+`docs/rationale/lifted-models.md` §3.1, with the null test of §3.2). Three modules divide it:
+`sd/predictions.py` is the record (the event's `data` checked into one shape, `sync` from the bus
+into `model/predictions.json`, and `Predictions`, the Python API), `sd/verdict.py` the rules
+(pure: a comparison, levels and runs in, statuses and a verdict out), and `sd/judge.py` when
+and from what (which era, which model, the measured levels, the simulated run, the false-change
+rate) and the publishing.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant M as The machine
+  participant B as Bus
+  participant C as Host collector
+  participant D as Host discovery
+  participant MS as ModelStore
+  M->>B: orchestra.prediction.made (change id X, expect, horizon_s)
+  C->>MS: predictions.json gets it, waiting
+  M->>B: system.changed or config.changed with id X
+  C->>MS: eras.json gets e1, cause X
+  Note over D: each discovery after e1.start plus the horizon
+  D->>MS: the era comparison, the previous era's model
+  D->>D: expected edits against the comparison, unpredicted changes
+  D->>D: the previous era's model run from the change with the edits, against the levels
+  D->>MS: the verdict, judged
+  D->>B: orchestra.prediction.judged (subject the prediction, correlationid X)
+```
+
+The prediction is an Orchestra type a machine publishes (as it publishes
+`orchestra.machine.started`), so Orchestra reads its `data`; no other machine's `data` is read
+(rule 3). It goes on the bus, not into a file Orchestra is handed, so that one path serves every
+machine (the Python API, `orchestra sd predict` and a machine posting to the events endpoint all
+publish the same event) and the log shows it came before the change.
+
+| Verdict | When |
+|---|---|
+| `side effect` | an expected edit came out different, or something changed that was not predicted (listed) |
+| `no effect` | otherwise, an expected edit did not appear |
+| `passed` | every expected edit appeared, every level expectation held, every stock moved as simulated; the null test (`expect: []`) when nothing changed |
+| `model wrong elsewhere` | every expected edit appeared, but a stock did not move as simulated |
+| `interrupted` | another era began before the horizon; `partial` is what the rules said until then |
+| `undecided` | an expected edit's flow still rested on the prior at twice the horizon |
+
+A factor r is met when a number moved (`|z| >= 2`, `sd/compare.py`'s threshold) and every number
+is within 2 standard errors of r times the old one. A flow whose form changed is judged by whether
+its old equation, run over the era's levels, still predicts the era's count of its events:
+discovery's choice of form churns on noise (on the synthetic pipeline an unchanged arrival flow
+came back `linear` in a stock), and that is no change. A stock moved as simulated when its mean
+level over the horizon's second half is within 2 standard errors of the run, counting the spread
+of single readings (an error of the mean, from readings minutes apart, called a third of the
+stocks that moved as simulated out of their band). Each verdict carries the threshold, the
+nominal false-change rate (4.55% a number) and, where the previous era is long enough, the share of
+flows flagged between its two halves, discovered apart.
+
 ### State layout
 
 ```mermaid
@@ -661,6 +718,7 @@ flowchart TD
   P6 --> P62["discovered.json: latest discovery"]
   P6 --> P63["eras.json: the eras and the bus offset read to"]
   P6 --> P64["announce.json: what the host last announced, its predictions"]
+  P6 --> P65["predictions.json: the machines' predictions, their verdicts, the bus offset read to"]
   KEY --> P7["sources/#lt;name#gt;.json: inferred definitions"]
   KEY --> P8["logs/"]
   P8 --> P81["orchestra-host.log"]
@@ -790,6 +848,8 @@ configuration, and every probe runs in a thread pool with a time limit.
 | `orchestra sd versions` | Lists the saved versions, with each one's era. | nothing |
 | `orchestra sd eras [--json]` | Lists the eras recorded, each with its versions, and what changed at the current era's boundary (`sd/compare.py`). | nothing |
 | `orchestra sd whatif [--flow --scale --add --set-stock --input --input-scale --param --horizon --stocks --bound --version --json]` | What the model says a change would do, against no change: a table (or the endpoint's JSON) with each stock's band, the limits met and what is not trusted (`sd/whatif.py`, `sd/whatif_report.py`). | nothing |
+| `orchestra sd predict --source M [--change --expect --null --horizon --simulate --json]` | Records what a change will do before it is made: publishes `orchestra.prediction.made` from `M` and prints the id the change must carry (`sd/predictions.py`). | the bus, `model/predictions.json` |
+| `orchestra sd predictions [--json]` | The predictions recorded and their verdicts, by era (`sd/predictions_report.py`). | nothing |
 | `orchestra sd fit [--version --step]` | Refits every counted flow over the whole history and saves a version. | `model/` |
 | `orchestra sd observability [--version --json]` | Which stocks what is measured determines, which need another instrument, and why (`sd/observability.py`). | nothing |
 | `orchestra sources check\|infer\|preview QUERY` | Probes the sources, runs an inference round, previews a query's fan-out. | `sources/` cache on infer |
@@ -831,8 +891,8 @@ divided.
 | # | Rule, in short | Where it is held |
 |---|---|---|
 | 1 | No tickets, tasks or AI in the core | The core modules handle only envelopes, series, processes and models. `collectors.py` counts events by `type` and `source` and nothing else. Agents' harnesses live in `~/orchestra-agents`. |
-| 2 | Machines are outside, known by their events | `web/machines.py` builds machines, and their liveness, from envelopes only; a series' `machine` label never makes a machine, an instance, or a machine active, and the Machines page reads no metrics. Of `data`, it reads only `orchestra.machine.started` announcements, and ignores the host's old ones for instruments. Plugin declarations fill in only unseen machines (`web/app.py:declare`). `web/machine_logs.py` reads a log only inside the repository or the state directory. `launcher.py` knows processes, not machines. Counted machines come only from `sources/traffic.py`. That a plugin's infrastructure process (scheduler, host, runtime, relay) is no machine is held by each plugin's conformance test (orchestra-tasking's `test_handoffs_e2e.py`, orchestra-agents' `test_host_is_no_machine.py`), not by the core, which cannot tell a provider from a machine. |
-| 3 | Every event carries the CloudEvents envelope | `events.envelope` is the only place events are built. `Events.publish` always uses it, and the events endpoint publishes only through it, passing `data` on unread. `event_time` and `event_source` read older flat events too. Counted traffic is read as series and never turned into events. |
+| 2 | Machines are outside, known by their events | `web/machines.py` builds machines, and their liveness, from envelopes only; a series' `machine` label never makes a machine, an instance, or a machine active, and the Machines page reads no metrics. Of `data`, it reads only `orchestra.machine.started` announcements, and ignores the host's old ones for instruments; `sd/predictions.py` reads only `orchestra.prediction.made`. Plugin declarations fill in only unseen machines (`web/app.py:declare`). `web/machine_logs.py` reads a log only inside the repository or the state directory. `launcher.py` knows processes, not machines. Counted machines come only from `sources/traffic.py`. That a plugin's infrastructure process (scheduler, host, runtime, relay) is no machine is held by each plugin's conformance test (orchestra-tasking's `test_handoffs_e2e.py`, orchestra-agents' `test_host_is_no_machine.py`), not by the core, which cannot tell a provider from a machine. |
+| 3 | Every event carries the CloudEvents envelope | `events.envelope` is the only place events are built. `Events.publish` always uses it, and the events endpoint publishes only through it, passing `data` on unread. The `data` Orchestra reads is of its own types only, whose shape it defines (`orchestra.machine.started`, `orchestra.prediction.made`). `event_time` and `event_source` read older flat events too. Counted traffic is read as series and never turned into events. |
 | 4 | One system, one model | One `ModelStore` per state directory, with one sequence of versions. Discovery runs over every series of the project at once. Package and group are labels on the Machines page, never separate views. |
 | 5 | State in `~/.orchestrator/<key>/`; bus and metrics in their stores | `config.Project` names every state path. Events go through `Events` over an `EventBus`, metrics through `MetricsStore`, the model through `ModelStore`, process records through `runtime`. `bus.stream_name` keeps Orchestra's own namespace. The `Source` protocol (`sources/__init__.py`) has only read methods. |
 | 6 | Every equation records its origin | `Equation.origin` is a required field (`sd/model.py`). Conservation writes `fitted`/`poisson-mle`, the net-flow layer `fitted`/`least-squares`, and SD Lab `discovered`/`sdlab:<strategy>`. `sd/attribute.py` associates machines with flows only as inferred hypotheses with evidence and confidence (`flow.evidence["machines"]`), never from a label or a declaration; `Machine.attributed` holds flow ids as hypotheses. |
@@ -849,7 +909,9 @@ table above says. They are listed here so nobody relies on the rule being absolu
 - `sd/fit.py:running_intervals`, used only by `orchestra sd fit`, reads `loop_started` and
   `loop_stopped` events, which come from the old task loop (rule 1).
 - Some CLI commands change stored data beyond rediscovery: `sd fit` saves a version,
-  `metrics backfill` replaces the event counters, and `events copy` writes to another bus. The
+  `metrics backfill` replaces the event counters, and `events copy` writes to another bus.
+  `sd predict` publishes `orchestra.prediction.made`: a statement about the model, which changes
+  no machine, but a write to the bus all the same; it is meant for machines and the Supervisor. The
   Core page's probe also appends an `orchestra.core.bus_probe` event (rule 9).
 
 ## Not built yet

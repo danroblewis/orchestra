@@ -221,6 +221,22 @@ the change did what was intended.
   The null test (§3.2) covers changes that should not change behaviour.
 - **Acceptance:** with dummy agents, a scripted change that really improves a rate is judged
   passed; one that changes nothing, no effect; one that moves another stock, side effect.
+- **Built (2026-10-27)** in Orchestra's core. A machine publishes `orchestra.prediction.made`
+  (an Orchestra type whose `data` Orchestra reads, as with `orchestra.machine.started`) naming the
+  id its change will carry, the expected edits (a flow's factor, unchanged, a part appearing or
+  disappearing, a stock's level; `[]` is the null test), the horizon and optionally its own
+  what-if run; `orchestra sd predict` and `sd.predictions.Predictions` publish it. The host
+  matches it to the era its change begins, judges it after the horizon against the boundary
+  comparison (a form change by whether the old law still predicts the count) and the stocks'
+  run from the previous era's model with the edits, and publishes `orchestra.prediction.judged`:
+  passed, no effect, side effect (naming what), model wrong elsewhere, interrupted or undecided,
+  with the threshold and the false-change rate measured between the previous era's halves. The
+  Dynamics page shows the verdicts under each era; `orchestra sd predictions` lists them (SPEC
+  §4.3, `sd/predictions.py`, `sd/verdict.py`, `sd/judge.py`). Accepted on a synthetic pipeline with
+  known rates (`tests/unit/test_predictions.py`: each outcome, the null test, an interrupted
+  era) and end to end on a real `orchestra run` with a scripted machine that predicts over the
+  events endpoint (`tests/e2e/test_predictions_e2e.py`, opt in). Not yet on the dummy agents
+  themselves: that test belongs in `orchestra-agents`, beside its eras e2e.
 
 ### G14. Test health as instruments
 - **What:** counts of tests by kind (unit, acceptance, e2e) and by outcome (passing, failing,
@@ -253,7 +269,7 @@ the change did what was intended.
 | G6–G7 | After G1 and G3 |
 | G8–G10 | To be planned |
 | G11–G12 | Built 2026-10-27 in Orchestra's core: eras with the previous era as the prior, the boundary comparison, the model's own events |
-| G13 | Next: builds on the era comparison (`discovery.era_comparison`) and `orchestra.era.started` |
+| G13 | Built 2026-10-27 in Orchestra's core: predictions recorded on the bus, judged per era by lifted-models §3.1, `orchestra.prediction.judged`; the dummy-agent e2e is still to be written in `orchestra-agents` |
 | G14 | After G6 lands in the task system |
 | G15 | After G3, G11 and G13 |
 

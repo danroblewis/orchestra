@@ -20,7 +20,7 @@ from ..events import Events
 from .background import Refresher
 from .core import CoreProbe
 from .core_explore import Explorer
-from .dynamics import era_eras, model_view
+from .dynamics import era_eras, model_view, predictions_view
 from .traffic import merge as merge_counted
 
 STATIC = Path(__file__).parent / "static"
@@ -150,6 +150,13 @@ def create_app(project: Project) -> FastAPI:
     @app.get("/api/dynamics/model")
     def dynamics_model(version: int | None = None, era: str | None = None) -> dict:
         return model_view(project, version, bg.levels, bg.levels_error, era=era)
+
+    @app.get("/api/dynamics/predictions")
+    def dynamics_predictions(era: str | None = None) -> dict:
+        """The predictions machines made of their changes and their verdicts (sd/predictions.py,
+        sd/judge.py), each with the era its change began; ``era`` keeps one era's ("none": those
+        whose change has not begun one)."""
+        return predictions_view(project, era)
 
     rediscovery: dict = {"running": False}
 

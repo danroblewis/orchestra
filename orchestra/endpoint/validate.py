@@ -7,8 +7,9 @@ which are checked and then left to ``orchestra.events.envelope`` to write. Anyth
 refused by name, so a misspelt field is not silently lost.
 
 Orchestra's own types (``orchestra.*``) are the host's to publish, except the announcements a
-machine makes of itself: ``orchestra.machine.started`` and the older
-``orchestra.machine.subscribed``. The source ``orchestra-host`` is the host's own. ``data`` is
+machine makes of itself (``orchestra.machine.started`` and the older
+``orchestra.machine.subscribed``) and the predictions a machine makes of its changes
+(``orchestra.prediction.made``, ``sd.predictions``). The source ``orchestra-host`` is the host's own. ``data`` is
 never read (AGENTS.md rule 3): only its size counts, through the body's."""
 
 from __future__ import annotations
@@ -27,6 +28,8 @@ MAX_TEXT = 1024                 # subject, correlationid, causationid
 MAX_ID = 256
 
 ANNOUNCEMENTS = ("orchestra.machine.started", "orchestra.machine.subscribed")
+STATEMENTS = ("orchestra.prediction.made",)          # what a machine says of its own changes (sd.predictions)
+MACHINES_MAY = (*ANNOUNCEMENTS, *STATEMENTS)
 OPTIONAL_TEXT = ("subject", "correlationid", "causationid")
 ACCEPTED = {"type", "source", "data", "time", "id", "specversion", "datacontenttype", *OPTIONAL_TEXT}
 
@@ -95,8 +98,8 @@ def check(obj: dict) -> dict[str, Any]:
     type_ = _text(obj, "type", MAX_TYPE, TYPE, "must start with a letter or digit and use letters, digits, '.', '_', ':' and '-'")
     if type_ is None:
         raise Invalid("type is required: what happened, such as invoice.sent")
-    if type_.startswith("orchestra.") and type_ not in ANNOUNCEMENTS:
-        raise Invalid(f"{type_} is Orchestra's own type; a machine may send only {' and '.join(ANNOUNCEMENTS)} "
+    if type_.startswith("orchestra.") and type_ not in MACHINES_MAY:
+        raise Invalid(f"{type_} is Orchestra's own type; a machine may send only {', '.join(MACHINES_MAY)} "
                       "of those", 403)
     source = _text(obj, "source", MAX_SOURCE, SOURCE, "must be <machine> or <machine>/<instance>, each of letters, "
                                                       "digits, '.', '_', ':', '@' and '-'")

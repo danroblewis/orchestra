@@ -77,6 +77,11 @@ a project declares (§5.2) are not machines, and nothing is announced for them; 
 host made for them before 2026-10-27 (`data.collector`) are ignored by the Machines page. Running machines on
 a clock is not built (`docs/roadmap/decisions.md`, D7).
 
+**Predictions.** A machine about to change the system may say first what the change will do,
+`orchestra.prediction.made` (§4.3, "Predictions"). It is the other Orchestra type a machine
+publishes from its own `source`, and Orchestra reads its `data`, which Orchestra defines. No other
+machine's `data` is read (AGENTS.md rule 3).
+
 Every event carries the **CloudEvents 1.0** envelope (`orchestra.events.envelope`):
 
 | Field | What it is |
@@ -88,7 +93,7 @@ Every event carries the **CloudEvents 1.0** envelope (`orchestra.events.envelope
 | `time` | RFC 3339, milliseconds |
 | `subject` | Optional: what the event is about |
 | `correlationid`, `causationid` | Optional extensions: the request it belongs to, the event that caused it |
-| `data` | The payload. It belongs to the machines that use it; Orchestra never reads it |
+| `data` | The payload. It belongs to the machines that use it; Orchestra never reads it, except in its own types (`orchestra.*`), whose `data` Orchestra defines |
 
 An event brought in from another system (a sync from its own log) keeps the `time` it happened
 there and an `id` stable across re-imports (`envelope(time=, id=)`), so a sync can tell what the
@@ -164,7 +169,7 @@ event through `orchestra.events.Events.publish`, which makes the envelope (AGENT
 5): it never reads `data`, and never touches a backend. It refuses, with a reason: an unknown
 field; a missing or malformed `type` or `source` (`<machine>` or `<machine>/<instance>`); a type
 starting `orchestra.` other than a machine's own announcements, `orchestra.machine.started` and
-`orchestra.machine.subscribed` (403); the source `orchestra-host` (403); text fields over their
+`orchestra.machine.subscribed`, and its predictions, `orchestra.prediction.made` (403); the source `orchestra-host` (403); text fields over their
 limits (type and source 256 characters, subject and the extensions 1024, id 256); a body over
 1 MB (413). The answer is `201 {"ok": true, "id", "duplicate": false, "event"}`. **Idempotency:**
 no backend refuses a repeated id, so the endpoint keeps the ids of the bus's last 10,000 events
@@ -532,6 +537,71 @@ discoveries the host publishes, as `orchestra-host` (its own events, so it write
   listener tells a divergence after an announced change from an unexplained one (the
   unexplained-change test, docs/rationale/lifted-models.md §3.3). Needs `orchestra[sd]`.
 
+**Predictions: the intended-effect test** (`sd/predictions.py`, `sd/verdict.py`, `sd/judge.py`;
+goal G13; docs/rationale/lifted-models.md §3.1 and §3.2). Before a machine changes the system it
+says what the change will do, as edits of the model, and once the change has run for the horizon
+Orchestra judges it against what the era's discovery found.
+
+- **Recording.** The machine publishes `orchestra.prediction.made` from its own `source`
+  (directly, over the events endpoint, with `orchestra sd predict`, or with
+  `sd.predictions.Predictions`, which publish it for it). `data`: `change`, the id of the event
+  that will make the change (chosen beforehand: the change is then published with that `id`);
+  `expect`, a list of edits, each `{"flow", "factor"}` (its rate × r; `"param"` for one number; 0
+  is the flow disappearing), `{"flow", "unchanged": true}`, `{"flow"|"stock"|"loop", "appears"|
+  "disappears": true}`, `{"from", "to", "appears": true}` (a new flow between two stocks, `null`
+  for outside), `{"stock", "below"|"above"}` (its mean level over the horizon's second half);
+  `[]` is the **null test**, the change should change nothing; `horizon_s` (or `horizon`, a
+  duration); optionally `trajectories`, the predictor's own what-if run of the stocks
+  (`{"t": [seconds after the change], "stocks": {id: {central, lo, hi}}}`). The prediction is an
+  Orchestra type rather than a file Orchestra is handed so that one path serves every machine and
+  the event log itself shows it came before the change. The host records each once, by its id,
+  in `model/predictions.json` as it follows the bus (`waiting`; `invalid` with the reason when
+  its `data` does not parse, so the machine can be told). A prediction changes no machine: it is
+  a statement about the model (AGENTS.md rule 9).
+- **Matching.** A prediction belongs to the era whose `cause` is its `change`; it waits until
+  that change begins an era. One made after its change is judged, and marked `late`.
+- **When.** After a discovery of the era made at least `horizon_s` after it began. While an
+  expected edit rests on the prior (the era has no evidence of its own on that flow yet) it waits
+  on, to twice the horizon, then is `undecided`. When another era begins before the horizon it is
+  judged at once **`interrupted`**, from the era's last saved model and the levels until the next
+  change, and `partial` says what the rules said from that.
+- **Each expected edit** against the boundary comparison: a factor r is **met** when a number of
+  the flow moved (`|z| ≥ 2`, the comparison's threshold) and every number is within 2 standard
+  errors of r times its value before; **absent** when none moved; **different** when it moved
+  elsewhere, or the flow appeared or disappeared instead. Discovery's choice of form churns on
+  noise, so a flow whose **form changed** is judged by its law: the previous era's equation, run
+  over the era's measured levels, predicts the era's count of its events, and a form change whose
+  old law still predicts the count (Poisson, widened by the fit's dispersion and the old numbers'
+  error, within 2 standard errors) is no change. Appearing and disappearing parts are read from
+  the comparison (a flow still carried, not found in the era since it began, counts as gone).
+- **Unpredicted changes**: every other flow that changed, changed form (and whose old law fails)
+  or appeared or disappeared, and every stock or loop that appeared or disappeared, except the
+  stocks at the ends of a flow predicted to appear or disappear and the loops through them.
+- **The stocks** are run from their levels at the change over the horizon: with the
+  prediction's own trajectories when given, else the previous era's model with the predicted
+  edits (`sd/whatif.py`; needs `orchestra[sd]`). A stock moved as simulated when its mean level
+  over the horizon's second half is within 2 standard errors of the run, the error being the run's
+  band and the spread of single readings about it (readings minutes apart are far from
+  independent, and an error of their mean is too narrow: on synthetic queues it failed a third of
+  the stocks that had moved as simulated). Only a clear departure counts.
+- **The verdict**: **side effect** when an expected edit is different or anything changed that
+  was not predicted (they are listed, with their numbers); else **no effect** when an expected edit
+  is absent; else **passed** when every level expectation holds and every stock moved as
+  simulated, and **model wrong elsewhere** when one did not. The null test passes when nothing
+  changed.
+- **The false-change rate.** Each verdict carries the threshold (`z` 2) and the rate a normal
+  error crosses it (`nominal`, 4.55% a number), and, where the previous era is long enough (ten
+  discovery steps a half, within the window), the share of flows flagged when its two halves are
+  discovered apart and compared (`measured`): nothing was announced between them, so every flag
+  there is false; `expected` is that share times the flows compared here.
+- **Published**: `orchestra.prediction.judged`, by the host, `subject` and `causationid` the
+  prediction's id, `correlationid` the change's. `data`: `verdict`, `prediction`, `change`, `era`,
+  `era_start`, `horizon_s`, `until`, `judged_at`, `late`, `z`, `expectations` (each with its
+  `status` and numbers), `unpredicted`, `stocks` (`from`: prediction or simulated, the rows with
+  level, central, standard error, `z` and `out`; `reason` when not simulated), `compared`,
+  `false_change`, and when interrupted `interrupted_by` and `partial`. Numbers, ids and codes,
+  no prose.
+
 **Observability** (`sd/observability.py`, `sd/linearise.py`; `orchestra sd observability`,
 `/api/dynamics/observability`) says which stocks what is measured determines. The model is
 linearised at its recent operating point (the mean levels and inputs of the last hour; a hidden
@@ -691,6 +761,8 @@ and `sd verify`, the Sources page, command/OAuth2/SigV4 auth, SQL sources.
   the bus begins and announcing each (`orchestra.era.started`, §4.3);
 - rediscovers the model every `[discovery] every`, within the current era, and then publishes
   what is due about it (`orchestra.model.changed`, `.diverged`, `.returned`, §4.3);
+- records the predictions machines make of their changes as it follows the bus, and after each
+  discovery judges those due and publishes the verdicts (`orchestra.prediction.judged`, §4.3);
 - keeps running the processes the project and the plugins declare (§5.1);
 - serves the events endpoint (§3.1) while it launches;
 - runs the instruments the project and the plugins declare (§5.2).
@@ -823,6 +895,7 @@ keeps its own harness (`~/orchestra-agents/SPEC.md`).
     events.jsonl                 the event log, when [events] url = "file"
     metrics.jsonl                the metrics, when [metrics] url = "file"
     model/vNNNN.json             the model's versions
+    model/eras.json, announce.json, predictions.json   the eras recorded, what the host last announced, the predictions and their verdicts (§4.3)
     sources/<name>.json          each source's latest inference: its definitions, what was left out, its families (§4.4)
     logs/orchestra-host.log
     logs/machines/<name>.log     each launched process's output (§5.1)
@@ -943,6 +1016,8 @@ since, and `restore(change)` puts the file back. Orchestra commits nothing: comm
 | `orchestra sd discover [--strategy S] [--minutes N] [--step-s S]\|show\|fit\|versions` | The model: discover it from the metrics, show, refit, list versions |
 | `orchestra sd whatif --flow F --scale X [--horizon 2h] [--stocks A,B] [--json]` | What the model says a change would do (§4.3, "What if"); read only |
 | `orchestra sd eras [--json]` | The eras recorded, each with its versions, and what changed at the current era's boundary (§4.3); read only |
+| `orchestra sd predict --source M [--change ID] --expect EDIT… \| --null [--horizon 1h] [--simulate] [--json]` | Record what a change will do before it is made (§4.3, "Predictions"): `EDIT` is `FLOW x2`, `FLOW unchanged`, `flow\|stock\|loop ID appears\|disappears`, `flow A->B appears`, `STOCK below\|above X` or a JSON object; publishes `orchestra.prediction.made` from `M` and prints the id the change must carry |
+| `orchestra sd predictions [--json]` | The predictions recorded and their verdicts, by era; read only |
 | `orchestra sources check\|infer\|preview QUERY` | Other stores (§4.4): probe them, infer what to read, read a query's fan-out |
 
 ---
@@ -1002,7 +1077,9 @@ minutes, which allows for the store's scrape interval and the minute between rea
   and steps through saved versions. With eras recorded, a timeline of them picks the era shown (a
   past era's last version: `/api/dynamics/model?era=`), and under it what changed at the era's
   start (before → after, appeared, disappeared, carried from the prior); each flow says how much
-  of it is the prior's and how it changed. It says in plain words what the window and the step are and
+  of it is the prior's and how it changed. Under that, the predictions made of the change that
+  began the era shown (and, with the current era, those still waiting for their change), each
+  with its verdict and evidence (`/api/dynamics/predictions?era=`). It says in plain words what the window and the step are and
   what each decides, shows each series' resolution and read (held or linear) beside it in the
   stocks table and the list of what was left out, and a stock's drawer its resolution, its balance
   or, for a stock no counters balance, its fitted net flow.
@@ -1101,9 +1178,10 @@ orchestra/
              provenance (where each series in a model came from), linearise and observability
              (which stocks what is measured determines), eras, prior and compare (eras, the
              previous era's model as a prior, the boundary before → after), loops, announce and
-             diverge (the model's own events)
+             diverge (the model's own events), predictions, verdict, judge and predictions_report
+             (the intended-effect test: the record, its rules, when and from what, the CLI's text)
   sdlab/     SD Lab's discovery research: ~70 strategies (needs the sd extra)
   web/       app, core, core_explore, machines, instruments, traffic (counted traffic), dynamics, static/
 tests/
-  unit/  bus/  metrics/  sources/  acceptance/
+  unit/  bus/  metrics/  sources/  acceptance/  e2e/ (slow, opt in: ORCHESTRA_E2E=1)
 ```
