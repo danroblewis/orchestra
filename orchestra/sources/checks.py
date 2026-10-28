@@ -59,6 +59,20 @@ def pick(metric: str, sets: list[Labels], n: int) -> tuple[str, int]:
     return f'{metric}{{{best}=~"{esc(rx)}"}}', count
 
 
+def pick_live(metric: str, live: list[Labels], listed: list[Labels]) -> tuple[str, int]:
+    """A selector for exactly the series ``live`` names (those reporting through the window, when the
+    listing's picks did not: a family whose series churn, pods replaced every few minutes, lists
+    many times the series that report at once), by the values of their most varied label, and how
+    many of ``listed`` it selects."""
+    labels = {k for s in live for k in s}
+    if not labels:
+        return metric, len(listed)
+    best = max(sorted(labels), key=lambda k: len({s.get(k) for s in live}))
+    vals = sorted({s[best] for s in live if best in s})
+    rx = "|".join(re.escape(v) for v in vals)
+    return f'{metric}{{{best}=~"{esc(rx)}"}}', max(len(live), sum(1 for s in listed if s.get(best) in vals))
+
+
 def interval(series: list[Points]) -> float | None:
     """The reporting interval: the largest of the series' median gaps between samples, so a
     lookback sized from it finds every series of the family, the slowest included."""

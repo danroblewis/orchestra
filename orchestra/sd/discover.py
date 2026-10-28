@@ -110,6 +110,7 @@ from .netnull import measured as net_evidence
 from .parsimony import fewer_counters
 from .passing import passages
 from .pins import declared as declared_stocks
+from .properties import statistic
 from .resolution import LINEAR, intervals_with, real_points, steps_of
 from .restate import split_event_counters, split_foreign_counters, unify_same_flows
 from .series import (
@@ -710,9 +711,12 @@ def _spread(xs: list[float]) -> float:
     return math.sqrt(sum((x - m) ** 2 for x in xs) / max(1, len(xs)))
 
 
-def _twins(a: Series, b: Series, a_terms: list, b_terms: list, same_flow, a_exact: float = 0.0, b_exact: float = 0.0) -> bool:
+def _twins(a: Series, b: Series, a_terms: list, b_terms: list, same_flow, a_exact: float = 0.0, b_exact: float = 0.0,
+           unit: dict[str, str] | None = None) -> bool:
     if a.traffic and b.traffic and a.traffic[0] == b.traffic[0] == "backlog":
         return False            # two queues a source declared: never one stock measured twice, however alike (one consumer acks both at once)
+    if unit and unit.get(a.key) != unit.get(b.key):
+        return False            # bytes and messages are never one stock measured twice, however alike they move (sd.units)
     if _one_reading(a, b):
         return True
     if _parts_of_one(a, b):
@@ -801,8 +805,8 @@ def _same_balance(a: list, b: list, same_flow) -> bool:
     return len(a) == len(b) and all(any(sa == sb and (ca is cb or same_flow(ca, cb)) for cb, sb in b) for ca, sa in a)
 
 
-def twin_levels(found: list, left_out: dict[str, str], same_flow, declared: frozenset | set = frozenset()
-                ) -> tuple[list, dict[str, list[dict]]]:
+def twin_levels(found: list, left_out: dict[str, str], same_flow, declared: frozenset | set = frozenset(),
+                unit: dict[str, str] | None = None) -> tuple[list, dict[str, list[dict]]]:
     """One stock measured twice (a shelf counted by the shelf and by the board): two levels that
     read alike as levels (``levels_match``: the same scale, and apart by no more than their spread)
     or are the same series read twice (``_same_series``), and that change alike in at least
@@ -814,11 +818,11 @@ def twin_levels(found: list, left_out: dict[str, str], same_flow, declared: froz
     operator declared a stock (``declared``, sd.pins), then the machine's whose counters make the
     balance, then the better balance, then the one more labels say (a queue that reads the same as
     the total of all queues is that queue); the other is left out and recorded as its twin, in the
-    kept stock's evidence."""
+    kept stock's evidence. Two levels in different units (``unit``, by key) are never twins."""
     kept: list = []
     twins: dict[str, list[dict]] = defaultdict(list)
     for s, terms, r2, exact in found:
-        other = next((k for k in kept if _twins(s, k[0], terms, k[1], same_flow, exact, k[3])), None)
+        other = next((k for k in kept if _twins(s, k[0], terms, k[1], same_flow, exact, k[3], unit)), None)
         if other is None:
             kept.append((s, terms, r2, exact))
             continue
@@ -932,6 +936,11 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         return good and (exact >= FLAG_EXACT or len({v for _, v in s.points}) > 2)
     for s in series:
         if s.counter:
+            continue
+        if statistic(s.name, s.summary):
+            # a maximum over partitions jumps from one to another with no flow: never conserved (sd.properties)
+            left_out[s.key] = ("a statistic of what it measures (a maximum, a mean, a percentile, or one its source summarised "
+                               "across reporters): a summary, not a store, so never a stock")
             continue
         if why := too_short(s, since, end, awake):
             left_out[s.key] = why
@@ -1051,7 +1060,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         else:
             left_out[s.key] = f"only an accumulator of other stocks' flows (R² {r2b:.2f} with counters of its own)"
     declared_keys = {s.key for s, _, _, _ in pinned}
-    found, twins = twin_levels(pinned + kept, left_out, lambda a, b: same_flow(a, b, n), declared_keys)
+    found, twins = twin_levels(pinned + kept, left_out, lambda a, b: same_flow(a, b, n), declared_keys, unit)
     # a balance is identified only by evidence that holds out of sample and beats chance (sd.identify);
     # a count of reporters and its own turnover is a balance by construction, no evidence at all
     found, identified, constructed_, refused = accepted(found, counters, barred, masks, provenance, left_out,
@@ -1135,7 +1144,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     net_flows: list[Flow] = []
     for st, made, was_input, lv in net_flow_stocks(series, [s for s, _, _, _ in found], sid_of, inputs, input_refs, left_out, step,
                                                    unit_s, (since, end), lambda x: (unique_id(_slug(x), writer_of(x), ids), _title(x)),
-                                                   ref, writer_of, measure=net_evidence):
+                                                   ref, writer_of, measure=net_evidence, units=unit):
         stocks.append(st)
         net_flows += made
         sources.pop(f"input:{was_input}", None)
