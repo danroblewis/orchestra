@@ -887,9 +887,13 @@ restart = "always"                                  # always (default) | on-fail
 stop_grace = 10                                     # seconds from SIGTERM to SIGKILL (default 10)
 ```
 
-and a plugin in `Plugin.processes` (§10.1). A command's first word `python` or `python3` is the
-Python Orchestra runs in (`sys.executable`, `launcher.own_python`), whatever is first on the PATH,
-so Orchestra and the plugins are importable; a `[[collect]]` command follows the same rule, and
+and a plugin in `Plugin.processes` (§10.1). Inside commands Orchestra runs, `python` is
+Orchestra's Python (`sys.executable`), even inside `sh -c`, whatever is first on the PATH, so
+Orchestra and the plugins are importable: every process it starts gets its environment from
+`launcher.child_env`, whose PATH begins with a directory where `python` and `python3` are that
+Python (`launcher.python_dir`), and a first word `python` or `python3` is replaced by it
+(`launcher.own_python`). The project's own is `uv run python` or `.venv/bin/python`. A
+`[[collect]]` command follows the same rule, and
 either may be a string or a list of words. The host starts each in the repository root, in a
 process group of its own, with `ORCHESTRA_REPO` (the root) and `ORCHESTRA_MACHINE_LOG` (its log,
 `<state>/logs/machines/<name>.log`, which receives its output) set, and, while the events

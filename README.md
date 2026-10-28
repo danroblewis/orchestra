@@ -91,8 +91,9 @@ format (`disk_free_bytes 1.2e11`, one per line) is declared under `[[collect]]` 
 `instrument=<name>`, to the project's store; a program that already serves Prometheus metrics is
 read under `[[scrape]]` with its URL. Instruments are listed on the Instruments page, their series
 in the Core explorers, and discovery reads them. A program that should run all the time goes under
-`[[machines]]` and `orchestra run` keeps it running (a first word `python` or `python3` is the
-Python Orchestra runs in). Events go over HTTP: `orchestra
+`[[machines]]` and `orchestra run` keeps it running (inside commands Orchestra runs, `python` is
+Orchestra's Python, even inside `sh -c`; use `uv run python` or `.venv/bin/python` for your
+project's). Events go over HTTP: `orchestra
 run` serves `POST /events` and `GET /events` and hands each process it launches the address and
 a token (`ORCHESTRA_EVENTS_ENDPOINT`, `ORCHESTRA_EVENTS_TOKEN`), so `curl` is enough. Python
 programs may use the optional helpers instead (`orchestra.events.Events.publish`,
