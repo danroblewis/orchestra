@@ -160,7 +160,7 @@ def cmd_sd(args) -> int:
     print(f"{m.name} (version {args.version or models.current_version()})")
     print("\nstocks (latest level):")
     from .sources.catalogue import Catalogue
-    cat = Catalogue(project, store)
+    cat = Catalogue(project, store, infer=False)
     now = time.time()
     remote = cat.reader(now - 900, now, project.config.discovery_step)
     for s in m.stocks:

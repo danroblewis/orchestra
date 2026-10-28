@@ -3,39 +3,31 @@ Chronosphere), over the standard library.
 
 Reads only: ``query_range`` for evaluated queries (in chunks of fewer than ``max_points`` points
 per series, joined), an instant ``query`` of ``selector[range]`` for raw samples at their real
-times, ``series`` for the schema, ``metadata`` and ``status/buildinfo`` where the server keeps
-them. Every request carries the source's auth (``auth.py``) and its timeout; a failure raises
-``SourceError`` naming the server and what it said, never a credential. Queries go as POSTed
-forms, which every one of these servers accepts, so long selectors do not hit URL limits.
+times, ``label/__name__/values`` and ``series`` for the schema, ``metadata`` and
+``status/buildinfo`` where the server keeps them. Queries go as POSTed forms, which every one of
+these servers accepts, so long selectors do not hit URL limits. How each request is asked (auth,
+rate, budget, retries, a busy store's refusals) is ``transport.py``.
 
-A managed store is busy, rate-limited and size-limited, and says so:
+A read the store refuses for its size (``TooBig``: a per-query series limit) is narrowed and the
+parts joined: a ``series`` listing by matcher, then by metric name, then by halving the time
+range; a range query and a raw read by halving their time range. A part still refused at
+``MIN_SPAN`` is named in ``left_out`` (series) or raised (queries: the caller asks for less).
 
-- **429, 502, 503, 504** are waited out and retried: after the ``Retry-After`` the server gave (in
-  seconds or as a date), else 1, 2, 4 s, at most ``RETRIES`` times and never past the read's
-  deadline. A body that is not JSON (a load balancer's HTML page) is no Prometheus answer and is
-  named by its status, never parsed.
-- **422 or a "too many series" refusal** (a per-query limit) is not worked around by asking for
-  less of the answer; the read is narrowed instead and the parts joined: a ``series`` listing is
-  split by matcher, then by metric name (from ``label/__name__/values``), then by halving the time
-  range; a range query and a raw read by halving their time range. A part that is still refused at
-  ``MIN_SPAN`` is left out and named in ``left_out`` (series) or raised (queries: their selector
-  must be narrowed with label matchers).
-- A request that times out says so with the source's ``timeout``."""
+A **native histogram** (``histogram``/``histograms`` in an answer, Prometheus 2.40+) is read as
+its count, a counter; the names seen so are kept in ``native``, so inference reads them with
+``histogram_count`` rather than as a gauge."""
 
 from __future__ import annotations
 
-import email.utils
-import json
 import math
-import re
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 
 from . import Health, Labels, PastDeadline, Points, SourceError
-from .auth import Auth
+from .limits import RateLimit
 from .spec import SourceSpec
+from .transport import RETRIES, RETRY, SameOriginRedirects, TooBig, Transport, retry_after
+
+__all__ = ["RETRIES", "RETRY", "PastDeadline", "PrometheusSource", "SameOriginRedirects", "TooBig", "retry_after"]
 
 ENDPOINTS = {"query_range": ("/api/v1/query_range", {"query": "up", "start": "0", "end": "60", "step": "60"}),
              "query": ("/api/v1/query", {"query": "up"}),
@@ -43,34 +35,7 @@ ENDPOINTS = {"query_range": ("/api/v1/query_range", {"query": "up", "start": "0"
              "labels": ("/api/v1/labels", None),
              "metadata": ("/api/v1/metadata", None),
              "buildinfo": ("/api/v1/status/buildinfo", None)}
-
-
-RETRY = {429, 502, 503, 504}         # busy or rate-limited: wait and ask again
-RETRIES = 4
-BACKOFF = (1.0, 2.0, 4.0, 8.0)       # without a Retry-After
-MAX_WAIT = 30.0                      # the longest single wait a Retry-After is believed for
 MIN_SPAN = 600.0                     # the shortest time range a refused read is split down to
-TOO_BIG = re.compile(r"(?i)too many|exceed|limit of|maximum number|max(imum)?[ _]?series|unique (time)?series")
-
-
-class TooBig(SourceError):
-    """The store refused a read for its size (a per-query series limit): narrow it, do not retry it."""
-
-
-def retry_after(value: str | None, now: float | None = None) -> float | None:
-    """Seconds to wait from a ``Retry-After`` header: a number of seconds or an HTTP date."""
-    if not value:
-        return None
-    v = value.strip()
-    try:
-        return max(0.0, float(v))
-    except ValueError:
-        pass
-    try:
-        when = email.utils.parsedate_to_datetime(v).timestamp()
-    except (TypeError, ValueError, IndexError):
-        return None
-    return max(0.0, when - (time.time() if now is None else now))
 
 
 def _with_name(selector: str, name: str) -> str | None:
@@ -87,6 +52,8 @@ def _with_name(selector: str, name: str) -> str | None:
 def _points(values: list) -> Points:
     out = []
     for t, v in values:
+        if isinstance(v, dict):                 # a native histogram's sample: its count
+            v = v.get("count")
         try:
             x = float(v)
         except (TypeError, ValueError):
@@ -96,105 +63,20 @@ def _points(values: list) -> Points:
     return out
 
 
+def _samples(r: dict) -> list:
+    """A result's samples: floats, or a native histogram's (``histograms``)."""
+    return list(r.get("values") or []) + list(r.get("histograms") or [])
+
+
 def _dur(seconds: float) -> str:
     return f"{max(1, math.ceil(seconds))}s"
 
 
-def _origin(url: str) -> tuple:
-    u = urllib.parse.urlsplit(url)
-    return u.scheme.lower(), (u.hostname or "").lower(), u.port or {"http": 80, "https": 443}.get(u.scheme.lower())
-
-
-class SameOriginRedirects(urllib.request.HTTPRedirectHandler):
-    """Follows a redirect only to the same scheme, host and port. urllib's default copies every
-    header, the credentials included, to wherever a redirect points (another host, or https to
-    http); this refuses instead, so they never leave the server they were meant for."""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        target = urllib.parse.urljoin(req.full_url, newurl)
-        if _origin(target) != _origin(req.full_url):
-            s, h, p = _origin(target)
-            raise urllib.error.HTTPError(req.full_url, code, f"redirected to {s}://{h}:{p}, another server; not followed, "
-                                         "so the credentials are not sent there", headers, fp)
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-
-class PrometheusSource:
-    def __init__(self, spec: SourceSpec):
-        self.spec = spec
-        self.name = spec.name
-        self.auth = Auth(spec.auth, spec.insecure)
-        self.requests = 0
-        self.points = 0
-        self.retries = 0                 # requests asked again after a 429/5xx
-        self.narrowed = 0                # reads split because the store refused their size
+class PrometheusSource(Transport):
+    def __init__(self, spec: SourceSpec, limiter: RateLimit | None = None):
+        super().__init__(spec, limiter)
         self.left_out: list[str] = []    # parts of a series listing still refused at MIN_SPAN
-        self._sleep = time.sleep
-        self._opener: urllib.request.OpenerDirector | None = None
-
-    def _open(self, req: urllib.request.Request):
-        if self._opener is None:
-            self._opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=self.auth.ssl_context()),
-                                                       SameOriginRedirects())
-        return self._opener.open(req, timeout=self.spec.timeout)
-
-    def _call(self, path: str, form: dict | None = None, *, post: bool = True, until: float | None = None) -> dict | list:
-        url = self.spec.url + path
-        body = None
-        if form is not None and post:
-            body = urllib.parse.urlencode(form, doseq=True).encode()
-        elif form is not None:
-            url += "?" + urllib.parse.urlencode(form, doseq=True)
-        for attempt in range(RETRIES + 1):
-            headers = {"Accept": "application/json", **self.auth.headers()}
-            if body is not None:
-                headers["Content-Type"] = "application/x-www-form-urlencoded"
-            req = urllib.request.Request(url, data=body, headers=headers, method="POST" if body is not None else "GET")
-            self.requests += 1
-            try:
-                with self._open(req) as r:
-                    raw = r.read()
-                break
-            except urllib.error.HTTPError as e:
-                if e.code in RETRY and attempt < RETRIES:
-                    self._wait(e, attempt, path, until)
-                    continue
-                said = self._said(e)
-                if e.code == 422 or (400 <= e.code < 500 and e.code not in (401, 403, 404) and TOO_BIG.search(said)):
-                    raise TooBig(f"{self.spec.where()}{path}: {said}") from None
-                raise SourceError(f"{self.spec.where()}{path}: {said}") from None
-            except TimeoutError:
-                raise SourceError(f"{self.spec.where()}{path}: no answer within the source's timeout of "
-                                  f"{self.spec.timeout:g} s (set timeout on the [[sources]] entry, or narrow the read)") from None
-            except OSError as e:
-                reason = getattr(e, "reason", None)
-                if isinstance(reason, TimeoutError):
-                    raise SourceError(f"{self.spec.where()}{path}: no answer within the source's timeout of "
-                                      f"{self.spec.timeout:g} s (set timeout on the [[sources]] entry, or narrow the read)") from None
-                raise SourceError(f"{self.spec.where()}{path}: {reason or e}") from None
-            except ValueError:                  # the HTTP library refusing a header: its message would carry the value
-                raise SourceError(f"{self.spec.where()}{path}: invalid request header (a credential is malformed)") from None
-        try:
-            doc = json.loads(raw)
-        except ValueError as e:
-            raise SourceError(f"{self.spec.where()}{path}: the answer is not JSON ({e})") from None
-        if not isinstance(doc, dict) or doc.get("status") != "success":
-            raise SourceError(f"{self.spec.where()}{path}: {doc.get('error') if isinstance(doc, dict) else 'not a Prometheus answer'}")
-        return doc.get("data")
-
-    def _wait(self, e: urllib.error.HTTPError, attempt: int, path: str, until: float | None) -> None:
-        """Wait out a 429 or 5xx: the server's Retry-After (capped), else a doubling pause; never
-        past ``until``."""
-        told = retry_after(e.headers.get("Retry-After") if e.headers else None)
-        wait = min(MAX_WAIT, told if told is not None else BACKOFF[min(attempt, len(BACKOFF) - 1)])
-        try:
-            e.read()                            # the body (HTML from a load balancer, often) is not needed
-        except (OSError, AttributeError):
-            pass
-        if until is not None and time.monotonic() + wait > until:
-            raise PastDeadline(f"{self.spec.where()}{path}: HTTP {e.code}, and waiting {wait:g} s to ask again would pass the deadline")
-        self.retries += 1
-        self._sleep(wait)
+        self.native: set[str] = set()    # metric names answered as native histograms
 
     def _results(self, path: str, form: dict, until: float | None = None) -> list[dict]:
         """The ``result`` list of a query's answer; ``SourceError`` when the answer has another shape."""
@@ -202,27 +84,15 @@ class PrometheusSource:
         res = data.get("result") if isinstance(data, dict) else None
         if not isinstance(res, list) or not all(isinstance(r, dict) for r in res):
             raise SourceError(f"{self.spec.where()}{path}: not a Prometheus answer")
+        for r in res:
+            if r.get("histograms") and (r.get("metric") or {}).get("__name__"):
+                self.native.add(r["metric"]["__name__"])
         return res
 
-    @staticmethod
-    def _said(e: urllib.error.HTTPError) -> str:
-        if 300 <= e.code < 400:
-            return f"HTTP {e.code}: {e.msg}"
-        if e.code in (401, 403):
-            return f"HTTP {e.code}: the server refused the credentials (check the token or certificate)"
-        try:
-            doc = json.loads(e.read())
-            err = doc.get("error") if isinstance(doc, dict) else None
-        except (ValueError, AttributeError, OSError):
-            err = None                          # an HTML page from a proxy: named by its status only
-        return f"HTTP {e.code}" + (f": {err}" if err else "")
-
-    def _in_time(self, until: float | None) -> None:
-        if until is not None and time.monotonic() > until:
-            raise PastDeadline(f"{self.spec.where()}: past the deadline")
-
     def query_range(self, query: str, start: float, end: float, step: float,
-                    until: float | None = None) -> list[tuple[Labels, Points]]:
+                    until: float | None = None, *, names: bool = False, narrow: bool = True) -> list[tuple[Labels, Points]]:
+        """``narrow``: a read refused for its size is asked again over halves of its time range
+        (False: ``TooBig`` is raised, for a caller that asks for fewer series instead)."""
         span = (self.spec.max_points - 1) * step
         merged: dict[tuple, tuple[Labels, dict[float, float]]] = {}
         t = start
@@ -232,15 +102,15 @@ class PrometheusSource:
             try:
                 res = self._results("/api/v1/query_range", {"query": query, "start": f"{t:.3f}", "end": f"{hi:.3f}", "step": f"{step:g}"}, until)
             except TooBig:
-                if hi - t <= max(MIN_SPAN, step):
+                if not narrow or hi - t <= max(MIN_SPAN, step):
                     raise
                 span = max(MIN_SPAN, step, (hi - t) / 2)    # fewer series touched in a shorter range: ask for less, then go on
                 self.narrowed += 1
                 continue
             for r in res:
-                labels = {k: v for k, v in (r.get("metric") or {}).items() if k != "__name__"}
+                labels = {k: v for k, v in (r.get("metric") or {}).items() if names or k != "__name__"}
                 g = merged.setdefault(tuple(sorted(labels.items())), (labels, {}))
-                g[1].update(_points(r.get("values") or []))
+                g[1].update(_points(_samples(r)))
             t = hi + step
         out = [(labels, sorted(pts.items())) for labels, pts in merged.values()]
         self.points += sum(len(p) for _, p in out)
@@ -262,7 +132,7 @@ class PrometheusSource:
             return [(labels, sorted(pts.items())) for labels, pts in joined.values()]
         out = []
         for r in res:
-            pts = [(t, v) for t, v in _points(r.get("values") or []) if start <= t <= end]
+            pts = [(t, v) for t, v in _points(_samples(r)) if start <= t <= end]
             if pts:
                 out.append((dict(r.get("metric") or {}), pts))
         self.points += sum(len(p) for _, p in out)
@@ -285,12 +155,15 @@ class PrometheusSource:
             raise SourceError(f"{self.spec.where()}/api/v1/label/__name__/values: not a Prometheus answer")
         return [str(x) for x in data]
 
-    def series(self, match: list[str], start: float, end: float, limit: int = 0) -> list[Labels]:
+    def series(self, match: list[str], start: float, end: float, limit: int = 0, *, narrow: bool = True) -> list[Labels]:
+        """``narrow``: a listing refused for its size is split by matcher, name and time (False:
+        ``TooBig`` is raised, for a caller that splits it its own way)."""
         self.left_out = []
         try:
             return self._series(match, start, end, limit)[: limit or None]
         except TooBig:
-            pass
+            if not narrow:
+                raise
         self.narrowed += 1
         seen: dict[tuple, Labels] = {}
         for m in match:
