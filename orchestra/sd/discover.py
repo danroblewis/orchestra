@@ -375,12 +375,12 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
     total = sum(d for _, d in events)
     if total < MIN_EVENTS:                 # too few events to tell a form from noise: the rate alone
         paths, src = {}, None
-    at = {sid: [p.before(t) for t, _ in events] for sid, p in paths.items()}
+    at = {sid: _by_level(events, [p.before(t) for t, _ in events]) for sid, p in paths.items()}
+    flat = _by_level(events, [0.0] * len(events))
 
     def ll(c: float, k: float, sid: str | None) -> float:
-        xs = at[sid] if sid else [0.0] * len(events)
         out = 0.0
-        for (_, d), x in zip(events, xs):
+        for x, d in at[sid] if sid else flat:
             r = c + k * x
             if r <= 1e-12:
                 return -math.inf
@@ -434,6 +434,17 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
     return [best, *sorted((c for c in cands if c is not best), key=lambda c: ("rejected" in c, c["aic"]))]
 
 
+def _by_level(events: list[tuple[float, float]], xs: list[float]) -> list[tuple[float, float]]:
+    """The events' counts summed by the level each saw: Σ count × log(c + k × level) over events
+    is the same sum over levels, and a stock holds few levels (a count of pods, a queue's length)
+    while it sees many events, so the likelihood the fitters evaluate thousands of times costs a
+    pass over the levels, not the events."""
+    out: dict[float, float] = {}
+    for (_, d), x in zip(events, xs, strict=True):
+        out[x] = out.get(x, 0.0) + d
+    return list(out.items())
+
+
 def _follows(events: list[tuple[float, float]], p: Path, c0: float, span: float) -> str:
     """Why a level read by a flow's rate follows the flow rather than leading it, or nothing: the
     rate fitted on the level ``LEAD_S`` later explains the events better, by ``AIC_MARGIN``, than
@@ -441,11 +452,11 @@ def _follows(events: list[tuple[float, float]], p: Path, c0: float, span: float)
     was when the events came. A count of the last two minutes' orders, high after each rush began,
     fits the orders as a cause would, until it is read a minute later and fits them better."""
     def best(shift: float) -> float:
-        xs = [p.before(t + shift) for t, _ in events]
+        xs = _by_level(events, [p.before(t + shift) for t, _ in events])
 
         def nll(q):
             out = 0.0
-            for (_, d), x in zip(events, xs):
+            for x, d in xs:
                 r = q[0] + q[1] * x
                 if r <= 1e-12:
                     return 1e18
