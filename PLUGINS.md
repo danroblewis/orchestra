@@ -89,9 +89,9 @@ That is all the registration there is.
   without reinstalling, but a change to the entry point itself needs `uv sync` (or
   `pip install -e`) again.
 - **Same environment.** If Orchestra is installed as a tool, the plugin goes into that tool's
-  environment, for example `uv tool install /path/to/orchestra --with /path/to/plugin`. The
-  plugins on this machine each have their own `.venv` with Orchestra installed editable from
-  `../orchestra_2` (`[tool.uv.sources]`), and run `orchestra` from there.
+  environment, for example `uv tool install 'orchestra @ git+https://github.com/danroblewis/orchestra@main'
+  --with /path/to/plugin` (README, "Install"). Each plugin's repository has its own `.venv`, with
+  Orchestra from GitHub at the commit its `uv.lock` pins, and runs `orchestra` from there.
 
 `orchestra.plugins.load(project)` calls each entry point's function and keeps what it returns. It
 is called from two places, at different times:
@@ -959,7 +959,7 @@ name = "orchestra-heartbeat"
 version = "0.1.0"
 description = "A minimal Orchestra plugin: one machine that beats, answers pings, and is shown on its own page."
 requires-python = ">=3.12"
-dependencies = ["orchestra", "fastapi>=0.115"]
+dependencies = ["orchestra @ git+https://github.com/danroblewis/orchestra@main", "fastapi>=0.115"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "httpx>=0.27"]
@@ -968,8 +968,8 @@ dev = ["pytest>=8.0", "httpx>=0.27"]
 [project.entry-points."orchestra.plugins"]
 heartbeat = "heartbeat.plugin:plugin"
 
-[tool.uv.sources]
-orchestra = { path = "../orchestra_2", editable = true }
+[tool.hatch.metadata]
+allow-direct-references = true      # hatchling refuses a `name @ url` dependency without it
 
 [tool.hatch.build.targets.wheel]
 packages = ["heartbeat"]
@@ -978,8 +978,17 @@ packages = ["heartbeat"]
 testpaths = ["tests"]
 ```
 
-The trial run used an absolute `path` to the Orchestra checkout, because the plugin lived in a
-scratch directory. The three real plugins use `../orchestra_2`, as above. `httpx` is there for
+Orchestra is a direct reference to its GitHub repository (PEP 508), not a `[tool.uv.sources]`
+entry, for two reasons. pip reads it too, where it would ignore uv's sources and look for another
+`orchestra` on PyPI. And a uv workspace can still replace it with a local checkout, which it cannot
+do to a member's own git source. `uv lock` pins the commit; `uv lock --upgrade-package orchestra`
+takes the newest `main`. Use the same URL, `@main` included, in every plugin: pip refuses two
+different URLs for one package in one environment. A dependency on another plugin, whose repository is
+private, goes over SSH: `"orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking"`.
+
+To run the plugin against an Orchestra checkout with uncommitted changes, lay it over the
+environment for one command, `uv run --with-editable /path/to/orchestra python -m pytest`; each
+plugin's README ("Developing against a local Orchestra") has the details. `httpx` is there for
 FastAPI's `TestClient`.
 
 ### 9.3 The package
@@ -1561,8 +1570,9 @@ How it stands today:
 
 - Orchestra is `1.0.0a1`. The plugin interface has **no version number** of its own and no
   compatibility check. A plugin is a `Plugin` dataclass instance, and that is the contract.
-- All three plugins depend on an unpinned `orchestra`, resolved through `[tool.uv.sources]` to an
-  editable checkout at `../orchestra_2`. They run against whatever is checked out there.
+- The plugins depend on `orchestra @ git+https://github.com/danroblewis/orchestra@main`, and each
+  one's `uv.lock` pins the commit. They run against that commit until `uv lock --upgrade-package
+  orchestra` moves it, or against a local checkout laid over them (`uv run --with-editable`).
 - The interface changes in lockstep with its users. For example, `Declared` lost its
   `description` field in orchestra_2 `6d80b787`, and the agents dropped the argument the same day
   (orchestra-agents `ba7135c`). Kind per instance (`f6402f05`) changed what `m.kind` holds, and the
@@ -1645,11 +1655,11 @@ machine; both are gone. So:
 
 ### 12.5 An editable install imports the working tree
 
-- The plugins install Orchestra **editable** from `../orchestra_2`. Everything they run imports
-  that checkout's working tree as it is now: their tests, `orchestra run`, `orchestra web`, and
-  every process started with `sys.executable`. If someone switches that checkout to another branch
-  or leaves it half-edited, every plugin runs that code. A git worktree of Orchestra is not what
-  the plugins import, and neither is a clone elsewhere, unless the source path points there.
+- A plugin run with `uv run --with-editable /path/to/orchestra` (or with Orchestra installed
+  editable into its `.venv`) imports that checkout's working tree as it is now: its tests,
+  `orchestra run`, `orchestra web`, and every process started with `sys.executable`. If the
+  checkout is on another branch or half-edited, the plugin runs that code. Without it, the plugin
+  runs the commit its `uv.lock` pins.
 - Orchestra resolves a git worktree to its main repository (`find_repo_root` uses
   `--git-common-dir`). `orchestra run` inside a worktree runs the main checkout's project: its
   `orchestra.toml`, its project key and its state directory. Try plugins in a plain directory or a

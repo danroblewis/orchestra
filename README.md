@@ -30,9 +30,30 @@ there yet (`docs/roadmap/use-cases.md`, UC-3b, is the sample that will).
 
 ## Install
 
+Nothing needs cloning. Orchestra and the plugins you want go into one environment straight from
+GitHub; a plugin is loaded only if it is installed beside the `orchestra` command:
+
 ```bash
-uv tool install /path/to/orchestra          # or: uv tool install -e /path/to/orchestra
+uv tool install 'orchestra[sd] @ git+https://github.com/danroblewis/orchestra@main' \
+    --with 'orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking' \
+    --with 'orchestra-desk @ git+ssh://git@github.com/danroblewis/orchestra-desk'
+orchestra --help
 ```
+
+Name Orchestra exactly as the plugins do, `git+https://github.com/danroblewis/orchestra@main`:
+pip refuses two different URLs for one package. The plugins' repositories are private, so they come
+over SSH with your GitHub key; add `--with` for each one you want (`orchestra-bridges`,
+`orchestra-outbox`, `orchestra-agents`). To take newer commits, run the same command again with
+`--reinstall --refresh`. Into a virtual environment instead, with `uv pip` or `pip`:
+
+```bash
+uv venv .venv && source .venv/bin/activate
+uv pip install 'orchestra[sd] @ git+https://github.com/danroblewis/orchestra@main' \
+    'orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking'
+```
+
+Orchestra alone from a checkout: `uv tool install /path/to/orchestra` (or `-e` for an editable one).
+Each plugin's README says how to develop it against a local Orchestra checkout.
 
 For working on Orchestra itself: `uv sync --extra dev` and `uv run orchestra ...`. Server event
 buses need an extra: `--extra bus-redis`, `bus-rabbitmq`, `bus-kafka`, or `bus` for all three.
