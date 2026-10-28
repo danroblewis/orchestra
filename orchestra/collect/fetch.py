@@ -3,7 +3,7 @@
 A command runs in the repository root with ``ORCHESTRA_REPO`` (the root) and
 ``ORCHESTRA_MACHINE_LOG`` (its log) set, in a process group of its own, its standard error going
 to its log. It fails when it exits non-zero, outlasts its timeout (its group is then killed) or
-cannot be started. A URL fails on anything but a 200, or when the server is silent for longer
+cannot be started. Its environment is ``launcher.child_env``'s: ``python`` in it is Orchestra's. A URL fails on anything but a 200, or when the server is silent for longer
 than the timeout (it bounds each wait, not the whole transfer). Either fails when the text is
 larger than ``MAX_BYTES``."""
 
@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from ..launcher import child_env
 from .spec import Collector
 
 MAX_BYTES = 10_000_000
@@ -30,7 +31,7 @@ class Failed(Exception):
 
 def run_command(c: Collector, repo: Path, log: Path, stop: threading.Event | None = None) -> str:
     """The command's standard output; raises ``Failed`` saying why there is none."""
-    env = {**os.environ, "ORCHESTRA_REPO": str(repo), "ORCHESTRA_MACHINE_LOG": str(log)}
+    env = child_env({"ORCHESTRA_REPO": str(repo), "ORCHESTRA_MACHINE_LOG": str(log)})
     log.parent.mkdir(parents=True, exist_ok=True)
     try:
         with log.open("ab") as err:

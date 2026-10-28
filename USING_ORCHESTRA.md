@@ -1218,12 +1218,16 @@ environment is `orchestra run`'s, plus:
 | `ORCHESTRA_EVENTS_ENDPOINT`, `ORCHESTRA_EVENTS_TOKEN` | The events endpoint and its token ([§5.2](#52-publishing-and-reading-events)), unless `[events] listen = "off"`. |
 | `PYTHONUNBUFFERED` | `1`, so a Python program's output reaches its log at once. |
 
-**Which `python` runs it.** A command whose first word is `python` or `python3` runs with the
-Python Orchestra runs in (after `uv tool install`, the tool's own), whatever is first on the
-`PATH`, so Orchestra and its plugins are importable (`python -m tasking.machines.shell_worker`).
-Any other interpreter is named by its path (`.venv/bin/python`, `/usr/bin/python3`), or run with
-`uv run python ...` when the project's `pyproject.toml` lists what the program needs. `[[collect]]`
-commands follow the same rule.
+**Which `python` runs it.** Inside commands Orchestra runs, `python` is Orchestra's Python, even
+inside `sh -c`. Use `uv run python` or `.venv/bin/python` for your project's. Orchestra's Python
+is the one it runs in (after `uv tool install`, the tool's own), whatever is first on the `PATH`
+`orchestra run` was started with (Anaconda's, say), so Orchestra and its plugins are importable
+(`python -m tasking.machines.shell_worker`): each process it starts (`[[machines]]`, a plugin's
+processes, `[[collect]]` commands, a source's transform script) gets a `PATH` that begins with a
+directory whose `python` and `python3` are that Python, and a first word `python` or `python3` is
+replaced by it outright. `uv run python ...` still runs the project's environment (uv picks it from
+the project's `pyproject.toml`, not from the `PATH`), and `VIRTUAL_ENV` is dropped when it names
+Orchestra's own environment, so `uv run` does not warn about it.
 
 **What happens when it exits.**
 

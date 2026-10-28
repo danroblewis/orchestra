@@ -26,6 +26,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
+from ..launcher import child_env
 from .spec import KINDS, NAME, SourceSpec
 from .views import Definition
 
@@ -50,7 +51,7 @@ def run(path: Path, repo_root: Path, payload: dict, timeout: float) -> list[dict
     if cmd is None:
         raise TransformError(f"{path} is not executable")
     try:
-        p = subprocess.run(cmd, check=False, cwd=repo_root, input=json.dumps(payload), capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(cmd, check=False, cwd=repo_root, env=child_env(), input=json.dumps(payload), capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         raise TransformError(f"{path.name} took longer than {timeout:g} s") from None
     except OSError as e:

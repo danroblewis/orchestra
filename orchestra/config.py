@@ -133,10 +133,10 @@ every = "5m"             # how often the host rediscovers
 # [discovery.options]    # passed to the strategy as they are
 
 # The programs `orchestra run` keeps running (docs/machines.md in Orchestra's repository). A command
-# runs in the repository root, split like a shell would but not run by one. A first word `python`
-# or `python3` is the Python Orchestra runs in, whatever is first on the PATH, so Orchestra and its
-# plugins are importable; name any other interpreter by its path (`.venv/bin/python`) or use
-# `uv run python ...` when this project's pyproject.toml lists what the program needs. Try a
+# runs in the repository root, split like a shell would but not run by one. Inside commands
+# Orchestra runs (these and [[collect]]), `python` is Orchestra's Python, even inside `sh -c`, so
+# Orchestra and its plugins are importable. Use `uv run python` or `.venv/bin/python` for this
+# project's (uv run picks this project's environment). Try a
 # program once first (`python machines/telemetry.py --once`); one that exits 0 is started again
 # after a pause, so a one-reading sampler runs about once a minute.
 # [[machines]]
@@ -146,7 +146,8 @@ every = "5m"             # how often the host rediscovers
 
 # Instruments: measurements in the Prometheus text format (`disk_free_bytes 1.2e11`, one per line),
 # written to the metrics store with instrument = <name> (docs/machines.md). An instrument measures
-# and is not a machine. A script run on an interval:
+# and is not a machine. `python` in its command is Orchestra's, as for [[machines]]. A script run on
+# an interval:
 # [[collect]]
 # name = "disk"
 # command = "machines/disk.sh"   # executable, named with a slash; not run by a shell (or a list of words)
