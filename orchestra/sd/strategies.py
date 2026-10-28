@@ -60,6 +60,7 @@ from .model import Equation, Flow, Model, Stock
 from .rates import combine, numbers, reads, scale
 from .resolution import steps_of
 from .series import sample, series_key, sum_instances
+from .stocktrust import unmeasured
 
 CONSERVATION = "conservation"
 DEFAULT = "kalman_lna"
@@ -147,7 +148,7 @@ def handed(base: Model) -> list[Stock]:
     (in ``FLAG_EXACT`` of the steps), and those no counters balance at all (``sd.netflow``). Where
     counters balance a stock exactly nothing is left to explain, and a strategy that ignores the
     known changes invents flows there."""
-    return [s for s in base.stocks if s.series is not None and ("net_flow" in s.evidence or s.evidence.get("exact_steps", 0.0) < FLAG_EXACT)]
+    return [s for s in base.stocks if s.series is not None and ("net_flow" in s.evidence or (s.evidence.get("exact_steps") or 0.0) < FLAG_EXACT)]
 
 
 def read_by(base: Model, ids: list[str], inputs: dict[str, list[float]]) -> dict[str, list[float]]:
@@ -220,10 +221,11 @@ def _associated(matched: list[Flow]) -> dict:
 
 def discover_with(dump, *, start: float, end: float, step: float, strategy: str = CONSERVATION,
                   options: dict | None = None, time_unit: str = "minute", deadline: float | None = None,
-                  kinds: dict | None = None) -> Model:
+                  kinds: dict | None = None, provenance: dict | None = None) -> Model:
     """The model the metrics imply, found with ``strategy``; how in ``model.discovery``. ``kinds``
-    are the series' declared kinds (``sd.series.Declared``), by series key."""
-    base = discover(dump, start=start, end=end, step=step, time_unit=time_unit, kinds=kinds)
+    are the series' declared kinds (``sd.series.Declared``), by series key; ``provenance``, what
+    each series' source said of it (``sd.discover``)."""
+    base = discover(dump, start=start, end=end, step=step, time_unit=time_unit, kinds=kinds, provenance=provenance)
     base.discovery["strategy"] = CONSERVATION
     if strategy == CONSERVATION or not base.stocks:
         return base
@@ -290,7 +292,7 @@ def discover_with(dump, *, start: float, end: float, step: float, strategy: str 
         unexplained.update(r.get("unexplained") or {})
     f = UNITS[time_unit] / coarse                               # steps per time unit
     ref = lambda x: x if x in {st.id for st in base.stocks} else (f"input:{x}" if x in inputs else x)
-    exact = {s.id for s in base.stocks if s.evidence.get("exact_steps", 0.0) >= FLAG_EXACT}
+    exact = {s.id for s in base.stocks if (s.evidence.get("exact_steps") or 0.0) >= FLAG_EXACT}
 
     # merge SD Lab's flows with the counters
     by_ends: dict[tuple, list[Flow]] = {}
@@ -320,7 +322,8 @@ def discover_with(dump, *, start: float, end: float, step: float, strategy: str 
             continue
         for end_ in (src, dst):
             if end_ and end_ not in stock_ids and end_ not in hidden:
-                hidden[end_] = Stock(end_, end_.replace("_", " "), "items", None, {"hidden": True, "strategy": strategy, "note": HIDDEN})
+                hidden[end_] = Stock(end_, end_.replace("_", " "), "items", None, {"hidden": True, "strategy": strategy, "note": HIDDEN,
+                                                                                 "trust": unmeasured(HIDDEN)})
         if len(matched) == 1:
             fid, name, counter = matched[0].id, matched[0].name, matched[0].counter
         elif matched:
