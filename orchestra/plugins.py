@@ -31,7 +31,8 @@ The web app mounts what it returns:
   (``orchestra.launcher.Process``: a name, a command, a restart policy, and how long it may take
   to stop), such as a scheduler or
   the host of the programs it runs. Orchestra starts them as it starts the project's own
-  ``[[machines]]`` and knows nothing else of them;
+  ``[[machines]]`` and knows nothing else of them. One that reads its settings once, when it
+  starts, names them in ``config_keys`` (``["bridges.github"]``), and is restarted when they change;
 - its ``collectors``, optionally: the instruments ``orchestra run`` reads measurements from for
   it (instruments, not machines: their series are labelled ``instrument=<name>`` and nothing is
   announced for them) (``orchestra.collect.spec.Collector``: ``Collector.scrape(name, url, ...)`` or
@@ -42,7 +43,11 @@ The web app mounts what it returns:
   (the Supervisor) that configures the plugin for the owner: what each setting is for, when to
   choose each value, the pitfalls, how to check a setting took, and which choices are the
   human's. Orchestra serves it with its own (``orchestra.guides``, ``/api/guides``) and reads
-  nothing in it.
+  nothing in it;
+- its ``check``, optionally: ``(raw, repo_root) -> list[str]``, what it says against a merged
+  configuration (empty when nothing). ``project.config_edit`` runs every plugin's check on every
+  change, so a change any plugin refuses is refused, with the plugin's name. A check judges only
+  the plugin's own sections, and a section's absence is no problem (removing it must be allowed).
 
 A machine belongs to a package when its announcement says so (``package`` in
 ``orchestra.machine.started``) or the package declares it. The package's every-page script may
@@ -97,6 +102,7 @@ class Plugin:
     processes: list[Process] = field(default_factory=list)   # what `orchestra run` starts for it
     collectors: list[Collector] = field(default_factory=list)   # what `orchestra run` scrapes or runs for measurements
     guide: Path | None = None   # a markdown file in the package: how to configure the plugin, for an AI operator
+    check: Callable[[dict, Path | None], list[str]] | None = None   # (merged raw, repo root) -> problems with its sections
 
 
 @dataclass

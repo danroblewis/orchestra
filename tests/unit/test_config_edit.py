@@ -157,3 +157,54 @@ def test_text_helpers_keep_layout():
     assert "# the default store" in tomlkit.dumps(doc)
     with pytest.raises(ConfigError, match="not an array of tables"):
         tt.entries(tomlkit.parse('[gate]\nunit = "make test"\n'), ["gate", "unit"])
+
+
+def test_every_loaded_plugin_s_check_judges_a_change(project, monkeypatch):
+    """Plugin.check runs on every change: what it newly says refuses the change, with its name; a
+    plugin that does not load, or whose check fails, refuses nothing and is reported."""
+    from orchestra import config_edit, plugins
+    from orchestra.plugins import Loaded, Plugin
+
+    seen = []
+
+    def tools_check(raw, repo_root):
+        seen.append(repo_root)
+        s = raw.get("tools")
+        return [] if s is None or isinstance(s.get("every"), int) else ["[tools] every must be a number"]
+
+    def broken_check(raw, repo_root):
+        raise RuntimeError("oops")
+
+    loads = []
+
+    def load(project, found=None):
+        loads.append(1)
+        return Loaded([Plugin("tools", check=tools_check), Plugin("shaky", check=broken_check), Plugin("plain")],
+                      [{"plugin": "gone", "error": "ImportError: no", "trace": ""}])
+
+    monkeypatch.setattr(config_edit, "_LOADED", {})
+    monkeypatch.setattr(plugins, "load", load)
+    edit = project.config_edit
+    c = edit.set("tools.every", 3)
+    assert seen and seen[0] == project.repo_root
+    assert any("plugin gone did not load" in w for w in c.warnings)
+    assert any("plugin shaky's check failed" in w and "oops" in w for w in c.warnings)
+    with pytest.raises(ConfigError, match=r"tools: \[tools\] every must be a number"):
+        edit.set("tools.every", "soon")
+    assert project.config.raw["tools"]["every"] == 3
+    edit.unset("tools")                                            # removing its section: no objection
+    assert "tools" not in project.config.raw
+    assert len(loads) == 1                                         # loaded once, not per change
+
+
+def test_a_plugin_check_only_refuses_what_it_newly_says(project):
+    from orchestra.config_edit import ConfigEdit
+
+    def check(raw, repo_root):
+        return ["[gate] is old"] if "gate" in raw else []
+
+    edit = ConfigEdit(project, plugins=[("tasks", check)])
+    assert edit.set("tasks.workers", 5).changed                    # it already said so: not refused
+    edit.unset("gate")
+    with pytest.raises(ConfigError, match=r"tasks: \[gate\] is old"):
+        edit.set("gate.timeout", "1s")

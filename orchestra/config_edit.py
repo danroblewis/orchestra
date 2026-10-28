@@ -9,9 +9,12 @@ changes a setting, in the repository's ``orchestra.toml`` or in the private over
 - edits the target file's text through ``tomlkit``, so its comments and layout are kept and only
   what changed differs (``toml_text``);
 - validates the merged result, the repository's file with the overlay over it, as Orchestra reads
-  it (its settings, ``[[machines]]``, ``[[collect]]`` and ``[[scrape]]``) and as the caller's
-  ``check`` does (a plugin passes its own reader): a change that makes any of them say something
-  new against the configuration is refused with what they said;
+  it (its settings, ``[[machines]]``, ``[[collect]]`` and ``[[scrape]]``), as every loaded
+  plugin's ``Plugin.check`` does (each named in what it says), and as the caller's ``check`` does:
+  a change that makes any of them say something new against the configuration is refused with
+  what they said. A plugin that does not load, or whose check fails, refuses nothing: it is
+  reported in the ``Change``'s ``warnings``. The plugins are loaded once per process, the first
+  time a change is checked (``plugin_checks``);
 - writes the file whole (a reader never sees half of it), reloads ``project.config`` and returns a
   ``Change``: the file, its text before and after, one line saying what changed, and the keys of
   the merged configuration whose value changed (none when the overlay's value still wins).
@@ -51,6 +54,9 @@ if TYPE_CHECKING:
 
 TARGETS = (REPO, OVERLAY)
 Check = Callable[[dict], list[str]]      # the merged configuration -> what a reader says against it
+PluginCheck = Callable[[dict, "Path | None"], list[str]]   # Plugin.check: (merged raw, repo root) -> problems
+
+_LOADED: dict[tuple[str, str], tuple[list[tuple[str, PluginCheck]], list[str]] | None] = {}
 
 OVERLAY_HEADER = ("# The private overlay: merged over the repository's orchestra.toml, never committed\n"
                   "# (Orchestra's USING_ORCHESTRA.md §2).\n")
@@ -65,6 +71,7 @@ class Change:
     after: str                      # its text after
     keys: list[str] = field(default_factory=list)   # keys of the merged configuration whose value changed
     note: str = ""                  # e.g. the overlay's value still wins over a change to the repository
+    warnings: list[str] = field(default_factory=list)   # plugins whose check could not be run
 
     @property
     def changed(self) -> bool:
@@ -76,7 +83,44 @@ class Change:
     @classmethod
     def from_dict(cls, d: dict) -> Change:
         return cls(**{k: d[k] for k in ("target", "file", "what", "before", "after") if k in d},
-                   keys=list(d.get("keys") or []), note=d.get("note") or "")
+                   keys=list(d.get("keys") or []), note=d.get("note") or "", warnings=list(d.get("warnings") or []))
+
+
+def plugin_checks(project: Project) -> tuple[list[tuple[str, PluginCheck]], list[str]]:
+    """Each loaded plugin's ``check`` by its name, and what kept a plugin from being asked (one
+    that did not load). Loaded once per project per process: what is installed does not change
+    while it runs. A plugin that, while loading, changes the configuration is not asked about it."""
+    key = (project.key, str(project.repo_root))
+    if key in _LOADED:
+        return _LOADED[key] or ([], [])
+    _LOADED[key] = None                                    # while loading: no check, and no recursion
+    from .plugins import load
+    try:
+        loaded = load(project)
+        out = ([(p.name, p.check) for p in loaded.plugins if p.check is not None],
+               [f"the plugin {e['plugin']} did not load, so its check was not run: {e['error']}" for e in loaded.errors])
+    except Exception as e:  # noqa: BLE001 - a broken plugin must not stop a change
+        out = ([], [f"the plugins did not load, so their checks were not run: {type(e).__name__}: {e}"])
+    _LOADED[key] = out
+    return out
+
+
+def plugin_problems(raw: dict, plugins: list[tuple[str, PluginCheck]], repo_root: Path | None,
+                    warnings: list[str]) -> list[str]:
+    """What the plugins' checks say against ``raw``, each prefixed with its plugin's name. A check
+    that fails is added to ``warnings``, never to what it says."""
+    out: list[str] = []
+    for name, check in plugins:
+        try:
+            said = check(raw, repo_root)
+            if not isinstance(said, list | tuple) or not all(isinstance(x, str) for x in said):
+                raise TypeError(f"returned {type(said).__name__}, not a list of strings")
+        except Exception as e:  # noqa: BLE001 - a plugin's mistake must not block every change
+            if (w := f"the plugin {name}'s check failed, so it was not applied: {type(e).__name__}: {e}") not in warnings:
+                warnings.append(w)
+            continue
+        out += [f"{name}: {x}" for x in said]
+    return out
 
 
 def problems(raw: dict, check: Check | None = None) -> list[str]:
@@ -127,8 +171,12 @@ def _shown(value: Any) -> str:
 class ConfigEdit:
     """The configuration of ``project`` as it is changed (see the module's docstring)."""
 
-    def __init__(self, project: Project):
+    def __init__(self, project: Project, plugins: list[tuple[str, PluginCheck]] | None = None):
         self.project = project
+        self._plugins = plugins          # (name, check) of each plugin; None: the loaded plugins'
+
+    def _plugin_checks(self) -> tuple[list[tuple[str, PluginCheck]], list[str]]:
+        return (self._plugins, []) if self._plugins is not None else plugin_checks(self.project)
 
     def file(self, target: str) -> Path:
         if target not in TARGETS:
@@ -274,8 +322,12 @@ class ConfigEdit:
             new, new_layers = self._merged(*(after if t == target else texts[t] for t in TARGETS))
         except (tomllib.TOMLDecodeError, OverlayError) as e:
             raise ConfigError(f"the change was not made: the result would not read ({e})") from e
-        old = set(problems(merged, check))
-        said = [p for p in problems(new, check) if p not in old]
+        plugins, warnings = self._plugin_checks()
+        warnings = list(warnings)
+        root = self.project.repo_root
+        old = set(problems(merged, check)) | set(plugin_problems(merged, plugins, root, warnings))
+        said = [p for p in problems(new, check) + plugin_problems(new, plugins, root, warnings) if p not in old]
+        change.warnings = warnings
         if said:
             raise ConfigError("the change was not made, because " + "; ".join(said))
         was = {r["key"]: r for r in describe(merged, layers)}

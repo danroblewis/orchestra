@@ -34,10 +34,13 @@ the overlay is the safe default: nothing reaches the team.
 
 Change settings only through `project.config_edit` (`set`, `set_many`, `unset`, `add_entry`,
 `remove_entry`, each with `target="repo"` or `"overlay"`; `dry_run=True` to see the diff first).
-It keeps the file's comments and **refuses** a result that Orchestra's readers or the plugin's
-`check` object to (`orchestra.config_edit.problems`): `[events]`, `[metrics]`, `[web]` and
-`[discovery]` values, every `[[machines]]` entry, every `[[collect]]` and `[[scrape]]` entry. A
-refusal says why; fix the value, do not work around it.
+It keeps the file's comments and **refuses** a result that Orchestra's readers or any loaded
+plugin's check object to (`orchestra.config_edit.problems`, `Plugin.check`): `[events]`,
+`[metrics]`, `[web]` and `[discovery]` values, every `[[machines]]` entry, every `[[collect]]` and
+`[[scrape]]` entry, and each plugin's own sections. You pass no `check=` for a plugin: its check
+runs by itself, and its refusal starts with its name. A refusal says why; fix the value, do not
+work around it. A plugin whose check could not run is named in the change's `warnings`: then
+check its sections by hand, by its guide.
 
 What `config_edit` does not prove is that the thing works. After a change, look:
 

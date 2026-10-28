@@ -20,7 +20,10 @@ bus (``orchestra.process.gave_up``). ``orchestra.toml`` (and the private overlay
 machine added by a merged commit starts without restarting the host, one removed stops, and one
 whose command or restart changed is restarted (and a given-up one tried again); the plugins'
 processes are asked for again then too, so a plugin's section added or removed starts or stops
-them. Every process is
+them. A plugin's process that reads its settings once, when it starts, names them in
+``config_keys`` (dotted keys of the merged configuration, ``["bridges.github"]``): when the value
+under any of them changes, it is restarted the same way, and one given up on is tried again, so a
+fixed setting reaches it without restarting the host. Every process is
 in the runtime record under ``processes`` for the Core page. A plugin's processes are named
 ``<plugin>.<name>`` there and in their logs' names, so a project's ``[[machines]]`` never collide
 with them.
@@ -39,6 +42,7 @@ it publishes (AGENTS.md rules 1 and 2)."""
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shlex
@@ -135,6 +139,8 @@ class Process:
     restart: str = "always"
     owner: str = "project"         # "project", or the plugin that declared it
     stop_grace_s: float | None = None   # from SIGTERM to SIGKILL when stopping it; None: STOP_GRACE_S
+    config_keys: list[str] = field(default_factory=list)   # dotted keys of the configuration it reads when it
+                                                           # starts: a change under any of them restarts it
 
     def argv(self) -> list[str]:
         return own_python(shlex.split(self.command) if isinstance(self.command, str) else [str(a) for a in self.command])
@@ -154,10 +160,26 @@ def check(p: Process) -> str | None:
         return f"{p.name}: bad command: {e}"
     if p.restart not in RESTARTS:
         return f"{p.name}: restart must be one of {', '.join(RESTARTS)}, not {p.restart!r}"
+    if not isinstance(p.config_keys, list | tuple) or not all(isinstance(k, str) and k for k in p.config_keys):
+        return f"{p.name}: config_keys must be a list of dotted keys, not {p.config_keys!r}"
     if p.stop_grace_s is not None and (isinstance(p.stop_grace_s, bool) or not isinstance(p.stop_grace_s, int | float)
                                        or p.stop_grace_s < 0):
         return f"{p.name}: stop_grace must be a number of seconds, not {p.stop_grace_s!r}"
     return None
+
+
+def fingerprint(raw: dict, keys: list[str]) -> str:
+    """A digest of the values under ``keys`` (dotted) in the configuration ``raw``; a key that is
+    not there counts as absent, so its appearing or going changes the digest too."""
+    if not keys:
+        return ""
+    picked = {}
+    for k in keys:
+        v: object = raw
+        for part in str(k).split("."):
+            v = v.get(part) if isinstance(v, dict) else None
+        picked[str(k)] = v
+    return hashlib.sha256(json.dumps(picked, sort_keys=True, default=str).encode()).hexdigest()
 
 
 def from_toml(raw: dict) -> list[Process]:
@@ -186,6 +208,7 @@ class _Run:
     state: str = "waiting"         # running | waiting | exited | gave_up
     start_at: float = 0.0          # while waiting: when to start
     code: int | None = None        # the last exit code (negative: killed by that signal)
+    fingerprint: str = ""          # of the settings under its spec's config_keys when it was declared
 
 
 @dataclass
@@ -204,6 +227,7 @@ class Launcher:
     _mtime: tuple | None = None                   # the configuration's stamp last read
     _project: list[Process] = field(default_factory=list)
     _plugins: list[Process] = field(default_factory=list)
+    _raw: dict = field(default_factory=dict)      # the merged configuration last read well
     _said: set[str] = field(default_factory=set)
     _recorded: dict | None = None
 
@@ -226,7 +250,8 @@ class Launcher:
         if stamp != self._mtime:
             self._mtime = stamp
             try:
-                self._project = from_toml(self.project.read_config().raw)
+                self._raw = self.project.read_config().raw
+                self._project = from_toml(self._raw)
             except (OSError, ValueError, TypeError, ConfigError) as e:
                 self._say_once(f"cannot read the configuration: {type(e).__name__}: {e}; keeping what runs")
             if callable(self.plugin_processes):
@@ -345,7 +370,9 @@ class Launcher:
         """Start what is declared and not running, restart what exited, stop what is no longer
         declared or was declared differently, and record it all."""
         wanted = self.wanted()
-        gone = [n for n, r in self.runs.items() if n not in wanted or not r.spec.same(wanted[n])]
+        prints = {n: fingerprint(self._raw, list(p.config_keys)) for n, p in wanted.items()}
+        gone = [n for n, r in self.runs.items()
+                if n not in wanted or not r.spec.same(wanted[n]) or r.fingerprint != prints[n]]
         if gone:
             self._stop([self.runs[n] for n in gone], "no longer declared as it was")
             for n in gone:
@@ -354,7 +381,8 @@ class Launcher:
         for name, spec in wanted.items():
             run = self.runs.get(name)
             if run is None:
-                run = self.runs[name] = _Run(spec, self.project.logs_dir / "machines" / f"{name}.log")
+                run = self.runs[name] = _Run(spec, self.project.logs_dir / "machines" / f"{name}.log",
+                                             fingerprint=prints[name])
             run.spec = spec                                       # the owner may have changed
             if run.state == "running" and run.popen is not None and (code := run.popen.poll()) is not None:
                 self._exited(run, code)
