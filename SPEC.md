@@ -629,6 +629,19 @@ discoveries the host publishes, as `orchestra-host` (its own events, so it write
   level, band and since; `data.diverged` every stock diverged now; `era` and `era_start`, so a
   listener tells a divergence after an announced change from an unexplained one (the
   unexplained-change test, docs/rationale/lifted-models.md §3.3). Needs `orchestra[sd]`.
+- `orchestra.model.stalled` and `orchestra.model.resumed` (`sd/stall.py`): work that stopped
+  moving, in the model's terms alone. From the same history (series read, no simulator), over the
+  last `[discovery] stall_after` (default 15 min): a **stock** is stalled when its level rose
+  while every outflow drained less than `[discovery] stall_share` (default 0.1) of its usual rate
+  (its mean over the history before that window) and at least one outflow usually drains it; a
+  **flow** is stalled when its usual rate is above zero and every rate within the window is zero.
+  One event per item, `subject` `stock:<id>` or `flow:<id>` (a listener wakes on one item:
+  `orchestra.model.stalled:stock:queue`), `data` `kind`, `id`, `name`, `since`, `window_s`, `per`
+  (the time unit of the rates), a stock's `level`, `rose_by` and `outflows` (`{flow, rate,
+  usual}`), a flow's `rate` and `usual`, `era`, `era_start`. Once per stall; `resumed` (the
+  stall's fields with `stalled_since`) when the item is judged again and moves. An item the
+  history does not cover on both sides of the window is not judged. What a stall means for the
+  work is the listener's to say (rule 1).
 
 **Predictions: the intended-effect test** (`sd/predictions.py`, `sd/verdict.py`, `sd/judge.py`;
 goal G13; docs/rationale/lifted-models.md §3.1 and §3.2). Before a machine changes the system it
@@ -986,7 +999,15 @@ model (AGENTS.md rule 9 keeps humans to reading it).
 - runs the event collector: replays the bus once at start, then follows it, recording the eras
   the bus begins and announcing each (`orchestra.era.started`, §4.3);
 - rediscovers the model every `[discovery] every`, within the current era, and then publishes
-  what is due about it (`orchestra.model.changed`, `.diverged`, `.returned`, §4.3);
+  what is due about it (`orchestra.model.changed`, `.diverged`, `.returned`, `.stalled`,
+  `.resumed`, §4.3);
+- says when a machine falls silent on the bus (`orchestra/quiet.py`): an instance with a cadence of
+  its own (at least 3 beats, the Machines page's rule, `orchestra/cadence.py`) silent longer than
+  it stays active by that cadence is announced once, `orchestra.machine.quiet` (`subject` the
+  machine; `data` `machine`, `instance`, `last_seen`, `usual_gap`, `quiet_for`, `mode`), until it is
+  heard again. Observed only: the one thing read from its announcement is its mode, and an
+  instance engaged ad hoc is never called quiet. Orchestra's host, and instances already quiet
+  when the host starts, are not announced;
 - records the predictions machines make of their changes as it follows the bus, and after each
   discovery judges those due and publishes the verdicts (`orchestra.prediction.judged`, §4.3);
 - keeps running the processes the project and the plugins declare (§5.1);
@@ -1164,6 +1185,8 @@ prior_for = "60m"       # how long a new era carries what it has not found of it
 announce_hold = 3       # discoveries a structure change holds before orchestra.model.changed
 announce_gap = "30m"    # the least time between two orchestra.model.changed
 diverge_after = "15m"   # how long a stock is out of its band before orchestra.model.diverged
+stall_after = "15m"     # how long a stock rises with its outflows stopped (or a flow stays at zero) before orchestra.model.stalled
+stall_share = 0.1       # an outflow below this share of its usual rate counts as stopped
 [[machines]]            # the commands `orchestra run` keeps running (§5.1)
 name = "telemetry"
 command = "python machines/telemetry.py"
@@ -1421,6 +1444,23 @@ A plugin may also ship a guide (`guide`: a markdown file in its package) written
 operator that configures it for the owner; `orchestra.guides.collect` and `/api/guides` return
 Orchestra's own guide (`orchestra/guide.md`: its settings, instruments, machines, the overlay)
 first, then each plugin's, and Orchestra reads nothing in them (PLUGINS.md §4.7.1).
+**A project's own plugins and overrides** (`orchestra/plugins.py`, `orchestra/overrides.py`;
+docs/proposals/agent-first-machines.md §10.1). Orchestra's environments are not editable installs,
+so a project patches in place. `.orchestra/plugins/<name>/__init__.py` (or `<name>.py`) is a plugin
+with the same contract, `plugin(project)`, loaded after the installed ones by file location as
+`orchestra_local.<name>`, never through `sys.path` (AGENTS.md rule 10). `.orchestra/overrides/<name>.py`
+replaces one attribute of an installed package: its header names `TARGET` (`module:attribute`),
+`PACKAGE` (`dist==version`, the version it was written against), `KIND` (`wrap`: `override(original)`
+is called once and returns what takes the attribute's place; `replace`: `override` itself takes
+it) and `ISSUE` (where the fix is asked upstream). It is applied only while that exact version is
+installed (otherwise **stale**, not applied, so it never outlives the fix), wherever plugin code
+runs: on every `plugins.load` and before a plugin command (`commands.run`, which is how the launcher
+starts plugin processes). Applied once; a changed file is applied again from the kept original; a
+removed or stale one is taken out. Each is reported in `/api/plugins` (`local`: name, file, status
+applied | stale | failed | loaded, error; an override's target, package, installed version and
+issue) and listed on the Core page. The limit: a copy taken with `from x import y` before the
+override was applied keeps the original.
+
 A plugin that fails, one whose name an earlier plugin took, a page at a path Orchestra serves, or
 a script or stylesheet missing from its static directory is left out and reported, never fatal. A plugin is
 the package's, not Orchestra's: its routes are its own, and Orchestra knows nothing of what they

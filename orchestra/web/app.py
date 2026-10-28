@@ -470,8 +470,9 @@ def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
 
     @app.get("/api/plugins")
     def plugin_list() -> dict:
-        """The installed plugins' pages (for the navigation) and any that failed to load."""
-        return {"ok": True, "pages": pages, "scripts": scripts, "errors": errors}
+        """The installed plugins' pages (for the navigation), any that failed to load, and the
+        project's own plugins and overrides as they were loaded (``local``; the Core page lists them)."""
+        return {"ok": True, "pages": pages, "scripts": scripts, "errors": errors, "local": loaded.local}
 
     @app.get("/api/guides")
     def guides() -> dict:

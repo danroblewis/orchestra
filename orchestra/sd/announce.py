@@ -22,7 +22,18 @@ with its ``gap`` (the level less the central prediction, in half-widths of the b
 every stock diverged now; the ``era`` and when it began (``era_start``), so a listener can tell a
 divergence right after an announced change from an unexplained one. ``orchestra.model.returned``:
 stocks back inside their band, the same fields, with ``diverged_since``. Divergence needs
-``orchestra[sd]`` (the simulator); without it only structure changes are announced.
+``orchestra[sd]`` (the simulator); without it only structure changes and stalls are announced.
+
+``orchestra.model.stalled``: a stock or a flow that stopped moving (``sd.stall``): a stock whose
+level rose over the last ``[discovery] stall_after`` while every outflow drained less than
+``[discovery] stall_share`` of its usual rate, or a flow usually above zero measured at zero for
+that whole window. One event per item, its ``subject`` ``stock:<id>`` or ``flow:<id>``, so a
+listener can wake on one item (``orchestra.model.stalled:stock:queue``). ``data``: ``kind``
+(``stock`` or ``flow``), ``id``, ``name``, ``since``, ``window_s``, ``per`` (the model's time unit
+the rates are in); a stock's ``level``, ``rose_by`` and ``outflows`` (each ``{flow, rate,
+usual}``); a flow's ``rate`` and ``usual``; the ``era`` and ``era_start``. Announced once per
+stall; ``orchestra.model.resumed`` (the same fields as its stall, with ``stalled_since``) when the
+item moves again. Stalls read the series only, so they need no simulator.
 
 The state (the structure last announced, the change being held, the predictions, which stocks are
 out) is the model store's ``announce.json`` record."""
@@ -32,6 +43,7 @@ from __future__ import annotations
 from .compare import diff, ids
 from .diverge import judge, predict
 from .model import Model
+from .stall import step as stall_step
 from .store import ModelStore
 
 RECORD = "announce"
@@ -71,17 +83,25 @@ def divergence_step(state: dict, model: Model, history: dict, at: float, after_s
 
 
 def announce(store: ModelStore, publish, model: Model, at: float, history: dict | None, *, hold: int, gap_s: float,
-             after_s: float, every_s: float, era_start: float | None = None) -> list[str]:
-    """After a discovery: publish what is due (``publish(type, data)``), keep the state, and say
-    what was published. ``history`` None: divergence is not judged (no simulator)."""
+             after_s: float, every_s: float, era_start: float | None = None, stall_after: float = 900.0,
+             stall_share: float = 0.1, diverge: bool = True) -> list[str]:
+    """After a discovery: publish what is due (``publish(type, data)``; a stall's with
+    ``subject=``), keep the state, and say what was published. ``history`` None: neither divergence
+    nor stalls are judged; ``diverge`` False: stalls only (no simulator)."""
     if (model.discovery or {}).get("not_saved"):
         return []                               # a source was missing: its stocks are not gone
     said = []
     with store.locked(RECORD):
         state = store.read_record(RECORD) or {}
         state, changed = structure_step(state, model, at, hold, gap_s)
-        went = came = []
+        went = came = stopped = moving = []
         if history is not None:
+            try:
+                state, stopped, moving = stall_step(state, model, history, at, stall_after, stall_share)
+                state.pop("stall_error", None)
+            except Exception as e:  # noqa: BLE001 - a history it cannot read: the rest is still announced
+                state = {**state, "stall_error": f"{type(e).__name__}: {e}"}
+        if history is not None and diverge:
             try:
                 state, went, came = divergence_step(state, model, history, at, after_s, every_s)
                 state.pop("divergence_error", None)
@@ -95,5 +115,10 @@ def announce(store: ModelStore, publish, model: Model, at: float, history: dict 
     for kind, stocks in (("diverged", went), ("returned", came)):
         if stocks:
             publish(f"orchestra.model.{kind}", {"stocks": stocks, "diverged": now_diverged, "era": model.era, "era_start": era_start})
+            said.append(f"orchestra.model.{kind}")
+    for kind, items in (("stalled", stopped), ("resumed", moving)):
+        for item in items:
+            publish(f"orchestra.model.{kind}", {**item, "era": model.era, "era_start": era_start},
+                    subject=f"{item['kind']}:{item['id']}")
             said.append(f"orchestra.model.{kind}")
     return said
