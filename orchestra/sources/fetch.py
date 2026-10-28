@@ -3,16 +3,20 @@
 - A **level** is a query evaluated with ``query_range`` on discovery's grid, but never finer than
   the series' own resolution: the step is discovery's step times the smallest whole number that
   reaches the reporting interval, and the first point is at or before the window's start.
-- A **counter** read from raw samples (view ``increments``) keeps the real sample times: each
-  reporting series' increments are ``b − a``, or ``b`` after a drop (a reset), and its first
-  sample is a baseline, not events; the increments are summed by the definition's grouping into
-  a running total that starts at 0. A series that began inside the window (its first sample more
-  than two of its own sample intervals after the start, and no larger than twice its largest
-  increment: a counter that started at 0, such as a publisher's new channel) counts its first
-  value too.
+- An inferred **counter** (view ``increments``) is read server-side, ``sum by (G) (increase(x[S]))``
+  on a grid of S (``plan.read_form``), and accumulated into a running total that starts at 0.
+- A declared counter (``[[series]]`` with ``select``) is read from raw samples and keeps the real
+  sample times: each reporting series' increments are ``b − a``, or ``b`` after a drop (a reset),
+  and its first sample is a baseline, not events; the increments are summed by the definition's
+  grouping into a running total that starts at 0. A series that began inside the window (its
+  first sample more than two of its own sample intervals after the start, and no larger than
+  twice its largest increment: a counter that started at 0, such as a publisher's new channel)
+  counts its first value too.
 - A **turnover** (views ``starts`` and ``stops``) is read from the same raw samples a count is
   made from: the series that started and stopped reporting, so the count is a stock its two
-  counters balance exactly.
+  counters balance exactly. One raw read serves every turnover of one selector.
+- The **generated views** of a family are read together, once per aggregation at the finest
+  grouping, every family's in few requests (``plan.py``): ``read_many``.
 - A **count** (views ``count`` and ``distinct``) reads 0 for a group at the steps it has no
   reporters while another group of the same count has some (``zero_fill``).
 - A **rate** (a query of per-second rates) is integrated over each step into a running total
@@ -30,18 +34,15 @@ series' ``machine`` label, so discovery attributes its flow to the producer or c
 from __future__ import annotations
 
 import math
+from concurrent.futures import ThreadPoolExecutor
 from itertools import pairwise
 
-from . import Labels, Points, Source
+from . import Labels, PastDeadline, Points, Source, SourceError
+from .plan import grid_step, read_form, shared
 from .traffic import resolve
-from .views import Definition, count_window
+from .views import Definition, lookback
 
-
-def grid_step(step: float, resolution_s: float | None) -> float:
-    """Discovery's step, or the smallest multiple of it no finer than the series' resolution."""
-    if not resolution_s or resolution_s <= step:
-        return step
-    return step * math.ceil(resolution_s / step - 1e-9)
+__all__ = ["grid_step", "read", "read_many"]
 
 
 def began_inside(pts: Points, start: float | None) -> bool:
@@ -145,23 +146,46 @@ def integrate(pts: Points) -> Points:
     return out
 
 
-def read(source: Source, d: Definition, prefix: str, machine: str | None, start: float, end: float,
-         step: float, producers: dict[str, str] | None = None, until: float | None = None) -> list[tuple[str, Labels, Points, dict | None]]:
-    """Each result series: its name, labels, points, and what it counts when it is traffic.
-    ``until``: the source's deadline (``time.monotonic()``), past which no request is made."""
+def accumulate(rows: list[tuple[Labels, Points]], t0: float) -> list[tuple[Labels, Points]]:
+    """Each step's events (``increase`` over it) into a running total from 0 at ``t0``; the step at
+    ``t0`` itself is before the window and is not counted."""
+    out = []
+    for labels, pts in rows:
+        total, acc = 0.0, [(t0, 0.0)]
+        for t, v in sorted(pts):
+            if t > t0:
+                total += v
+                acc.append((t, total))
+        out.append((labels, acc))
+    return out
+
+
+def _raw(source: Source, d: Definition, start: float, end: float, step: float, until: float | None,
+         selects: dict | None = None) -> list[tuple[Labels, Points]]:
+    """A definition read on its own: a declared counter or a turnover from raw samples (each
+    selector once, through ``selects``), a query as written on discovery's grid."""
+    def select(sel: str, a: float) -> list:
+        if selects is None:
+            return source.select(sel, a, end, until=until)
+        if (sel, a) not in selects:
+            selects[(sel, a)] = source.select(sel, a, end, until=until)
+        return selects[(sel, a)]
     if d.view == "increments":
         res = d.resolution_s or 0.0
-        got = increments(source.select(d.query, start - res, end, until=until), d.by_real, start)
-    elif d.view in ("starts", "stops"):
-        w = count_window(d.resolution_s)
-        got = turnover(source.select(d.query, start - w, end, until=until), d.by_real, w, start, end, d.view == "stops")
-    else:
-        q = grid_step(step, d.resolution_s)
-        got = source.query_range(d.query, math.floor(start / q) * q, end, q, until=until)
-        if d.view in ("count", "distinct"):
-            got = zero_fill(got)
-        if d.kind == "rate":
-            got = [(labels, integrate(pts)) for labels, pts in got]
+        return increments(select(d.query, start - res), d.by_real, start)
+    if d.view in ("starts", "stops"):
+        w = lookback(d.resolution_s)
+        return turnover(select(d.query, start - w), d.by_real, w, start, end, d.view == "stops")
+    q = grid_step(step, d.resolution_s)
+    return source.query_range(d.query, math.floor(start / q) * q, end, q, until=until)
+
+
+def _finish(d: Definition, got: list[tuple[Labels, Points]], prefix: str, machine: str | None,
+            producers: dict[str, str] | None) -> list[tuple[str, Labels, Points, dict | None]]:
+    if d.view in ("count", "distinct"):
+        got = zero_fill(got)
+    if d.kind == "rate":
+        got = [(labels, integrate(pts)) for labels, pts in got]
     out = []
     for labels, pts in got:
         lab = {d.rename.get(k, k): v for k, v in labels.items() if k != "__name__"}
@@ -179,3 +203,46 @@ def read(source: Source, d: Definition, prefix: str, machine: str | None, start:
             counted.update(machine=lab["machine"], attributed="from its machine label")
         out.append((f"{prefix}:{d.name}", lab, pts, counted))
     return out
+
+
+def read_many(source: Source, defs: list[Definition], prefix: str, machine: str | None, start: float, end: float,
+              step: float, producers: dict[str, str] | None = None, until: float | None = None,
+              concurrency: int = 4) -> tuple[dict[str, list[tuple[str, Labels, Points, dict | None]]], dict[str, str]]:
+    """Every definition read for the window: the result series by definition id (name, labels,
+    points, what it counts when traffic), and why for those that could not be read. ``until``:
+    the deadline (``time.monotonic()``), past which no request is made."""
+    forms = {d.id: f for d in defs if (f := read_form(d, step)) is not None}
+    starts = {q: math.floor(start / q) * q for _, _, q in forms.values()}
+    rows, errors = shared(source, defs, forms, starts, end, until, concurrency) if forms else ({}, {})
+    out: dict[str, list] = {}
+    by_id = {d.id: d for d in defs}
+    for i, got in rows.items():
+        d = by_id[i]
+        if d.agg == "increase":
+            got = accumulate(got, starts[forms[i][2]])
+        out[i] = _finish(d, got, prefix, machine, producers)
+    selects: dict = {}
+    alone = [d for d in defs if d.id not in forms]
+
+    def one(d: Definition):
+        try:
+            return d.id, _finish(d, _raw(source, d, start, end, step, until, selects), prefix, machine, producers), None
+        except SourceError as e:
+            return d.id, None, e
+    with ThreadPoolExecutor(max(1, concurrency)) as pool:
+        for i, got, e in pool.map(one, alone):
+            if e is not None:
+                errors[i] = str(e) if not isinstance(e, PastDeadline) else f"late: {e}"
+            else:
+                out[i] = got
+    return out, errors
+
+
+def read(source: Source, d: Definition, prefix: str, machine: str | None, start: float, end: float,
+         step: float, producers: dict[str, str] | None = None, until: float | None = None) -> list[tuple[str, Labels, Points, dict | None]]:
+    """One definition's result series (``read_many``); raises ``SourceError`` when it fails."""
+    out, errors = read_many(source, [d], prefix, machine, start, end, step, producers, until, 1)
+    if d.id in errors:
+        err = errors[d.id]
+        raise (PastDeadline if err.startswith("late: ") else SourceError)(err.removeprefix("late: "))
+    return out.get(d.id, [])

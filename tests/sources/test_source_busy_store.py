@@ -25,6 +25,7 @@ def _source(fake: FakePrometheus, tmp_path, **extra) -> PrometheusSource:
     src = PrometheusSource(specs.sources[0])
     src.slept = []
     src._sleep = src.slept.append            # no real waiting in tests: record what it would wait
+    src.limiter.hold = lambda seconds: None  # nor for the other readers' pause (tests/unit/test_sources_limits.py)
     return src
 
 
@@ -41,14 +42,15 @@ def test_a_429_is_retried_after_the_seconds_the_server_gave(fake, tmp_path):
     fake.refuse = [(429, {"Retry-After": "3"}, b'{"status":"error","error":"quota exhausted"}', "application/json")]
     src = _source(fake, tmp_path)
     got = src.query_range("queue_depth", T0, T0 + 600, 15)
-    assert len(got) == 3 and src.slept == [3.0] and src.retries == 1
+    assert len(got) == 3 and len(src.slept) == 1 and 3.0 <= src.slept[0] <= 3.6 and src.retries == 1   # plus jitter
 
 
 def test_a_503_with_an_html_page_is_retried_and_never_parsed(fake, tmp_path):
     fake.refuse = [(503, {"Retry-After": "1"}, HTML, "text/html"), (503, {}, HTML, "text/html")]
     src = _source(fake, tmp_path)
     assert len(src.series(['{__name__="queue_depth"}'], T0, T0 + 600)) == 3
-    assert src.slept == [1.0, 2.0]           # the server's wait, then the doubling pause without one
+    first, then = src.slept                  # the server's wait (plus jitter), then the doubling pause without one
+    assert 1.0 <= first <= 1.2 and 1.0 <= then <= 2.0
 
 
 def test_a_store_that_stays_busy_is_named_by_its_status_after_the_last_try(fake, tmp_path):
@@ -139,14 +141,15 @@ def test_a_selector_is_narrowed_to_one_name_only_when_it_names_none():
 
 
 class _Late(PrometheusSource):
-    """A store slow on some queries: a probe of them is past the deadline."""
+    """A store slow on some queries: a probe of them (read at the series' resolution, unlike the
+    schema's coarser reads) is past the deadline. One part a request (``series_per_query = 1``)."""
 
     late = ("jobs_done",)
 
-    def query_range(self, query, start, end, step, until=None):
-        if any(x in query for x in self.late):
+    def query_range(self, query, start, end, step, until=None, **kw):
+        if any(x in query for x in self.late) and step < 100 and end - start > step:
             raise PastDeadline("past the deadline")
-        return super().query_range(query, start, end, step, until)
+        return super().query_range(query, start, end, step, until, **kw)
 
 
 def test_probes_past_the_deadline_leave_their_candidates_out_and_the_round_partial(tmp_path):
@@ -158,12 +161,12 @@ def test_probes_past_the_deadline_leave_their_candidates_out_and_the_round_parti
     dump += [("jobs_done_total", {"queue": q}, pts(lambda i, k=k: float(k * i))) for k, q in enumerate("abc", 1)]
     f = FakePrometheus(dump)
     try:
-        spec = load({"sources": [{"name": "busy", "url": f.url}]}, tmp_path).sources[0]
+        spec = load({"sources": [{"name": "busy", "url": f.url, "series_per_query": 1}]}, tmp_path).sources[0]
         inf = infer(_Late(spec), spec, [], tmp_path, now - 3600, now)
-        assert inf.partial and any("not probed within" in d.why for d in inf.left_out)
+        assert inf.partial and any("not probed this round" in d.why for d in inf.left_out)
         assert not any("jobs_done" in d.query for d in inf.kept) and inf.kept
         _Late.late = ("queue_depth", "jobs_done", "pods_running")
-        with pytest.raises(SourceError, match="narrow match, or raise deadline"):
+        with pytest.raises(SourceError, match="narrow match, or raise infer_deadline"):
             infer(_Late(spec), spec, [], tmp_path, now - 3600, now)
     finally:
         _Late.late = ("jobs_done",)

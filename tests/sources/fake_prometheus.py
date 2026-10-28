@@ -22,8 +22,24 @@ RAW = re.compile(r"^(?P<sel>.*)\[(?P<n>\d+)(?P<u>[smhd])\]\s*$", re.DOTALL)
 UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
 
+def unwrap(q: str, fn: str = "histogram_count") -> str:
+    """``fn(x)`` as ``x``, everywhere in ``q``: the fake keeps a native histogram's counts as values."""
+    while (i := q.find(fn + "(")) >= 0:
+        depth, j = 0, i + len(fn)
+        for j in range(i + len(fn), len(q)):
+            depth += {"(": 1, ")": -1}.get(q[j], 0)
+            if depth == 0:
+                break
+        q = q[:i] + q[i + len(fn) + 1:j] + q[j + 1:]
+    return q
+
+
 class TooMany(Exception):
     """A read over the fake's per-query series limit."""
+
+
+class Busy(Exception):
+    """An answer raising it is a 503 with ``Retry-After: 0``: busy, ask again (at once, in tests)."""
 
 
 class FakePrometheus:
@@ -38,6 +54,8 @@ class FakePrometheus:
         self.meta: dict[str, list[dict]] = {}
         self.refuse: list[tuple] = []           # the next answers: (status, headers, body bytes, content type)
         self.max_series = 0                     # a query or /series touching more series answers 422; 0: no limit
+        self.native: set[str] = set()           # metric names served as native histograms (their values are the counts)
+        self.queries_touched: list[int] = []
         self.queries: list[str] = []
         self.requests = 0
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
@@ -64,7 +82,11 @@ class FakePrometheus:
         return "NaN" if t in self.nan_at else repr(float(v))
 
     def _matrix(self, results) -> dict:
-        return {"resultType": "matrix", "result": [{"metric": lab, "values": [[t, self._value(t, v)] for t, v in pts]} for lab, pts in results]}
+        def one(lab, pts):
+            if lab.get("__name__") in self.native:      # as Prometheus 2.40+ answers a native histogram
+                return {"metric": lab, "histograms": [[t, {"count": self._value(t, v), "sum": "0", "buckets": []}] for t, v in pts]}
+            return {"metric": lab, "values": [[t, self._value(t, v)] for t, v in pts]}
+        return {"resultType": "matrix", "result": [one(lab, pts) for lab, pts in results]}
 
     def answer(self, endpoint: str, form: dict[str, list[str]]):
         one = lambda k, d=None: (form.get(k) or [d])[0]
@@ -72,7 +94,7 @@ class FakePrometheus:
             q = one("query")
             self.queries.append(q)
             self._touched(q, float(one("start")), float(one("end")))
-            return self._matrix(promql.query_range(self.dump, q, float(one("start")), float(one("end")), float(one("step"))))
+            return self._matrix(promql.query_range(self.dump, unwrap(q), float(one("start")), float(one("end")), float(one("step"))))
         if endpoint == "query":
             q, at = one("query"), float(one("time", time.time()))
             self.queries.append(q)
@@ -105,13 +127,24 @@ class FakePrometheus:
         if self.max_series and n > self.max_series:
             raise TooMany(f"query matched {n} series, over the limit of {self.max_series} series per query")
 
-    def _touched(self, sel: str, start: float, end: float) -> None:
-        """The per-query limit on a plain selector's series (other queries are not counted)."""
+    def _touched(self, q: str, start: float, end: float) -> None:
+        """The per-query limit: the series every selector of the query matches, over its range
+        (as VictoriaMetrics counts ``seriesFetched``)."""
         try:
-            got = promql.select(self.dump, sel, start, end)
+            tree = promql.parse(unwrap(q))
         except promql.PromQLError:
             return
-        self._limit(len(got))
+        sels, todo = [], [tree]
+        while todo:
+            node = todo.pop()
+            if isinstance(node, promql.Selector):
+                sels.append(node)
+            elif isinstance(node, tuple):
+                todo.extend(node)
+        seen = {(name, tuple(sorted(lab.items()))) for name, lab, pts in self.dump for sel in sels
+                if promql._match(sel, name, lab) and any(start - 300 <= t <= end for t, _ in pts)}
+        self.queries_touched.append(len(seen))
+        self._limit(len(seen))
 
     def _handler(self):
         fake = self
@@ -146,6 +179,8 @@ class FakePrometheus:
                     return self._send(400, {"status": "error", "errorType": "bad_data", "error": str(e)})
                 except TooMany as e:
                     return self._send(422, {"status": "error", "errorType": "execution", "error": str(e)})
+                except Busy:
+                    return self._raw(503, b"<html>busy</html>", "text/html", {"Retry-After": "0"})
                 self._send(200, {"status": "success", "data": data})
 
             def _send(self, code: int, body: dict):
