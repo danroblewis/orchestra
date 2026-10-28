@@ -194,14 +194,31 @@ class Experiments:
         out["runs"] = rec.get("runs", [])
         return out
 
-    def list(self, owner: str | None = None, status: str | None = None) -> dict:
+    def list(self, owner: str | None = None, status: str | None = None, era: str | None = None) -> dict:
+        """Every experiment, oldest first: who made it, its title and purpose, status, base, its
+        latest run and the verdict of the prediction it became. ``era`` keeps those tied to an era:
+        made on its model, or predicting the change that began it (``"none"``: made before any)."""
+        try:
+            preds = {p["id"]: p for p in reads.predictions(self.models)["predictions"]}
+        except Exception:  # noqa: BLE001 - the list is read without the verdicts
+            preds = {}
         rows = []
         for r in self.store.all():
             if (owner and r.get("owner") != owner) or (status and r.get("status") != status):
                 continue
-            rows.append({k: r.get(k) for k in ("id", "owner", "title", "status", "created_at", "updated_at", "origin")}
+            pid = (r.get("prediction") or {}).get("id")
+            p = preds.get(pid) if pid else None
+            judged = None
+            if pid:
+                judged = {"status": (p or {}).get("status") or "not yet recorded", "era": (p or {}).get("era"),
+                          "verdict": ((p or {}).get("verdict") or {}).get("verdict"), "partial": ((p or {}).get("verdict") or {}).get("partial")}
+            if era and era not in ((r["base"].get("era") or "none"), (judged or {}).get("era")):
+                continue
+            last = (r.get("runs") or [None])[-1]
+            rows.append({k: r.get(k) for k in ("id", "owner", "title", "purpose", "status", "created_at", "updated_at", "origin")}
                         | {"base": {k: v for k, v in r["base"].items() if k != "model"}, "runs": len(r.get("runs", [])),
-                           "prediction": (r.get("prediction") or {}).get("id")})
+                           "last_run": {k: last[k] for k in ("id", "mode", "at")} if last else None,
+                           "prediction": pid, "verdict": judged})
         return {"ok": True, "experiments": rows}
 
     def create(self, title: str, purpose: str = "", version: int | None = None, *, origin: dict | None = None,
@@ -309,6 +326,26 @@ class Experiments:
         except NotFound as e:
             raise ExperimentError(str(e), 404) from None
 
+    def measured(self, eid: str, rid: str, before_s: float = 3600.0) -> dict:
+        """What was measured of a forward run's stocks: ``before_s`` before the run's now, and
+        since, up to its horizon or the present (so the forecast can be held against what
+        happened). Read-only; another run's mode answers with nothing (its result has its own)."""
+        rec = self._get(eid)
+        run = self.run_result(eid, rid)["run"]
+        r = run["result"]
+        if run["mode"] != "forward":
+            return {"ok": True, "mode": run["mode"], "stocks": {}}
+        now = float(r["now"])
+        before = float(_num(before_s, "before_s", 60.0, 86400.0, 3600.0))
+        start, end = now - min(before, max(600.0, float(r["horizon_s"]))), min(now + float(r["horizon_s"]), max(time.time(), now))
+        try:
+            h = self.history(_union(self._base(rec), self._draft(rec)), start, max(end, now + 1.0))
+        except Exception as e:  # noqa: BLE001 - the page shows the run without it
+            return {"ok": False, "error": f"the measured levels could not be read: {type(e).__name__}: {e}", "stocks": {}}
+        want = set(r["stocks"])
+        return {"ok": True, "mode": "forward", "now": now, "start": start, "end": end,
+                "stocks": {sid: [p for p in pts if start <= p[0] <= end] for sid, pts in (h.get("stocks") or {}).items() if sid in want}}
+
     def _window(self, options: dict) -> tuple[float, float]:
         start, end = options.get("start"), options.get("end")
         if options.get("era"):
@@ -373,7 +410,7 @@ class Experiments:
         rep["ambiguous"] = bool(any(a["met"] for a in rep["alternatives"]) or (u.get("checked") and not u.get("consistent")))
         targets = "; ".join(f"{t['id']} {t['kind']} {t['value']:g}" for t in rep["targets"] if t["kind"] != "hold")
         made = self.create(f"inverse of {rec['id']}: {targets}"[:MAX_TEXT], f"the smallest change the inverse solver found under which "
-                           f"a replay of {start:.0f}–{end:.0f} meets: {targets}", origin={"experiment": rec["id"], "mode": "inverse"},
+                           f"a replay of {_utc(start)} to {_utc(end)} UTC meets: {targets}", origin={"experiment": rec["id"], "mode": "inverse"},
                            model=solved, base=copy.deepcopy(rec["base"]), eid=new_id)
         rep["experiment"] = made["experiment"]["id"]
         return {"mode": "inverse", **rep}
@@ -431,6 +468,11 @@ class Experiments:
             return {"ok": True, **self.predictions(rec["prediction"]["id"])}
         except ReadError:
             return {"ok": True, "prediction": {**rec["prediction"], "status": "not yet recorded"}}
+
+
+def _utc(t: float) -> str:
+    from datetime import UTC, datetime
+    return datetime.fromtimestamp(t, UTC).strftime("%Y-%m-%d %H:%M")
 
 
 def _union(base: Model, draft: Model) -> Model:

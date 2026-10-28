@@ -12,7 +12,7 @@ Reads (``GET``):
 | ``/observability?version=`` | which stocks what is measured determines |
 | ``/series?ids=a,b&start=&end=&span_s=&points=&limit=&after=`` | series summarised, and their points on request (paged) |
 | ``/predictions``, ``/predictions/<id>`` | predictions and their verdicts |
-| ``/experiments?owner=&status=`` | the experiments |
+| ``/experiments?owner=&status=&era=`` | the experiments, each with its latest run and its verdict |
 | ``/experiments/<id>?base=`` | one: its draft (equations in the language), scenario, log, runs, prediction |
 | ``/experiments/<id>/diff`` | what its draft changed of its base |
 | ``/experiments/<id>/runs``, ``/experiments/<id>/runs/<run>`` | its runs, and one in full |
@@ -126,7 +126,7 @@ def _call(x, name: str, ids: tuple, q: dict, d: dict) -> dict:
     if name == "check":
         return x.check_equation(d.get("equation"), d.get("params"), d.get("experiment"), d.get("version"))
     if name == "list":
-        return x.list(_q(q, "owner"), _q(q, "status"))
+        return x.list(_q(q, "owner"), _q(q, "status"), _q(q, "era"))
     if name == "create":
         return x.create(d.get("title"), d.get("purpose") or "", d.get("version"))
     eid = ids[0]
