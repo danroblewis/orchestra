@@ -109,7 +109,7 @@ class Collecting:
             for c in now.values():
                 if self.wanted.get(c.name) != c:
                     self._due[c.name] = 0.0
-                    self.log(f"collect: {c.name}: {'running' if c.kind == 'collect' else 'scraping'} `{c.target}` every {c.every_s:g} s")
+                    self.log(f"collect: {c.name}: {'running' if c.kind == 'collect' else 'scraping'} `{c.shown}` every {c.every_s:g} s")
             self.wanted = now
             self._urgent = True
 
@@ -125,7 +125,7 @@ class Collecting:
     def snapshot(self) -> dict:
         """The instruments as the runtime record holds them."""
         with self._lock:
-            return {n: {"kind": c.what, "target": c.target, "every_s": c.every_s, "timeout_s": c.timeout_s, "owner": c.owner,
+            return {n: {"kind": c.what, "target": c.shown, "every_s": c.every_s, "timeout_s": c.timeout_s, "owner": c.owner,
                         "log": str(self._log_of(c)), "failures": self.failures[n], **self.health.get(n, {})}
                     for n, c in sorted(self.wanted.items())}
 

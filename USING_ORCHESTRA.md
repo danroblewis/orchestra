@@ -374,7 +374,7 @@ where `<plugin>` is a loaded plugin with processes, is refused: that form is kep
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string, required | | The instrument's id. Letters, digits, `.`, `_` and `-`. Not `orchestra-host`, and not another `[[collect]]` or `[[scrape]]` entry's name. Instrument names are their own: it may share a `[[machines]]` entry's name without being that machine. Its log is `logs/instruments/<name>.log`. |
-| `command` | string, required | | Split like a shell would, not run by one. A file in the repository is named with a slash: `machines/disk.sh` or `./disk.sh`. |
+| `command` | string, or array of strings, required | | A string is split like a shell would split it, but no shell runs it; an array (`["machines/disk.sh", "-v"]`) is the words as they are. A file in the repository is named with a slash: `machines/disk.sh` or `./disk.sh`. |
 | `every` | duration | `"60s"` | How often it runs. At least 1 s. |
 | `timeout` | duration | `"10s"` | How long one run may take. More than 0; never more than `every` (a larger value is cut to `every`). |
 
