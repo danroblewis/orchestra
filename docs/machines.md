@@ -65,6 +65,12 @@ The collector appears on the Instruments page as `disk`, a script, with its targ
 its last write and its log. Nothing is announced on the bus for it, and it is not a machine. A
 test of it is a test of a script: run it and check what it prints.
 
+**A ready-made one: your tests.** `python -m orchestra.instruments.test_reports --reports
+'reports/*/*.xml'` reads the JUnit XML (or pytest report log) your test runner writes and prints
+the tests by kind and outcome, the flaky and the confirmed ones, and with `--history` counters of
+tests added and removed, so the test count can be a stock. One `[[collect]]` entry adopts it
+(`USING_ORCHESTRA.md` section 3.4).
+
 ## What a collector prints
 
 The Prometheus text format, one sample per line:
