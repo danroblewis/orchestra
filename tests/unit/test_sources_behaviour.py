@@ -254,3 +254,20 @@ def test_two_jobs_scraping_different_nodes_are_not_one():
     faster = [({"job": "integrations/node_exporter", "instance": "ip-10-0-1-1"}, grid(3.0e12, 2.1e9)),
               ({"job": "integrations/node_exporter", "instance": "ip-10-0-1-2"}, grid(4.0e12, 4.2e8))]
     assert duplicated(a + faster, "job", counter=True) is None    # the same targets, but not the same counts
+
+
+def test_labels_that_name_units_or_kinds_are_never_summed_across():
+    from orchestra.sources.checks import is_unit
+    for label in ("unit", "resource", "le", "type"):
+        assert is_unit(label, label, {"a", "b"})
+    assert is_unit("kind", "kind", {"cpu", "memory"}) and not is_unit("queue", "queue", {"orders", "emails"})
+
+
+def test_a_counter_split_earns_credit_from_a_lag_split_by_it_and_another_label(tmp_path):
+    """The lag by consumer group and topic moves apart: the produced offsets by topic can balance
+    each topic's part of it, so they rank like a split that matters."""
+    from orchestra.sources.rank import stock_splits
+    info = {c: {"real": c, "role": "grouping", "cardinality": 3} for c in ("consumergroup", "topic")}
+    lag = Definition(id="l", source="lab", name="lag", family="lag", view="rollup", kind="level", query="",
+                     group_by=["consumergroup", "topic"], labels_info=info)
+    assert stock_splits([lag], {"l": {"apart": 0.8}}) == {"consumergroup": 0.792, "topic": 0.792}

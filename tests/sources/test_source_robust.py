@@ -10,6 +10,7 @@ import email.utils
 import math
 import threading
 import time
+from itertools import pairwise
 
 import pytest
 from fake_prometheus import Busy, FakePrometheus
@@ -341,7 +342,7 @@ url = "{f.url}"
     assert r.kinds[counter].resolution_s == 60.0 and r.provenance[counter]["resolution_s"] == 60.0
     assert r.kinds[level].resolution_s == 30.0
     pts = next(p for n, lab, p in r.dump if n == "lab:jobs_total" and not lab)
-    assert {b - a for (a, _), (b, _) in zip(pts, pts[1:], strict=False)} == {60.0}
+    assert {b - a for (a, _), (b, _) in pairwise(pts)} == {60.0}
 
 
 def test_a_counter_that_began_inside_the_window_starts_there(made, tmp_path):
@@ -354,4 +355,4 @@ def test_a_counter_that_began_inside_the_window_starts_there(made, tmp_path):
     got, errors = read_many(src, [d], "lab", None, T0 + 60, NOW, 30.0)
     (_, _, pts, _), = got["c0"]
     assert not errors and pts[0][0] >= T0 + 3000 - 30 and pts[0][1] == 0.0
-    assert all(b - a == 30.0 for (a, _), (b, _) in zip(pts, pts[1:], strict=False))
+    assert all(b - a == 30.0 for (a, _), (b, _) in pairwise(pts))

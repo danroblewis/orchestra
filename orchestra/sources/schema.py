@@ -50,8 +50,8 @@ from __future__ import annotations
 
 import re
 
-from . import Labels, Source
 from ..sd.units import from_name
+from . import Labels, Source
 from .checks import COLLECTION_LABELS
 from .family import UNREAD, Family, LabelInfo, Schema, stat_name
 from .spec import SourceSpec
