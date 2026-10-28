@@ -56,6 +56,10 @@ class FakePrometheus:
         self.max_series = 0                     # a query or /series touching more series answers 422; 0: no limit
         self.native: set[str] = set()           # metric names served as native histograms (their values are the counts)
         self.queries_touched: list[int] = []
+        self.name_asks: list[list[str]] = []      # the match[] of each label/__name__/values request
+        self.meta_asks: list[dict] = []           # the parameters of each metadata request
+        self.ranges: list[tuple[float, float]] = []   # the time range of each range query and raw read
+        self.refusals = 0                         # reads refused for their size (422)
         self.queries: list[str] = []
         self.requests = 0
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
@@ -93,6 +97,7 @@ class FakePrometheus:
         if endpoint == "query_range":
             q = one("query")
             self.queries.append(q)
+            self.ranges.append((float(one("start")), float(one("end"))))
             self._touched(q, float(one("start")), float(one("end")))
             return self._matrix(promql.query_range(self.dump, unwrap(q), float(one("start")), float(one("end")), float(one("step"))))
         if endpoint == "query":
@@ -100,6 +105,7 @@ class FakePrometheus:
             self.queries.append(q)
             if m := RAW.match(q):
                 d = int(m["n"]) * UNITS[m["u"]]
+                self.ranges.append((at - d, at))
                 self._touched(m["sel"], at - d, at)
                 return self._matrix([(lab, [(t, v) for t, v in pts if t > at - d]) for lab, pts in promql.select(self.dump, m["sel"], at - d, at)])
             res = promql.query_range(self.dump, q, at, at, 60)
@@ -107,24 +113,28 @@ class FakePrometheus:
         if endpoint in ("series", "label_values"):
             start, end = float(one("start", 0)), float(one("end", time.time()))
             seen = {}
-            for m in form.get("match[]") or []:
+            for m in form.get("match[]") or (['{__name__=~".+"}'] if endpoint == "label_values" else []):   # no match[]: every name
                 for lab, _ in promql.select(self.dump, m, start, end):
                     seen.setdefault(tuple(sorted(lab.items())), lab)
             out = sorted(seen.values(), key=lambda x: sorted(x.items()))
             if endpoint == "label_values":
-                return sorted({lab["__name__"] for lab in out})
+                self.name_asks.append(list(form.get("match[]") or []))
+                names = sorted({lab["__name__"] for lab in out})
+                return names[: int(one("limit"))] if one("limit") else names
             self._limit(len(out))
             return out[: int(one("limit"))] if one("limit") else out
         if endpoint == "labels":
             return sorted({k for _, lab, _ in self.dump for k in lab} | {"__name__"})
         if endpoint == "metadata":
-            return self.meta
+            self.meta_asks.append({k: one(k) for k in ("metric", "limit", "limit_per_metric") if one(k)})
+            return {k: v for k, v in self.meta.items() if not one("metric") or k == one("metric")}
         if endpoint == "buildinfo":
             return {"version": "fake-1.0", "revision": "test"}
         raise KeyError(endpoint)
 
     def _limit(self, n: int) -> None:
         if self.max_series and n > self.max_series:
+            self.refusals += 1
             raise TooMany(f"query matched {n} series, over the limit of {self.max_series} series per query")
 
     def _touched(self, q: str, start: float, end: float) -> None:

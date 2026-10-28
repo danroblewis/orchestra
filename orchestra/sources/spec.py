@@ -41,7 +41,9 @@ traffic = { direction = "out", channel = "{topic}" }
 ```
 
 A source may name a ``preset`` (``preset.py``): a file of series definitions for one exporter, and
-defaults for the source table; ``infer = false`` reads only the declared series, and
+defaults for the source table; ``infer = false`` reads only the declared series (a source that
+declares ``[[series]]`` and keeps inferring infers every 6 h, not hourly, unless ``infer_every``
+says otherwise), and
 ``[sources.producers]`` (channel = machine) names the producer of a channel whose counts name none.
 ``settle`` ends every read from the source that long before now, so its series end together: a
 store that hides the newest samples from range queries but not from raw reads (VictoriaMetrics'
@@ -72,6 +74,7 @@ TYPES = {"prometheus"}
 KINDS = {"level", "counter", "rate"}
 SECRET_KEYS = re.compile(r"(?i)^(token|bearer|password|passwd|secret|api_?key|apikey|credentials?)$")
 IDENTITY = ["pod", "instance", "container"]      # canonical labels that name one reporting thing, by default
+DECLARED_INFER_EVERY = 6 * 3600.0                  # infer_every, by default, for a source whose series are declared
 
 
 @dataclass
@@ -100,7 +103,11 @@ class SourceSpec:
     infer_deadline: float = 300.0       # for one inference round, the schema's reads included
     series_per_query: int = 2000        # the most series one batched read may touch (under the store's per-query limit)
     history: float = 86400.0            # how far back a family's type (counter or gauge) is judged, coarsely
-    infer_every: float = 3600.0
+    infer_every: float = 3600.0         # 6 h when the source declares [[series]] and infer_every is not set
+    max_requests_per_day: int = 20000   # per store (every project and process on this machine reading it), per UTC day
+    web_share: float = 0.2              # of the store's rate and daily cap, at most, for the web server's reads
+    max_names: int = 2000               # metric names a match may select for inference to list them
+    infer_every_set: bool = True        # whether orchestra.toml says infer_every (else a default that depends on [[series]])
     insecure: bool = False
     infer: bool = True                  # False: read only the declared series (a preset's), never the schema
     settle: float = 0.0                 # every read from this source ends this long before now: the store's own delay
@@ -198,6 +205,9 @@ def _source(raw: dict, repo_root: Path) -> SourceSpec:
         infer_requests=int(raw.get("infer_requests", 1500)), infer_deadline=parse_duration(raw.get("infer_deadline"), 300.0),
         series_per_query=max(1, int(raw.get("series_per_query", 2000))), history=parse_duration(raw.get("history"), 86400.0),
         infer_every=parse_duration(raw.get("infer_every"), 3600.0), insecure=bool(raw.get("insecure", False)),
+        max_requests_per_day=max(1, int(raw.get("max_requests_per_day", 20000))),
+        web_share=min(1.0, max(0.01, float(raw.get("web_share", 0.2)))), max_names=max(1, int(raw.get("max_names", 2000))),
+        infer_every_set="infer_every" in raw,
         infer=bool(raw.get("infer", True)), settle=parse_duration(raw.get("settle"), 0.0), producers={str(k): v for k, v in producers.items()}, preset=raw.get("preset"))
 
 
@@ -261,6 +271,9 @@ def load(raw: dict, repo_root: Path) -> Specs:
             out.declared.append(_series(r))
         except ValueError as e:
             out.refused[label] = str(e)
+    for s in out.sources:                   # its series declared: the schema is looked at less often, unless asked
+        if s.infer and not s.infer_every_set and any(x.source == s.name for x in out.declared):
+            s.infer_every = DECLARED_INFER_EVERY
     return out
 
 
