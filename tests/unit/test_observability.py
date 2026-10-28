@@ -1,6 +1,5 @@
 """Which stocks what is measured determines (sd/observability.py), on hand-built models."""
 
-import json
 import subprocess
 
 import pytest
@@ -72,15 +71,13 @@ def test_a_chain_measured_at_its_end_is_determined_and_says_how():
     m = Model("c", "chain", stocks=[hidden("a"), hidden("b"), measured("z")],
               flows=[Flow("in", "in", None, "a", equations=[c(1.0)]), Flow("ab", "a to b", "a", "b", equations=[k("a", 0.1)]),
                      Flow("bz", "b to z", "b", "z", equations=[k("b", 0.3)]), Flow("out", "out", "z", None, equations=[k("z", 0.5)])])
-    from orchestra.sd.observability import lines, report
+    from orchestra.sd.observability import report
     r = report(m, {"z": 3.0})
     assert r["observable"] and r["rank"] == 3 and r["generically_observable"]
     a = by_id(r)["a"]
     assert a["determined"]
     assert a["why"] == "a drives b through flow ab; b drives z through flow bz; z is measured by series z_level (the level of z)"
     assert a["relies_on"] == ["series z_level (the level of z)"]
-    text = "\n".join(lines(r))
-    assert "hidden stock a: determined — a drives b" in text
     # measured at the start instead, nothing downstream reaches it
     m.stocks = [measured("a"), hidden("b"), hidden("z")]
     r = report(m, {"a": 3.0})
@@ -163,18 +160,18 @@ def project(tmp_path, monkeypatch):
     return init_project(r)
 
 
-def test_the_command_and_the_endpoint_report_on_the_current_model(project, capsys):
+def test_the_apis_report_on_the_current_model_and_the_command_is_gone(project, capsys):
     from fastapi.testclient import TestClient
 
     from orchestra.cli import main
+    from orchestra.sd.experiments.api import Experiments
     from orchestra.sd.store import ModelStore
     from orchestra.web.app import create_app
     from orchestra.web.auth import bearer
     ModelStore.for_state(project.state_dir).save(two_stocks())
-    assert main(["--repo", str(project.repo_root), "sd", "observability"]) == 0
-    out = capsys.readouterr().out
-    assert "1 of 2 stock levels determined" in out and "hidden stock y: NOT determined" in out
-    assert main(["--repo", str(project.repo_root), "sd", "observability", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["rank"] == 1
+    with pytest.raises(SystemExit):
+        main(["--repo", str(project.repo_root), "sd", "observability"])
+    r = Experiments(project).observability()
+    assert r["ok"] and r["rank"] == 1 and by_id(r)["y"]["would_determine"] == ["series on y", "counter on out_y"]
     d = TestClient(create_app(project), headers=bearer(project)).get("/api/dynamics/observability").json()
     assert d["ok"] and d["rank"] == 1 and by_id(d)["y"]["would_determine"] == ["series on y", "counter on out_y"]

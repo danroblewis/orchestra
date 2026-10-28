@@ -1,4 +1,5 @@
-"""The events endpoint's HTTP server, run by the host that launches (``orchestra.host``).
+"""The events endpoint's HTTP server, run by the host that launches (``orchestra.host``): the
+events, and beside them the model and experiments (``api.py``), behind one token.
 
 A stdlib ``ThreadingHTTPServer``, one thread per request, so a long poll never holds up a publish.
 Everything goes through the ``Events`` it is given: it never touches a bus backend itself
@@ -25,7 +26,7 @@ from urllib.parse import parse_qs, urlsplit
 from .. import runtime
 from ..config import Project
 from ..events import Events
-from . import RECORD_KEY
+from . import RECORD_KEY, api
 from .validate import MAX_BODY, Invalid, check, number, parse, types_filter
 
 SEEN_MAX = 10_000
@@ -167,8 +168,9 @@ def _handler(ep: EventsEndpoint) -> type[BaseHTTPRequestHandler]:
             path = urlsplit(self.path).path.rstrip("/") or "/"
             if path == "/health":
                 return path
-            if path != "/events":
-                self._send(404, {"ok": False, "error": f"no {path} here: POST /events, GET /events, GET /health"})
+            if path != "/events" and not api.known(path):
+                self._send(404, {"ok": False, "error": f"no {path} here: POST /events, GET /events, GET /health, and the model "
+                                                       "and experiments (GET /model, /experiments, ...: USING_ORCHESTRA.md §5.9)"})
                 return None
             if not ep.authorized(self.headers.get("Authorization")):
                 self._send(401, {"ok": False, "error": "needs Authorization: Bearer <token> (ORCHESTRA_EVENTS_TOKEN, "
@@ -177,10 +179,25 @@ def _handler(ep: EventsEndpoint) -> type[BaseHTTPRequestHandler]:
                 return None
             return path
 
+        def _api(self, method: str, path: str, body: bytes = b"") -> None:
+            try:
+                status, out = api.handle(ep.project, method, path, urlsplit(self.path).query, body)
+            except Exception as e:  # noqa: BLE001 - a fault of ours: said, and the endpoint stays up
+                ep.log(f"events endpoint: {method} {path} failed: {type(e).__name__}: {e}")
+                status, out = 500, {"ok": False, "error": f"{type(e).__name__}: {e}"}
+            self._send(status, out)
+
+        def _refuse(self) -> None:
+            self._send(405, {"ok": False, "error": f"{self.command} is not served: GET and POST only"})
+
+        do_PUT = do_DELETE = do_PATCH = _refuse
+
         def do_GET(self) -> None:
             path = self._route()
             if path == "/health":
                 self._send(200, {"ok": True})
+            elif path is not None and path != "/events":
+                self._api("GET", path)
             elif path == "/events":
                 try:
                     self._send(200, ep.read(parse_qs(urlsplit(self.path).query, keep_blank_values=True)))
@@ -193,8 +210,8 @@ def _handler(ep: EventsEndpoint) -> type[BaseHTTPRequestHandler]:
             path = self._route()
             if path is None:
                 return
-            if path != "/events":
-                self._send(405, {"ok": False, "error": "POST only to /events"})
+            if path == "/health":
+                self._send(405, {"ok": False, "error": "GET /health"})
                 return
             length = self.headers.get("Content-Length")
             if length is None or not length.isdigit():
@@ -209,6 +226,9 @@ def _handler(ep: EventsEndpoint) -> type[BaseHTTPRequestHandler]:
                 self.close_connection = True
                 return
             body = self.rfile.read(int(length))
+            if path != "/events":
+                self._api("POST", path, body)
+                return
             try:
                 status, out = ep.publish(body)
             except Invalid as e:

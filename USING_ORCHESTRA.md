@@ -32,7 +32,7 @@ Contents:
 2. [Configure: `orchestra.toml`](#2-configure-orchestratoml)
 3. [Add your own metrics](#3-add-your-own-metrics)
 4. [Name series so discovery can use them](#4-name-series-so-discovery-can-use-them)
-5. [Connect machines](#5-connect-machines)
+5. [Connect machines](#5-connect-machines) (and ask the model: [experiments](#59-asking-the-model-experiments))
 6. [What Orchestra does with your data](#6-what-orchestra-does-with-your-data)
 7. [A worked example: a queue](#7-a-worked-example-a-queue)
 8. [Troubleshooting](#8-troubleshooting)
@@ -1308,7 +1308,7 @@ When a machine changes how the system works (it edits a prompt or a role, change
 configuration, adds a worker kind, deploys), it says so, and a new **era** begins. Each era is
 discovered from its own data: after the change it is a different system, and what came before is
 not evidence for it. The previous era's model is its prior until the new era has enough data of
-its own, and the Dynamics page and `orchestra sd eras` say what changed at the boundary: each
+its own, and the Dynamics page and `GET /eras` (section 5.9) say what changed at the boundary: each
 rate before and after, with its uncertainty, and what appeared or disappeared.
 
 Publish `system.changed` from the machine that made the change, with what it changed as the
@@ -1362,16 +1362,20 @@ what the system did, not by the machine that made it. The steps:
      |---|---|
      | `{"flow": "jobs_arrived_total", "factor": 2}` | the flow's rate doubles (`"param": "k"` for one of its numbers; `0` for the flow to go) |
      | `{"flow": "jobs_done_total", "unchanged": true}` | this flow does not change |
+     | `{"flow": "jobs_done_total", "equation": "k * min(jobs_waiting, 4)", "params": {"k": 0.5}}` | the flow's whole rate becomes this equation (section 5.9's language); judged by whether it predicts what the new era counts |
      | `{"flow": "f", "appears": true}`, `{"stock": "s", "disappears": true}` | a part appears or disappears (`loop` too) |
-     | `{"from": "jobs_waiting", "to": null, "appears": true}` | a new flow between two stocks (`null`: outside) |
+     | `{"from": "jobs_waiting", "to": null, "appears": true}` | a new flow between two stocks (`null`: outside); `equation` and `params` may say its rate |
      | `{"stock": "jobs_waiting", "below": 6}` | the stock's mean level over the horizon's second half (`above` too) |
 
      `[]` is the **null test**: the change (a refactor, an upgrade) should change nothing.
    - `horizon_s` (or `horizon`, such as `"30m"`): how long after the change to judge it. Long
      enough for the flows you name to count a few dozen events in the new era;
-   - optionally `trajectories`: your own "what if" run of the stocks from the change
+   - optionally `trajectories`: your own forward run of the stocks from the change
      (`{"t": [seconds after the change], "stocks": {"jobs_waiting": {"central": [...], "lo": [...],
      "hi": [...]}}}`). Without it Orchestra runs the previous era's model with your edits.
+
+   Committing an experiment (section 5.9) does this step for you, from the experiment's edits and
+   its forward run.
 3. **Make the change**, and publish the event that begins its era (`system.changed`, or one
    `[discovery] eras_from` names) with `"id"` set to the id you chose.
 
@@ -1385,17 +1389,6 @@ curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/events" \
   -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN" -H "Content-Type: application/json" \
   -d '{"type": "system.changed", "source": "deployer", "id": "deploy-2.4.1", "subject": "billing"}'
 ```
-
-From a shell with the CLI, the same prediction, printing the id to carry (a new one when
-`--change` is not given); `--simulate` attaches the current model's what-if run:
-
-```bash
-orchestra sd predict --source deployer --change deploy-2.4.1 --expect "invoices_sent_total x1.5" --horizon 2h
-orchestra sd predict --source deployer --null --horizon 1h        # a change that should change nothing
-```
-
-`--expect` is repeated, one edit each: `FLOW x2`, `FLOW unchanged`, `flow|stock|loop ID
-appears|disappears`, `flow A->B appears`, `STOCK below|above X`, or a JSON object as above.
 
 From Python, in a plugin or a machine that uses the library:
 
@@ -1416,7 +1409,8 @@ mine.verdict(made["id"])            # the verdict, as below
 **The verdict.** The host judges the prediction after its first discovery at least the horizon
 after the change, and publishes `orchestra.prediction.judged` (`source` `orchestra-host`,
 `subject` and `causationid` the prediction's event id, `correlationid` the change's id). Listen
-for it, or read `orchestra sd predictions` or the Dynamics page, under the era. `data.verdict` is:
+for it, or read `GET /predictions` (section 5.9), `orchestra sd predictions` or the Dynamics
+page, under the era. `data.verdict` is:
 
 | Verdict | Meaning |
 |---|---|
@@ -1429,11 +1423,188 @@ for it, or read `orchestra sd predictions` or the Dynamics page, under the era. 
 
 `data.expectations` gives each edit's `status` (`met`, `absent`, `different`, and for levels
 `missed`) with the numbers it was judged by: a flow's number before and after, `z` (the change
-over its standard error) and, for a factor, the predicted value and how far the result is from it.
+over its standard error) and, for a factor, the predicted value and how far the result is from it;
+for an equation, `law` (the events it predicts over the era, the events counted, and `z`) and
+`old_law` (the same for the previous era's equation).
 `data.false_change` says how often a change is reported where there was none: the threshold
 (`z`, 2), the nominal rate (`nominal`, 4.55% a number) and, when the era before was long enough,
 the share of flows flagged between its two halves (`measured`). A null test is worth what that
 rate is. `data.late` is true when the prediction was made after its change began.
+
+### 5.9 Asking the model: experiments
+
+A machine (an AI agent, or any program) can ask the model what a change would do before making
+it, check whether an equation explains what happened, and ask what would have had to be different
+for an outcome to have been. It does so with an **experiment**: a copy of the model it edits and
+runs, which changes nothing in the system. The host serves experiments beside the events
+endpoint, with the same address and token (section 5.2), so any language with an HTTP client can
+use them; from Python, `orchestra.sd.experiments.api.Experiments` does the same. The web UI shows
+them and cannot change them.
+
+**Read first.** Everything answers JSON, `{"ok": true, ...}`:
+
+```bash
+api() { curl -s -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN" -H "Content-Type: application/json" "$@"; }
+api "$ORCHESTRA_EVENTS_ENDPOINT/model"                 # stocks, flows with their equations, inputs, loops
+api "$ORCHESTRA_EVENTS_ENDPOINT/eras"                  # the eras, and what changed at the last boundary
+api "$ORCHESTRA_EVENTS_ENDPOINT/language"              # the equation language: functions, rules, limits
+api "$ORCHESTRA_EVENTS_ENDPOINT/series?ids=jobs_waiting,jobs_done_total&span_s=3600"            # summaries
+api "$ORCHESTRA_EVENTS_ENDPOINT/series?ids=jobs_waiting&span_s=86400&points=1&limit=500"         # and points, paged
+api "$ORCHESTRA_EVENTS_ENDPOINT/observability"         # which stocks what is measured determines
+api "$ORCHESTRA_EVENTS_ENDPOINT/predictions"           # predictions and their verdicts
+```
+
+`/model` gives each flow as a machine would write it:
+
+```json
+{"id": "jobs_done_total", "from": "jobs_waiting", "to": "jobs_reviewing",
+ "equation": "k * jobs_waiting", "params": {"k": 0.58}, "origin": "fitted", "method": "poisson-mle",
+ "reads": {"stocks": ["jobs_waiting"], "inputs": [], "params": ["k"], "functions": []},
+ "spread": 0.05, "measured": true}
+```
+
+`/series` answers at most 5,000 points a series and 20,000 in all; a series cut short has
+`next`: ask again with `after=<next>`.
+
+#### The equation language
+
+A flow's rate is an expression in Python's syntax, per the model's time unit (`time_unit` in
+`/model`), over:
+
+- **stock ids** (their level now), **measured inputs** (their value now) and **parameters**,
+  named numbers you give beside it (`{"equation": "k * jobs_waiting", "params": {"k": 0.6}}`), and
+  plain numbers. An id that is not a plain name, or that is both a stock and an input, is written
+  `stock("id")` or `input("name")`;
+- `+ - * / **`, unary `-`, brackets, and one comparison (`<`, `<=`, `>`, `>=`, `==`, `!=`), which
+  is 1 when true and 0 when false;
+- the functions `min(a, b, …)`, `max(a, b, …)`, `abs`, `exp`, `log` (natural), `sqrt`,
+  `clip(x, lo, hi)`, `if_then_else(c, a, b)`, `zidz(a, b)` (a / b, or 0 when b is 0),
+  `lookup(x, [[x0, y0], [x1, y1], …])` (straight between the points, held beyond them),
+  `smooth(x, tau)` (x smoothed over tau time units), `delay(x, tau)` (x as it was tau time units
+  ago), `observed()` (the flow's own measured rate: what was counted in a replay, the last ten
+  minutes' mean going forward), and SD Lab's `ceil`, `floor`, `integer`, `power`, `modulo`,
+  `quantum`, `ln`, `log10`, `sin` and the rest, `xidz`, `and_`, `or_`, `not_`.
+
+A rate below 0 is taken as 0 (a flow moves material one way), a rate that is not a number
+(`log(0)`) as 0 and reported, and a stock's outflows share what it holds. **Units are not
+checked**: `k * waiting` is per hour if the model's time unit is the hour. Nothing you write is
+run as code: the text is parsed into a fixed set of operations, and every name is checked against
+the model (`POST /equations/check` with `equation` and `params` says whether it parses and what it
+reads). Examples:
+
+| Rate | Means |
+|---|---|
+| `c` | constant |
+| `k * waiting` | proportional to a stock |
+| `c + k * demand` | linear in an input |
+| `k * min(waiting, 2 * workers_free)` | capacity-capped: at most two jobs per free worker |
+| `k * waiting * (1 - backlog / cap)` | slowing as a backlog fills |
+| `(target - level) / tau` | closing a gap |
+| `rate * delay(approved, 2)` | following another level two time units late |
+| `observed()` | as measured: no equation |
+
+#### An experiment's life
+
+```bash
+E=$(api -X POST "$ORCHESTRA_EVENTS_ENDPOINT/experiments" \
+     -d '{"source": "curator", "title": "pair reviews", "purpose": "does pairing halve review time?"}' | jq -r .experiment.id)
+api -X POST "$ORCHESTRA_EVENTS_ENDPOINT/experiments/$E/edits" -d '{"source": "curator", "edits": [
+  {"op": "replace_flow", "id": "jobs_reviewed_total", "equation": "k * min(jobs_reviewing, 2 * reviewers)", "params": {"k": 0.8}},
+  {"op": "add_stock", "id": "rework", "initial": 0},
+  {"op": "add_flow", "id": "sent_back", "from": "jobs_reviewing", "to": "rework", "equation": "k * jobs_reviewing", "params": {"k": 0.05}}]}'
+api -X POST "$ORCHESTRA_EVENTS_ENDPOINT/experiments/$E/runs" -d '{"source": "curator", "mode": "forward", "horizon_s": 7200}'
+api -X POST "$ORCHESTRA_EVENTS_ENDPOINT/experiments/$E/runs" -d '{"source": "curator", "mode": "replay", "span_s": 86400}'
+api "$ORCHESTRA_EVENTS_ENDPOINT/experiments/$E/diff"
+```
+
+An experiment starts as a copy of the current era's latest model (`"version": N` for a saved
+version). It is its owner's, the `source` that made it: only the owner edits, commits or discards
+it; anyone may read and run it.
+
+**Edits** come in batches (`edits`), applied together or not at all. A refused batch answers 422
+with the reason and the edit's `index`, and leaves the draft as it was.
+
+| `op` | Fields | Does |
+|---|---|---|
+| `add_flow` | `id`, `from`, `to` (a stock, or `null` for outside), `equation`, `params` | a new flow |
+| `replace_flow` | `id`, `equation`, `params`, optionally `from`, `to` | the flow's whole equation (and ends) |
+| `remove_flow` | `id` | the flow is gone |
+| `set_params` | `flow`, `params` | some numbers of the flow's equation |
+| `add_stock` | `id`, `initial` | a hidden stock (no series measures it), starting at `initial` |
+| `remove_stock` | `id` | the stock is gone; no flow may still end at it or read it |
+| `set_level` | `stock`, `level` (`null` clears) | where a forward run starts the stock |
+| `set_input` | `input`, `scenario` | what a forward run assumes of an input: `{"kind": "hold"}`, `{"kind": "value", "value"}`, `{"kind": "scale", "factor"}`, `{"kind": "step", "at_s", "value"}`, `{"kind": "ramp", "to_s", "value"}`, `{"kind": "series", "points": [[s, v], …]}` |
+| `load_model` | `model` | the whole draft: `{"stocks": [{"id", "initial"?}], "flows": [{"id", "from", "to", "equation", "params"}]}` |
+
+Every equation an edit writes is recorded as `declared` (an assumption until it is fitted), with
+the experiment and your source as its method.
+
+**Runs** (`POST .../runs`, `mode` and its options; each run is kept, `GET .../runs/<id>`):
+
+- **`forward`** (`horizon_s`, `members`, `seed`, `bounds`: `{"stock": [lo, hi]}`, `stocks`,
+  `points`): the base model and your draft from the levels now. Per stock and flow: `base`,
+  `experiment` and (for stocks) `difference`, each `{central, lo, hi}` at the times `t` (seconds
+  from now): the run with the numbers as written, and the 10th–90th percentile of runs with every
+  rate perturbed by its recorded error. Your own equations are declared, so their band is ±50%
+  until the model fits them. `limits`: where a stock reaches 0 or leaves your bounds, and whether
+  your change brings it. `not_trusted`, with reasons: read them before you believe the numbers;
+- **`replay`** (`start` and `end`, or `span_s` back from now, or `era`): both models over a past
+  window, on its measured inputs, from the levels measured at its start, against what was
+  measured. Per stock: `measured`, `base`, `experiment` and `error` (how far each run misses, in
+  the level's own spread). Per counted flow: `one_step`, the equation evaluated on the measured
+  levels against what its counter counted (`deviance`, lower is better; `d2`, the share of a
+  constant rate's misfit it explains), and `versus_base`. Use it to check that an equation
+  explains what happened, not just the outcome you want, and to replay last month with your
+  equations;
+- **`inverse`** (a window, `targets`, `hold`, `new_flows`, `max_changes`, `deadline_s` up to 300,
+  `alternatives`, `check`): "if we ran this window again with these outcomes, what else would
+  have had to be true?" Targets are `{"stock": S, "scale": 1.5}` (its mean, ×1.5 of the base
+  replay's), `{"stock": S, "level": x}`, `{"stock": S, "below": x}` / `"above"` (its highest or
+  lowest level), `{"flow": F, "scale": r}` or `{"flow": F, "total": x}`; holds are `{"flow": F}`
+  (its equation stays) and `{"series": X}` (a stock's or flow's history stays). The solver looks
+  for the fewest changes to the draft's numbers and rates (and, with `new_flows`, a new inflow or
+  outflow of a target stock) under which the replay meets the targets within 5%. It answers with
+  `reached` (or the best it could do), `changes`, `side_effects` (what else would have moved, by
+  how much), `alternatives` (other changes that do as well), `uniqueness` (whether the data the
+  solved model would make, discovered again, shows the same changes) and `ambiguous`, and a new
+  draft of yours with the changes in it (`experiment`). It looks one change ahead, so two changes
+  that only work together are not found; it optimises what you name, so hold what must not move.
+
+**Commit** turns the experiment into a prediction of the change you are about to make (section
+5.8): your edits become the expected edits, and a forward run over the horizon the predicted
+trajectories. Then make the change, carrying the returned `change` id:
+
+```bash
+api -X POST "$ORCHESTRA_EVENTS_ENDPOINT/experiments/$E/commit" -d '{"source": "curator", "horizon": "2h"}'
+# ... make the change, publishing system.changed with "id": the returned change ...
+api "$ORCHESTRA_EVENTS_ENDPOINT/experiments/$E/prediction"     # later: the verdict
+```
+
+A flow whose numbers alone you changed is judged by how its fitted numbers move; a flow whose
+equation you rewrote, by whether your equation predicts what the new era counted. Hidden stocks
+you added are not judged directly (no series measures them), only through the stocks they move.
+`POST .../discard` ends an experiment you will not commit.
+
+From Python:
+
+```python
+from orchestra.config import load_project
+from orchestra.sd.experiments.api import Experiments
+
+x = Experiments(load_project(), source="curator")
+e = x.create("pair reviews")["experiment"]
+x.edit(e["id"], [{"op": "set_params", "flow": "jobs_reviewed_total", "params": {"k": 0.8}}])
+r = x.run(e["id"], "forward", horizon_s=7200)["run"]["result"]
+made = x.commit(e["id"], horizon="2h")      # publish your change with id made["change"]
+```
+
+| Status | Means |
+|---|---|
+| 400 | the request is malformed (a missing `source`, an unknown option) |
+| 403 | the experiment is another machine's |
+| 404 | no such experiment, run, version or series |
+| 409 | the experiment is committed or discarded |
+| 422 | an edit or equation was refused (`error`, `index`) |
 
 ## 6. What Orchestra does with your data
 
@@ -1532,11 +1703,9 @@ orchestra sd discover [--minutes 60] [--step-s 30] [--strategy conservation]   #
 orchestra sd show [--version N]                                                # stocks, flows, machines
 orchestra sd versions                                                          # every saved version
 orchestra sd fit [--step 1]                                                    # refit the current model's flows
-orchestra sd observability [--json]                                            # which stocks what is measured determines
-orchestra sd whatif --flow F --scale 1.5 [--horizon 1h] [--stocks A,B]         # what a change would do (read only; below)
 ```
 
-`orchestra sd observability` (and `/api/dynamics/observability`) answers, for the latest model:
+`GET /observability` on the events endpoint (and `/api/dynamics/observability` on the web) answers, for the latest model:
 can each stock's level, a hidden stock's above all, be determined from the series and counters
 there are? For each it says how (through which flow and which instrument), or, when it cannot,
 which new series or counter would make it determinable. It also lists numbers that only show in
@@ -1559,24 +1728,9 @@ says what the window and step are, lists what was left out and why, and steps th
 versions. **Rediscover now** reruns discovery in the background, optionally with another
 strategy for that run.
 
-**What if.** Ask the model what a change would do before making it:
-
-```bash
-orchestra sd whatif --flow bakery_orders_assigned_total --scale 1.5 --horizon 30m \
-    --stocks bakery_orders_waiting,bakery_shelf_items --bound bakery_orders_waiting=:12
-```
-
-It runs the model forward from the levels now, as it is and with the change, and prints each
-stock now and at the horizon: baseline, with the change, and the difference, each with a band
-(the 10th–90th percentile of 24 runs with every flow's rate perturbed by the error its fit
-records). Below the table: the flows' rates now against what was seen, where a stock reaches 0 or
-leaves a `--bound`, and what is **not trusted here** and why (a declared or net-flow equation, few
-events, low R², a stock the model's own run misses, a run outside the observed range). Other
-changes: `--add C` (per the model's time unit) on a flow, `--set-stock S=LEVEL`,
-`--input NAME=VALUE`, `--input-scale NAME=FACTOR`, `--param FLOW.k=VALUE`; `--version N` asks a
-saved version instead of the latest discovery; `--json` prints what `POST /api/dynamics/whatif`
-returns for the same question (body: `{"interventions": [{"kind": "scale_flow", "flow": "…",
-"factor": 1.5}], "stocks": […], "horizon_s": 1800}`). It only reads: nothing is saved or written.
+**What if.** A machine asks the model what a change would do through an experiment (section
+5.9): any change to the equations, not only a flow scaled. The `orchestra sd whatif` command and
+`POST /api/dynamics/whatif` were removed on 2026-10-27.
 
 The other pages: **Machines** (section 5.6, with the event map and each machine's dialog),
 **Instruments** (section 3: each instrument's health and log), **Core** (the host and its processes, the bus and the store probed live, a series catalogue, a
@@ -1941,12 +2095,13 @@ printed it; `cat ~/.orchestrator/projects.json` lists every project's key.
 | `orchestra sd show [--version N]` | The model: stocks with their latest level, flows, machines. |
 | `orchestra sd versions` | The saved versions. |
 | `orchestra sd fit [--version N] [--step H]` | Refit the flows over H-hour steps and save a version. |
-| `orchestra sd observability [--version N] [--json]` | Which stocks what is measured determines, and what would determine the rest. |
+| `orchestra sd predictions [--json]` | The predictions recorded and their verdicts, by era. |
 | `orchestra sources check` | Probe each source's endpoints and credentials. |
 | `orchestra sources infer [--source NAME]` | Run an inference round and print what is kept and left out. |
 | `orchestra sources preview QUERY [--source NAME] [--minutes N] [--step-s S]` | Read a query's fan-out, with sparklines. |
 
-Every command takes `--repo PATH`.
+Every command takes `--repo PATH`. Removed on 2026-10-27: `orchestra sd whatif`, `sd predict`,
+`sd eras` and `sd observability`; their data is read through the HTTP API (section 5.9).
 
 ### Events Orchestra publishes
 
@@ -1978,6 +2133,10 @@ program of your own.
 | An instrument's output (a script's or a URL's) | 10 MB |
 | An event posted to the endpoint | 1 MB; `type`, `source` and `id` 256 characters, `subject` and the extensions 1024 |
 | `GET /events` | `wait` at most 30 s, `limit` at most 10,000 |
+| `GET /series` | 5,000 points a series, 20,000 an answer, a window of 90 days, 64 series |
+| An equation | 4,000 characters, 600 parts, 64 parameters, 256 lookup points |
+| An edit batch | 256 edits |
+| An inverse run | `deadline_s` at most 300, `max_changes` at most 8 |
 | Duplicate ids the endpoint remembers | the bus's last 10,000 when it started, and every one posted to it since |
 | A point's timestamp | at most 60 s in the future |
 | `every` | at least 1 s |

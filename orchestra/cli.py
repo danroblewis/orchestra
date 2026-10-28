@@ -92,105 +92,6 @@ def cmd_metrics(args) -> int:
     return 0
 
 
-def _eras(models, args) -> int:
-    """The eras recorded (sd/eras.py), each with its model's versions, and what changed at the
-    current era's boundary (sd/compare.py)."""
-    import json
-
-    from .sd import eras as era_record
-
-    eras = era_record.recorded(models)
-    versions = models.versions()
-    cached = models.latest_discovery()
-    comparison = (cached[1].discovery.get("era_comparison") if cached else None) or None
-    if args.json:
-        print(json.dumps({"eras": [vars(e) for e in eras], "current": cached[1].era if cached else None,
-                          "versions": {e: [v["version"] for v in versions if v.get("era") == e] for e in [None, *(x.id for x in eras)]},
-                          "comparison": comparison}, indent=1, default=str))
-        return 0
-    if not eras:
-        print("no eras yet: none has begun (system.changed, or an event [discovery] eras_from names; recorded by the host as it "
-              "follows the bus, and by `orchestra sd discover`)")
-        return 0
-    for e in [None, *eras]:
-        vs = [f"v{v['version']}" for v in versions if v.get("era") == (e.id if e else None)]
-        head = f"{e.id:<5} from {_when(e.start)}  {e.label}" + (f"  subject {e.subject}" if e.subject else "") if e else "-     before any era"
-        mark = "  (current)" if cached and cached[1].era == (e.id if e else None) else ""
-        print(f"{head}{mark}" + (f"\n      versions: {', '.join(vs)}" if vs else ""))
-    if comparison:
-        print(f"\nat the start of era {comparison['to']}, against era {comparison['from'] or 'before any era'}:")
-        for f in comparison["flows"]:
-            if f["status"] in ("changed", "unchanged"):
-                nums = "; ".join(f"{n['param']} {n['before']:.4g} → {n['after']:.4g} (z {n['z']})" for n in f.get("params", []))
-                print(f"  flow {f['id']}: {f['status']}: {nums}")
-            else:
-                print(f"  flow {f['id']}: {f['status']}" + (f" ({f['why']})" if f.get("why") else ""))
-        for kind in ("appeared", "disappeared", "carried"):
-            if comparison["stocks"].get(kind):
-                print(f"  stocks {kind}: {', '.join(comparison['stocks'][kind])}")
-        for kind in ("appeared", "disappeared"):
-            if comparison["loops"].get(kind):
-                print(f"  loops {kind}: {', '.join(comparison['loops'][kind])}")
-    return 0
-
-
-def _predict(project: Project, models, args) -> int:
-    """Record a prediction of a change (sd/predictions.py): published as orchestra.prediction.made
-    from ``--source``, judged by the host once the change has begun an era and the horizon passed."""
-    import json
-
-    from .config import parse_duration
-    from .sd import predictions as P
-
-    try:
-        if not args.source:
-            raise P.PredictionError("--source: the machine making the change (whose prediction it is)")
-        expect = [P.parse(x) for x in args.expect]
-        if bool(expect) == bool(args.null):
-            raise P.PredictionError("say what the change will do (--expect, repeated), or --null for a change that should "
-                                    "change nothing")
-        horizon = parse_duration(args.horizon, 3600.0)
-    except (P.PredictionError, ConfigError) as e:
-        print(f"orchestra sd predict: {e}", file=sys.stderr)
-        return 2
-    traj = None
-    if args.simulate:
-        from .metrics import for_project as metrics_for
-        from .sd.judge import reader
-        from .sd.strategies import sd_installed
-        from .sd.whatif import load, what_if
-        from .web.background import history, stock_step
-
-        if not sd_installed():
-            print("orchestra sd predict: --simulate needs orchestra[sd] installed", file=sys.stderr)
-            return 2
-        model, _ = load(models)
-        if model is None or not model.stocks:
-            print("orchestra sd predict: --simulate: no model yet", file=sys.stderr)
-            return 1
-        raw = reader(project, metrics_for(project))
-        h = history(model, raw, time.time(), stock_step(project.config.discovery_step))
-        try:
-            traj = P.trajectories_from(what_if(model, h, P.interventions(expect, {f.id for f in model.flows}), horizon_s=horizon))
-        except ValueError as e:
-            print(f"orchestra sd predict: --simulate: {e}", file=sys.stderr)
-            return 2
-    try:
-        made = P.Predictions(project, source=args.source).record(expect, horizon, change=args.change, trajectories=traj)
-    except P.PredictionError as e:
-        print(f"orchestra sd predict: {e}", file=sys.stderr)
-        return 2
-    if args.json:
-        print(json.dumps(made))
-        return 0
-    from .sd.predictions_report import expectation
-    print(f"prediction {made['id']} recorded (orchestra.prediction.made from {made['source']}): "
-          + (", ".join(expectation(x) for x in made["expect"]) or "nothing changes (the null test)"))
-    print(f"the change must carry the id {made['change']} and begin an era (system.changed, or what [discovery] eras_from names);"
-          f" it is judged {horizon / 60:g} min after it" + (", against the simulated run" if traj else ""))
-    return 0
-
-
 def _predictions(models, args) -> int:
     """The predictions recorded and their verdicts, by era (sd/predictions.py, sd/judge.py)."""
     import json
@@ -238,19 +139,11 @@ def cmd_sd(args) -> int:
         for k, why in m.discovery["left_out"].items():
             print(f"  {k}: {why}")
         if m.era:
-            print(f"era {m.era} (from {_when(m.discovery.get('era_start'))}); `orchestra sd eras` compares it with its prior")
+            print(f"era {m.era} (from {_when(m.discovery.get('era_start'))}); the Dynamics page compares it with its prior")
         print(f"saved as version {r.version}" if r.version else "structure unchanged: no new version")
         args.version = None
-    if args.action == "whatif":
-        return cmd_whatif(args, project, models)
-    if args.action == "eras":
-        return _eras(models, args)
-    if args.action == "predict":
-        return _predict(project, models, args)
     if args.action == "predictions":
         return _predictions(models, args)
-    if args.action == "observability":
-        return _observability(project, models, args)
     if args.action == "versions":
         for v in models.versions():
             era = f"  era {v['era']}" if v.get("era") else ""
@@ -293,94 +186,6 @@ def cmd_sd(args) -> int:
     print("\nmachines (attributed flows are hypotheses):")
     for mc in m.machines:
         print(f"  {mc.id:<20} {mc.kind:<8} flows: {', '.join(mc.attributed) or '-'}")
-    return 0
-
-
-def _observability(project: Project, models, args) -> int:
-    """Which stocks what is measured determines (sd/observability.py), at the last hour's mean levels."""
-    import json
-
-    from .metrics import for_project as metrics_for
-    from .sd.observability import lines, operating_point, report
-    from .sd.strategies import sd_installed
-    from .sources.catalogue import Catalogue
-    from .web.background import history, stock_step
-
-    if not sd_installed():
-        sys.exit("orchestra: the observability report needs orchestra[sd] installed")
-    if args.version is None and (cached := models.latest_discovery()) and cached[1].stocks:
-        m, which = cached[1], "the latest discovery"
-    else:
-        m, which = models.load(args.version), f"version {args.version or models.current_version()}"
-    if m is None:
-        print("no model yet")
-        return 1
-    store = metrics_for(project)
-    cat = Catalogue(project, store)
-    step = stock_step(project.config.discovery_step)
-    readers: dict = {}
-
-    def raw(ref, start: float, end: float):
-        if ref.source and ref.source != "own":
-            if (start, end) not in readers:
-                readers[(start, end)] = cat.reader(start, end, step)
-            return readers[(start, end)](ref)
-        return store.raw(ref.name, ref.labels, start=start, end=end)
-
-    levels, inputs, point = operating_point(history(m, raw, time.time(), step))
-    r = report(m, levels, inputs, point=point)
-    if args.json:
-        print(json.dumps(r, indent=1))
-        return 0
-    print(f"{m.name} ({which})")
-    print("\n".join(lines(r)))
-    return 0
-
-
-def cmd_whatif(args, project, models) -> int:
-    """What the model says a change would do (sd/whatif.py): read only; nothing is saved or written."""
-    import json
-
-    from .config import parse_duration
-    from .metrics import for_project as metrics_for
-    from .sd import whatif_report as report
-    from .sd.strategies import sd_installed
-    from .sd.whatif import load, what_if
-    from .sources.catalogue import Catalogue
-    from .web.background import history, stock_step
-
-    if not sd_installed():
-        print("whatif needs orchestra[sd] installed", file=sys.stderr)
-        return 2
-    try:
-        ivs = report.interventions(args.flow, args.scale, args.add, args.set_stock, args.input, args.input_scale, args.param)
-        bounds = report.bounds(args.bound)
-        horizon_s = parse_duration(args.horizon, 3600.0)
-    except (ValueError, ConfigError) as e:
-        print(f"orchestra sd whatif: {e}", file=sys.stderr)
-        return 2
-    model, label = load(models, args.version)
-    if model is None:
-        print("no model yet")
-        return 1
-    store = metrics_for(project)
-    cat = Catalogue(project, store)
-    step = stock_step(project.config.discovery_step)
-
-    def raw(ref, start, end):
-        if ref.source and ref.source != "own":
-            return cat.reader(start, end, step)(ref)
-        return store.raw(ref.name, ref.labels, start=start, end=end)
-
-    h = history(model, raw, time.time(), step)
-    try:
-        r = what_if(model, h, ivs, stocks=[s for s in (args.stocks or "").split(",") if s] or None,
-                    horizon_s=horizon_s, step_s=args.step_s, members=args.members, seed=args.seed,
-                    bounds=bounds, label=label)
-    except ValueError as e:
-        print(f"orchestra sd whatif: {e}", file=sys.stderr)
-        return 2
-    print(json.dumps(r) if args.json else "\n".join(report.table(r)))
     return 0
 
 
@@ -483,42 +288,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(fn=cmd_metrics)
 
     s = sub.add_parser("sd", help="the system dynamics model: discover it from the metrics, show it, fit it, list its versions, "
-                       "say which stocks what is measured determines, ask what a change would do (whatif), list the eras and what changed (eras), "
-                       "record what a change will do before it is made (predict) and list the predictions and their verdicts (predictions)")
-    s.add_argument("action", choices=["show", "fit", "versions", "discover", "observability", "whatif", "eras", "predict", "predictions"])
+                       "and list the predictions and their verdicts (predictions). Machines ask the model what a change would do "
+                       "through experiments (the events endpoint's HTTP API, or sd.experiments.api.Experiments; USING_ORCHESTRA.md §5.9)")
+    s.add_argument("action", choices=["show", "fit", "versions", "discover", "predictions"])
     s.add_argument("--minutes", type=float, help="for discover: the window, in minutes back from now (default: [discovery] window)")
-    s.add_argument("--step-s", dest="step_s", type=float, help="for discover: seconds per step (default: [discovery] step); "
-                   "for whatif: the simulation's step (default 15 s, longer for long horizons)")
+    s.add_argument("--step-s", dest="step_s", type=float, help="for discover: seconds per step (default: [discovery] step)")
     s.add_argument("--strategy", help="for discover: conservation or an SD Lab strategy (default: [discovery] strategy)")
-    s.add_argument("--version", type=int, help="for show, fit, observability and whatif: this past version (default: the current one; "
-                   "for observability and whatif, the latest discovery)")
+    s.add_argument("--version", type=int, help="for show and fit: this past version (default: the current one)")
     s.add_argument("--step", type=float, default=1.0, help="for fit: hours per step (default 1)")
-    s.add_argument("--json", action="store_true", help="for observability, whatif, eras, predict and predictions: the answer as JSON")
-    w = s.add_argument_group("whatif", "what the model says a change would do, against no change (read only)")
-    w.add_argument("--flow", help="the flow --scale and --add change")
-    w.add_argument("--scale", type=float, help="multiply the flow's rate by this")
-    w.add_argument("--add", type=float, help="add this much per time unit to the flow's rate")
-    w.add_argument("--set-stock", dest="set_stock", action="append", default=[], metavar="STOCK=LEVEL", help="start a stock at this level")
-    w.add_argument("--input", action="append", default=[], metavar="NAME=VALUE", help="hold a measured input at this value")
-    w.add_argument("--input-scale", dest="input_scale", action="append", default=[], metavar="NAME=FACTOR",
-                   help="hold a measured input at its last value times this")
-    w.add_argument("--param", action="append", default=[], metavar="FLOW.PARAM=VALUE", help="set one number of a flow's rate")
-    w.add_argument("--horizon", default="1h", help="how far ahead (a duration: 30m, 2h; default 1h); for predict, how long "
-                   "after the change to judge it")
-    w.add_argument("--stocks", help="comma-separated stock ids to report (default: all)")
-    w.add_argument("--bound", action="append", default=[], metavar="STOCK=LO:HI", help="report where a stock leaves these bounds")
-    w.add_argument("--members", type=int, default=24, help="runs in the uncertainty band (default 24)")
-    w.add_argument("--seed", type=int, default=0, help="the band's random seed (default 0)")
-    w = s.add_argument_group("predict", "record what a change will do, before it is made; judged once it has begun an era "
-                             "and --horizon has passed (the intended-effect test)")
-    w.add_argument("--source", help="the machine making the change: the prediction is its")
-    w.add_argument("--change", help="the id the change event will carry, or carries (default: a new one, printed)")
-    w.add_argument("--expect", action="append", default=[], metavar="EDIT",
-                   help="an expected edit of the model, repeated: 'FLOW x2', 'FLOW unchanged', 'flow|stock|loop ID appears|disappears', "
-                        "'flow A->B appears', 'STOCK below|above X', or a JSON object")
-    w.add_argument("--null", action="store_true", help="the null test: the change should change nothing")
-    w.add_argument("--simulate", action="store_true", help="attach the current model's what-if run of the expected edits "
-                   "(needs orchestra[sd]); without it the host simulates the previous era's model when it judges")
+    s.add_argument("--json", action="store_true", help="for predictions: the answer as JSON")
     s.set_defaults(fn=cmd_sd)
 
     s = sub.add_parser("sources", help="other time-series stores ([[sources]]): check them, infer what to read, preview a query")

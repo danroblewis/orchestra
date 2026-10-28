@@ -73,17 +73,34 @@ marked as such. This is goal G1, and every other goal's tests depend on it.
 
 ### G5. Agents use the system dynamics model (phase 1)
 - **What:**
-  - **Tools:** agents can read the model and simulate a change: "if this flow's rate changed
-    so, what do these stocks do?". A worker can state, before its work, which flows it expects
-    to change, and a later version of the model checks the guess.
+  - **Tools:** agents can read the model and simulate a change. The owner (2026-10-27): the
+    "what if" is not "scale this flow"; the agent looks at the model, guesses the impact of its
+    change, and writes it as flow equations removed, rewritten whole or added, over any stocks and
+    variables, one edit at a time or as a whole diagram, until the outcomes it expects follow from
+    equations that semantically justify them. Not only agents: any machine may. A worker can
+    state, before its work, which flows it expects to change, and a later version of the model
+    checks the guess.
   - **Guidance:** agents learn what good stock and flow metrics look like and how to add an
     emitter (`docs/machines.md`, USING_ORCHESTRA.md §3–4), since agents implement new metrics.
   - **Focus:** domain stocks the target repository emits come first; the task system's own
     stocks matter mostly to a pipeline manager (G9).
 - **Acceptance:**
-  - the simulate tool's output matches `orchestra sd` on a known model (the bakery);
+  - the simulate tool's output matches the model's own simulation on a known model (the bakery);
   - a dummy worker records an expected-effect note, and the note is compared with the next
     model version.
+- **Phase 1 built (2026-10-27) in Orchestra's core: experiments** (SPEC §4.5,
+  `orchestra/sd/experiments/`). An equation language every flow's rate is read and written in
+  (every equation discovery writes renders in it and round-trips); a staged draft of the model a
+  machine edits in checked, atomic batches (add, rewrite or remove flows; hidden stocks;
+  parameters; input scenarios; a whole model) with each equation's origin recorded; three runs:
+  **forward** (base and draft from now, with the band, limits and trust flags of the former what-if,
+  whose run matches `sd.simulate` on the bakery), **replay** (a past window on its measured
+  inputs, each equation scored against its counter: the backtest and the counterfactual replay)
+  and **inverse** (G16); and **commit**, which makes the experiment a G13 prediction. Served to
+  any machine by the HTTP API beside the events endpoint and the Python API, and read-only on the
+  web. `orchestra sd whatif` and `POST /api/dynamics/whatif` are gone. **Next:** phase 2, the
+  agents' tools (pi or MCP) and a skill explaining them, in `~/orchestra-agents`; phase 3, the
+  web pages that show experiments and their runs.
 
 ## Next
 
@@ -191,8 +208,9 @@ the change did what was intended.
   names more by envelope (default `config.changed`); the host records and announces them
   (`orchestra.era.started`); discovery reads only the current era, merges it with its prior and
   compares the two (SPEC §4.3, `sd/eras.py`, `sd/prior.py`, `sd/compare.py`); the Dynamics page has
-  the timeline and each flow's change, the Machines page's map is per era, and `orchestra sd eras`
-  lists them.
+  the timeline and each flow's change, the Machines page's map is per era, and `GET /eras` on the
+  events endpoint lists them for machines (the `orchestra sd eras` command was removed on
+  2026-10-27).
 
 ### G12. The model says when it changes, and when reality leaves its predictions
 - **What:** Orchestra publishes events of its own:
@@ -225,7 +243,8 @@ the change did what was intended.
   (an Orchestra type whose `data` Orchestra reads, as with `orchestra.machine.started`) naming the
   id its change will carry, the expected edits (a flow's factor, unchanged, a part appearing or
   disappearing, a stock's level; `[]` is the null test), the horizon and optionally its own
-  what-if run; `orchestra sd predict` and `sd.predictions.Predictions` publish it. The host
+  forward run; `sd.predictions.Predictions` and committing an experiment publish it (the
+  `orchestra sd predict` command was removed on 2026-10-27). The host
   matches it to the era its change begins, judges it after the horizon against the boundary
   comparison (a form change by whether the old law still predicts the count) and the stocks'
   run from the previous era's model with the edits, and publishes `orchestra.prediction.judged`:
@@ -237,6 +256,12 @@ the change did what was intended.
   era) and end to end on a real `orchestra run` with a scripted machine that predicts over the
   events endpoint (`tests/e2e/test_predictions_e2e.py`, opt in). Not yet on the dummy agents
   themselves: that test belongs in `orchestra-agents`, beside its eras e2e.
+- **Extended (2026-10-27): experiments as predictions.** A prediction may expect a flow's whole
+  equation (`{"flow", "equation", "params"}`), judged by its law: the predicted equation, run over
+  the era's measured levels and inputs, must predict what the era counted. Committing an
+  experiment (G5) states its edits this way, with its forward run as the trajectories; on the
+  synthetic pipeline, a doubled rate written as new numbers or as a new equation passes, and a
+  wrong equation is a side effect (`tests/unit/test_experiments_api.py`).
 
 ### G14. Test health as instruments
 - **What:** counts of tests by kind (unit, acceptance, e2e) and by outcome (passing, failing,
@@ -285,17 +310,52 @@ the change did what was intended.
   raise the first-try rate. The intended-effect test passes for a helpful edit and fails for a
   useless one.
 
+## Causality
+
+### G16. Exploring causality
+- **Why:** a model fitted to what happened says what moves together; acting on it needs what
+  causes what. The owner (2026-10-27): "if we did last month again but our profits were 50%
+  higher, what else would have needed to be true?", with the warning that such a search
+  optimises isolated changes, and data faked to fit them may not be faked fully, especially where
+  there are unintended but acceptable side effects.
+- **What:**
+  - **Inverse experiments** (built, the first part): targets over a past window and what must
+    hold; the smallest set of changes to the model under which a replay meets them; the side
+    effects, the near-optimal alternatives, and a fabricate-and-rediscover check of whether the
+    data would tell the solution from another.
+  - **Counterfactual replay** (built): a past window run again with other equations, on its own
+    measured inputs, scored against what happened.
+  - **Era boundaries as natural experiments:** every announced change is an intervention; the
+    boundary comparison (G11) and the verdicts (G13) are its readout, and the false-change rate
+    measured between an era's halves is the noise floor any claimed effect must clear.
+  - **Probes:** designed perturbations (persistent excitation in control terms): a machine varies
+    something on purpose, within safe bounds, so that the flows it touches can be identified
+    rather than inferred from whatever happened to vary. A probe is an experiment committed with
+    its own horizon and a planned return.
+- **Acceptance:**
+  - (built) on synthetic data from a known model, an inverse run asked for a target the true
+    change produced recovers that change as the sparsest solution and reports its side effects;
+    an impossible target is reported unreachable with the best approach; an ambiguous one is
+    flagged; the solver keeps its deadline (`tests/unit/test_experiments_inverse.py`);
+  - (built) the true equation scores better in replay than a wrong one on data it made
+    (`tests/unit/test_experiments_replay.py`);
+  - (to come) a probe on the dummy-agents system identifies a flow's rate that ordinary operation
+    leaves unidentified (the observability report says undetermined before, determined after);
+  - (to come) the effect of each era boundary on the dummy-agents system is reported with the
+    measured false-change rate, and an effect below it is said to be indistinguishable from noise.
+
 ## Status
 
 | Goal | Status |
 |---|---|
-| G1–G5 | In progress from 2026-10-27 |
+| G1–G5 | In progress from 2026-10-27; G5's phase 1 (experiments in the core) built 2026-10-27, phases 2 (agents' tools and skill) and 3 (web pages) next |
 | G6–G7 | After G1 and G3 |
 | G8–G10 | To be planned |
 | G11–G12 | Built 2026-10-27 in Orchestra's core: eras with the previous era as the prior, the boundary comparison, the model's own events |
-| G13 | Built 2026-10-27 in Orchestra's core: predictions recorded on the bus, judged per era by lifted-models §3.1, `orchestra.prediction.judged`; the dummy-agent e2e is still to be written in `orchestra-agents` |
+| G13 | Built 2026-10-27 in Orchestra's core: predictions recorded on the bus, judged per era by lifted-models §3.1, `orchestra.prediction.judged`; equation expectations and committed experiments added the same day; the dummy-agent e2e is still to be written in `orchestra-agents` |
 | G14 | Built 2026-10-27: the test-report instrument in Orchestra, the gate's reruns and test reports in the task system; the dummy-agent e2e is still to be written in `orchestra-agents` |
 | G15 | After G3, G11 and G13 |
+| G16 | Inverse experiments and counterfactual replay built 2026-10-27 (with G5's phase 1); natural experiments and probes to come |
 
 Related work already in flight (2026-10-27):
 - agent tool permissions enforced;

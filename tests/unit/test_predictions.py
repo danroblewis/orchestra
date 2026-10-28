@@ -203,16 +203,17 @@ def test_predictions_are_checked_into_one_shape():
         P.check({"expect": [], "horizon_s": 60})
 
 
-def test_the_command_lines_expectations():
-    assert P.parse("jobs_done_total x2") == {"kind": "factor", "flow": "jobs_done_total", "factor": 2.0}
-    assert P.parse("jobs_done_total ×0.5")["factor"] == 0.5
-    assert P.parse("jobs_done_total unchanged") == {"kind": "unchanged", "flow": "jobs_done_total"}
-    assert P.parse("stock jobs_reviewing disappears") == {"kind": "disappears", "part": "stock", "id": "jobs_reviewing"}
-    assert P.parse("flow jobs_waiting->outside appears") == {"kind": "appears", "part": "flow", "from": "jobs_waiting", "to": None}
-    assert P.parse("jobs_waiting below 6") == {"kind": "level", "stock": "jobs_waiting", "below": 6.0}
-    assert P.parse('{"flow": "f", "param": "k", "factor": 2}') == {"kind": "factor", "flow": "f", "factor": 2.0, "param": "k"}
-    with pytest.raises(P.PredictionError, match="expected"):
-        P.parse("jobs_done_total doubles")
+def test_an_equation_is_an_expectation_checked_for_syntax():
+    assert P.expectation({"flow": "f", "equation": "k * min(q, 2 * r)", "params": {"k": 0.4}}) == {
+        "kind": "equation", "flow": "f", "equation": "k * min(q, 2 * r)", "params": {"k": 0.4}}
+    new = P.expectation({"from": "a", "to": None, "appears": True, "equation": "c", "params": {"c": 1}})
+    assert new == {"kind": "appears", "part": "flow", "from": "a", "to": None, "equation": "c", "params": {"c": 1.0}}
+    assert P.plain(new) == {"from": "a", "to": None, "appears": True, "equation": "c", "params": {"c": 1.0}}
+    for bad, why in [({"flow": "f", "equation": "__import__('os')"}, "equation"), ({"flow": "f", "equation": "k * q", "params": {"z": 1}}, "not read by the equation"),
+                     ({"flow": "f", "params": {"k": 1}}, "params go with an equation"),
+                     ({"flow": "f", "appears": True, "equation": "c", "params": {"c": 1}}, "its ends")]:
+        with pytest.raises(P.PredictionError, match=why):
+            P.expectation(bad)
 
 
 def test_sync_records_each_prediction_once_keeps_invalid_ones_and_survives_a_replaced_bus(tmp_path):
@@ -318,7 +319,7 @@ def test_levels_stocks_and_the_verdict_table():
 
 # --- the command line, the host and the Dynamics page
 
-def test_predict_on_the_command_line_judged_by_the_host_shown_by_the_cli_and_the_dynamics_api(tmp_path, monkeypatch, capsys):
+def test_a_prediction_judged_by_the_host_shown_by_the_cli_and_the_dynamics_api(tmp_path, monkeypatch, capsys):
     import json
     import subprocess
 
@@ -349,12 +350,13 @@ def test_predict_on_the_command_line_judged_by_the_host_shown_by_the_cli_and_the
         assert main() == 0
         return capsys.readouterr().out
 
-    out = cli("predict", "--source", "ops", "--change", "cause", "--expect", "jobs_arrived_total x2", "--expect", "jobs_done_total unchanged",
-              "--horizon", "40m")
-    assert "recorded (orchestra.prediction.made from ops): jobs_arrived_total ×2, jobs_done_total unchanged" in out
-    assert "the change must carry the id cause" in out
+    made = P.Predictions(p, source="ops").record([{"flow": "jobs_arrived_total", "factor": 2}, {"flow": "jobs_done_total", "unchanged": True}],
+                                                 horizon="40m", change="cause")
+    assert made["status"] == "waiting" and made["change"] == "cause"
     monkeypatch.setattr("sys.argv", ["orchestra", "sd", "predict", "--source", "ops", "--horizon", "40m"])
-    assert main() == 2 and "--null" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        main()
+    assert "invalid choice: 'predict'" in capsys.readouterr().err, "the command is gone: machines predict through the APIs"
 
     host = Host(p)
     events = Events.for_project(p)

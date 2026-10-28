@@ -1,4 +1,4 @@
-"""How far to trust the model's equations, for a prediction (``sd.whatif``): each flow's spread
+"""How far to trust the model's equations, for a forward run (``sd.experiments.forward``): each flow's spread
 (the relative error its fit records) and the reasons a flow or a stock is not trusted.
 
 **Spread.** One number per flow, ``rel``: the relative standard error of its rate, from what its

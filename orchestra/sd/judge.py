@@ -14,9 +14,11 @@ saved model and the levels until the next change; what the rules would say from 
 ``sd.compare``: the previous era's model against this era's own evidence). The stocks' measured
 levels from the change to the horizon, read as the Dynamics page reads them
 (``web.background.history``). Their predicted runs: the prediction's own ``trajectories`` when it
-carries them, else the previous era's model run from the change with the predicted edits
-(``sd.whatif``, which needs ``orchestra[sd]``; without it the stocks are judged by the level
-expectations alone, ``stocks.reason`` says why).
+carries them, else the previous era's model run forward from the change with the predicted edits
+(``sd.experiments.forward`` on ``sd.experiments.expect.draft``, which needs ``orchestra[sd]``;
+without it the stocks are judged by the level expectations alone, ``stocks.reason`` says why). An
+expected equation is judged by its law over the era's measured levels and inputs
+(``sd.verdict.text_law``).
 
 **The false-change rate** (lifted-models §3.2: a null test is worth what the quiet-period diff
 rate is). Each verdict reports the threshold (``z``: a number changed when it moved by ``Z``
@@ -72,8 +74,8 @@ def _era_model(store: ModelStore, era, end: float, interrupted: bool):
 
 
 def measured_levels(models: list, raw, start: float, until: float, step: float) -> dict[str, list]:
-    """Each measured stock of ``models``: its level from ``start`` to ``until``, as ``[seconds after
-    start, level]``."""
+    """Each measured stock of ``models`` (and, as ``input:<name>``, each measured input): its level
+    from ``start`` to ``until``, as ``[seconds after start, level]``."""
     from ..web.background import history
 
     out: dict[str, list] = {}
@@ -83,6 +85,31 @@ def measured_levels(models: list, raw, start: float, until: float, step: float) 
         h = history(m, raw, until, step, span_s=until - start)
         for sid, pts in (h.get("stocks") or {}).items():
             out.setdefault(sid, [[t - start, v] for t, v in pts if start <= t <= until])
+        for name, pts in (h.get("inputs") or {}).items():
+            out.setdefault(f"input:{name}", [[t - start, v] for t, v in pts if start <= t <= until])
+    return out
+
+
+def predicted_laws(expect: list[dict], prior, model, measured: dict[str, list], span_s: float) -> dict[str, dict]:
+    """Each flow an expectation gives a whole equation: its predicted equation's law over the era
+    (``new``) and the previous era's (``old``), as ``sd.verdict.law`` reckons them."""
+    from .discover import UNITS
+    from .verdict import text_law
+
+    if model is None:
+        return {}
+    unit = UNITS.get(model.time_unit, 60.0)
+    out = {}
+    for e in expect:
+        if e["kind"] != "equation":
+            continue
+        a = next((f for f in model.flows if f.id == e["flow"]), None)
+        b = next((f for f in (prior.flows if prior else []) if f.id == e["flow"]), None)
+        if a is None or a.current() is None:
+            continue
+        rel = spread(b)[0] if b is not None else 0.1
+        old = law(b.current(), b.src, a.current(), measured, span_s, unit, rel) if b is not None and b.current() else None
+        out[e["flow"]] = {"new": text_law(e["equation"], e.get("params") or {}, a.current(), measured, span_s, unit, rel), "old": old}
     return out
 
 
@@ -106,8 +133,8 @@ def laws_of(prior, model, comparison: dict, measured: dict[str, list], span_s: f
 
 
 def simulated(prior, raw, expect: list[dict], start: float, horizon_s: float, step: float) -> tuple[dict | None, str | None]:
-    """The previous era's model run from ``start`` with the predicted edits: trajectories, or the
-    reason there are none."""
+    """The previous era's model run forward from ``start`` with the predicted edits: trajectories,
+    or the reason there are none."""
     from .strategies import sd_installed
 
     if prior is None or not prior.stocks:
@@ -115,14 +142,16 @@ def simulated(prior, raw, expect: list[dict], start: float, horizon_s: float, st
     if not sd_installed():
         return None, "no_simulator"
     from ..web.background import history
-    from .whatif import what_if
+    from .experiments.expect import draft
+    from .experiments.forward import forward, trajectories
 
     try:
         h = history(prior, raw, start, step)
-        r = what_if(prior, h, record.interventions(expect, {f.id for f in prior.flows}), horizon_s=horizon_s, now=start, points=121)
+        edited, _ = draft(prior, expect)
+        r = forward(prior, edited, h, horizon_s=horizon_s, now=start, points=121)
     except Exception:  # noqa: BLE001 - a model the simulator cannot step is judged by its levels alone
         return None, "simulation_failed"
-    return record.trajectories_from(r), None
+    return trajectories(r), None
 
 
 def false_change(project, metrics, prev_start: float | None, start: float, comparison: dict) -> dict:
@@ -197,8 +226,9 @@ def judge_one(project, metrics, store: ModelStore, p: dict, eras: list, now: flo
     span = until - era.start
     measured = measured_levels([model, prior], raw, era.start, until, step)
     laws = laws_of(prior, model, comparison, measured, span)
+    predicted = predicted_laws(expect, prior, model, measured, span)
     taken = set()
-    statuses = [{**e, **edit(e, comparison, model, taken, laws)} for e in edits]
+    statuses = [{**e, **edit(e, comparison, model, taken, laws, predicted)} for e in edits]
     levels = [{**e, **level(e, measured, span)} for e in expect if e["kind"] == "level"]
     if p.get("trajectories"):
         traj, why, origin = p["trajectories"], None, "prediction"
