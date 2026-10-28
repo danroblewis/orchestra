@@ -674,10 +674,16 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   the kind, where the credential comes from and whether it is there; never its value.
 - **Series are inferred from the schema** every `infer_every` (an hour), cached in
   `<state>/sources/<name>.json` (`sources/infer.py`): families (names differing by a statistic
-  suffix, or a `stat`/`statistic`/`quantile` label; a histogram's `_count`; a recording rule
-  `…:sum`/`:avg` as a view of its base by that function), label aliases, each label's role
-  (identity: one of the source's `identity` names, default pod/instance/container, or churning,
-  or over 50 values; constant; grouping) and the reporting interval (`sources/schema.py`).
+  suffix, or a `stat`/`statistic`/`quantile` label; a histogram's or summary's `_count`, typed
+  under its own name or its base's; a recording rule `…:sum`/`:avg` as a view of its base by that
+  function, read on its own interval), label aliases, each label's role (identity: one of the
+  source's `identity` names, default pod/instance/container, a label naming one object (an id,
+  an address, an image or version), churning, or over 50 values; constant; grouping) and the
+  reporting interval (`sources/schema.py`). **A name is a hint; the samples decide**
+  (`sources/behaviour.py`): a gauge that never falls but at rare resets and whose name counts
+  events is a counter, a counter that falls by halves is a gauge, and timestamps, clocks, info
+  metrics and Prometheus' `up`/`scrape_*` are never levels or flows. A scrape job or replica
+  label whose values repeat each other's series is read at one value (`sources/duplicates.py`).
 - **Views** (`sources/views.py`): of a per-pod statistic, the max of max, min of min, average of
   average (flagged unweighted) and max of p95/p99 (flagged an upper bound), never a sum; of a
   plain gauge the max and average (latencies, ratios) or the sum; of a counter, increments from
@@ -690,8 +696,11 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   candidates as JSON on standard input and prints rewrites: new queries, drops with a reason,
   definitions of its own, pins (`sources/transform.py`). A failure fails the round.
 - **Rank and cap** (`sources/rank.py`): each candidate is read over the window at its resolution;
-  one that returns nothing or does not move is left out; the rest are scored (moves, stable,
-  small, coarse, view) and taken round-robin across families up to the cap. A pin bypasses the
+  one that returns nothing or does not move is left out, and so is one equal at every point to
+  another family's (a count of the same pods, a `_count` beside its `_total`); the rest are
+  scored (moves, groups moving apart, stable, small, coarse, view) and taken in two rounds:
+  every family's coarsest up to 60% of the cap, then the rest best first, splits whose groups
+  move apart leading. Each definition records the grouping labels it merges. A pin bypasses the
   ranking, not the cap. What is left out is kept with its score and why. A hand-written
   `[[series]]` (source, name, query, kind level|counter|rate, unit) is always read.
 - **Reading** (`sources/catalogue.py`, `sources/fetch.py`): every definition is read for exactly

@@ -220,7 +220,8 @@ def test_recording_rules_are_views_of_their_base_in_one_family(tmp_path, names, 
     assert set(fam.rollups) == rules
     defs = views(fam, spec)
     rolled = [d for d in defs if d.view == "rollup"]
-    assert {d.name.rpartition("_")[2] for d in rolled} == rules
+    named = {r["metric"].replace(":", "_") if r.get("level") else f"{r['of']}_{fn}" for fn, r in fam.rollups.items()}
+    assert {d.name for d in rolled} == named              # level:metric:fn by its full name: never an exporter's metric_fn
     if "rate" in rules:
         assert all(d.kind == "rate" and d.query.startswith("sum") for d in rolled)
     if fam.name == "request_latency":                     # the rules replace the base's own max and avg
