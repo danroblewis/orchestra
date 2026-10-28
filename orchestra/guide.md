@@ -111,8 +111,12 @@ written for half the window, changed in at least 5 steps, with counters that cou
 events each: so the first model appears about an hour after instruments start, and a series that
 changes for a few seconds at a time is invisible on a 30 s grid. A demo wants a short window and
 a fine step (`window = "10m"`, `step = "5s"`); a slow system (tickets, deploys) a longer window.
-`every` below a minute costs CPU for little: discovery's deadline is 80% of it. Change these only
-for a reason you can name.
+`every` below a minute costs CPU for little: discovery's deadline is 80% of it. Discoveries never
+overlap: the host starts one every `every`, or a fifth of `every` after the last one ended when it
+took longer, and logs how long each took and whether the strategy was stopped at its deadline
+(`discovery (kalman_lna): …; took 312 s; kalman_lna stopped at its deadline of 240 s`). A run that
+is always stopped there is reading too much: narrow `[[sources]] match` or lower `max_series`.
+Change these only for a reason you can name.
 
 ## Instruments and machines
 
@@ -218,7 +222,10 @@ service = ["service", "app", "k8s_app"]       # spellings that mean the same lab
 ```
 
 Narrow `match` to what bears on the owner's question; a broad match on a big store spends the
-read deadline (`deadline`, 120 s) and the 200-series cap on noise. `settle = "30s"` for a
+read deadline (`deadline`, 120 s) and the 200-series cap on noise. The cap is spent on every
+family's total first (up to 60% of it), then on the splits whose groups move apart (three
+queues, consumer groups, pod phases), and each definition says what it merges (`merges queue
+(3 values)` in `infer_source`): a total you need split is one to pin or a reason to narrow. `settle = "30s"` for a
 VictoriaMetrics with its default latency offset. A refused source counts as missing, and then
 discovery saves no model version until it is fixed: check `GET /api/instruments` `errors`. A
 `[[series]]` entry (`source`, `name`, `query` or `select`, `kind = "level" | "counter" | "rate"`)
@@ -235,11 +242,17 @@ label, per-pod series, recording rules beside their bases. Look before declaring
    the question is about (requests waiting, jobs queued, orders shipped) and search the names for
    them (`match = ['{__name__=~".*queue.*|.*backlog.*"}']`). A store read whole fills the 200-series
    cap with whatever ranks first.
-2. **Tell counters from gauges by behaviour, not only by name.** The metadata's `type` when the
-   store keeps it; else `_total`, `_count`, `_sum` and `_bucket` are counters, and anything else
-   is a gauge until `preview_query` shows it: a series that only rises (with drops to zero at
-   restarts) is a counter whatever it is called. A counter is a flow (read as increments or a
-   rate); a gauge may be a stock. A `_created` series is a timestamp, not a measurement.
+2. **Tell counters from gauges by behaviour, not only by name.** Inference does most of this
+   and says so in each family's `retyped`: a summary's or histogram's `_count` is a counter even
+   when the store types only the base name; a gauge that never falls but at a rare reset, and
+   whose name counts events rather than an amount held (`…_offset`, `…_processed_messages`, not
+   `…_used_bytes` or `…_lag`), is read as a counter (kafka_exporter types its offsets gauges); a
+   "counter" that falls by halves is read as a gauge; Unix timestamps (`…_created`,
+   `…_start_time_seconds`), clocks (`…_uptime_seconds`), info metrics (always 1) and Prometheus'
+   own `up` and `scrape_*` are read as neither. A recording rule's name is a hint too: one named
+   a rate of a utilisation is a gauge, and a rule is read on its own evaluation interval. Check
+   `retyped` against what you know of the exporter; where it is wrong, pin the series. A counter
+   is a flow (read as increments or a rate); a gauge may be a stock.
 3. **Find the stock candidates.** A good stock is a gauge of an amount that accumulates and
    drains (a queue's depth, items in progress, open tickets, a balance), with counters beside it
    that fill and drain it (`enqueued_total`, `processed_total`). Discovery makes a stock of a level
@@ -248,14 +261,18 @@ label, per-pod series, recording rules beside their bases. Look before declaring
    they are intensive (the views take their max or average, never a sum).
 4. **Mind the labels.** `source_schema` shows each label's number of values. A label with many
    values (pod, instance, request id, path, user) multiplies series: sum it away (it is an
-   `identity` label by default for pod, instance and container; name others in `identity`), unless
-   it names the thing the model is about (`service`, `queue`). Several spellings of one label
+   `identity` label by default for pod, instance and container, and for any label that names one
+   object: a `…_id`, `uid`, an IP address, an image or version, or values that look like ids; name
+   others in `identity`), unless it names the thing the model is about (`service`, `queue`). Several spellings of one label
    (`service`, `app`, `k8s_app`) are one `[sources.labels]` entry.
 5. **Watch for duplicates.** One quantity is often stored several ways: a base metric and its
    recording rules (`job:http_requests:rate5m`), a histogram's `_count` and a separate
-   `requests_total`, the same gauge from two exporters. Read one of each quantity: two flows that
-   count the same events make discovery see twice the flow, and a stock balanced by one while the
-   other is read too will not balance.
+   `requests_total`, the same gauge from two exporters. Inference reads a family once when two
+   scrape jobs (or Prometheus replicas) hold the same series (`notes`: `job=… only repeats
+   job=…`), and keeps one of two families equal at every point and one count of the same pods;
+   what it cannot see (two exporters that disagree a little) is yours. Read one of each quantity:
+   two flows that count the same events make discovery see twice the flow, and a stock balanced
+   by one while the other is read too will not balance.
 6. **Check units and windows.** A gauge reported every 5 minutes cannot show a change inside one
    discovery step; a counter that resets every deploy is fine (increments are reset-safe), one that
    is a cumulative from another system's start is fine too. A stock and its flows must count the

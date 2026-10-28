@@ -375,12 +375,12 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
     total = sum(d for _, d in events)
     if total < MIN_EVENTS:                 # too few events to tell a form from noise: the rate alone
         paths, src = {}, None
-    at = {sid: [p.before(t) for t, _ in events] for sid, p in paths.items()}
+    at = {sid: _by_level(events, [p.before(t) for t, _ in events]) for sid, p in paths.items()}
+    flat = _by_level(events, [0.0] * len(events))
 
     def ll(c: float, k: float, sid: str | None) -> float:
-        xs = at[sid] if sid else [0.0] * len(events)
         out = 0.0
-        for (_, d), x in zip(events, xs):
+        for x, d in at[sid] if sid else flat:
             r = c + k * x
             if r <= 1e-12:
                 return -math.inf
@@ -434,6 +434,17 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
     return [best, *sorted((c for c in cands if c is not best), key=lambda c: ("rejected" in c, c["aic"]))]
 
 
+def _by_level(events: list[tuple[float, float]], xs: list[float]) -> list[tuple[float, float]]:
+    """The events' counts summed by the level each saw: Σ count × log(c + k × level) over events
+    is the same sum over levels, and a stock holds few levels (a count of pods, a queue's length)
+    while it sees many events, so the likelihood the fitters evaluate thousands of times costs a
+    pass over the levels, not the events."""
+    out: dict[float, float] = {}
+    for (_, d), x in zip(events, xs, strict=True):
+        out[x] = out.get(x, 0.0) + d
+    return list(out.items())
+
+
 def _follows(events: list[tuple[float, float]], p: Path, c0: float, span: float) -> str:
     """Why a level read by a flow's rate follows the flow rather than leading it, or nothing: the
     rate fitted on the level ``LEAD_S`` later explains the events better, by ``AIC_MARGIN``, than
@@ -441,11 +452,11 @@ def _follows(events: list[tuple[float, float]], p: Path, c0: float, span: float)
     was when the events came. A count of the last two minutes' orders, high after each rush began,
     fits the orders as a cause would, until it is read a minute later and fits them better."""
     def best(shift: float) -> float:
-        xs = [p.before(t + shift) for t, _ in events]
+        xs = _by_level(events, [p.before(t + shift) for t, _ in events])
 
         def nll(q):
             out = 0.0
-            for (_, d), x in zip(events, xs):
+            for x, d in xs:
                 r = q[0] + q[1] * x
                 if r <= 1e-12:
                     return 1e18
@@ -470,13 +481,17 @@ def dispersion(events: list[tuple[float, float]], live: list[tuple[float, float]
     changes (a start that ends the idle time it depends on) is wrong at every step's edge."""
     p, x = form["params"], (form["inputs"][0] if form["inputs"] else None)
     c, k = p.get("c", 0.0), p.get("k", 0.0)
-    times = [t for t, d in events for _ in range(int(d))]
-    if len(times) < 2:
+    at = [(t, int(d)) for t, d in events if int(d) > 0]
+    n = sum(d for _, d in at)                       # the events, one by one
+    if n < 2:
         return 1.0
     between = lambda a, b: paths[x].expected(a, b, c, k) if x else max(0.0, c) * sum(max(0.0, min(b, hi) - max(a, lo)) for lo, hi in live) / unit_s
-    gaps = [between(a, b) for a, b in pairwise(times)]
-    mean = sum(gaps) / len(gaps)
-    return sum((g - mean) ** 2 for g in gaps) / max(1, len(gaps) - 1) / max(mean * mean, 1e-12)
+    # events at one instant are apart by nothing: of the n − 1 gaps, all but those between
+    # instants are 0, so they are counted, not listed (a counter of bytes counts millions a step)
+    gaps = [between(a, b) for (a, _), (b, _) in pairwise(at)]
+    zeros = (n - 1) - len(gaps)
+    mean = sum(gaps) / (n - 1)
+    return (sum((g - mean) ** 2 for g in gaps) + zeros * mean * mean) / max(1, n - 2) / max(mean * mean, 1e-12)
 
 
 def too_short(s: Series, since: float, end: float, awake: list[tuple[float, float]]) -> str:
