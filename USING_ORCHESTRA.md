@@ -52,18 +52,16 @@ uv tool install 'orchestra[sd] @ git+https://github.com/danroblewis/orchestra@ma
 uv tool install /path/to/orchestra            # or from a checkout
 ```
 
-Plugins go into the same environment with `--with` (README, "Install"), for example
-`--with 'orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking'`, in one line:
+Plugins are extras too, each a package of its own that the extra installs beside Orchestra:
 
 ```bash
-uv tool install 'orchestra[sd] @ git+https://github.com/danroblewis/orchestra@main' --with 'orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking'
+uv tool install 'orchestra[sd,tasking,agents,bridges,desk,outbox] @ git+https://github.com/danroblewis/orchestra@main'
 ```
 
 A plugin's command line comes with it as a subcommand of `orchestra`, named for the plugin
-(`orchestra tasks ...`); `orchestra --help` lists the installed ones. Plugins name Orchestra as `git+https://github.com/danroblewis/orchestra@main`, so
-install Orchestra by that exact URL beside them: pip refuses two different URLs for one package.
-Running `uv tool install` again replaces the whole tool: give every plugin's `--with` each time, or
-the ones left out are uninstalled. The `orchestra` command goes into `~/.local/bin`; `uv tool
+(`orchestra tasks ...`); `orchestra --help` lists the installed ones. Running `uv tool install` again replaces the whole tool: name every plugin you want each
+time, or the ones left out are uninstalled. A plugin from a local checkout goes in with `--with
+/path/to/plugin` (PLUGINS.md). The `orchestra` command goes into `~/.local/bin`; `uv tool
 update-shell` puts it on the PATH.
 
 Extras add optional parts:
@@ -72,6 +70,7 @@ Extras add optional parts:
 |---|---|
 | `sd` | SD Lab's discovery strategies (`kalman_lna` and about 70 others). Without it, discovery uses `conservation`, Orchestra's own. |
 | `bus-redis`, `bus-rabbitmq`, `bus-kafka` | The client library for that event bus. `bus` installs all three. |
+| `tasking`, `agents`, `bridges`, `desk`, `outbox` | A plugin: its package (`orchestra-tasking`, …), from its own repository. |
 
 `deploy/dev/compose.yaml` in Orchestra's repository starts Redis, RabbitMQ, Kafka and
 VictoriaMetrics locally, if you want server backends to try.
