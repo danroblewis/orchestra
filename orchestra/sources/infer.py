@@ -39,7 +39,7 @@ SHAPE_POINTS = 30            # a probe's series, kept at this many points, to co
 REFUSED = re.compile(r"over the store's per-query series limit|HTTP 4(?!29|01|03)\d\d")   # the store will not read it: no retry helps
 UNPROBED = 0.5               # of the candidates, at most, not probed for the round to stand (partial)
 TRANSPORT = ("timeout", "deadline", "concurrency", "infer_every", "rate", "burst", "max_requests", "infer_requests",
-             "infer_deadline", "max_points", "settle", "script_timeout")   # how a source is read, not what it holds
+             "infer_deadline", "max_points", "settle", "script_timeout", "series_per_query")   # how a source is read, not what it holds
 
 
 @dataclass

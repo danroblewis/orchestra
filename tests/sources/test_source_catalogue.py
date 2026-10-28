@@ -16,8 +16,8 @@ from orchestra.metrics import Point, for_project
 from orchestra.sd.rediscover import aligned, rediscover
 from orchestra.sd.series import Declared, sample
 from orchestra.sd.store import ModelStore
-from orchestra.sources.catalogue import Catalogue
 from orchestra.sources.cache import cached, save
+from orchestra.sources.catalogue import Catalogue
 from orchestra.web.dynamics import model_view
 
 
