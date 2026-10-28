@@ -471,6 +471,13 @@ def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
         """The installed plugins' pages (for the navigation) and any that failed to load."""
         return {"ok": True, "pages": pages, "scripts": scripts, "errors": errors}
 
+    @app.get("/api/guides")
+    def guides() -> dict:
+        """How to configure Orchestra and each installed plugin, for an AI operator: Orchestra's
+        guide, then each plugin's (orchestra/guides.py), read now."""
+        from .. import guides as g
+        return {"ok": True, "guides": g.collect(project, loaded)}
+
     declared = [(p.name, d) for p in loaded.plugins for d in p.machines]
 
     def declare(machines: list[dict]) -> None:

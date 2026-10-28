@@ -225,6 +225,7 @@ class Plugin:
     machines: list[Declared] = field(default_factory=list)
     processes: list[Process] = field(default_factory=list)   # what `orchestra run` starts for it
     collectors: list[Collector] = field(default_factory=list)   # what `orchestra run` scrapes or runs for measurements
+    guide: Path | None = None   # a markdown file in the package: how to configure the plugin, for an AI operator
 
 # orchestra/launcher.py
 @dataclass
@@ -450,6 +451,39 @@ collectors=[Collector.scrape("slack", f"http://{slack.get('host', '127.0.0.1')}:
 
 An instrument says nothing about which machine does the work it measures. A machine is
 associated with a flow only by inference from its events (§4.5, §6.5).
+
+### 4.7.1 `guide`: how to configure the plugin
+
+`guide` is a markdown file shipped in the plugin's package (`Path(__file__).parent / "guide.md"`;
+hatchling ships every file under the package directory, other build backends may need it listed),
+written for an AI operator: the Supervisor, which sets up the owner's environment by reading the
+guides and changing the configuration through `project.config_edit`. The owner does not want to
+learn your settings; the Supervisor learns them from your guide. Orchestra serves it after its own
+(`orchestra/guide.md`): `orchestra.guides.collect(project)` returns `[{"name", "text"}]`, Orchestra's
+first, then each loaded plugin's in load order, and `GET /api/guides` returns
+`{"ok": true, "guides": [...]}`, behind the web login like every route. Orchestra reads nothing in
+it. A guide that cannot be read is listed with empty `text` and an `error`, never fatal.
+
+A good guide is **decision knowledge, not a procedure**: no script and no step-by-step recipe, but
+what an operator that has read the owner's repository needs to choose well:
+
+- **What each setting is for**, when to choose each value, the safe default, and how settings
+  interact (one that is ignored unless another is set, one that caps another).
+- **How to infer values from the repository**: what to look for (test markers and directories,
+  build backends, a `Makefile`, `package.json` scripts, CI workflows, Dockerfiles, how the app is
+  served, the git remote) and what to do when it is not there.
+- **The pitfalls**: defaults that bite (a 10 s timeout on a test suite), states that stop
+  progress (a failing base branch pauses landing), gaps that are not zeros.
+- **How to check a setting took**: the `check` your plugin passes to `config_edit` (what it
+  refuses), and where the result shows when it runs (a page, an API route, a log).
+- **Which choices belong to the human**, so the operator asks rather than decides: letting agents
+  change code, pushing, anything that acts as the owner (messages, comments, approvals),
+  credentials (never in a configuration file), and cost.
+- **TOML examples** with real keys only. Test it: a unit test that parses every ```` ```toml ````
+  block of the guide and passes each through your configuration reader keeps the guide from
+  naming a key that does not exist (Orchestra's `tests/unit/test_guides.py` does this for its own).
+
+Keep it short and accurate: a few hundred lines at most, every key read from your config code.
 
 ### 4.8 `scripts` and `stylesheets`
 
