@@ -12,7 +12,7 @@ web UI, with no machines of its own. Machines come from other packages. A **plug
 installed in the same environment as `orchestra web` that registers itself in the entry-point
 group `orchestra.plugins` (`orchestra/plugins.py`, `SPEC.md` §10.1): it adds its pages, API routes
 and machine cards to the web UI. Two exist: the task system `orchestra-tasking` (package
-`tasking`, plugin `tasks`: tickets and a scheduler that offers work over the bus;
+`tasking`, plugin `tasks`, command `orchestra tasks`: tickets and a scheduler that offers work over the bus;
 [github.com/danroblewis/orchestra-tasking](https://github.com/danroblewis/orchestra-tasking),
 private) and the AI agents that fill its roles, `orchestra-agents` (package `orchestra_agents`,
 plugin `agents`; private). Each repository's README says what it holds. How the task system left

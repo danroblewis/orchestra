@@ -391,7 +391,7 @@ plugin command through Orchestra's module, `[sys.executable, "-m", "orchestra", 
 ...]` (the same as `orchestra <name> run`, §4.10). `sys.executable` is the interpreter running
 `orchestra run`, which is the environment your plugin is installed in; a bare `python` in a
 command the launcher runs is that one too (SPEC §5.1), but a bare `orchestra` is whatever comes
-first on the `PATH`. **Never name a console script of your own** (`tasking run`): a plugin has
+first on the `PATH`. **Never name a console script of your own** (the old `tasking run`): a plugin has
 none (§4.10), and one left on the `PATH` from an older install may be another environment's.
 
 The usual pattern is to declare processes only when the project configures the plugin:
@@ -628,7 +628,7 @@ publishing is infrastructure, and the rule (AGENTS.md rule 2) is the same for ev
   and a team's probe as the team's lead. Guard it in your own `publish`: refuse your process's
   own name, as `tasking/events.py` and `orchestra_agents/events.py` do.
 - They **never write metrics directly**. Keep the counts in your own record and declare an
-  instrument (`Plugin.collectors`, §4.7) that prints them: `tasks.tickets` (`tasking metrics`),
+  instrument (`Plugin.collectors`, §4.7) that prints them: `tasks.tickets` (`orchestra tasks metrics`),
   `agents.turns` (`orchestra-agents metrics`). Keep series names stable across such a change;
   the instrument adds `instrument=<plugin>.<name>`.
 - They **act only as the machines they implement**, and each of those machines announces what
@@ -838,14 +838,14 @@ def plugin(orchestra_project) -> Plugin:
 def processes(project: Project) -> list[Process]:
     if not set_up(project):
         return []
-    return [Process("scheduler", [sys.executable, "-m", "tasking", "run", "--wait"])]
+    return [Process("scheduler", [sys.executable, "-m", "orchestra", "tasks", "run", "--wait"])]
 
 
 def collectors(project: Project) -> list[Collector]:
     if not set_up(project):
         return []
     step = max(1.0, float(project.orchestra.config.discovery_step))
-    return [Collector.collect("tickets", f"{shlex.quote(sys.executable)} -m tasking metrics", every_s=step, timeout_s=min(step, 10.0))]
+    return [Collector.collect("tickets", f"{shlex.quote(sys.executable)} -m orchestra tasks metrics", every_s=step, timeout_s=min(step, 10.0))]
 
 ```
 
@@ -857,7 +857,7 @@ def collectors(project: Project) -> list[Collector]:
 | `router` | `/api/plugins/tasks/state`, `/board`, `/attention`, `/tickets/{id}`, `/metrics` (the measurements as Prometheus text), and `POST /control` (operator controls, published as the machine `task_web`). A router dependency reloads the configuration (`project.reload_config()`, the overlay merged) on every request, so the capacity ceiling is live |
 | `machines` | none. The scheduler is no machine (below); `task_web` and `merge_gate` appear once seen |
 | `processes` | `tasks.scheduler`, only when `orchestra.toml` has `[project]` or `[tasks]` |
-| `collectors` | `tasks.tickets`: `tasking metrics` every discovery step, printing `tasks_tickets{state}`, `tasks_tickets_created_total{by}`, `tasks_ticket_transitions_total{from,to,by}` and `tasks_worktrees{state}` from the task system's record. A command rather than a scrape of `/metrics`, because `orchestra run` does not know the web server's port; the text is the same |
+| `collectors` | `tasks.tickets`: `orchestra tasks metrics` every discovery step, printing `tasks_tickets{state}`, `tasks_tickets_created_total{by}`, `tasks_ticket_transitions_total{from,to,by}` and `tasks_worktrees{state}` from the task system's record. A command rather than a scrape of `/metrics`, because `orchestra run` does not know the web server's port; the text is the same |
 
 Its config sections: `[project]`, `[tasks]`, `[gate]`, `[staging]`. State:
 `~/.orchestrator/<key>/tasks/`. The scheduler is an implementation detail of the plugin, not a
