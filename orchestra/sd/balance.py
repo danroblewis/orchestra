@@ -21,6 +21,9 @@ starting it from many places and keeping the best, which a search from one start
 of a balance alone often makes the fit worse (inflow without its outflows), and which local
 optimum a single start reaches depends on noise.
 
+A counter far larger than the level (``resolvable``) is not searched: its squares' rounding is
+more than the level's variance.
+
 A level slower than the grid (``sd.resolution``) is judged on the stretches between its writes,
 not on single steps: ``units`` turns the steps into those stretches, and every function here that
 takes a level does so, so a balance found on them is checked on them again wherever it is."""
@@ -39,6 +42,7 @@ MAX_TERMS = 8
 COMPLETION = 0.5        # an exact balance earns back a penalty less this many events' worth
 EXACT_SSE = 0.5         # a balance with less squared error than this is exact in every step (levels are counts)
 PAIR_STARTS = 8         # the search also starts from this many best pairs of counters
+RESOLVABLE = 1e10       # a counter whose squared changes are more than this many times the level's is not searched
 
 
 class LeastSquares:
@@ -222,10 +226,10 @@ def balance(level, counters: list, ls: LeastSquares | None = None, steps: list[i
 
     if ls is None:
         ls = LeastSquares(xs)
-    live = [j for j, x in enumerate(xs) if enough_events(x)]
-    rare = [j for j, x in enumerate(xs) if any(x) and j not in live]
-    b = ls.against(y)
     yy = sum(v * v for v in y)
+    live = [j for j, x in enumerate(xs) if enough_events(x) and resolvable(x, yy)]
+    rare = [j for j, x in enumerate(xs) if any(x) and j not in live and resolvable(x, yy)]
+    b = ls.against(y)
     best = None
     for start in starts_for(ls, y, b, yy, live):
         coef, sse = search(ls.g, b, yy, cost, live, start, objective)
@@ -247,6 +251,16 @@ def balance(level, counters: list, ls: LeastSquares | None = None, steps: list[i
     chosen = [(counters[j], sign) for j, sign in sorted(coef.items())]
     exact = sum(1 for r in resid if abs(r) <= 0.5) / len(resid)
     return chosen, 1 - sse / sst, exact
+
+
+def resolvable(x: list[float], yy: float) -> bool:
+    """Whether a counter can be weighed against a level in floating point: the search works on
+    sums of squares, and a counter whose changes are millions of times the level's (the bytes a
+    node sent, against a pool that gains two connections now and then) has squares whose rounding
+    alone is larger than the level's whole variance. Such a counter cannot balance it (it would
+    take another as large to cancel it to the last digit), and searched it only adds rounding:
+    every pair with it looks exact, and crowds out the pair that is."""
+    return sum(v * v for v in x) <= RESOLVABLE * max(yy, 1.0)
 
 
 def columns(level, series: list, steps: list[int]) -> list[list[float]]:
