@@ -316,9 +316,16 @@ def _register(project: Project) -> None:
     (project.state_dir / "project.json").write_text(json.dumps(
         {"key": project.key, "repo_root": str(project.repo_root), "backend": "local"}, indent=2))
     index = home() / "projects.json"
-    data = json.loads(index.read_text()) if index.exists() else {}
+    try:
+        data = json.loads(index.read_text()) if index.exists() else {}
+    except (OSError, ValueError):     # another process mid-write before writes were atomic, or a damaged file: rebuilt
+        data = {}
+    if data.get(str(project.repo_root)) == project.key:
+        return
     data[str(project.repo_root)] = project.key
-    index.write_text(json.dumps(data, indent=2))
+    tmp = index.with_name(f".{index.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(tmp, index)            # atomic: processes starting together (orchestra run, web, a plugin's host) never read half a file
 
 
 def init_project(repo: Path) -> Project:

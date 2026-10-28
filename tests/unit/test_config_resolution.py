@@ -70,3 +70,15 @@ def test_load_registers_state_on_demand(repo, monkeypatch):
     monkeypatch.chdir(repo)
     q = load_project()
     assert q.key == p.key and q.state_dir.exists()
+
+
+def test_the_project_index_is_written_whole_and_a_damaged_one_is_rebuilt(repo, tmp_path):
+    """orchestra run, orchestra web and a plugin's host load the project at once: a reader never
+    sees half the index, and an index left damaged does not stop a process starting."""
+    import json
+    index = tmp_path / "home" / "projects.json"
+    init_project(repo)
+    index.write_text('{"/elsewhere": "x-1", ')                 # cut short, as a write interrupted midway left it
+    p = init_project(repo)
+    assert json.loads(index.read_text()) == {str(p.repo_root): p.key}
+    assert [f.name for f in index.parent.iterdir() if f.name.endswith(".tmp")] == []
