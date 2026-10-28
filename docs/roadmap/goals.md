@@ -179,6 +179,16 @@ the change did what was intended.
 - **Acceptance:** a change event starts an era. Discovery fits the eras separately, and the
   Dynamics page shows them on a timeline. A rate that changed at an era boundary is reported as
   changed, with before and after values.
+- **Decided (the owner, 2026-10-27):** an era is the analysis window. Within it the event map and
+  the model are determined from its data only; the previous era's model is its prior (D4), and the
+  era's own evidence takes over as it accumulates. Parts in only one era are reported as appeared
+  or disappeared at the boundary.
+- **Built (2026-10-27):** `system.changed` always begins an era, and `[discovery] eras_from`
+  names more by envelope (default `config.changed`); the host records and announces them
+  (`orchestra.era.started`); discovery reads only the current era, merges it with its prior and
+  compares the two (SPEC §4.3, `sd/eras.py`, `sd/prior.py`, `sd/compare.py`); the Dynamics page has
+  the timeline and each flow's change, the Machines page's map is per era, and `orchestra sd eras`
+  lists them.
 
 ### G12. The model says when it changes, and when reality leaves its predictions
 - **What:** Orchestra publishes events of its own:
@@ -190,6 +200,10 @@ the change did what was intended.
 - **Acceptance:** a scripted change to a dummy-run system produces exactly one structure-change
   event. A system pushed off its prediction produces a divergence event naming the stocks and
   the size of the gap.
+- **Built (2026-10-27):** `orchestra.model.changed` (held over `[discovery] announce_hold`
+  discoveries, at most one per `announce_gap`), `orchestra.model.diverged` and `.returned` (a
+  stock out of its predicted band for `diverge_after`, the gap in half-widths of the band); SPEC
+  §4.3, `sd/announce.py`, `sd/diverge.py`.
 
 ### G13. The intended-effect test: "better than evals"
 - **What:** a change states its predicted effect before it is made, as a "what if" (G5) on the
@@ -234,7 +248,8 @@ the change did what was intended.
 | G1–G5 | In progress from 2026-10-27 |
 | G6–G7 | After G1 and G3 |
 | G8–G10 | To be planned |
-| G11–G13 | Started 2026-10-27 (Orchestra core: eras, model events, intended-effect test) |
+| G11–G12 | Built 2026-10-27 in Orchestra's core: eras with the previous era as the prior, the boundary comparison, the model's own events |
+| G13 | Next: builds on the era comparison (`discovery.era_comparison`) and `orchestra.era.started` |
 | G14 | After G6 lands in the task system |
 | G15 | After G3, G11 and G13 |
 

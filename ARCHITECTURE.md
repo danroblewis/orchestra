@@ -125,8 +125,8 @@ Each component, its module, and what it depends on:
 | Thread | Cadence | What it does |
 |---|---|---|
 | main | every 15 s | Writes `orchestra_host_up{machine="orchestra-host"}` (1 while running, 0 when stopping). |
-| `collector` | every 2 s | Replays the whole bus once at start (`collectors.backfill`, which replaces the event counters), then reads new events and writes their counts. |
-| `discovery` | 5 s after start, then every `[discovery] every` (default 5 min) | Calls `sd.rediscover.rediscover(..., skip_if_busy=True)` and logs the result. |
+| `collector` | every 2 s | Replays the whole bus once at start (`collectors.backfill`, which replaces the event counters), then reads new events and writes their counts. Every 5 s it records the eras new events begin and announces them (`sd.eras.sync`, `orchestra.era.started`). |
+| `discovery` | 5 s after start, then every `[discovery] every` (default 5 min) | Calls `sd.rediscover.rediscover(..., skip_if_busy=True, events=...)`, logs the result, then publishes what is due about the model (`sd.announce.announce`: `orchestra.model.changed`, `.diverged`, `.returned`). |
 | `launcher` | every 1 s | Only in the host that holds `launcher` in the runtime record. Before its first tick it starts the events endpoint, so the processes it launches get its address; each tick runs `Launcher.tick()` and `Collecting.tick()`; when the host stops it stops the processes, then the endpoint. |
 | `events-endpoint` | per request | Only in the launching host: a `ThreadingHTTPServer` (one thread per request, so a long poll holds up nothing). Each bus call takes one lock, since not every bus client library is thread-safe. |
 
@@ -386,15 +386,22 @@ sequenceDiagram
   end
   ST-->>RD: model
   RD->>RD: annotate provenance, mark not_saved if a source is missing
+  opt an era is in force
+    RD->>MS: save the previous era's last discovery, if the era is new
+    RD->>MS: prior_for(era): the latest version of another era
+    RD->>RD: merge with the prior (prior.py), compare with it (compare.py)
+  end
   RD->>MS: write_discovery (model/discovered.json)
-  RD->>MS: save new version if structure changed and nothing missing
+  RD->>MS: save new version if structure changed or an era began, and nothing missing
 ```
 
 The steps in detail. Constants are named so they can be found in the code.
 
 1. **The window.** It defaults to the last 60 minutes (`[discovery] window`) on a 30 s grid
    (`[discovery] step`). `rediscover.aligned` moves the window to end on a multiple of the step,
-   so runs a few seconds apart sample the same grid and agree.
+   so runs a few seconds apart sample the same grid and agree. It never reaches back past the
+   start of the current era (`rediscover.era_window`; "Eras" below); an era younger than two
+   steps is not read at all, and its model is its prior.
 2. **Reading.** `Catalogue.read` returns the own store's series as they are and each remote
    definition read for exactly this window. A series' declared kind (a remote counter, a named
    level) overrides the naming rule (`sd.series.Declared`).
@@ -522,8 +529,10 @@ The steps in detail. Constants are named so they can be found in the code.
 12. **Versions** (`sd/rediscover.py`, `sd/store.py`).
     - Every run writes `model/discovered.json`, which the web page reads.
     - A new version `model/vNNNN.json` is saved only when the run found stocks, its structure
-      differs from the current version, and no source was missing. Structure means the stock
-      ids, and each flow's id, ends, form and inputs (`discover.structure`).
+      differs from the current version or its era does, and no source was missing. Structure
+      means the stock ids, and each flow's id, ends, form and inputs (`discover.structure`).
+    - When an era has begun since the last run, that run's model (the previous era's last) is
+      saved first, so every era keeps a readable version (`ModelStore.of_era`).
     - `ModelStore.save` also refuses a model with duplicate ids or dangling references
       (`Model.check`), and adds nothing if the body is identical to the current version.
 
@@ -566,6 +575,59 @@ flowchart TD
 The flowchart is simplified. Twins, restatements, passages and copies (steps 6 and 7) rework
 stocks and flows after the first balances are found.
 
+### Eras, and the model's own events
+
+An era begins when a machine says it changed the system (goal G11). The events that begin one are
+`system.changed`, always, and whatever `[discovery] eras_from` names (default `config.changed`),
+matched on the envelope only: type, source, subject (`sd/eras.py`; rule 3). The host's collector
+looks every 5 s (`eras.sync`): it reads the bus after the offset kept in `model/eras.json`, records
+each new match once, by its id, as `e1`, `e2`, ..., and publishes `orchestra.era.started`. When the
+filters change, the bus is read again from the start.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant M as A machine
+  participant B as Bus
+  participant C as Host collector
+  participant D as Host discovery
+  participant MS as ModelStore
+  M->>B: system.changed or config.changed (source: the machine)
+  C->>B: read after the eras offset
+  C->>MS: eras.json gets e1 (start, label, cause)
+  C->>B: orchestra.era.started (subject e1, causationid the cause)
+  D->>MS: save the last model before e1 as a version
+  D->>D: discover from e1's start only
+  D->>MS: prior_for(e1), merge, compare
+  D->>MS: discovered.json and a version of era e1
+  D->>B: orchestra.model.changed, diverged, returned, when due
+```
+
+**The prior** (`sd/prior.py`). The era's discovery is merged with the previous era's model: a
+flow found in both in one form gets the era's numbers pulled towards the prior's (a prior worth
+`PRIOR_EVENTS` = 20 events against the era's own count; `Equation.prior` records it); one in
+another form on fewer than 20 events keeps the prior's equation; a part only the prior has is
+carried with origin `prior` until the era is `[discovery] prior_for` old (default: the window),
+then dropped. **The comparison** (`sd/compare.py`) goes in `discovery["era_comparison"]`: each
+flow's numbers before and after (the era's own), their standard errors from `sd/trust.py`, `z`,
+and `changed` at `|z| >= 2`; parts that appeared, disappeared or are carried; loops by
+`sd/loops.py` (cycles of influence between stocks, one id per set of stocks).
+
+**The model's own events** (`sd/announce.py`, `sd/diverge.py`; goal G12), published by the
+discovery thread after each run, with their state in `model/announce.json`:
+
+| Event | When | `data` |
+|---|---|---|
+| `orchestra.era.started` | An event began an era. | `era`, `start`, `label`, `cause` (`id`, `type`, `source`, `subject`) |
+| `orchestra.model.changed` | The structure (stock, flow and loop ids) differs from the one last announced, the same in `[discovery] announce_hold` discoveries in a row (3), and `announce_gap` (30 min) has passed since the last. | `added`, `removed` (each `stocks`, `flows`, `loops`), `era`, `held`, `first_seen` |
+| `orchestra.model.diverged` | A stock's level has been more than 2 half-widths from the central prediction at every check for `[discovery] diverge_after` (15 min). | `stocks` (each `stock`, `gap`, `level`, `central`, `lo`, `hi`, `half`, `since`, `predicted_at`), `diverged`, `era`, `era_start` |
+| `orchestra.model.returned` | A diverged stock is back within 1 half-width. | as above, with `diverged_since` |
+
+The prediction a level is judged against is the oldest still within its horizon
+(`max(diverge_after, 2 x every)`): `sd.whatif.what_if` with no intervention from the levels then,
+its 10-90% band widened by the Poisson spread of the stock's flows' events since. A model with a
+missing source announces nothing. Without `orchestra[sd]` divergence is not judged.
+
 ### State layout
 
 ```mermaid
@@ -582,6 +644,8 @@ flowchart TD
   KEY --> P6["model/"]
   P6 --> P61["vNNNN.json: the versions"]
   P6 --> P62["discovered.json: latest discovery"]
+  P6 --> P63["eras.json: the eras and the bus offset read to"]
+  P6 --> P64["announce.json: what the host last announced, its predictions"]
   KEY --> P7["sources/#lt;name#gt;.json: inferred definitions"]
   KEY --> P8["logs/"]
   P8 --> P81["orchestra-host.log"]
@@ -675,9 +739,9 @@ so most page requests do no expensive work:
 |---|---|---|
 | **Dashboard** (`/`) | Movable panels: Machines (what runs now) and Host (a Core status strip, CPU, GPU, memory, disk). Plugins may add panels. | `static/dashboard.js` |
 | **Core** (`/core`) | The host and its processes, the bus and the metrics store, each probed against its real backend under a 4 s limit; a metrics catalogue and PromQL editor; an event explorer; logs; the configuration, each key with the file it came from (`/api/project`, read on its own so the rest of the page does not depend on it). | `web/core.py`, `web/core_explore.py`, `orchestra/overlay.py` |
-| **Machines** (`/machines`) | Every machine seen on the bus (and counted-traffic machines and plugin placeholders), its instances, mode and kind, whether it is active, the event map with hand-offs and counted traffic, communication loops, and a dialog per machine with its series, last events (envelopes only) and log tail. | `web/machines.py`, `web/traffic.py`, `web/machine_logs.py`, `static/netgraph.js`, `static/loops.js` |
+| **Machines** (`/machines`) | Every machine seen on the bus (and counted-traffic machines and plugin placeholders), its instances, mode and kind, whether it is active, the event map with hand-offs and counted traffic, communication loops, and a dialog per machine with its series, last events (envelopes only) and log tail. With eras, the map and cards are the current era's by default (`MachineIndex(since, until)`; `/api/machines?era=<id>\|none\|all`). | `web/machines.py`, `web/traffic.py`, `web/machine_logs.py`, `static/netgraph.js`, `static/loops.js` |
 | **Instruments** (`/instruments`) | What measures the system, apart from the machines: each `[[collect]]`, `[[scrape]]` and `[[sources]]` entry (and a plugin's), with its kind (script, URL, source), target, interval, last write and points, failures, last error and log. Read from the runtime record's `instruments` and `orchestra.toml`, never by running an instrument. `/api/instruments`, `/api/instruments/<name>/log`. | `web/instruments.py`, `static/instruments.html` |
-| **Dynamics** (`/dynamics`) | The model as a stock-and-flow graph, with feedback loops marked balancing or reinforcing, history charts, each stock's and flow's drawer (a flow's lists each machine hypothesis with its why, or "no machine associated yet"), a flows table with "machines (hypotheses)" and their confidence, a simulation from the start of the era and a projection forward, and stepping through saved versions. "Rediscover now" runs discovery in the background. | `web/dynamics.py`, `sd/simulate.py`, `static/sd-graph.js`, `static/sd-layout.js`, `static/layout-worker.js` |
+| **Dynamics** (`/dynamics`) | The model as a stock-and-flow graph, with feedback loops marked balancing or reinforcing, history charts, each stock's and flow's drawer (a flow's lists each machine hypothesis with its why, or "no machine associated yet"), a flows table with "machines (hypotheses)" and their confidence, a simulation from the start of the era and a projection forward, and stepping through saved versions. With eras, a timeline picks the era (`/api/dynamics/model?era=`) and lists what changed at its start (before → after, appeared, disappeared, carried from the prior). "Rediscover now" runs discovery in the background. | `web/dynamics.py`, `sd/simulate.py`, `static/sd-graph.js`, `static/sd-layout.js`, `static/layout-worker.js` |
 
 **What if** (`POST /api/dynamics/whatif`, `sd/whatif.py`, `sd/trust.py`) answers "if this
 changed, what would these stocks do?" from the same cached history: the model run forward from the
@@ -706,9 +770,10 @@ configuration, and every probe runs in a thread pool with a time limit.
 | `orchestra events copy --to URL [--force]` | Copies the event log to another backend. | the target bus |
 | `orchestra metrics series` | Lists the project's series. | nothing |
 | `orchestra metrics backfill [--append]` | Replays the whole log into `orchestra_events_total`. | metrics |
-| `orchestra sd discover [--strategy --minutes --step-s]` | Runs discovery now (same code path as the host). | `model/` |
+| `orchestra sd discover [--strategy --minutes --step-s]` | Runs discovery now (same code path as the host), recording new eras from the bus first and announcing them. | `model/`, the bus |
 | `orchestra sd show [--version]` | Prints the model with current levels. | nothing |
-| `orchestra sd versions` | Lists the saved versions. | nothing |
+| `orchestra sd versions` | Lists the saved versions, with each one's era. | nothing |
+| `orchestra sd eras [--json]` | Lists the eras recorded, each with its versions, and what changed at the current era's boundary (`sd/compare.py`). | nothing |
 | `orchestra sd whatif [--flow --scale --add --set-stock --input --input-scale --param --horizon --stocks --bound --version --json]` | What the model says a change would do, against no change: a table (or the endpoint's JSON) with each stock's band, the limits met and what is not trusted (`sd/whatif.py`, `sd/whatif_report.py`). | nothing |
 | `orchestra sd fit [--version --step]` | Refits every counted flow over the whole history and saves a version. | `model/` |
 | `orchestra sd observability [--version --json]` | Which stocks what is measured determines, which need another instrument, and why (`sd/observability.py`). | nothing |
@@ -782,7 +847,7 @@ These are plans, not features. Each is described in `docs/proposals/` or `docs/r
   and others (`docs/proposals/event-sources.md`).
 - Ghost machines, the environment as a flow's driver, and leverage points
   (`docs/proposals/environment-and-ghost-machines.md`).
-- Eras, delays, non-linear forms, priors, and prospective model versions
+- Delays, non-linear forms, priors a human hands in (eras' priors are built), and prospective model versions
   (`docs/proposals/system-dynamics-core.md`, `docs/proposals/orchestra-kernel.md`,
   `docs/roadmap/README.md`).
 - Collectors that skip repeated values (the collectors' half of "each series' real resolution",
