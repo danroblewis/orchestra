@@ -10,10 +10,11 @@ the level's change to 0.7% over the hour).
 
 So a level's balance is also searched on the stretches between a slow counter's writes
 (``sd.resolution.Block``): there every series is read at the same two instants from its own points
-(a counter, what it counted between them; a level, its value at each), so a fast level and a slow
-counter are compared on a common grid, the slower one's. A level whose balance on steps fits
+(a counter are compared on a common grid, the slower one's. A level whose balance on steps is exact
 needs no other grid. The coarse balance is kept when it uses a slow counter and fits where the
-balance on steps does not (a balance that fits on steps is the finer evidence); the level is then
+balance on steps does not, or is exact where the balance on steps fits only roughly (a lag read
+every 30 s beside its topic's offsets read every minute: on steps, CPU periods and orders placed
+"fit" the incident's rise at R² 0.98; on the minutes, produced less consumed is exact); the level is then
 judged on those stretches throughout (``Series.blocks``), its identification included. The steps after the slow counter's last write
 are no stretch: what it counted there has not arrived (``sd.series.arrived_until``)."""
 
@@ -23,6 +24,7 @@ from collections import Counter
 from dataclasses import replace
 
 from .balance import LeastSquares, balance, columns
+from .identify import FLAG_EXACT
 
 PATTERNS = 2            # the most common write patterns among the slow counters tried (one per store and phase, as a rule)
 
@@ -52,7 +54,8 @@ def coarse(level, counters: list, steps: list[int], got: tuple, fits, solvers: d
     takes those stretches as its units (``level.blocks``). ``solvers`` caches the counters' least
     squares by ``key`` and pattern."""
     terms, r2, exact = got
-    if level.blocks is not None or (terms and fits(level, r2, exact, terms, steps)):
+    on_steps = bool(terms) and fits(level, r2, exact, terms, steps)
+    if level.blocks is not None or (on_steps and exact >= FLAG_EXACT):
         return got
     best = None
     for pattern in patterns(counters):
@@ -63,7 +66,7 @@ def coarse(level, counters: list, steps: list[int], got: tuple, fits, solvers: d
         t, r, e = balance(view, counters, solvers[k], steps)
         if any(c.blocks for c, _ in t) and fits(view, r, e, t, steps) and (best is None or r > best[2]):
             best = (pattern, t, r, e)
-    if best is None:
+    if best is None or (on_steps and best[3] < FLAG_EXACT):
         return got
     level.blocks = best[0]
     return best[1], best[2], best[3]
