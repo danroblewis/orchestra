@@ -892,28 +892,24 @@ bridges = "orchestra_bridges.plugin:plugin"
 ```python
 # orchestra_bridges/plugin.py (main)
 def plugin(project) -> Plugin:
-    configured = section(project.config.raw, "github") is not None
+    raw = project.config.raw
+    configured = [s for s in SYSTEMS if section(raw, s) is not None] + jira_sections(raw)
+    scrapes = [(s, url) for s in configured if (url := metrics_url(section(raw, s), PORTS.get(s)))]
     return Plugin(
         "bridges",
-        machines=[Declared(MACHINE, "program", "continuous")] if configured else [],
-        processes=[Process("github", [sys.executable, "-m", "orchestra_bridges", "github"], stop_grace_s=10)]
-        if configured else [])
+        processes=[Process(s, [sys.executable, "-m", "orchestra_bridges", s], stop_grace_s=10) for s in configured],
+        collectors=[Collector.scrape(s, url, every_s=SCRAPE_EVERY_S) for s, url in scrapes])
 ```
 
-This is the smallest real plugin. It has **no pages, router or scripts**: what the bridges show is
-Orchestra's own Machines page and series. It declares one process and one machine
-(`bridges.github`) when `[bridges.github]` exists. The bridge publishes each GitHub actor's doings
-with the actor as the source (`person.<login>`), announcing each actor first with `kind: "person"`
-(or `program` for a bot) and `package: "bridges"`. It writes its own series through
-`orchestra.metrics`, and keeps no state of its own: it rebuilds everything from its events and
-series at start. Under §6.1 the declared machine `bridges.github`, any announcement or event the
-bridge makes under its own name, and its direct metric writes are departures still to remove:
-the bridge is a relay, and only the actors it relays are machines.
-
-On the unmerged `slack-bridge` branch, the plugin declares one process and one machine per
-configured system (`SYSTEMS = ("github", "slack")`). The Slack bridge serves `/metrics` instead of
-writing. On that branch the owner adds a `[[scrape]]` named `bridges.slack` to `orchestra.toml`
-by hand; the plugin can now declare it itself in `collectors` (§4.7).
+It has **no pages, router or scripts**: what the bridges show is Orchestra's own Machines page
+and series. It declares one process per configured bridge (GitHub issues, GitHub pull requests,
+Jira, Slack) and one instrument per bridge (a scrape of the bridge's own `/metrics`). It declares
+**no machine**: a bridge is a relay (§6.1). The machines are the actors it relays, each published
+with the actor as the source (`person.<login>`, or `bot.<name>` for a bot or the system itself,
+e.g. `bot.jira` for an automation with no author), and announced first with `kind: "person"` or
+`program` and `package: "bridges"`. A guard (`orchestra_bridges/relay.py`) refuses any other
+source. A gap in what a bridge saw is a measurement in its instrument, not an event. It keeps no
+state of its own: it rebuilds from its events' ids and its instrument's series at start.
 
 ---
 
