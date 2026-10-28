@@ -52,6 +52,7 @@ import re
 import time
 from pathlib import Path
 
+from . import behaviour
 from .attribute import UNSET
 from .bounded import Late, run_jobs
 from .discover import FLAG_EXACT, MIN_EVENTS, UNITS, discover
@@ -224,7 +225,17 @@ def discover_with(dump, *, start: float, end: float, step: float, strategy: str 
                   kinds: dict | None = None, provenance: dict | None = None) -> Model:
     """The model the metrics imply, found with ``strategy``; how in ``model.discovery``. ``kinds``
     are the series' declared kinds (``sd.series.Declared``), by series key; ``provenance``, what
-    each series' source said of it (``sd.discover``)."""
+    each series' source said of it (``sd.discover``). Each stock's behaviour trust is measured on
+    the model found (``sd.behaviour``)."""
+    model = _discover_with(dump, start=start, end=end, step=step, strategy=strategy, options=options, time_unit=time_unit,
+                           deadline=deadline, kinds=kinds, provenance=provenance)
+    if model.stocks:
+        behaviour.attach(model, dump, start, end, step)
+    return model
+
+
+def _discover_with(dump, *, start: float, end: float, step: float, strategy: str, options: dict | None, time_unit: str,
+                   deadline: float | None, kinds: dict | None, provenance: dict | None) -> Model:
     base = discover(dump, start=start, end=end, step=step, time_unit=time_unit, kinds=kinds, provenance=provenance)
     base.discovery["strategy"] = CONSERVATION
     if strategy == CONSERVATION or not base.stocks:
