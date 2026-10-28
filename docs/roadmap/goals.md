@@ -173,6 +173,10 @@ the change did what was intended.
 - **What:** when a machine changes how the system works, a new era begins. Examples: a prompt or
   role edited, a configuration changed, a worker kind added, a deploy. The model is fitted per
   era, so the eras can be compared.
+- **An era is the analysis window** (the owner): both the event map and the model's equations are
+  determined from the era's own data. The previous era's model is the prior for the new one (D4):
+  early in an era, discovery starts from it and the era's own evidence takes over as it accumulates.
+  Where they disagree is what the change did.
 - **Who marks it:** the change is announced by the machine that made it, as an event on the bus.
   Orchestra knows no domain (rule 1), so which event types start an era is configuration, plus
   the generic events Orchestra already sees, such as `config.changed`.
