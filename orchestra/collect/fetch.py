@@ -37,12 +37,12 @@ def run_command(c: Collector, repo: Path, log: Path, stop: threading.Event | Non
             p = subprocess.Popen(c.argv(), cwd=repo, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                  stderr=err, start_new_session=True)
     except PermissionError as e:
-        raise Failed(f"cannot run `{c.target}`: {e} (is it executable? chmod +x)") from e
+        raise Failed(f"cannot run `{c.shown}`: {e} (is it executable? chmod +x)") from e
     except FileNotFoundError as e:
         hint = f" (to run the file in the repository, write ./{c.argv()[0]})" if "/" not in c.argv()[0] and (repo / c.argv()[0]).exists() else ""
-        raise Failed(f"cannot run `{c.target}`: {e}{hint}") from e
+        raise Failed(f"cannot run `{c.shown}`: {e}{hint}") from e
     except OSError as e:
-        raise Failed(f"cannot run `{c.target}`: {type(e).__name__}: {e}") from e
+        raise Failed(f"cannot run `{c.shown}`: {type(e).__name__}: {e}") from e
     out: list[bytes] = []
     reader = threading.Thread(target=lambda: out.append(p.stdout.read(MAX_BYTES + 1)), daemon=True)
     reader.start()

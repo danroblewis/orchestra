@@ -53,9 +53,13 @@ uv tool install /path/to/orchestra            # or from a checkout
 ```
 
 Plugins go into the same environment with `--with` (README, "Install"), for example
-`--with 'orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking'`. Plugins
-name Orchestra as `git+https://github.com/danroblewis/orchestra@main`, so install Orchestra by that
-exact URL beside them: pip refuses two different URLs for one package.
+`--with 'orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking'`, plus
+`--with-executables-from orchestra-tasking` for the plugin's own command (`tasking`) to be put on
+the PATH too. Plugins name Orchestra as `git+https://github.com/danroblewis/orchestra@main`, so
+install Orchestra by that exact URL beside them: pip refuses two different URLs for one package.
+Running `uv tool install` again replaces the whole tool: give every plugin's `--with` each time, or
+the ones left out are uninstalled. The commands go into `~/.local/bin`; `uv tool update-shell`
+puts it on the PATH.
 
 Extras add optional parts:
 
@@ -283,7 +287,7 @@ CLI call alike. The state-directory file needs no variable.
 ### Durations
 
 Wherever a key takes a duration, give a number of seconds (`30`, `2.5`) or a string with a unit:
-`"500ms"`, `"30s"`, `"5m"`, `"1h"`. A string with no unit is seconds.
+`"500ms"`, `"30s"`, `"5m"`, `"1h"`, `"7d"`, `"2w"`. A string with no unit is seconds.
 
 ### `[events]`: the event bus
 
@@ -370,7 +374,7 @@ where `<plugin>` is a loaded plugin with processes, is refused: that form is kep
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string, required | | The instrument's id. Letters, digits, `.`, `_` and `-`. Not `orchestra-host`, and not another `[[collect]]` or `[[scrape]]` entry's name. Instrument names are their own: it may share a `[[machines]]` entry's name without being that machine. Its log is `logs/instruments/<name>.log`. |
-| `command` | string, required | | Split like a shell would, not run by one. A file in the repository is named with a slash: `machines/disk.sh` or `./disk.sh`. |
+| `command` | string, or array of strings, required | | A string is split like a shell would split it, but no shell runs it; an array (`["machines/disk.sh", "-v"]`) is the words as they are. A file in the repository is named with a slash: `machines/disk.sh` or `./disk.sh`. |
 | `every` | duration | `"60s"` | How often it runs. At least 1 s. |
 | `timeout` | duration | `"10s"` | How long one run may take. More than 0; never more than `every` (a larger value is cut to `every`). |
 
@@ -853,8 +857,8 @@ command = "python -m orchestra.instruments.test_reports --reports reports/*/*.xm
 every = "60s"
 ```
 
-Use a `python` that has Orchestra installed (section 5.5, "Which `python` runs it"), or the copied
-file's path. Try it first: `python -m orchestra.instruments.test_reports --reports 'reports/*/*.xml'`.
+`python` here is the Python Orchestra runs in (section 5.5, "Which `python` runs it"), so the
+module is found; a copied file is run by its path. Try it first: `python -m orchestra.instruments.test_reports --reports 'reports/*/*.xml'`.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -1214,9 +1218,12 @@ environment is `orchestra run`'s, plus:
 | `ORCHESTRA_EVENTS_ENDPOINT`, `ORCHESTRA_EVENTS_TOKEN` | The events endpoint and its token ([§5.2](#52-publishing-and-reading-events)), unless `[events] listen = "off"`. |
 | `PYTHONUNBUFFERED` | `1`, so a Python program's output reaches its log at once. |
 
-`python` in a command is whatever `python` is on the `PATH` `orchestra run` was started with.
-Name an interpreter by its full path, use `python3`, or use `uv run python ...` when the
-project's `pyproject.toml` lists what the program needs.
+**Which `python` runs it.** A command whose first word is `python` or `python3` runs with the
+Python Orchestra runs in (after `uv tool install`, the tool's own), whatever is first on the
+`PATH`, so Orchestra and its plugins are importable (`python -m tasking.machines.shell_worker`).
+Any other interpreter is named by its path (`.venv/bin/python`, `/usr/bin/python3`), or run with
+`uv run python ...` when the project's `pyproject.toml` lists what the program needs. `[[collect]]`
+commands follow the same rule.
 
 **What happens when it exits.**
 
@@ -2092,7 +2099,9 @@ printed it; `cat ~/.orchestrator/projects.json` lists every project's key.
    | `a counter of only N events: fewer than 5` | Wait for more events, or a longer window. |
    | `no counters balance it (best R² ...)` | A flow is not measured. Add a counter for every way in and out of the level (arrivals, completions, expiries, retries). Or the level is a quantity of its own, and stays an input. |
    | `too new to be a stock yet, an input until it covers enough` | Wait: the level must have been written for half the window's data. |
-   | `no longer written: its writer ... has been silent N min before the end of the window` | The series' writer (named there: usually the instrument) stopped writing more than five minutes before the window's end. Fix the instrument (Instruments page), or look at a window when it ran (`--minutes`). |
+   | `no longer written: its writer ... has written nothing in the last N min of the window` | The series' writer (named there: usually the instrument) stopped writing more than five minutes before the window's end. Fix the instrument (Instruments page), or look at a window when it ran (`--minutes`). |
+   | `not written while its writer ... was live in the window` | The writer is writing, but not this series: its last point is from before the window (a level's old value is not carried into it). |
+   | `too new to measure` | Its first point came after the window's last step (an instrument's first round, say); the next discovery considers it. |
    | `named orchestra_*` | Rename it. |
    | `a counter no stock's balance needed` | Not a problem: a counter that explains no level. |
    | `the same as ...` / `the same quantity measured again` | Two series measure one thing; one is kept. |

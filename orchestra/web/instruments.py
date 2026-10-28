@@ -26,7 +26,7 @@ def _declared(project) -> tuple[list[dict], list[str]]:
     except (OSError, ValueError, ConfigError) as e:
         return [], [f"cannot read the configuration: {e}"]
     found, errors = from_toml(raw)
-    return [{"name": c.name, "kind": c.what, "target": c.target, "every_s": c.every_s, "owner": c.owner} for c in found], errors
+    return [{"name": c.name, "kind": c.what, "target": c.shown, "every_s": c.every_s, "owner": c.owner} for c in found], errors
 
 
 def _sources(project, discovery: dict | None) -> tuple[list[dict], list[str]]:

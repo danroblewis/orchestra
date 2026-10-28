@@ -33,16 +33,20 @@ def project_key(repo_root: Path) -> str:
     return f"{name}-{digest}"
 
 
+DURATION_UNITS = {"ms": 0.001, "s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+
+
 def parse_duration(value: Any, default: float) -> float:
+    """Seconds: a number is seconds, a string a number with a unit (ms, s, m, h, d or w; none is s)."""
     if value is None:
         return default
     if isinstance(value, (int, float)):
         return float(value)
-    m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*(ms|s|m|h)?\s*", str(value))
+    m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*(ms|s|m|h|d|w)?\s*", str(value))
     if not m:
-        raise ConfigError(f"bad duration {value!r}")
+        raise ConfigError(f"bad duration {value!r}: a number of seconds, or with a unit: ms, s, m, h, d or w")
     n, unit = float(m.group(1)), m.group(2) or "s"
-    return n * {"ms": 0.001, "s": 1, "m": 60, "h": 3600}[unit]
+    return n * DURATION_UNITS[unit]
 
 
 @dataclass
@@ -129,21 +133,23 @@ every = "5m"             # how often the host rediscovers
 # [discovery.options]    # passed to the strategy as they are
 
 # The programs `orchestra run` keeps running (docs/machines.md in Orchestra's repository). A command
-# runs in the repository root with the PATH `orchestra run` was started with, so `python` is the
-# interpreter Orchestra is installed in when `orchestra run` starts from that environment; use
-# `uv run python ...` only if this project's pyproject.toml depends on Orchestra. Try a program
-# once first (`python machines/telemetry.py --once`); one that exits 0 is started again after a
-# pause, so a one-reading sampler runs about once a minute.
+# runs in the repository root, split like a shell would but not run by one. A first word `python`
+# or `python3` is the Python Orchestra runs in, whatever is first on the PATH, so Orchestra and its
+# plugins are importable; name any other interpreter by its path (`.venv/bin/python`) or use
+# `uv run python ...` when this project's pyproject.toml lists what the program needs. Try a
+# program once first (`python machines/telemetry.py --once`); one that exits 0 is started again
+# after a pause, so a one-reading sampler runs about once a minute.
 # [[machines]]
 # name = "telemetry"
 # command = "python machines/telemetry.py"
 # restart = "always"     # always, on-failure or never
 
-# Measurements in the Prometheus text format (`disk_free_bytes 1.2e11`, one per line), written to
-# the metrics store with machine = <name> (docs/machines.md). A script run on an interval:
+# Instruments: measurements in the Prometheus text format (`disk_free_bytes 1.2e11`, one per line),
+# written to the metrics store with instrument = <name> (docs/machines.md). An instrument measures
+# and is not a machine. A script run on an interval:
 # [[collect]]
 # name = "disk"
-# command = "machines/disk.sh"   # executable, named with a slash; not run by a shell
+# command = "machines/disk.sh"   # executable, named with a slash; not run by a shell (or a list of words)
 # every = "60s"
 # timeout = "20s"
 # A URL that serves them, read on an interval:

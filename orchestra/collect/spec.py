@@ -5,7 +5,8 @@ URL), and those the plugins declare (``Plugin.collectors``).
 
     [[collect]]
     name = "disk"                    # the instrument's id: letters, digits, . _ -
-    command = "machines/disk.sh"     # split like a shell would, not run by one
+    command = "machines/disk.sh"     # split like a shell would, not run by one; or a list, ["machines/disk.sh", "-v"]
+                                     # (a first word python or python3 is the Python Orchestra runs in)
     every = "60s"                    # how often (default 60 s)
     timeout = "20s"                  # how long one round may take (default 10 s, never more than every)
 
@@ -26,7 +27,7 @@ from dataclasses import dataclass, replace
 
 from ..config import ConfigError, parse_duration
 from ..events import HOST
-from ..launcher import NAME
+from ..launcher import NAME, own_python
 
 EVERY_S = 60.0
 TIMEOUT_S = 10.0
@@ -38,17 +39,21 @@ KINDS = ("collect", "scrape")
 class Collector:
     name: str
     kind: str                  # "collect" (a command) or "scrape" (a URL)
-    target: str                # the command, or the URL
+    target: str | tuple[str, ...]   # the command (a string, or its words as a list), or the URL
     every_s: float = EVERY_S
     timeout_s: float = TIMEOUT_S
     owner: str = "project"     # "project", or the plugin that declared it
+
+    def __post_init__(self) -> None:
+        if isinstance(self.target, list):      # a TOML array: kept as a tuple, so the collector stays hashable
+            object.__setattr__(self, "target", tuple(self.target))
 
     @classmethod
     def scrape(cls, name: str, url: str, **kw) -> Collector:
         return cls(name, "scrape", url, **kw)
 
     @classmethod
-    def collect(cls, name: str, command: str, **kw) -> Collector:
+    def collect(cls, name: str, command: str | list[str], **kw) -> Collector:
         return cls(name, "collect", command, **kw)
 
     @property
@@ -56,8 +61,16 @@ class Collector:
         """What kind of instrument it is, in a word: a script, or a URL."""
         return "script" if self.kind == "collect" else "URL"
 
+    @property
+    def shown(self) -> str:
+        """The command or URL as one line, for logs and pages."""
+        return shlex.join(self.target) if isinstance(self.target, tuple) else str(self.target)
+
     def argv(self) -> list[str]:
-        return shlex.split(self.target)
+        """The command's words: a string is split like a shell would (not run by one), a list is
+        taken as it is; a first word of ``python`` or ``python3`` is Orchestra's own Python
+        (``launcher.own_python``)."""
+        return own_python(list(self.target) if isinstance(self.target, tuple) else shlex.split(self.target))
 
 
 def check(c: Collector, accepted: Iterable[Collector]) -> str | None:
@@ -69,8 +82,18 @@ def check(c: Collector, accepted: Iterable[Collector]) -> str | None:
     if c.kind not in KINDS:
         return f"{c.name}: kind must be collect or scrape, not {c.kind!r}"
     field = "command" if c.kind == "collect" else "url"
-    if not isinstance(c.target, str) or not c.target.strip():
+    if c.kind == "collect" and isinstance(c.target, tuple):
+        if not all(isinstance(w, str) for w in c.target):
+            return f"{c.name}: command must be a string or a list of strings, not {list(c.target)!r}"
+        if not c.target or not c.target[0].strip():
+            return f"{c.name}: empty command"
+        return _check_times(c)
+    if c.target is None or (isinstance(c.target, str) and not c.target.strip()):
         return f"{c.name}: needs a {field}"
+    if not isinstance(c.target, str):
+        kinds = "a string or a list of strings" if c.kind == "collect" else "a string"
+        given = list(c.target) if isinstance(c.target, tuple) else c.target
+        return f"{c.name}: {field} must be {kinds}, not {given!r}"
     if c.kind == "collect":
         try:
             if not shlex.split(c.target):
@@ -79,6 +102,10 @@ def check(c: Collector, accepted: Iterable[Collector]) -> str | None:
             return f"{c.name}: bad command: {e}"
     elif not c.target.startswith(("http://", "https://")):
         return f"{c.name}: url must start with http:// or https://"
+    return _check_times(c)
+
+
+def _check_times(c: Collector) -> str | None:
     for what, v in (("every", c.every_s), ("timeout", c.timeout_s)):
         if isinstance(v, bool) or not isinstance(v, int | float):
             return f"{c.name}: {what} must be a number of seconds, not {v!r}"

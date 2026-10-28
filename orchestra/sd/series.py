@@ -47,6 +47,24 @@ def plumbing_reason(name: str) -> str:
             "rename it for what it measures (docs/machines.md)")
 
 
+def not_current_reason(ser: Series, end: float) -> str:
+    """Why a series that is not live at the end of the window (``sd.live.gone``), or never was in
+    it (no intervals), is left out. ``end`` is the window's last grid step."""
+    who = writer_of(ser)
+    last = max((t for t, _ in ser.points), default=end)
+    if ser.intervals:
+        quiet = round((end - ser.intervals[-1][1]) / 60)
+        if who:
+            return f"no longer written: its writer {who} has written nothing in the last {quiet} min of the window"
+        return f"no longer written: nothing in the last {quiet} min of the window"
+    if ser.points and ser.points[0][0] >= end:
+        return "too new to measure: its first point is after the window's last step, so the next discovery considers it"
+    ago = max(0, round((end - last) / 60))
+    if who:
+        return f"not written while its writer {who} was live in the window: its last point is {ago} min before the end"
+    return f"not written in the window: its last point is {ago} min before the end"
+
+
 @dataclass(frozen=True)
 class Declared:
     """What a series is, said by whoever defined it (a source's view, a ``[[series]]``) rather than

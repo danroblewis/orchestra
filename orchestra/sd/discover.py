@@ -104,6 +104,7 @@ from .series import (
     EVENT_COUNTER,
     PLUMBING,
     Series,
+    not_current_reason,
     plumbing_reason,
     sample,
     sum_instances,
@@ -766,9 +767,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         elif ivs and not gone(ivs[-1][1], end, awake):
             current.append(ser)
         else:
-            since = round((end - (ivs[-1][1] if ivs else max((t for t, _ in ser.points), default=start))) / 60)
-            who = f"its writer {writer_of(ser)} has been silent" if writer_of(ser) else "its last point is"
-            left_out[ser.key] = f"no longer written: {who} {since} min before the end of the window"
+            left_out[ser.key] = not_current_reason(ser, end)
     series = current
     # the window's data begin when the first series was live in it; a level is judged on how much
     # of that it covers (MIN_COVER), so a collector started a few minutes ago is an input, not a

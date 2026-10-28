@@ -36,14 +36,24 @@ GitHub; a plugin is loaded only if it is installed beside the `orchestra` comman
 ```bash
 uv tool install 'orchestra[sd] @ git+https://github.com/danroblewis/orchestra@main' \
     --with 'orchestra-tasking @ git+ssh://git@github.com/danroblewis/orchestra-tasking' \
-    --with 'orchestra-desk @ git+ssh://git@github.com/danroblewis/orchestra-desk'
+    --with-executables-from orchestra-tasking \
+    --with 'orchestra-desk @ git+ssh://git@github.com/danroblewis/orchestra-desk' \
+    --with-executables-from orchestra-desk
+uv tool update-shell        # once: puts ~/.local/bin on the PATH (open a new terminal after)
 orchestra --help
 ```
 
 Name Orchestra exactly as the plugins do, `git+https://github.com/danroblewis/orchestra@main`:
 pip refuses two different URLs for one package. The plugins' repositories are private, so they come
-over SSH with your GitHub key; add `--with` for each one you want (`orchestra-bridges`,
-`orchestra-outbox`, `orchestra-agents`). To take newer commits, run the same command again with
+over SSH with your GitHub key; add a `--with` for each one you want (`orchestra-bridges`,
+`orchestra-outbox`, `orchestra-agents`). `--with` alone loads a plugin into Orchestra but does not
+put its own command on the PATH; `--with-executables-from <plugin>` does, for the plugins that
+have one (`tasking`, `orchestra-desk`, `orchestra-agents`, `orchestra-outbox`). The commands land in `~/.local/bin`,
+which `uv tool update-shell` adds to the PATH (`uv tool dir --bin` says where they are).
+
+The command is the whole of what is installed: running `uv tool install` again replaces the tool,
+and a plugin whose `--with` is left out is uninstalled. `uv tool list --show-with` shows what is
+there. To take newer commits, run the same command again, every `--with` included, with
 `--reinstall --refresh`. Into a virtual environment instead, with `uv pip` or `pip`:
 
 ```bash
@@ -74,13 +84,15 @@ them locally. Series that live in another store (Prometheus, VictoriaMetrics, Mi
 are read in place by naming it under `[[sources]]` (SPEC §4.4); `orchestra sources infer` shows
 what Orchestra will read from it.
 
-Machines are your programs, and none needs to import Orchestra. A script that prints its
-measurements in the Prometheus text format (`disk_free_bytes 1.2e11`, one per line) is a machine:
-declare it under `[[collect]]` in `orchestra.toml` and `orchestra run` runs it on an interval and
-writes what it prints, labelled `machine=<name>`, to the project's store. A program that already
-serves Prometheus metrics is declared under `[[scrape]]` with its URL. A program that should run all
-the time goes under `[[machines]]` and `orchestra run` keeps it running. Their series appear on the
-Machines page and in the Core explorers, and discovery reads them. Events go over HTTP: `orchestra
+Machines are your programs, and none needs to import Orchestra. Measurements come from
+instruments, which are not machines: a script that prints measurements in the Prometheus text
+format (`disk_free_bytes 1.2e11`, one per line) is declared under `[[collect]]` in
+`orchestra.toml`, and `orchestra run` runs it on an interval and writes what it prints, labelled
+`instrument=<name>`, to the project's store; a program that already serves Prometheus metrics is
+read under `[[scrape]]` with its URL. Instruments are listed on the Instruments page, their series
+in the Core explorers, and discovery reads them. A program that should run all the time goes under
+`[[machines]]` and `orchestra run` keeps it running (a first word `python` or `python3` is the
+Python Orchestra runs in). Events go over HTTP: `orchestra
 run` serves `POST /events` and `GET /events` and hands each process it launches the address and
 a token (`ORCHESTRA_EVENTS_ENDPOINT`, `ORCHESTRA_EVENTS_TOKEN`), so `curl` is enough. Python
 programs may use the optional helpers instead (`orchestra.events.Events.publish`,
