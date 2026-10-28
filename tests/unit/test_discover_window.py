@@ -93,4 +93,20 @@ def test_a_machine_silent_longer_than_a_restart_is_gone(tmp_path):
     store.write(_heartbeat(start, end))
     m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
     assert not m.stocks
-    assert m.discovery["left_out"]['bakery_shelf_loaves{machine="shop"}'].startswith("no longer written: its writer shop has been silent 10 min")
+    assert m.discovery["left_out"]['bakery_shelf_loaves{machine="shop"}'] == (
+        "no longer written: its writer shop has written nothing in the last 10 min of the window")
+
+
+def test_a_series_not_live_in_the_window_says_why_without_calling_its_writer_silent():
+    # one level whose only point is after the window's last step (a collector's first round, just
+    # written); one written once before the window while its instrument writes another series
+    # throughout. Neither writer is silent, and neither series is "0 min" from anything
+    lab = {"project": "p", "instrument": "kicad"}
+    dump = [("new_level", lab, [(1799.0, 1.0)]),
+            ("old_level", lab, [(-600.0, 3.0)]),
+            ("other_level", lab, [(float(t), float(t % 7)) for t in range(-600, 1800, 120)])]
+    why = discover(dump, start=0.0, end=1800.0, step=7).discovery["left_out"]
+    assert why['new_level{instrument="kicad"}'] == (
+        "too new to measure: its first point is after the window's last step, so the next discovery considers it")
+    assert why['old_level{instrument="kicad"}'] == (
+        "not written while its writer kicad was live in the window: its last point is 40 min before the end")

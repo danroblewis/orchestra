@@ -2099,7 +2099,9 @@ printed it; `cat ~/.orchestrator/projects.json` lists every project's key.
    | `a counter of only N events: fewer than 5` | Wait for more events, or a longer window. |
    | `no counters balance it (best R² ...)` | A flow is not measured. Add a counter for every way in and out of the level (arrivals, completions, expiries, retries). Or the level is a quantity of its own, and stays an input. |
    | `too new to be a stock yet, an input until it covers enough` | Wait: the level must have been written for half the window's data. |
-   | `no longer written: its writer ... has been silent N min before the end of the window` | The series' writer (named there: usually the instrument) stopped writing more than five minutes before the window's end. Fix the instrument (Instruments page), or look at a window when it ran (`--minutes`). |
+   | `no longer written: its writer ... has written nothing in the last N min of the window` | The series' writer (named there: usually the instrument) stopped writing more than five minutes before the window's end. Fix the instrument (Instruments page), or look at a window when it ran (`--minutes`). |
+   | `not written while its writer ... was live in the window` | The writer is writing, but not this series: its last point is from before the window (a level's old value is not carried into it). |
+   | `too new to measure` | Its first point came after the window's last step (an instrument's first round, say); the next discovery considers it. |
    | `named orchestra_*` | Rename it. |
    | `a counter no stock's balance needed` | Not a problem: a counter that explains no level. |
    | `the same as ...` / `the same quantity measured again` | Two series measure one thing; one is kept. |

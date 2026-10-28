@@ -20,12 +20,12 @@ from ..sd import predictions as prediction_record
 from ..sd.store import ModelStore
 
 NONE = "no machine associated yet"
-EARLY = ("Orchestra's own", "named orchestra_", "no longer written")   # the reasons a series is left out before it is considered (sd.discover)
+EARLY = ("Orchestra's own", "named orchestra_", "no longer written", "not written", "too new")   # the reasons a series is left out before it is considered (sd.discover)
 
 
 def looked_at(discovery: dict) -> int:
     """How many series a discovery looked at: every one sampled (``sampled``), of which ``series``
-    were considered and the rest left out at once (Orchestra's own, or no longer written).
+    were considered and the rest left out at once (Orchestra's own, or not being written).
     Discoveries before 2026-10-26 recorded only ``series``: the ones left out at once are counted
     from their reasons."""
     if "sampled" in discovery:

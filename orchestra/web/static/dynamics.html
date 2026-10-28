@@ -221,10 +221,10 @@ function loops(nodes, causal) {
   if (main.length) NetGraph.loopList($("looplist"), GRAPH, main); else $("looplist").innerHTML = '<span class="muted">No loops through more than one stock.</span>';
 }
 // what a discovery looked at, in the same numbers everywhere: every series sampled, of which some
-// were left out at once (Orchestra's own, or no longer written) and the rest considered
+// were left out at once (Orchestra's own, or not being written) and the rest considered
 function lookedAt(d) {
   const n = d.looked_at ?? d.series, early = n - (d.series ?? n);
-  return `Looked at ${n} series over ${ago(d.end - d.start)}, in ${d.step} s steps` + (early > 0 ? `: ${early} left out at once (Orchestra's own, or no longer written), ${d.series} considered.` : ".");
+  return `Looked at ${n} series over ${ago(d.end - d.start)}, in ${d.step} s steps` + (early > 0 ? `: ${early} left out at once (Orchestra's own, or not being written), ${d.series} considered.` : ".");
 }
 // the window and the step, said plainly: what they are and what they decide
 function plainWindow(windowS, stepS) {
