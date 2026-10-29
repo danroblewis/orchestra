@@ -15,7 +15,8 @@ Components:
 
 Logs: the bootstrap host's log file, a core log kept in this process (component state changes,
 errors, probe writes), the event stream's tail, and the logs of the processes the host launches
-(`orchestra/launcher.py`)."""
+(`orchestra/launcher.py`, read by `process_logs`: by name, bounded, within the state directory or
+the repository, under the same time limit)."""
 
 from __future__ import annotations
 
@@ -39,6 +40,7 @@ from ..config import Project
 from ..events import Events, event_time
 from ..metrics import MetricsStore, Point
 from ..metrics import for_project as metrics_for
+from . import process_logs
 
 INTERVAL = 5.0          # seconds between probes, however many browsers poll
 TIMEOUT = 4.0           # seconds a component may take before it is reported as timed out
@@ -75,13 +77,14 @@ def _proc(pid) -> dict:
 
 
 def _tail(path: Path, lines: int) -> list[str]:
-    if not path.exists():
+    try:
+        with path.open("rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - 200 * lines))
+            return f.read().decode("utf-8", "replace").splitlines()[-lines:]
+    except OSError:                                       # missing or unreadable: no lines, never an error
         return []
-    with path.open("rb") as f:
-        f.seek(0, 2)
-        size = f.tell()
-        f.seek(max(0, size - 200 * lines))
-        return f.read().decode("utf-8", "replace").splitlines()[-lines:]
 
 
 class CoreProbe:
@@ -121,8 +124,12 @@ class CoreProbe:
         for name, r in sorted((record.get("processes") or {}).items()):
             out.append({"name": name, "state": r.get("state"), "owner": r.get("owner"), "restarts": r.get("restarts", 0),
                         "code": r.get("code"), "command": r.get("command") or [],
-                        **(_proc(r["pid"]) if r.get("pid") else {"alive": False}), "since": r.get("since")})
+                        **(_proc(r["pid"]) if r.get("pid") else {"alive": False}), "since": r.get("since"),
+                        "log_error": process_logs.hint(name, self.project.logs_dir, self._roots())})
         return out
+
+    def _roots(self) -> list[Path]:
+        return [self.project.state_dir, self.project.repo_root]
 
     def _host(self) -> dict:
         record = runtime.read(self.project)
@@ -251,9 +258,21 @@ class CoreProbe:
     def log_sources(self) -> list[dict]:
         out = [{"id": "host", "name": "Orchestra host (bootstrap)"}, {"id": "core", "name": "Core"},
                {"id": "events", "name": "Event stream"}]
-        out += [{"id": f"process:{name}", "name": f"{name} (started by the host)"}
-                for name in sorted(runtime.read(self.project).get("processes") or {})]
+        running = set(runtime.read(self.project).get("processes") or {})
+        out += [{"id": f"process:{name}", "name": name if name in running else f"{name} (not running now)",
+                 "process": name, "running": name in running,
+                 "error": process_logs.hint(name, self.project.logs_dir, self._roots())}
+                for name in sorted(running | set(process_logs.names(self.project.logs_dir)))]
         return out
+
+    def process_log(self, name: str, lines: int = 200) -> dict:
+        """A launched process's log tail (``process_logs.read``), within the time limit."""
+        try:
+            return self._pool.submit(process_logs.read, name, self.project.logs_dir, self._roots(), lines).result(timeout=TIMEOUT)
+        except FutureTimeout:
+            return {"name": name, "lines": [], "more": False, "error": None, "note": f"reading the log timed out after {TIMEOUT:g} s"}
+        except Exception as e:  # noqa: BLE001 - shown on the page
+            return {"name": name, "lines": [], "more": False, "error": None, "note": f"{type(e).__name__}: {e}"}
 
     def logs(self, source: str, lines: int = 200) -> dict:
         lines = max(10, min(lines, 2000))
@@ -275,10 +294,6 @@ class CoreProbe:
             except Exception as e:  # noqa: BLE001
                 return {"source": source, "lines": [], "note": f"the event bus did not answer: {type(e).__name__}: {e}"}
         if source.startswith("process:"):
-            rec = (runtime.read(self.project).get("processes") or {}).get(source.partition(":")[2])
-            if rec is None:
-                return {"source": source, "lines": [], "note": "no such process: the host is not running it now"}
-            # the path the launcher writes, not the record's, so the record cannot name any file
-            path = self.project.logs_dir / "machines" / f"{Path(source.partition(':')[2]).name}.log"
-            return {"source": source, "lines": _tail(path, lines)}
+            # the path the launcher writes, found by name, not the record's, so the record cannot name any file
+            return {"source": source, **self.process_log(source.partition(":")[2], lines)}
         return {"source": source, "lines": [], "note": "unknown log source"}

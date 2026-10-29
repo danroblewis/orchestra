@@ -1072,7 +1072,7 @@ lock only when nobody holds it or its holder is dead, and cleared only by that h
 stops. A second host, started while one runs, launches nothing and writes nothing of the
 launcher's; one that takes the launch from a dead holder first stops what that holder left
 running. Every process is in the runtime record (`processes`), which the Core page shows while
-the launching host runs.
+the launching host runs; their logs stay readable there after it stops (§10, Core).
 
 The launcher starts commands and nothing more: what a process does and which machine it is are
 learned only from what it publishes (AGENTS.md rules 1 and 2). A process's name is not a machine
@@ -1429,6 +1429,17 @@ it. Pages read only the web server's background caches
   metrics (a catalogue of every series with the project's label, naming any series in the file
   store that lacks it, and a PromQL editor) and the events (types, volumes, sources); logs (the
   host's, Core's, the event stream and each launched process's). It imports only the bus, the metrics store and the runtime record.
+  A launched process's log (the launcher's own `<state>/logs/machines/<name>.log`, for a project's
+  `[[machines]]` and a plugin's `Plugin.processes` alike) is opened from its row in the host card
+  (with its last exit code and restarts, and a mark when the log's last lines look like an error or
+  a traceback, a cheap guess) and stays listed after the host stops. Such processes are not machines
+  (AGENTS.md rule 2): a plugin's scheduler is read here, never on the Machines page. The tail is the
+  last 200 lines, newest at the bottom, refreshed every few seconds, with earlier lines on request
+  up to 2000; it is found by the process's name, read from the end within 1 MB, only within the
+  state directory or the repository and under the page's time limit, and a missing or unreadable
+  log is a note, not an error. `GET /api/core/processes/<name>/log?lines=` returns it (`lines`
+  oldest first, `more`, `size`, `path`, `previous` (the rotated `.log.1`), `error`, `note`);
+  `/api/core/logs/sources` and `/api/core/logs?source=` list and read every log the page shows.
   Its Configuration panel (`/api/project`, fetched on its own, so the rest of the page does not
   depend on it) lists the configuration's files and each key with the file it came from (§8),
   never the value of a key the overlay marks secret.
