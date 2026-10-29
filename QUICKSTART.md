@@ -15,13 +15,13 @@ You need:
 ## 1. Install
 
 ```bash
-uv tool install 'orchestra[sd] @ git+https://github.com/danroblewis/orchestra@main' --with 'orchestra-tasking @ git+https://github.com/danroblewis/orchestra-tasking' --with 'orchestra-agents @ git+https://github.com/danroblewis/orchestra-agents' --with 'orchestra-bridges @ git+https://github.com/danroblewis/orchestra-bridges' --with 'orchestra-desk @ git+https://github.com/danroblewis/orchestra-desk' --with 'orchestra-outbox @ git+https://github.com/danroblewis/orchestra-outbox'
+uv tool install 'orchestra[sd,tasking,agents,bridges,desk,outbox] @ git+https://github.com/danroblewis/orchestra@main'
 uv tool update-shell
 ```
 
 Open a new terminal. `orchestra --help` should list `tasks`, `agents`, `bridges`, `desk` and `outbox`.
 
-This installs every plugin. Bridges, desk and outbox stay off until you ask the Supervisor to set them up (see **Plugins** below).
+`sd` is the model and its discovery. Each other name is a plugin. This installs every plugin. Bridges, desk and outbox stay off until you ask the Supervisor to set them up (see **Plugins** below).
 
 ## 2. Configure
 
@@ -130,7 +130,7 @@ All five are installed by step 1. Tasking and agents run from the start. The oth
 
 GitHub uses your `gh` login. Jira and Slack need a token you create; the Supervisor tells you which file to save it in. Tokens never go in `orchestra.toml`. Outbox drafts wait on the **Outbox** page until you approve them.
 
-To leave a plugin out, drop its `--with` from the install command and run it again: a plugin left out of the command is uninstalled.
+To leave a plugin out, drop its name from the brackets and run the install again: a plugin left out is uninstalled.
 
 ## Update, stop, remove
 
@@ -146,7 +146,7 @@ To leave a plugin out, drop its `--with` from the install command and run it aga
 | You see | Do |
 |---|---|
 | `orchestra: command not found` | Run `uv tool update-shell`, then open a new terminal. |
-| `orchestra --help` has no `tasks` | The install line was missing a plugin. Run it again, complete. |
+| `orchestra --help` has no `tasks` | The install line was missing `tasking`. Run it again, complete. |
 | The Supervisor doesn't answer | Core page: is `agents.host` running? Log: `~/.orchestrator/<key>/logs/machines/agents.host.log`. Check `claude --version`. |
 | A ticket is BLOCKED | Open it on the Tickets page for the reason. Ask the Supervisor what to do. |
 | An instrument writes nothing | Instruments page: its last error. Try its command by hand in the repository. |
