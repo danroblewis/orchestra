@@ -153,6 +153,11 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     def core_logs(source: str = "host", lines: int = 200) -> dict:
         return core.logs(source, lines)
 
+    @app.get("/api/core/processes/{name}/log")
+    def core_process_log(name: str, lines: int = 200) -> dict:
+        """A launched process's log tail: lines (oldest first), more, size, path, error, note."""
+        return core.process_log(name, lines)
+
     @app.get("/dynamics", response_class=HTMLResponse)
     async def dynamics_page() -> str:
         return page("dynamics.html")
