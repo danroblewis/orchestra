@@ -11,6 +11,8 @@
   .logs { margin-top:16px } .logs .bar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:8px }
   .logs .bar button.on { color:var(--text); border-color:var(--accent) } .logs select { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:11px; padding:2px 6px }
   .logs .term { height:520px; white-space:pre; overflow:auto; font-size:11.5px }
+  .logs .more { display:block; margin:0 0 6px } .logs .lerr { color:#fca5a5; font-size:11.5px; margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .logs .bar .err { border-color:#ef4444 } .perr { color:#fca5a5; cursor:pointer }
   .proc { font-size:11.5px; color:var(--text2) } .stale { color:#fcd34d }
   .svc { margin-top:12px; display:grid; grid-template-columns:minmax(300px, 380px) minmax(0, 1fr); gap:12px; align-items:start }
   .svc .panel, #host-card .panel { margin:0 } .svc > div:first-child { position:sticky; top:12px }
@@ -85,8 +87,10 @@
     <div id="local-list" class="scroll" style="max-height:300px"></div>
   </div>
   <div class="logs">
-    <h2><span>Logs</span><span class="hctl"><span class="muted" id="log-note"></span></span></h2>
+    <h2><span>Logs</span><span class="hctl"><span class="muted" id="log-note"></span>
+      <button class="ctl" onclick="refreshLog()" title="Read the log again">refresh</button></span></h2>
     <div class="bar" id="log-bar"></div>
+    <div class="lerr" id="log-err" style="display:none"></div>
     <div class="term" id="log"></div>
   </div>
 </div>
@@ -95,7 +99,8 @@
 <script src="/static/charts.js?v={{v}}"></script>
 <script src="/static/promql-editor.js?v={{v}}"></script>
 <script>
-let CORE = null, PROBE = null, LOG_SRC = "host";
+let CORE = null, PROBE = null, LOG_SRC = "host", LOG_LINES = 200;
+const LOG_MAX_LINES = 2000;
 try { LOG_SRC = localStorage.getItem("orchestra.core.log") || "host"; } catch (e) {}
 const fmtNum = (v) => (Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : (+v).toFixed(v >= 10 ? 0 : 1));
 const spark = (points, opts = {}) => Charts.spark(points, opts);
@@ -111,7 +116,8 @@ function processesHtml(ps) {
   const row = (p) => `<tr><td><b>${esc(p.name)}</b>${p.owner && p.owner !== "project" ? ` <span class="muted">(${esc(p.owner)})</span>` : ""}</td>
     <td>${p.state === "running" ? "running" : `<span class="stale">${esc(PROC_STATE[p.state] || p.state)}${p.code != null ? ` · exit ${p.code}` : ""}</span>`}</td>
     <td class="num">${p.alive ? `pid ${p.pid} · up ${since(p.since)} · ${fmtBytes(p.rss || 0)}` : "—"}</td>
-    <td class="num">${p.restarts ? `${p.restarts} restart${p.restarts > 1 ? "s" : ""}` : ""}</td>
+    <td class="num">${p.restarts ? `${p.restarts} restart${p.restarts > 1 ? "s" : ""}` : ""}${p.state === "running" && p.code != null ? ` · last exit ${p.code}` : ""}</td>
+    <td>${p.log_error ? `<span class="perr" title="${esc(p.log_error)}" onclick="showLog('${esc(p.name)}')">⚠ error in log</span> · ` : ""}<button class="ctl" onclick="showLog('${esc(p.name)}')" title="This process's output, as the host writes it to logs/machines/${esc(p.name)}.log">log</button></td>
     <td class="num" style="text-align:left;max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(p.command.join(" "))}">${esc(p.command.join(" "))}</td></tr>`;
   return `<div class="sl">processes the host keeps running</div><table class="ct">${ps.map(row).join("")}</table>`;
 }
@@ -157,17 +163,27 @@ async function probeBus() {
 async function refreshSources() {
   try {
     const { sources } = await (await fetch("/api/core/logs/sources")).json();
-    $("log-bar").innerHTML = sources.map((s) => `<button class="ctl ${s.id === LOG_SRC ? "on" : ""}" onclick="pickLog('${s.id}')">${esc(s.name)}</button>`).join("");
+    $("log-bar").innerHTML = sources.map((s) => `<button class="ctl ${s.id === LOG_SRC ? "on" : ""} ${s.error ? "err" : ""}" onclick="pickLog('${esc(s.id)}')"
+      title="${s.process ? `logs/machines/${esc(s.process)}.log${s.error ? " · " + esc(s.error) : ""}` : ""}">${s.error ? "⚠ " : ""}${esc(s.name)}</button>`).join("");
   } catch (e) {}
 }
-function pickLog(id) { if (!id) return; LOG_SRC = id; try { localStorage.setItem("orchestra.core.log", id); } catch (e) {} refreshSources(); refreshLog(); }
-async function refreshLog() {
+function pickLog(id) { if (!id) return; LOG_SRC = id; LOG_LINES = 200; try { localStorage.setItem("orchestra.core.log", id); } catch (e) {} refreshSources(); refreshLog(true); }
+// a launched process's log: picked, and scrolled to, from its row in the host card
+function showLog(name) { pickLog(`process:${name}`); document.querySelector(".logs").scrollIntoView({ behavior: "smooth" }); }
+function moreLog() { LOG_LINES = Math.min(LOG_MAX_LINES, LOG_LINES * 2); refreshLog(false, true); }
+async function refreshLog(toBottom = false, keepTop = false) {
   try {
-    const d = await (await fetch(`/api/core/logs?source=${encodeURIComponent(LOG_SRC)}&lines=400`)).json();
-    const el = $("log"), atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
-    el.innerHTML = highlightLog(d.lines.join("\n"));
-    $("log-note").textContent = d.note || `${d.lines.length} lines`;
-    if (atBottom) el.scrollTop = el.scrollHeight;
+    const d = await (await fetch(`/api/core/logs?source=${encodeURIComponent(LOG_SRC)}&lines=${LOG_LINES}`)).json();
+    const el = $("log"), atBottom = toBottom || el.scrollTop + el.clientHeight >= el.scrollHeight - 4, fromEnd = el.scrollHeight - el.scrollTop;
+    const more = d.more && LOG_LINES < LOG_MAX_LINES ? `<button class="ctl more" onclick="moreLog()">show ${Math.min(LOG_MAX_LINES, LOG_LINES * 2) - LOG_LINES} earlier lines</button>`
+      : d.more ? `<div class="muted more">the last ${LOG_MAX_LINES} lines; the rest is in ${esc(d.path || "the file")}</div>` : "";
+    el.innerHTML = more + highlightLog(d.lines.join("\n"));
+    const size = d.size != null ? ` · ${fmtBytes(d.size)}` : "";
+    $("log-note").textContent = d.note || `${d.lines.length} lines${size}${d.path ? " · " + d.path : ""}`;
+    $("log-err").style.display = d.error ? "" : "none";
+    $("log-err").textContent = d.error ? `⚠ last error-like line: ${d.error}` : "";
+    if (keepTop) el.scrollTop = el.scrollHeight - fromEnd;
+    else if (atBottom) el.scrollTop = el.scrollHeight;
   } catch (e) {}
 }
 let CAT = null, FIRST_RUN = false;

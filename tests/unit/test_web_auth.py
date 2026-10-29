@@ -74,7 +74,7 @@ def test_the_token_is_the_projects_kept_owner_only(project):
     assert t not in project.config_file.read_text()
 
 
-@pytest.mark.parametrize("path", ["/api/core", "/api/machines", "/api/plugins/outbox/state", "/plugins/outbox/static/outbox.js",
+@pytest.mark.parametrize("path", ["/api/core", "/api/core/processes/tasks.scheduler/log", "/api/machines", "/api/plugins/outbox/state", "/plugins/outbox/static/outbox.js",
                                   "/static/app.js", "/api/session", "/docs", "/openapi.json"])
 def test_without_a_login_every_route_is_refused(project, path):
     r = TestClient(create_app(project)).get(path)
