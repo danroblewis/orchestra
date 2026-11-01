@@ -17,6 +17,7 @@ Reads (``GET``):
 | ``/experiments/<id>/diff`` | what its draft changed of its base |
 | ``/experiments/<id>/runs``, ``/experiments/<id>/runs/<run>`` | its runs, and one in full |
 | ``/experiments/<id>/prediction`` | the prediction it became, and its verdict |
+| ``/intended?version=``, ``/intended/design`` | the intended model's declared layer, and its summary (``sd.intended``) |
 
 Writes (``POST``, a JSON object with ``source``, the machine's CloudEvents source):
 
@@ -28,6 +29,7 @@ Writes (``POST``, a JSON object with ``source``, the machine's CloudEvents sourc
 | ``/experiments/<id>/runs`` | ``mode`` (forward, replay, inverse) and its options |
 | ``/experiments/<id>/commit`` | ``horizon``, ``change``, ``subject``: the prediction |
 | ``/experiments/<id>/discard`` | nothing more |
+| ``/intended`` | ``source``, ``author``, ``turn``, ``message``, ``quote``, ``reason``, ``request``, ``ops``: one call to the declared layer, applied whole or refused (422, with ``index``) |
 
 Every answer is ``{"ok": true, ...}`` or ``{"ok": false, "error": ...}`` with a status: 400 a bad
 request, 403 not the owner, 404 not found, 409 not a draft, 422 an edit or equation refused."""
@@ -52,7 +54,9 @@ ROUTES = [
     ("GET", rf"/experiments/{EXP}/runs/{RUN}", "run_result"),
     ("POST", rf"/experiments/{EXP}/commit", "commit"), ("POST", rf"/experiments/{EXP}/discard", "discard"),
     ("GET", rf"/experiments/{EXP}/prediction", "prediction"),
+    ("GET", r"/intended", "intended"), ("POST", r"/intended", "declare"), ("GET", r"/intended/design", "design"),
 ]
+INTENDED = ("intended", "declare", "design")
 COMPILED = [(m, re.compile(f"^{p}$"), name) for m, p, name in ROUTES]
 
 
@@ -95,11 +99,31 @@ def handle(project, method: str, path: str, query: str, body: bytes, metrics=Non
             return 400, {"ok": False, "error": "the body must be a JSON object"}
         if not isinstance(data, dict):
             return 400, {"ok": False, "error": "the body must be a JSON object"}
+    if name in INTENDED:
+        return _intended(project, name, q, data)
     try:
         x = Experiments(project, data.get("source") if name not in ("check",) else None, metrics=metrics)
         return 200 if name not in ("create",) else 201, _call(x, name, match.groups(), q, data)
     except (ExperimentError, ReadError) as e:
         return e.status, {"ok": False, "error": str(e), **getattr(e, "extra", {})}
+    except _Bad as e:
+        return 400, {"ok": False, "error": str(e)}
+
+
+def _intended(project, name: str, q: dict, d: dict) -> tuple[int, dict]:
+    """The declared layer (``sd.intended``): read, summarised, or one call applied."""
+    from ..sd.intended import IntentError
+
+    store = project.intended
+    try:
+        if name == "intended":
+            return 200, {"ok": True, **store.read(_q(q, "version", int))}
+        if name == "design":
+            return 200, {"ok": True, **store.design()}
+        prov = {k: d[k] for k in ("source", "author", "turn", "message", "quote", "reason", "request") if d.get(k) is not None}
+        return 200, {"ok": True, **store.apply(d.get("ops"), prov, via="plugin")}
+    except IntentError as e:
+        return e.status, {"ok": False, "error": str(e), **({"index": e.index} if e.index is not None else {})}
     except _Bad as e:
         return 400, {"ok": False, "error": str(e)}
 

@@ -207,6 +207,12 @@ class Project:
     def logs_dir(self) -> Path:
         return self.state_dir / "logs"
 
+    @property
+    def intended(self):
+        """The intended model (``orchestra.sd.intended``): ``apply``, ``read``, ``diff``, ``design``."""
+        from .sd.store import ModelStore
+        return ModelStore.for_state(self.state_dir).intended()
+
     def ensure_dirs(self) -> None:
         for d in (self.state_dir, self.logs_dir):
             d.mkdir(parents=True, exist_ok=True)

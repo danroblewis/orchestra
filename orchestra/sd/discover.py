@@ -149,7 +149,7 @@ def _said(s: Series) -> list[str]:
     with nothing to say (RabbitMQ's vhost ``/``, which would end an id in ``__``), and not one
     another value already says (a queue ``analytics.clicks`` says its consumer ``analytics`` and its
     exchange ``clicks``: the id is ``…_analytics_clicks``, not ``…_analytics_clicks_analytics_clicks``)."""
-    vals = [v for k, v in sorted(s.labels.items()) if k not in ("project", "machine", "instrument") and re.sub(r"\W+", "", v)]
+    vals = [v for k, v in sorted(s.labels.items()) if k not in ("project", "machine", "instrument", "simulated") and re.sub(r"\W+", "", v)]
     words = [set(filter(None, re.split(r"\W+", v))) for v in vals]
     return [v for i, v in enumerate(vals)
             if not any(j != i and (words[i] < words[j] or (words[i] == words[j] and j < i)) for j in range(len(vals)))]
@@ -1170,7 +1170,14 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                                         **({"problems": pin_problems} if pin_problems else {})}}
                           if pins or pin_problems else {}),
                        "left_out": dict(sorted(left_out.items()))}
+    mark_simulated(model)
     return model
+
+
+def mark_simulated(model: Model) -> None:
+    """The parts fitted from a series labelled ``simulated="true"``, marked so (``sd.simulated``)."""
+    from .simulated import mark
+    mark(model)
 
 
 def structure(model: Model) -> list:

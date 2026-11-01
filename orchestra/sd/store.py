@@ -18,7 +18,10 @@ era begins, the previous era's last discovery is saved as a version before anyth
 era is, so every past era stays readable (``of_era``), and the new era's prior is the latest
 version of another era (``prior_for``). Beside the versions the store keeps two small records:
 ``eras.json``, the eras recorded from the bus (``sd.eras.sync``), and ``announce.json``, what
-the host last announced about the model (``sd.announce``)."""
+the host last announced about the model (``sd.announce``).
+
+**The intended model** (``sd.intended``): the declared layer, versioned ``dN`` apart from the
+discovered ``vN``, lives in ``intended/`` and is reached only through ``intended()``."""
 
 from __future__ import annotations
 
@@ -113,6 +116,12 @@ class ModelStore:
             if d and d.get("model", {}).get("era") != era:
                 return Model.from_json(d["model"])
         return None
+
+    def intended(self):
+        """The declared layer beside the versions (``sd.intended``, ``<state>/model/intended/``):
+        the only way to it."""
+        from .intended import IntendedStore
+        return IntendedStore(self)
 
     def read_record(self, name: str) -> dict | None:
         """One of the store's small records (``eras``, ``announce``), or None."""

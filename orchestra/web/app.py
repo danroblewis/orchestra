@@ -1,5 +1,6 @@
 """The web UI: Dashboard, Machines, Instruments, Dynamics, Experiments and Core. Read-only for humans: nothing here
-changes the system (AGENTS.md rule 9). Every route, a plugin's too, is behind the project's web token
+changes the system (AGENTS.md rule 9) beyond observations (rediscovering, and the intended model's
+closed list of page controls, web/intended.py). Every route, a plugin's too, is behind the project's web token
 (web/auth.py), which the app's outermost middleware checks."""
 
 from __future__ import annotations
@@ -24,6 +25,8 @@ from .background import Refresher
 from .core import CoreProbe
 from .core_explore import Explorer
 from .dynamics import era_eras, model_view, predictions_view
+from .intended import attach_dynamics, attach_machines
+from .intended import install as install_intended
 from .sd_extra import install as install_sd_extra
 from .sd_extra import unavailable
 from .traffic import merge as merge_counted
@@ -53,6 +56,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     bg = Refresher(project, events, core.metrics)
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
     install_sd_extra(app)
+    install_intended(app, project, events, core.metrics)
 
     @app.middleware("http")
     async def no_cache(request, call_next):
@@ -167,10 +171,14 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         return page("dynamics.html")
 
     @app.get("/api/dynamics/model")
-    def dynamics_model(version: int | None = None, era: str | None = None) -> dict:
+    def dynamics_model(version: int | None = None, era: str | None = None, since: str | None = None) -> dict:
+        """The model, and beside it the declared layer compared with it (``model.intended``,
+        web/intended.py): ``since`` the base version (the previous by default, ``off`` for no marks)."""
         from ..sd.strategies import sd_installed
         bg.want("remote")                           # a page shows the levels: read remote ones while it does
         out = model_view(project, version, bg.levels, bg.levels_error, era=era)
+        if out.get("ok"):
+            attach_dynamics(project, out, since, core.metrics)
         if not sd_installed():                      # conservation only: say what is missing, and how to have it
             out["sd_missing"] = needs_sd("behaviour trust, simulation, experiments and SD Lab's strategies")
         return out
@@ -355,6 +363,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         if bg.counted and bg.counted.get("failed"):
             out["counted_failed"] = bg.counted["failed"]
         declare(out["machines"])
+        attach_machines(project, out, bg.model())       # the declared machines (web/intended.py)
         # the host publishes only when it starts and stops; whether it runs is in the runtime record
         up = bool(runtime.hosts(runtime.read(project)))
         for m in out["machines"]:
