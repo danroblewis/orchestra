@@ -832,9 +832,17 @@ it never writes under `<state>/model/intended/` itself (AGENTS.md rule 5 as amen
   unanswered request for the same part and id, with the same control (`confirm` for confirm,
   `discard` for discard or a retract, and for `switch_kind` a `revise_machine` that sets `kind`
   and nothing else, which then applies at once) and the same `change` when it names one; anything
-  else is a 422. What the owner declared is retracted, unmarked or re-targeted only by the owner
-  ("the owner declared this: ask the owner"), and a declared stock or effect that a flow, a
-  target or an expected effect names is retracted only after them.
+  else is a 422, and so is any call citing a request that is not open. Only the op that answers
+  a request clears it; citing it on another op does not. A request whose element was settled
+  some other way (the owner's quoted confirm, a retract, its change settled) is no longer open.
+  The request is noted before it is published, so a plugin may answer it as soon as it hears it.
+- **What is the owner's**: what the owner declared, and what the owner confirmed (on a page,
+  quoted, or by request; `confirmed.by` is `owner`), is retracted, unmarked, re-described or
+  re-targeted only by the owner ("the owner declared this: ask the owner"); re-marking the
+  owner's mark leaves it as it is. A key is expected or ignored, never both. A declared stock or
+  effect that a flow, a target, an expected effect or a pending change names is retracted only
+  after them, and an event type a machine names only after the machine changes. `via` is the
+  plugin's or the page's; nothing writes as `host` until inference does.
 
 ### 6.7 The whole path, in order
 

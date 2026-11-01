@@ -204,7 +204,19 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         return predictions_view(project, era)
 
     rediscovery: dict = {"running": False}
-    plugin_collectors: list = []                    # the loaded plugins' (mount_plugins): which instruments are simulated
+    plugin_collectors: dict = {"stamp": None, "list": []}   # the loaded plugins' (mount_plugins): which instruments are simulated
+
+    def collectors_now() -> list:
+        """The plugins' collectors, loaded again, with the configuration, when orchestra.toml or the
+        private overlay changed since they were loaded: a plugin writes its entries while the web
+        server runs, and only the host reloads otherwise."""
+        stamp = project.config_stamp()
+        if stamp != plugin_collectors["stamp"]:
+            from ..config import fresh_config
+            from ..sd.simulated import plugin_collectors as load_collectors
+            fresh_config(project)
+            plugin_collectors.update(stamp=stamp, list=load_collectors(project))
+        return plugin_collectors["list"]
 
     @app.get("/api/dynamics/strategies")
     def dynamics_strategies() -> dict:
@@ -236,7 +248,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
                 with reading_only():                # another store's definitions are the host's to infer
                     r = rediscover(project, core.metrics, strategy=body.get("strategy") or None, options=body.get("options"),
                                    window_s=body.get("window_s") or None, step_s=body.get("step_s") or None,
-                                   note="discovered on request: the structure changed", collectors=plugin_collectors)
+                                   note="discovered on request: the structure changed", collectors=collectors_now())
                 rediscovery.update(result={"at": r.at, "stocks": len(r.model.stocks), "flows": len(r.model.flows), "version": r.version,
                                            "strategy": r.strategy, "compute_ms": r.model.discovery.get("compute_ms")}, error=None)
             except Exception as e:  # noqa: BLE001 - reported to the page
@@ -474,8 +486,9 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         except WebSocketDisconnect:
             return
 
+    stamp = project.config_stamp()
     declare, loaded_collectors = mount_plugins(app, project, stylesheets)
-    plugin_collectors.extend(loaded_collectors)
+    plugin_collectors.update(stamp=stamp, list=loaded_collectors)
     app.add_middleware(AuthMiddleware, project=project, on=auth_on)   # added last: the outermost, in front of every route
     return app
 

@@ -11,9 +11,11 @@
 One call is one journal line and one version ``dN``: all of its ops apply or none, under
 ``ModelStore.locked("intended")``. A call's seq is its version's number, and its ops' change ids
 are ``c<seq>.<i>``. The store, never the caller, sets a call's ``via`` and its time ``at``; a
-call ``via: page`` is one control of rule 9's closed list (``page_control``). The ops are given
-the owner's open requests (``requests.open_requests``), so one that answers a request
-(``provenance.request``) is checked against what the owner asked (``consent.py``).
+call ``via: page`` is one control of rule 9's closed list (``controls.page_control``). A call
+citing ``provenance.request`` must cite one of the owner's open requests (``requests.open_requests``,
+a 422 otherwise); the ops are given them, so one that answers it is checked against what the owner
+asked (``consent.py``), and the requests an op answered are written on the journal line
+(``answered``): only those are answered, not every call that cites one.
 ``dN`` and ``vN`` are separate numberings: neither makes the other's versions (rule 4 as
 amended). Only the host and the web server write here (rule 5 as amended); everything derived
 (present, heard, recording, met, …) is computed on read and never stored.
@@ -32,28 +34,15 @@ import re
 import time
 from pathlib import Path
 
+from . import lines
 from .checks import IntentError
 from .checks import provenance as checked_provenance
+from .controls import page_control
 from .ops import apply_op, empty
 from .requests import open_requests
 
 NAME = re.compile(r"^d(\d{4,})\.json$")
 LOCK = "intended"
-
-
-PAGE_MARKS = ("expect", "unexpect", "ignore")
-PAGE_SETTLES = ("confirm", "discard")
-PAGE_PARTS = ("stock", "effect", "flow")
-
-
-def page_control(ops: list) -> None:
-    """A page's call is one control from rule 9's closed list (as amended): ``expect``,
-    ``unexpect``, ``ignore``, or ``confirm`` / ``discard`` on a stock, effect or flow."""
-    op = ops[0] if len(ops) == 1 and isinstance(ops[0], dict) else None
-    name = (op or {}).get("op")
-    if op is None or not (name in PAGE_MARKS or (name in PAGE_SETTLES and op.get("part") in PAGE_PARTS)):
-        raise IntentError("a page records one observation: expect, unexpect, ignore, or confirm or discard on a stock, "
-                          "effect or flow; anything else is the Supervisor's", status=400)
 
 
 class IntendedStore:
@@ -96,19 +85,7 @@ class IntendedStore:
         return d
 
     def _journal_lines(self) -> list[dict]:
-        try:
-            lines = (self.dir / "journal.jsonl").read_text(encoding="utf-8").splitlines()
-        except OSError:
-            return []
-        out = []
-        for line in lines:
-            try:
-                e = json.loads(line)
-            except ValueError:
-                continue
-            if isinstance(e, dict) and isinstance(e.get("seq"), int):
-                out.append(e)
-        return out
+        return [e for e in lines.records(self.dir / "journal.jsonl") if isinstance(e.get("seq"), int)]
 
     def current_version(self) -> int | None:
         nums = self._numbers() + [e["seq"] for e in self._journal_lines()]
@@ -159,7 +136,10 @@ class IntendedStore:
             page_control(ops)
         with self.models.locked(LOCK):
             cur = self.read()
-            asked = open_requests(self) if prov.get("request") else {}
+            asked = open_requests(self, cur["layer"]) if prov.get("request") else {}
+            if prov.get("request") and prov["request"] not in asked:
+                raise IntentError(f"provenance.request {prov['request']} is not one of the owner's unanswered requests")
+            answered: set[str] = set()
             prov["at"] = time.time()
             layer = copy.deepcopy(cur["layer"])
             seq = (self.current_version() or 0) + 1
@@ -167,7 +147,7 @@ class IntendedStore:
             for i, op in enumerate(ops):
                 cid = f"c{seq}.{i}"
                 try:
-                    part, eid = apply_op(layer, op, {"provenance": prov, "change": cid, "requests": asked})
+                    part, eid = apply_op(layer, op, {"provenance": prov, "change": cid, "requests": asked, "answered": answered})
                 except IntentError as e:
                     raise IntentError(str(e), index=i, status=e.status) from None
                 changes.append({"op": op.get("op"), "part": part, "id": eid, "change": cid})
@@ -177,8 +157,8 @@ class IntendedStore:
             tmp.write_text(json.dumps({"version": seq, "at": prov["at"], "layer": layer}) + "\n", encoding="utf-8")
             tmp.replace(p)
             stamped = [{**op, "change": c["change"]} for op, c in zip(ops, changes)]
-            with open(self.dir / "journal.jsonl", "a", encoding="utf-8") as fh:
-                fh.write(json.dumps({"seq": seq, "at": prov["at"], "provenance": prov, "ops": stamped, "changes": changes}) + "\n")
+            lines.append(self.dir / "journal.jsonl", {"seq": seq, "at": prov["at"], "provenance": prov, "ops": stamped,
+                                                      "changes": changes, **({"answered": sorted(answered)} if answered else {})})
         return {"version": seq, "changes": changes}
 
     def _hold(self, hold: int | None) -> int:

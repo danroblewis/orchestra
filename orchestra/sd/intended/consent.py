@@ -7,10 +7,14 @@
   noted (``requests.noted``) that no accepted call has answered yet, about the same part and id,
   with the same control (a ``confirm`` answers ``confirm``, a ``discard`` answers ``discard``, a
   revision of the kind answers ``switch_kind``) and the same ``change`` when the request names
-  one. The store gives the ops the open requests (``ctx["requests"]``), so no op reads a file.
+  one. The store gives the ops the open requests (``ctx["requests"]``), so no op reads a file,
+  and a set (``ctx["answered"]``) that ``verified`` adds each request it finds answered to: only
+  those are written on the journal line as answered (``requests.open_requests``).
 
-What the owner declared (an element, mark or target whose provenance author is ``owner``) is
-changed or removed only with the owner's consent; what a plugin proposed by itself is its own."""
+What is the owner's (``owners``: an element, mark or target the owner declared, or an element the
+owner confirmed, on a page, through a plugin quoting the owner, or by a plugin answering the
+owner's request) is changed or removed only with the owner's consent; what a plugin proposed by
+itself and nobody confirmed is its own."""
 
 from __future__ import annotations
 
@@ -38,11 +42,15 @@ def request(ctx: dict) -> dict | None:
 
 def verified(ctx: dict, part: str, eid, control: str, change: str | None = None, *, exact: bool = False) -> bool:
     """The call answers the owner's open request to ``control`` this ``part`` ``eid`` (and, when
-    the request names a pending change, that ``change``; ``exact``: the request names ``change``)."""
+    the request names a pending change, that ``change``; ``exact``: the request names ``change``).
+    A request found answered is added to ``ctx["answered"]``."""
     r = request(ctx)
     if r is None or (r.get("part"), r.get("id"), r.get("control")) != (part, eid, control):
         return False
-    return r.get("change") == change or (not exact and r.get("change") is None)
+    ok = r.get("change") == change or (not exact and r.get("change") is None)
+    if ok and ctx.get("answered") is not None:
+        ctx["answered"].add(r["event"])
+    return ok
 
 
 def may_settle(ctx: dict, part: str, eid, control: str, change: str | None = None) -> None:
@@ -58,11 +66,20 @@ def may_settle(ctx: dict, part: str, eid, control: str, change: str | None = Non
                           + (f" (change {change})" if change else ""))
 
 
+def owners(owned: dict | None) -> bool:
+    """Whether an element, mark or target (a record with its ``provenance`` and, for an element,
+    ``confirmed``) is the owner's: the owner declared it, or the owner confirmed it."""
+    owned = owned or {}
+    return (owned.get("provenance") or {}).get("author") == "owner" or (owned.get("confirmed") or {}).get("by") == "owner"
+
+
+def consents(ctx: dict, part: str, eid, control: str = "discard") -> bool:
+    """The owner asks, or the call answers the owner's request (``control`` on ``part`` ``eid``)."""
+    return owner_asks(ctx["provenance"]) or verified(ctx, part, eid, control)
+
+
 def guard_owners(owned: dict | None, ctx: dict, part: str, eid, control: str = "discard") -> None:
-    """Refuse a change to what the owner declared (``owned``: its provenance), unless the owner
-    asks or the call answers the owner's request (``control`` on ``part`` ``eid``)."""
-    if (owned or {}).get("author") != "owner":
-        return
-    if owner_asks(ctx["provenance"]) or verified(ctx, part, eid, control):
-        return
-    raise IntentError(ASK_THE_OWNER)
+    """Refuse a change to what is the owner's (``owned``: the element, mark or target record),
+    unless the owner consents (``consents``)."""
+    if owners(owned) and not consents(ctx, part, eid, control):
+        raise IntentError(ASK_THE_OWNER)

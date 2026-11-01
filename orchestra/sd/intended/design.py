@@ -8,7 +8,10 @@ so a row leaves out a field it has no value for.
 Presence is read from the Dynamics comparison: a declared element's by its id, a mark's by its
 key. Before any model exists (no saved version, no discovery), a declared stock or effect with
 no ``found_as`` is certainly absent. The unsettled suggestions are the comparison's
-(``view.unsettled_of``), read from the saved versions' history, whatever the base.
+(``view.unsettled_of``), read from the saved versions' history, whatever the base. A comparison
+that fails leaves presence, suggestions and ``stabilised`` unknown and says why
+(``comparison_error``), so a broken comparison never reads as nothing open. Every open request
+is listed (``requests.open_requests``), not only the latest per element.
 
 Whether a machine is heard is the Machines page's rule (``machines_view.heard_as``: its id or an
 alias among the observed machines). ``observed``: the ids the Machines page has observed (the bus
@@ -23,10 +26,10 @@ from __future__ import annotations
 from .checks import IntentError
 from .drafts import publishable
 from .expected import is_mark
-from .facts import LIMIT_S, _within
+from .facts import LIMIT_S, within
 from .keys import Keys
 from .machines_view import comparison, heard_as
-from .requests import unanswered
+from .requests import open_requests
 
 LAST = 20
 
@@ -42,7 +45,7 @@ def _heard(intended) -> set[str] | None:
     def read():
         store = for_project(project)
         return {(lab.get("source") or "").split("/", 1)[0] for _, lab in store.series(EVENTS, {"project": project.key})}
-    got, ok = _within(read, LIMIT_S)
+    got, ok = within(read, LIMIT_S)
     return got if ok else None
 
 
@@ -67,13 +70,14 @@ def design(intended, hold: int, block: dict | None = None, observed: set[str] | 
     cur = intended.read()
     layer = cur["layer"]
     no_model = not (intended.models.current_version() or intended.models.latest_discovery())
+    error = None
     if block is None and not no_model:
         try:
             block = intended.diff(limit_s=0.0, hold=hold)
         except IntentError:
             raise
-        except Exception:  # noqa: BLE001 - the summary stands without the comparison
-            block = None
+        except Exception as e:  # noqa: BLE001 - the summary stands without the comparison, and says so
+            block, error = None, f"{type(e).__name__}: {e}"
     present = _presence(block)
     elements, absent = [], []
     for part, group in (("stock", "stocks"), ("effect", "effects"), ("flow", "flows"), ("machine", "machines"),
@@ -96,8 +100,9 @@ def design(intended, hold: int, block: dict | None = None, observed: set[str] | 
         elements.append({"part": mk["part"], "key": key, "state": "expected", "present": present.get((mk["part"], "key", key))})
     open_items = [{"what": "unconfirmed", "part": e["part"], "id": e["id"]} for e in elements if e.get("state") == "proposed"]
     open_items += [{"what": "pending change", "part": e["part"], "id": e["id"], "change": c} for e in elements for c in e.get("pending", [])]
-    open_items += [{"what": "unanswered request", "part": p, "id": i, "control": r["control"], "event": r["event"]}
-                   for (p, i), r in unanswered(intended).items()]
+    open_items += [{"what": "unanswered request", "part": r["part"], "id": r["id"], "control": r["control"], "event": r["event"],
+                    "change": r.get("change")}
+                   for r in open_requests(intended, layer).values()]
     open_items += absent + [{"what": "absent expected part", "part": e["part"], "id": e.get("id"), "key": e.get("key")}
                             for e in (block or {}).get("expected", []) if not e["present"]]
     open_items += [{"what": "unsettled suggestion", "part": s["part"], "key": s["key"]} for s in (block or {}).get("suggestions", [])]
@@ -115,8 +120,11 @@ def design(intended, hold: int, block: dict | None = None, observed: set[str] | 
                        for mid, m in layer["machines"].items()
                        if m.get("state") == "declared" and heard_as(mid, m, heard) is None]
     last = [c for e in intended.journal()[-LAST:] for c in e.get("changes", [])][-LAST:]
-    return {"version": cur["version"], "elements": _compact(elements), "open": _compact(open_items), "last_changes": last,
-            "stabilised": (block or {}).get("stabilised")}
+    out = {"version": cur["version"], "elements": _compact(elements), "open": _compact(open_items), "last_changes": last,
+           "stabilised": (block or {}).get("stabilised")}
+    if error is not None:
+        out["comparison_error"] = error
+    return out
 
 
 def _compact(rows: list[dict]) -> list[dict]:

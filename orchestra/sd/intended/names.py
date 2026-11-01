@@ -3,23 +3,25 @@ edit can be published (``drafts``), its label and link (``machines_view``) and t
 predicts (``diff.predicted``). An edit's ``stock``, ``from`` and ``to`` name, in the order tried:
 
 1. a declared stock or effect, by its id: resolved through its ``found_as``, and unresolved
-   while it has none ("waits for a series");
-2. a discovered stock, by its key (§3.1);
-3. tolerated, a discovered stock by its id, taken as its current key.
+   while it has none: "waits for a link" when its measure has a chosen option (something records
+   it, and the Supervisor links it once that is the stock), else "waits for a series";
+2. a discovered stock, by its key (§3.1).
 
-Anything else is "not in the model". ``None`` (an end of an ``appears`` flow) is outside. A draft
-names keys, which hold across versions; ids follow arrival order, so a plugin publishing a draft
-as ``orchestra.prediction.made`` turns its keys into the era's ids (the judge reads ids)."""
+Anything else, a discovered id included, is "not in the model": ids follow arrival order, so a
+stored draft naming one would point at another stock in a later version. ``None`` (an end of an
+``appears`` flow) is outside. A draft names keys, which hold across versions; a plugin publishing a
+draft as ``orchestra.prediction.made`` turns its keys into the era's ids (the judge reads ids).
+Resolving reads only the layer and the model's keys."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .keys import Keys
+from .keys import OUTSIDE, Keys
 
 WAITS = "waits for a series"
+WAITS_LINK = "waits for a link"
 ABSENT = "not in the model"
-OUTSIDE = "outside"
 
 
 @dataclass(frozen=True)
@@ -45,13 +47,12 @@ def resolve(text: str | None, layer: dict, keys: Keys) -> Name:
     if decl is not None:
         fa = decl.get("found_as")
         if not fa:
-            return Name(text, None, None, decl.get("name") or text, WAITS, True)
+            why = WAITS_LINK if (decl.get("measure") or {}).get("chosen") else WAITS
+            return Name(text, None, None, decl.get("name") or text, why, True)
         return Name(text, fa, keys.stocks.get(fa), decl.get("name") or text, None, True)
     if text in keys.stocks:
         sid = keys.stocks[text]
         return Name(text, text, sid, _stock_name(keys, sid) or text)
-    if text in keys.stock_of_id:
-        return Name(text, keys.stock_of_id[text], text, _stock_name(keys, text) or text)
     return Name(text, None, None, text, ABSENT)
 
 

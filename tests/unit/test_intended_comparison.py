@@ -89,14 +89,14 @@ def test_one_resolver_for_a_drafts_names(tmp_path):
              {"author": "supervisor"})
     layer = it.read()["layer"]
     rows = expected_effect(layer["machines"]["fci"], layer, ms.load(), {})["edits"]
-    assert [(r["publishable"], r["why"]) for r in rows] == [(True, None), (True, None), (True, None), (False, "not in the model"),
-                                                           (False, "not in the model")]
+    assert [(r["publishable"], r["why"]) for r in rows] == [(True, None), (True, None), (False, "done_id: not in the model"),
+                                                           (False, "nowhere: not in the model"), (False, "not in the model")]
     assert rows[0]["label"] == "queue_id ↑" and rows[0]["link"] == "/dynamics#s:queue_id"
     assert rows[1]["label"] == "queue_id → done_id appears"
     predicted = block(ms)["predicted"]
-    assert [(p["present"], p["id"]) for p in predicted] == [(True, "moved"), (True, "moved"), (False, None)]
+    assert [(p["present"], p["id"]) for p in predicted] == [(True, "moved"), (False, None), (False, None)]
     drafts = [o["why"] for o in it.design(hold=3)["open"] if o["what"] == "unpublishable draft"]
-    assert drafts == ["not in the model", "not in the model"]
+    assert drafts == ["done_id: not in the model", "nowhere: not in the model", "not in the model"]
 
 
 def test_a_retired_placeholder_is_removed_as_simulated(tmp_path):
@@ -139,3 +139,38 @@ def test_a_recording_is_read_for_this_project_only(tmp_path):
         metrics.write([Point("passing", float(i), now - 60 * (n - i), {"instrument": "acc", "project": project}) for i in range(n)])
     assert Facts(metrics, now=now, project="mine").recording("acc")["points"] == 2
     assert Facts(metrics, now=now).recording("acc")["points"] == 5          # no project: the busiest series
+
+
+def test_a_discovered_id_in_a_draft_is_not_in_the_model(tmp_path):
+    from orchestra.sd.intended.keys import Keys
+    from orchestra.sd.intended.names import ABSENT, WAITS, WAITS_LINK, resolve
+
+    m = model([st("queue_id", name="queue")])
+    layer = {"stocks": {"bare": {"name": "Bare"}, "chosen": {"name": "Chosen", "measure": {"options": [{"key": "a"}], "chosen": "a"}}},
+             "effects": {}}
+    keys = Keys(m)
+    assert resolve("queue_id", layer, keys).why == ABSENT and resolve("queue", layer, keys).id == "queue_id"
+    assert resolve("bare", layer, keys).why == WAITS and resolve("chosen", layer, keys).why == WAITS_LINK
+
+
+def test_a_stock_with_neither_series_nor_implied_level_is_keyed_by_id():
+    from orchestra.sd.intended.keys import stock_key
+
+    assert stock_key(Stock("hidden_q", "hidden q", series=None, evidence={"hidden": True})) == "stock:hidden_q"
+    implied = Stock("after_in", "after in", series=None, evidence={"level": {"name": "after_in_total", "labels": {"instrument": "i"}}})
+    assert stock_key(implied) == "after_in_total"
+
+
+def test_design_says_why_the_comparison_failed(tmp_path, monkeypatch):
+    from orchestra.sd.intended.store import IntendedStore
+
+    ms = saved(tmp_path, model([st("a")]))
+    it = ms.intended()
+    it.apply([{"op": "declare_stock", "name": "Features"}], OWNER)
+    assert "comparison_error" not in it.design(hold=3)
+
+    def broken(self, *a, **kw):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(IntendedStore, "diff", broken)
+    d = it.design(hold=3)
+    assert d["comparison_error"] == "RuntimeError: boom" and d["stabilised"] is None

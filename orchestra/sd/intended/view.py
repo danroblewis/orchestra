@@ -100,7 +100,7 @@ def dynamics_block(intended, model=None, since=None, *, hold: int, version: int 
     past = version is not None and not live and version != max(saved, default=None)
     if d is None:
         d = intended.at((saved.get(version) or {}).get("saved_at")) if past else (intended.current_version() or 0)
-    layer = intended.read(d)["layer"] if d else intended.read(0)["layer"]
+    layer = intended.read(d)["layer"]
     shown = Keys(model)
     base_model = models.load(base_n) if base_n else None
     base = Keys(base_model) if base_model is not None else None

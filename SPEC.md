@@ -1048,26 +1048,40 @@ it (rule 7).
   quoting the owner) or with `provenance.request` (answering the owner's request), never by its
   author alone. A plugin answers the owner's request (`provenance.request`) only with the op asked
   for: the request must be one the web server noted, unanswered, about the same part and id, with
-  the same control and, when it names one, the same change (a made-up or mismatched request is a
-  422); a revision answering a `switch_kind` request (it sets `kind` and nothing else) applies at
-  once, even on a confirmed machine, recorded in `latest.request`. What the owner declared (an
-  element, mark or target whose provenance author is `owner`) is retracted, unmarked or
-  re-targeted only by the owner or in answer to the owner's request ("the owner declared this:
-  ask the owner"). A declared stock or effect named by a declared flow, a keyed target or a
-  machine's expected effect is not retracted or discarded until those change. Once a machine is
-  confirmed, a new expected effect waits as a pending change; new edits drop the linked
-  prediction. Where the owner's pending change and another's touch the same fields, the other
-  carries `overridden_by` (on read) and is confirmed only when the owner's request names it. A
-  call `via: page` is one control of rule 9's closed list (400 otherwise).
+  the same control and, when it names one, the same change; any call citing a request that is not
+  open, whatever its ops, is a 422. A request is answered only by an op that answers it (the
+  journal line's `answered`), never by a call that merely cites it. A revision answering a
+  `switch_kind` request (it sets `kind` and nothing else) applies at once, even on a confirmed
+  machine, recorded in `latest.request`. A confirmation records who gave it (`confirmed`: `by:
+  owner` when the owner asks, or `by: owner, via: request, request` when it answers the owner's
+  request). What is the owner's (an element, mark, target or described event type the owner
+  declared, or an element the owner confirmed) is retracted, unmarked, re-described or re-targeted
+  only by the owner or in answer to the owner's request ("the owner declared this: ask the
+  owner"); another author's re-mark of the owner's mark leaves it as it is, and a target set by id
+  is guarded by who set it (`target_by`). A key is expected or ignored, never both: one mark
+  replaces the other, under the same guard. A declared stock or effect named by a declared flow, a
+  keyed target, a machine's expected effect or a pending change that would set one is not
+  retracted or discarded until those change; an event type a machine receives or emits is not
+  retracted until the machine changes. Once a machine is confirmed, a new expected effect waits as
+  a pending change; new edits drop the linked prediction. Where the owner's pending change and
+  another's touch the same fields, the other carries `overridden_by` (on read) and is confirmed
+  only when the owner asks for it or the owner's request names it. The owner's re-declaration of
+  a declared flow is a revision (a non-owner's is a 422). A call `via: page` is one control of rule
+  9's closed list (400 otherwise); a call is `via` a plugin or a page (inference's `host` joins once
+  inference writes here).
 - **Keys.** A discovered part is matched by key, never by id: a stock's series name and labels
   without instrument, machine, source, project, instance, simulated and draft; a flow's ends' keys
-  and its counter's key. Parts carried from the prior are not the era's own.
+  and its counter's key. A stock no series measures is keyed by the level its counters imply,
+  where discovery keeps it (`evidence.level`, a state between counters); only a stock with
+  neither, SD Lab's hidden stocks (named after other stocks' ids), is keyed by its id
+  (`stock:<id>`), which follows arrival order. Parts carried from the prior are not the era's own.
 - **Storage.** `model/intended/`: `journal.jsonl` (every accepted call, append-only),
   `dNNNN.json` (the whole layer after each call; `dN` and `vN` are separate numberings, rule 4;
   a `dN` that cannot be parsed is reported as unreadable, 500, never as missing), `diff/` (the
   structural diff cached as `d{N}-v{M}-v{K}-{era}-h{hold}.json`, `hold` the `announce_hold` its
-  suggestions settled by; `vlive` for an unsaved latest discovery), `requests.jsonl`,
-  `announced.json`. Reached only through `ModelStore.intended()` (`project.intended`), written
+  suggestions settled by; `vlive` for an unsaved latest discovery, each of its pairs kept until a
+  newer discovery), `requests.jsonl` (each request noted before it is published, taken out again if
+  the publish fails), `announced.json`. An append first ends a torn last line. Reached only through `ModelStore.intended()` (`project.intended`), written
   only by the host and the web server (rule 5). Present, heard, recording, measured, met,
   candidates and verdicts are derived on read, under a time limit (`missing` names what was not
   read in time); an op carrying one is refused.
@@ -1085,17 +1099,22 @@ it (rule 7).
   machines' expected effects predict, one entry per machine and edit (`machine`, `edit`), as ghost
   flows with no association (`machines: []`, rule 6). A draft's names (`stock`, `from`, `to`)
   are resolved one way everywhere (`intended/names.py`): a declared id through its `found_as`
-  ("waits for a series" without one), a discovered key, or, tolerated, a discovered id taken as
-  its key; otherwise "not in the model". A draft names keys; a plugin publishing a draft as
+  (without one, "waits for a link" when its measure has a chosen option, else "waits for a
+  series"), or a discovered key; otherwise, a discovered id included, "not in the model" (an
+  unresolved end of a flow is named: "tickets_open: not in the model"). A draft names keys; a
+  plugin publishing a draft as
   `orchestra.prediction.made` turns them into the era's ids. A target on an effect found only as
-  an input is judged on that input's series. A recording is read for the project's own points.
+  an input is judged on that input's series. A recording is read for the project's own points. A
+  declared stock or effect whose chosen option is simulated reads `simulated: true`, and its
+  recording `simulated: true`.
 - **The API.** `project.intended.apply(ops, provenance)` (all ops or none; `IntentError` with
   the op's `index`), `read`, `diff`, `design`; over HTTP `POST /intended`, `GET /intended` and
   `GET /intended/design` on the events endpoint (§3.1). `design()` reads presence by id for a
   declaration and by key for a mark, lists a declared stock or effect with no `found_as` as absent
   before any model exists, and says a machine is heard as the Machines page does (its id or an
   alias among the observed machines: the web server gives the ids it has observed, counted
-  traffic's included; in process, Orchestra's count of the bus). The ops: `declare_stock`,
+  traffic's included; in process, Orchestra's count of the bus), lists every open request, and
+  says why when the comparison failed (`comparison_error`). The ops: `declare_stock`,
   `declare_effect`, `declare_flow`, `set_target` (its comparison is `target`, since `op` names the
   op), `expect`, `unexpect`, `ignore`, `unignore`, `link`, `alias`, `propose_machine`,
   `revise_machine`, `declare_event`, `set_expected_effect`, `record_prediction`,
@@ -1104,7 +1123,9 @@ it (rule 7).
 - **Announced.** After each accepted call the host publishes `orchestra.intent.changed` as
   `orchestra-host`, one event per element the call touched (`subject` `<part>:<id>`, `data`
   `{version, via, ops}` with that element's changes), following the journal, so a call the web
-  server wrote is announced once it is up. Intent events are records about a declaration, never
+  server wrote is announced once it is up. Delivery is at least once per element: a publish that
+  fails partway through a call repeats the elements already sent, so a listener de-duplicates by
+  `version` and change ids. Intent events are records about a declaration, never
   hand-offs on the Machines page.
 - **The pages** (§10): `GET /api/dynamics/model?since=` gains `model.intended`, `/api/machines`
   gains each machine's `intent` (a declared machine not heard is appended, `unseen`, with no
@@ -1114,13 +1135,14 @@ it (rule 7).
   the repository or the state directory, past an interpreter outside them; 404 no entry, 403 only
   outside files). A refusal is `{ok: false, error}` with its status (a non-integer `version`, `d`
   or `after` is a 400). Each attachment row under a machine's `intent` carries the owner's
-  unanswered request (`requested`), and each pending change `overridden_by` when the owner's
-  overrides it. The page controls (rule 9): `POST /api/intended/control` records an observation
+  unanswered request (`requested`: the latest still open), each machine and attachment who
+  confirmed it (`confirmed`), and each pending change `overridden_by` when the owner's overrides it. The page controls (rule 9): `POST /api/intended/control` records an observation
   (`expect`, `unexpect`, `ignore`, `confirm` or `discard` on a stock, effect or flow; a mark is
   stored by `key`, or by the key of the part with that `id` in the latest model, and an `expect`
   or `ignore` of a key no latest model has is refused), and `POST /api/intended/request`
   publishes the owner's request (`confirm`, `discard` on a machine or attachment, `switch_kind`
-  on a machine; it must name a declared element, and for `change` one of its pending changes) as
+  on a machine; it must name a declared element, and for `change` one of its pending changes; a
+  `confirm` or `discard` with no change is of a proposed element, 409 otherwise) as
   `orchestra.intent.requested` from `owner`, which the Supervisor answers by applying with
   `provenance.request`.
 
@@ -1230,8 +1252,12 @@ every = "30s"
 A **simulated** instrument (P4's placeholder ramp) is read by discovery only while an entry with
 `simulated = true` names it; afterwards its series are left out ("simulated, expired") and its
 points stay. Every stock, flow and machine hypothesis fitted from a simulated series is marked
-`simulated: true` in its `evidence` in the saved version (`sd/simulated.py`); the key (§4.6)
-leaves the label out, so a real series takes over the placeholder's expected mark. A plugin's
+`simulated: true` in its `evidence` in the saved version (`sd/simulated.py`), with the series that
+caused it (`simulated_from`: `{series, as}`, `as` one of `series`, `counter`, `end`, `input`), and
+every equation fitted from one carries `quality.simulated = 1` (it reads a simulated stock or input,
+is fitted on a simulated counter, or is a net flow's on a simulated level); the key (§4.6) and the
+ids and names of parts and inputs leave the label out (`series.NOT_NAMED`), so a real series takes
+over the placeholder's expected mark and its input's name. A plugin's
 collector may be simulated too. A **draft** instrument's series are left out of discovery
 (`left_out`: "draft"), while its entry exists and after it is gone. The core honours the flag and
 nothing more: `expires` is data for the plugin, which removes the entry then or clears the flag
@@ -1239,8 +1265,10 @@ when the option is chosen; points written after that are ordinary and join the s
 leaves `draft` out). Both flags are read only on Orchestra's own series: a `[[sources]]` series
 keeps its own labels, and is never marked simulated. The judge's split-half discovery (§4.3)
 selects series the same way (`sd.simulated.discovered`). Which plugin collectors are simulated
-is read from the collectors the caller runs (the host's, the web server's loaded plugins'); only
-a caller with none (the CLI) loads the plugins for it.
+is read from the collectors the caller runs (the host's, the web server's loaded plugins', loaded
+again once the configuration changed); only a caller with none (the CLI) loads the plugins for it.
+The web server reads `orchestra.toml` and the overlay again when either changed since it last read
+them (`config.fresh_config`) before it reads which entries are simulated or an option's entry.
 
 Each is an **instrument**: it measures the running system and never acts on it, so it is not a
 machine (AGENTS.md rule 7). Nothing is announced on the bus for it and it is not on the Machines

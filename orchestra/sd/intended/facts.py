@@ -26,7 +26,7 @@ _pool = ThreadPoolExecutor(max_workers=POOL, thread_name_prefix="intended-fact")
 _free = threading.BoundedSemaphore(POOL)
 
 
-def _within(fn, limit: float):
+def within(fn, limit: float):
     """``(fn(), True)`` if it answered within ``limit``; ``(None, False)`` if it failed, ran past
     the limit, or no worker was free."""
     if limit <= 0 or not _free.acquire(blocking=False):
@@ -63,7 +63,7 @@ class Facts:
             self._miss(what)
             return None
         left = self.deadline - time.monotonic()
-        v, ok = _within(fn, left) if left > 0 else (None, False)
+        v, ok = within(fn, left) if left > 0 else (None, False)
         if not ok:
             self._miss(what)
         return v

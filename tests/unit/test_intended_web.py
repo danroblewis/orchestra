@@ -94,6 +94,10 @@ def test_15_16_a_request_publishes_one_event_from_owner_and_writes_no_version(tm
     assert c.post("/api/intended/request", json={"control": "expect", "part": "stock", "id": "x"}).status_code == 400
     m = next(x for x in machines(c)["machines"] if x["id"] == "feature_count_improver")
     assert m["intent"]["requested"]["event"] == got["event"]
+    project.intended.apply([{"op": "declare_event", "type": "work.requested", "description": "asks for work"}],
+                           {"author": "supervisor", "source": "supervisor", "request": got["event"]})
+    m = next(x for x in machines(c)["machines"] if x["id"] == "feature_count_improver")
+    assert m["intent"]["requested"]["event"] == got["event"]                 # citing it is no answer: only the op asked for is
     project.intended.apply([{"op": "confirm", "part": "machine", "id": "feature_count_improver"}],
                            {"author": "supervisor", "source": "supervisor", "request": got["event"]})
     m = next(x for x in machines(c)["machines"] if x["id"] == "feature_count_improver")
@@ -438,9 +442,9 @@ def test_one_rule_says_whether_a_draft_is_publishable(tmp_path, monkeypatch):
     out = {"machines": [], "edges": []}
     merge(out, project.intended, ModelStore.for_state(project.state_dir).load())
     edits = out["machines"][0]["intent"]["expected_effect"]["edits"]
-    assert [(e["publishable"], e["why"]) for e in edits] == [(False, "waits for a series"), (False, "not in the model")]
+    assert [(e["publishable"], e["why"]) for e in edits] == [(False, "features: waits for a link"), (False, "not in the model")]
     drafts = [(o["edit"], o["why"]) for o in project.intended.design()["open"] if o["what"] == "unpublishable draft"]
-    assert drafts == [({"from": "features", "to": None, "appears": True}, "waits for a series"),
+    assert drafts == [({"from": "features", "to": None, "appears": True}, "features: waits for a link"),
                       ({"stock": "nothing_here", "rises": True}, "not in the model")]
 
 
@@ -481,6 +485,45 @@ def test_a_hung_store_does_not_grow_the_threads_past_the_pool(tmp_path):
     finally:
         gate.set()
     deadline = time.time() + 5
-    while time.time() < deadline and facts._within(lambda: 1, 1.0) != (1, True):
+    while time.time() < deadline and facts.within(lambda: 1, 1.0) != (1, True):
         time.sleep(0.05)
-    assert facts._within(lambda: 1, 1.0) == (1, True)
+    assert facts.within(lambda: 1, 1.0) == (1, True)
+
+
+def test_the_web_server_reads_an_orchestra_toml_a_plugin_edited_while_it_runs(tmp_path, monkeypatch):
+    project = project_at(tmp_path, monkeypatch)
+    seed(project)
+    c = client(project)
+    assert c.get("/api/intended/script?instrument=features.new").status_code == 404
+    base = project.config_file.read_text()
+    project.config_file.write_text(base + '\n[[collect]]\nname = "features.new"\ncommand = "true"\n')
+    assert c.get("/api/intended/script?instrument=features.new").json()["entry"]["command"] == "true"
+    project.config_file.write_text(base + '\n[[collect]]\nname = "features.new"\ncommand = "false"\nevery = "1m"\n')
+    assert c.get("/api/intended/script?instrument=features.new").json()["entry"]["command"] == "false"
+    project.config_file.write_text(base + "\n[[collect\n")                         # half written: the last good one stands
+    assert c.get("/api/intended/script?instrument=features.new").json()["entry"]["command"] == "false"
+
+
+def test_rediscover_reads_the_plugins_collectors_again_once_the_configuration_changed(tmp_path, monkeypatch):
+    from orchestra.sd import rediscover as rd
+    from orchestra.sd import simulated
+
+    project = project_at(tmp_path, monkeypatch)
+    seen = []
+
+    def spy(project, metrics, **kw):
+        seen.append(kw["collectors"])
+        raise RuntimeError("stop here")
+    monkeypatch.setattr(rd, "rediscover", spy)
+    monkeypatch.setattr(simulated, "plugin_collectors", lambda project: ["reloaded"])
+    c = client(project)
+
+    def run():
+        assert c.post("/api/dynamics/rediscover", json={}).json()["started"]
+        deadline = time.time() + 10
+        while c.get("/api/dynamics/rediscover").json()["running"] and time.time() < deadline:
+            time.sleep(0.05)
+    run()
+    project.config_file.write_text(project.config_file.read_text() + '\n[[collect]]\nname = "x"\ncommand = "true"\nsimulated = true\n')
+    run()
+    assert seen == [[], ["reloaded"]]

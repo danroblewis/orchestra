@@ -2,7 +2,10 @@
 effect and flow and each mark, with what is derived on read (present, measured, the chosen
 option's recording, candidates, the target's verdict). Candidates are display only: a stock the
 chosen instrument records is listed, never linked (``link`` is the plugin's, rule 7 as amended).
-A target on an effect found only as an input an equation reads is judged on that input's series."""
+A target on an effect found only as an input an equation reads is judged on that input's series.
+A declared stock or effect whose chosen option is simulated reads ``simulated: true``, as does one
+found as a simulated stock; its recording says so (``recording.simulated``), and ``measured``
+stays true once it has points, so the page tags them as placeholder numbers."""
 
 from __future__ import annotations
 
@@ -67,11 +70,14 @@ def _candidates(el: dict, keys, chosen_instrument: str | None) -> list[dict]:
 
 def level_entry(el: dict, row: dict, keys, facts, version_label: str) -> dict:
     measure = copy.deepcopy(el.get("measure"))
-    chosen = None
+    chosen, placeholder = None, False
     if measure and measure.get("chosen"):
         opt = next((o for o in measure["options"] if o.get("key") == measure["chosen"]), None)
         chosen = (opt or {}).get("instrument")
+        placeholder = bool((opt or {}).get("simulated"))
         measure["recording"] = facts.recording(chosen) if chosen else None
+        if measure["recording"] is not None:
+            measure["recording"]["simulated"] = placeholder
     rec = (measure or {}).get("recording") or {}
     present = row["present"]
     found = _stock(keys, el.get("found_as"))
@@ -79,7 +85,7 @@ def level_entry(el: dict, row: dict, keys, facts, version_label: str) -> dict:
            "declared": el.get("state") == "declared", "present": present,
            "measured": present or bool(rec.get("points")), "near": el.get("near"), "note": el.get("note"),
            "unit": el.get("unit"), "linked": el.get("linked"), "found_id": found.id if found else None,
-           "simulated": _simulated(found), "target": target_of(el.get("target"), "stock", el.get("found_as"), keys, facts),
+           "simulated": placeholder or _simulated(found), "target": target_of(el.get("target"), "stock", el.get("found_as"), keys, facts),
            "candidates": _candidates(el, keys, chosen) if not present else [], "measure": measure,
            **{k: el.get(k) for k in COMMON}, "pending": pending_view(el)}
     if not present:

@@ -74,7 +74,7 @@ def test_the_machines_answer_keeps_the_fixture_shape_and_adds_intent(tmp_path, m
     assert m["intent"]["guessed"] == ["receives[0]", "receives[1]"]
     edit = m["intent"]["expected_effect"]["edits"][0]
     assert edit == {"edit": {"stock": "features", "rises": True}, "label": "Features ↑", "link": "/dynamics#s:features",
-                    "publishable": False, "why": "waits for a series"}
+                    "publishable": False, "why": "waits for a link"}
     assert {"from": "session.settled", "to": "feature_count_improver", "kind": "subscribes", "state": "proposed",
             "observed": False, "gone": False} in got["intended_edges"]
     assert {"type": "work.requested", "description": None, "implicit": True} in got["intended_types"]

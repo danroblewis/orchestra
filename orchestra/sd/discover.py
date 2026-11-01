@@ -117,6 +117,7 @@ from .resolution import LINEAR, intervals_with, real_points, steps_of
 from .restate import split_event_counters, split_foreign_counters, unify_same_flows
 from .series import (
     EVENT_COUNTER,
+    NOT_NAMED,
     PLUMBING,
     Series,
     not_current_reason,
@@ -149,7 +150,7 @@ def _said(s: Series) -> list[str]:
     with nothing to say (RabbitMQ's vhost ``/``, which would end an id in ``__``), and not one
     another value already says (a queue ``analytics.clicks`` says its consumer ``analytics`` and its
     exchange ``clicks``: the id is ``…_analytics_clicks``, not ``…_analytics_clicks_analytics_clicks``)."""
-    vals = [v for k, v in sorted(s.labels.items()) if k not in ("project", "machine", "instrument", "simulated") and re.sub(r"\W+", "", v)]
+    vals = [v for k, v in sorted(s.labels.items()) if k not in NOT_NAMED and re.sub(r"\W+", "", v)]
     words = [set(filter(None, re.split(r"\W+", v))) for v in vals]
     return [v for i, v in enumerate(vals)
             if not any(j != i and (words[i] < words[j] or (words[i] == words[j] and j < i)) for j in range(len(vals)))]
@@ -1009,7 +1010,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                             {"balance_r2": None if unfit else round(r2, 4), "exact_steps": None if unfit else round(exact, 4),
                              "steps": n, "balance_steps": len(masks[s.key]),
                              **({"by_construction": True} if by_cons else {}),
-                             **({"measured": False} if p and not p.measured else {}),
+                             **({"measured": False, "level": {"name": s.name, "labels": dict(s.labels)}}   # the level the counters imply: its name holds
+                                if p and not p.measured else {}),
                              **({"identification": identified[s.key].record()} if s.key in identified else {}),
                              "trust": stock_trust(s, exact, identified, by_cons, p),
                              "written_by": writer_of(s), "accumulator": all(sign > 0 for _, sign in terms),

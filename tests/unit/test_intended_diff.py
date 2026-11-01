@@ -284,3 +284,20 @@ def test_a_bad_or_unknown_since_is_refused(tmp_path, since, status):
         block(ms, since=since)
     assert e.value.status == status
     assert block(ms, since="none")["since"] is None and block(ms, since="")["since"] == 1
+
+
+def test_one_discoverys_live_diffs_stay_cached_side_by_side(tmp_path):
+    ms = saved(tmp_path, model([st("a")]), model([st("a"), st("b")]))
+    ms.write_discovery(model([st("a"), st("b"), st("c")]), at=100.0)
+    folder = ms.intended().dir / "diff"
+    dynamics_block(ms.intended(), hold=3)
+    dynamics_block(ms.intended(), since="1", hold=3)
+    dynamics_block(ms.intended(), since="off", hold=3)
+    live = sorted(p.name for p in folder.glob("d*-vlive-*.json"))
+    assert live == ["d0-vlive-v1-none-h3.json", "d0-vlive-v2-none-h3.json", "d0-vlive-voff-none-h3.json"]
+    dynamics_block(ms.intended(), hold=3)                              # read again: a hit, nothing removed
+    assert sorted(p.name for p in folder.glob("d*-vlive-*.json")) == live
+    ms.write_discovery(model([st("a"), st("c")]), at=200.0)            # a newer discovery: the old live files go
+    dynamics_block(ms.intended(), hold=3)
+    assert sorted(p.name for p in folder.glob("d*-vlive-*.json")) == ["d0-vlive-v2-none-h3.json"]
+    assert json.loads((folder / "d0-vlive-v2-none-h3.json").read_text())["stamp"] == 200.0

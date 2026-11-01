@@ -37,6 +37,8 @@ def comparison(heard: bool) -> str:
 
 
 def _norm(s: str) -> str:
+    """An observed name as a machine id would spell it (not ``checks.make_slug``, which names an
+    empty result "element")."""
     return re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_")
 
 
@@ -116,8 +118,9 @@ def intent_of(m: dict, layer: dict, heard: bool, requested: dict | None, model, 
            **{k: m.get(k) for k in ENVELOPE}, "guessed": m.get("guessed") or [], "pending": pending_view(m),
            "requested": requested, "aliases": m.get("aliases") or [],
            "expected_effect": expected_effect(m, layer, model, predictions), "provenance": m.get("provenance"),
-           "latest": m.get("latest"), "change": m.get("change"),
-           "attachments": [{**{k: a.get(k) for k in ("id", "instrument", "match", "instance_label", "state", "provenance")},
+           "latest": m.get("latest"), "change": m.get("change"), "confirmed": m.get("confirmed"),
+           "attachments": [{**{k: a.get(k) for k in ("id", "instrument", "match", "instance_label", "state", "provenance",
+                                                     "confirmed")},
                             "pending": pending_view(a), "requested": asked.get(("attachment", a["id"]))}
                            for a in layer["attachments"].values() if a["machine"] == m["id"]]}
     return out
@@ -127,7 +130,7 @@ def merge(out: dict, intended, model=None, predictions: list[dict] | None = None
     """Add the declared layer to an ``/api/machines`` answer in place."""
     layer = intended.read()["layer"]
     preds = {p.get("id"): p for p in predictions or []}
-    asked = unanswered(intended)
+    asked = unanswered(intended, layer)
     machines = out.setdefault("machines", [])
     by_id = {m["id"]: m for m in machines}
     observed = observed_ids(machines)

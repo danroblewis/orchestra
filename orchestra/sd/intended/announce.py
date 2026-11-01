@@ -5,7 +5,9 @@ them: ``subject`` ``<part>:<id>``, ``data`` ``{version, via, ops: [{op, part, id
 element hears every call that touched it, with the existing filter syntax,
 ``orchestra.intent.changed:subject=machine:feature_count_improver``. It follows the journal by
 ``seq`` from ``announced.json``, written once a whole call is announced, so a call the web server
-wrote is announced once the host is up, and each call once."""
+wrote is announced once the host is up. Delivery is at least once per element: a publish that
+fails partway through a call leaves the call unannounced, and the next pass sends the elements
+already sent again, so a listener de-duplicates by ``version`` and the change ids in ``ops``."""
 
 from __future__ import annotations
 

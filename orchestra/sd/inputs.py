@@ -14,7 +14,7 @@ import re
 from collections import defaultdict
 
 from .live import regular
-from .series import PLUMBING, Series, series_key
+from .series import NOT_NAMED, PLUMBING, Series, series_key
 
 
 def _group(s: Series) -> tuple[str, tuple]:
@@ -27,7 +27,9 @@ def _group(s: Series) -> tuple[str, tuple]:
 
 
 def _name(name: str, labels: dict[str, str]) -> str:
-    return "_".join([name, *[re.sub(r"\W+", "_", v) for k, v in sorted(labels.items()) if k not in ("project", "machine", "instrument")]])
+    """An input's name: the series' name and the values of the labels that say which it is (never
+    ``series.NOT_NAMED``: a placeholder's input is named as the real series that replaces it)."""
+    return "_".join([name, *[re.sub(r"\W+", "_", v) for k, v in sorted(labels.items()) if k not in NOT_NAMED]])
 
 
 def offered_inputs(series: list[Series], stocks: set[str], left_out: dict[str, str]

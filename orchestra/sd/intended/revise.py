@@ -11,14 +11,15 @@ Machines page marks "just now".
 **Precedence** (§3): where the owner's pending change and another author's touch the same fields
 (the same ``set`` keys, or an ``add`` or ``remove`` of the same list), the other is
 ``overridden_by`` the owner's (``overridden``, derived on read), and is not confirmed while the
-owner's is pending unless the owner's request names it."""
+owner's is pending unless the owner asks for it (on a page, or quoted through a plugin) or the
+owner's request names it."""
 
 from __future__ import annotations
 
 import copy
 
 from .checks import IntentError
-from .consent import at_once, verified
+from .consent import at_once, owner_asks, verified
 
 
 def _apply(el: dict, set_: dict, add: dict, remove: dict) -> dict:
@@ -103,13 +104,14 @@ def pending_view(el: dict) -> list[dict]:
 
 def settle_pending(el: dict, change: str, accept: bool, ctx: dict, part: str) -> None:
     """Confirm (apply) or discard one pending change. One the owner's pending change overrides is
-    confirmed only when the owner's request names it."""
+    confirmed only when the owner asks for it or the owner's request names it."""
     pend = el.get("pending") or []
     p = next((x for x in pend if x["change"] == change), None)
     if p is None:
         raise IntentError(f"{el.get('id')} has no pending change {change}")
     by = overridden(pend).get(change)
-    if accept and by is not None and not verified(ctx, part, el.get("id"), "confirm", change, exact=True):
+    if accept and by is not None and not (owner_asks(ctx["provenance"])
+                                          or verified(ctx, part, el.get("id"), "confirm", change, exact=True)):
         raise IntentError(f"{part} {el.get('id')}: the owner's pending change {by} touches the same fields as {change}; "
                           "it is confirmed only when the owner asks for it")
     el["pending"] = [x for x in pend if x is not p]

@@ -28,15 +28,13 @@ from fastapi.responses import JSONResponse
 
 from ..sd.intended import IntentError
 from ..sd.intended import requests as owner_requests
+from ..sd.intended.controls import OBSERVATIONS, PAGE_MARKS, PAGE_PARTS
 from ..sd.intended.keys import mark_key
 from ..sd.intended.params import integer, saved_version
 from ..sd.intended.view import dynamics_block
 from ..sd.model import Model
 from ..sd.store import ModelStore
 
-OBSERVATIONS = ("expect", "unexpect", "ignore", "confirm", "discard")      # rule 9 as amended: the closed list
-MARKS = ("expect", "unexpect", "ignore")
-LEVELS = ("stock", "effect", "flow")
 BODY = {"control", "part", "id", "key", "change", "from", "page"}
 
 
@@ -62,10 +60,10 @@ def observation(body, models) -> tuple[dict, dict]:
     control, part = body.get("control"), body.get("part")
     if control not in OBSERVATIONS:
         raise IntentError(f"control is one of {', '.join(OBSERVATIONS)}; a machine's confirm and discard are requests", status=400)
-    if part not in LEVELS:
+    if part not in PAGE_PARTS:
         raise IntentError("a page observation is on a stock, an effect or a flow; machines and attachments are requests "
                           "(POST /api/intended/request)", status=400)
-    if control in MARKS:
+    if control in PAGE_MARKS:
         if part == "effect":
             raise IntentError("marks are on discovered stocks and flows", status=400)
         if not body.get("key") and not body.get("id"):
@@ -84,9 +82,12 @@ def script_of(project, instrument: str) -> dict:
     names: the first word that is a file inside the repository or the state directory. A word
     outside them (an interpreter such as ``/bin/sh``, ``/usr/bin/env`` or a virtualenv's Python)
     is passed over; only when no word is inside and some word was a file outside is the call
-    refused (403). No such entry is a 404."""
+    refused (403). No such entry is a 404. The configuration is read again if it changed since
+    (``config.fresh_config``): a plugin writes entries while the web server runs."""
+    from ..config import fresh_config
     from .machine_logs import readable
 
+    fresh_config(project)
     entry = next((e for e in project.config.raw.get("collect") or [] if isinstance(e, dict) and e.get("name") == instrument), None)
     if entry is None:
         raise IntentError(f"there is no [[collect]] entry named {instrument}", status=404)

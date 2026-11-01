@@ -21,7 +21,7 @@ SCHEDULED_ONLY = ("at", "tz", "missed")
 # what the comparison derives on read (§5): an op carrying one is refused
 DERIVED = frozenset({"present", "heard", "recording", "points", "points_series", "measured", "met", "instances",
                      "candidates", "alias_candidates", "unexpected", "verdict", "verdicts"})
-AUTHOR_VIA = ("plugin", "page", "host")
+AUTHOR_VIA = ("plugin", "page")          # "host" (inference) joins once inference writes here
 PROVENANCE = ("author", "source", "turn", "message", "quote", "reason", "request")    # what a caller gives
 PAGE = ("control", "page", "from")                                                     # ... and a page control
 TARGET_OPS = ("below", "above", "within")

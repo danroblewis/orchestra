@@ -10,7 +10,10 @@ the series is left out ("simulated, expired"), so the simulated parts leave the 
 Every stock and flow fitted from a simulated series (its own series or counter, an end, or a
 measured input its equation reads), and every machine hypothesis on such a flow, is marked
 ``simulated: true`` in the saved version (in its ``evidence``), from the label, so the mark lives
-in ``vN``. A prediction verdict never counts a simulated part as an unpredicted change
+in ``vN``, with the series that caused it (``evidence["simulated_from"]``: ``{series, as}``, ``as``
+one of ``series`` for a stock, ``counter``, ``end`` or ``input`` for a flow). Every equation fitted
+from one is marked too (``quality["simulated"] = 1``): one that reads a simulated stock or input,
+one fitted on a simulated counter, and a net flow's fitted on a simulated end's level. A prediction verdict never counts a simulated part as an unpredicted change
 (``sd.verdict``) and a target backed only by simulated parts is never met (``sd.intended``). This
 is a flag, not a rule change: the parts are discovered as any other.
 
@@ -53,9 +56,12 @@ def plugin_collectors(project) -> list:
 
 def configured(project, collectors: list | None = None) -> set[str]:
     """The instruments whose entries say ``simulated = true``: the project's ``[[collect]]`` and
-    ``[[scrape]]`` and the plugins' collectors (``collectors``, or loaded now)."""
+    ``[[scrape]]`` (the configuration read again if it changed, ``config.fresh_config``) and the
+    plugins' collectors (``collectors``, or loaded now)."""
     from ..collect.spec import from_toml
+    from ..config import fresh_config
 
+    fresh_config(project)
     plugin = plugin_collectors(project) if collectors is None else collectors
     found, _ = from_toml(getattr(project.config, "raw", None) or {}, plugin)
     return {c.name for c in found if c.simulated}
@@ -112,16 +118,26 @@ def mark(model, others: dict | None = None) -> None:
     def sim(name: str, labels: dict | None) -> bool:
         return is_simulated(labels) and series_key(name, labels or {}) not in others
 
-    sim_stocks = {s.id for s in model.stocks if s.series and sim(s.series.name, s.series.labels)}
-    sim_inputs = {f"input:{n}" for n, ref in ((model.discovery or {}).get("inputs") or {}).items()
+    sim_stocks = {s.id: series_key(s.series.name, s.series.labels or {}) for s in model.stocks
+                  if s.series and sim(s.series.name, s.series.labels)}
+    sim_inputs = {f"input:{n}": series_key(ref.get("name") or "", ref.get("labels") or {})
+                  for n, ref in ((model.discovery or {}).get("inputs") or {}).items()
                   if isinstance(ref, dict) and sim(ref.get("name") or "", ref.get("labels"))}
+    read = {**sim_stocks, **sim_inputs}
     for s in model.stocks:
         if s.id in sim_stocks:
-            s.evidence["simulated"] = True
+            s.evidence.update(simulated=True, simulated_from=[{"series": sim_stocks[s.id], "as": "series"}])
     for f in model.flows:
         refs = [r for r in [f.counter, *(f.measured_by or [])] if r is not None]
-        inputs = {i for e in f.equations for i in e.inputs}
-        if any(sim(r.name, r.labels) for r in refs) or {f.src, f.dst} & sim_stocks or inputs & (sim_stocks | sim_inputs):
-            f.evidence["simulated"] = True
-            for h in ((f.evidence.get("machines") or {}).get("hypotheses") or []):
-                h["simulated"] = True
+        counters = [series_key(r.name, r.labels or {}) for r in refs if sim(r.name, r.labels)]
+        ends = [sim_stocks[e] for e in dict.fromkeys((f.src, f.dst)) if e in sim_stocks]
+        inputs = [read[i] for i in dict.fromkeys(i for e in f.equations for i in e.inputs) if i in read]
+        why = [{"series": k, "as": a} for a, keys in (("counter", counters), ("end", ends), ("input", inputs)) for k in keys]
+        if not why:
+            continue
+        f.evidence.update(simulated=True, simulated_from=why)
+        for h in ((f.evidence.get("machines") or {}).get("hypotheses") or []):
+            h["simulated"] = True
+        for e in f.equations:
+            if counters or (ends and not refs) or set(e.inputs) & set(read):
+                e.quality["simulated"] = 1

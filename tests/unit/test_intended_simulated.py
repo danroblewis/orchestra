@@ -161,6 +161,50 @@ def test_a_flow_reading_a_simulated_input_is_marked():
     simulated.mark(m)
     assert f.evidence["simulated"] and f.evidence["machines"]["hypotheses"][0]["simulated"]
     assert not m.stocks[0].evidence.get("simulated")
+    assert f.evidence["simulated_from"] == [{"series": 'ramp{instrument="features.sim",simulated="true"}', "as": "input"}]
+    back = Model.from_json(m.to_json()).flow("in")
+    assert back.current().quality["simulated"] == 1 and back.evidence["simulated_from"] == f.evidence["simulated_from"]
+
+
+def test_a_simulated_stock_and_the_flows_fitted_on_it_say_which_series():
+    real = Flow("in", "in", None, "q", SeriesRef("q_in_total", {"instrument": "real"}),
+                equations=[Equation("constant", {"c": 1.0}, "fitted")])
+    net = Flow("net", "net", None, "q", None, equations=[Equation("constant", {"c": 1.0}, "fitted")])
+    q = Stock("q", "q", series=SeriesRef("q", {"instrument": "features.sim", "simulated": "true"}))
+    m = Model("system", "s", stocks=[q], flows=[real, net])
+    simulated.mark(m)
+    key = 'q{instrument="features.sim",simulated="true"}'
+    assert q.evidence["simulated_from"] == [{"series": key, "as": "series"}]
+    assert real.evidence["simulated_from"] == net.evidence["simulated_from"] == [{"series": key, "as": "end"}]
+    assert "simulated" not in real.current().quality                # fitted on its real counter
+    assert net.current().quality["simulated"] == 1                  # fitted on the placeholder's level
+
+
+def test_a_placeholders_input_is_named_as_the_real_series_that_replaces_it():
+    from orchestra.sd.inputs import _name
+
+    assert _name("features_wip", {"project": "p", "instrument": "features.sim", "simulated": "true"}) == "features_wip"
+    assert _name("features_wip", {"instrument": "real", "team": "a"}) == _name("features_wip", {"team": "a", "draft": "true"})
+
+
+def test_a_newly_flagged_instrument_is_read_without_a_restart(tmp_path, monkeypatch):
+    project = project_at(tmp_path, monkeypatch)
+    assert simulated.configured(project, []) == set()
+    project.config_file.write_text(project.config_file.read_text() + SIM)          # a plugin's config_edit, as the web server runs
+    assert simulated.configured(project, []) == {"features.sim"}
+
+
+def test_a_declared_stock_measured_only_by_a_placeholder_reads_simulated(tmp_path, monkeypatch):
+    from intended_seed import QUOTE, record_points, seed
+
+    project = project_at(tmp_path, monkeypatch)
+    seed(project)
+    project.intended.apply([{"op": "record_measurement", "part": "stock", "id": "features", "chosen": "d", "options": [
+        {"key": "d", "title": "a simulated ramp", "kind": "simulated", "instrument": "features.sim", "simulated": True}]}],
+        {"author": "owner", "source": "supervisor", "quote": QUOTE})
+    record_points(project, instrument="features.sim", name="features_ramp")
+    e = next(x for x in project.intended.diff(metrics=metrics_for(project))["expected"] if x.get("id") == "features")
+    assert e["simulated"] is True and e["measured"] is True and e["measure"]["recording"]["simulated"] is True
 
 
 def test_discovery_given_the_collectors_never_loads_the_plugins(tmp_path, monkeypatch):

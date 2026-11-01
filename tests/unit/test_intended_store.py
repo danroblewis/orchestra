@@ -18,11 +18,10 @@ SUPERVISOR = {"author": "supervisor", "source": "supervisor", "reason": "a guess
 
 
 class Bus:
-    """Enough of ``Events`` for the web server's request route: each event gets its own id."""
+    """Enough of ``Events`` for the web server's request route: the event keeps the id it is given."""
 
     def publish(self, type_, data, **kw):
-        import uuid
-        return {"id": f"ev-{uuid.uuid4().hex[:8]}"}
+        return {"id": kw["id"]}
 
 
 def answer(s, control, part="machine", eid="feature_count_improver", change=None) -> dict:

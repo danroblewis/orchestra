@@ -15,11 +15,10 @@ FCI = "feature_count_improver"
 
 
 class Bus:
-    """Enough of ``Events`` for a request: each event its own id."""
+    """Enough of ``Events`` for a request: the event keeps the id it is given."""
 
     def publish(self, type_, data, **kw):
-        import uuid
-        return {"id": f"ev-{uuid.uuid4().hex[:8]}"}
+        return {"id": kw["id"]}
 
 
 def store(tmp_path):
@@ -46,7 +45,7 @@ def test_a_request_is_answered_only_by_the_op_it_asked_for(tmp_path):
     s.apply([machine(), machine("other")], SUPERVISOR)
     confirm = {"op": "confirm", "part": "machine", "id": FCI}
     for rid in ("ev-made-up", asked(s, "discard"), asked(s, "confirm", "other")):
-        with pytest.raises(IntentError, match="not the owner's unanswered request") as e:
+        with pytest.raises(IntentError, match="owner's unanswered request") as e:
             s.apply([confirm], {**SUPERVISOR, "request": rid})
         assert e.value.status == 422
     assert s.read()["layer"]["machines"][FCI]["state"] == "proposed"
@@ -55,7 +54,7 @@ def test_a_request_is_answered_only_by_the_op_it_asked_for(tmp_path):
     s.apply([confirm], {**SUPERVISOR, "request": rid})
     assert s.read()["layer"]["machines"][FCI]["state"] == "declared"
     assert ("machine", FCI) not in requests.unanswered(s)
-    with pytest.raises(IntentError, match="not the owner's unanswered request"):          # answered: not open any more
+    with pytest.raises(IntentError, match="not one of the owner's unanswered requests"):  # answered: not open any more
         s.apply([{"op": "discard", "part": "machine", "id": "other"}], {**SUPERVISOR, "request": rid})
 
 
@@ -89,9 +88,10 @@ def test_a_switch_kind_request_does_not_carry_other_changes(tmp_path):
     s.apply([{"op": "revise_machine", "id": FCI, "set": {"kind": "programmatic", "title": "X"}}], {**SUPERVISOR, "request": rid})
     m = s.read()["layer"]["machines"][FCI]
     assert m["kind"] == "universal" and len(m["pending"]) == 1                # not the kind alone: it waits
-    s.apply([{"op": "revise_machine", "id": FCI, "set": {"kind": "programmatic"}}],
-            {**SUPERVISOR, "request": asked(s, "confirm")})
+    rid = asked(s, "confirm", change=m["pending"][0]["change"])
+    s.apply([{"op": "revise_machine", "id": FCI, "set": {"kind": "programmatic"}}], {**SUPERVISOR, "request": rid})
     assert s.read()["layer"]["machines"][FCI]["kind"] == "universal"            # a confirm request is no switch
+    assert rid in requests.open_requests(s)                                      # ... and it is not answered by one
 
 
 @pytest.mark.parametrize("who", ["owner", "supervisor"])
@@ -147,7 +147,7 @@ def test_the_owners_redeclaration_of_a_proposed_flow_declares_it(tmp_path):
     f = s.read()["layer"]["flows"]["ab"]
     assert f["state"] == "declared" and f["name"] == "a to b" and f["confirmed"] == {"by": "owner", "change": got["changes"][0]["change"]}
     with pytest.raises(IntentError, match="already declared"):
-        s.apply([{"op": "declare_flow", "id": "ab", "from": "a", "to": "b"}], OWNER)
+        s.apply([{"op": "declare_flow", "id": "ab", "from": "a", "to": "b"}], SUPERVISOR)
 
 
 @pytest.mark.parametrize("op", [
@@ -216,8 +216,9 @@ def test_the_owners_pending_change_overrides_another_on_the_same_fields(tmp_path
     pend = {p["change"]: p for p in intent_of(layer["machines"][FCI], layer, False, None, None, {})["pending"]}
     assert pend[theirs]["overridden_by"] == mine and "overridden_by" not in pend[mine] and "overridden_by" not in pend[other]
     assert "overridden_by" not in layer["machines"][FCI]["pending"][1]        # derived on read, never stored
-    with pytest.raises(IntentError, match=f"the owner's pending change {mine}"):
-        s.apply([{"op": "confirm", "part": "machine", "id": FCI, "change": theirs}], OWNER)
+    with pytest.raises(IntentError, match="owner's unanswered request"):         # a request for another change
+        s.apply([{"op": "confirm", "part": "machine", "id": FCI, "change": theirs}],
+                {**SUPERVISOR, "request": asked(s, "confirm", change=mine)})
     s.apply([{"op": "confirm", "part": "machine", "id": FCI, "change": theirs}],
             {**SUPERVISOR, "request": asked(s, "confirm", change=theirs)})
     assert s.read()["layer"]["machines"][FCI]["engagement"] == {"mode": "ad hoc"}

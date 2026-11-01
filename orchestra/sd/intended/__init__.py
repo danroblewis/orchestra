@@ -11,7 +11,8 @@ series, a declared flow changes no equation. Discovery never reads it (rule 7 as
 | ``store`` | ``IntendedStore``: the journal and the versions ``dN``, ``apply``, ``read`` (``ModelStore.intended()``) |
 | ``checks`` | ids, the machine envelope, provenance, derived fields refused |
 | ``ops``, ``machine_ops``, ``revise`` | the ops of §6.3; revisions applied at once or kept pending, the owner's precedence |
-| ``consent`` | whether an op has the owner's consent: the owner asks, or a plugin answers the owner's request |
+| ``controls`` | the page controls that are observations: rule 9's closed list |
+| ``consent`` | whether an op has the owner's consent: the owner asks, or a plugin answers the owner's request; what is the owner's |
 | ``keys`` | a discovered part's key (§3.1) |
 | ``history`` | suggestions, settling, came and went (§3.3) |
 | ``diff`` | the structural diff of ``dN``, ``vM``, ``vK``, cached |
@@ -22,6 +23,7 @@ series, a declared flow changes no equation. Discovery never reads it (rule 7 as
 | ``drafts`` | whether an edit of a machine's draft expected effect can be published yet |
 | ``requests`` | the owner's requests from the pages (``orchestra.intent.requested``) |
 | ``announce`` | the host's ``orchestra.intent.changed`` |
+| ``lines`` | the journal's and the requests' JSON-lines files, a torn line never swallowing the next |
 | ``design`` | the plugin's summary |
 """
 

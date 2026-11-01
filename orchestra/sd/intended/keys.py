@@ -6,6 +6,10 @@ match by, since discovered ids are assigned by arrival order (``sd.discover.uniq
   ``simulated`` and ``draft``, so a renamed collector keeps the key, a real series takes over a
   placeholder's mark, and the points a draft instrument writes once its flag is cleared join
   the same stock;
+- a stock no series measures has the key of the level its counters imply, where discovery keeps
+  it (``evidence["level"]``: a state between counters, ``sd.passing``); only a stock with neither
+  (SD Lab's hidden stocks, whose names are made of other stocks' ids) is keyed by its id,
+  ``stock:<id>``;
 - a flow's key is its ends' keys and its counter's key (none for a net flow).
 
 Parts the era carries from its prior (``sd.prior``) are not the era's own: ``own_keys`` leaves
@@ -14,6 +18,7 @@ them out. Each key counts once."""
 from __future__ import annotations
 
 from ..discover import NOT_IDENTITY
+from ..model import SeriesRef
 from ..prior import rests_on_prior
 from ..series import series_key
 from .checks import IntentError
@@ -29,7 +34,9 @@ def ref_key(ref) -> str | None:
 
 
 def stock_key(stock) -> str:
-    return ref_key(stock.series) or f"stock:{stock.id}"
+    level = (stock.evidence or {}).get("level")
+    implied = ref_key(SeriesRef(level["name"], level.get("labels") or {})) if isinstance(level, dict) and level.get("name") else None
+    return ref_key(stock.series) or implied or f"stock:{stock.id}"
 
 
 def flow_key(flow, keys_of_stocks: dict[str, str]) -> str:

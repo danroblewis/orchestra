@@ -10,8 +10,10 @@ base ``vK`` (§3.2, §5), computed on keys (``keys.py``), never with ``sd.compar
 
 The structural diff of a pair is cached as ``diff/d{N}-v{M}-v{K}-{era}-h{hold}.json`` (``hold``
 the ``announce_hold`` its suggestions settled by): its inputs never change, so a file never
-changes (``live`` for an unsaved latest discovery: newest only, rewritten when the discovery is
-newer). Bus and metrics facts are never cached (``facts.py``)."""
+changes (``live`` for an unsaved latest discovery: rewritten when the discovery is newer; a live
+file of another discovery is removed when one of this discovery is written, and the live files of
+one discovery's other pairs, a page's ``since`` or another ``hold``, stay). Bus and metrics facts
+are never cached (``facts.py``)."""
 
 from __future__ import annotations
 
@@ -119,6 +121,17 @@ def cache_name(d: int, v, since, era, hold: int) -> str:
     return f"d{d}-v{v}-v{since if since is not None else 'off'}-{era or 'none'}-h{hold}.json"
 
 
+def _drop_stale_live(folder: Path, stamp: float | None) -> None:
+    """Remove the live files written for another discovery than the one ``stamp`` names."""
+    for old in folder.glob("d*-vlive-*.json"):
+        try:
+            if json.loads(old.read_text(encoding="utf-8")).get("stamp") == stamp:
+                continue
+        except (OSError, ValueError, AttributeError):
+            pass
+        old.unlink(missing_ok=True)
+
+
 def cached(intended, d: int, v, since, era, shown: Keys, base: Keys | None, layer: dict, hold: int, models,
            stamp: float | None = None, nums: list[int] | None = None) -> dict:
     """The structural diff of a pair, from the cache or computed and written there. ``v`` is a
@@ -138,8 +151,7 @@ def cached(intended, d: int, v, since, era, shown: Keys, base: Keys | None, laye
     try:
         folder.mkdir(parents=True, exist_ok=True)
         if v == "live":
-            for old in folder.glob("d*-vlive-*.json"):
-                old.unlink(missing_ok=True)
+            _drop_stale_live(folder, stamp)
         tmp = p.with_suffix(".tmp")
         tmp.write_text(json.dumps({"stamp": stamp, "diff": out}) + "\n", encoding="utf-8")
         tmp.replace(p)
