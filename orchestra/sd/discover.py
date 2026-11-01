@@ -172,10 +172,44 @@ def _slug(s: Series) -> str:
     return "_".join([s.name, *[re.sub(r"\W+", "_", v) for v in _said(s)]])
 
 
-def _title(s: Series) -> str:
+def _title(s: Series, provenance: dict | None = None) -> str:
+    """What the model calls a part: its series' name and the label values that say which one;
+    a series that names a ``step`` (and its ``place`` there) is named by them first, with the
+    values left over that they do not spell ("write (held) · delivery_sail": the pile
+    ``write.held`` is said by the step and the place); a series its instrument made with the ``age``
+    view (``provenance``, by series key) is "age of" that place, never the place's own name. The
+    Dynamics page names parts the same way (sd-graph.js)."""
+    if step := s.labels.get("step"):
+        place = s.labels.get("place")
+        age = "age of " if ((provenance or {}).get(s.key) or {}).get("view") == "age" else ""
+        spelled = set(_words(step)) | set(_words(place or ""))
+        rest = [v for k, v in sorted(s.labels.items())
+                if k not in ("step", "place") and v in _said(s) and not set(_words(v)) <= spelled]
+        return f"{age}{step}" + (f" ({place})" if place else "") + (f" · {', '.join(rest)}" if rest else "")
     base = re.sub(r"_total$", "", s.name).replace("_", " ")
     extra = _said(s)
     return base + (f" ({', '.join(extra)})" if extra else "")
+
+
+def _words(v: str) -> list[str]:
+    return [w for w in re.split(r"[\W_]+", v.lower()) if w]
+
+
+def _between_titles(found: list, passed: dict) -> dict[str, str]:
+    """A state no series measures (an unmeasured passage, ``sd.passing``) is named by its
+    neighbours: "between <what its ins drain> and <what its outs fill>", never after the counter
+    that fills it (the owner, 2026-11-01: "after work item moves (write.held, open_pr.waiting,
+    delivery_sail)" read as three things in one stock). Its id keeps the level the counters imply."""
+    out = {}
+    for key, p in passed.items():
+        if p.measured:
+            continue
+        ins, outs = {c.key for c in p.ins}, {c.key for c in p.outs}
+        side = lambda keys, sign, key=key: list(dict.fromkeys(
+            _title(s) for s, terms, _, _ in found if s.key != key and any(c.key in keys and g == sign for c, g in terms)))
+        src, dst = side(ins, -1) or ["outside"], side(outs, 1) or ["outside"]
+        out[key] = f"between {' or '.join(src)} and {' or '.join(dst)}"
+    return out
 
 
 def _same_total(a: Series, b: Series) -> bool:
@@ -1039,6 +1073,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         same_as[keep.key] = [x for x in same_as[keep.key] if (x["name"], x["labels"]) != (drop.name, drop.labels)]
     stocks, sid_of, ids = [], {}, set()
     held: dict[str, dict] = {}       # the levels whose value was carried on their machine's word, and for how long
+    between = _between_titles(found, passed)
     for s, terms, r2, exact in found:
         sid = unique_id(_slug(s), writer_of(s), ids)
         sid_of[s.key] = sid
@@ -1048,7 +1083,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         p = passed.get(s.key)
         by_cons = s.key in constructed_
         unfit = by_cons or r2 is None           # no R² that is evidence: a balance by construction, or no series measures the level
-        stocks.append(Stock(sid, _title(s), "items", ref(s) if not p or p.measured else None,
+        stocks.append(Stock(sid, between.get(s.key) or _title(s, provenance), "items", ref(s) if not p or p.measured else None,
                             {"balance_r2": None if unfit else round(r2, 4), "exact_steps": None if unfit else round(exact, 4),
                              "steps": n, "balance_steps": len(masks[s.key]),
                              **({"by_construction": True} if by_cons else {}),
@@ -1098,7 +1133,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # a level no counters balance may still be a stock, its net flow fitted from the other series (sd.netflow)
     net_flows: list[Flow] = []
     for st, made, was_input, lv in net_flow_stocks(series, [s for s, _, _, _ in found], sid_of, inputs, input_refs, left_out, step,
-                                                   unit_s, (since, end), lambda x: (unique_id(_slug(x), writer_of(x), ids), _title(x)),
+                                                   unit_s, (since, end), lambda x: (unique_id(_slug(x), writer_of(x), ids), _title(x, provenance)),
                                                    ref, writer_of, measure=net_evidence, units=unit):
         stocks.append(st)
         net_flows += made

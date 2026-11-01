@@ -26,7 +26,14 @@ eras the host recorded are used. When the era is new since the last discovery, t
 (the previous era's last model) is saved as a version first, so the past era stays readable. What
 was found in the era is then merged with its prior, the latest version of another era
 (``sd.prior.merge``), compared with it (``sd.compare``: ``discovery["era_comparison"]``), and
-saved as a version when its structure changed or it is the era's first. An era younger than two
+saved as a version when its structure changed or it is the era's first.
+
+**A quiet window** (``sd.quiet``). A stock of the current version whose series was written to the
+end of the window and moved fewer than five times in it (for a hidden stock, every counter of its
+flows) is carried into the discovery from that version, with its flows, before the structures are
+compared: a window with too little motion is no evidence
+that a stock is gone, so it never saves a poorer version. When nothing else changed, no version
+is saved and the record says ``quiet since <time>: the model of v<N> stands``. An era younger than two
 steps is not discovered: its model is its prior, carried whole. With no era (no change was ever
 announced) nothing of this applies, and discovery is exactly as before."""
 
@@ -43,7 +50,7 @@ from pathlib import Path
 from ..metrics import MetricsStore
 from ..sources.catalogue import Catalogue
 from . import eras as era_record
-from . import persistence, simulated
+from . import persistence, quiet, simulated
 from . import snapshot as snap
 from .compare import compare
 from .discover import structure
@@ -171,9 +178,13 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
         prev = store.latest_discovery()
         if prev and now - prev[0] > 2 * cfg.discovery_every:
             m.discovery["since_last_s"] = round(now - prev[0])      # the machine slept, or nothing ran: this window was read whole, as always
-        store.write_discovery(m, at=now)
         cur = store.load()
+        vs = store.versions()
+        m = quiet.hold(m, cur, vs[-1]["version"] if vs else None, reading.dump)
         changed = m.stocks and (cur is None or structure(cur) != structure(m) or cur.era != m.era)
+        if m.discovery.get("quiet") and not changed:
+            m.discovery["quiet"]["note"] = quiet.stands(m)      # nothing but quiet: the current version stands
+        store.write_discovery(m, at=now)
         version = store.save(m, note=f"{note} ({strategy})") if changed and not reading.missing else None
         return Result(m, now, version, strategy)
 

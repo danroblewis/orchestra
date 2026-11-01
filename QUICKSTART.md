@@ -91,20 +91,15 @@ goes back to `write`, `rounds` 3). The built-in worker and reviewer agents take 
 the worktrees are built in (each made from `origin/main`, fetched: your repository needs an
 `origin` with a `main` branch; nothing is pushed to it). The **Workflows** page draws it; **Items** shows each piece of work.
 
-**Known gaps today** (the Supervisor cannot do these from the chat yet):
+**Starting a piece of work.** Type: *"Start the task loop on adding a /version endpoint that
+returns the app version, with a test."* The Supervisor asks which workflow if more than one fits,
+then starts the item and answers with its id (for example `task_loop-3fa2c1`) and its link on
+**Items** (`/items/<id>`); ask it where the item is at any time. If `orchestra run` is not
+running, it says so and starts nothing. The approved change is a commit on the item's branch in
+its worktree; you merge it.
 
-- **Asking for a piece of work.** The Supervisor has no tool that starts an item on a workflow, so
-  you start one with a line of Orchestra's Python, in your repository:
+**Known gap today** (the Supervisor cannot do this from the chat yet):
 
-  ```bash
-  "$(uv tool dir)/orchestra/bin/python" -c 'from orchestra.config import load_project
-  from orchestra.events import Events
-  Events.for_project(load_project(), source="owner").publish("item.requested",
-      {"workflow": "task_loop", "brief": "Add a /version endpoint that returns the app version, with a test"},
-      subject="version-1")'
-  ```
-
-  The approved change is a commit on the item's branch in its worktree; you merge it.
 - **The gate.** The example's third step, `gate` (merge into `main` when the tests pass), is a
   program, and a program is code: the Supervisor hands code to the Coordinator, which today plans
   it as tickets only with the tasking plugin, which this quickstart leaves out. The example's gate

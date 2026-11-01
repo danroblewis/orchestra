@@ -80,6 +80,8 @@ def test_an_unmeasured_state_between_a_drain_and_fills_of_two_stocks_is_a_hidden
         ("a_level", "after_moved_total"), ("after_moved_total", "b_level"), ("after_moved_total", "c_level")), ends
     hidden = m.stock("after_moved_total")
     assert hidden.series is None and hidden.evidence["hidden"] and "passing" in hidden.evidence
+    # named by its neighbours, never after the counter that fills it (the owner, 2026-11-01)
+    assert hidden.name == "between a level and b level or c level", hidden.name
 
 
 def test_an_unmeasured_state_keeps_the_level_its_counters_imply_as_its_key(tmp_path):

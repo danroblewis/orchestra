@@ -120,6 +120,8 @@ const nice = (s) => (s || "outside").toLowerCase().replace(/_/g, " ");
 // stocks and flows by what tells them apart (SDGraph.names); the model's ``name`` is the full record
 const stockName = (id) => SDGraph.stockName(MODEL, id), flowName = (f) => SDGraph.flowName(MODEL, f);
 const stockHead = (id) => { const n = SDGraph.names(MODEL).stocks[id]; return n ? esc(n.name) + (n.family ? ` <span class="muted">${esc(n.family)}</span>` : "") : esc(nice(id)); };
+// a stock's own sentence (its series' ``describes`` label), said under its name; "" when it has none
+const stockAbout = (id) => { const n = SDGraph.names(MODEL).stocks[id]; return n && n.about ? `<div class="muted about">${esc(n.about)}</div>` : ""; };
 const num = (v, short) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(short ? 2 : 3));
 // the model's text and graph come from sd-graph.js (shared with the layout tests)
 const readName = (x) => SDGraph.readName(MODEL, x);
@@ -290,6 +292,12 @@ function sourcesNote(d) {
   return `<h3>Sources</h3>` + names.map(line).join("") + (d.not_saved ? `<div class="stale" style="font-size:12px">Not saved as a version: ${esc(d.not_saved)}</div>` : "")
     + (d.since_last_s ? `<div class="muted" style="font-size:12px">The discovery before this one was ${ago(d.since_last_s)} earlier; this one read its whole window again.</div>` : "");
 }
+// a quiet window (sd/quiet.py): the stocks whose series did not move, held from the current version
+function quietNote(d) {
+  const q = d.quiet; if (!q) return "";
+  const when = q.since != null ? new Date(q.since * 1000).toISOString().slice(0, 16).replace("T", " ") + " UTC" : null;
+  return `<div class="stale" style="font-size:12px;margin-bottom:6px">${esc(q.note || `quiet${when ? " since " + when : ""}: ${q.stocks.length} stock${q.stocks.length === 1 ? "" : "s"} of v${q.version} held`)} <span class="muted">(${esc(q.stocks.join(", "))}: their series were written to the end of the window and hardly moved, so nothing says they are gone)</span></div>`;
+}
 // "Left out": its true count ("all 35" only when the model uses none and none was kept), and the
 // buckets add up to it: the series the record names, by why, then the rest it does not name
 // (left out at once, or folded into a sum over instances), last (left-out.js counts them)
@@ -352,7 +360,7 @@ function tables() {
       <td class="mcell">${(f.machines || []).length ? f.machines.map((h) => `<div title="${esc(h.why || h.origin || "")}"><span class="mdot" style="--c:${mcolor(h.machine)}"></span><a href="/machines#${encodeURIComponent(h.machine)}" onclick="event.stopPropagation()">${esc((byMachine[h.machine] || {}).name || h.machine)}</a>${h.confidence != null ? ` <span class="muted num">${Math.round(100 * h.confidence)}%</span>` : ""}${Evidence.matched(h) ? `<div class="muted" style="font-size:11px">${esc(Evidence.matched(h))}</div>` : ""}</div>`).join("") : `<span class="muted" title="${esc(f.association || "")}">no machine associated yet</span>`}</td></tr>`; }).join("");
   // how far to trust each stock, as its drawer says it
   const trustCell = Evidence.trustCell;
-  const stocksHtml = `<tr><th>stock</th><th>now</th><th>trust</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr data-sid="${esc(s.id)}" ${opens(`Live.openStock('${esc(s.id)}')`)}><td>${stockHead(s.id)}</td><td class="num">${m.levels[s.id] ? levelText(m.levels[s.id].v, s.unit) : "—"}</td><td>${trustCell(s)}</td>
+  const stocksHtml = `<tr><th>stock</th><th>now</th><th>trust</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr data-sid="${esc(s.id)}" ${opens(`Live.openStock('${esc(s.id)}')`)}><td>${stockHead(s.id)}${stockAbout(s.id)}</td><td class="num">${m.levels[s.id] ? levelText(m.levels[s.id].v, s.unit) : "—"}</td><td>${trustCell(s)}</td>
       <td class="num muted bound">${s.series ? esc(keyOf(s.series)) + `<div style="font-family:inherit">${esc(resOf(m.discovery, keyOf(s.series)))}</div>` : "not measured"}</td></tr>`).join("");
   const hypm = m.machines.filter((x) => x.attributed.length), total = (window.MLIST || []).length;
   const machinesHtml = `<tr><th>machine</th><th>kind</th><th>flows (hypotheses)</th></tr>` + hypm.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span><a href="/machines#${encodeURIComponent(x.id)}">${esc(x.name)}</a>${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
@@ -366,7 +374,7 @@ function tables() {
   const fitted = m.flows.filter((f) => f.current && f.current.origin === "fitted" && !Evidence.tooFew(f)).length;
   const d = m.discovery || {};
   $("found").innerHTML = d.left_out ? `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d))} A level is a stock when counters balance it (R² ≥ ${d.min_r2}), or, with no counters, when the other series explain how it changes better than a steady drift does; a passage (a state each item leaves within a step) is judged on its raw points, its rises and falls matched to its counters, not on R².</div>`
-    + (d.end && d.step ? `<div class="muted" style="font-size:12px;margin-bottom:6px">${plainWindow(d.end - d.start, d.step)}</div>` : "") + sourcesNote(d)
+    + (d.end && d.step ? `<div class="muted" style="font-size:12px;margin-bottom:6px">${plainWindow(d.end - d.start, d.step)}</div>` : "") + quietNote(d) + sourcesNote(d)
     + m.stocks.map((s) => { const ev = s.evidence || {};
       const passage = ev.trust && ev.trust.kind === "passage";
       if (ev.balance) return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">changes by</span> ${ev.balance.map((b) => `<span class="ty">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join(" ")} <span class="muted">${passage ? "a passage: judged on its raw points; R² not used" : ev.balance_r2 == null ? (ev.by_construction ? "a count and its own turnover" : "measured by no series") : `R² ${ev.balance_r2.toFixed(3)} · exact in ${Math.round(100 * ev.exact_steps)}% of steps`}${trustText(ev)}</span></div>`;
