@@ -16,8 +16,8 @@ Everything here is observed, or announced by the machine itself:
   of thing it is** (a program, an agent, a service, a person), **which package** it belongs to, the **name**
   to show it by and the **group** it belongs to (a team): until the bus adapters provide
   subscriptions the backend can list (docs/proposals/empty-orchestra.md §3), an instance announces
-  these when it starts, with ``orchestra.machine.started`` (``data.mode``, ``data.listens_for``,
-  ``data.kind``, ``data.package``, ``data.name``, ``data.group`` or else ``data.team``). A group labels machines and
+  these when it starts, with ``orchestra.machine.started`` (its fields, and which are kept per
+  instance or per machine, are stated once in SPEC §2, "The announcement"). A group labels machines and
   groups them on the page, never separates them (AGENTS.md rule 4). How it is engaged and what
   kind it is belong to each **instance** (its latest announcement stands): a machine whose
   instances differ says so (``agent ×2, program ×1``), never just the last one to announce. So
@@ -200,7 +200,7 @@ class MachineIndex:
         # the instance's latest says its name and group, or that there are none
         card["name"] = d.get("name") if isinstance(d.get("name"), str) and d["name"] else None
         card["group"] = next((d[k] for k in ("group", "team") if isinstance(d.get(k), str) and d[k]), None)
-        card["about"] = {k: v for k, v in d.items() if k not in ("mode", "listens_for", "log", "package", "kind", "name", "group")
+        card["about"] = {k: v for k, v in d.items() if k not in ("mode", "listens_for", "log", "package", "kind", "name", "group", "team")
                          and isinstance(v, str | int | float | bool | type(None) | list)}
         if isinstance(d.get("log"), str) and d["log"]:
             self.logs[machine][instance or ""] = d["log"]

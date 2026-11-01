@@ -1243,20 +1243,10 @@ curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/events" \
                 \"log\": \"$ORCHESTRA_MACHINE_LOG\"}}"
 ```
 
-This is Orchestra's own event type, so Orchestra reads these fields of its `data`:
-
-| Field | Type | Meaning |
-|---|---|---|
-| `mode` | string | `continuous`, `scheduled` or `ad hoc`. Per instance; the latest stands. |
-| `kind` | string | `program`, `agent`, `person` or `service`. Per instance; the latest stands. |
-| `listens_for` | array of strings | The event types it reads. Draws arrows on the event map. |
-| `log` | string | Its log file. Shown in its dialog only when the real path is a regular file inside the repository or the state directory. |
-| `package` | string | The package it belongs to (a plugin draws its card). |
-| `name` | string | The name to show it by. |
-| `group` (or `team`) | string | A label that groups it near others on the page. It never separates it. |
-
-Anything else in `data` (strings, numbers, booleans, lists) is passed to its package's card
-unread.
+This is Orchestra's own event type, so Orchestra reads its `data`: the fields, and which are kept
+per instance or per machine, are stated once, in SPEC §2 ("The announcement"). A log is shown in
+the machine's dialog only when its real path is a regular file inside the repository or the state
+directory.
 
 You announce only what Orchestra cannot observe. Everything else (what it publishes,
 when it was last seen) is observed. Instruments are not machines and are not announced; the

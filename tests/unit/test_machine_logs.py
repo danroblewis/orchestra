@@ -71,9 +71,10 @@ def test_a_hand_off_to_a_machine_that_announced_it_listens_for_none_of_the_sende
 
 def test_what_a_machine_announces_about_itself_is_read_once():
     evs = [{"type": "orchestra.machine.started", "source": "baker/1", "time": "2026-10-25T00:00:00Z",
-            "data": {"mode": "ad_hoc", "kind": "agent", "package": "bakery", "listens_for": ["order.placed"], "team": "morning"}}]
+            "data": {"mode": "ad_hoc", "kind": "agent", "package": "bakery", "listens_for": ["order.placed"], "team": "morning", "shift": "early"}}]
     [m] = [m for m in machines_view(evs)["machines"] if m["id"] == "baker"]
     assert (m["mode"], m["kind"], m["package"], m["subscribes"]) == ("ad_hoc", "agent", "bakery", ["order.placed"])
-    assert m["about"] == {"team": "morning"}, "the rest of the announcement is the package's, passed on unread"
+    assert m["about"] == {"shift": "early"}, "the rest of the announcement is the package's, passed on unread"
+    assert m["group"] == "morning"                     # team is read, as the group, so never passed on too
     [host] = [m for m in machines_view(evs)["machines"] if m["bootstrap"]]
     assert host["kind"] == "program"

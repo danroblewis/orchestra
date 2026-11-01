@@ -219,11 +219,9 @@ curl -sf "$ORCHESTRA_EVENTS_ENDPOINT/events?after=0&types=disk.full&wait=30" \
 # -> {"ok": true, "events": [...], "next": 42}: read again with after=42
 ```
 
-`orchestra.machine.started` takes `mode` (`continuous`, `scheduled` or `ad hoc`), `kind`
-(`program`, `agent`, `person` or `service`), `listens_for` (the event types it reads) and `log`
-(its log file, `$ORCHESTRA_MACHINE_LOG` for a launched process, shown in its dialog when it is
-inside the repository or the state directory). Instruments are not announced: they are not
-machines.
+What `orchestra.machine.started`'s `data` may say is stated once, in SPEC §2 ("The
+announcement"); a launched process gives `$ORCHESTRA_MACHINE_LOG` as its `log`. Instruments are not
+announced: they are not machines.
 
 ### Being seen
 

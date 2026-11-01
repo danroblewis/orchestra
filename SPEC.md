@@ -60,15 +60,31 @@ observed and say nothing about flows. Orchestra's own machine is the **bootstrap
 
 **How a machine is engaged** is one of three modes, a property of how it is run, not of what it
 is: **continuous** (long-running instances that take work as it comes), **scheduled** (run by
-the clock) or **ad hoc** (a fresh instance per piece of work). An instance announces its mode,
-what it listens for, what kind of thing it is (`data.kind`: program, agent, person or service),
-which package it belongs to (`data.package`), the name to show it by (`data.name`) and its group
-(`data.group`, or else `data.team`) when it starts (`orchestra.machine.started`, `data.mode`,
-`data.listens_for`), and may say where its log is (`data.log`, a file path). The announcement is a
-plain event: a machine sends it over HTTP like any other (§3.1), from its own `source`. A group is a label:
-the Machines page shows it on each card and draws a group's machines near each other on the map,
-but every machine stays on the one page and the one map (AGENTS.md rule 4). These
-announcements are Orchestra's own event type, so Orchestra reads their `data`. The web server
+the clock) or **ad hoc** (a fresh instance per piece of work).
+
+**The announcement.** When an instance starts it announces itself with `orchestra.machine.started`
+from its own `source`. It is a plain event: a machine sends it over HTTP like any other (§3.1). It
+is Orchestra's own event type, so Orchestra reads its `data` (`web/machines.py`). This is the one
+full statement of the fields Orchestra reads; every other document points here:
+
+| `data` field | What it says | Kept per |
+|---|---|---|
+| `mode` | how it is engaged: `continuous`, `scheduled` or `ad hoc` | instance (its latest announcement) |
+| `kind` | what kind of thing it is: `program`, `agent`, `person` or `service` | instance (its latest announcement) |
+| `listens_for` | the event types it reads | machine (the union of its instances') |
+| `log` | where its log is, a file path | instance |
+| `package` | the package it belongs to, whose card draws it | instance; the machine shows the latest instance's that names one |
+| `name` | the name to show it by | instance (one that drops it has none); the machine shows the latest instance's that names one |
+| `group`, or else `team` | its group, a label | instance, as `name` |
+| `collector` | marks an announcement the host made for an instrument before 2026-10-27: ignored | — |
+
+A machine whose instances differ in mode or kind says so (`agent ×2, program ×1`), never just the
+last one to announce. Everything else in the announcement (`about`) is passed to the package's card
+unread (scalars and lists only), merged across the instances, the latest instance's over the
+others. An instance that announces only what it listens for and what it is (a part of a machine
+implemented elsewhere) so never erases what another instance said of the machine. A group is a
+label: the Machines page shows it on each card and draws a group's machines near each other on
+the map, but every machine stays on the one page and the one map (AGENTS.md rule 4). The web server
 shows an announced log only when its real path is a regular file inside the project's repository
 or state directory (`web/machine_logs.py`), because anything that can publish could name any
 file. The host starts and keeps running the commands a project or a plugin declares (§5.1), but
@@ -77,8 +93,9 @@ a project declares (§5.2) are not machines, and nothing is announced for them; 
 host made for them before 2026-10-27 (`data.collector`) are ignored by the Machines page. Running machines on
 a clock is not built (`docs/roadmap/decisions.md`, D7).
 
-**The intended model.** The discovered model has no machines; the declared layer stored beside
-it (§4.6) names machines, never in a stock, flow or equation. A declared machine is shown as
+**The intended model.** The discovered model names no machine in a stock, flow or equation; it
+lists the machines that hold a flow's hypotheses (§4.3). The declared layer stored beside it
+(§4.6) names machines, never in a stock, flow or equation. A declared machine is shown as
 declared, and as heard only once its `source` is on the bus; its declaration never overrides what
 is observed and never makes a machine exist. The owner's page requests are published as
 `orchestra.intent.requested` from `owner`, the third Orchestra type a machine (here, the person)

@@ -35,8 +35,8 @@ def test_an_announced_name_and_group_are_read_and_the_latest_announcement_stands
            started("person.cy", "2026-09-21T13:50:00Z", name="Cy")]             # Cy left the team
     seen = {m["id"]: m for m in machines_view(evs, now=T0)["machines"]}
     assert (seen["person.al"]["name"], seen["person.al"]["group"]) == ("Alice Liddell", "editor")
-    assert seen["person.al"]["about"] == {"team": "editor", "github": "alice"}        # the rest still goes to the card
-    assert seen["person.bo"]["group"] == "sre"
+    assert seen["person.al"]["about"] == {"github": "alice"}       # the rest still goes to the card; team was read as the group
+    assert seen["person.bo"]["group"] == "sre" and "team" not in seen["person.bo"]["about"]   # read, so never passed on
     assert (seen["telemetry"]["name"], seen["telemetry"]["group"]) == (None, None)
     assert (seen["person.cy"]["name"], seen["person.cy"]["group"]) == ("Cy", None)
 

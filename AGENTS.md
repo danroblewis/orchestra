@@ -20,9 +20,9 @@ Rules 2, 3, 4, 5, 6, 7 and 9 were amended on 2026-11-01 for the intended model
    a domain concept (ticket, task, build, agent) to the core.
 2. **Machines are outside Orchestra, and known by their events.** A machine
    does actual work: a program, an AI agent (a universal machine), a person.
-   The discovered model has no machines;
-   the declared layer stored beside it (the intended model) names machines, never in a stock, flow
-   or equation. A machine's relationship to the
+   The discovered model names no machine in a stock, flow or equation; it lists the machines that
+   hold a flow's hypotheses (rule 6). The declared layer stored beside it (the intended model)
+   names machines, never in a stock, flow or equation. A machine's relationship to the
    model's flows is not known: it may influence no flow, one or several, and
    several machines may contribute to one flow. Relating actual work to the
    model, by inference, is what Orchestra is for. Orchestra knows a machine
@@ -36,9 +36,10 @@ Rules 2, 3, 4, 5, 6, 7 and 9 were amended on 2026-11-01 for the intended model
    (rule 7). The Machines page and the model read what is observed, never a
    machine's description of itself. The exceptions are what an instance
    announces in `orchestra.machine.started`: its mode, what it listens for,
-   its kind (program, agent, person, service), where its log is and which
-   package it belongs to (the rest of the announcement is passed on to that
-   package's card, unread), and the machines a plugin declares
+   its kind (program, agent, person, service), where its log is, which
+   package it belongs to, and the name and group (or team) to show it by
+   (SPEC §2; the rest of the announcement is passed on to that package's
+   card, unread), and the machines a plugin declares
    (`Plugin.machines`): placeholders that only fill in machines not seen yet,
    never override what is observed, and say nothing about flows. The owner may declare machines
    (the intended model, `orchestra/sd/intended/`), through a plugin or by confirming a proposal.
