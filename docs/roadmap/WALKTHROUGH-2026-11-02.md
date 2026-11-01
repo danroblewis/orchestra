@@ -9,7 +9,9 @@ answered, so every bracketed default stands; where the script uses one it says "
 
 The SRE plays the owner. The owner talks only in the Supervisor's chat; the pages are for looking.
 The coordinator starts the run (the recipe below) and plays the harness (a hold on one review, one
-fake incident); it never types in a page or edits a file once the clock starts.
+fake incident, both `demo.sh` controls on the run's `--dir`); it never types in a page or edits a
+file once the clock starts. The owner's one page act is approving the nudger's reminder on the
+Outbox page (step 11).
 
 ## The fresh state
 
@@ -29,9 +31,11 @@ logged-in `claude` and `gh`.
 
 **Start:** the agents' launcher `tests/live/delivery_live_run.py`, with the role's tools
 `design,observe,model,events,workflows,work` (`work` holds `request_work`; L3's role lacks it) and
-without L3's forced Slack-off, so the Slack card states its own reason:
-`-- --tickets 2 --seed <s> --port 8301 --dir <run>`. The seed is one whose first check fails for
-ticket A (L3 found `--seed 1` gave none: try seeds on `--dry-run` first, free).
+without L3's forced Slack-off, so the Slack card states its own reason. The launcher passes what
+follows its `--` to `examples/delivery_live/demo.sh`:
+`-- --tickets 2 --reject-first 1 --reject-rate 0 --hold-review 2 --port 83xx --dir <run>`.
+This gives exactly one rejection (the first pull request at SAIL, ticket A) and holds the second
+pull request's review (ticket B) for 40 minutes or until released.
 
 **Ports:** the web on the first free port in 8300-8319; the outbox and the fakes take any free
 port (the example's `port = 0`); nothing on the never-list (8096, 8101, 8157, 8173).
@@ -51,8 +55,8 @@ Supervisor's answer is budgeted at 90 seconds. A ticket with no rejection takes 
 
 ## The two tickets
 
-Ticket A goes through with the one rejection. Ticket B's stand-in review is held by the harness,
-so its review goes stale (a hold the stand-in does not have yet: see the gaps).
+Ticket A goes through with the one rejection. Ticket B's stand-in review is held by the harness
+(`--hold-review 2`), so its review goes stale past the 30-minute guard.
 
 ## The steps
 
@@ -81,8 +85,10 @@ and fails the step.
 
 **3. The worker's branch and pull request.**
 (a) Nothing.
-(b) Each worker pushes a branch and opens a pull request whose description names the ticket;
-the item gains the facts `commit` and `pull`; `github.pr.opened` from `person.github.<login>`.
+(b) Each worker pushes a branch and writes the pull request's title and body naming the ticket;
+the outbox opens the pull request (`live.pr_open`, approved by configuration) and the worker links
+it, so the item gains the facts `commit`, `number` and `pull`; `github.pr.opened` from
+`person.github.<login>`.
 (c) Items: A and B at `ci`, the pull request as a link. Machines: the workers and the owner on
 GitHub.
 (e) The push takes seconds; `github.pr.opened` waits one GitHub poll.
@@ -97,7 +103,7 @@ item's `head_sha`, outcome `success`.
 (f) Pass: each item moved on the check of its own commit.
 
 **5. The stand-in review.**
-(b) For A, `reviewer_stand_in` submits a `COMMENT` review; `github.pr.reviewed` (`commented`). B is
+(b) For A, `reviewer_stand_in` submits a `COMMENT` review; `github.pr.commented`. B is
 held: no review.
 (c) Items: A at `sail`; B at `review`, waiting on reviewers, with the time it has waited.
 (e) One GitHub poll.
@@ -113,7 +119,7 @@ A at `sail_check`.
 shows it sent; no SAIL write appears on the bus except the outbox's.
 
 **7. SAIL's result: a rejection, triage, rework.**
-(b) The fake `sail` labels A `REJECTED`; `github.pr.labeled` relayed; the floor runs
+(b) The fake `sail` labels A `REJECTED` (forced by `--reject-first 1`); `github.pr.labeled` relayed; the floor runs
 `sail_triage`, which asks the fake PagerDuty for an incident on the SAIL runners' service (none)
 and exits `local`; A returns to `write`; the worker pushes a rework; `github.pr.synchronize` takes
 A to `ci`, then `review`, `sail`, `sail_check` again.
@@ -144,28 +150,32 @@ guard's reason. Items: the guard shown on B's timeline.
 (a) The owner, in L3's words: "Create a machine called Review Nudger: when a pull request has
 waited too long for its review or for SAIL, it reminds the reviewer. It should listen for the GitHub
 pull request events and the SAIL check results on the bus. Make it a scheduled task for 9am every
-day. Then confirm it. I expect SAILED per day ×1.2." These are the coordinator's words for the
-owner's "sending messages to people to review my Pull Request" (Q6, notes 118) and "It is good to make
-predictions about what impact our Machines have" (Q13).
-(b) The machine declared with receives heard on the bus (a `github.pr.*`, `sail.check.completed`),
-scheduled 09:00, confirmed; `orchestra.prediction.made` from `supervisor`, factor 1.2.
+day. Then confirm it. I expect SAILED per day ×1.2." The coordinator's words for Q6 (notes 118)
+and Q13.
+(b) The machine declared (receives heard on the bus), scheduled 09:00, confirmed; `orchestra.prediction.made` from `supervisor`, factor 1.2.
 (c) Machines: Review Nudger "declared, never heard". Dynamics: the expected change drawn beside
 the model, as a hypothesis.
-(d) The answer states the time zone it used and asks which the owner means (default Q10: ask, guess
-none); says who the reminder reaches is not set and offers the Outbox for its approval; gives the
-prediction's id and when it is judged.
+(d) The answer says the declared 09:00 is not what runs: the program behind it is the
+`review_nudger` workflow, run daily at 00:00 UTC and on
+request, since no calendar time is supported yet (SPEC §12.1); it asks which time zone the owner
+means for a later 09:00 (default Q10: ask, guess none); says each reminder is a comment drafted to
+the Outbox that waits for the owner's approval; gives the prediction's id and when it is judged.
 (e) 90 s. The SRE answers the zone question: "This machine's clock."
-(f) Pass: L3's `check_nudger`; and the answer says plainly that no program runs the nudger yet.
+(f) Pass: L3's `check_nudger`; and the answer does not claim the nudger runs at 09:00.
 
 **11. The nudge, and B released.**
 (a) The owner: "Remind the reviewer on B's pull request."
-(b) Nothing runs the nudger (gap). The coordinator then releases the hold; B goes through
-`review`, `sail`, `sail_check`.
-(d) The answer says nothing can send the reminder today and why, names B's pull request, and
-names what would (a program for the declared nudger; its message drafted to the Outbox, approved
-each time: default for R2's "who should a stale review reach?").
-(e) 90 s; then three GitHub polls for B.
-(f) Pass: the Supervisor neither claims a reminder was sent nor writes anywhere.
+(b) The Supervisor calls `request_work` on `review_nudger`, the brief naming B's ticket. The
+program `review_nudger/1` finds the item waiting longest at `review` or `sail_check` (past 30
+minutes; the one the brief names first) and exits `found`; `remind` drafts a comment on B's pull request
+(`live.nudge`, `approval = "always"`). The owner approves it on the Outbox page; the outbox posts
+it; `outbox.sent`. The coordinator then releases the hold
+(`demo.sh --release-review --dir <run>`); B goes through `review`, `sail`, `sail_check`.
+(c) Outbox: the draft waiting, then sent. Machines: `review_nudger/1` beside the declared nudger.
+(d) The answer names B's pull request and says the reminder waits for the owner's approval (default for R2's "who should a stale review reach?").
+(e) 90 s; the approval as fast as the owner; then three GitHub polls for B.
+(f) Pass: one comment on B's real pull request, sent only after the owner's approval; the
+Supervisor never claims it was sent before `outbox.sent`.
 
 **12. SAILED, merged, ticket Done, requester told.**
 (b) The fake labels A (then B) `SAILED`, squash-merges and deletes the branch; the floor drafts
@@ -180,19 +190,22 @@ a Slack line posted (bot token) or the card's stated reason (done criterion 1).
 **13. A second piece of work, from the chat.**
 (a) The owner: "Start another delivery: add a line to greeting.txt saying good morning."
 (b) `request_work` publishes `item.requested` as `owner`, `via: supervisor`, quoting the message;
-the floor offers it to a worker; steps 3 to 7 follow.
-(c) Items: the new item at `write`, its brief the owner's sentence.
+`has_ticket` finds none, so `create_ticket` drafts `live.create_ticket` and the outbox (approved by
+configuration) opens an "[orchestra live test]" ticket on SCRUM assigned to the owner; then the
+floor offers it to a worker and steps 3 to 7 and 12 follow.
+(c) Items: the new item at `write`, its brief the owner's sentence, its ticket the one opened.
+Outbox: the ticket's draft, approved by configuration, sent.
 (d) The answer names the item's id, its Items link, and that `explain_item` follows it.
 (e) 90 s, then as step 3.
-(f) Pass: one item, its request from `owner`; at `close_ticket` it has no ticket, and the step
-passes only if the item then waits with attention and the reason (no ticket to close), never
-"closed".
+(f) Pass: one item, its request from `owner`, one new ticket (no second item from that ticket's
+assignment); the item ends `closed` with its ticket Done.
 
 **14. An incident.**
 PagerDuty is a fake: the kits' FakePagerDuty on this machine, polled every minute by
 `pagerduty_fake`, which relays `pagerduty.incident.<status>` as `bot.pagerduty_fake` and
 `person.pagerduty_fake.<user>`, announced as fake. It pages no phone.
-(a) The harness opens a high-urgency incident on the SAIL runners' service (`PSVC003`). The owner,
+(a) The harness opens a high-urgency incident on the SAIL runners' service (`PSVC003`):
+`demo.sh --incident open --dir <run>`. The owner,
 as the on-call begins (Q6, notes 141): "I got a PagerDuty alert. Is my delivery work affected?
 What is the impact?"
 (b) `pagerduty.incident.triggered`; any SAIL rejection while it is open is triaged
@@ -202,7 +215,8 @@ deliveries?").
 (d) The answer names the incident's id and service, says it is the fake, names the items at SAIL
 that a company-wide failure would hold, and does not invent an impact analysis it has no data for
 (no SLO or log source is connected).
-(e) One PagerDuty poll (1 minute), 90 s for the answer. The harness resolves it after.
+(e) One PagerDuty poll (1 minute), 90 s for the answer. The harness resolves it after:
+`demo.sh --incident resolve --dir <run>`.
 (f) Pass: the incident named and called fake; no claim about SLOs or logs; any rejection during it
 triaged `company_wide`.
 
@@ -227,21 +241,23 @@ draws no stock must say why.
 
 - **The review is a stand-in.** One GitHub account: GitHub refuses an author's approval, so a
   comment review stands in and `review_state = "commented"`.
-- **No hold on the stand-in.** Step 9 needs the harness to hold B's review; `review_stand_in.py`
-  has no such control yet.
-- **Nothing runs the nudger.** It is declared and confirmed; no program sends a reminder.
-- **Slack needs a bot token.** The file holds an `xoxe.` token; nothing posts until an `xoxb-`
-  token exists (default Q9: disabled).
-- **The Jira poller must not replay Done tickets.** L3 saw earlier Done tickets relayed as
-  assigned, reworked, then refused by `close_ticket`. Step 2 fails if it recurs.
-- **The GitHub poller must not replay history.** L3 saw it relay earlier pull requests on start,
-  and the fake SAIL answer replayed labels. Step 3 fails if it recurs.
+- **No 09:00 schedule yet.** The nudger runs every 24 hours at 00:00 UTC and on request.
+- **Each reminder needs the owner's approval** on the Outbox page (`live.nudge` is `"always"`).
+- **Slack is disabled.** The token lacks channel-read permission (an `xoxe.` token); nothing
+  posts until an `xoxb-` bot token exists (default Q9: disabled).
+- **The Jira poller must not replay Done tickets** (L3 saw it). Step 2 fails if it recurs.
+- **The GitHub poller must not replay history** (L3 saw it). Step 3 fails if it recurs.
 - **No model within 20 minutes of two tickets.** L3's prediction names an event type, not a flow;
   step 16's stocks rest on the overnight run.
-- **`request_work` cannot start `delivery_live`.** Its `starts` lists only `jira.issue.assigned`;
-  step 13 needs `{"request": true}` added by the Supervisor, and the item has no ticket to close.
-- **No way to open a fake incident mid-run.** FakePagerDuty's `add_incident` is in-process only;
-  `fake_world.py` needs a control for step 14.
-- **No seed is known to reject.** Seeds are tried on `--dry-run` first.
+- **The fake CI takes 15 seconds** in a dry run.
+- **A request's ticket is left out of the Jira poller's scope** (the label
+  `orchestra-live-requested`), so its assignment never starts a second item.
 - **No SLO, log or alert source** is connected, so the on-call's impact analysis cannot be done.
-- **Polling, not webhooks:** a 4-second job waits up to 25 minutes.
+- **Polling, not webhooks:** a short job waits up to 25 minutes.
+
+## Evidence
+
+A live run on 2026-11-01 passed for SCRUM-14, SCRUM-15 and SCRUM-16 (pull requests #12, #13 and
+#14): one held review, with the 30-minute guard firing once; one forced rejection, triaged `local`
+and reworked; 10 Outbox sends. Transcript: `~/orchestra-workflows`,
+`examples/delivery_live/transcripts/2026-11-01-outbox/`.
