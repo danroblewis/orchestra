@@ -7,7 +7,7 @@ times stamped before the 06:12Z correction are wrong (section 9).
 
 In short: the four proposals are reviewed and on `main`. The core has the intended model and the
 Dynamics and Machines pages in the mocked states. The Supervisor has its design tools, the
-integration flow and the floor, but the owner's scenario has not yet passed live. The Workflows
+integration flow and the floor, and the owner's scenario passed live on Haiku (A3b). The Workflows
 plugin is a new private repository with the record, piles, the floor, definitions, pages, the task
 loop and seven examples. The integration kits, four example pollers and `docs/INTEGRATING.md` are
 done and passed a stranger test.
@@ -23,14 +23,13 @@ provenance and `pile` as a construction place, two rounds of discovery fixes, th
 under `docs/proposals/`, `docs/INTEGRATING.md`, and UC-7..13, G17..G22 and D22..D40 in
 `docs/roadmap/`. Rules 2 to 7 and 9 of `AGENTS.md` were amended in the proposals' wording.
 
-**Agents, `~/orchestra-agents`.** `main` is `ddf4671` "Merge branch 'A3': the owner's scenario live
-on Haiku", pushed. New: the design tools, prompts and guide, the block on workers pushing or
+**Agents, `~/orchestra-agents`.** `main` is `30a84fe`, the merge of A3b (`744ab7f`), pushed. New: the design tools, prompts and guide, the block on workers pushing or
 merging, the host answering floor offers, `integrate_system` and `approve_integration`, the
 workflow tools, the live scenario test, and the H1, H4 and H7 fixes.
 
 **Workflows, `~/orchestra-workflows`** (new, private, https://github.com/danroblewis/orchestra-workflows).
-`main` is `0851c41` "e2e: read the floor's state only once it has folded the bus", one commit
-ahead of origin (`5dff1f9`).
+`main` is `0851c41` "e2e: read the floor's state only once it has folded the bus; the first claim
+is the holder", pushed. M4 and M5 are complete.
 
 **Bridges, `~/orchestra-bridges`.** `main` is `44cb8f3` "Merge branch 'I5'", pushed. Kits in
 `orchestra_bridges/kits/`, four example machines in `examples/integrations/`.
@@ -40,8 +39,8 @@ on :8096. It runs the agents' demo with `--dummy` from two worktrees on branch `
 `~/orchestra-wt/demo` (`ab0cacaf`, with the UX review's round-1 fixes, not yet on `main`) and agents
 `~/orchestra-agents-wt-demo` (`34e6823`). The login link is in `~/orchestra-live-demo/LOGIN.txt`.
 
-<!-- PENDING: final main commit and push state of each repository after the coordinator's last push -->
-Pending at the time of writing: the push of the core's log commits and the plugin's deflake commit.
+<!-- PENDING: final core main commit and the push of its log commits -->
+Pending at the time of writing: the push of the core's goal-log commits.
 
 ## 2. Status per task
 
@@ -65,7 +64,8 @@ Pending at the time of writing: the push of the core's log commits and the plugi
 | C7, C8 | done | collector provenance; API fields for A1 |
 | C9 | done | the map draws only observed hand-offs |
 | A1, A2 | done | design tools; prompts and guide |
-| A3 | done with caveats | the test exists and rehearses; no live run passed every turn |
+| A3 | done with caveats | test written; no live run passed every turn |
+| A3b | done | after fixes, one Haiku run passed all five turns for $0.19 |
 | A5 | done with caveats | full-path `gh` or a pushurl still gets through |
 | A6 | done | the host claims and finishes floor offers |
 | W1 to W5 | done | skeleton, record, piles, floor, definitions |
@@ -76,8 +76,6 @@ Pending at the time of writing: the push of the core's log commits and the plugi
 | I2, I4, I5 | done | kits, four pollers, pointers |
 | I3 | done | fake e2e and a live Haiku run passed |
 
-<!-- PENDING: A3b result (the Supervisor fixes and one Haiku re-run, cap $3) -->
-Pending at the time of writing: A3b, the fixes for A3's Supervisor failures and one Haiku re-run.
 
 ## 3. Decisions made for the owner
 
@@ -118,10 +116,9 @@ Added in the run, in the log's words where it gives them:
 - "A polling relay publishes as the actor (person.<system>.<account> / bot.<system>), never as
   itself (D19)"; examples write to the overlay; bridges are checked before writing a poller.
 - "Nothing scheduled before approval" (I3).
-- One UX review after M2 merged, not one per task; one plugin review after W4.
 - "A model-acceptance case must use a detached clone, not a worktree".
 
-Each has a row in `docs/roadmap/decisions.md` where P6 recorded it.
+P6 recorded them in `docs/roadmap/decisions.md`.
 
 ## 4. How to run each thing
 
@@ -157,16 +154,14 @@ The last green run per repository, as logged. `ruff check` was clean at every pu
 |---|---|---|
 | core | `b59f7ad1` | unit 936 passed, rc=0 |
 | core | `513a998d` | unit+metrics+sources 1079 passed, 25 skipped, rc=0 |
-| agents | `ddf4671` | unit 522 passed, rc=0 |
+| agents | `30a84fe` | unit 533 passed, 1 skipped, rc=0 |
 | agents | `80c115c` | full suite 408 passed, 2 skipped, rc=0, 19m44s |
-| workflows | `5dff1f9` | 352 passed, rc=0 on the re-run |
+| workflows | `0851c41` | 352 passed, rc=0 |
 | bridges | `a89ea49` | 308 passed, rc=0 |
 
-Known flaky: two plugin floor e2e tests failed under load once at `5dff1f9`. They were test bugs,
-fixed in `0851c41` (20/20 under load in the deflake agent's run).
-
-<!-- PENDING: the coordinator's plugin suite on main after 0851c41 (count, rc) and the push -->
-Pending at the time of writing: the plugin suite on `main` after the deflake commit `0851c41`.
+Known flaky until `0851c41`: two plugin floor e2e tests failed under load. Both were test bugs:
+a `caught_up(floor)` helper now waits for the floor's offset to reach the end of the bus, and the
+workflow test keeps the first claim per offer. Proven 20/20 under 8-suite load; floor code unchanged.
 
 ## 6. Model acceptance
 
@@ -183,7 +178,7 @@ Run on the C5 core, ten checks per use case.
 - **UC-3 (agents and a program): 4/10, fails.** Short windows, and one spurious stock balanced by
   a ticket flow, fixed by the second of two discovery fixes merged with C5.
 
-The judges saw no regression from M2. Both feeders had to be patched: tasking's `create_ticket`
+The judges saw no regression from M2. Tasking's `create_ticket`
 now requires a `milestone_id`. The working files are in the session scratchpad, which may not
 persist.
 
@@ -192,11 +187,8 @@ Pending at the time of writing: the UC-1 re-score against core `b59f7ad1`.
 
 ## 7. Live model spend
 
-Logged: A3 $6.33 (Haiku with Sonnet fallback turns) and I3 about $0.13. The log records no other
-live run. Total about $6.46, approximate, well under the $30 cap. The UX personas used the
-`--dummy` demo.
-
-<!-- PENDING: A3b spend (cap $3) and the new total -->
+A3 $6.33 (Haiku with Sonnet fallback turns), A3b $0.19, I3 about $0.13. Total about $6.65,
+approximate, well under the $30 cap. The UX personas used the `--dummy` demo.
 
 ## 8. Open findings and follow-ups
 
@@ -204,7 +196,9 @@ live run. Total about $6.46, approximate, well under the $30 cap. The UX persona
 - The loop finder sees no cycle when a turn's end is fitted on the oldest item's age (W6).
 - The event map overflows about 10 px at 390 px width.
 - The Machines page marks only a refinement's last edit, so receives removed in the same
-  refinement never show as removed.
+  refinement never show as removed. A fix is in progress on branch `refine-marks`.
+
+<!-- PENDING: refine-marks outcome (the Machines page's refinement marks) -->
 - A heard declared machine drew dashed under C3's styling (I4); check it after C9.
 - "Whoever acts next" hand-offs draw coordinator to `bot.triage` via `attention.needed` (X34).
 - `find_repo_root` resolves linked worktrees to the main repository; `use-cases.md` "Adding a
@@ -217,11 +211,16 @@ live run. Total about $6.46, approximate, well under the $30 cap. The UX persona
 Pending at the time of writing: the UX review of the core pages, round 2, on branch `demo-live`.
 
 **Agents.**
-- A3's Supervisor failures. Haiku failed turns 1, 4 and 6; Sonnet failed turn 1 twice. It never
-  offered the existing `repo_files` series and wrote its own counter; put events in the wrong field
-  and invented one; `read_events` returned 360k characters; never called `link`; named a level as
-  a flow; reached for `add_duty`; used UTC instead of your zone. A3 also fixed confirm's prediction
-  record, which was always `invalid`. A3b works on the rest.
+- A3's failures (Haiku failed turns 1, 4, 6; Sonnet turn 1 twice: unoffered `repo_files`, events
+  in the wrong field, a 360k-character `read_events`, no `link`, a level named as a flow,
+  `add_duty`, UTC) were fixed in A3b: `propose_measurements` needs `list_metrics` first; events go
+  in `receives` and must be heard or announced; `read_events` returns the newest 20 (at most 100)
+  with counts; the Supervisor links the declared stock itself; effects and confirm accept only
+  model flows; no time zone is guessed; a loop is a machine, not a duty.
+- Still seen on Haiku in A3b: turn 1 declared an extra machine; it refused to link `repo_files`
+  (it counts every tracked file, not notes files) and recorded its own instrument; turn 5's
+  scheduling removed all the receives (the tool now warns); transcript redaction's email pattern
+  turns flow ids containing `@` into `[email]`.
 - A5's block is bypassed by a full-path `gh` or an explicit pushurl.
 
 **Workflows.**
@@ -241,7 +240,7 @@ not re-verified.
 
 **Housekeeping.** Worktrees left: core `~/orchestra-wt/C1`, `C2`, `demo`; agents
 `~/orchestra-agents-wt-A3`, `-A3b`, `-C5`, `-demo`; workflows `~/orchestra-workflows-wt-fix`,
-`-wt-X34`; the clone `~/orchestra-bakery-clone-UC1b`. Keep both `demo` worktrees while the demo runs.
+`-wt-X34`; the clone `~/orchestra-bakery-clone-UC1b`. Keep both `demo` worktrees.
 
 ## 9. What the coordinator got wrong
 
