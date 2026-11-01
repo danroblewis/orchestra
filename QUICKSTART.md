@@ -95,12 +95,13 @@ Inside these commands, `python` is Orchestra's own Python. For your project's Py
 ## Plugins
 
 Each plugin is its own package. Install one by adding its name to the brackets of the install
-command (`orchestra[sd,workflows]`) and running it again; its own README says how to configure it.
+command (`orchestra[sd,agents]`) and running it again; its own README says how to configure it.
+`workflows` is private: it installs only with access to its repository; the rest install without it.
 
 | Plugin | What it adds | Read |
 |---|---|---|
 | agents | AI agents as machines | [orchestra-agents](https://github.com/danroblewis/orchestra-agents#readme) |
-| workflows | Your team's own workflows as items, piles and offers to machines | [orchestra-workflows](https://github.com/danroblewis/orchestra-workflows#readme) |
+| workflows | Your team's own workflows as items, piles and offers to machines | orchestra-workflows (private: needs access to its repository) |
 | bridges | Activity in other systems, relayed onto the bus | [orchestra-bridges](https://github.com/danroblewis/orchestra-bridges#readme) |
 | desk | Standing conditions and a ledger of what you asked for | [orchestra-desk](https://github.com/danroblewis/orchestra-desk#readme) |
 | outbox | Messages and actions on your behalf, each one approved by you | [orchestra-outbox](https://github.com/danroblewis/orchestra-outbox#readme) |

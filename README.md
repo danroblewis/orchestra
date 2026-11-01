@@ -26,14 +26,16 @@ Nothing needs cloning. Orchestra and the plugins you want go into one environmen
 GitHub; a plugin is loaded only if it is installed beside the `orchestra` command:
 
 ```bash
-uv tool install 'orchestra[sd,tasking,agents,bridges,desk,outbox,workflows] @ git+https://github.com/danroblewis/orchestra@main'
+uv tool install 'orchestra[sd,tasking,agents,bridges,desk,outbox] @ git+https://github.com/danroblewis/orchestra@main'
 uv tool update-shell        # once: puts ~/.local/bin on the PATH (open a new terminal after)
 orchestra --help            # Orchestra's commands, and each installed plugin's: orchestra tasks ...
 ```
 
 `sd` is the system dynamics discovery; each other extra is a plugin, a package of its own in its
 own repository (`orchestra-tasking`, `orchestra-agents`, `orchestra-bridges`, `orchestra-desk`,
-`orchestra-outbox`, `orchestra-workflows`), which the extra installs beside Orchestra. Name only the ones you want. A
+`orchestra-outbox`, `orchestra-workflows`), which the extra installs beside Orchestra. Name only the ones you want.
+`workflows` is private: its extra installs only with access to its repository; the rest install
+without it. A
 plugin's command line is a subcommand of `orchestra`, named for the plugin (`orchestra tasks`,
 `orchestra agents`, `orchestra desk`, `orchestra outbox`, `orchestra bridges`, `orchestra workflows`). The one command,
 `orchestra`, lands in `~/.local/bin`, which `uv tool update-shell` adds to the PATH (`uv tool dir

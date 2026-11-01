@@ -55,8 +55,10 @@ uv tool install /path/to/orchestra            # or from a checkout
 Plugins are extras too, each a package of its own that the extra installs beside Orchestra:
 
 ```bash
-uv tool install 'orchestra[sd,tasking,agents,bridges,desk,outbox,workflows] @ git+https://github.com/danroblewis/orchestra@main'
+uv tool install 'orchestra[sd,tasking,agents,bridges,desk,outbox] @ git+https://github.com/danroblewis/orchestra@main'
 ```
+
+`workflows` is private: its extra installs only with access to its repository.
 
 A plugin's command line comes with it as a subcommand of `orchestra`, named for the plugin
 (`orchestra tasks ...`); `orchestra --help` lists the installed ones. Running `uv tool install` again replaces the whole tool: name every plugin you want each

@@ -31,6 +31,7 @@ agents = ["orchestra-agents @ git+https://github.com/danroblewis/orchestra-agent
 bridges = ["orchestra-bridges @ git+https://github.com/danroblewis/orchestra-bridges"]
 desk = ["orchestra-desk @ git+https://github.com/danroblewis/orchestra-desk"]
 outbox = ["orchestra-outbox @ git+https://github.com/danroblewis/orchestra-outbox"]
+# orchestra-workflows is a private repository: this extra installs only with access to it
 workflows = ["orchestra-workflows @ git+https://github.com/danroblewis/orchestra-workflows"]
 
 [project.scripts]
