@@ -58,11 +58,15 @@ Opus (`model: opus`) in the background.
 
 ```
 Task <id> of docs/roadmap/GOAL-2026-11-01-workflows.md in <repo>. Read first: <files>.
-Work in a git worktree of <repo>: `git -C <repo> worktree add <repo>-wt-<id> -b <id> origin/main`.
+Work in a git worktree of <repo>: `git -C <repo> worktree add <repo>-wt-<id> -b <id> origin/main`,
+then `uv sync --extra dev --extra sd` in it (without `dev` an old ruff reports false errors; without
+`sd` the simulate endpoint answers 503 and the D3 screenshot fails). Never `uv sync` in the main
+checkout of ~/orchestra_2 (the owner's venv): run its suite with `uv run --no-sync`.
 Deliverable: <from the goal document>. Acceptance: <from the goal document>.
 Rules: follow AGENTS.md of the repository; keep modules small; tests for everything new;
-`uv run python -m pytest` with the rc checked explicitly (rc=0 before you report; list any
-pre-existing failure by name); ruff clean; commit on the branch with the trailer
+`uv run python -m pytest -q > out.txt; echo rc=$?` with the rc read directly, never after a
+pipe (rc=0 before you report; list any pre-existing failure by name); ruff clean; commit on the
+branch with the trailer
 `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`; do not merge or push; stop every
 process you start; never touch the never-list (below); never print credentials or tokens.
 Report (≤300 words): the branch and commits, the suite result with rc, what is done, what is
