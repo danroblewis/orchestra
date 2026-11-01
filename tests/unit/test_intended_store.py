@@ -1,7 +1,9 @@
 """The declared layer's store (docs/proposals/intended-model.md §2–§5, §10 tests 1–4, 20, 25, 26):
 one call is one journal line and one ``dN``, all or nothing; past versions stay as they were;
-provenance and change ids on everything; the machine envelope checked and its ``spec`` stored
-as sent; revisions applied at once or kept pending."""
+provenance and change ids on everything, ``via`` and ``at`` set by the store; the machine
+envelope checked and its ``spec`` stored as sent; revisions applied at once or kept pending;
+proposals settled by the owner or in answer to a request; a corrupt ``dN`` told from a missing
+one."""
 
 import json
 
@@ -13,6 +15,7 @@ from orchestra.sd.store import ModelStore
 OWNER = {"author": "owner", "source": "supervisor", "turn": "sessions/supervisor/41", "message": "msg_0193",
          "quote": "I'm going to create a Features stock."}
 SUPERVISOR = {"author": "supervisor", "source": "supervisor", "reason": "a guess"}
+ANSWER = {**SUPERVISOR, "request": "ev-request-1"}          # the Supervisor answering the owner's request
 
 
 def store(tmp_path) -> IntendedStore:
@@ -51,7 +54,7 @@ def test_past_versions_read_back_unchanged_and_numbered_without_gaps(tmp_path):
 def test_every_element_and_change_carries_provenance(tmp_path):
     s = store(tmp_path)
     s.apply([{"op": "declare_stock", "name": "Features"}], OWNER)
-    s.apply([{"op": "expect", "part": "stock", "key": "k"}], {"author": "owner", "via": "page", "control": "expect",
+    s.apply([{"op": "expect", "part": "stock", "key": "k"}], {"author": "owner", "control": "expect",
                                                              "page": "dynamics", "from": "changes since v14"}, via="page")
     layer = s.read()["layer"]
     p = layer["stocks"]["features"]["provenance"]
@@ -93,25 +96,61 @@ def test_an_op_carrying_a_derived_field_is_refused(tmp_path, derived):
         store(tmp_path).apply([{"op": "declare_stock", "name": "Features", derived: True}], OWNER)
 
 
-def test_an_owners_revision_applies_at_once_and_anothers_waits(tmp_path):
+def revision(**kw):
+    return {"op": "revise_machine", "id": "feature_count_improver", "set": {"engagement": {"mode": "scheduled", "at": "00:00"}},
+            "add": {"receives": ["gate.rejected"]}, "remove": {"receives": ["session.settled"]}, **kw}
+
+
+def test_25_an_owners_revision_of_a_proposed_machine_applies_at_once(tmp_path):
     s = store(tmp_path)
     s.apply([machine()], SUPERVISOR)
-    s.apply([{"op": "revise_machine", "id": "feature_count_improver",
-              "set": {"engagement": {"mode": "scheduled", "at": "00:00"}},
-              "add": {"receives": ["gate.rejected"]}, "remove": {"receives": ["session.settled"]}}],
-            {**OWNER, "quote": "…12am every day"})
+    s.apply([revision()], {**OWNER, "quote": "…12am every day"})
     m = s.read()["layer"]["machines"]["feature_count_improver"]
-    assert m["engagement"]["mode"] == "scheduled" and m["receives"] == ["gate.rejected"]
+    assert m["engagement"]["mode"] == "scheduled" and m["receives"] == ["gate.rejected"] and m["pending"] == []
     assert m["latest"]["added"] == {"receives": ["gate.rejected"]} and m["latest"]["removed"] == {"receives": ["session.settled"]}
     assert m["latest"]["before"] == {"engagement": {"mode": "continuous"}} and m["latest"]["quotes"] == ["…12am every day"]
-    got = s.apply([{"op": "revise_machine", "id": "feature_count_improver", "set": {"spec": {"steps": ["c"], "invariants": ["x"]}}}],
-                  SUPERVISOR)
+
+
+def test_25_the_same_revision_on_a_confirmed_machine_waits_until_confirmed(tmp_path):
+    s = store(tmp_path)
+    s.apply([machine()], SUPERVISOR)
+    s.apply([{"op": "confirm", "part": "machine", "id": "feature_count_improver"}], ANSWER)
+    got = s.apply([revision()], {**OWNER, "quote": "…12am every day"})
     m = s.read()["layer"]["machines"]["feature_count_improver"]
     change = got["changes"][0]["change"]
+    assert m["state"] == "declared" and m["engagement"] == {"mode": "continuous"} and m["receives"] == ["session.settled"]
+    assert [p["change"] for p in m["pending"]] == [change]
+    s.apply([{"op": "confirm", "part": "machine", "id": "feature_count_improver", "change": change}], OWNER)
+    m = s.read()["layer"]["machines"]["feature_count_improver"]
+    assert m["engagement"]["mode"] == "scheduled" and m["pending"] == [] and m["latest"]["before"] == {"engagement": {"mode": "continuous"}}
+
+
+def test_25_a_revision_by_another_author_waits_until_confirm_or_discard(tmp_path):
+    s = store(tmp_path)
+    s.apply([machine()], SUPERVISOR)
+    got = s.apply([{"op": "revise_machine", "id": "feature_count_improver", "set": {"spec": {"steps": ["c"], "invariants": ["x"]}}}],
+                  SUPERVISOR)
+    change = got["changes"][0]["change"]
+    m = s.read()["layer"]["machines"]["feature_count_improver"]
     assert m["spec"]["steps"] == ["b", "a"] and [p["change"] for p in m["pending"]] == [change]
-    s.apply([{"op": "confirm", "part": "machine", "id": "feature_count_improver", "change": change}], SUPERVISOR)
+    s.apply([{"op": "confirm", "part": "machine", "id": "feature_count_improver", "change": change}], ANSWER)
     m = s.read()["layer"]["machines"]["feature_count_improver"]
     assert m["spec"] == {"steps": ["c"], "invariants": ["x"]} and m["pending"] == [] and m["latest"]["before"]["steps"] == ["b", "a"]
+    got = s.apply([{"op": "revise_machine", "id": "feature_count_improver", "set": {"title": "FCI"}}], SUPERVISOR)
+    s.apply([{"op": "discard", "part": "machine", "id": "feature_count_improver", "change": got["changes"][0]["change"]}], OWNER)
+    m = s.read()["layer"]["machines"]["feature_count_improver"]
+    assert m["title"] == "Feature Count Improver" and m["pending"] == []
+
+
+def test_an_owners_revision_of_a_stock_applies_at_once_and_redeclaring_a_proposed_one_declares_it(tmp_path):
+    s = store(tmp_path)
+    s.apply([{"op": "declare_stock", "id": "bugs", "name": "Bugs"}], SUPERVISOR)
+    assert s.read()["layer"]["stocks"]["bugs"]["state"] == "proposed"
+    got = s.apply([{"op": "declare_stock", "id": "bugs", "name": "Bugs", "unit": "bugs"}], OWNER)
+    b = s.read()["layer"]["stocks"]["bugs"]
+    assert b["state"] == "declared" and b["unit"] == "bugs" and b["confirmed"] == {"by": "owner", "change": got["changes"][0]["change"]}
+    s.apply([{"op": "declare_stock", "id": "bugs", "name": "Bugs", "unit": "defects"}], OWNER)
+    assert s.read()["layer"]["stocks"]["bugs"]["unit"] == "defects"
 
 
 def test_confirm_and_discard_and_guesses(tmp_path):
@@ -120,12 +159,84 @@ def test_confirm_and_discard_and_guesses(tmp_path):
     layer = s.read()["layer"]
     assert layer["stocks"]["bugs"]["state"] == "proposed"
     s.apply([{"op": "confirm", "part": "machine", "id": "feature_count_improver"},
-             {"op": "discard", "part": "stock", "id": "bugs"}], SUPERVISOR)
+             {"op": "discard", "part": "stock", "id": "bugs"}], ANSWER)
     layer = s.read()["layer"]
     assert layer["machines"]["feature_count_improver"]["state"] == "declared"
     assert layer["machines"]["feature_count_improver"]["guessed"] == [] and "bugs" not in layer["stocks"]
     with pytest.raises(IntentError):
-        s.apply([{"op": "discard", "part": "machine", "id": "feature_count_improver"}], SUPERVISOR)
+        s.apply([{"op": "discard", "part": "machine", "id": "feature_count_improver"}], ANSWER)
+
+
+def test_a_proposal_is_not_confirmed_by_its_author_alone(tmp_path):
+    s = store(tmp_path)
+    s.apply([machine(), {"op": "declare_stock", "name": "Bugs"}], SUPERVISOR)
+    got = s.apply([{"op": "revise_machine", "id": "feature_count_improver", "set": {"title": "FCI"}}], SUPERVISOR)
+    change = got["changes"][0]["change"]
+    for op in ({"op": "confirm", "part": "machine", "id": "feature_count_improver"},
+               {"op": "discard", "part": "stock", "id": "bugs"},
+               {"op": "confirm", "part": "machine", "id": "feature_count_improver", "change": change}):
+        with pytest.raises(IntentError, match="confirmed by the owner") as e:
+            s.apply([op], SUPERVISOR)
+        assert e.value.status == 422
+    assert s.current_version() == 2
+    s.apply([{"op": "confirm", "part": "stock", "id": "bugs"}], {"author": "owner", "control": "confirm"}, via="page")
+    assert s.read()["layer"]["stocks"]["bugs"]["state"] == "declared"
+
+
+def test_discarding_a_proposed_machine_takes_its_attachments(tmp_path):
+    s = store(tmp_path)
+    s.apply([machine(), {"op": "propose_attachment", "machine": "feature_count_improver", "instrument": "pg"},
+             {"op": "propose_machine", "id": "other"}, {"op": "propose_attachment", "machine": "other", "instrument": "pg"}],
+            SUPERVISOR)
+    s.apply([{"op": "discard", "part": "machine", "id": "feature_count_improver"}], ANSWER)
+    assert [a["machine"] for a in s.read()["layer"]["attachments"].values()] == ["other"]
+
+
+def test_record_measurement_is_for_a_stock_or_an_effect(tmp_path):
+    s = store(tmp_path)
+    s.apply([machine()], SUPERVISOR)
+    with pytest.raises(IntentError, match="stock or effect") as e:
+        s.apply([{"op": "record_measurement", "part": "machine", "id": "feature_count_improver", "options": [{"key": "a"}]}],
+                SUPERVISOR)
+    assert e.value.status == 422 and e.value.index == 0
+
+
+def test_the_store_sets_via_and_at(tmp_path, monkeypatch):
+    import orchestra.sd.intended.store as store_module
+
+    s = store(tmp_path)
+    for bad in ({**OWNER, "via": "page"}, {**OWNER, "at": 1.0}, {**SUPERVISOR, "control": "expect"}):
+        with pytest.raises(IntentError) as e:
+            s.apply([{"op": "declare_stock", "name": "Features"}], bad)
+        assert e.value.status == 400
+    monkeypatch.setattr(store_module.time, "time", lambda: 1234.5)
+    s.apply([{"op": "declare_stock", "name": "Features"}], OWNER)
+    p = s.read()["layer"]["stocks"]["features"]["provenance"]
+    assert p["via"] == "plugin" and p["at"] == 1234.5 and s.journal()[0]["at"] == 1234.5 and s.read()["at"] == 1234.5
+
+
+def test_a_corrupt_version_is_unreadable_not_missing(tmp_path):
+    s = store(tmp_path)
+    s.apply([{"op": "declare_stock", "name": "Features"}], OWNER)
+    with pytest.raises(IntentError) as e:
+        s.read(7)
+    assert e.value.status == 404
+    (s.dir / "d0001.json").write_text("{not json")
+    for call in (lambda: s.read(), lambda: s.read(1), lambda: s.apply([{"op": "declare_stock", "name": "Bugs"}], OWNER),
+                 lambda: s.design(hold=3)):
+        with pytest.raises(IntentError, match="d1 cannot be read") as e:
+            call()
+        assert e.value.status == 500
+    assert len(s.journal()) == 1
+
+
+def test_a_version_left_without_its_journal_line_keeps_its_number(tmp_path):
+    s = store(tmp_path)
+    s.apply([{"op": "declare_stock", "name": "Features"}], OWNER)
+    (s.dir / "d0002.json").write_text((s.dir / "d0001.json").read_text())      # a crash between the two writes
+    assert s.current_version() == 2 and [v["version"] for v in s.versions()] == [1, 2]
+    assert s.apply([{"op": "declare_stock", "name": "Bugs"}], OWNER)["version"] == 3
+    assert [v["version"] for v in s.versions()] == [1, 2, 3] and [e["seq"] for e in s.journal()] == [1, 3]
 
 
 def test_an_expected_effect_adds_no_flow_and_links_its_prediction(tmp_path):

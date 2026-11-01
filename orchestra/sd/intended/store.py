@@ -10,15 +10,23 @@
 
 One call is one journal line and one version ``dN``: all of its ops apply or none, under
 ``ModelStore.locked("intended")``. A call's seq is its version's number, and its ops' change ids
-are ``c<seq>.<i>``. ``dN`` and ``vN`` are separate numberings: neither makes the other's versions
-(rule 4 as amended). Only the host and the web server write here (rule 5 as amended); everything
-derived (present, heard, recording, met, …) is computed on read and never stored."""
+are ``c<seq>.<i>``. The store, never the caller, sets a call's ``via`` and its time ``at``.
+``dN`` and ``vN`` are separate numberings: neither makes the other's versions (rule 4 as
+amended). Only the host and the web server write here (rule 5 as amended); everything derived
+(present, heard, recording, met, …) is computed on read and never stored.
+
+``dN`` is written first, then its journal line. A crash between the two leaves a ``dN`` with no
+journal line: ``current_version()`` is the larger of the journal's last seq and the newest
+``dN``, so the next call never reuses that number, and ``versions()`` lists it too (with no
+author). A ``dN`` that is missing is a 404; one that exists and cannot be parsed is reported as
+unreadable (500), never as missing."""
 
 from __future__ import annotations
 
 import copy
 import json
 import re
+import time
 from pathlib import Path
 
 from .checks import IntentError
@@ -30,9 +38,17 @@ LOCK = "intended"
 
 
 class IntendedStore:
-    def __init__(self, models):
+    def __init__(self, models, project=None):
+        """``project``: the project the store belongs to, whose ``[discovery] announce_hold``
+        the comparison settles suggestions by; a store made from the state directory alone is
+        given ``hold`` by its caller."""
         self.models = models
+        self.project = project
         self.dir = Path(models.dir) / "intended"
+
+    @property
+    def hold(self) -> int | None:
+        return self.project.config.announce_hold if self.project is not None else None
 
     # ---- reading ----
     def _numbers(self) -> list[int]:
@@ -45,38 +61,23 @@ class IntendedStore:
         return self.dir / f"d{n:04d}.json"
 
     def _load(self, n: int) -> dict | None:
+        """``dN`` as stored, or None when there is none; raises ``IntentError`` (500) when the
+        file exists and cannot be read."""
         try:
-            return json.loads(self._path(n).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            text = self._path(n).read_text(encoding="utf-8")
+        except FileNotFoundError:
             return None
+        except OSError as e:
+            raise IntentError(f"d{n} cannot be read: {e}", status=500) from None
+        try:
+            d = json.loads(text)
+        except ValueError as e:
+            raise IntentError(f"d{n} cannot be read: {e}", status=500) from None
+        if not isinstance(d, dict):
+            raise IntentError(f"d{n} cannot be read: not an object", status=500)
+        return d
 
-    def current_version(self) -> int | None:
-        nums = self._numbers()
-        return nums[-1] if nums else None
-
-    def read(self, version: int | None = None) -> dict:
-        """The declared layer at ``version`` (the current by default): ``{version, at, layer}``;
-        version 0 is the empty layer before any call."""
-        n = self.current_version() if version is None else version
-        if not n:
-            return {"version": 0, "at": None, "layer": empty()}
-        d = self._load(n)
-        if d is None:
-            raise IntentError(f"there is no declared version d{n}", status=404)
-        return {"version": n, "at": d.get("at"), "layer": {**empty(), **d.get("layer", {})}}
-
-    def at(self, t: float | None) -> int:
-        """The version current at time ``t`` (browsing a past ``vN`` pairs it with this)."""
-        best = 0
-        if t is None:
-            return self.current_version() or 0
-        for n in self._numbers():
-            d = self._load(n)
-            if d and (d.get("at") or 0) <= t:
-                best = n
-        return best
-
-    def journal(self, after: int = 0) -> list[dict]:
+    def _journal_lines(self) -> list[dict]:
         try:
             lines = (self.dir / "journal.jsonl").read_text(encoding="utf-8").splitlines()
         except OSError:
@@ -87,13 +88,48 @@ class IntendedStore:
                 e = json.loads(line)
             except ValueError:
                 continue
-            if e.get("seq", 0) > after:
+            if isinstance(e, dict) and isinstance(e.get("seq"), int):
                 out.append(e)
         return out
 
+    def current_version(self) -> int | None:
+        nums = self._numbers() + [e["seq"] for e in self._journal_lines()]
+        return max(nums) if nums else None
+
+    def read(self, version: int | None = None) -> dict:
+        """The declared layer at ``version`` (the current by default): ``{version, at, layer}``;
+        version 0 is the empty layer before any call."""
+        n = self.current_version() if version is None else version
+        if not n:
+            return {"version": 0, "at": None, "layer": empty()}
+        d = self._load(n)
+        if d is None:
+            raise IntentError(f"there is no declared version d{n}", status=404)
+        return {"version": n, "at": d.get("at"), "layer": {**empty(), **(d.get("layer") or {})}}
+
+    def at(self, t: float | None) -> int:
+        """The version current at time ``t`` (browsing a past ``vN`` pairs it with this), from
+        the journal's times in one read."""
+        if t is None:
+            return self.current_version() or 0
+        return max((e["seq"] for e in self._journal_lines() if (e.get("at") or 0) <= t), default=0)
+
+    def journal(self, after: int = 0) -> list[dict]:
+        return [e for e in self._journal_lines() if e["seq"] > after]
+
     def versions(self) -> list[dict]:
-        return [{"version": e["seq"], "at": e.get("at"), "author": (e.get("provenance") or {}).get("author"),
-                 "via": (e.get("provenance") or {}).get("via"), "changes": e.get("changes", [])} for e in self.journal()]
+        """Every ``dN``, from the journal, and any ``dN`` a crash left with no journal line."""
+        out = {e["seq"]: {"version": e["seq"], "at": e.get("at"), "author": (e.get("provenance") or {}).get("author"),
+                          "via": (e.get("provenance") or {}).get("via"), "changes": e.get("changes", [])}
+               for e in self._journal_lines()}
+        for n in self._numbers():
+            if n not in out:
+                try:
+                    at = (self._load(n) or {}).get("at")
+                except IntentError:
+                    at = None
+                out[n] = {"version": n, "at": at, "author": None, "via": None, "changes": []}
+        return [out[n] for n in sorted(out)]
 
     # ---- writing ----
     def apply(self, ops, provenance: dict | None, via: str = "plugin") -> dict:
@@ -104,8 +140,9 @@ class IntendedStore:
         prov = checked_provenance(provenance, via)
         with self.models.locked(LOCK):
             cur = self.read()
+            prov["at"] = time.time()
             layer = copy.deepcopy(cur["layer"])
-            seq = cur["version"] + 1
+            seq = (self.current_version() or 0) + 1
             changes = []
             for i, op in enumerate(ops):
                 cid = f"c{seq}.{i}"
@@ -125,10 +162,18 @@ class IntendedStore:
         return {"version": seq, "changes": changes}
 
     # ---- the comparison and the summary ----
-    def diff(self, model=None, since=None, **kw) -> dict:
-        from .view import dynamics_block
-        return dynamics_block(self, model=model, since=since, **kw)
+    def _hold(self, hold: int | None) -> int:
+        hold = hold if hold is not None else self.hold
+        if hold is None:
+            raise ValueError("the comparison needs announce_hold: give hold, or make the store with its project")
+        return hold
 
-    def design(self) -> dict:
+    def diff(self, model=None, since=None, hold: int | None = None, **kw) -> dict:
+        """The Dynamics comparison (``view.dynamics_block``); ``hold`` the project's
+        ``announce_hold`` by default."""
+        from .view import dynamics_block
+        return dynamics_block(self, model=model, since=since, hold=self._hold(hold), **kw)
+
+    def design(self, hold: int | None = None) -> dict:
         from .design import design
-        return design(self)
+        return design(self, self._hold(hold))

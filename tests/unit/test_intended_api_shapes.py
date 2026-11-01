@@ -67,7 +67,8 @@ def test_the_machines_answer_keeps_the_fixture_shape_and_adds_intent(tmp_path, m
     assert set(want) <= set(got)
     m = next(x for x in got["machines"] if x["id"] == "feature_count_improver")
     assert set(want["machines"][0]) - {"group", "name", "kinds"} <= set(m)
-    assert m["unseen"] and m["kind"] == "universal"
+    assert m["unseen"] and m["kind"] == "universal" and m["subscribes"] == [] and m["mode"] is None
+    assert m["comparison"] == "declared, neither heard nor measured"
     assert INTENT <= set(m["intent"])
     assert m["intent"]["state"] == "proposed" and m["intent"]["author"] == "supervisor" and not m["intent"]["heard"]
     assert m["intent"]["guessed"] == ["receives[0]", "receives[1]"]

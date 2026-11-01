@@ -1,8 +1,10 @@
-"""Revising a declared element (§4): a revision by ``author: owner`` with a quote applies at once;
-any other revision becomes a **pending change** on the element, shown as proposed and answered by
-``confirm`` or ``discard`` with its change id. An applied revision of a machine records its
-difference as ``latest`` (what was added, removed and what the changed fields were before), which
-the Machines page marks "just now"."""
+"""Revising an element (§4). A revision by ``author: owner`` with a quote applies at once, except
+on a machine or an attachment that is no longer proposed: there, as for any other author, the
+revision becomes a **pending change** on the element, shown as proposed and answered by
+``confirm`` or ``discard`` with its change id (E2: the Supervisor changes a proposed machine as
+the owner talks; a confirmed one changes only when confirmed again). An applied revision records
+its difference as ``latest`` (what was added, removed and what the changed fields were before),
+which the Machines page marks "just now"."""
 
 from __future__ import annotations
 
@@ -13,6 +15,11 @@ from .checks import IntentError
 
 def at_once(prov: dict) -> bool:
     return prov.get("author") == "owner" and bool(prov.get("quote"))
+
+
+def owner_asks(prov: dict) -> bool:
+    """The owner asked for it: through a plugin with the owner's words quoted, or on a page."""
+    return prov.get("author") == "owner" and (bool(prov.get("quote")) or prov.get("via") == "page")
 
 
 def _apply(el: dict, set_: dict, add: dict, remove: dict) -> dict:
@@ -50,10 +57,14 @@ def _guesses(el: dict, touched: set[str], guessed: list[str]) -> None:
     el["guessed"] = kept + [g for g in guessed if g not in kept]
 
 
-def revise(el: dict, set_: dict, add: dict, remove: dict, guessed: list[str], ctx: dict) -> dict:
-    """Apply a revision now or keep it pending; returns the change's record."""
+def revise(el: dict, set_: dict, add: dict, remove: dict, guessed: list[str], ctx: dict, *,
+           waits_once_confirmed: bool = False) -> dict:
+    """Apply a revision now or keep it pending; returns the change's record.
+    ``waits_once_confirmed``: a machine's or an attachment's, where even the owner's revision
+    waits once the element is no longer proposed."""
     prov, cid = ctx["provenance"], ctx["change"]
-    if not at_once(prov):
+    now = at_once(prov) and (not waits_once_confirmed or el.get("state") == "proposed")
+    if not now:
         el.setdefault("pending", []).append({"change": cid, "set": set_, "add": add, "remove": remove, "guessed": guessed,
                                              "provenance": prov})
         return {"pending": True}

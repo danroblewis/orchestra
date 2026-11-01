@@ -3,8 +3,9 @@ match by, since discovered ids are assigned by arrival order (``sd.discover.uniq
 
 - a stock's key is its series' name and the labels that say which thing it measures: the labels
   without ``NOT_IDENTITY`` (instrument, machine, source, project, instance) and without
-  ``simulated``, so a renamed collector keeps the key and a real series takes over a
-  placeholder's mark;
+  ``simulated`` and ``draft``, so a renamed collector keeps the key, a real series takes over a
+  placeholder's mark, and the points a draft instrument writes once its flag is cleared join
+  the same stock;
 - a flow's key is its ends' keys and its counter's key (none for a net flow).
 
 Parts the era carries from its prior (``sd.prior``) are not the era's own: ``own_keys`` leaves
@@ -15,6 +16,7 @@ from __future__ import annotations
 from ..discover import NOT_IDENTITY
 from ..prior import rests_on_prior
 from ..series import series_key
+from .checks import IntentError
 
 LEFT_OUT = NOT_IDENTITY | {"simulated", "draft"}
 OUTSIDE = "outside"
@@ -74,3 +76,25 @@ class Keys:
         if f is None:
             return None, None
         return (self.stock_of_id.get(f.src) if f.src else None, self.stock_of_id.get(f.dst) if f.dst else None)
+
+
+def latest(models) -> list[Keys]:
+    """The keys of the latest discovery and of the newest saved version (those there are)."""
+    found = models.latest_discovery()
+    return [Keys(m) for m in ((found[1] if found else None), models.load()) if m is not None]
+
+
+def mark_key(models, part: str, key: str | None, eid: str | None, *, known: bool) -> str:
+    """The key a page control's mark is on: ``key`` as given, or the key of the part with id
+    ``eid`` in the latest discovery (else the newest saved version). ``known``: the key must be
+    a part of one of them (an ``expect`` or ``ignore``, so a typo makes no lasting ghost)."""
+    models_keys = latest(models)
+    if key:
+        if known and not any(key in k.of(part) for k in models_keys):
+            raise IntentError(f"no {part} with key {key!r} in the latest model", status=400)
+        return key
+    for k in models_keys:
+        found = (k.stock_of_id if part == "stock" else k.flow_of_id).get(eid)
+        if found is not None:
+            return found
+    raise IntentError(f"no {part} with id {eid!r} in the latest model", status=400)

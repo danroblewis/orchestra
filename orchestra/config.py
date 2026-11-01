@@ -211,7 +211,7 @@ class Project:
     def intended(self):
         """The intended model (``orchestra.sd.intended``): ``apply``, ``read``, ``diff``, ``design``."""
         from .sd.store import ModelStore
-        return ModelStore.for_state(self.state_dir).intended()
+        return ModelStore.for_state(self.state_dir).intended(self)
 
     def ensure_dirs(self) -> None:
         for d in (self.state_dir, self.logs_dir):

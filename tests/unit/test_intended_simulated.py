@@ -1,7 +1,9 @@
-"""Simulated and draft series (docs/proposals/intended-model.md §6.3; §10 test 17): a placeholder's
-parts are marked ``simulated`` in the saved version and read only while its entry says so; a
-draft instrument's series is never read by discovery; a verdict never counts a simulated part and
-a target on one is never met; a real series of the same key keeps the expected mark."""
+"""Simulated and draft series (docs/proposals/intended-model.md §6.3; §10 tests 17, 32): a
+placeholder's parts are marked ``simulated`` in the saved version and read only while an entry
+(the project's or a plugin's) says so; a draft instrument's series is left out of discovery while
+its entry exists and after; points written once the flag is cleared join the same key; the flags
+are read on Orchestra's own series only; a verdict never counts a simulated part and a target on
+one is never met; a real series of the same key keeps the expected mark."""
 
 import random
 import time
@@ -9,11 +11,14 @@ import time
 from intended_seed import project_at
 
 from orchestra.collect.round import points_of
-from orchestra.collect.spec import from_toml
+from orchestra.collect.spec import Collector, from_toml
 from orchestra.metrics import Point
 from orchestra.metrics import for_project as metrics_for
+from orchestra.sd import simulated
 from orchestra.sd.intended.facts import judged
+from orchestra.sd.intended.keys import ref_key, stock_key
 from orchestra.sd.intended.view import dynamics_block
+from orchestra.sd.model import Equation, Flow, Model, SeriesRef, Stock
 from orchestra.sd.rediscover import rediscover
 from orchestra.sd.store import ModelStore
 from orchestra.sd.verdict import unpredicted
@@ -41,7 +46,7 @@ def test_the_collector_labels_a_placeholders_and_a_drafts_points():
     assert [c.name for c in cs] == ["sim", "try"] and "expires goes with draft" in errors[0]
     sim, draft = (points_of(c, "q 1\n", "p", 1.0).points[0].labels for c in cs)
     assert sim["simulated"] == "true" and "draft" not in sim
-    assert draft["draft"] == "true" and cs[1].expired(cs[1].expires) and not cs[1].expired(cs[1].expires - 1)
+    assert draft["draft"] == "true" and cs[1].expires == 1794096000.0
     faked = points_of(cs[0], 'q{simulated="no",draft="x"} 1\n', "p", 1.0).points[0].labels
     assert faked["exported_simulated"] == "no" and faked["exported_draft"] == "x"
 
@@ -58,9 +63,8 @@ def test_simulated_parts_are_marked_read_while_named_then_left_out_and_the_mark_
     store = ModelStore.for_state(project.state_dir)
     saved = store.load()
     assert next(s for s in saved.stocks if s.id == st.id).evidence["simulated"]
-    store.intended().apply([{"op": "expect", "part": "stock", "key": "features_level"}], {"author": "owner", "via": "page"},
-                           via="page")
-    b = dynamics_block(store.intended())
+    store.intended().apply([{"op": "expect", "part": "stock", "key": "features_level"}], {"author": "owner"}, via="page")
+    b = dynamics_block(store.intended(), hold=3)
     assert "simulated" in b["marks"]["stocks"][st.id] and next(e for e in b["expected"])["simulated"]
     # a simulated part is never an unpredicted change; a target on it is never met
     comparison = {"flows": [{"id": f.id, "status": "appeared"} for f in r.model.flows], "stocks": {"appeared": [st.id]}}
@@ -76,15 +80,84 @@ def test_simulated_parts_are_marked_read_while_named_then_left_out_and_the_mark_
     # a real series of the same name and identity labels takes the mark
     write_queue(project, {"instrument": "features.real"}, now + 2, seed=4)
     r = rediscover(project, metrics_for(project), now=now + 2)
-    b = dynamics_block(store.intended())
+    b = dynamics_block(store.intended(), hold=3)
     e = next(e for e in b["expected"] if e["key"] == "features_level")
     assert e["present"] and not e["simulated"]
 
 
-def test_a_draft_instruments_series_is_never_read(tmp_path, monkeypatch):
+DRAFT = '\n[[collect]]\nname = "features.try"\ncommand = "true"\ndraft = true\nexpires = "2026-11-08T00:00:00Z"\n'
+
+
+def test_32_a_draft_series_is_left_out_while_its_entry_exists_and_after_and_clean_points_join_its_key(tmp_path, monkeypatch):
+    project = project_at(tmp_path, monkeypatch)
+    project.config_file.write_text(project.config_file.read_text() + DRAFT)
+    project.reload_config()
+    now = time.time()
+    then = now - 4000
+    labels = {"instrument": "features.try", "draft": "true"}
+    write_queue(project, labels, then)
+    key = 'features_level{draft="true",instrument="features.try"}'
+    r = rediscover(project, metrics_for(project), now=then)
+    assert not r.model.stocks and r.model.discovery["left_out"][key].startswith("draft")
+    project.config_file.write_text(project.config_file.read_text().replace(DRAFT, ""))        # the entry removed
+    project.reload_config()
+    r = rediscover(project, metrics_for(project), now=then + 1)
+    assert not r.model.stocks and r.model.discovery["left_out"][key].startswith("draft")
+    write_queue(project, {"instrument": "features.try"}, now, seed=4)                           # the flag cleared
+    r = rediscover(project, metrics_for(project), now=now)
+    st = next(s for s in r.model.stocks if s.series.name == "features_level")
+    assert stock_key(st) == ref_key(SeriesRef("features_level", labels)) == "features_level"
+
+
+def test_a_plugins_simulated_collector_is_not_expired(tmp_path, monkeypatch):
+    project = project_at(tmp_path, monkeypatch)
+    plugin = Collector("ramp", "collect", "true", owner="features", simulated=True)
+    assert simulated.configured(project, [plugin]) == {"features.ramp"}
+    monkeypatch.setattr(simulated, "plugin_collectors", lambda project: [plugin])
+    now = time.time()
+    write_queue(project, {"instrument": "features.ramp", "simulated": "true"}, now)
+    r = rediscover(project, metrics_for(project), now=now)
+    st = next(s for s in r.model.stocks if s.series.name == "features_level")
+    assert st.evidence["simulated"] and not any(v.startswith("simulated, expired") for v in r.model.discovery["left_out"].values())
+
+
+def test_the_flags_are_read_on_orchestras_own_series_only():
+    own = ("q", {"instrument": "i", "draft": "true"}, [])
+    theirs = ("jira:q", {"draft": "true"}, [])
+    sim = ("s", {"instrument": "gone", "simulated": "true"}, [])
+    kept, left = simulated.select([own, theirs, sim], {'jira:q{draft="true"}': {"source": "jira"}}, lambda: set())
+    assert kept == [theirs] and left['q{draft="true",instrument="i"}'].startswith("draft")
+    assert left['s{instrument="gone",simulated="true"}'].startswith("simulated, expired")
+    asked = []
+    simulated.select([own, theirs], {}, lambda: asked.append(1) or set())
+    assert not asked                                           # no simulated series: the plugins are not loaded
+
+
+def test_the_judges_halves_leave_a_draft_series_out(tmp_path, monkeypatch):
+    from orchestra.sd import strategies
+    from orchestra.sd.judge import false_change
+
     project = project_at(tmp_path, monkeypatch)
     now = time.time()
     write_queue(project, {"instrument": "features.try", "draft": "true"}, now)
-    r = rediscover(project, metrics_for(project), now=now)
-    assert not r.model.stocks
-    assert r.model.discovery["left_out"]['features_level{draft="true",instrument="features.try"}'].startswith("a draft")
+    write_queue(project, {"instrument": "real"}, now, seed=5)
+    seen = []
+    real = strategies.discover_with
+
+    def spy(dump, **kw):
+        seen.append({(n, labels.get("draft")) for n, labels, _ in dump})
+        return real(dump, **kw)
+    monkeypatch.setattr(strategies, "discover_with", spy)
+    false_change(project, metrics_for(project), None, now, {"flows": []})
+    assert len(seen) == 2 and all(("features_level", "true") not in names and ("features_level", None) in names for names in seen)
+
+
+def test_a_flow_reading_a_simulated_input_is_marked():
+    eq = Equation("linear", {"c": 0.1, "k": 0.2}, "fitted", inputs=["input:ramp"])
+    f = Flow("in", "in", None, "q", SeriesRef("q_in_total", {"instrument": "real"}), equations=[eq],
+             evidence={"machines": {"hypotheses": [{"machine": "m", "confidence": 0.5}]}})
+    m = Model("system", "s", stocks=[Stock("q", "q", series=SeriesRef("q", {"instrument": "real"}))], flows=[f])
+    m.discovery = {"inputs": {"ramp": {"name": "ramp", "labels": {"instrument": "features.sim", "simulated": "true"}}}}
+    simulated.mark(m)
+    assert f.evidence["simulated"] and f.evidence["machines"]["hypotheses"][0]["simulated"]
+    assert not m.stocks[0].evidence.get("simulated")

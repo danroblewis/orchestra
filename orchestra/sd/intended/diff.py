@@ -8,9 +8,10 @@ base ``vK`` (§3.2, §5), computed on keys (``keys.py``), never with ``sd.compar
   the parts ``sd.prior`` carries into the era;
 - each key's **suggestion status** (``history.py``).
 
-The structural diff of a pair is cached as ``diff/d{N}-v{M}-v{K}-{era}.json``: its inputs never
-change, so a file never changes (``live`` for the latest discovery: newest only, rewritten when
-the discovery is newer). Bus and metrics facts are never cached (``facts.py``)."""
+The structural diff of a pair is cached as ``diff/d{N}-v{M}-v{K}-{era}-h{hold}.json`` (``hold``
+the ``announce_hold`` its suggestions settled by): its inputs never change, so a file never
+changes (``live`` for an unsaved latest discovery: newest only, rewritten when the discovery is
+newer). Bus and metrics facts are never cached (``facts.py``)."""
 
 from __future__ import annotations
 
@@ -21,23 +22,24 @@ from . import history
 from .keys import Keys, ref_key
 
 
-def _end_key(end, layer: dict, keys: Keys) -> tuple[bool, str | None]:
-    """A declared flow's end as a stock key: (resolved, key); None is outside."""
+def _end_key(end, layer: dict) -> tuple[bool, str | None]:
+    """A declared flow's end as a stock key: (resolved, key); None is outside. An end is a
+    declared stock's or effect's id (its ``found_as``; unresolved while it has none) or a
+    discovered stock's key, taken literally, never a discovered id (ids follow arrival order).
+    A declared id wins over a key of the same text."""
     if end is None:
         return True, None
     for group in ("stocks", "effects"):
         if end in layer[group]:
             fa = layer[group][end].get("found_as")
             return (fa is not None), fa
-    if end in keys.stock_of_id:
-        return True, keys.stock_of_id[end]
     return True, end
 
 
 def flow_matches(el: dict, layer: dict, keys: Keys) -> tuple[str | None, list[str]]:
     """A declared flow's match in a model: (the one flow key it is, or None; the candidates)."""
-    ok_a, a = _end_key(el.get("from"), layer, keys)
-    ok_b, b = _end_key(el.get("to"), layer, keys)
+    ok_a, a = _end_key(el.get("from"), layer)
+    ok_b, b = _end_key(el.get("to"), layer)
     if not (ok_a and ok_b) or keys.model is None:
         return None, []
     found = [k for k in keys.flows if keys.ends(k) == (a, b)]
@@ -48,19 +50,20 @@ def flow_matches(el: dict, layer: dict, keys: Keys) -> tuple[str | None, list[st
 
 def predicted(layer: dict, keys: Keys) -> list[dict]:
     """The flows the declared machines' expected effects predict to appear (``{"from", "to",
-    "appears": true}``), drawn as expected ghost flows: each with its ends, whether a flow between
-    them is in the model, and no machine (a draft prediction is not an association, rule 6 as
-    amended). The same ends predicted twice are one entry."""
-    out: dict[tuple, dict] = {}
-    for m in layer["machines"].values():
+    "appears": true}``), drawn as expected ghost flows labelled with the machine whose expected
+    effect it is: one entry per machine and edit, each with its ends, the edit as stored, whether
+    a flow between the ends is in the model, and ``machines: []`` (a draft prediction is not an
+    association, rule 6 as amended)."""
+    out = []
+    for mid, m in layer["machines"].items():
         for e in (m.get("expected_effect") or {}).get("edits") or []:
             if not e.get("appears") or ("from" not in e and "to" not in e):
                 continue
             row = {"from": e.get("from"), "to": e.get("to")}
             key, cands = flow_matches(row, layer, keys)
-            out.setdefault((row["from"], row["to"]), {**row, "key": key, "present": key is not None, "candidates": cands,
-                                                     "state": "predicted"})
-    return list(out.values())
+            out.append({"machine": mid, **row, "edit": e, "key": key, "present": key is not None, "candidates": cands,
+                        "state": "predicted", "machines": []})
+    return out
 
 
 def input_keys(model) -> set[str]:
@@ -95,16 +98,17 @@ def structural(layer: dict, shown: Keys, base: Keys | None, statuses: dict) -> d
     return out
 
 
-def cache_name(d: int, v, since, era) -> str:
-    return f"d{d}-v{v}-v{since if since is not None else 'off'}-{era or 'none'}.json"
+def cache_name(d: int, v, since, era, hold: int) -> str:
+    return f"d{d}-v{v}-v{since if since is not None else 'off'}-{era or 'none'}-h{hold}.json"
 
 
 def cached(intended, d: int, v, since, era, shown: Keys, base: Keys | None, layer: dict, hold: int, models,
-           stamp: float | None = None) -> dict:
+           stamp: float | None = None, nums: list[int] | None = None) -> dict:
     """The structural diff of a pair, from the cache or computed and written there. ``v`` is a
-    saved version's number or ``"live"`` (with ``stamp``, the discovery's time)."""
+    saved version's number or ``"live"`` (with ``stamp``, the discovery's time); ``nums`` the
+    saved versions' numbers, when the caller has them."""
     folder = Path(intended.dir) / "diff"
-    p = folder / cache_name(d, v, since, era)
+    p = folder / cache_name(d, v, since, era, hold)
     try:
         got = json.loads(p.read_text(encoding="utf-8"))
         if v != "live" or got.get("stamp") == stamp:
@@ -112,7 +116,7 @@ def cached(intended, d: int, v, since, era, shown: Keys, base: Keys | None, laye
     except (OSError, ValueError, KeyError):
         pass
     upto = None if v == "live" else v
-    statuses = history.statuses(models, upto, shown if v == "live" else None, hold)
+    statuses = history.statuses(models, upto, shown if v == "live" else None, hold, nums)
     out = structural(layer, shown, base, statuses)
     try:
         folder.mkdir(parents=True, exist_ok=True)

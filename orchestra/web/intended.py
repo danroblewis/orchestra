@@ -26,6 +26,8 @@ from fastapi.responses import JSONResponse
 
 from ..sd.intended import IntentError
 from ..sd.intended import requests as owner_requests
+from ..sd.intended.keys import mark_key
+from ..sd.intended.params import saved_version
 from ..sd.intended.view import dynamics_block
 from ..sd.model import Model
 from ..sd.store import ModelStore
@@ -43,12 +45,18 @@ def _refused(e: IntentError) -> JSONResponse:
     return JSONResponse(out, status_code=e.status)
 
 
-def observation(body) -> tuple[dict, dict]:
-    """A page control's op and provenance; refuses a machine or attachment, and any value."""
+def observation(body, models) -> tuple[dict, dict]:
+    """A page control's op and provenance; refuses a machine or attachment, and any value. A mark
+    is stored by key: ``key`` when the page has it (a Changes row), else the key of the part
+    with that ``id`` in the latest model; an ``expect`` or ``ignore`` of a key no latest model has
+    is refused."""
     if not isinstance(body, dict):
         raise IntentError("the body is an object {control, part, id, change?, from}", status=400)
     if extra := sorted(set(body) - BODY):
         raise IntentError(f"a page control carries no values: {', '.join(extra)} refused", status=400)
+    for k in ("id", "key", "change", "from", "page"):
+        if body.get(k) is not None and (not isinstance(body[k], str) or len(body[k]) > 1000):
+            raise IntentError(f"{k} is a string of at most 1000 characters", status=400)
     control, part = body.get("control"), body.get("part")
     if control not in OBSERVATIONS:
         raise IntentError(f"control is one of {', '.join(OBSERVATIONS)}; a machine's confirm and discard are requests", status=400)
@@ -58,10 +66,13 @@ def observation(body) -> tuple[dict, dict]:
     if control in MARKS:
         if part == "effect":
             raise IntentError("marks are on discovered stocks and flows", status=400)
-        op = {"op": control, "part": part, "key": body.get("key") or body.get("id")}
+        if not body.get("key") and not body.get("id"):
+            raise IntentError("a mark names its part's key (or its id in the latest model)", status=400)
+        key = mark_key(models, part, body.get("key"), body.get("id"), known=control in ("expect", "ignore"))
+        op = {"op": control, "part": part, "key": key}
     else:
         op = {"op": control, "part": part, "id": body.get("id"), **({"change": body["change"]} if body.get("change") else {})}
-    prov = {"author": "owner", "via": "page", "control": control, "page": body.get("page") or "dynamics",
+    prov = {"author": "owner", "control": control, "page": body.get("page") or "dynamics",
             **({"from": body["from"]} if body.get("from") else {})}
     return op, prov
 
@@ -98,7 +109,7 @@ def attach_dynamics(project, out: dict, since, metrics) -> None:
     try:
         model = Model.from_json(m)
         live = bool(m.get("live"))
-        out["model"]["intended"] = dynamics_block(ModelStore.for_state(project.state_dir).intended(), model, since,
+        out["model"]["intended"] = dynamics_block(project.intended, model, since,
                                                   version=None if live else m.get("version"), live=live, stamp=m.get("as_of"),
                                                   metrics=metrics, hold=project.config.announce_hold)
     except IntentError as e:
@@ -121,7 +132,7 @@ def attach_machines(project, out: dict, model) -> None:
 def install(app: FastAPI, project, events, metrics) -> None:
     """The routes of the table above."""
     def intended():
-        return ModelStore.for_state(project.state_dir).intended()
+        return project.intended
 
     def answer(fn):
         try:
@@ -147,16 +158,17 @@ def install(app: FastAPI, project, events, metrics) -> None:
             store = intended()
             if v in (None, "", "live"):
                 return {"ok": True, **store.diff(None, since, d=d, metrics=metrics, hold=project.config.announce_hold)}
-            model = store.models.load(int(v))
+            n = saved_version(v, [x["version"] for x in store.models.versions()], "v")
+            model = store.models.load(n)
             if model is None:
-                raise IntentError(f"there is no version {v}", status=404)
-            return {"ok": True, **dynamics_block(store, model, since, version=int(v), live=False, metrics=metrics, d=d,
+                raise IntentError(f"v{n} cannot be read", status=500)
+            return {"ok": True, **dynamics_block(store, model, since, version=n, live=False, metrics=metrics, d=d,
                                                  hold=project.config.announce_hold)}
         return answer(go)
 
     @app.get("/api/intended/design")
     def intended_design():
-        return {"ok": True, **intended().design()}
+        return answer(lambda: {"ok": True, **intended().design()})
 
     @app.get("/api/intended/script")
     def intended_script(instrument: str):
@@ -170,8 +182,9 @@ def install(app: FastAPI, project, events, metrics) -> None:
             return JSONResponse({"ok": False, "error": "the body must be a JSON object"}, status_code=400)
 
         def go():
-            op, prov = observation(body)
-            return {"ok": True, **intended().apply([op], prov, via="page")}
+            store = intended()
+            op, prov = observation(body, store.models)
+            return {"ok": True, **store.apply([op], prov, via="page")}
         return answer(go)
 
     @app.post("/api/intended/request")

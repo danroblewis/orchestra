@@ -800,7 +800,36 @@ associate a machine with a flow. Orchestra's only series derived from the event 
   of one type step by step (`orchestra/sd/attribute.py`). A match is a correlation in time, not a
   cause. A flow with none reads "no machine associated yet".
 
-### 6.6 The whole path, in order
+### 6.6 The intended model
+
+What the owner intends (stocks, effects, flows, targets, expected marks, machines with their
+envelope and `spec`, event types, attachments) and what a plugin proposes, kept beside the
+discovered model (SPEC §4.6, `docs/proposals/intended-model.md`). A plugin declares and proposes;
+it never writes under `<state>/model/intended/` itself (AGENTS.md rule 5 as amended).
+
+- **In the host or the web server** (code a plugin runs there): `project.intended`, an
+  `IntendedStore`. `apply(ops, provenance)` applies one call, all its ops or none, and answers
+  `{"version", "changes"}` or raises `IntentError` with the refused op's `index`; `read(version)`
+  is the declared layer at `dN`; `diff(model, since)` is the comparison the Dynamics page reads;
+  `design()` is the summary of the layer and its open items, under 20 KB for 100 elements.
+  `provenance` is `{author, source, turn, message, quote, reason, request?}`: `author: owner`
+  needs the owner's words as `quote`, and `via` and `at` are set by the store.
+- **From any other process**: `POST /intended` on the host's events endpoint (SPEC §3.1), with
+  the project's token, body `{source, author, turn, message, quote, reason, request?, ops}`,
+  answered `{"ok": true, "version", "changes"}` or 422 `{"ok": false, "error", "index"}`; `GET
+  /intended?version=` and `GET /intended/design` read back.
+- **The events.** The host announces each accepted call as `orchestra.intent.changed` from
+  `orchestra-host`, one event per element the call touched (`subject` `<part>:<id>`, `data`
+  `{version, via, ops}`). The owner's clicks on a machine or an attachment (confirm, discard, the
+  kind switch) are published as `orchestra.intent.requested` from `owner` (`data` `{control,
+  part, id, change, from}`) and change nothing until a plugin answers by applying with
+  `provenance.request` set to the request's event id. Listen with the subject filter:
+  `orchestra.intent.changed:subject=machine:<id>`, `orchestra.intent.requested:subject=machine:<id>`.
+- A proposal (a machine always enters proposed) and a pending change are confirmed or discarded
+  only by the owner (quoted) or in answer to a request; an owner's quoted revision of a proposed
+  machine applies at once, and of a confirmed one waits as a pending change.
+
+### 6.7 The whole path, in order
 
 ```mermaid
 sequenceDiagram

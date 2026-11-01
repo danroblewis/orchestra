@@ -153,8 +153,6 @@ class Collecting:
                 run = self._busy.get(name)
                 if (run is not None and run.is_alive()) or now < self._due.get(name, 0.0):
                     continue
-                if c.expired(time.time()):            # a draft past its expiry records nothing more
-                    continue
                 self._due[name] = now + c.every_s
                 self._busy[name] = t = threading.Thread(target=self._round, args=(c,), name=f"collect-{name}", daemon=True)
                 t.start()

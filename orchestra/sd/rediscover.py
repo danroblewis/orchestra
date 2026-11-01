@@ -50,7 +50,7 @@ from .model import Model
 from .prior import merge
 from .provenance import annotate
 from .store import ModelStore
-from .strategies import CONSERVATION, DEFAULT, discover_with, sd_installed
+from .strategies import CONSERVATION, DEFAULT, sd_installed
 
 _lock = threading.Lock()       # one rediscovery at a time per process
 DEADLINE_SHARE = 0.8           # of [discovery] every: what an SD Lab strategy may take
@@ -124,13 +124,9 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
         start = era_window(start, end, step_s, era.start if era else None)
         if era is None or end - start >= 2 * step_s:
             reading = Catalogue(project, metrics).read(start, end, step_s)
-            dump, expired = simulated.select(reading.dump, simulated.configured(getattr(cfg, "raw", None) or {}))
-            m = discover_with(dump, start=start, end=end, step=step_s, strategy=strategy, options=options,
-                              deadline=DEADLINE_SHARE * cfg.discovery_every, kinds=reading.kinds, provenance=reading.provenance)
+            m = simulated.discovered(project, reading, start=start, end=end, step=step_s, strategy=strategy, options=options,
+                                     deadline=DEADLINE_SHARE * cfg.discovery_every, provenance=reading.provenance)
             annotate(m, reading.provenance)
-            simulated.mark(m)
-            if expired:
-                m.discovery["left_out"] = dict(sorted({**(m.discovery.get("left_out") or {}), **expired}.items()))
         else:                                   # the era is too young to read: its prior, carried whole
             reading = None
             m = Model("system", "The system", "The era is too young to discover: its prior, carried.")

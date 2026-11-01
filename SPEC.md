@@ -85,8 +85,8 @@ is observed and never makes a machine exist. The owner's page requests are publi
 publishes.
 
 **Predictions.** A machine about to change the system may say first what the change will do,
-`orchestra.prediction.made` (§4.3, "Predictions"). It is the other Orchestra type a machine
-publishes from its own `source`, and Orchestra reads its `data`, which Orchestra defines. No other
+`orchestra.prediction.made` (§4.3, "Predictions"). It is one of the Orchestra types machines
+publish (rule 3's list), from its own `source`, and Orchestra reads its `data`, which Orchestra defines. No other
 machine's `data` is read (AGENTS.md rule 3).
 
 Every event carries the **CloudEvents 1.0** envelope (`orchestra.events.envelope`):
@@ -207,10 +207,13 @@ token, serves the model and experiments (§4.5) to a machine in any language: `G
 versions and the last boundary's comparison), `/observability`, `/series?ids=&start=&end=&span_s=
 &points=&limit=&after=` (each series summarised, its points on request, at most 5,000 a series
 and 20,000 an answer, paged by `after`), `/predictions[/<id>]`, `/experiments?owner=&status=`,
-`/experiments/<id>[/diff|/runs[/<run>]|/prediction]`; and `POST /equations/check`,
+`/experiments/<id>[/diff|/runs[/<run>]|/prediction]`, `/intended?version=` and `/intended/design`
+(the intended model's declared layer and its summary, §4.6); and `POST /equations/check`,
 `/experiments` (create), `/experiments/<id>/edits`, `/runs` (forward, replay, inverse), `/commit`
-and `/discard`, each body naming the machine's `source`. They answer what the Python API
-(`sd.experiments.api.Experiments`) answers: `{"ok": true, ...}`, or `{"ok": false, "error"}` with
+and `/discard`, each body naming the machine's `source`, and `POST /intended` (one call to the
+declared layer: `{source, author, turn, message, quote, reason, request?, ops}`, applied whole or
+refused with the op's `index`, §4.6). They answer what the Python API
+(`sd.experiments.api.Experiments`, `project.intended`) answers: `{"ok": true, ...}`, or `{"ok": false, "error"}` with
 400, 403 (not the owner), 404, 409 (not a draft) or 422 (an edit or equation refused, with the
 edit's `index`). Other methods are refused (405).
 
@@ -1032,27 +1035,37 @@ it (rule 7).
   P5's attachments, a machine's expected effect (a draft prediction in §4.3's grammar, never an
   association) and aliases. Every element carries its `state` (proposed or declared), its
   `provenance` (`author`, `via`, `at`, `source`, `turn`, `message`, `quote`, `reason`, `request`;
-  a page control's `control`, `page`, `from`) and its change id (`c<seq>.<i>`). What the owner
-  asks for is declared at once; a machine always enters proposed. A revision by the owner with a
-  quote applies at once (recorded as `latest`: added, removed, before); any other is a pending
-  change until `confirm` or `discard` names it.
+  a page control's `control`, `page`, `from`; `via` and `at` are set by the store, never given)
+  and its change id (`c<seq>.<i>`). What the owner asks for is declared at once, a re-declared
+  proposed stock or effect included; a machine always enters proposed. A revision by the owner
+  with a quote applies at once to a stock or effect, and to a machine or attachment while it is
+  still proposed (recorded as `latest`: added, removed, before); on a confirmed machine or
+  attachment, and by any other author, it is a pending change until `confirm` or `discard` names
+  it. A proposal or pending change is confirmed or discarded by the owner (a page, or a plugin
+  quoting the owner) or with `provenance.request` (answering the owner's request), never by its
+  author alone.
 - **Keys.** A discovered part is matched by key, never by id: a stock's series name and labels
   without instrument, machine, source, project, instance, simulated and draft; a flow's ends' keys
   and its counter's key. Parts carried from the prior are not the era's own.
 - **Storage.** `model/intended/`: `journal.jsonl` (every accepted call, append-only),
-  `dNNNN.json` (the whole layer after each call; `dN` and `vN` are separate numberings, rule 4),
-  `diff/` (the structural diff cached by `dN`, `vM`, `vK` and era), `requests.jsonl`,
+  `dNNNN.json` (the whole layer after each call; `dN` and `vN` are separate numberings, rule 4;
+  a `dN` that cannot be parsed is reported as unreadable, 500, never as missing), `diff/` (the
+  structural diff cached as `d{N}-v{M}-v{K}-{era}-h{hold}.json`, `hold` the `announce_hold` its
+  suggestions settled by; `vlive` for an unsaved latest discovery), `requests.jsonl`,
   `announced.json`. Reached only through `ModelStore.intended()` (`project.intended`), written
   only by the host and the web server (rule 5). Present, heard, recording, measured, met,
   candidates and verdicts are derived on read, under a time limit (`missing` names what was not
   read in time); an op carrying one is refused.
-- **The comparison.** Changes since the previous version by default (`since=`, `off`): new and
-  removed keys, the expected set present or a ghost, a declared flow's matches as candidates when
+- **The comparison.** Changes since the previous version by default (`since=`, `off`; a value
+  that is not a version's number is a 400, an unknown version a 404): new and removed keys, the expected set present or a ghost, a declared flow's matches as candidates when
   an end is outside or two flows match; suggestions settle after `[discovery] announce_hold`
   saved versions, came-and-went and ignored are collapsed groups; the model has stabilised when
-  no suggestion is unsettled. A past `vN` is paired with the `dN` current when it was saved.
-  `intended.predicted` lists the flows the declared machines' expected effects predict, as ghost
-  flows with no machine (rule 6).
+  no suggestion is unsettled. A past `vN` is paired with the `dN` current when it was saved. The
+  latest discovery is shown as the newest `vN` when its structure is that version's; otherwise it
+  is compared with `vN` and labelled "the latest discovery". A declared flow's ends are declared
+  ids or discovered keys, never discovered ids. `intended.predicted` lists the flows the declared
+  machines' expected effects predict, one entry per machine and edit (`machine`, `edit`), as ghost
+  flows with no association (`machines: []`, rule 6).
 - **The API.** `project.intended.apply(ops, provenance)` (all ops or none; `IntentError` with
   the op's `index`), `read`, `diff`, `design`; over HTTP `POST /intended`, `GET /intended` and
   `GET /intended/design` on the events endpoint (§3.1). The ops: `declare_stock`,
@@ -1062,17 +1075,23 @@ it (rule 7).
   `record_measurement`, `confirm`, `discard`, `retract`, `propose_attachment`,
   `revise_attachment`.
 - **Announced.** After each accepted call the host publishes `orchestra.intent.changed` as
-  `orchestra-host` (`subject` `<part>:<id>` of the call's first change, `data` `{version, via,
-  ops}`), following the journal, so a call the web server wrote is announced once it is up.
+  `orchestra-host`, one event per element the call touched (`subject` `<part>:<id>`, `data`
+  `{version, via, ops}` with that element's changes), following the journal, so a call the web
+  server wrote is announced once it is up. Intent events are records about a declaration, never
+  hand-offs on the Machines page.
 - **The pages** (§10): `GET /api/dynamics/model?since=` gains `model.intended`, `/api/machines`
-  gains each machine's `intent` (a declared machine not heard is appended, `unseen`), and
-  `intended_edges`, `intended_types`; `/api/intended`, `/versions`, `/journal`, `/diff`,
+  gains each machine's `intent` (a declared machine not heard is appended, `unseen`, with no
+  observed values: no `subscribes`, `publishes` or `mode`) and `comparison` (`heard`, or
+  "declared, neither heard nor measured"), and `intended_edges`, `intended_types`; `/api/intended`, `/versions`, `/journal`, `/diff`,
   `/design`, `/script` (an option's script, read only inside the repository or the state
   directory). The page controls (rule 9): `POST /api/intended/control` records an observation
-  (`expect`, `unexpect`, `ignore`, `confirm` or `discard` on a stock, effect or flow), and `POST
-  /api/intended/request` publishes the owner's request (`confirm`, `discard`, `switch_kind` on a
-  machine or attachment) as `orchestra.intent.requested` from `owner`, which the Supervisor
-  answers by applying with `provenance.request`.
+  (`expect`, `unexpect`, `ignore`, `confirm` or `discard` on a stock, effect or flow; a mark is
+  stored by `key`, or by the key of the part with that `id` in the latest model, and an `expect`
+  or `ignore` of a key no latest model has is refused), and `POST /api/intended/request`
+  publishes the owner's request (`confirm`, `discard` on a machine or attachment, `switch_kind`
+  on a machine; it must name a declared element, and for `change` one of its pending changes) as
+  `orchestra.intent.requested` from `owner`, which the Supervisor answers by applying with
+  `provenance.request`.
 
 ---
 
@@ -1096,6 +1115,10 @@ it (rule 7).
   when the host starts, are not announced;
 - records the predictions machines make of their changes as it follows the bus, and after each
   discovery judges those due and publishes the verdicts (`orchestra.prediction.judged`, §4.3);
+- announces each accepted call to the intended model's declared layer, once, as
+  `orchestra.intent.changed` (one event per element the call touched, following the journal, so
+  a call the web server wrote while it was down is announced once it is up), and after each
+  discovery and declaration writes the current comparison's structural diff to the cache (§4.6);
 - keeps running the processes the project and the plugins declare (§5.1);
 - serves the events endpoint (§3.1) while it launches;
 - runs the instruments the project and the plugins declare (§5.2).
@@ -1165,7 +1188,7 @@ every = "60s"                    # default 60 s, at least 1 s
 timeout = "20s"                  # default 10 s, never more than every
 simulated = true                 # optional: a placeholder; its points are labelled simulated="true"
 draft = true                     # optional: an option being tried; its points are labelled draft="true"
-expires = "2026-11-08T00:00:00Z" # with draft: no round after this time
+expires = "2026-11-08T00:00:00Z" # with draft: when its plugin removes it (data only)
 
 [[scrape]]
 name = "app"
@@ -1177,9 +1200,14 @@ A **simulated** instrument (P4's placeholder ramp) is read by discovery only whi
 `simulated = true` names it; afterwards its series are left out ("simulated, expired") and its
 points stay. Every stock, flow and machine hypothesis fitted from a simulated series is marked
 `simulated: true` in its `evidence` in the saved version (`sd/simulated.py`); the key (§4.6)
-leaves the label out, so a real series takes over the placeholder's expected mark. A **draft**
-instrument's series are never read by discovery ("a draft instrument's series"); past `expires`
-it records nothing more, and keeping it is the plugin's (it drops the flag).
+leaves the label out, so a real series takes over the placeholder's expected mark. A plugin's
+collector may be simulated too. A **draft** instrument's series are left out of discovery
+(`left_out`: "draft"), while its entry exists and after it is gone. The core honours the flag and
+nothing more: `expires` is data for the plugin, which removes the entry then or clears the flag
+when the option is chosen; points written after that are ordinary and join the same stock (the key
+leaves `draft` out). Both flags are read only on Orchestra's own series: a `[[sources]]` series
+keeps its own labels. The judge's split-half discovery (§4.3) selects series the same way
+(`sd.simulated.discovered`).
 
 Each is an **instrument**: it measures the running system and never acts on it, so it is not a
 machine (AGENTS.md rule 7). Nothing is announced on the bus for it and it is not on the Machines
@@ -1200,7 +1228,8 @@ number is left out; a line that cannot be read is skipped and said once in the h
 point gets `project` and `instrument = <name>` (its provenance), and the round's start time when it
 has no timestamp. Every other label the text gave is kept as it was, `machine` included: the
 measured system's own dimension of the data. A label of the text that Orchestra sets (`project`,
-`instrument`) is kept as `exported_<name>`, as Prometheus does, never overwritten. A series named
+`instrument`, `simulated`, `draft`) is kept as `exported_<name>`, as Prometheus does, never
+overwritten. A series named
 `orchestra_*` is refused, with a line in the host's log saying to rename it.
 
 A round that fails (a non-zero exit, the timeout, which kills the command's group, a command that

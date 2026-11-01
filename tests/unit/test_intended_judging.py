@@ -13,6 +13,20 @@ from orchestra.sd.verdict import outcome, slope, unpredicted
 RISES = {"kind": "slope", "stock": "features", "direction": "rises"}
 
 
+def test_27_rises_is_judged_end_to_end_against_the_slope_before_the_change(tmp_path):
+    """Through ``judge_one``: the stock read in the prior era's window before the change and in
+    the era's after it, by the same id across the two eras' models."""
+    from test_predictions import judged, step  # the synthetic pipeline with known rates
+
+    rises = [{"stock": "jobs_waiting", "rises": True}]
+    [v], _, _ = judged(tmp_path / "met", rises, done_k=step(0.5, 0.0))          # nothing done after: waiting piles up
+    [e] = v["expectations"]
+    assert e["kind"] == "slope" and e["status"] == "met" and e["z"] >= 2, v
+    [v], _, _ = judged(tmp_path / "absent", rises)                               # the change changes nothing
+    [e] = v["expectations"]
+    assert e["status"] == "absent" and v["verdict"] == "no effect", v
+
+
 def line(rate, n=30, start=0.0, wiggle=0.3):
     return [[start + 60 * i, rate * 60 * i + (wiggle if i % 2 else -wiggle)] for i in range(n)]
 

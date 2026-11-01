@@ -10,8 +10,8 @@ URL), and those the plugins declare (``Plugin.collectors``).
     every = "60s"                    # how often (default 60 s)
     timeout = "20s"                  # how long one round may take (default 10 s, never more than every)
     simulated = true                 # a placeholder: every point labelled simulated="true" (sd.simulated)
-    draft = true                     # an option being tried: points labelled draft="true", never read by discovery
-    expires = "2026-11-08T00:00:00Z" # ... and no round after this time (RFC 3339, or unix seconds)
+    draft = true                     # an option being tried: points labelled draft="true", left out of discovery
+    expires = "2026-11-08T00:00:00Z" # ... when the plugin removes the entry (RFC 3339, or unix seconds): data only
 
     [[scrape]]
     name = "app"
@@ -48,10 +48,7 @@ class Collector:
     owner: str = "project"     # "project", or the plugin that declared it
     simulated: bool = False    # a placeholder's: its points are labelled simulated="true" (sd.simulated)
     draft: bool = False        # an option being tried: its points are labelled draft="true" (sd.simulated)
-    expires: float | None = None   # a draft's: no round after this time (unix seconds)
-
-    def expired(self, now: float) -> bool:
-        return self.draft and self.expires is not None and now >= self.expires
+    expires: float | None = None   # a draft's: when its plugin removes it (unix seconds); data, never acted on here
 
     def __post_init__(self) -> None:
         if isinstance(self.target, list):      # a TOML array: kept as a tuple, so the collector stays hashable

@@ -2,7 +2,11 @@
 when undeclared); a declared machine not yet heard is appended (``unseen: true``); a plugin's
 placeholder never replaces an intent. The card's kind is the declared kind until the machine is
 heard, then the announced one. A declaration never makes a machine exist in the observed layer
-(rule 2 as amended): ``heard`` is whether its source (or an alias) is on the bus, read now.
+(rule 2 as amended): ``heard`` is whether its source (or an alias) is on the bus, read now, and
+an appended unheard machine carries no observed values (no subscribes, publishes or mode: what
+it is declared to receive and its engagement are under ``intent`` and ``intended_edges``). Each
+declared machine also gains ``comparison`` (§6.1): ``heard``, or "declared, neither heard nor
+measured" while nothing is measured.
 
 The top level gains ``intended_edges`` (``{from, to, kind, state, observed, gone}``) and
 ``intended_types`` (declared event types and their descriptions)."""
@@ -11,9 +15,18 @@ from __future__ import annotations
 
 import re
 
+from .drafts import names_of, publishable
 from .requests import unanswered
 
 ENVELOPE = ("title", "description", "tags", "kind", "managed", "engagement", "receives", "emits", "reads", "spec")
+HEARD = "heard"
+NEITHER = "declared, neither heard nor measured"
+
+
+def comparison(heard: bool) -> str:
+    """A declared machine's entry in the comparison. P5's attachments (C4) refine the unheard
+    case: "attached, nothing measured" and "measured, never heard" are set where ``measured`` is."""
+    return HEARD if heard else NEITHER
 
 
 def _norm(s: str) -> str:
@@ -44,31 +57,21 @@ def _label(edit: dict, names: dict[str, str]) -> str:
 
 def expected_effect(m: dict, layer: dict, model, predictions: dict[str, dict]) -> dict | None:
     """A machine's draft prediction, each edit with its label, link and whether it can be
-    published yet (an edit on a declared stock with no ``found_as`` waits for a series)."""
+    published yet (``drafts.publishable``)."""
     ee = m.get("expected_effect")
     if not ee:
         return None
-    names = {s.id: s.name for s in (model.stocks if model else [])} | {f.id: f.name for f in (model.flows if model else [])}
-    names |= {k: v["name"] for g in ("stocks", "effects") for k, v in layer[g].items()}
+    names = names_of(model, layer)
     edits = []
     for e in ee["edits"]:
-        row = {"edit": e, "label": _label(e, names), "publishable": True, "why": None}
-        sid = e.get("stock")
-        if sid is not None:
-            row["link"] = f"/dynamics#s:{sid}"
-            decl = layer["stocks"].get(sid) or layer["effects"].get(sid)
-            if decl is not None and not decl.get("found_as"):
-                row.update(publishable=False, why="waits for a series")
-            elif decl is None and sid not in names:
-                row.update(publishable=False, why="not in the model")
+        ok, why = publishable(e, layer, names)
+        row = {"edit": e, "label": _label(e, names), "publishable": ok, "why": why}
+        if e.get("stock") is not None:
+            row["link"] = f"/dynamics#s:{e['stock']}"
         elif e.get("flow") is not None:
             row["link"] = f"/dynamics#f:{e['flow']}"
         else:
             row["link"] = "/dynamics"
-            for end in (e.get("from"), e.get("to")):
-                d = layer["stocks"].get(end) if end else None
-                if d is not None and not d.get("found_as"):
-                    row.update(publishable=False, why="waits for a series")
         edits.append(row)
     pid = ee.get("prediction")
     p = predictions.get(pid) if pid else None
@@ -97,6 +100,7 @@ def merge(out: dict, intended, model=None, predictions: list[dict] | None = None
     observed_ids = {m["id"] for m in machines if not m.get("unseen")}
     for m in machines:
         m.setdefault("intent", None)
+        m.setdefault("comparison", None)
     observed_edges = {(e.get("from"), e.get("to"), e.get("kind")) for e in out.get("edges") or []}
     edges = []
     for mid, m in layer["machines"].items():
@@ -108,24 +112,25 @@ def merge(out: dict, intended, model=None, predictions: list[dict] | None = None
             intent["alias_candidates"] = sorted(o for o in observed_ids if o != mid and o not in layer["machines"]
                                                 and (_norm(o) == mid or _norm(o.rsplit(".", 1)[-1]) == mid))
         if heard:
-            seen["intent"] = intent
+            seen.update(intent=intent, comparison=comparison(True))
         elif mid in by_id:                       # a plugin's placeholder: the declaration stands, and its kind
-            by_id[mid].update(intent=intent, kind=m["kind"], unseen=True)
-        else:
-            machines.append({"id": mid, "bootstrap": False, "mode": (m.get("engagement") or {}).get("mode"), "kind": m["kind"],
-                             "package": None, "about": {}, "unseen": True, "publishes": [], "subscribes": list(m.get("receives") or []),
+            by_id[mid].update(intent=intent, kind=m["kind"], unseen=True, comparison=comparison(False))
+        else:                                    # nothing observed: no subscribes, publishes or mode of its own
+            machines.append({"id": mid, "bootstrap": False, "mode": None, "kind": m["kind"],
+                             "package": None, "about": {}, "unseen": True, "publishes": [], "subscribes": [],
                              "flows": [], "logs": [], "instances": [], "first_seen": None, "last_seen": None, "active": False,
-                             "intent": intent})
+                             "intent": intent, "comparison": comparison(False)})
+        node = seen["id"] if heard else mid      # heard through an alias: the edges attach to the drawn node
         removed = (m.get("latest") or {}).get("removed") or {}
         for t in m.get("receives") or []:
-            edges.append({"from": t, "to": mid, "kind": "subscribes", "state": m["state"],
+            edges.append({"from": t, "to": node, "kind": "subscribes", "state": m["state"],
                           "observed": any((t, n, "subscribes") in observed_edges for n in names), "gone": False})
         for t in m.get("emits") or []:
-            edges.append({"from": mid, "to": t, "kind": "publishes", "state": m["state"],
+            edges.append({"from": node, "to": t, "kind": "publishes", "state": m["state"],
                           "observed": any((n, t, "publishes") in observed_edges for n in names), "gone": False})
-        edges += [{"from": t, "to": mid, "kind": "subscribes", "state": m["state"], "observed": False, "gone": True}
+        edges += [{"from": t, "to": node, "kind": "subscribes", "state": m["state"], "observed": False, "gone": True}
                   for t in removed.get("receives") or []]
-        edges += [{"from": mid, "to": t, "kind": "publishes", "state": m["state"], "observed": False, "gone": True}
+        edges += [{"from": node, "to": t, "kind": "publishes", "state": m["state"], "observed": False, "gone": True}
                   for t in removed.get("emits") or []]
     out["intended_edges"] = edges
     out["intended_types"] = [{"type": t, "description": e.get("description"), "implicit": e.get("implicit", False)}

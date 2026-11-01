@@ -164,7 +164,7 @@ def false_change(project, metrics, prev_start: float | None, start: float, compa
     """The false-change rate, as far as it can be measured (see above)."""
     from ..sources.catalogue import Catalogue
     from .rediscover import configured_strategy
-    from .strategies import discover_with
+    from .simulated import discovered
 
     cfg = project.config
     out = {"z": Z, "nominal": NOMINAL}
@@ -179,8 +179,8 @@ def false_change(project, metrics, prev_start: float | None, start: float, compa
         halves = []
         for s, e in ((a, mid), (mid, b)):
             reading = Catalogue(project, metrics, infer=False).read(s, e, step, keep=False)
-            halves.append(discover_with(reading.dump, start=s, end=e, step=step, strategy=configured_strategy(project),
-                                        options=cfg.discovery_options, deadline=0.4 * cfg.discovery_every, kinds=reading.kinds))
+            halves.append(discovered(project, reading, start=s, end=e, step=step, strategy=configured_strategy(project),
+                                     options=cfg.discovery_options, deadline=0.4 * cfg.discovery_every))
     except Exception:  # noqa: BLE001 - the rate is reported unmeasured
         return {**out, "measured": None, "reason": "discovery_failed"}
     c = compare(*halves)

@@ -4,19 +4,21 @@
 from}``, and the Supervisor answers by ``apply``-ing with ``provenance.request`` the request's event
 id. The web server also notes each one it published in ``requests.jsonl``, so the page can show
 "asked the Supervisor · waiting" without reading the bus; a request is answered once a journal
-entry names it."""
+entry names it. A request names something declared (a machine or attachment in the layer, and
+for ``change`` one of its pending changes) and carries no values (AGENTS.md rule 9 as amended)."""
 
 from __future__ import annotations
 
 import json
 import time
 
-from .checks import IntentError
+from .checks import IntentError, text
 
 REQUESTED = "orchestra.intent.requested"
 OWNER = "owner"
 CONTROLS = ("confirm", "discard", "switch_kind")
 PARTS = ("machine", "attachment")
+GROUP = {"machine": "machines", "attachment": "attachments"}
 
 
 def check(body: dict) -> dict:
@@ -28,15 +30,32 @@ def check(body: dict) -> dict:
         raise IntentError(f"a request's control is one of {', '.join(CONTROLS)}", status=400)
     if body.get("part") not in PARTS:
         raise IntentError("requests are about a machine or an attachment; the rest are observations", status=400)
+    if body["control"] == "switch_kind" and body["part"] != "machine":
+        raise IntentError("switch_kind is a machine's (Universal | Programmatic)", status=400)
     if not isinstance(body.get("id"), str) or not body["id"]:
         raise IntentError("id names the machine or attachment", status=400)
-    return {"control": body["control"], "part": body["part"], "id": body["id"], "change": body.get("change"),
-            "from": body.get("from")}
+    try:
+        text(body["id"], "id", limit=200)
+        change = text(body.get("change"), "change", limit=40)
+        origin = text(body.get("from"), "from", limit=200)
+    except IntentError as e:
+        raise IntentError(str(e), status=400) from None
+    return {"control": body["control"], "part": body["part"], "id": body["id"], "change": change, "from": origin}
+
+
+def named(intended, data: dict) -> None:
+    """The request's machine or attachment is in the declared layer, and its change pending there."""
+    el = intended.read()["layer"][GROUP[data["part"]]].get(data["id"])
+    if el is None:
+        raise IntentError(f"there is no declared {data['part']} {data['id']!r}", status=404)
+    if data["change"] is not None and data["change"] not in {p.get("change") for p in el.get("pending") or []}:
+        raise IntentError(f"{data['part']} {data['id']} has no pending change {data['change']}", status=404)
 
 
 def publish(intended, events, body: dict) -> dict:
     """Publish one request as the owner and note it; returns the event."""
     data = check(body)
+    named(intended, data)
     ev = events.publish(REQUESTED, data, source=OWNER, subject=f"{data['part']}:{data['id']}")
     intended.dir.mkdir(parents=True, exist_ok=True)
     with open(intended.dir / "requests.jsonl", "a", encoding="utf-8") as fh:

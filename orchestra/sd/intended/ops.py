@@ -2,15 +2,17 @@
 layer in place. A machine's and an attachment's are ``machine_ops``. Each op returns the part and
 id it changed; the store gives it its change id and provenance.
 
-What the owner asks for (``author: owner``) is declared at once; what another author proposes
-enters ``proposed`` (§3). Nothing here reads a discovered model: a declaration binds no series and
+What the owner asks for (``author: owner``) is declared at once, a re-declaration of a proposed
+stock or effect included; what another author proposes enters ``proposed`` (§3). A proposal or a
+pending change is confirmed or discarded by the owner, or by the plugin answering the owner's
+request (``provenance.request``, §6.2), never by its author alone. Nothing here reads a discovered model: a declaration binds no series and
 is matched to one only by ``link`` (rule 7 as amended)."""
 
 from __future__ import annotations
 
 from . import machine_ops
 from .checks import IntentError, make_slug, no_derived, only, slug, strings, target, text
-from .revise import at_once, revise, settle_pending
+from .revise import owner_asks, revise, settle_pending
 
 GROUP = {"stock": "stocks", "effect": "effects", "flow": "flows", "machine": "machines", "attachment": "attachments",
          "event": "events"}
@@ -52,14 +54,20 @@ def declare_level(layer: dict, op: dict, ctx: dict, part: str) -> tuple[str, str
     if eid in layer[other]:
         raise IntentError(f"{eid} is already declared as {'an effect' if part == 'stock' else 'a stock'}")
     if eid in group:
+        el = group[eid]
         changed = {k: v for k, v in fields.items() if op.get(k) is not None}
-        revise(group[eid], changed, {}, {}, strings(op.get("guessed"), "guessed"), ctx)
+        revise(el, changed, {}, {}, strings(op.get("guessed"), "guessed"), ctx)
+        if el.get("state") == "proposed" and owner_asks(ctx["provenance"]):
+            el.update(state="declared", confirmed={"by": "owner", "change": ctx["change"]})
         return part, eid
     group[eid] = _new(ctx, id=eid, part=part, **fields, found_as=None, measure=None, target=None)
     return part, eid
 
 
 def declare_flow(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
+    """An expected flow between two ends, each a declared stock's or effect's id or a discovered
+    stock's key (never a discovered id: ids follow arrival order), ``null`` for outside. A
+    declared id wins over a discovered key of the same text."""
     only(op, ("id", "from", "to", "name", "note"), "declare_flow")
     a, b = text(op.get("from"), "from", limit=1000), text(op.get("to"), "to", limit=1000)
     if a is None and b is None:
@@ -122,7 +130,10 @@ def declare_event(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
 
 def record_measurement(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
     only(op, ("part", "id", "options", "chosen"), "record_measurement")
-    el = element(layer, op.get("part") or "stock", op.get("id"))
+    part, eid = op.get("part") or "stock", op.get("id")
+    if part not in ("stock", "effect"):
+        raise IntentError(f"a measurement is recorded for a declared stock or effect, not a {part}")
+    el = element(layer, part, eid)
     opts = op.get("options")
     if not isinstance(opts, list) or not opts:
         raise IntentError("options is a non-empty list")
@@ -142,13 +153,21 @@ def record_measurement(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
     if chosen is not None and chosen not in keys:
         raise IntentError(f"chosen must be one of the options' keys ({', '.join(keys)}), not {chosen!r}")
     el["measure"] = {"options": out, "chosen": chosen, "change": ctx["change"]}
-    return el["part"], el["id"]
+    return part, eid
+
+
+def _may_settle(prov: dict) -> None:
+    """A proposal or pending change is settled by the owner (a page, or a plugin quoting the
+    owner, which ``checks.provenance`` requires) or in answer to the owner's request."""
+    if prov.get("author") != "owner" and not prov.get("request"):
+        raise IntentError("a proposal is confirmed by the owner: give the owner's quote or the request's event id")
 
 
 def confirm(layer: dict, op: dict, ctx: dict, accept: bool) -> tuple[str, str]:
     only(op, ("part", "id", "change"), op["op"])
     part, eid = op.get("part"), op.get("id")
     el = element(layer, part, eid)
+    _may_settle(ctx["provenance"])
     if op.get("change"):
         settle_pending(el, op["change"], accept, ctx)
         return part, eid
@@ -158,7 +177,14 @@ def confirm(layer: dict, op: dict, ctx: dict, accept: bool) -> tuple[str, str]:
         el.update(state="declared", guessed=[], confirmed={"by": ctx["provenance"].get("author"), "change": ctx["change"]})
     else:
         del layer[GROUP[part]][eid]
+        _orphans(layer, part, eid)
     return part, eid
+
+
+def _orphans(layer: dict, part: str, eid: str) -> None:
+    """A machine discarded or retracted takes its attachments with it."""
+    if part == "machine":
+        layer["attachments"] = {k: a for k, a in layer["attachments"].items() if a["machine"] != eid}
 
 
 def retract(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
@@ -166,8 +192,7 @@ def retract(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
     part, eid = op.get("part"), op.get("id")
     element(layer, part, eid)
     del layer[GROUP[part]][eid]
-    if part == "machine":
-        layer["attachments"] = {k: a for k, a in layer["attachments"].items() if a["machine"] != eid}
+    _orphans(layer, part, eid)
     return part, eid
 
 
@@ -194,4 +219,4 @@ def apply_op(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
     raise IntentError(f"unknown op {name!r}")
 
 
-__all__ = ["apply_op", "at_once", "element", "empty"]
+__all__ = ["apply_op", "element", "empty"]

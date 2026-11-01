@@ -15,7 +15,9 @@ series, a declared flow changes no equation. Discovery never reads it (rule 7 as
 | ``history`` | suggestions, settling, came and went (§3.3) |
 | ``diff`` | the structural diff of ``dN``, ``vM``, ``vK``, cached |
 | ``facts``, ``expected``, ``view`` | the Dynamics page's block, with facts read under a time limit |
-| ``machines_view`` | the Machines page's ``intent``, edges and types |
+| ``params`` | the comparison's ``since`` and ``v``, parsed in one place |
+| ``machines_view`` | the Machines page's ``intent``, ``comparison``, edges and types |
+| ``drafts`` | whether an edit of a machine's draft expected effect can be published yet |
 | ``requests`` | the owner's requests from the pages (``orchestra.intent.requested``) |
 | ``announce`` | the host's ``orchestra.intent.changed`` |
 | ``design`` | the plugin's summary |

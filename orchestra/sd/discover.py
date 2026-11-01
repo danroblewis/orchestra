@@ -1170,14 +1170,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                                         **({"problems": pin_problems} if pin_problems else {})}}
                           if pins or pin_problems else {}),
                        "left_out": dict(sorted(left_out.items()))}
-    mark_simulated(model)
     return model
-
-
-def mark_simulated(model: Model) -> None:
-    """The parts fitted from a series labelled ``simulated="true"``, marked so (``sd.simulated``)."""
-    from .simulated import mark
-    mark(model)
 
 
 def structure(model: Model) -> list:

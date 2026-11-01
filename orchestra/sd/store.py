@@ -117,11 +117,11 @@ class ModelStore:
                 return Model.from_json(d["model"])
         return None
 
-    def intended(self):
+    def intended(self, project=None):
         """The declared layer beside the versions (``sd.intended``, ``<state>/model/intended/``):
-        the only way to it."""
+        the only way to it. ``project``: whose ``announce_hold`` the comparison settles by."""
         from .intended import IntendedStore
-        return IntendedStore(self)
+        return IntendedStore(self, project)
 
     def read_record(self, name: str) -> dict | None:
         """One of the store's small records (``eras``, ``announce``), or None."""

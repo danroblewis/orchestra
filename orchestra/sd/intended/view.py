@@ -3,17 +3,25 @@ was removed, the Changes panel's rows, and the suggestions' groups, for one disc
 against a base version (``since``: the previous version by default, ``off`` for no marks, or any
 version). Browsing a past ``vN`` pairs it with the ``dN`` current when ``vN`` was saved.
 
+The latest discovery is shown as the newest saved version ``vN`` when its structure is that
+version's (its base ``vN-1``, labelled ``vN``); otherwise it is an unsaved discovery, compared
+with ``vN`` by default and labelled "the latest discovery", so an absence is never said of a
+version that has the part.
+
 Structure comes from the cached diff (``diff.py``); every metrics fact is read now, under a time
 limit (``facts.py``)."""
 
 from __future__ import annotations
 
+from ..discover import structure
 from . import diff as diffs
 from .expected import flow_entry, level_entry, mark_entry, target_of
 from .facts import LIMIT_S, Facts
 from .keys import Keys
+from .params import OFF, since_of
 
-HOLD = 3
+LATEST = "the latest discovery"
+_structures: dict[tuple[str, int], list] = {}
 
 
 def _rate(flow) -> str | None:
@@ -28,34 +36,59 @@ def _machines(flow) -> list[dict]:
     return [{"machine": h.get("machine"), "confidence": h.get("confidence")} for h in hyps]
 
 
-def resolve(models, version: int | None, live: bool, since) -> tuple[int | None, int | None]:
-    """(the shown version's number, the base's number or None for no marks)."""
-    nums = [v["version"] for v in models.versions()]
-    shown = version if version is not None else (nums[-1] if nums else None)
-    if since in ("off", "none", False):
-        return shown, None
-    if since is not None and since != "":
-        return shown, int(since)
-    prev = [n for n in nums if shown is not None and n < shown]
-    return shown, (prev[-1] if prev else None)
+def _saved_structure(models, n: int):
+    """A saved version's structure (cached: a saved version never changes)."""
+    ck = (str(models.dir), n)
+    if ck not in _structures:
+        m = models.load(n)
+        if m is None:
+            return None
+        _structures[ck] = structure(m)
+        if len(_structures) > 1024:
+            _structures.pop(next(iter(_structures)))
+    return _structures[ck]
 
 
-def dynamics_block(intended, model=None, since=None, *, version: int | None = None, live: bool | None = None,
-                   stamp: float | None = None, metrics=None, hold: int = HOLD, limit_s: float = LIMIT_S, now: float | None = None,
+def resolve(models, nums: list[int], version: int | None, live: bool, since, model=None) -> tuple[int | None, int | None, str]:
+    """(the shown version's number, or None for an unsaved discovery; the base's number, or None
+    for no marks; the shown model's label). ``nums``: the saved versions' numbers."""
+    newest = nums[-1] if nums else None
+    if live:
+        same = newest is not None and model is not None and structure(model) == _saved_structure(models, newest)
+        shown = newest if same else None
+    else:
+        shown = version if version is not None else newest
+    label = f"v{shown}" if shown else LATEST
+    base = since_of(since, nums)
+    if base == OFF:
+        return shown, None, label
+    if base is not None:
+        return shown, base, label
+    if shown is None:
+        return None, newest, label
+    prev = [n for n in nums if n < shown]
+    return shown, (prev[-1] if prev else None), label
+
+
+def dynamics_block(intended, model=None, since=None, *, hold: int, version: int | None = None, live: bool | None = None,
+                   stamp: float | None = None, metrics=None, limit_s: float = LIMIT_S, now: float | None = None,
                    d: int | None = None) -> dict:
     """The ``intended`` block for ``model`` (default: the latest discovery, else the current
-    version). ``version``: the saved version ``model`` is (None with ``live``)."""
+    version). ``version``: the saved version ``model`` is (None with ``live``). ``hold``: the
+    project's ``[discovery] announce_hold``, which suggestions settle by."""
     models = intended.models
+    saved_list = models.versions()
+    nums = [v["version"] for v in saved_list]
     if model is None:
         cached = models.latest_discovery()
         if cached:
             stamp, model = cached
             live = True if live is None else live
         else:
-            model, version, live = models.load(), models.current_version(), False
+            model, version, live = models.load(), (nums[-1] if nums else None), False
     live = bool(live) if live is not None else version is None
-    shown_n, base_n = resolve(models, version, live, since)
-    saved = {v["version"]: v for v in models.versions()}
+    shown_n, base_n, label = resolve(models, nums, version, live, since, model)
+    saved = {v["version"]: v for v in saved_list}
     past = version is not None and not live and version != max(saved, default=None)
     if d is None:
         d = intended.at((saved.get(version) or {}).get("saved_at")) if past else (intended.current_version() or 0)
@@ -63,11 +96,10 @@ def dynamics_block(intended, model=None, since=None, *, version: int | None = No
     shown = Keys(model)
     base_model = models.load(base_n) if base_n else None
     base = Keys(base_model) if base_model is not None else None
-    v = "live" if live else shown_n
+    v = "live" if shown_n is None else shown_n
     st = diffs.cached(intended, d, v, base_n if base is not None else None, model.era if model else None, shown, base, layer,
-                      hold, models, stamp)
+                      hold, models, stamp, nums)
     facts = Facts(metrics, limit_s, now)
-    label = f"v{shown_n}" if shown_n else "this discovery"
     status = st["status"]
     ignored = layer["marks"]["ignored"]
     expected_keys = set(layer["marks"]["expected"])

@@ -69,7 +69,7 @@ def revise_machine(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
             if k not in LISTS:
                 raise IntentError(f"{what} takes the list fields ({', '.join(LISTS)}), not {k}")
             strings(v, f"{what}.{k}")
-    revise(m, set_, add, remove, strings(op.get("guessed"), "guessed"), ctx)
+    revise(m, set_, add, remove, strings(op.get("guessed"), "guessed"), ctx, waits_once_confirmed=True)
     _implicit_events(layer, m, ctx)
     return "machine", m["id"]
 
@@ -152,7 +152,7 @@ def revise_attachment(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
     set_ = op.get("set") or {}
     if not isinstance(set_, dict) or set(set_) - set(ATTACH_FIELDS):
         raise IntentError(f"set takes {', '.join(ATTACH_FIELDS)}")
-    revise(a, _attachment_fields(set_), {}, {}, strings(op.get("guessed"), "guessed"), ctx)
+    revise(a, _attachment_fields(set_), {}, {}, strings(op.get("guessed"), "guessed"), ctx, waits_once_confirmed=True)
     return "attachment", a["id"]
 
 
