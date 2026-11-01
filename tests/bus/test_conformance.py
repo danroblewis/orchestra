@@ -114,6 +114,43 @@ def test_limit_keeps_the_latest_and_startup_idiom(make_bus):
     assert bus.read(0, limit=1)[1] == 20, "the loop finds the end with read(0, limit=1)"
 
 
+def test_page_reads_forward_in_bounded_pages_and_every_event_once(make_bus):
+    bus = make_bus()
+    for e in _events(23):
+        bus.append(e)
+    got, nxt = bus.page(0, 5)
+    assert [e["i"] for e in got] == [0, 1, 2, 3, 4] and nxt == 5
+    seen, at = [], 0
+    while at < bus.end():
+        page, at = bus.page(at, 7)
+        assert len(page) <= 7
+        seen += [e["i"] for e in page]
+    assert seen == list(range(23)) and at == 23
+    assert bus.page(23, 5) == ([], 23)
+    assert bus.page(100, 5) == ([], 23), "a cursor past the end reads nothing and returns the end"
+    events = Events(bus=bus)
+    assert [e["i"] for e in events.page(20, 100)[0]] == [20, 21, 22]
+
+
+def test_file_pages_step_over_a_malformed_line_without_repeating_an_event(make_bus):
+    if make_bus.url != "file":
+        pytest.skip("a malformed line is written into the file backend only")
+    bus = make_bus()
+    for e in _events(3, "a"):
+        bus.append(e)
+    with bus.path.open("a") as f:
+        f.write("{torn\n")
+    for e in _events(5, "b"):
+        bus.append(e)
+    seen, at, pages = [], 0, 0
+    while at < bus.end():
+        page, at = bus.page(at, 4)
+        pages += 1
+        seen += [(e["tag"], e["i"]) for e in page]
+    assert seen == [("a", 0), ("a", 1), ("a", 2), ("b", 0), ("b", 1), ("b", 2), ("b", 3), ("b", 4)]
+    assert at == 9 and pages == 3
+
+
 def test_a_second_instance_sees_the_same_stream(make_bus):
     a = make_bus()
     b = make_bus()          # same key: another process, another host

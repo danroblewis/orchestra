@@ -97,8 +97,24 @@ def test_a_file_rewritten_or_still_being_written_is_counted_again(tmp_path):
     path.write_text('{"c": 1}\n')                             # shrank
     assert bus.end() == 1 and bus.read(0) == ([{"c": 1}], 1)
     with path.open("a") as f:
-        f.write('{"c": 2')                                    # a line still being written
-    assert bus.end() == 2
+        f.write('{"c": 2')                                    # a line still being written: not counted yet
+    assert bus.end() == 1 and bus.read(0) == ([{"c": 1}], 1)
     with path.open("a") as f:
         f.write('}\n')
     assert bus.end() == 2 and bus.read(1) == ([{"c": 2}], 2)
+
+
+def test_a_half_written_last_line_is_read_once_its_writer_finishes_it(tmp_path):
+    import json
+    path = tmp_path / "events.jsonl"
+    bus = FileBus(path)
+    bus.append({"type": "first", "i": 0})
+    second = json.dumps({"type": "second", "i": 1, "pad": "x" * 40}) + "\n"
+    with path.open("a") as f:
+        f.write(second[:30])                                  # the writer is part-way through it
+    assert bus.read(0) == ([{"type": "first", "i": 0}], 1)
+    assert bus.end() == 1 and bus.page(0, 10) == ([{"type": "first", "i": 0}], 1)
+    with path.open("a") as f:
+        f.write(second[30:])
+    got, nxt = bus.read(1)
+    assert [e["type"] for e in got] == ["second"] and nxt == 2

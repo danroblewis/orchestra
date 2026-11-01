@@ -85,6 +85,15 @@ class RabbitStreamBus:
             got = self._consume(start, end - 1)
         return [json.loads(b) for n, b in got if start <= n < end], end
 
+    def page(self, since: int = 0, limit: int = 500) -> tuple[list[dict], int]:
+        end = self.end()
+        if since >= end:
+            return [], end
+        bound = min(since + max(1, limit), end)
+        with self._lock:
+            got = self._consume(since, bound - 1)
+        return [json.loads(b) for n, b in got if since <= n < bound], bound
+
     def close(self) -> None:
         with self._lock:
             if self._conn is not None and self._conn.is_open:

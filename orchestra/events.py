@@ -125,6 +125,13 @@ class Events:
         to read from next."""
         return self.bus.read(since, limit)
 
+    def page(self, since: int = 0, limit: int = 500) -> tuple[list[dict], int]:
+        """Return (events, next_offset): the events at the offsets after ``since`` up to
+        ``min(since + limit, end)``, in order, and that bound to read from next, whatever was
+        skipped there (``EventBus.page``). A loop on it from 0 reads every event once, each page
+        bounded."""
+        return self.bus.page(since, limit)
+
     def after(self, offset: int) -> tuple[list[dict], int]:
         """Return (events, next_offset): every event after ``offset``, in order, and the offset
         to read from next. Unlike ``read`` nothing is cut off, even when events arrive while it

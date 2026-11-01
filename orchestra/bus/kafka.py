@@ -61,25 +61,41 @@ class KafkaBus:
             _low, high = self._consumer.get_watermark_offsets(self._tp, timeout=10, cached=False)
         return high
 
+    def _range(self, start: int, bound: int) -> list[dict]:
+        """The messages at offsets start..bound-1 (under the lock)."""
+        self._consumer.assign([self._ck.TopicPartition(self._topic, 0, start)])
+        out: list[dict] = []
+        try:
+            while True:
+                msg = self._consumer.poll(10)
+                if msg is None:
+                    raise BusError(f"Kafka topic {self._topic}: no message for 10s before offset {bound - 1}")
+                if msg.error():
+                    raise BusError(f"Kafka read from {self._topic}: {msg.error()}")
+                if msg.offset() < bound:
+                    out.append(json.loads(msg.value()))
+                if msg.offset() >= bound - 1:
+                    break
+        finally:
+            self._consumer.unassign()
+        return out
+
     def read(self, since: int = 0, limit: int = 500) -> tuple[list[dict], int]:
         with self._lock:
             low, end = self._consumer.get_watermark_offsets(self._tp, timeout=10, cached=False)
             start = max(since, end - limit, low) if limit else end
             if start >= end:
                 return [], end
-            self._consumer.assign([self._ck.TopicPartition(self._topic, 0, start)])
-            out: list[dict] = []
-            while True:
-                msg = self._consumer.poll(10)
-                if msg is None:
-                    raise BusError(f"Kafka topic {self._topic}: no message for 10s before offset {end - 1}")
-                if msg.error():
-                    raise BusError(f"Kafka read from {self._topic}: {msg.error()}")
-                out.append(json.loads(msg.value()))
-                if msg.offset() >= end - 1:
-                    break
-            self._consumer.unassign()
-        return out, end
+            return self._range(start, end), end
+
+    def page(self, since: int = 0, limit: int = 500) -> tuple[list[dict], int]:
+        with self._lock:
+            low, end = self._consumer.get_watermark_offsets(self._tp, timeout=10, cached=False)
+            if since >= end:
+                return [], end
+            start = max(since, low)                 # what retention removed is skipped, never waited for
+            bound = min(start + max(1, limit), end)
+            return (self._range(start, bound) if start < bound else []), bound
 
     def close(self) -> None:
         with self._lock:

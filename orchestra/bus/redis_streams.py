@@ -44,5 +44,13 @@ class RedisStreamsBus:
         rows = self._r.xrange(self._key, f"{start + 1}-0", f"{end}-0")
         return [json.loads(fields[b"e"]) for _, fields in rows], end
 
+    def page(self, since: int = 0, limit: int = 500) -> tuple[list[dict], int]:
+        end = self.end()
+        if since >= end:
+            return [], end
+        bound = min(since + max(1, limit), end)
+        rows = self._r.xrange(self._key, f"{since + 1}-0", f"{bound}-0")
+        return [json.loads(fields[b"e"]) for _, fields in rows], bound
+
     def close(self) -> None:
         self._r.close()

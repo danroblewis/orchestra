@@ -33,6 +33,12 @@ class EventBus(Protocol):
         """Events after offset ``since``: at most the last ``limit`` of them, in order, and the
         offset of the end of the stream (where the next read should start)."""
 
+    def page(self, since: int = 0, limit: int = 500) -> tuple[list[dict], int]:
+        """A bounded read forward: the events at the offsets after ``since`` up to
+        ``min(since + limit, end)``, in order, and that bound as the offset to read from next,
+        whatever was skipped there (a malformed line, events a retention removed). Paging from 0
+        reads every event once, each page costing at most ``limit`` events."""
+
     def end(self) -> int:
         """The offset of the end of the stream: how many events it holds."""
 

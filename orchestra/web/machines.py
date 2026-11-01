@@ -339,6 +339,12 @@ class _ListBus:
     def read(self, since: int = 0, limit: int = 500) -> tuple[list[dict], int]:
         return self.evs[since:][-limit:], len(self.evs)
 
+    def page(self, since: int = 0, limit: int = 500) -> tuple[list[dict], int]:
+        if since >= len(self.evs):
+            return [], len(self.evs)
+        bound = min(since + max(1, limit), len(self.evs))
+        return self.evs[since:bound], bound
+
 
 def machines_view(events: list[dict], now: float | None = None, flows: dict[str, list[dict]] | None = None,
                   since: float | None = None, until: float | None = None) -> dict:
