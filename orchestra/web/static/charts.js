@@ -115,7 +115,7 @@ const Charts = (() => {
       + (c.dots ? at.map((h) => `<circle cx="${c.x(h.p[0])}" cy="${c.y(h.p[1])}" r="3.2" style="fill:${colorOf(h.l, h.i)}"/>`).join("") : "");
     const rows = at.slice().sort((a, b) => b.p[1] - a.p[1]).slice(0, 14);
     const el = tipEl();
-    el.innerHTML = `<div class="tt">${new Date(tt * 1000).toLocaleString()}</div>` + rows.map((h) =>
+    el.innerHTML = `<div class="tt">${typeof Orchestra !== "undefined" && Orchestra.when ? Orchestra.when(tt, { date: true, seconds: true }) : new Date(tt * 1000).toLocaleString()}</div>` + rows.map((h) =>
       `<div class="tr">${c.lines.length > 1 ? `<i style="background:${colorOf(h.l, h.i)}"></i>` : ""}<span class="tl">${esc(h.l.label)}</span><b>${num(h.p[1])}${esc(c.unit && c.lines.length === 1 ? c.unit : "")}</b>${bandAt(h.l, h.p[0])}</div>`).join("")
       + (at.length > rows.length ? `<div class="muted">+${at.length - rows.length} more</div>` : "");
     el.style.display = "block";

@@ -192,9 +192,11 @@ def test_the_measured_moves_are_known_to_sdlab_and_its_invented_flows_are_droppe
     # handed the bakery's two stocks, which are balanced exactly by their counters, an SD Lab
     # strategy's flows that no counter measures are dropped there; its flows on the counters are
     # kept, and two between the same ends become one with two terms
+    # (the merge itself: a counter balance of R² 0.98 or more keeps its fits, BALANCED_R2, so it is lifted here)
     store, start, end = _bakery_with_gauges(tmp_path)
     seen = {}
     _every_measured_stock(monkeypatch)
+    monkeypatch.setattr("orchestra.sd.strategies.BALANCED_R2", 1.01)
     flows = [{"from": None, "to": "bakery_shelf_loaves", "rate": {"form": "constant", "value": 1.0}, "perStep": 1.0},
              {"from": None, "to": "bakery_shelf_loaves", "rate": {"form": "linear", "c": 0.0, "terms": [{"stock": "weather_temperature_celsius", "k": 0.1}]}},
              {"from": "bakery_oven_orders_pending", "to": "bakery_shelf_loaves", "rate": {"form": "proportional", "stock": "bakery_oven_orders_pending", "k": 0.2}},
@@ -444,3 +446,51 @@ def test_a_stopping_host_ends_the_strategy_running_now():
     assert not t.is_alive() and _time.monotonic() - started < 5
     assert got and "stopped mid-discovery" in str(got[0])
     assert not bounded._running
+
+
+def _filling_and_slightly_off(tmp_path):
+    """``a`` only fills (a repository's commits, never falling); ``b`` fills and drains, its gauge
+    one high now and then; both are handed over (``_every_measured_stock``)."""
+    store = FileMetrics(tmp_path / "m.jsonl")
+    rates = {"a_in_total": 20.0, "b_in_total": 20.0, "b_out_total": 20.0}
+    machines = dict.fromkeys([*rates, "a", "b"], "m")
+    off = lambda t: 1 if int(t - T0) // 30 % 29 == 0 else 0
+    return store, *write(store, 90, random.Random(6), rates, {"a": {"a_in_total": 1}, "b": {"b_in_total": 1, "b_out_total": -1}},
+                         machines, initial={"a": 30, "b": 30},
+                         extra=lambda t, v: [Point("b", v["b"] + off(t), t, {"project": "p", "machine": "m"})])
+
+
+def test_an_accumulator_gets_no_outflow_and_a_good_balance_no_unmeasured_inflow(tmp_path, monkeypatch):
+    # the core demo's v3 (R2, the modeller): repository commits, an accumulator, got an SD Lab
+    # outflow, and an inflow driven by two gauges beside the counters that balance it
+    store, start, end = _filling_and_slightly_off(tmp_path)
+    _every_measured_stock(monkeypatch)
+    flows = [{"from": "a", "to": None, "rate": {"form": "constant", "value": 0.6}},
+             {"from": None, "to": "a", "rate": {"form": "constant", "value": 0.4}},
+             {"from": None, "to": "b", "rate": {"form": "constant", "value": 0.3}}]
+    monkeypatch.setattr("orchestra.sd.strategies.run_strategy", _fake({}, flows))
+    monkeypatch.setattr("orchestra.sd.strategies.explains_residual", lambda *a: False)
+    m = discover_with(store.dump("", {"project": "p"}), start=start, end=end, step=30, strategy="fake")
+    a, b = m.stock("a"), m.stock("b")
+    assert a.evidence["accumulator"] and a.evidence["balance_r2"] >= 0.98 and b.evidence["balance_r2"] >= 0.98
+    assert not [f.id for f in m.flows if f.src == "a" or f.id.startswith("unmeasured:")], [f.id for f in m.flows]
+    whys = {(d["from"], d["to"]): d["why"] for d in m.discovery["dropped"]}
+    assert "only fills" in whys[("a", None)] and "R² ≥ 0.98" in whys[(None, "a")] and "R² ≥ 0.98" in whys[(None, "b")]
+    assert all(m.flow(f).current().method == "poisson-mle" for f in ("a_in_total", "b_in_total", "b_out_total")), "the counters keep their fits"
+
+
+def test_a_level_that_falls_is_no_accumulator_and_keeps_its_outflow(tmp_path, monkeypatch):
+    # the R2 refuter's case: commits balanced by one counter that adds, rewound by 2 at 8 force-pushes;
+    # every term adds, but the level fell: not an accumulator, so SD Lab's outflow (the rewinds) stays
+    store = FileMetrics(tmp_path / "m.jsonl")
+    rewinds = range(600, 5400, 600)
+    back = lambda t: -2 * sum(1 for k in rewinds if t - T0 >= k)
+    start, end = write(store, 90, random.Random(6), {"a_in_total": 20.0}, {"a": {"a_in_total": 1}}, {"a_in_total": "m", "a": "m"},
+                       initial={"a": 300}, extra=lambda t, v: [Point("a", v["a"] + back(t), t, {"project": "p", "machine": "m"})])
+    _every_measured_stock(monkeypatch)
+    monkeypatch.setattr("orchestra.sd.strategies.run_strategy", _fake({}, [{"from": "a", "to": None, "rate": {"form": "constant", "value": 0.6}}]))
+    monkeypatch.setattr("orchestra.sd.strategies.explains_residual", lambda *a: True)
+    m = discover_with(store.dump("", {"project": "p"}), start=start, end=end, step=30, strategy="fake")
+    a = m.stock("a")
+    assert a is not None and a.evidence["accumulator"] is False, a and a.evidence.get("accumulator")
+    assert [f.id for f in m.flows if f.src == "a"], [(f.id, f.src, f.dst) for f in m.flows]

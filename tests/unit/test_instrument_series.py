@@ -27,3 +27,21 @@ def test_an_instruments_series_are_listed_with_their_latest_values(tmp_path):
 
 def test_no_store_says_so():
     assert instrument_series(None, "x", T0) == {"ok": False, "error": "the metrics store could not be opened"}
+
+
+def test_each_series_its_views_name_carries_the_title_its_part_gets(tmp_path):
+    from orchestra.collect.views import parse
+
+    m = FileMetrics(tmp_path / "m.jsonl")
+    lab = {"instrument": "workflows.piles", "project": "p", "workflow": "delivery_sail"}
+    pile = lambda st, pl: {**lab, "pile": f"{st}.{pl}", "step": st, "place": pl}
+    m.write([Point("workflow_pile_items", 1, T0, pile("write", "held")), Point("workflow_pile_items", 0, T0, pile("ci", "waiting")),
+             Point("workflow_pile_oldest_seconds", 4, T0, pile("write", "held")),
+             Point("workflow_pile_moves_total", 3, T0, {**lab, "from": "write.held", "to": "ci.waiting"})])
+    views = parse({"workflow_pile_items": {"view": "count", "place": "pile"}, "workflow_pile_oldest_seconds": {"view": "age"},
+                   "workflow_pile_moves_total": {"view": "moves", "starts": "to", "stops": "from"}})
+    got = instrument_series(m, "workflows.piles", T0 + 1, views=views)
+    assert sorted(r.get("title") for r in got["series"]) == [
+        "age of write (held) · delivery_sail", "ci (waiting) · delivery_sail", "write (held) · delivery_sail",
+        "write (held) → ci (waiting) · delivery_sail"]
+    assert all("title" not in r for r in instrument_series(m, "workflows.piles", T0 + 1)["series"])

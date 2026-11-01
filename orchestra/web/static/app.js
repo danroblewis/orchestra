@@ -11,11 +11,17 @@ const seenText = (m, now = Date.now() / 1000) => (m.first_seen ? `first ${ago(no
 // the Dashboard, Dynamics); no machine, or "none": grey
 const MPAL = ["#60a5fa", "#f59e0b", "#e879f9", "#22c55e", "#f87171", "#38bdf8", "#facc15", "#a78bfa", "#fb923c", "#2dd4bf"];
 const mcolor = (id) => { if (!id || id === "none") return "#94a3b8"; let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return MPAL[h % MPAL.length]; };
-const hhmm = (t) => new Date(t * 1000).toTimeString().slice(0, 5);
 const ago = (sec) => (sec < 60 ? `${Math.round(sec)}s` : sec < 3600 ? `${Math.round(sec / 60)}m` : `${(sec / 3600).toFixed(1)}h`);
 const fmtBytes = (b) => (b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)} GB` : `${Math.round(b / (1 << 20))} MB`);
 
 window.Orchestra = window.Orchestra || {};
+// One time formatter, with the zone, for every page (a plugin's pages delegate to it: workflows'
+// WFTime.when): "12:03 PST"; {seconds: true} "12:03:07 PST"; {date: true} "Nov 1, 12:03 PST".
+// ``t`` in seconds since the epoch; none reads "—"
+Orchestra.when = (t, o = {}) => (t == null ? "—" : new Date(t * 1000).toLocaleString(undefined, {
+  ...(o.date ? { month: "short", day: "numeric" } : {}), hour: "2-digit", minute: "2-digit", ...(o.seconds ? { second: "2-digit" } : {}),
+  hourCycle: "h23", timeZoneName: "short" }));
+const hhmm = (t) => Orchestra.when(t);
 // Whether a machine is active, said the same way everywhere (the Dashboard's row, a card's seen row,
 // the map's tooltip, the dialog), with the rule the judgement used: heard within 2.5× its usual gap,
 // at least 2 minutes; with no cadence yet, the 2-minute floor alone. The host's flag is the runtime
@@ -30,7 +36,10 @@ Orchestra.liveness = (m, now = Date.now() / 1000) => {
     title: "by the runtime record: the host process is in it; it publishes only when it starts and stops" };
   if (!m.last_seen) return { word: "never heard", cls: "quiet", detail: "", title: m.intent ? "declared: nothing on the bus under it" : "nothing on the bus under it yet" };
   const cads = [m.cadence_s, ...(m.instances || []).map((i) => i.cadence_s)].filter((g) => g), g = cads.length ? Math.min(...cads) : null;
-  if (m.active && !g && Orchestra.continuous(m)) return { word: "active", cls: "live", detail: `publishes continuously · last event ${ago(now - m.last_seen)} ago`,
+  // events too close together to make beats: how often, on average, never "continuously" (beside an
+  // announced "ad hoc" that would read as a contradiction)
+  const n = (m.publishes || []).reduce((a, p) => a + (p.count || 0), 0), every = n > 1 ? (m.last_seen - m.first_seen) / (n - 1) : null;
+  if (m.active && !g && Orchestra.continuous(m)) return { word: "active", cls: "live", detail: `${every ? `about every ${ago(every)} · ` : ""}last event ${ago(now - m.last_seen)} ago`,
     title: "heard within the last 2 minutes; its events come too close together to make a cadence of beats" };
   const rule = g ? `usual gap ${ago(g)}` : "no cadence yet: judged by the 2-minute floor";
   if (m.active) return { word: "in rhythm", cls: "live", detail: `${rule} · last event ${ago(now - m.last_seen)} ago`,
@@ -254,7 +263,7 @@ if (/^#token=/.test(location.hash)) { try { history.replaceState(history.state, 
 // ``Orchestra.asOf(seconds)`` is that time as HH:MM (or HH:MM:SS), or "" before any answer.
 Orchestra.conn = (() => {
   let last = null;
-  const hm = (t, s) => new Date(t).toTimeString().slice(0, s ? 8 : 5);
+  const hm = (t, s) => Orchestra.when(t / 1000, { seconds: !!s });
   Orchestra.asOf = (s) => (last ? hm(last, s) : "");
   return (ok, opts = {}) => {
     const el = $("conn");

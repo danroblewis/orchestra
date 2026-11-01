@@ -35,3 +35,13 @@ test("a hypothesis says how many of its events matched", () => {
   assert.equal(Evidence.matched({ test: "by correlation", counts: { flow: 10, events: 12 } }), "12 events to 10 counted");
   assert.equal(Evidence.matched({ confidence: 0.5 }), "");
 });
+
+test("a match in time that cannot tell machines apart says so: one machine on 3 flows, or 3 machines on one", () => {
+  const h = (machine, confidence) => ({ machine, confidence });
+  const owner = [1, 2, 3].map((i) => ({ id: `f${i}`, machines: [h("owner", 1.0)] }));
+  assert.equal(Evidence.untold({ flows: owner }, owner[0]), "events within one step: timing cannot tell these apart");
+  const crowd = { id: "g", machines: [h("a", 0.9), h("b", 0.94), h("c", 0.86)] };
+  assert.equal(Evidence.untold({ flows: [crowd] }, crowd), "events within one step: timing cannot tell these apart");
+  const two = [{ id: "x", machines: [h("a", 0.95)] }, { id: "y", machines: [h("a", 0.95), h("b", 0.5)] }];
+  assert.equal(Evidence.untold({ flows: two }, two[0]), "");
+});

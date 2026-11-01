@@ -56,6 +56,27 @@ def test_rejected_rising_once_in_31_moves_is_not_the_state_between_approved_and_
     assert at_events(rejected, ins, outs, T0, END, STEP) is None
 
 
+def test_a_level_written_every_149_s_that_matched_2_of_52_moves_is_refused():
+    # the core demo's MERGING (R2, the modeller): it rose once and fell once at the passage's events
+    # while the counters moved 26 items in and 26 out; written every 149 s, almost none of its
+    # writes were checked, and one rise and one fall at events covering a fifth of the window is chance
+    at = [T0 + 40 + 137.0 * k for k in range(26)]
+    ins, outs = [_counter("reviewed_total", at)], [_counter("landed_total", [t + 3.0 for t in at])]
+    merging = _level("MERGING", [(at[7] + 0.5, 1.0), (at[7] + 3.5, 0.0)], every=149.0)
+    assert at_events(merging, ins, outs, T0, END, 30.0) is None
+
+
+def test_a_state_seen_at_few_of_many_moves_is_kept_when_chance_cannot_give_its_matches():
+    # the bakery's orders accepting (UC-1): written every 5 s, each order in it for about a second,
+    # so it saw 11 of 77; 11 rises and 11 falls at the events, which cover a tenth of the window, are no chance
+    at = [T0 + 20 + 46.0 * k for k in range(77)]
+    ins, outs = [_counter("picked_up_total", at)], [_counter("accepted_total", [t + 1.0 for t in at])]
+    seen = at[::7]
+    accepting = _level("accepting", sorted([(t + 0.2, 1.0) for t in seen] + [(t + 1.2, 0.0) for t in seen]), every=5.0)
+    got = at_events(accepting, ins, outs, T0, END, STEP)
+    assert got is not None and got[0][:2] == [11, 11] and got[0][3] == 77
+
+
 def test_a_true_state_sampled_coarsely_is_still_the_state():
     # written every second and never at its changes: it sees each item for the three seconds it stays
     ins, outs = [_counter("moves_total", IN, to="sail.waiting")], [_counter("moves_total", OUT, to="sail_check.waiting")]
@@ -79,3 +100,36 @@ def test_passage_trust_is_matched_against_the_items_moved():
     assert pairs["components"]["matched"] == 1.0 and pairs["matched_counts"] == "156 of 156 moves matched"
     old = stocktrust.passage(SimpleNamespace(rises=[2, 2], falls=[2, 2], out_of_step=0, moved=25))   # a record before the items were kept
     assert old["components"]["matched"] == 1.0 and old["matched_counts"] == "4 of 4 rises and falls matched"
+
+
+def _ticks(name: str, at: list[int], end: int) -> Series:
+    c, pts = 0, []
+    for t in range(end + 1):
+        c += at.count(t)
+        pts.append((float(t), float(c)))
+    return Series(name, {}, pts, [], True)
+
+
+def test_a_flag_on_its_own_clock_beside_a_busy_counter_is_never_the_state():
+    # the R2 refuter's case: a 0/1 flag on a 450 s timer, counters firing in ~45% of seconds, items
+    # passing in a second; it rises at an in's event by chance most of the time, never by holding one
+    import random
+
+    for seed in range(200):
+        r = random.Random(seed)
+        ins = [t for t in range(1, 3600) if r.random() < 0.45]
+        flag = Series("flag", {}, [(float(t), 1.0 if t % 450 == 225 else 0.0) for t in range(3601)], [], False)
+        assert at_events(flag, [_ticks("i", ins, 3600)], [_ticks("o", [t + 1 for t in ins], 3600)], 0.0, 3600.0, 1.0) is None, seed
+
+
+def test_a_coarse_level_that_read_the_one_item_that_stayed_is_the_state_at_any_step():
+    # UC-2's REJECTED, the R2 refuter's shape: six items, five through in under a second, one held
+    # two writes; seen once, matched once, at a 5, 15 or 30 s step over 600 or 2100 s
+    for span in (600, 2100):
+        for w in (5, 15, 30):
+            ins = [int(span * k / 7) for k in range(1, 7)]
+            outs = list(ins)
+            outs[2] = ins[2] + 2 * w + 1
+            lvl = Series("rej", {}, [(float(t), 1.0 if ins[2] <= t < outs[2] else 0.0) for t in range(0, span + 1, w)], [], False)
+            got = at_events(lvl, [_ticks("i", ins, span)], [_ticks("o", outs, span)], 0.0, float(span), float(w))
+            assert got is not None and got[0][:2] == [1, 1], (span, w)

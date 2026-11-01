@@ -10,7 +10,7 @@
   if (typeof module === "object" && module.exports) module.exports = factory();
   else root.SDGraph = factory();
 })(typeof self !== "undefined" ? self : this, function () {
-  const nice = (s) => (s || "outside").toLowerCase().replace(/_/g, " ");
+  const nice = (s) => s || "outside";
   const num = (v, short) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(short ? 2 : 3));
   // What to call each stock and flow. A series' name says what kind of thing it counts ("beads
   // issues"); its labels say which ones ("status: in_progress"). So a stock is named by the label
@@ -30,53 +30,38 @@
   // - a stock named by a label that also names the stocks of another series (pods by region, for
   //   two services) says its machine too ("search · eu-west"), so two services' regions never
   //   look alike. A remote machine's source prefix is left out (rig.search: "search").
-  // - a series that names a ``step`` (and its ``place`` there) is named by them, then by the label
-  //   values they do not spell, whatever the family says: "write (held) · delivery sail" (the
-  //   pile write.held is spelled by the step and the place). The sentence its instrument's view
-  //   gives it (``describes``, collect/views.py; the model carries the views) is its description
-  //   (``about``), never part of its name (the owner, 2026-11-01: "write.held" read as a disk
-  //   write); a series of the ``age`` view is "age of write (held) · delivery sail";
+  // - a part the server named by its instrument's places (``evidence.named``, sd/titles.py: "write
+  //   (held) · delivery_sail", a move "write (held) → open_pr (waiting) · delivery_sail", a hidden
+  //   state "open_pr (waiting) … ci (waiting)") is shown by that name, as every page shows it; the
+  //   sentence its instrument's view gives it (``describes``, collect/views.py; the model carries
+  //   the views) is its description (``about``), never part of its name (the owner, 2026-11-01:
+  //   "write.held" read as a disk write); two such series of one name are told apart by their families;
   // - a stock no series measures (a passage, sd/passing.py, or a hidden stock a strategy found) is
-  //   named by its neighbours: "between write (held) and open pr (waiting)", never by the counter
-  //   that fills it nor by its id; two stepped series of one name (a pile's level and its oldest
-  //   item's age) are told apart by their families;
-  // - a flow whose counter says where from and where to, when either end names a stock by a step,
-  //   is named by those stocks: "write (held) → open pr (waiting) · delivery sail".
+  //   otherwise named by its neighbours: "between write (held) and outside", never by the counter
+  //   that fills it nor by its id.
+  // Label values keep their spelling (sail_check, delivery_sail); a series' name is said in words.
   // Names are {name, family, about}; ``label`` is the name, with the family only where the name
   // alone is not unique in the model. The model's own ``name`` stays the full record.
   const IGNORE = new Set(["project", "machine", "instrument", "instance", "source"]);
-  const STEPPED = new Set(["step", "place"]);
-  const wordSet = (v) => new Set(String(v).toLowerCase().split(/[\W_]+/).filter(Boolean));
   // the view the series' instrument declared of it (collect/views.py; ``views``: by instrument, then
   // series name, each a list whose first match wins): how it was made, and its sentence
   function viewOf(views, r, instrument) {
     const l = (r && r.labels) || {}, inst = instrument || l.instrument, list = views && inst && views[inst] && views[inst][r.name];
     return (list || []).find((v) => Object.entries(v.where || {}).every(([k, w]) => l[k] === w)) || null;
   }
-  // a stepped series: its step and place, the values they spell (the series' own place label, as
-  // write.held), and the rest of its values, which say whose step it is; its sentence is its view's
-  // ``describes``, never a label (a label is the series' identity: editing it would start a new
-  // series); an ``age`` view's series is "age of" its place, never the place's own name
-  function stepped(r, views, instrument) {
-    const l = (r && r.labels) || {}; if (l.step == null) return null;
-    const spelled = new Set([...wordSet(l.step), ...wordSet(l.place || "")]);
-    const own = Object.entries(l).filter(([k]) => !IGNORE.has(k) && !STEPPED.has(k));
-    const isSpelled = (v) => [...wordSet(v)].every((w) => spelled.has(w));
-    const v = viewOf(views, r, instrument), place = words(l.step) + (l.place != null ? ` (${words(l.place)})` : "");
-    return { short: (v && v.view === "age" ? "age of " : "") + place, place,
-      spells: own.filter(([, x]) => isSpelled(x)).map(([, x]) => x), rest: own.filter(([, x]) => !isSpelled(x)),
-      about: (v && v.describes) || "" };
-  }
-  const words = (v) => String(v).replace(/_/g, " ");
+  // a part the server named by its instrument's places: its name as it is, its view's sentence beside it
+  const named = (x) => !!(x && x.evidence && x.evidence.named);
+  const aboutOf = (r, views, instrument) => { const v = viewOf(views, r, instrument); return (v && v.describes) || ""; };
+  const words = (v) => String(v);
   const seriesOf = (x) => x.series || x.counter || (x.measured_by && x.measured_by[0]) || null;
-  const familyName = (n) => words(n.replace(/_total$/, ""));
+  const familyName = (n) => n.replace(/_total$/, "").replace(/_/g, " ");
   // a machine as a stock's name says it: without its source's prefix when the series has it
   const machineWord = (s) => { const mc = (s.labels || {}).machine; if (!mc) return null;
     const pre = s.name.includes(":") ? s.name.split(":")[0] + "." : null;
     return words(pre && mc.startsWith(pre) ? mc.slice(pre.length) : mc); };
   function nameFamily(items, drop = null, views = null) {
     const out = {}, fams = new Map(), said_by = {};
-    for (const x of items) { const s = seriesOf(x); if (!s) continue; const k = s.name; fams.set(k, [...(fams.get(k) || []), x]); }
+    for (const x of items) { const s = seriesOf(x); if (!s || (!drop && named(x))) continue; const k = s.name; fams.set(k, [...(fams.get(k) || []), x]); }
     for (const [fname, xs] of fams) {
       const labels = (x) => Object.fromEntries(Object.entries(seriesOf(x).labels || {}).filter(([k]) => !IGNORE.has(k)));
       const keys = [...new Set(xs.flatMap((x) => Object.keys(labels(x))))].map((k) => {
@@ -105,11 +90,10 @@
       }
     }
     if (!drop) {
-      const mine = items.filter((x) => stepped(seriesOf(x)));
-      for (const x of mine) { const st = stepped(seriesOf(x), views);
-        out[x.id] = { name: [st.short, ...st.rest.map(([, v]) => words(v))].join(" · "), family: "", about: st.about, stepped: true }; }
-      // two series of one step and place (a pile's level and its oldest item's age): their family tells them apart
-      for (const x of mine) if (mine.some((y) => y !== x && out[y.id].name === out[x.id].name)) out[x.id].family = familyName(seriesOf(x).name);
+      const mine = items.filter(named);
+      for (const x of mine) out[x.id] = { name: x.name, family: "", about: seriesOf(x) ? aboutOf(seriesOf(x), views) : "", stepped: true };
+      // two series of one name: their family tells them apart
+      for (const x of mine) if (seriesOf(x) && mine.some((y) => y !== x && out[y.id].name === out[x.id].name)) out[x.id].family = familyName(seriesOf(x).name);
     }
     // what no series measures: a stock by its own name; a flow is a balance's remainder, named by
     // what it does (its ends are always shown beside it)
@@ -147,33 +131,13 @@
     for (const f of fs) if (!out[f.id]) out[f.id] = { name: `unmeasured ${f.from && f.to ? "flow" : f.from ? "outflow" : "inflow"}`, family: "" };
     return out;
   }
-  // where a counter's from or to value is a stepped stock's own place label (write.held), that
-  // stock's short name, if its other labels agree with the counter's (the same workflow's pile)
-  function placeName(stocks, v, l) {
-    for (const s of stocks) { const st = stepped(seriesOf(s)); if (!st || !st.spells.includes(v)) continue;
-      if (st.rest.every(([k, w]) => l[k] == null || l[k] === w)) return st.place; }
-    return null;
-  }
-  // a flow between stepped stocks, by them: "write (held) → open pr (waiting) · delivery sail";
-  // null when neither end of its counter is a stepped stock
-  function steppedFlowName(m, f) {
-    const c = seriesOf(f), l = c ? labelsOf(c) : {};
-    if (l.from == null && l.to == null) return null;
-    const a = l.from != null ? placeName(m.stocks || [], l.from, l) : null, b = l.to != null ? placeName(m.stocks || [], l.to, l) : null;
-    if (!a && !b) return null;
-    const rest = Object.entries(l).filter(([k]) => !MOVE.has(k)).sort(([x], [y]) => x.localeCompare(y)).map(([, v]) => words(v));
-    const move = `${a || (l.from != null ? words(l.from) : "outside")} → ${b || (l.to != null ? words(l.to) : "outside")}`;
-    return [l.by != null ? `${words(l.by)}: ${move}` : move, ...rest].join(" · ");
-  }
-  // one series by itself, as the Instruments page lists an instrument's series: named as a stock or a
-  // flow of it would be, beside the others of the same instrument (``peers``, which name the places
-  // a counter's from and to are), with the sentence its view gives it (``views``: by instrument,
-  // as the model carries them): {name, family, about}
-  function seriesName(r, peers = [], views = null, instrument = null) {
-    const st = stepped(r, views, instrument), fam = familyName(r.name);
-    if (st) return { name: [st.short, ...st.rest.map(([, v]) => words(v))].join(" · "), family: fam, about: st.about };
-    const moved = steppedFlowName({ stocks: peers.map((p) => ({ series: p })) }, { counter: r });
-    if (moved) return { name: moved, family: fam, about: "" };
+  // one series by itself, as the Instruments page lists an instrument's series: by the title the
+  // server gave it (``title``, sd/titles.py, as a stock or a flow of it would be named), else by its
+  // labels, with the sentence its view gives it (``views``: by instrument, as the model carries them):
+  // {name, family, about}
+  function seriesName(r, views = null, instrument = null) {
+    const fam = familyName(r.name);
+    if (r.title) return { name: r.title, family: fam, about: aboutOf(r, views, instrument) };
     const l = labelsOf(r), rest = Object.entries(l).filter(([k]) => !MOVE.has(k)).sort(([x], [y]) => x.localeCompare(y)).map(([k, v]) => `${words(k)} ${words(v)}`);
     const parts = [moveText(l), ...rest].filter(Boolean);
     return { name: parts.length ? parts.join(", ") : fam, family: parts.length ? fam : "", about: "" };
@@ -191,6 +155,23 @@
     const cut = (n) => (tail ? n.slice(0, n.length - tail.length - 3) : n);
     return `between ${a.map(cut).join(" or ")} and ${b.map(cut).join(" or ")}${tail ? " · " + tail : ""}`;
   }
+  // when the ends a flow's counter names are not the ends it is drawn between (a co-flow drawn
+  // through a stock it passes, a move whose place is no stock), why, in words: "counted as
+  // triage.held → write.waiting, drawn from outside"; "" when they agree or it names none. A value in
+  // angle brackets (<start>, <end>) is outside; a stock agrees with a value its series carries or
+  // its name says.
+  function drawnApart(m, f) {
+    const l = (f && f.counter && f.counter.labels) || {};
+    if (l.from == null || l.to == null) return "";
+    const outside = (v) => /^<.*>$/.test(String(v));
+    const fold = (t) => String(t).toLowerCase().replace(/[\W_]+/g, " ").trim();
+    const agrees = (id, v) => { if (!id) return outside(v); if (outside(v)) return false;
+      const s = (m.stocks || []).find((x) => x.id === id), ser = s && seriesOf(s);
+      return (ser && Object.values(ser.labels || {}).includes(v)) || fold(stockName(m, id)).includes(fold(v)); };
+    const end = (id) => (id ? stockName(m, id) : "outside");
+    const apart = [!agrees(f.from, l.from) ? `from ${end(f.from)}` : "", !agrees(f.to, l.to) ? `into ${end(f.to)}` : ""].filter(Boolean);
+    return apart.length ? `counted as ${l.from} → ${l.to}, drawn ${apart.join(" and ")}` : "";
+  }
   // the other counters that count a flow's events (evidence.same_as), named as flows are: "same events as …"
   function sameAs(m, f) {
     const same = (f && f.evidence && f.evidence.same_as) || [];
@@ -202,10 +183,10 @@
     if (!m) return { stocks: {}, flows: {} };
     if (NAMES.has(m)) return NAMES.get(m);
     const stocks = nameFamily(m.stocks || [], null, m.views || null);
-    for (const s of m.stocks || []) { if (seriesOf(s) || !(s.evidence && (s.evidence.passing || s.evidence.hidden))) continue;
+    for (const s of m.stocks || []) { if (seriesOf(s) || named(s) || !(s.evidence && (s.evidence.passing || s.evidence.hidden))) continue;
       const b = betweenName(m, s, stocks); if (b) stocks[s.id] = { name: b, family: "", about: "", between: true }; }
     const flows = flowNames(m.flows || []);
-    for (const f of m.flows || []) { const n = steppedFlowName(m, f); if (n) flows[f.id] = { name: n, family: "" }; }
+    for (const f of m.flows || []) if (named(f)) flows[f.id] = { name: f.name, family: "" };
     for (const group of [stocks, flows]) {
       const seen = new Map(); for (const v of Object.values(group)) seen.set(v.name, (seen.get(v.name) || 0) + 1);
       for (const v of Object.values(group)) v.label = v.family && seen.get(v.name) > 1 ? `${v.name} · ${v.family}` : v.name;
@@ -342,5 +323,5 @@
     return { nodes, edges, causal, flowEdge, flows, acc };
   }
 
-  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, seriesName, sameAs, nice, num, correlational, machineLabel, UNTESTED };
+  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, seriesName, sameAs, drawnApart, nice, num, correlational, machineLabel, UNTESTED };
 });

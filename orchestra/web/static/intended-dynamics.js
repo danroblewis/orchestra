@@ -17,7 +17,7 @@
 const Intended = (() => {
   let ON = new URLSearchParams(location.search).get("since") !== "off";   // "changes since" is on by default
   const it = () => (MODEL && MODEL.intended && !MODEL.intended.error ? MODEL.intended : null);
-  const hhmm = (t) => new Date(t * 1000).toTimeString().slice(0, 5);
+  const hhmm = (t) => Orchestra.when(t);
   const agoText = (t) => { const s = Date.now() / 1000 - t; return s < 90 ? "just now" : ago(s) + " ago"; };
   const vlabel = () => { const x = it(); return x && x.shown ? `v${x.shown}` : "this discovery"; };
   // the machines that listen for the owner's requests (web/intended.py askers), null while the bus is unread

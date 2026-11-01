@@ -37,7 +37,7 @@ const Live = (() => {
   }
   const inputHist = (name) => (HISTORY && HISTORY.inputs && HISTORY.inputs[name]) || [];
   // what a chart's points span, said plainly: "since 01:37 · 6 min of data" (never "last hour" over minutes)
-  const hm = (t) => new Date(t * 1000).toTimeString().slice(0, 5);
+  const hm = (t) => Orchestra.when(t);
   const spanText = (pts) => { if (!pts || !pts.length) return "no data yet"; const a = pts[0][0], b = pts[pts.length - 1][0], m = (b - a) / 60;
     return `since ${hm(a)} · ${m < 1 ? `${Math.round(b - a)} s` : m < 90 ? `${Math.round(m)} min` : `${(m / 60).toFixed(1)} h`} of data`; };
   // a flow's machines, as hypotheses with their confidence: never one name as if it were a fact
@@ -227,7 +227,7 @@ const Live = (() => {
     const yMax = seen.length ? Math.max(...seen) * 1.5 + 1 : null;
     const endText = end ? `+${horizon()} min: ${fmt(Math.round(end[1] * 100) / 100)}` : "";
     el.innerHTML = Charts.line([...(measured ? [measured] : []),
-      { label: `the equations, from ${new Date(d.start * 1000).toTimeString().slice(0, 5)}`, points: era, color: "#e5e7eb", dash: "6 4" },
+      { label: `the equations, from ${Orchestra.when(d.start)}`, points: era, color: "#e5e7eb", dash: "6 4" },
       { label: `projected, next ${horizon()} min${endText ? ` (${endText})` : ""}`, points: proj, color: stockColor(id), dash: "2 3" }],
       { W: 700, H: 240, now: d.now, yMax: yMax != null && end && end[1] > yMax ? yMax : null, notes: end ? [{ t: end[0], v: end[1], text: endText }] : [],
         marks: [{ t: d.now, label: "now" }, ...(era.length ? [{ t: d.start, label: "era began" }] : [])] });
@@ -261,8 +261,7 @@ const Live = (() => {
     const price = drv.price != null ? `<div class="muted" style="font-size:11.5px">a driver must beat the constant by ${rateFmt(drv.price)} AIC, the price for trying ${drv.tried ?? "its"} forms</div>` : "";
     // the counter's own ends, when they are not the ends drawn (a co-flow drawn through a stock it passes)
     const cl = (f.counter && f.counter.labels) || {}, endName = (id) => (id ? stockName(id) : "outside");
-    const counts = cl.from && cl.to ? `counts ${cl.from} → ${cl.to}` : "";
-    const differs = counts && ((f.from && !stockName(f.from).toUpperCase().includes(String(cl.from).replace(/_/g, " ").toUpperCase())) || (f.to && !stockName(f.to).toUpperCase().includes(String(cl.to).replace(/_/g, " ").toUpperCase())) || !f.from || !f.to);
+    const apart = SDGraph.drawnApart(MODEL, f);
     const through = (ev.through || []).map((id) => stockName(id)).join(", ");
     // a counter labelled with who moved it (by=, machine=) names an instrument's label, not evidence
     const byLabel = cl.by || cl.machine ? `<div class="muted" style="font-size:11.5px">its counter is labelled ${cl.by ? `by=${esc(cl.by)}` : `machine=${esc(cl.machine)}`}: the instrument's label, not evidence of who moved it</div>` : "";
@@ -276,7 +275,7 @@ const Live = (() => {
       <div>fit</div><div class="num">${Evidence.tooFew(f) ? `<b>${esc(Evidence.tooFewText(f))}</b>: ` : ""}${esc(e.origin || "")} by ${esc(e.method || "")} · ${esc(e.form || "")} · ${q.events ?? 0} events${q.live_minutes ? ` over ${q.live_minutes} min` : ""}${q.dispersion != null ? ` · dispersion ${rateFmt(q.dispersion)}` : ""}${zeroEv ? `<div class="muted" style="font-family:inherit">${esc(zeroEv.slice(3))}</div>` : ""}</div>
       ${(f.measured_by || []).length > 1 ? `<div>measured by</div><div class="num">${f.measured_by.map((c) => esc(c.name)).join(" + ")}</div>` : ""}
       ${SDGraph.sameAs(MODEL, f).length ? `<div>same events</div><div>as ${SDGraph.sameAs(MODEL, f).map(esc).join(", ")} <span class="muted">(another counter counts each of its events: one move, two names)</span></div>` : ""}
-      <div>counter</div><div class="num">${esc(f.counter ? keyOf(f.counter) : "—")}${differs ? `<div class="muted" style="font-family:inherit">${esc(counts)}; drawn ${esc(endName(f.from))} → ${esc(endName(f.to))}${through ? ` because it passes through ${esc(through)}` : ""}</div>` : ""}</div>
+      <div>counter</div><div class="num">${esc(f.counter ? keyOf(f.counter) : "—")}${apart ? `<div class="muted" style="font-family:inherit">${esc(apart)}${through ? `, because it passes through ${esc(through)}` : ""}</div>` : ""}</div>
       ${ev.co_flow_of ? `<div>co-flow</div><div>${esc(ev.note || "")} (see ${flowLink(ev.co_flow_of)})</div>` : ""}
       ${ev.copy_of ? `<div>copy</div><div>every event of ${esc(flowName(MODEL.flows.find((x) => x.id === ev.copy_of)) || ev.copy_of)} also fills ${esc(f.to ? stockName(f.to) : "this stock")}: one count filling several stocks, not a split</div>` : ""}
       ${(ev.copies || []).length ? `<div>copies</div><div>every event also fills ${ev.copies.map((id) => { const c = MODEL.flows.find((x) => x.id === id); return esc(c && c.to ? stockName(c.to) : id); }).join(", ")}</div>` : ""}
@@ -309,10 +308,12 @@ const Live = (() => {
   function toggle(id) { HIDDEN = HIDDEN || new Set(); HIDDEN.has(id) ? HIDDEN.delete(id) : HIDDEN.add(id); try { localStorage.setItem("orchestra.dyn.hidden", JSON.stringify([...HIDDEN])); } catch (e) {} chart(); }
 
   // a flow's label on the diagram: the equation, or, where the observed rate parts from it, the
-  // observed rate first ("0.00 now · eq 1.50 /min"); quiet when nothing moved over the recent window
+  // observed rate first ("0.00 now · eq 1.50 /min"); quiet when nothing moved over the recent window.
+  // A flow with too few events to fit has no rate to show: its label says so, never an "eq"
   function edgeLabel(e) {
     const f = MODEL && MODEL.flows.find((x) => x.id === e.fid); if (!f || !e.eqLabel) return null;
-    const a = against(f), first = a.differs ? `${rateFmt(a.obs)} now · eq ${rateFmt(a.eq)} ${per()}` : e.eqLabel;
+    const a = against(f), few = typeof Evidence !== "undefined" && Evidence.tooFew(f);
+    const first = few ? Evidence.tooFewText(f) : a.differs ? `${rateFmt(a.obs)} now · eq ${rateFmt(a.eq)} ${per()}` : e.eqLabel;
     return { label: [first, ...(Array.isArray(e.label) ? e.label.slice(1) : [])], quiet: !!a.quiet && HISTORY != null };
   }
   let GRAPH = null;

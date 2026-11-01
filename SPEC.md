@@ -299,6 +299,16 @@ point of that instrument the record `{source: "own", instrument, view, ...}` in 
 provenance, and discovery reads it as it reads a source's (§4.3). A view describes how a series
 was made, never a machine or a flow (rules 6 and 7): it changes no equation.
 
+A view also names the parts its series become, once, on the server (`sd/titles.py`), and every
+page shows that title (the Dynamics, Machines and Instruments pages, the diff between versions):
+where a count's other labels spell its place label's value part by part, they are the place in
+words, in the order they spell it (`pile="write.held"`, `step="write"`, `place="held"`: "write
+(held) · delivery_sail"); an `age` series of the same labels is "age of" it; a move between places
+is named by them, a stock or not ("write (held) → ci (waiting) · delivery_sail"); a hidden state
+between such moves by the places its moves enter and leave ("open_pr (waiting) … ci (waiting)").
+No label's name is known to the core (rule 1), and label values keep their spelling (`sail_check`).
+Such a part's evidence says `named: "places"`.
+
 ### 4.3 The model
 
 `orchestra/sd/`: stocks (each bound to a series), flows (each bound to a counter), equations
@@ -337,6 +347,10 @@ matched back to the counters and their machines (`sd/strategies.py`); several be
 ends become one with one rate of several terms; one that no counter measures is kept, as
 unmeasured, only where the stock's balance is not exact (a strategy that ignores `known` invents
 flows for stocks whose counters already explain every step, and those are dropped and recorded).
+Where its flows describe the whole change rather than the residual, a stock whose counters
+balance it with an R² of 0.98 or more keeps its counters' fits and gets no unmeasured flow; and a
+stock that only fills (an accumulator: every term of its balance adds, and its level never fell
+in the window, as a repository's commits with no force-push) gets no flow out of it.
 Its richer forms (gap, linear in several stocks or inputs, expressions, effects) are kept in
 each equation's `spec`, and its hidden stocks are drawn dashed. The host gives a strategy a
 deadline below `[discovery] every`, and one discovery runs at a time per project across
@@ -577,13 +591,20 @@ Conservation (`sd/discover.py`):
    all its evidence, so it does not come and go with the one event that takes the fill over the
    bar at the edge of a window), become a flow into the state and flows out of it. The state is the measured level whose raw points
    rise at the inflow's events and fall at the outflows' (`sd/between.py`: the grid misses it,
-   the raw points do not), that rose no more often than the inflow counted, that at each of its
+   the raw points do not), never an age, an aggregate or a statistic of what it holds, nor a
+   level in a unit no counter is in (the oldest item's seconds, `sd/discover.py`), that rose no more often than the inflow counted, that at each of its
    own writes reads what the counters imply (the items moved in less those moved out up to then,
    give or take a second for the order of two writers' writes, apart from the items there
    before), at 80% of the writes where it, or the counters throughout that second, say something
    is there (a state sampled coarsely misses the items that come and go between its writes, and
    so do the counters' totals at those writes; a pile that reads empty while the counters say an
-   item is in, or moves while they say nothing moved, is another state), and that
+   item is in, or moves while they say nothing moved, is another state), whose matched rises
+   and falls moved at least a quarter of the items the counters moved, or else beat chance (a
+   binomial tail over its rises and its falls, each matched by chance with the share of its own
+   writes within the tolerance after an event, below one in a thousand: the bakery's 11 of 77
+   orders accepting) or read the items its writes could not have missed, one at least (UC-2's
+   REJECTED, seen once at any step; one rise and one fall of 2 of 52 written every 149 s, or a
+   flag on its own clock beside a busy counter, do neither), and that
    both rose and fell by at least one in the window (the test
    is by magnitude, in the level's own unit, whatever that is: a level that only rises, the test
    reports read, 5 to 10, is a tally; one whose moves are all under one, a gate's duration of
@@ -665,7 +686,8 @@ moves matched` scores 0.08, not 1.0; a version saved before the items were kept 
 first), its steps in step, and its units. A balance's: the shift null (1 at the least p-value its shifts can give, 0 at p = 1), the
 held-out R² (an exact balance's own R² on each half), the level reproduced (one less the running
 residual's spread over the level's), its units (`1 − e^(−units/20)`), and whether both halves chose
-the same counters (0.6 when not: its flows are not identified). A net flow's (`sd/netnull.py`): the
+the same counters (0.6 when not: its flows are not identified; when each half balanced it on
+counters the other did not choose, exact or not, "two balances fit"). A net flow's (`sd/netnull.py`): the
 same, for its fitted form, with the shift null refitting the whole procedure over the same drivers on
 the level moved in time, and its R². Hidden states and counts by construction score 0. Net-flow
 stocks are kept, whatever their score: a coincidental driver is the data's to cure with more

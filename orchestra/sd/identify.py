@@ -61,6 +61,7 @@ class Identification:
     halves: list = field(default_factory=list)      # per half: the counters its own search chose
     dropped: list = field(default_factory=list)     # counters only the whole window chose
     stable: bool | None = None                      # both halves chose the same counters (or counters of the same events)
+    two_balances: bool = False                      # each half chose a balance, and they differ on a counter both can say something of
     cum_ratio: float | None = None
     cum_steady: float | None = None                 # ... less a steady unmeasured flow (the residual's mean)
     p_null: float | None = None
@@ -83,7 +84,7 @@ class Identification:
 
     def record(self) -> dict:
         return {"units": self.units, "held_out_r2": _round(self.held_out_r2), "halves_r2": _round(self.halves_r2),
-                "exact_moved": _round(self.exact_moved), "stable": self.stable,
+                "exact_moved": _round(self.exact_moved), "stable": self.stable, **({"two_balances": True} if self.two_balances else {}),
                 "cum_residual_ratio": _round(self.cum_ratio), "misses_rho": _round(self.misses_rho), "cum_residual_steady": _round(self.cum_steady), "p_null": _round(self.p_null), "null_shifts": len(self.null_r2),
                 **({"declared": True} if self.declared else {}), **({"pinned": True} if self.pinned else {}),
                 "null_r2_max": _round(max(self.null_r2)) if self.null_r2 else None,
@@ -264,6 +265,14 @@ def identify(level, terms: list, r2: float, exact: float, pool: list, steps: lis
     got.stable = not got.dropped and all(
         len(t) == len(got.terms) and all(_chosen(c, sg, t, half, same) for c, sg in got.terms)
         for half, t in zip(halves, picks) if all(_votes(level, c, half) for c, _ in got.terms))
+    # each half balanced the level on counters of its own, none of one half's chosen by the other
+    # (one on triage's and sail's moves, the other on sail_check's): two balances fit, whichever the
+    # whole window chose. Halves that share a counter and differ on another chose a proxy for a few
+    # events (the customers who gave up for the orders cancelled while baking), not another balance
+    got.two_balances = len(picks) == 2 and all(picks) and not any(
+        _chosen(c, sg, picks[1 - j], halves[1 - j], same) for j in (0, 1) for c, sg in picks[j])
+    if got.two_balances and got.is_exact:
+        got.stable = False                          # (short of exact, acceptance reads stable as before: sd.accept.gate)
     got.cum_ratio = cum_ratio(level, got.terms, steps) if got.terms else None
     got.cum_steady = cum_ratio(level, got.terms, steps, steady=True) if got.terms else None
     own = [fit_of(level, got.terms, half)[0] for half in halves if got.terms and sum(1 for i in half if level.deltas[i]) >= MIN_EVENTS]

@@ -12,7 +12,7 @@ from orchestra.sd.passing import passages
 T0 = 1_800_000_000.0
 
 
-def chain(store, *, write_x: bool, split: bool = False, minutes: int = 60, seed: int = 3):
+def chain(store, *, write_x: bool, split: bool = False, minutes: int = 60, seed: int = 3, provenance: dict | None = None):
     """Items arrive in A, move to X, and leave X for B within a third of a second; B drains. Every
     series is written each second, before that second's events; X, when written, also reads 1 at
     the instant an item enters it and 0 when it leaves (a fraction of a second off the whole
@@ -51,7 +51,7 @@ def chain(store, *, write_x: bool, split: bool = False, minutes: int = 60, seed:
                 lv[level] -= 1
                 n[out] += 1
     store.write(pts)
-    return discover(store.dump("", {"project": "p"}), start=T0, end=T0 + minutes * 60, step=30)
+    return discover(store.dump("", {"project": "p"}), start=T0, end=T0 + minutes * 60, step=30, provenance=provenance)
 
 
 def test_a_measured_state_the_grid_never_sees_joins_its_chain(tmp_path):
@@ -63,6 +63,21 @@ def test_a_measured_state_the_grid_never_sees_joins_its_chain(tmp_path):
     assert x.series is not None and x.evidence["passing"]["rises_at_ins"][0] == x.evidence["passing"]["rises_at_ins"][1] > 0
     assert m.flow("moved_total").evidence["through"] == ["x_level"]
     assert m.discovery["left_out"].get('passed_total{machine="m"}') is None
+
+
+def test_an_age_is_never_the_state_between_moves(tmp_path):
+    # the same chain, but X's instrument says X is an age (how long the oldest has waited): the
+    # state between the moves stays hidden, and X is never bound to it
+    key = 'x_level{machine="m"}'
+    m = chain(FileMetrics(tmp_path / "m.jsonl"), write_x=True, provenance={key: {"instrument": "piles", "view": "age"}})
+    assert all(s.series is None or s.series.name != "x_level" for s in m.stocks), [s.id for s in m.stocks]
+    assert "an age" in m.discovery["left_out"].get(key, ""), m.discovery["left_out"]
+
+
+def test_a_level_in_another_unit_is_never_the_state_between_moves(tmp_path):
+    # X written in seconds: no counter is in seconds, so X is no state the moves' items are held in
+    m = chain(FileMetrics(tmp_path / "m.jsonl"), write_x=True, provenance={'x_level{machine="m"}': {"unit": "seconds"}})
+    assert all(s.series is None or s.series.name != "x_level" for s in m.stocks), [s.id for s in m.stocks]
 
 
 def test_a_measured_state_between_a_drain_and_fills_of_two_stocks_joins_its_chain(tmp_path):

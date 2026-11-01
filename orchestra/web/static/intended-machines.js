@@ -252,7 +252,7 @@ const IntendedMachines = (() => {
   function measuredBy(m, d) {
     const ms = m.measured && m.measured.attachments ? m.measured : null, atts = ms ? ms.attachments : (m.intent.attachments || []);
     if (!atts.length) return "";
-    const at = d && d.measured_at ? new Date(d.measured_at * 1000).toTimeString().slice(0, 8) : null;
+    const at = d && d.measured_at ? Orchestra.when(d.measured_at, { seconds: true }) : null;
     const one = (a) => {
       const inst = a.instances || {}, list = inst.list || [], names = (a.names || []).map((x) => x.name);
       const valueOf = (v, name) => { const x = (a.series || []).find((s) => s.name === name && (s.labels || {})[a.instance_label] === v); return x ? x.value : ""; };

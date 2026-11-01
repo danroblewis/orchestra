@@ -39,16 +39,15 @@ const NetGraph = (() => {
   // the Dynamics page); used for the first layout, tidy and reset instead of the forces.
   // ``polish``: an optional async function (nodes, edges, at) -> {id: [x, y]} run after it (in a
   // worker), whose result the nodes glide to unless the viewer has moved something meanwhile.
-  // ``narrow``: below this width (a phone) the automatic fit is at no less than MIN_K, so its labels stay
-  // readable, and the drawing's height follows the fitted content instead of a tall empty canvas; on
-  // a wider screen at no less than DESK_K, centred on the largest connected part. What that leaves out
+  // ``narrow``: below this width (a phone) the automatic fit fits the whole drawing, and the drawing's
+  // height follows the fitted content instead of a tall empty canvas; on a wider screen at no less than DESK_K, centred on the largest connected part. What that leaves out
   // of view is said at the right edge ("N more → · fit to see all"); the fit button fits everything,
   // at any scale.
   // ``isolatedRow``: nodes linked to nothing are set in a row under the rest after the first layout,
   // rather than wherever the forces threw them.
   // ``TOP``: the band at the top of the drawing the controls (reset, tidy, fit) sit in: a fit keeps
   // every node below it
-  const NARROW = 600, MIN_K = 0.55, DESK_K = 0.85, TOP = 40, REVEAL_ALPHA = 0.1;
+  const NARROW = 600, DESK_K = 0.85, TOP = 40, REVEAL_ALPHA = 0.1;
   function create(container, { key, height = 600, isolateHops = 1, onClick, tip, boundary, layout, polish, isolatedRow = false } = {}) {
     container.innerHTML = "";
     const svgEl = document.createElementNS(NS, "svg");
@@ -148,9 +147,9 @@ const NetGraph = (() => {
       if (fb) { x0 = Math.min(x0, fb.x0 - 16); x1 = Math.max(x1, fb.x1 + 16); y0 = Math.min(y0, fb.y0 - 16); y1 = Math.max(y1, fb.y1 + 16); }
       const w = W(), narrow = w < NARROW;
       const apply = (k, tx, ty) => { (animate ? svg.transition().duration(400) : svg).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k)); hint(only ? null : outside(k, tx, ty)); };
-      if (narrow && !only) {                 // a phone: readable labels, and a canvas as tall as the drawing
-        let k = Math.min(w / (x1 - x0), 1.4);
-        if (all) k = Math.min(k, (height - TOP) / (y1 - y0)); else k = Math.max(MIN_K, k);
+      if (narrow && !only) {                 // a phone: the whole drawing in view on first load, the canvas as tall as it
+        // (never an empty frame with "N more → fit"); zoom in to read, the fit button fits it again
+        const k = Math.min(w / (x1 - x0), 1.4, (height - TOP) / (y1 - y0));
         const h = Math.round(Math.min(Math.max(280, (y1 - y0) * k + TOP), height));
         if (h !== H) { H = h; svg.attr("viewBox", `0 0 ${w} ${H}`).style("height", H + "px"); }
         const tx = (x1 - x0) * k <= w ? w / 2 - k * (x0 + x1) / 2 : -k * x0;
