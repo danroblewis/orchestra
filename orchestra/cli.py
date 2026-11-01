@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import os
 import sys
 import time
@@ -41,6 +42,22 @@ def cmd_run(args) -> int:
     return 0
 
 
+def _cannot_bind(host: str, port: int) -> str | None:
+    """Why the web server could not listen on ``host:port``, checked before any token is printed
+    or the runtime record names it; None when it can."""
+    import socket
+
+    try:
+        family, kind, proto, _, addr = socket.getaddrinfo(host or None, port, type=socket.SOCK_STREAM,
+                                                          flags=socket.AI_PASSIVE)[0]
+        with socket.socket(family, kind, proto) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(addr)
+    except OSError as e:
+        return f"port {port} is in use" if e.errno in (errno.EADDRINUSE,) else f"cannot listen on {host}:{port}: {e.strerror or e}"
+    return None
+
+
 def cmd_web(args) -> int:
     from .web import auth
 
@@ -55,6 +72,9 @@ def cmd_web(args) -> int:
         on = auth.enabled(project, args.host)
     except ConfigError as e:
         sys.exit(f"orchestra: {e}")
+    if why := _cannot_bind(args.host, args.port):
+        print(f"orchestra: {why}; serve on another: orchestra web --port {args.port + 10}", file=sys.stderr)
+        return 1
     import uvicorn
 
     from .web.app import create_app

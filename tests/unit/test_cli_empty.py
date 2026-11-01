@@ -44,3 +44,22 @@ def test_every_action_is_described_in_help(capsys):
     with pytest.raises(SystemExit):
         main(["web", "--help"])
     assert "the port to serve on" in capsys.readouterr().out
+
+
+def test_a_port_in_use_is_said_before_any_link_or_record(project, monkeypatch, capsys):
+    import socket
+
+    import uvicorn
+
+    from orchestra import runtime
+
+    monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: (_ for _ in ()).throw(AssertionError("served")))
+    with socket.socket() as taken:
+        taken.bind(("127.0.0.1", 0))
+        taken.listen()
+        port = taken.getsockname()[1]
+        assert main(["--repo", str(project.repo_root), "web", "--port", str(port)]) == 1
+    out = capsys.readouterr()
+    assert out.err.strip() == f"orchestra: port {port} is in use; serve on another: orchestra web --port {port + 10}"
+    assert "token" not in out.out and "log in" not in out.out
+    assert "web" not in runtime.read(project)

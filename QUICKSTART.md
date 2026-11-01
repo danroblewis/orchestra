@@ -132,6 +132,7 @@ To leave a plugin out, drop its name from the brackets and run the install again
 | You see | Do |
 |---|---|
 | `orchestra: command not found` | Run `uv tool update-shell`, then open a new terminal. |
+| `orchestra: port 8000 is in use` (address already in use) | Another program, or another `orchestra web`, serves on it. Serve on another: `orchestra web --port 8010`. |
 | An instrument writes nothing | Instruments page: its last error. Try its command by hand in the repository. |
 | No model on Dynamics | Read why each series was left out on the Dynamics page; a level that never changes is never a stock. |
 | A plugin's command is missing from `orchestra --help` | The install line was missing its name. Run it again, complete. |
