@@ -117,7 +117,8 @@ def test_a_second_host_deletes_nothing_and_writes_no_counters(bare):
     h = Host(bare, collect_every=0.02)
     t = _run(h, counts=False)
     try:
-        assert _until(lambda: runtime.read(bare).get("hosts", {}).get(str(os.getpid()), {}).get("collector", {}).get("state") == "following")
+        assert _until(lambda: runtime.read(bare).get("hosts", {}).get(str(os.getpid()), {}).get("collector", {}).get("state", "")
+                      .startswith("following; "))
         Events.for_project(bare, source="m").publish("x.happened", {})
         time.sleep(0.3)
         assert _total(bare) == 7.0                   # the launching host's counters, untouched
@@ -159,3 +160,59 @@ def test_a_malformed_announcement_is_read_past_by_the_replay_and_the_follow_loop
         h.stop()
         t.join(5)
     assert "skipped an event it could not read" in (bare.logs_dir / "orchestra-host.log").read_text()
+
+
+def _state(project) -> str:
+    return runtime.read(project).get("hosts", {}).get(str(os.getpid()), {}).get("collector", {}).get("state", "")
+
+
+def test_a_host_that_does_not_count_names_the_one_that_does_and_announces_no_quiet(bare, monkeypatch):
+    runtime.update(bare, lambda d: d.__setitem__("launcher", {"pid": 4242}))
+    monkeypatch.setattr(runtime, "launcher", lambda d: d.get("launcher"))      # 4242 stands for a live host
+    h = Host(bare, collect_every=0.02)
+    quiets = []
+    monkeypatch.setattr(h, "_quiet", lambda watch: quiets.append(1))
+    monkeypatch.setattr(h, "_eras", lambda: None)
+    monkeypatch.setattr(h, "_intent", lambda after_discovery=False: None)
+    assert h._take_launch() is None and h._other == 4242
+    t = _run(h, counts=None)
+    try:
+        assert _until(lambda: _state(bare) == "following; host 4242 keeps the counters")
+        time.sleep(0.2)
+        assert quiets == []                                    # only the launching host says a machine is quiet
+    finally:
+        h.stop()
+        t.join(5)
+
+
+def test_a_host_that_takes_the_launch_over_replays_and_counts(bare, monkeypatch):
+    Events.for_project(bare, source="m").publish("x.happened", {})
+    runtime.update(bare, lambda d: d.__setitem__("launcher", {"pid": 4242}))
+    alive = {"other": True}
+    real_launcher = runtime.launcher
+    monkeypatch.setattr(runtime, "launcher", lambda d: d.get("launcher") if alive["other"] else real_launcher(d))
+    h = Host(bare, collect_every=0.02)
+    monkeypatch.setattr(h, "_launch", lambda: h._stop.wait())  # the launcher thread itself is not under test
+    quiets = []
+    monkeypatch.setattr(h, "_quiet", lambda watch: quiets.append(1))
+    monkeypatch.setattr(h, "_eras", lambda: None)
+    monkeypatch.setattr(h, "_intent", lambda after_discovery=False: None)
+    assert h._take_launch() is None
+    t = _run(h, counts=None)
+    launcher = None
+    try:
+        assert _until(lambda: _state(bare).startswith("following; host 4242"))
+        assert _total(bare) is None
+        alive["other"] = False                                 # the launching host stopped; its record says so
+        runtime.update(bare, lambda d: d.pop("launcher", None))
+        launcher = h._take_launch()
+        assert launcher is not None and runtime.read(bare)["launcher"]["pid"] == os.getpid()
+        assert _until(lambda: _total(bare) == 1.0)             # replayed from the start, counting now
+        Events.for_project(bare, source="m").publish("x.happened", {})
+        assert _until(lambda: _total(bare) == 2.0)
+        assert _until(lambda: _state(bare) == "following") and quiets
+    finally:
+        h.stop()
+        t.join(5)
+        if launcher is not None:
+            launcher.join(5)

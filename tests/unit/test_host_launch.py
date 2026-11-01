@@ -83,22 +83,28 @@ def test_a_host_that_does_not_launch_leaves_the_launch_alone(project, hosts):
     child = record["processes"]["nap"]["pid"]
 
     b = hosts("b")
-    until(lambda: said(b, "this one starts none"))
+    until(lambda: said(b, f"host {a.pid} runs this project") and said(b, "starts nothing"))
     assert runtime.read(project)["launcher"]["pid"] == a.pid
     b.send_signal(signal.SIGTERM)
     b.wait(timeout=30)
     assert runtime.read(project)["launcher"]["pid"] == a.pid      # b did not clear a's claim
 
     c = hosts("c")
-    until(lambda: said(c, "this one starts none"))
+    until(lambda: said(c, "starts nothing"))
     time.sleep(1.5)                                                # a tick or two, had c launched
     assert [s.pid for s in sleeps(hosts.n)] == [child]             # one copy, and a's child was not killed
     record = runtime.read(project)
     assert record["launcher"]["pid"] == a.pid and record["processes"]["nap"]["pid"] == child
     assert {int(k) for k in record["hosts"]} == {a.pid, c.pid}
 
-    a.send_signal(signal.SIGTERM)
+    a.send_signal(signal.SIGTERM)                                  # c takes the launch over at its next beat
     a.wait(timeout=30)
+    until(lambda: (runtime.read(project).get("launcher") or {}).get("pid") == c.pid
+          and (runtime.read(project).get("processes") or {}).get("nap", {}).get("state") == "running")
+    assert said(c, f"host {a.pid} stopped; this one takes over")
+    until(lambda: len(sleeps(hosts.n)) == 1)
+    c.send_signal(signal.SIGTERM)
+    c.wait(timeout=30)
     until(lambda: not sleeps(hosts.n))
     assert "launcher" not in runtime.read(project) and "processes" not in runtime.read(project)
 

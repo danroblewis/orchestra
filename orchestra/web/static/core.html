@@ -133,7 +133,7 @@ function renderCore() {
   const loop = h.loop || {};
   const hostHtml = `<div class="kv">
       <div>loop</div><div>${loop.alive ? `<b>running</b> <span class="proc num">pid ${loop.pid} · up ${since(loop.since)} · ${fmtBytes(loop.rss || 0)}${loop.port ? " · control :" + loop.port : ""}</span>` : `<span class="stale">not running</span> <span class="proc">start it with <code>orchestra run</code></span>`}</div>
-      ${h.collector ? `<div>collector</div><div class="num${String(h.collector.state).startsWith("failing") ? " stale" : ""}" title="The host's count of the bus by event type and source (orchestra_events_total): replaying the bus at start, following it, or failing (and retrying)">${esc(h.collector.state)} <span class="proc">for ${since(h.collector.at)}</span></div>` : ""}
+      ${h.collector ? `<div>collector</div><div class="num${String(h.collector.state).startsWith("failing") ? " stale" : ""}" title="The host's count of the bus by event type and source (orchestra_events_total): replaying the bus at start, following it and counting, following without counting while another host keeps the counters (this one takes over if that one stops), or failing (and retrying)">${esc(h.collector.state)} <span class="proc">for ${since(h.collector.at)}</span></div>` : ""}
       <div>web</div><div><b>running</b> <span class="proc num">pid ${h.web.pid} · up ${since(h.web.since)} · ${fmtBytes(h.web.rss || 0)}</span></div>
       <div>version</div><div class="num">${esc(h.version)}${h.commit ? " · " + esc(h.commit) : ""} · ${esc(h.python)}</div>
       <div>project</div><div class="num">${esc(h.project)}</div>

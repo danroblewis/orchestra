@@ -138,14 +138,15 @@ Each component, its module, and what it depends on:
 | Thread | Cadence | What it does |
 |---|---|---|
 | main | every 15 s | Writes `orchestra_host_up{machine="orchestra-host"}` (1 while running, 0 when stopping). |
-| `collector` | every 2 s | Replays the whole bus once at start (`collectors.backfill`, which replaces the event counters), then reads new events and writes their counts. Every 5 s it records the eras new events begin and announces them (`sd.eras.sync`, `orchestra.era.started`). |
+| `collector` | every 2 s | In the launching host only: replays the whole bus once at start (`collectors.backfill`, which replaces the event counters), then reads new events and writes their counts, and announces quiet machines (`orchestra.machine.quiet`). A host that does not launch follows from the bus's end without counting (its state names the host that counts) until it takes the launch over, then replays and counts. In every host, every 5 s it records the eras new events begin and announces them (`sd.eras.sync`, `orchestra.era.started`). |
 | `discovery` | 5 s after start, then every `[discovery] every` (default 5 min) | Calls `sd.rediscover.rediscover(..., skip_if_busy=True, events=...)`, logs the result, then publishes what is due about the model (`sd.announce.announce`: `orchestra.model.changed`, `.diverged`, `.returned`). |
 | `launcher` | every 1 s | Only in the host that holds `launcher` in the runtime record. Before its first tick it starts the events endpoint, so the processes it launches get its address; each tick runs `Launcher.tick()` and `Collecting.tick()`; when the host stops it stops the processes, then the endpoint. |
 | `events-endpoint` | per request | Only in the launching host: a `ThreadingHTTPServer` (one thread per request, so a long poll holds up nothing). Each bus call takes one lock, since not every bus client library is thread-safe. |
 
 Only one host launches per project. `Host._claim` takes `launcher` in the runtime record under the
-lock, and only when no live process holds it. A second `orchestra run` still runs the event
-collector and discovery, but starts no processes and no instruments. A host that takes over from a
+lock, and only when no live process holds it. A second `orchestra run` follows the bus without
+counting and runs discovery, but starts no processes and no instruments; it tries the claim again
+every beat (15 s) and takes over when the first has stopped. A host that takes over from a
 dead one first stops whatever the dead one left running (`Launcher.reap_orphans`).
 
 ### The launcher

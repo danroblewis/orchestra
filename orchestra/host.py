@@ -7,10 +7,12 @@ In an empty Orchestra it does little, on purpose:
 - it runs Orchestra's event collector: every event on the bus, from any machine, counted by type
   and source (``orchestra.collectors``). The host that launches replays the whole bus once at start,
   in order, so the counters continue from the full history, retrying until the replay succeeds,
-  then follows the bus; a second host follows from the bus's end and writes no counters. What the
-  collector is doing is in the runtime record (``hosts.<pid>.collector``, on the Core page);
-- it says when a machine falls silent past its own cadence on the bus (``orchestra.quiet``:
-  ``orchestra.machine.quiet``, subject the machine);
+  then follows the bus; a second host follows from the bus's end and writes no counters (its state
+  says which host keeps them), and takes the launch over, replaying the bus and counting from then
+  on, when that host stops. What the collector is doing is in the runtime record
+  (``hosts.<pid>.collector``, on the Core page);
+- in the host that launches, it says when a machine falls silent past its own cadence on the bus
+  (``orchestra.quiet``: ``orchestra.machine.quiet``, subject the machine), so each is said once;
 - it records the eras the bus begins (``orchestra.sd.eras``: ``system.changed`` and the events
   ``[discovery] eras_from`` names) as it follows the bus, and announces each
   (``orchestra.era.started``);
@@ -33,7 +35,8 @@ In an empty Orchestra it does little, on purpose:
 - it keeps running the commands the project declares (``[[machines]]`` in ``orchestra.toml``) and
   the plugins declare (``Plugin.processes``), through ``orchestra.launcher``, and stops them when
   it stops. Only one host launches for a project (``launcher`` in the runtime record): a second one, started while the
-  first runs, launches nothing, says so, and leaves the first one's record alone;
+  first runs, launches nothing, says so, leaves the first one's record alone, and tries the claim
+  again every beat, taking over when the first one has stopped;
 - in the host that launches, it serves the events endpoint (``orchestra.endpoint``): machines
   publish and read events over HTTP on ``[events] listen`` (127.0.0.1 and a port the system picks,
   unless given), with the project's token. Its address is in the runtime record
@@ -115,6 +118,8 @@ class Host:
         self._stop = threading.Event()
         self._said_state: str | None = None              # the collector's state as last recorded
         self.skipped = 0                                 # events the quiet watch could not read
+        self._launching = threading.Event()              # set while this host holds the launch: it counts and announces quiet
+        self._other: int | None = None                   # the host that holds it, when another does
 
     def log(self, msg: str) -> None:
         line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {msg}"
@@ -159,7 +164,7 @@ class Host:
         quiet = QuietWatch()
         if not counts:
             offset = self.events.end()
-            self.log("collector: another orchestra run keeps the event counters; following the bus from its end")
+            self.log(f"collector: {self._holder_says()} keeps the event counters; following the bus from its end")
             return None, quiet, offset
         self._collector_state("replaying")
         evs, offset = self.events.after(0)
@@ -184,17 +189,41 @@ class Host:
                 self.log(f"collector: skipped an event it could not read ({type(e).__name__}: {e}); "
                          "later ones are only counted")
 
+    def _holder(self) -> int | None:
+        """The pid of the host that holds the launch, when it is another one."""
+        if self._other is not None:
+            return self._other
+        try:
+            held = runtime.launcher(runtime.read(self.project))
+        except Exception:  # noqa: BLE001 - unknown: said so
+            return None
+        return held["pid"] if held and held.get("pid") != os.getpid() else None
+
+    def _holder_says(self) -> str:
+        pid = self._holder()
+        return f"host {pid}" if pid else "another orchestra run"
+
+    def _following(self) -> str:
+        """The collector's state while it follows: counting, or not (another host keeps the counters)."""
+        return "following" if self._launching.is_set() else f"following; {self._holder_says()} keeps the counters"
+
     def _look(self, quiet: QuietWatch) -> None:
-        """What the host looks for every ``ERAS_EVERY_S``, whether or not the replay has landed."""
+        """What the host looks for every ``ERAS_EVERY_S``, whether or not the replay has landed.
+        Quiet machines are announced by the host that launches only, so each is announced once."""
         self._eras()
-        self._quiet(quiet)
+        if self._launching.is_set():
+            self._quiet(quiet)
         self._intent()
 
-    def _collect(self, counts: bool = True) -> None:
+    def _collect(self, counts: bool | None = None) -> None:
         """Follow the bus and keep the event counters current. The replay at start is retried,
         with a growing pause, until it succeeds; meanwhile the eras, quiet machines and the
         intended model's announcements are still looked at (quiet with an empty watch until the
-        replay lands)."""
+        replay lands). Only the host that launches counts (``counts``, or else whether it holds
+        the launch); one that takes the launch over later replays the bus then and counts from
+        there on."""
+        if counts is not None:
+            (self._launching.set if counts else self._launching.clear)()
         col, quiet, offset = None, QuietWatch(), None
         pending: list[Point] = []                     # counted but not yet written: retried, never counted twice
         eras_at = retry_at = 0.0
@@ -203,11 +232,14 @@ class Host:
             if time.time() - eras_at >= ERAS_EVERY_S:
                 eras_at = time.time()
                 self._look(quiet)
+            if offset is not None and col is None and self._launching.is_set():
+                offset = None                             # this host took the launch over: replay, then count
+                retry_at, pause = 0.0, self.collect_every
             if offset is None:
                 if time.time() >= retry_at:
                     try:
-                        col, quiet, offset = self._replay(counts)
-                        self._collector_state("following")
+                        col, quiet, offset = self._replay(self._launching.is_set())
+                        self._collector_state(self._following())
                     except Exception as e:  # noqa: BLE001 - retried; the looks go on meanwhile
                         why = f"{type(e).__name__}: {e}"
                         self.log(f"collector: replay failed: {why}; retrying in {pause:.0f} s")
@@ -226,7 +258,7 @@ class Host:
                         pending = collapse(pending)[-PENDING_MAX:]
                         metrics_for(self.project).write(pending)
                         pending = []
-                    self._collector_state("following")
+                    self._collector_state(self._following())
                 except Exception as e:  # noqa: BLE001 - keep following; the next read retries
                     self.log(f"collector: {type(e).__name__}: {e}")
                     self._collector_state(f"failing: {type(e).__name__}: {e}")
@@ -447,6 +479,19 @@ class Host:
             return None
         return runtime.update(self.project, take)
 
+    def _take_launch(self) -> threading.Thread | None:
+        """Claim the launch; when this host gets it, start the launcher and count the events from
+        now on (``_collect`` replays the bus then). None while another live host holds it."""
+        other = self._claim()
+        if other:
+            self._other = other
+            return None
+        self._other = None
+        self._launching.set()
+        t = threading.Thread(target=self._launch, name="launcher")
+        t.start()
+        return t
+
     def _register(self, d: dict) -> None:
         d["hosts"] = {k: r for k, r in (d.get("hosts") or {}).items() if runtime.holds(r)}
         d["hosts"][str(os.getpid())] = runtime.me()
@@ -470,12 +515,12 @@ class Host:
         self.log(f"host started (pid {os.getpid()}) for {self.project.key}")
         launching = discovering = None
         if not once:
-            if other := self._claim():
-                self.log(f"launcher: another orchestra run (pid {other}) runs this project and keeps its processes; this one starts none")
-            else:
-                launching = threading.Thread(target=self._launch, name="launcher")
-                launching.start()
-            threading.Thread(target=self._collect, args=(launching is not None,), name="collector", daemon=True).start()
+            launching = self._take_launch()
+            if launching is None:
+                self.log(f"launcher: host {self._other} runs this project: it keeps the processes, the instruments, the event "
+                         "counters and the quiet announcements; this one follows the bus and rediscovers, starts nothing, "
+                         "and takes over if that one stops")
+            threading.Thread(target=self._collect, name="collector", daemon=True).start()
             discovering = threading.Thread(target=self._discover, name="discovery", daemon=True)
             discovering.start()
         try:
@@ -483,6 +528,15 @@ class Host:
                 self._beat(1.0)
                 if once:
                     break
+                if launching is None:                 # the other host may have stopped: take over
+                    was = self._other
+                    try:
+                        launching = self._take_launch()
+                    except Exception as e:  # noqa: BLE001 - the next beat tries again
+                        self.log(f"launcher: cannot claim: {type(e).__name__}: {e}")
+                    if launching is not None:
+                        self.log(f"launcher: host {was} stopped; this one takes over: it launches the processes and "
+                                 "instruments, counts the events (replaying the bus first) and announces quiet machines")
                 self._stop.wait(self.interval)
         except KeyboardInterrupt:
             pass

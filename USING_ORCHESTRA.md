@@ -112,7 +112,9 @@ Every command takes `--repo PATH` to name the repository. Without it, Orchestra 
 Orchestra finds the main repository's root: a worktree is the same project as its repository.
 
 Only one host launches for a project. A second `orchestra run` started while one is running
-counts events and rediscovers, but starts no processes and no instruments. It says so in its log.
+follows the bus without counting and rediscovers; it starts no processes and no instruments, and
+takes over if the first stops. It says so when it starts, naming the first one's pid, and the Core
+page's collector row says which host keeps the counters.
 
 ### Logging in to the web UI
 
