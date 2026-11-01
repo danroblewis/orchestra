@@ -577,13 +577,18 @@ Conservation (`sd/discover.py`):
    all its evidence, so it does not come and go with the one event that takes the fill over the
    bar at the edge of a window), become a flow into the state and flows out of it. The state is the measured level whose raw points
    rise at the inflow's events and fall at the outflows' (`sd/between.py`: the grid misses it,
-   the raw points do not), that rose no more often than the inflow counted, that at each of its
+   the raw points do not), never an age, an aggregate or a statistic of what it holds, nor a
+   level in a unit no counter is in (the oldest item's seconds, `sd/discover.py`), that rose no more often than the inflow counted, that at each of its
    own writes reads what the counters imply (the items moved in less those moved out up to then,
    give or take a second for the order of two writers' writes, apart from the items there
    before), at 80% of the writes where it, or the counters throughout that second, say something
    is there (a state sampled coarsely misses the items that come and go between its writes, and
    so do the counters' totals at those writes; a pile that reads empty while the counters say an
-   item is in, or moves while they say nothing moved, is another state), and that
+   item is in, or moves while they say nothing moved, is another state), whose matched rises
+   and falls moved at least a quarter of the items the counters moved, or so many that chance
+   would give them less than once in a thousand (one rise and one fall at a passage that moved
+   26 items each way, 2 of 52, is chance; the bakery's 11 of 77 orders accepting, written every
+   5 s, is not), and that
    both rose and fell by at least one in the window (the test
    is by magnitude, in the level's own unit, whatever that is: a level that only rises, the test
    reports read, 5 to 10, is a tally; one whose moves are all under one, a gate's duration of

@@ -22,7 +22,11 @@ never reads above zero says nothing about which state it is, and is never chosen
 coincidence with counters that count at almost every instant: when the instants within the
 tolerance after the ins' (or the outs') events cover more than ``CHANCE`` of the window, a level
 that moves at all would match them by chance (a memory gauge against request counters), so none
-is chosen."""
+is chosen. A level whose matched rises and falls moved fewer than ``FEW_MATCHED`` of the items the
+counters moved (one rise and one fall at a passage that moved 26 items: 2 of 52) is the state only
+when so many matched that chance would rarely give them (``BY_CHANCE``: each rise lands within the
+tolerance after an in's event with the share of the window those tolerances cover, each fall
+likewise); otherwise the passage's state is the hidden one its counters imply."""
 
 from __future__ import annotations
 
@@ -35,6 +39,8 @@ from .series import Series
 MATCHED = 0.8         # the share of a level's rises (and falls) that must come at the passage's events
 CHANCE = 0.5          # the share of the window the events' tolerance may cover, at most, for a match to mean anything
 SAME_TOTAL = 0.03
+FEW_MATCHED = 0.25    # below this share of the items the counters moved, the matches alone must rule out chance
+BY_CHANCE = 0.001     # how likely, at most, the matched rises and falls came at the events by chance, for a level below FEW_MATCHED
 ORDER = 1.0           # seconds: how far apart two writers' writes of one instant may be stamped
 
 
@@ -140,8 +146,14 @@ def at_events(level: Series, ins: list[Series], outs: list[Series], start: float
     fell = {t: a - b for (_, a), (t, b) in pairwise(pts) if b < a and t > start}
     hit_in = sum(n for t, n in rose.items() if _hits([t], into, tol))
     hit_out = sum(n for t, n in fell.items() if _hits([t], out, tol))
-    return ([up, len(rises), round(hit_in, 6), round(moves(cin, start, end), 6)],
-            [down, len(falls), round(hit_out, 6), round(moves(cout, start, end), 6)])
+    moved_in, moved_out = moves(cin, start, end), moves(cout, start, end)
+    if moved_in + moved_out and (hit_in + hit_out) / (moved_in + moved_out) < FEW_MATCHED:
+        span = end - start
+        chance = (_covered(into, tol) / span) ** up * (_covered(out, tol) / span) ** down
+        if chance > BY_CHANCE:
+            return None                              # a few matches of many moves, which chance would give: no evidence
+    return ([up, len(rises), round(hit_in, 6), round(moved_in, 6)],
+            [down, len(falls), round(hit_out, 6), round(moved_out, 6)])
 
 
 def state_level(levels: list[Series], ins: list[Series], outs: list[Series], *, start: float, end: float, step: float,

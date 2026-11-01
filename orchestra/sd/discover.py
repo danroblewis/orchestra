@@ -886,13 +886,16 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         good = r2 >= MIN_R2 or (terms is not None and steps is not None and two_clocks(s, terms)
                                 and timing_limited(s, terms, steps, r2))
         return good and (exact >= FLAG_EXACT or len({v for _, v in s.points}) > 2)
+    never_level: set[str] = set()                # an age, an aggregate or a statistic: no stock, nor a state between moves
     for s in series:
         if s.counter:
             continue
         if why := construction.no_level(provenance, s.key):
             left_out[s.key] = why
+            never_level.add(s.key)
             continue
         if statistic(s.name, s.summary):
+            never_level.add(s.key)
             # a maximum over partitions jumps from one to another with no flow: never conserved (sd.properties)
             left_out[s.key] = ("a statistic of what it measures (a maximum, a mean, a percentile, or one its source summarised "
                                "across reporters): a summary, not a store, so never a stock")
@@ -1033,7 +1036,11 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # (sd.passing); joined through it
     where = {"start": start, "end": end, "step": step, "writer_of": writer_of}
     stock_keys = {s.key for s, _, _, _ in found}
-    levels = [s for s in series if not s.counter and s.key not in stock_keys and not left_out.get(s.key, "").startswith(("the same as", SHORT))]
+    # a state between moves holds the moves' items: never an age, an aggregate or a statistic of
+    # them, nor a level in a unit no counter is in (the oldest item's seconds)
+    counted_in = {unit[c.key] for c in counters}
+    levels = [s for s in series if not s.counter and s.key not in stock_keys and s.key not in never_level
+              and unit[s.key] in counted_in and not left_out.get(s.key, "").startswith(("the same as", SHORT))]
     found, hopped, revived = split_hops(found, counters, copies, levels, first_stamped=first_stamped, **where)
     for d in revived:                      # a copy that came back as a hop of its own stands for itself
         counters.append(d)
