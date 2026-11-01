@@ -277,8 +277,8 @@ the file store uses `orchestra/metrics/promql.py`, a tested subset.
 
 Orchestra's own collector (`orchestra/collectors.py`) counts every event on the bus by type and
 source: `orchestra_events_total{type, source}`, the one series derived from the event log.
-Discovery reads it to associate machines with flows (§4.3). The host runs it live (section 5); `orchestra
-metrics backfill` replays the whole log. Only the last value of a series at an instant is written,
+Discovery reads it to associate machines with flows (§4.3). The host runs it live (section 5), replaying the
+whole log into it at every start. Only the last value of a series at an instant is written,
 because stores disagree on the order of points that share one.
 
 A project's own instruments, a command run on an interval (`[[collect]]`) or a URL read on one
@@ -1581,7 +1581,7 @@ since, and `restore(change)` puts the file back. Orchestra commits nothing: comm
 | `orchestra web [--port] [--host]` | Serve the web UI, behind the web token (§10.2); print a link that logs in |
 | `orchestra web token [--rotate]` | Print the web token; `--rotate` replaces it and ends every session |
 | `orchestra events info\|endpoint [--env]\|copy --to URL` | The event log; where the events endpoint is, and its token (§3.1) |
-| `orchestra metrics backfill\|series` | Replay the log into event counters; list series |
+| `orchestra metrics series` | List series |
 | `orchestra sd discover [--strategy S] [--minutes N] [--step-s S]\|show\|versions` | The model: discover it from the metrics, show it, list versions |
 | `orchestra sd predictions [--json]` | The predictions recorded and their verdicts, by era; read only |
 | `orchestra sources check\|infer\|preview QUERY` | Other stores (§4.4): probe them, infer what to read, read a query's fan-out |

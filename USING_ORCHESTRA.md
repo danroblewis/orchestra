@@ -2240,7 +2240,6 @@ printed it; `cat ~/.orchestrator/projects.json` lists every project's key.
 | `orchestra events endpoint [--env]` | The events endpoint's URL and the token's file; with `--env`, `export` lines for `eval`. Exits 1 when no host serves it. |
 | `orchestra events copy --to URL [--force]` | Copy the event log to another bus backend. |
 | `orchestra metrics series` | Every series of the project, with its labels. |
-| `orchestra metrics backfill [--append]` | Replay the event log into `orchestra_events_total`. |
 | `orchestra sd discover [--minutes N] [--step-s S] [--strategy S]` | Discover the model now. |
 | `orchestra sd show [--version N]` | The model: stocks with their latest level, flows, machines. |
 | `orchestra sd versions` | The saved versions. |

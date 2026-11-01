@@ -65,7 +65,7 @@ class BackfillReport:
     types: dict[str, int]
 
 
-def backfill(events: list[dict], *, project: str, store: MetricsStore, replace: bool = True) -> BackfillReport:
+def backfill(events: list[dict], *, project: str, store: MetricsStore) -> BackfillReport:
     """Replay a whole event log into the metrics store. The points are computed before anything
     is deleted; when the write fails after the old counters were deleted it raises, never returns,
     and the caller replays again (the host retries until it succeeds), so the counters are never
@@ -75,9 +75,8 @@ def backfill(events: list[dict], *, project: str, store: MetricsStore, replace: 
     for ev in events:
         points += col.observe(ev)
     points = collapse(points)
-    if replace:
-        for name in (EVENTS, *LEGACY):
-            store.delete(name, {"project": project})
+    for name in (EVENTS, *LEGACY):
+        store.delete(name, {"project": project})
     store.write(points)
     stamps = [t for t in (event_time(e) for e in events) if t is not None]
     types = Counter()

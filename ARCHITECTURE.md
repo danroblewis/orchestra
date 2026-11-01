@@ -128,7 +128,7 @@ Each component, its module, and what it depends on:
 | **Model store** | `orchestra/sd/store.py`, `orchestra/sd/model.py` | The one model and its versions: `<state>/model/vNNNN.json`, plus the latest discovery cached in `model/discovered.json`. | the state directory |
 | **Intended model** | `orchestra/sd/intended/` (`store`, `ops`, `machine_ops`, `revise`, `consent`, `controls`, `requests`, `keys`, `history`, `diff`, `view`, `machines_view`, `design`, `announce`, and helpers), `orchestra/web/intended.py` | The declared layer beside the discovered model: what the owner intends (stocks, effects, targets, flows, machines with their envelope and opaque `spec`, event types, attachments) and what a plugin or inference proposes, in versions `dN` (`<state>/model/intended/`, reached only through `ModelStore.intended()`, `project.intended`), and the comparison of the two, on keys. It runs nothing: a declared machine is not started, a declared stock binds no series, a declared flow changes no equation, and discovery never reads it. The host announces each accepted call as `orchestra.intent.changed`; the web server records the page's observations and publishes the owner's requests as `orchestra.intent.requested`. | model store, metrics (facts read under a time limit), the bus (announcements, requests) |
 | **Web** | `orchestra/web/` | `orchestra web`: a FastAPI app with the Dashboard, Core, Machines, Instruments, Dynamics and Experiments pages, and plugin pages. Background threads keep caches warm so page requests stay cheap. Every route, a plugin's too, is behind the project's web token (`<state>/web.token`), checked by one middleware (`web/auth.py`). | bus, metrics, runtime, model store, sources, plugins |
-| **CLI** | `orchestra/cli.py` | `init`, `run`, `web`, `events info\|endpoint\|copy`, `metrics backfill\|series`, `sd discover\|show\|fit\|versions\|predictions`, `sources check\|infer\|preview`. | the rest, imported on use |
+| **CLI** | `orchestra/cli.py` | `init`, `run`, `web`, `events info\|endpoint\|copy`, `metrics series`, `sd discover\|show\|fit\|versions\|predictions`, `sources check\|infer\|preview`. | the rest, imported on use |
 | **Plugins** | `orchestra/plugins.py` | Loads packages registered in the entry-point group `orchestra.plugins`. A plugin adds pages, a static directory, an API router, every-page scripts and stylesheets, declared machines, processes, instruments (`collectors`) and a guide for an AI operator (`guide`, served with Orchestra's own `guide.md` by `orchestra/guides.py` at `/api/guides`). One that fails to load, or whose name another plugin took, is reported and left out. | launcher (`Process`), collect (`Collector`) |
 
 ### Inside the host
@@ -968,7 +968,6 @@ configuration, and every probe runs in a thread pool with a time limit.
 | `orchestra events endpoint [--env]` | Prints the events endpoint's URL and the token's file, or `export` lines for both. | `events.token`, if it did not exist |
 | `orchestra events copy --to URL [--force]` | Copies the event log to another backend. | the target bus |
 | `orchestra metrics series` | Lists the project's series. | nothing |
-| `orchestra metrics backfill [--append]` | Replays the whole log into `orchestra_events_total`. | metrics |
 | `orchestra sd discover [--strategy --minutes --step-s]` | Runs discovery now (same code path as the host), recording new eras from the bus first and announcing them. | `model/`, the bus |
 | `orchestra sd show [--version]` | Prints the model with current levels. | nothing |
 | `orchestra sd versions` | Lists the saved versions, with each one's era. | nothing |
@@ -1028,8 +1027,7 @@ divided.
 **Known departures** (as of `69111d58`). These are places where the code goes further than the
 table above says. They are listed here so nobody relies on the rule being absolute:
 
-- Some CLI commands change stored data beyond rediscovery: `metrics backfill` replaces the
-  event counters, and `events copy` writes to another bus. The
+- A CLI command changes stored data beyond rediscovery: `events copy` writes to another bus. The
   Core page's probe also appends an `orchestra.core.bus_probe` event (rule 9).
 
 ## Not built yet

@@ -13,6 +13,8 @@ from . import __version__, commands, runtime
 from .config import ConfigError, Project, init_project, load_project
 from .events import Events
 
+COPY_PAGE = 10_000             # events read per page by `events copy`
+
 
 def _project(args) -> Project:
     try:
@@ -75,19 +77,11 @@ def cmd_web(args) -> int:
 
 
 def cmd_metrics(args) -> int:
-    """The metrics store: replay the event log into event counters, or list the series."""
-    from . import collectors
+    """The metrics store: list the project's series."""
     from .metrics import for_project as metrics_for
 
     project = _project(args)
-    store = metrics_for(project)
-    if args.action == "backfill":
-        evs, _ = Events.for_project(project).read(0, limit=10_000_000)
-        rep = collectors.backfill(evs, project=project.key, store=store, replace=not args.append)
-        print(f"{rep.events} events ({_when(rep.first)} → {_when(rep.last)}) → {rep.points} points in {store.name}")
-        print("types: " + ", ".join(f"{t} {n}" for t, n in sorted(rep.types.items(), key=lambda x: -x[1])[:20]))
-        return 0
-    for name, labels in store.series("", {"project": project.key}):
+    for name, labels in metrics_for(project).series("", {"project": project.key}):
         print(name, " ".join(f"{k}={v}" for k, v in sorted(labels.items()) if k != "project"))
     return 0
 
@@ -267,18 +261,20 @@ def cmd_events(args) -> int:
     if target.end() and not args.force:
         print(f"{args.to} already holds {target.end()} events for this project; use --force to append anyway")
         return 1
-    offset, n = 0, 0
-    while True:
-        batch, end = events.bus.read(offset, limit=10_000_000)
+    offset, n, had = 0, 0, target.end()
+    while offset < (end := events.end()):         # forward, a bounded page at a time, from the start
+        batch, offset = events.page(offset, COPY_PAGE)
         for ev in batch:
             target.append(ev)
         n += len(batch)
-        if end <= offset + len(batch) or not batch:
-            break
-        offset = end
-    print(f"copied {n} events from {events.bus.name} to {target.name}: it now holds {target.end()}")
-    print(f"to use it, set [events] url = \"{args.to}\" in orchestra.toml")
+    held = target.end()
     target.close()
+    if held - had != n or n != end:
+        print(f"orchestra: copied {n} events from {events.bus.name} to {target.name}, but the source holds {end} "
+              f"(unreadable lines are skipped) and the target took {held - had}: check both before switching")
+        return 1
+    print(f"copied {n} events from {events.bus.name} to {target.name}: it now holds {held}")
+    print(f"to use it, set [events] url = \"{args.to}\" in orchestra.toml")
     return 0
 
 
@@ -308,10 +304,9 @@ def build_parser(plugin_help: dict[str, str] | None = None) -> argparse.Argument
     s.add_argument("--rotate", action="store_true", help="for token: replace it; every session ends")
     s.set_defaults(fn=cmd_web)
 
-    s = sub.add_parser("metrics", help="the metrics store: backfill event counters from the log, list series")
-    s.add_argument("action", choices=["backfill", "series"], help="backfill: count the whole event log into "
-                   "orchestra_events_total again; series: list every series the store holds for this project")
-    s.add_argument("--append", action="store_true", help="for backfill: keep existing points instead of replacing them")
+    s = sub.add_parser("metrics", help="the metrics store: list the project's series")
+    s.add_argument("action", choices=["series"], help="series: list every series the store holds for this project "
+                   "(the host replays the whole event log into orchestra_events_total at every start)")
     s.set_defaults(fn=cmd_metrics)
 
     s = sub.add_parser("sd", help="the system dynamics model: discover it from the metrics, show it, list its versions, "
