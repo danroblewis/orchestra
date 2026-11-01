@@ -14,9 +14,9 @@ const CH = process.env.CH || (() => { const base = path.join(HOME, ".cache/puppe
 const puppeteer = require(PC);
 const PORT = +(process.env.PORT || 8187), ROOT = path.resolve(__dirname, "../.."), OUT = path.join(ROOT, "mockups/out");
 const FRAMES = { layout_dynamics: "/dynamics?frame=layout_dynamics", layout_machines: "/machines?frame=layout_machines", base_dynamics: "/dynamics", D1: "/dynamics?frame=D1", D2: "/dynamics?frame=D2", D3: "/dynamics?frame=D3",
-  base_machines: "/machines", E1: "/machines?frame=E1", E2: "/machines?frame=E2", E3: "/machines?frame=E3" };
+  base_machines: "/machines", E1: "/machines?frame=E1", E2: "/machines?frame=E2", E3: "/machines?frame=E3", E4: "/machines?frame=E4" };
 const urlOf = (f) => FRAMES[f] || (f.startsWith("D") ? `/dynamics?frame=${f}` : `/machines?frame=${f}`);
-const want = process.argv.slice(2).length ? process.argv.slice(2) : ["D1", "D1-closed", "D2", "D3", "D3-closed", "E1", "E2", "E3", "E3-continuous", "E3-external"];
+const want = process.argv.slice(2).length ? process.argv.slice(2) : ["D1", "D1-closed", "D2", "D3", "D3-closed", "E1", "E2", "E3", "E3-continuous", "E3-external", "E4"];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
   const server = spawn("python3", [path.join(ROOT, "mockups/tools/serve.py"), String(PORT)], { stdio: "inherit" });
