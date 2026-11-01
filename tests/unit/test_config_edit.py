@@ -210,3 +210,36 @@ def test_a_plugin_check_only_refuses_what_it_newly_says(project):
     edit.unset("gate")
     with pytest.raises(ConfigError, match=r"tasks: \[gate\] is old"):
         edit.set("gate.timeout", "1s")
+
+
+WRITER = """
+import sys
+from orchestra import plugins
+plugins.entry_points = lambda group: []
+from orchestra.config import ConfigError, load_project
+project = load_project(sys.argv[1])
+done = 0
+for i in range(15):
+    while True:
+        try:
+            project.config_edit.set(f"{sys.argv[2]}.k{i}", i)
+            done += 1
+            break
+        except ConfigError as e:
+            if "changed after" not in str(e):
+                raise
+            project.reload_config()            # another process wrote first: work it out again
+print(done)
+"""
+
+
+def test_two_processes_changing_the_configuration_lose_nothing(project):
+    import sys
+    env = {**os.environ}
+    procs = [subprocess.Popen([sys.executable, "-c", WRITER, str(project.repo_root), who], env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for who in ("alpha", "beta")]
+    outs = [p.communicate(timeout=120) for p in procs]
+    assert all(p.returncode == 0 for p in procs), outs
+    assert [o.strip() for o, _ in outs] == ["15", "15"]
+    raw = tomllib.loads(project.config_file.read_text())
+    assert raw["alpha"] == {f"k{i}": i for i in range(15)} and raw["beta"] == {f"k{i}": i for i in range(15)}

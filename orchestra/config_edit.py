@@ -31,10 +31,12 @@ overlay's own entry otherwise."""
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -260,27 +262,43 @@ class ConfigEdit:
 
     # writing
 
+    @contextmanager
+    def _locked(self) -> Iterator[None]:
+        """The project's configuration held against every other writer, in any process
+        (``<state>/config.lock``), from the check of what a file holds to the write."""
+        self.project.state_dir.mkdir(parents=True, exist_ok=True)
+        with open(self.project.state_dir / "config.lock", "w") as fh:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(fh, fcntl.LOCK_UN)
+
     def apply(self, change: Change) -> Change:
-        """Write a change made with ``dry_run``; refused when its file changed since."""
+        """Write a change made with ``dry_run``; refused when its file changed since. The check
+        and the write are one step under the configuration's lock, so a change another process
+        wrote in between is never overwritten."""
         path = Path(change.file)
-        if _read(path) != change.before:
-            raise ConfigError(f"{path} changed after the change was worked out; work it out again")
-        if change.changed:
-            _write(path, change.after, private=change.target == OVERLAY)
-            self.project.reload_config()
+        with self._locked():
+            if _read(path) != change.before:
+                raise ConfigError(f"{path} changed after the change was worked out; work it out again")
+            if change.changed:
+                _write(path, change.after, private=change.target == OVERLAY)
+                self.project.reload_config()
         return change
 
     def restore(self, change: Change) -> bool:
         """Put the change's file back as it was before it, when the file still holds what the
         change wrote (an overlay the change created is removed). False when it does not."""
         path = Path(change.file)
-        if _read(path) != change.after:
-            return False
-        if change.before is None:
-            path.unlink(missing_ok=True)
-        else:
-            _write(path, change.before, private=change.target == OVERLAY)
-        self.project.reload_config()
+        with self._locked():
+            if _read(path) != change.after:
+                return False
+            if change.before is None:
+                path.unlink(missing_ok=True)
+            else:
+                _write(path, change.before, private=change.target == OVERLAY)
+            self.project.reload_config()
         return True
 
     # the work
