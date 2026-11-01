@@ -11,6 +11,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from itertools import pairwise
 
+from ..events import HOST
 from ..metrics import step_sample
 from .live import (
     RESTART_S,
@@ -47,6 +48,22 @@ def plumbing_reason(name: str) -> str:
         return "Orchestra's own (the host's and the Core page's plumbing), not a measure of the system"
     return ("named orchestra_*: the orchestra_ prefix is Orchestra's own, so discovery ignores this series; "
             "rename it for what it measures (docs/machines.md)")
+
+
+def orchestra_events(s: Series) -> bool:
+    """Whether an event count is of Orchestra's own events: a type in its namespace
+    (``orchestra.*``: a machine started or quiet, the model changed or stalled, whoever published
+    it), or anything the host published (``orchestra-host``, the provider, never a machine:
+    AGENTS.md rule 2). Like ``orchestra_host_up`` (``PLUMBING``), they say what Orchestra did, never
+    the work of the system, so no balance is made of them and no flow is attributed to the host.
+    Told by the namespace and the source, not by a list of names: the source ``orchestra-host``
+    is reserved for the host (``orchestra.events.HOST``), and nothing else may publish under it."""
+    return s.name == EVENT_COUNTER and ((s.labels.get("type") or "").startswith("orchestra.")
+                                        or (s.labels.get("source") or "").partition("/")[0] == HOST)
+
+
+ORCHESTRA_EVENTS_REASON = ("Orchestra's own events (an orchestra.* type, or published by the host): what Orchestra did, "
+                           "not the system's work, so never a flow")
 
 
 def not_current_reason(ser: Series, end: float) -> str:

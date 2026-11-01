@@ -74,7 +74,8 @@ const IntendedMachines = (() => {
         if (!it) continue;
         const mode = (it.engagement || {}).mode, eng = mode === "scheduled" && it.engagement.at ? `scheduled · ${it.engagement.at}` : mode;
         if (it.state === "proposed") {
-          n.cls = `${n.cls || ""} im-proposed`; n.sub = ["unconfirmed", eng, it.managed === "external" ? "external" : ""].filter(Boolean).join(" · ");
+          // the observed mode stays (machineSub, from /api/machines); a declared one that differs is tagged beside it (rule 2)
+          n.cls = `${n.cls || ""} im-proposed`; n.sub = ["unconfirmed", n.sub || "", eng && mode !== m.mode ? `declared ${eng}` : "", it.managed === "external" ? "external" : ""].filter(Boolean).join(" · ");
           n.tags = [{ text: it.author === "owner" ? `unconfirmed · added by ${IntendedCore.owner(it.provenance)}` : "unconfirmed", cls: "im-t-unconf" }];
         } else if (!it.heard) {
           n.cls = `${n.cls || ""} im-unheard`; n.halo = false; n.color = "transparent"; n.sub = "declared · never heard";

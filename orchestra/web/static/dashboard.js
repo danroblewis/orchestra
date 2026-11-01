@@ -3,7 +3,8 @@
 // arranges it: drag a panel by its title bar, resize it from its edges and corners; panels pack
 // upward, so one goes under another with no gap. A panel can be hidden and brought back from
 // Panels (in the navigation). Where each panel is, and how big, is kept in this browser.
-// A panel may say how big it starts: spec.size = {w: columns of 12, h: rows of 40 px}.
+// A panel may say how big it starts: spec.size = {w: columns of 12, h: rows of 40 px}; and that on a
+// phone it goes below the others: spec.phone = "last" (panel-order.js).
 (function () {
   const KEY = "orchestra.dashboard.grid";
   const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch (e) { return null; } };
@@ -85,10 +86,10 @@
   }
 
   const placed = new Set();
-  // panels in the order of the wide layout, (y, x); one never placed goes after them, in the order it registered
-  const wideOrder = (ps) => ps.map((p, i) => ({ p, i, at: L.items[p.id] })).sort((a, b) => (a.at ? 0 : 1) - (b.at ? 0 : 1) || (a.at && b.at ? a.at.y - b.at.y || a.at.x - b.at.x : 0) || a.i - b.i).map((x) => x.p);
+  // panels in the order of the wide layout; on a phone, a panel that asks to be last goes last (panel-order.js)
+  const order = (ps) => (narrow() ? PanelOrder.phone : PanelOrder.wide)(ps, L.items);
   function sync() {
-    for (const p of wideOrder(Orchestra.panels.all())) if (!placed.has(p.id)) { placed.add(p.id); place(p); }
+    for (const p of order(Orchestra.panels.all())) if (!placed.has(p.id)) { placed.add(p.id); place(p); }
     relist();
     menu();
   }
@@ -97,7 +98,7 @@
     if (!narrow()) return;
     let y = 0;
     grid.batchUpdate();
-    for (const p of wideOrder(Orchestra.panels.all())) { const el = els.get(p.id); if (!el || L.hidden.includes(p.id) || !el.gridstackNode) continue;
+    for (const p of order(Orchestra.panels.all())) { const el = els.get(p.id); if (!el || L.hidden.includes(p.id) || !el.gridstackNode) continue;
       grid.update(el, { x: 0, y }); y += el.gridstackNode.h; }
     grid.batchUpdate(false);
   }

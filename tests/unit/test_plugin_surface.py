@@ -45,8 +45,8 @@ SURFACE = {
     "orchestra.web.instruments": ["instruments_view"],
     "orchestra.web.machine_logs": ["readable", "tail"],
 }
-NEEDS_SD = {"orchestra.sd.experiments.api": ["ExperimentError", "Experiments"],
-            "orchestra.sd.experiments.language": ["reference"]}
+NEEDS_SD = {"orchestra.sd.reads": ["ModelReads", "ReadError"],
+            "orchestra.sd.equations.language": ["reference"]}
 
 
 @pytest.mark.parametrize("module", sorted(SURFACE))
@@ -57,7 +57,7 @@ def test_every_name_the_plugins_import_is_there(module):
 
 
 @pytest.mark.parametrize("module", sorted(NEEDS_SD))
-def test_the_experiments_names_are_there(module):
+def test_the_model_reads_names_are_there(module):
     pytest.importorskip("numpy")
     mod = importlib.import_module(module)
     assert all(hasattr(mod, n) for n in NEEDS_SD[module]), module

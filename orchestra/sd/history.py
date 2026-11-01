@@ -1,6 +1,7 @@
 """The model's recent history, read from the metrics: each stock's level and each flow's rate over
 the last ``HISTORY_S``, for the Dynamics page's sparklines and charts (``web.background``), the
-host's announcements (``sd.announce``), the judging of predictions (``sd.judge``) and experiments.
+host's announcements (``sd.announce``), the judging of predictions (``sd.judge``) and the model reads
+(``sd.reads``, ``sd.equations``).
 Levels are sampled at the project's discovery step when that is finer than ``STOCK_STEP_S``, so
 the history shows the levels discovery saw."""
 

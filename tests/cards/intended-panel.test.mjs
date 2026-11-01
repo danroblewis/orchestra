@@ -36,3 +36,13 @@ test("a machine's panel, closed and opened again, is drawn again", () => {
   assert.match(side.innerHTML, /class="im-head"/, "the panel is empty on reopening");
   assert.ok(row.classes.has("open"));
 });
+
+test("a proposed machine's map subtitle keeps the observed mode; a declared one that differs is tagged beside it", () => {
+  const sup = { id: "supervisor", mode: "continuous", intent: { state: "proposed", heard: true, engagement: { mode: "ad hoc" } } };
+  const n = { machine: true, mid: "supervisor", sub: "continuous" };
+  IntendedMachines.decorate({ machines: [sup] }, [n], []);
+  assert.equal(n.sub, "unconfirmed · continuous · declared ad hoc");
+  const same = { machine: true, mid: "supervisor", sub: "continuous" };
+  IntendedMachines.decorate({ machines: [{ ...sup, intent: { ...sup.intent, engagement: { mode: "continuous" } } }] }, [same], []);
+  assert.equal(same.sub, "unconfirmed · continuous");
+});

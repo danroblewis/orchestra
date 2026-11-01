@@ -117,6 +117,11 @@ def attach_dynamics(project, out: dict, since, metrics) -> None:
     """Add ``model.intended`` to a ``/api/dynamics/model`` answer; a failure is said there and
     never breaks the page."""
     m = out.get("model") or {}
+    try:                     # how each instrument made its series, and what it says of them (collect.views)
+        from ..collect.views import declared, tables
+        out["model"]["views"] = {name: tables(vs) for name, vs in declared(project).items()}
+    except Exception as e:  # noqa: BLE001 - the parts are named without their instruments' words
+        out["model"]["views_error"] = f"{type(e).__name__}: {e}"
     try:
         model = Model.from_json(m)
         live = bool(m.get("live"))

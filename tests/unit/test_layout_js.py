@@ -1,4 +1,4 @@
-"""The Node tests (tests/layout: the Dynamics layout; tests/loops: feedback loops; tests/names: what stocks and flows are called; tests/cards: the rows of a machine's card, its details panel, and who the owner's requests reach; tests/machine_graph: the Machines page's event map; tests/left_out: what a discovery left out; tests/charts: the line charts), run here so the suite covers them.
+"""The Node tests (tests/layout: the Dynamics layout; tests/loops: feedback loops; tests/names: what stocks and flows are called; tests/cards: the rows of a machine's card, its details panel, and who the owner's requests reach; tests/machine_graph: the Machines page's event map; tests/left_out: what a discovery left out; tests/charts: the line charts; tests/evidence: what the Dynamics tables say of the evidence; tests/panel_order: the Dashboard's panel order), run here so the suite covers them.
 
 They need Node and elkjs (``npm ci`` in tests/layout); without them they are skipped, with how to
 get them."""
@@ -69,7 +69,21 @@ def test_the_line_charts():
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="needs Node")
+def test_what_the_dynamics_tables_say_of_the_evidence():
+    here = LAYOUT.parent / "evidence"
+    r = subprocess.run(["node", "--test", "evidence.test.mjs"], cwd=here, capture_output=True, text=True, timeout=120, check=False)
+    assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs Node")
 def test_who_the_owners_requests_reach():
     cards = LAYOUT.parent / "cards"
     r = subprocess.run(["node", "--test", "intended-core.test.mjs"], cwd=cards, capture_output=True, text=True, timeout=120, check=False)
+    assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs Node")
+def test_the_dashboards_panel_order():
+    here = LAYOUT.parent / "panel_order"
+    r = subprocess.run(["node", "--test", "panel_order.test.mjs"], cwd=here, capture_output=True, text=True, timeout=120, check=False)
     assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]

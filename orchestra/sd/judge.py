@@ -15,7 +15,7 @@ saved model and the levels until the next change; what the rules would say from 
 levels from the change to the horizon, read as the Dynamics page reads them
 (``sd.history.history``). Their predicted runs: the prediction's own ``trajectories`` when it
 carries them, else the previous era's model run forward from the change with the predicted edits
-(``sd.experiments.forward`` on ``sd.experiments.expect.draft``, which needs ``orchestra[sd]``;
+(``sd.equations.forward`` on ``sd.equations.predicted.draft``, which needs ``orchestra[sd]``;
 without it the stocks are judged by the level expectations alone, ``stocks.reason`` says why). An
 expected equation is judged by its law over the era's measured levels and inputs
 (``sd.verdict.text_law``).
@@ -147,8 +147,8 @@ def simulated(prior, raw, expect: list[dict], start: float, horizon_s: float, st
         return None, "no_prior_model"
     if not sd_installed():
         return None, "no_simulator"
-    from .experiments.expect import draft
-    from .experiments.forward import forward, trajectories
+    from .equations.forward import forward, trajectories
+    from .equations.predicted import draft
     from .history import history
 
     try:

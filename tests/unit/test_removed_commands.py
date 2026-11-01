@@ -1,6 +1,6 @@
-"""The commands experiments replaced, and `sd fit`, are gone: the owner does not use command lines;
-machines use the APIs (SPEC §3.1, §4.5) and people the web UI. The docs describe what is, not what
-was removed."""
+"""The commands removed on 2026-10-27 (whatif, predict, eras, observability), and `sd fit`, are
+gone: the owner does not use command lines; machines use the APIs (SPEC §3.1, §4.5) and people the
+web UI. The docs describe what is, not what was removed."""
 
 from pathlib import Path
 

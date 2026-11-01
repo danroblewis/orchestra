@@ -476,7 +476,7 @@ company's pipeline blocks.
 | Step or capability | Layer | Where, and what | Built? |
 |---|---|---|---|
 | The target metric's baseline | Target + Core | An instrument for the metric; the store or `[[sources]]` | Built (mechanism) |
-| A written prediction | Core + Agents | Experiments (SPEC §4.5): forward, replay and inverse runs on a draft of the model, committed as a G13 prediction (Built 2026-10-27; they replaced `orchestra sd whatif` and `POST /api/dynamics/whatif`); the agents' tool and the expected-effect note (G5 phase 2) | Partial |
+| A written prediction | Core + Agents | A G13 prediction (`orchestra.prediction.made`), made by the Supervisor's `confirm` of a declared expected effect or `predict_fix`; experiments (forward, replay and inverse runs on a draft of the model, built 2026-10-27) were removed on 2026-11-01 | Partial |
 | The change | Story 1 | — | — |
 | Remeasure; verdict | Core | Eras and the intended-effect test (H1, H4, `rationale/lifted-models.md`) | No |
 | The slide | Outbox | — | No |

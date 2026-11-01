@@ -101,9 +101,28 @@ const Live = (() => {
     const rows = [...io.in.map((f) => ["+", f]), ...io.out.map((f) => ["−", f])].map(([sg, f]) => `<div class="tr"><span>${sg} ${esc(flowName(f))}</span><b>${rateFmt(recentRate(f.id))}${per()}</b></div>`).join("");
     const changers = [...new Set([...io.in, ...io.out].flatMap((f) => (f.machines || []).map((x) => x.machine)))];
     const ev = s.evidence || {};
-    return `<div class="tt">${stockHead(s.id)}</div><div class="tr"><span>now</span><b>${fmt(v)}</b></div>
+    return `<div class="tt">${stockHead(s.id)}</div>${stockAbout(s.id)}<div class="tr"><span>now</span><b>${fmt(v)}</b></div>
       <div class="tr"><span>machines (hypotheses)</span><b>${changers.map((m) => `<span style="color:${mcolor(m)}">${esc(m)}</span>`).join(", ") || "—"}</b></div>
       <div class="tr"><span>${ev.hidden ? "its counters from" : "measured by"}</span><b>${esc(ev.hidden ? counterInstruments(ev) : ev.written_by || ev.machine || "—")}</b></div><div class="tr"><span>range, ${esc(spanText(stockHist(id)))}</span><b>${fmt(h.length ? Math.min(...h) : null)} – ${fmt(h.length ? Math.max(...h) : null)}</b></div>${rows}<div class="hint">click for history and details</div>`;
+  }
+  // why what the page shows as one stock is one: a passage's counters count the same items in and
+  // out of a state no series measures; twins are one stock measured by several series (the owner,
+  // 2026-11-01, read a passage named by its counter's labels as three things in one stock)
+  function whyOne(s, io) {
+    const ev = s.evidence || {}, rows = [];
+    if (ev.passing) {
+      const ends = (fs, end) => [...new Set(fs.map((f) => (f[end] ? stockName(f[end]) : "outside")))].join(" or ");
+      rows.push(`<div>why one stock</div><div>items leave ${esc(ends(io.in, "from"))} and reach ${esc(ends(io.out, "to"))} within one step of the grid, and the counters that move them count the same items (${ev.passing.ins.length + ev.passing.outs.length} counters, their totals agree): ${ev.hidden ? "no series measures the state between, so it is one stock whose level is what they imply" : "the level between is measured, and rises and falls with them"}.</div>`);
+    }
+    if ((ev.twins || []).length) {
+      rows.push(`<div>why one stock</div><div>one stock, measured ${ev.twins.length + 1} ways: ${esc(s.series ? keyOf(s.series) : s.id)} (kept)${ev.twins.map((t) => `, ${esc(t.series)} <span class="muted">(changes equal in ${Math.round(100 * (t.equal_steps || 0))}% of steps${t.change_correlation != null ? `, correlate by ${(+t.change_correlation).toFixed(2)}` : ""})</span>`).join("")}</div>`);
+    }
+    // a level that counts this stock's servers busy (sd/capacity.py): its capacity, not a second stock
+    for (const v of ev.capacity_of || []) {
+      const k = v.capacity, u = v.utilisation != null ? `, busy ${Math.round(100 * v.utilisation)}% of the time${k > 1 && v.mean_occupancy != null ? ` (mean occupancy ${(+v.mean_occupancy).toFixed(2)})` : ""}` : "";
+      rows.push(`<div>capacity ${esc(String(k))}</div><div>${esc(v.series)}: the same items as ${esc(stockName(s.id))}, capacity ${esc(String(k))}${u}. It counts the ones being served (started by ${esc((v.starts || []).join(", "))}), never holds more than this stock, and its items leave as this stock's do (${esc((v.ends_as || []).join(", "))}), on its own writes within ${esc(String(v.tolerance_s))} s: counted once, here, not as a second stock.</div>`);
+    }
+    return rows.join("");
   }
   // the instruments that wrote a hidden stock's balance counters: what its level is implied from
   function counterInstruments(ev) {
@@ -136,16 +155,18 @@ const Live = (() => {
   }
   // how far to trust the stock (sd/stocktrust.py): each measurement of its evidence, the weakest as its score
   function trustRows(t) {
+    if (Evidence.byConstruction(t)) return `<div>trust</div><div><b>by construction: no evidence (D33)</b>${(t.why || []).map((w) => `<br><span class="muted">${esc(w)}</span>`).join("")}</div>
+      ${t.behaviour ? behaviourRows(t.behaviour) : ""}`;
     const pct = (x) => (x == null ? "—" : (+x).toFixed(2));
     const parts = Object.entries(t.components || {}).map(([k, v]) => `${esc(k.replace("_", " "))} ${pct(v)}`).join(" · ");
-    const facts = [t.p_null != null ? `shift null p ${pct(t.p_null)}` : "", t.held_out_r2 != null ? `held-out R² ${pct(t.held_out_r2)}` : "",
+    const facts = [t.matched_counts ? esc(t.matched_counts) : "", t.p_null != null ? `shift null p ${pct(t.p_null)}` : "", t.held_out_r2 != null ? `held-out R² ${pct(t.held_out_r2)}` : "",
       t.cum_residual_ratio != null ? `running residual ${pct(t.cum_residual_ratio)} × the level's spread` : "", t.units != null ? `judged on ${t.units} unit${t.units === 1 ? "" : "s"} (steps, or stretches between a slow level's writes)` : "",
       t.persistence != null ? (t.persistence_of > 1 ? `found the same way in ${Math.round(100 * t.persistence)}% of the last ${t.persistence_of} discoveries` : "first discovery: nothing to compare with yet") : ""].filter(Boolean).join(" · ");
     return `<div>trust</div><div><b>${pct(t.score)}</b> ${esc(t.level)} <span class="muted">(${esc(t.kind.replace("_", " "))}; the weakest of: ${parts})</span>
       ${facts ? `<br><span class="muted">${facts}</span>` : ""}${(t.why || []).map((w) => `<br><span class="muted">${esc(w)}</span>`).join("")}</div>
       ${t.behaviour ? behaviourRows(t.behaviour) : ""}`;
   }
-  // how far to trust the stock's projection (sd/experiments/heldout.py): the model run forward from part-way through its window
+  // how far to trust the stock's projection (sd/equations/heldout.py): the model run forward from part-way through its window
   function behaviourRows(b) {
     const pct = (x) => (x == null ? "—" : (+x).toFixed(2));
     return `<div>behaviour</div><div><b>${pct(b.score)}</b> ${esc(b.level)} <span class="muted">(its own runs from part-way through the window miss the level by ${pct(b.error)} × its spread; holding the level, ${pct(b.hold_error)})</span>
@@ -167,8 +188,10 @@ const Live = (() => {
     for (const l of lines) for (const [t, v] of l.points) net.set(t, (net.get(t) || 0) + v);
     if (lines.length > 1) lines.push({ label: "net (in − out)", points: [...net.entries()].sort((a, b) => a[0] - b[0]), color: "#e5e7eb" });
     openDrawer(`<h3 data-drawer-key="s:${esc(id)}">${stockHead(s.id)} <span class="tag">stock</span>${ev.hidden ? ' <span class="tag">hidden: found from the levels, not measured</span>' : ""}</h3>
-      ${ev.hidden ? `<div class="muted" style="font-size:12px;margin-bottom:8px">A question about the system: ${esc(ev.note || "something in it is not measured or not understood yet")}.</div>` : ""}
+      ${stockAbout(s.id)}
+      ${ev.hidden ? `<div class="muted" style="font-size:12px;margin-bottom:8px">A question about the system: ${esc(ev.note || (ev.passing && ev.passing.note) || "something in it is not measured or not understood yet")}.</div>` : ""}
       <div class="def"><div>now</div><div class="num">${fmt(now(id))}</div>
+      ${whyOne(s, io)}
       <div>machines</div><div>${[...new Set([...io.in, ...io.out].flatMap((f) => (f.machines || []).map((h) => h.machine)))].map((m) => `<span class="mdot" style="--c:${mcolor(m)}"></span>${esc(m)}`).join(" ") || '<span class="muted">none associated yet</span>'} <span class="muted">(hypotheses, from its flows)</span></div>
       ${ev.hidden ? `<div>its counters from</div><div>${esc(counterInstruments(ev))} <span class="muted">(no series measures it: its level is what these counters imply)</span></div>` : `<div>measured by</div><div>${writerLink(s, ev)} <span class="muted">(wrote the series: an instrument, or the series' own label)</span></div>`}<div>bound to</div><div class="num">${esc(s.series ? keyOf(s.series) : "—")}</div>
       ${s.series && s.series.source && s.series.source !== "own" ? `<div>read from</div><div>source <b>${esc(s.series.source)}</b><div class="num" style="font-size:11.5px">${esc(s.series.query || "")}</div><div class="muted" style="font-size:11.5px">${esc((s.series.origin || []).join(" → "))}</div></div>` : ""}
@@ -176,6 +199,7 @@ const Live = (() => {
       ${s.series && resOf(MODEL.discovery, keyOf(s.series)) ? `<div>resolution</div><div>${esc(resOf(MODEL.discovery, keyOf(s.series)))}</div>` : ""}
       ${ev.balance ? `<div>balance</div><div class="num">Δ =${ev.balance.map((b) => `<span class="bal-term">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join("")}<span class="muted">${ev.trust && ev.trust.kind === "passage" ? "a passage: judged on its raw points; R² not used" : ev.balance_r2 == null ? (ev.by_construction ? "by construction: a count of reporters and its own turnover, so no evidence" : "measured by no series: no fit to report") : `R² ${ev.balance_r2} · exact in ${Math.round(100 * ev.exact_steps)}% of steps`}${ev.balance_r2_level != null ? ` · judged on the traffic through it (R² on the level itself ${ev.balance_r2_level})` : ""}</span></div>` : ""}
       ${ev.net_flow ? netFlowRows(s, ev, io) : ""}
+      ${ev.quiet ? `<div>held</div><div>from v${esc(String(ev.quiet.version))}: ${esc(ev.quiet.why)}</div>` : ""}
       ${ev.trust ? trustRows(ev.trust) : ""}</div>
       <h4 style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">Level: measured, as the equations run it, and projected
         <label class="muted" style="font-weight:400;font-size:11.5px">project <input id="sim-h" type="number" min="1" max="1440" value="${horizon()}" style="width:58px"> min ahead</label></h4>
@@ -249,7 +273,7 @@ const Live = (() => {
     openDrawer(`<h3 data-drawer-key="f:${esc(fid)}">${esc(flowName(f))} <span class="tag">flow</span></h3>
       <div class="def"><div>moves</div><div>${esc(f.from ? stockName(f.from) : "outside")} → ${esc(f.to ? stockName(f.to) : "outside")}</div>
       <div>equation</div><div class="num">${esc(eqText(f))}${SDGraph.correlational(MODEL, f) ? `<div class="muted" style="font-family:inherit">${esc(SDGraph.UNTESTED)}</div>` : ""}</div><div>machines</div><div>${(f.machines || []).length ? f.machines.map((h) => `<div><span class="mdot" style="--c:${mcolor(h.machine)}"></span><b><a href="/machines#${encodeURIComponent(h.machine)}" title="open it on the Machines page">${esc(h.machine)}</a></b>${h.confidence != null ? ` <span class="num">${Math.round(100 * h.confidence)}%</span>` : ""} <span class="muted">${esc(h.why || h.origin || "")}</span></div>`).join("") + '<div class="muted" style="font-size:11.5px">hypotheses: a match in time, not a cause; they change no equation, and two similar flows between the same stocks may not be told apart</div>' + byLabel : `<span class="muted">${esc(f.association || "no machine associated yet")}</span>${byLabel}`}</div>
-      <div>fit</div><div class="num">${esc(e.origin || "")} by ${esc(e.method || "")} · ${esc(e.form || "")} · ${q.events ?? 0} events${q.live_minutes ? ` over ${q.live_minutes} min` : ""}${q.dispersion != null ? ` · dispersion ${rateFmt(q.dispersion)}` : ""}${zeroEv ? `<div class="muted" style="font-family:inherit">${esc(zeroEv.slice(3))}</div>` : ""}</div>
+      <div>fit</div><div class="num">${Evidence.tooFew(f) ? `<b>${esc(Evidence.tooFewText(f))}</b>: ` : ""}${esc(e.origin || "")} by ${esc(e.method || "")} · ${esc(e.form || "")} · ${q.events ?? 0} events${q.live_minutes ? ` over ${q.live_minutes} min` : ""}${q.dispersion != null ? ` · dispersion ${rateFmt(q.dispersion)}` : ""}${zeroEv ? `<div class="muted" style="font-family:inherit">${esc(zeroEv.slice(3))}</div>` : ""}</div>
       ${(f.measured_by || []).length > 1 ? `<div>measured by</div><div class="num">${f.measured_by.map((c) => esc(c.name)).join(" + ")}</div>` : ""}
       ${SDGraph.sameAs(MODEL, f).length ? `<div>same events</div><div>as ${SDGraph.sameAs(MODEL, f).map(esc).join(", ")} <span class="muted">(another counter counts each of its events: one move, two names)</span></div>` : ""}
       <div>counter</div><div class="num">${esc(f.counter ? keyOf(f.counter) : "—")}${differs ? `<div class="muted" style="font-family:inherit">${esc(counts)}; drawn ${esc(endName(f.from))} → ${esc(endName(f.to))}${through ? ` because it passes through ${esc(through)}` : ""}</div>` : ""}</div>

@@ -101,6 +101,11 @@ marked as such. This is goal G1, and every other goal's tests depend on it.
   web. `orchestra sd whatif` and `POST /api/dynamics/whatif` are gone. **Next:** phase 2, the
   agents' tools (pi or MCP) and a skill explaining them, in `~/orchestra-agents`; phase 3, the
   web pages that show experiments and their runs.
+  **Superseded 2026-11-01 (the owner): the declared layer and predictions.** The owner's way to say what a change should do
+  is the declared layer's expected effects and `orchestra.prediction.made`; the Experiments page
+  (phase 3) was removed, and then, the same day, the rest of the experiments with their APIs and
+  the agents' tools (D41's stage 2): the equation language and the forward run stay in
+  `orchestra/sd/equations/` for prediction judging.
 
 **The Workflows run (2026-11-01): G17–G22.** Written by the coordinator's run from the four reviewed proposals and the task table of
 [GOAL-2026-11-01-workflows.md](GOAL-2026-11-01-workflows.md) (milestones M2–M5), following D21;
@@ -407,7 +412,7 @@ the change did what was intended.
   (an Orchestra type whose `data` Orchestra reads, as with `orchestra.machine.started`) naming the
   id its change will carry, the expected edits (a flow's factor, unchanged, a part appearing or
   disappearing, a stock's level; `[]` is the null test), the horizon and optionally its own
-  forward run; `sd.predictions.Predictions` and committing an experiment publish it (the
+  forward run; `sd.predictions.Predictions` and the Supervisor's `confirm` publish it (the
   `orchestra sd predict` command was removed on 2026-10-27). The host
   matches it to the era its change begins, judges it after the horizon against the boundary
   comparison (a form change by whether the old law still predicts the count) and the stocks'
@@ -420,12 +425,12 @@ the change did what was intended.
   era) and end to end on a real `orchestra run` with a scripted machine that predicts over the
   events endpoint (`tests/e2e/test_predictions_e2e.py`, opt in). Not yet on the dummy agents
   themselves: that test belongs in `orchestra-agents`, beside its eras e2e.
-- **Extended (2026-10-27): experiments as predictions.** A prediction may expect a flow's whole
+- **Extended (2026-10-27): equations as predictions.** A prediction may expect a flow's whole
   equation (`{"flow", "equation", "params"}`), judged by its law: the predicted equation, run over
-  the era's measured levels and inputs, must predict what the era counted. Committing an
-  experiment (G5) states its edits this way, with its forward run as the trajectories; on the
+  the era's measured levels and inputs, must predict what the era counted. On the
   synthetic pipeline, a doubled rate written as new numbers or as a new equation passes, and a
-  wrong equation is a side effect (`tests/unit/test_experiments_api.py`).
+  wrong equation is a side effect (`tests/unit/test_predictions.py`). (Committing an experiment
+  stated its edits this way until experiments were removed on 2026-11-01.)
 
 ### G14. Test health as instruments
 - **What:** counts of tests by kind (unit, acceptance, e2e) and by outcome (passing, failing,
@@ -487,26 +492,27 @@ the change did what was intended.
   optimises isolated changes, and data faked to fit them may not be faked fully, especially where
   there are unintended but acceptable side effects.
 - **What:**
-  - **Inverse experiments** (built, the first part): targets over a past window and what must
+  - **Inverse experiments** (built, the first part; removed 2026-11-01, superseded by the declared layer
+    and predictions): targets over a past window and what must
     hold; the smallest set of changes to the model under which a replay meets them; the side
     effects, the near-optimal alternatives, and a fabricate-and-rediscover check of whether the
     data would tell the solution from another.
-  - **Counterfactual replay** (built): a past window run again with other equations, on its own
+  - **Counterfactual replay** (built; removed 2026-11-01 with the experiments): a past window run again with other equations, on its own
     measured inputs, scored against what happened.
   - **Era boundaries as natural experiments:** every announced change is an intervention; the
     boundary comparison (G11) and the verdicts (G13) are its readout, and the false-change rate
     measured between an era's halves is the noise floor any claimed effect must clear.
   - **Probes:** designed perturbations (persistent excitation in control terms): a machine varies
     something on purpose, within safe bounds, so that the flows it touches can be identified
-    rather than inferred from whatever happened to vary. A probe is an experiment committed with
-    its own horizon and a planned return.
+    rather than inferred from whatever happened to vary. A probe is a change predicted with its
+    own horizon and a planned return.
 - **Acceptance:**
   - (built) on synthetic data from a known model, an inverse run asked for a target the true
     change produced recovers that change as the sparsest solution and reports its side effects;
     an impossible target is reported unreachable with the best approach; an ambiguous one is
-    flagged; the solver keeps its deadline (`tests/unit/test_experiments_inverse.py`);
+    flagged; the solver keeps its deadline (its tests went with it on 2026-11-01);
   - (built) the true equation scores better in replay than a wrong one on data it made
-    (`tests/unit/test_experiments_replay.py`);
+    (likewise removed on 2026-11-01);
   - (to come) a probe on the dummy-agents system identifies a flow's rate that ordinary operation
     leaves unidentified (the observability report says undetermined before, determined after);
   - (to come) the effect of each era boundary on the dummy-agents system is reported with the
@@ -516,14 +522,14 @@ the change did what was intended.
 
 | Goal | Status |
 |---|---|
-| G1–G5 | In progress from 2026-10-27; G5's phase 1 (experiments in the core) built 2026-10-27, phases 2 (agents' tools and skill) and 3 (web pages) next |
+| G1–G5 | In progress from 2026-10-27; G5's phase 1 (experiments in the core) built 2026-10-27, phase 2 (agents' tools and skill) built; phase 3 (web pages) built; all three removed 2026-11-01, superseded by the declared layer and predictions |
 | G6–G7 | After G1 and G3. Written for the task system, which D21 replaces with the Workflows plugin (G21); to be restated against the floor once it runs, for the owner to confirm |
 | G8–G10 | To be planned; G8's loop is written as a workflow in UC-7 (G22's X1), on fakes |
 | G11–G12 | Built 2026-10-27 in Orchestra's core: eras with the previous era as the prior, the boundary comparison, the model's own events |
-| G13 | Built 2026-10-27 in Orchestra's core: predictions recorded on the bus, judged per era by lifted-models §3.1, `orchestra.prediction.judged`; equation expectations and committed experiments added the same day; the dummy-agent e2e is still to be written in `orchestra-agents` |
+| G13 | Built 2026-10-27 in Orchestra's core: predictions recorded on the bus, judged per era by lifted-models §3.1, `orchestra.prediction.judged`; equation expectations added the same day (committed experiments too, removed 2026-11-01); the dummy-agent e2e is still to be written in `orchestra-agents` |
 | G14 | Built 2026-10-27: the test-report instrument in Orchestra, the gate's reruns and test reports in the task system; the dummy-agent e2e is still to be written in `orchestra-agents` |
 | G15 | After G3, G11 and G13 |
-| G16 | Inverse experiments and counterfactual replay built 2026-10-27 (with G5's phase 1); natural experiments and probes to come |
+| G16 | Inverse experiments and counterfactual replay built 2026-10-27 (with G5's phase 1); removed 2026-11-01, superseded by the declared layer and predictions; natural experiments and probes to come |
 | G17–G18 | Planned 2026-11-01 (M2 of the Workflows run); proposals 2 and 5 reviewed and merged; C1 dispatched |
 | G19–G20 | Planned 2026-11-01 (M3); proposal 4 (G19) reviewed and merged; A1 and A5 dispatched |
 | G21 | Planned 2026-11-01 (M4); proposal 3 reviewed and merged; W1 running |

@@ -1,4 +1,4 @@
-"""The web UI: Dashboard, Machines, Instruments, Dynamics, Experiments and Core. Read-only for humans: nothing here
+"""The web UI: Dashboard, Machines, Instruments, Dynamics and Core. Read-only for humans: nothing here
 changes the system (AGENTS.md rule 9) beyond observations (rediscovering, and the intended model's
 closed list of page controls, web/intended.py). Every route, a plugin's too, is behind the project's web token
 (web/auth.py), which the app's outermost middleware checks."""
@@ -23,7 +23,6 @@ from .background import Refresher
 from .core import CoreProbe
 from .core_explore import Explorer
 from .dynamics import era_eras, model_view, predictions_view
-from .experiments_routes import install as install_experiments
 from .intended import attach_dynamics, attach_machines
 from .intended import install as install_intended
 from .machines import model_parts
@@ -114,6 +113,13 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
             out["hung_on_error"] = f"{type(e).__name__}: {e}"
         return out
 
+    @app.get("/api/instruments/{name}/series")
+    def instrument_series_(name: str) -> dict:
+        """The series an instrument wrote in the last hour, each with its latest value
+        (web/instrument_series.py): read from the metrics store, never by running the instrument."""
+        from .instrument_series import instrument_series
+        return instrument_series(core.metrics, name, time.time())
+
     @app.get("/api/instruments/{name}/log")
     def instrument_log(name: str, lines: int = 200) -> dict:
         """The tail of an instrument's log; only a file within the project is read (machine_logs.py)."""
@@ -200,10 +206,10 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         if out.get("ok"):
             attach_dynamics(project, out, since, core.metrics)
             attach_askers(out)
-        elif bg.ready("index"):                     # no model: how long the bus has been heard, so the page can say how much data there is
+        elif bg.ready("index"):                     # no model: the earliest event's time as its source stamped it (the bus keeps no receive time), so the page can say how much data there is
             out["bus_since"] = bg.index.bus_since()
         if not sd_installed():                      # conservation only: say what is missing, and how to have it
-            out["sd_missing"] = needs_sd("behaviour trust, simulation, experiments and SD Lab's strategies")
+            out["sd_missing"] = needs_sd("behaviour trust, simulation and SD Lab's strategies")
         return out
 
     def attach_askers(out: dict) -> None:
@@ -336,10 +342,8 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     @app.get("/api/dynamics/eras")
     def dynamics_eras() -> dict:
         """The eras, each era's versions, and what changed at the last boundary (sd/compare.py)."""
-        from ..sd.experiments.reads import eras
+        from ..sd.reads import eras
         return eras(bg.models)
-
-    install_experiments(app, project, core.metrics, page)
 
     @app.get("/api/machines")
     def machines(era: str | None = None) -> dict:

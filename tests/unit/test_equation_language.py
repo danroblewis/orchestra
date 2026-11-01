@@ -1,4 +1,4 @@
-"""The equation language (sd/experiments/language.py, forms.py, compile.py): every form the model
+"""The equation language (sd/equations/language.py, forms.py, compile.py): every form the model
 holds renders in it, round-trips, and evaluates as SD Lab's own simulator evaluates it; unsafe or
 unknown input is refused, saying why."""
 
@@ -9,9 +9,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from orchestra.sd.experiments.compile import Frame, compile_rate
-from orchestra.sd.experiments.forms import Names, equation_of, flow_text, text_of
-from orchestra.sd.experiments.language import EquationError, parse, reference, syntax
+from orchestra.sd.equations.compile import Frame, compile_rate
+from orchestra.sd.equations.forms import Names, equation_of, flow_text, text_of
+from orchestra.sd.equations.language import EquationError, parse, reference, syntax
 from orchestra.sd.model import Equation, Flow, Model, Stock
 from orchestra.sd.rates import numbers
 from orchestra.sd.strategies import sd_installed
@@ -99,8 +99,8 @@ def test_the_classic_forms_render_as_a_machine_writes_them_and_stay_those_forms(
                      (Equation("linear", {"c": 1.0, "k": 0.2}, "fitted", inputs=["input:demand"]), "c + k * demand"),
                      (Equation("linear", {"c": 1.0, "k": 0.2}, "fitted", inputs=["weird:id"]), 'c + k * stock("weird:id")')):
         assert round_trip(Flow("f", "f", "a", None, equations=[eq]))[0] == text
-        back = equation_of(parse(text, stocks=STOCKS, inputs=INPUTS, params=eq.params), "experiment x-1 by m")
-        assert back.form == eq.form and back.origin == "declared" and back.method == "experiment x-1 by m"
+        back = equation_of(parse(text, stocks=STOCKS, inputs=INPUTS, params=eq.params), "a prediction by m")
+        assert back.form == eq.form and back.origin == "declared" and back.method == "a prediction by m"
     written = equation_of(parse("k*a", stocks=STOCKS, inputs=INPUTS, params={"k": 1}), "m")
     assert written.form == "expr" and text_of(written, "a", names()) == ("k*a", {"k": 1.0}), "a text written otherwise is kept as written"
 
@@ -164,7 +164,7 @@ def test_syntax_alone_takes_every_other_name_as_a_stock():
 
 
 def test_numbers_that_are_not_numbers_are_zero_and_counted():
-    from orchestra.sd.experiments import engine
+    from orchestra.sd.equations import engine
 
     m = Model("m", "m", time_unit="minute", stocks=[Stock("q", "q")],
               flows=[Flow("in", "in", None, "q", equations=[equation_of(parse("log(q)", stocks=["q"]), "t")])])

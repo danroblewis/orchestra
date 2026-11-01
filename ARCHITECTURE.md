@@ -62,9 +62,8 @@ flowchart LR
   subgraph state["State directory"]
     RT["runtime.json"]
     MS["model/"]
-    XS["experiments/"]
   end
-  EX["Experiments (sd/experiments/)"]
+  EX["Model reads (sd/reads.py)"]
   subgraph web["orchestra web (web/)"]
     BG["Background reads"]
     UI["Core, Machines, Instruments, Dynamics"]
@@ -73,13 +72,11 @@ flowchart LR
   CLI["CLI (cli.py)"]
 
   M -- "POST /events, GET /events" --> EP
-  M -- "GET /model, POST /experiments..." --> EP
-  EP -- "the model and experiments API" --> EX
-  M -. "or the Python API (Experiments)" .-> EX
+  M -- "GET /model, /eras, /series..." --> EP
+  EP -- "the model API" --> EX
+  M -. "or the Python API (ModelReads)" .-> EX
   EX -- "reads levels and rates" --> MET
-  EX -- "base models" --> MS
-  EX -- "drafts, runs" --> XS
-  EX -- "commit: orchestra.prediction.made" --> BUS
+  EX -- "models, eras, predictions" --> MS
   EP -- "Events.publish, Events.after" --> BUS
   M -. "or the Python helper (Events.publish)" .-> BUS
   LA -- "starts, restarts" --> M
@@ -117,18 +114,18 @@ Each component, its module, and what it depends on:
 | **Runtime record** | `orchestra/runtime.py` | `<state>/runtime.json`: the running hosts, the one host that launches, the web server, and the launched processes. Every write takes a file lock. A record holds a pid and the process's create time, so a reused pid is not mistaken for it. | config, `psutil`, `fcntl` |
 | **Event collector** | `orchestra/collectors.py` | Counts every event by type and source into `orchestra_events_total{type, source}`. Knows nothing about what events mean. | bus, metrics |
 | **Bootstrap host** | `orchestra/host.py` | `orchestra run`: Orchestra's own machine, `orchestra-host`. Registers itself, publishes `orchestra.host.started`/`stopped`, writes `orchestra_host_up`, runs the event collector, rediscovers the model on a timer, and (in the one host that launches) runs the launcher and the instruments. | everything below |
-| **Events endpoint** | `orchestra/endpoint/` (`__init__`, `validate`, `server`, `api`) | HTTP for machines in any language: `POST /events` checks one event's fields and publishes it through `Events.publish`; `GET /events?after=&types=&wait=&limit=` reads by offset, with a long poll. Beside them, the model and experiments API (`api.py`): `GET /model`, `/eras`, `/series`, `/observability`, `/predictions`, `/experiments...` and `POST /experiments...`, answering what the Python API answers; and the intended model's declared layer: `GET /intended`, `GET /intended/design` and `POST /intended` (one call to the declared layer, applied whole or refused). Served by the host that launches on `[events] listen` (127.0.0.1 and a port the system picks, by default), behind the project's token (`<state>/events.token`). Remembers recent ids, so a retried post is written once. | events (`Events`), runtime, the stdlib's `http.server`; experiments |
+| **Events endpoint** | `orchestra/endpoint/` (`__init__`, `validate`, `server`, `api`) | HTTP for machines in any language: `POST /events` checks one event's fields and publishes it through `Events.publish`; `GET /events?after=&types=&wait=&limit=` reads by offset, with a long poll. Beside them, the model API (`api.py`): `GET /model`, `/eras`, `/series`, `/observability`, `/predictions`, `POST /equations/check`, answering what the Python API answers; and the intended model's declared layer: `GET /intended`, `GET /intended/design` and `POST /intended` (one call to the declared layer, applied whole or refused). Served by the host that launches on `[events] listen` (127.0.0.1 and a port the system picks, by default), behind the project's token (`<state>/events.token`). Remembers recent ids, so a retried post is written once. | events (`Events`), runtime, the stdlib's `http.server`; model reads |
 | **Launcher** | `orchestra/launcher.py` | Keeps running the commands that `[[machines]]` and plugins (`Plugin.processes`) declare. Knows them only as processes: a name, a command, a pid, an exit code. | config, runtime, the host's `publish` |
 | **Instruments: collectors and scrapes** | `orchestra/collect/` (`spec`, `fetch`, `exposition`, `round`, `runner`) | Runs `[[collect]]` commands and reads `[[scrape]]` URLs (the project's and the plugins' `Plugin.collectors`) on intervals, parses the Prometheus text format, and writes the points labelled `project` and `instrument=<name>`, keeping the target's own labels (`machine` included; a target's `project` or `instrument` becomes `exported_project`, `exported_instrument`). Announces nothing on the bus. Keeps each instrument's health in the runtime record under `instruments`, and its log in `<state>/logs/instruments/<name>.log`. | metrics, runtime, launcher (log size) |
 | **Shipped instruments** | `orchestra/instruments/` (`test_reports`) | Scripts any repository can run under `[[collect]]`, standard library only, never imported by the core: `test_reports` runs the tests (or reads the reports something else wrote), reads JUnit XML and pytest report logs, and prints tests by kind and outcome, flaky and confirmed tests, and (with a history file) tests added and removed (USING_ORCHESTRA.md section 3.4). | nothing of Orchestra |
 | **Sources** | `orchestra/sources/` | Reads other time-series stores in place (`[[sources]]`), never writes to them. Infers what to read from a store's schema, reads it for discovery's exact window, and records where every series came from. Also reads **counted traffic** (`sources/traffic.py`). | metrics (the own store), `sd/series.py`, HTTP |
 | **Discovery** | `orchestra/sd/` (`rediscover.py`, `discover.py`, `strategies.py`, `netflow.py`, `attribute.py`, and helpers), `orchestra/sdlab/` | Builds the model from the series without being told what anything is. `sd/discover.py` is Orchestra's own "conservation" step; `sd/strategies.py` can add one of SD Lab's strategies on top. `sd/attribute.py` infers which machines may be associated with each flow, as hypotheses from their event counts. | sources (the catalogue), model store; `numpy` and friends for SD Lab (`sd` extra) |
 | **Observability** | `orchestra/sd/observability.py`, `orchestra/sd/linearise.py` | Reads the model, never changes it: linearises it at the last hour's mean levels and says which stocks the series and counters determine, through what, and which new instrument would determine the rest (with parameters seen only in combination, and controllability as a weak structural note). `GET /observability` on the events endpoint, `/api/dynamics/observability`. | the model; `numpy` (`sd` extra) |
-| **Experiments** | `orchestra/sd/experiments/` | A staged, editable copy of the model that machines change and run: the equation language every rate is written in (`language`, `forms`, `compile`), its stepper (`engine`), the record and its edits (`store`, `edits`, `views`), the three runs (`forward`, `replay`, `inverse`, with `fabricate` for the inverse's uniqueness check), the bridge to predictions (`expect`), and the Python API (`api`, `reads`). | model store, metrics (through the sources' catalogue), predictions; `numpy` (`sd` extra) |
+| **Equations and model reads** | `orchestra/sd/equations/`, `orchestra/sd/reads.py` | The equation language every rate is written in (`language`, `forms`, `compile`), its stepper (`engine`), the forward run with its band (`forward`, `heldout`, `history`) that prediction judging and the divergence check use, a prediction's draft (`predicted`), and the model as a machine reads it (`views`; `sd/reads.py`, `ModelReads`, the Python API). Experiments, a staged, editable copy of the model machines changed and ran, were removed on 2026-11-01 (the owner); the declared layer's expected effects and the Supervisor's `confirm` replaced them. | model store, metrics (through the sources' catalogue), predictions; `numpy` (`sd` extra) |
 | **Model store** | `orchestra/sd/store.py`, `orchestra/sd/model.py` | The one model and its versions: `<state>/model/vNNNN.json`, plus the latest discovery cached in `model/discovered.json`. | the state directory |
 | **Intended model** | `orchestra/sd/intended/` (`store`, `ops`, `machine_ops`, `revise`, `consent`, `controls`, `requests`, `keys`, `history`, `diff`, `view`, `machines_view`, `design`, `announce`, and helpers), `orchestra/web/intended.py` | The declared layer beside the discovered model: what the owner intends (stocks, effects, targets, flows, machines with their envelope and opaque `spec`, event types, attachments) and what a plugin or inference proposes, in versions `dN` (`<state>/model/intended/`, reached only through `ModelStore.intended()`, `project.intended`), and the comparison of the two, on keys. It runs nothing: a declared machine is not started, a declared stock binds no series, a declared flow changes no equation, and discovery never reads it. The host announces each accepted call as `orchestra.intent.changed`; the web server records the page's observations and publishes the owner's requests as `orchestra.intent.requested`. | model store, metrics (facts read under a time limit), the bus (announcements, requests) |
-| **Web** | `orchestra/web/` | `orchestra web`: a FastAPI app with the Dashboard, Core, Machines, Instruments, Dynamics and Experiments pages, and plugin pages. Background threads keep caches warm so page requests stay cheap. Every route, a plugin's too, is behind the project's web token (`<state>/web.token`), checked by one middleware (`web/auth.py`). | bus, metrics, runtime, model store, sources, plugins |
-| **CLI** | `orchestra/cli.py` | `init`, `run`, `web`, `events info\|endpoint\|copy`, `metrics series`, `sd discover\|show\|fit\|versions\|predictions`, `sources check\|infer\|preview`. | the rest, imported on use |
+| **Web** | `orchestra/web/` | `orchestra web`: a FastAPI app with the Dashboard, Core, Machines, Instruments and Dynamics pages, and plugin pages. Background threads keep caches warm so page requests stay cheap. Every route, a plugin's too, is behind the project's web token (`<state>/web.token`), checked by one middleware (`web/auth.py`). | bus, metrics, runtime, model store, sources, plugins |
+| **CLI** | `orchestra/cli.py` | `init`, `run`, `web`, `events info\|endpoint\|copy`, `metrics series`, `sd discover\|snapshot\|show\|versions\|predictions`, `sources check\|infer\|preview`. | the rest, imported on use |
 | **Plugins** | `orchestra/plugins.py` | Loads packages registered in the entry-point group `orchestra.plugins`. A plugin adds pages, a static directory, an API router, every-page scripts and stylesheets, declared machines, processes, instruments (`collectors`) and a guide for an AI operator (`guide`, served with Orchestra's own `guide.md` by `orchestra/guides.py` at `/api/guides`). One that fails to load, or whose name another plugin took, is reported and left out. | launcher (`Process`), collect (`Collector`) |
 
 ### Inside the host
@@ -661,7 +658,7 @@ discovery thread after each run, with their state in `model/announce.json`:
 | `orchestra.model.returned` | A diverged stock is back within 1 half-width. | as above, with `diverged_since` |
 
 The prediction a level is judged against is the oldest still within its horizon
-(`max(diverge_after, 2 x every)`): `sd.experiments.forward` with no change from the levels then,
+(`max(diverge_after, 2 x every)`): `sd.equations.forward` with no change from the levels then,
 its 10-90% band widened by the Poisson spread of the stock's flows' events since. A model with a
 missing source announces nothing. Without `orchestra[sd]` divergence is not judged.
 
@@ -699,7 +696,7 @@ sequenceDiagram
 The prediction is an Orchestra type a machine publishes (as it publishes
 `orchestra.machine.started`), so Orchestra reads its `data`; no other machine's `data` is read
 (rule 3). It goes on the bus, not into a file Orchestra is handed, so that one path serves every
-machine (the Python API, a committed experiment and a machine posting to the events endpoint all
+machine (the Python API, the Supervisor's `confirm` and a machine posting to the events endpoint all
 publish the same event) and the log shows it came before the change.
 
 | Verdict | When |
@@ -720,43 +717,20 @@ level over the horizon's second half is within 2 standard errors of the run, cou
 of single readings (an error of the mean, from readings minutes apart, called a third of the
 stocks that moved as simulated out of their band). Each verdict carries the threshold, the
 nominal false-change rate (4.55% a number) and, where the previous era is long enough, the share of
-flows flagged between its two halves, discovered apart. An expected whole **equation** (what a
-committed experiment states for a flow it rewrote) is judged by its law the same way: the
+flows flagged between its two halves, discovered apart. An expected whole **equation** (`{"flow",
+"equation", "params"}`) is judged by its law the same way: the
 predicted equation, run over the era's measured levels and inputs (`sd/verdict.py:text_law`),
 must predict the era's count.
 
-### Experiments: forward, replay, inverse, commit
+### The equation language and the forward run
 
-An experiment (`orchestra/sd/experiments/`, SPEC §4.5) is a draft of the model a machine edits and
-runs before it changes anything: an AI agent through its tools, any other program through the
-HTTP API on the events endpoint or the Python API. Both are one implementation
-(`experiments/api.py:Experiments`), so they answer alike. The web UI reads experiments and never
-changes one.
-
-```mermaid
-flowchart TD
-  M["A machine (agent or program)"] -- "POST /experiments" --> C["create: copy the base model<br/>(the latest discovery, or a version)"]
-  C --> D[("experiments/#lt;id#gt;.json<br/>base, draft, scenario, log")]
-  M -- "POST .../edits (a batch)" --> E["edits.py: check each edit,<br/>then the whole draft"]
-  E -- "all accepted" --> D
-  E -- "one refused: 422, nothing changed" --> M
-  M -- "POST .../runs mode=forward" --> F["forward.py: base and draft from now,<br/>band, limits, not trusted"]
-  M -- "POST .../runs mode=replay" --> R["replay.py: a past window on its inputs,<br/>observed against simulated, scores"]
-  M -- "POST .../runs mode=inverse" --> I["inverse.py: targets and holds,<br/>greedy sparse search under a deadline"]
-  I -- "solved changes" --> N[("a new draft, the caller#apos;s")]
-  I -- "fabricate both windows, rediscover, test the laws" --> U["uniqueness check"]
-  F --> G["engine.py: the equations in the language,<br/>many columns at once"]
-  R --> G
-  I --> G
-  F --> S[("#lt;id#gt;.runs/#lt;run#gt;.json")]
-  R --> S
-  I --> S
-  M -- "POST .../commit" --> P["expect.py: the diff as expected edits,<br/>the forward run as trajectories"]
-  P -- "orchestra.prediction.made, subject the experiment" --> B[("Event bus")]
-  B --> J["the host judges it after the horizon (sd/judge.py)"]
-  W["Web UI: /api/experiments..."] -. "reads" .-> D
-  W -. "reads" .-> S
-```
+Experiments (a draft of the model a machine edited and ran forward, replayed or inverted, and
+committed as a prediction) were removed on 2026-11-01, the owner: the page first, then the
+machines' side (`sd/experiments/`, the `/experiments` HTTP routes, the agents' `experiments` and
+`replay` tool groups). A machine states a change's effect with `orchestra.prediction.made`
+directly (`sd.predictions.Predictions`), and the Supervisor through the declared layer
+(`declare_expected_effect`, then `confirm`, which publishes it). What prediction judging needs
+stayed, in `orchestra/sd/equations/` (SPEC §4.5):
 
 **The equation language** (`language.py`, `forms.py`, `compile.py`) is how every rate is read and
 written: a Python-syntax expression over stock ids, measured inputs, named parameters and numbers,
@@ -764,19 +738,15 @@ with a fixed set of functions (including `smooth`, `delay` and `observed()`), pa
 numpy closures and checked against the model's names. Every equation discovery writes renders in
 it and parses back to the same text (checked on every saved model on the development machine,
 about 3,000 equations, against SD Lab's own evaluators). **The engine** (`engine.py`) steps it as
-SD Lab's simulator steps the Dynamics page's projection, with a column per band member or
-inverse candidate, so a forward run's band and an inverse step's whole grid are one pass.
+SD Lab's simulator steps the Dynamics page's projection, with a column per band member, so a
+forward run's band is one pass.
 
-**Forward** keeps what the scale-and-add "what if" did well (the band from each flow's recorded
-error, z shared by flow id between the two runs; the limits; the trust flags from `sd/trust.py`)
-and asks it of a whole draft. **Replay** scores each counted flow's equation one step ahead on the
-measured levels (Poisson deviance against its counter), so an equation is judged on its own and
-not through the drift of the others, and each stock's free run. **Inverse** searches the smallest
-set of changes greedily (one change ahead: a pair that only works together is not found) and says
-so; its alternatives and its fabricate-and-rediscover check are what say whether the answer is the
-only one the data would allow. **Commit** turns the draft into a G13 prediction; the host's
-judging is unchanged, with the equation kind added to `sd/verdict.py`.
-
+**Forward** (`forward.py`) runs a base model and a draft (a prediction's expected edits applied,
+`predicted.py`) from the levels at a time, with the band from each flow's recorded error (z shared
+by flow id between the two runs), widened by each stock's held-out replay error (`heldout.py`),
+the limits and the trust flags from `sd/trust.py`. The host's judging (`sd/judge.py`) runs it for
+a prediction without its own trajectories, and the divergence check (`sd/diverge.py`) runs the
+model with no change.
 
 ### State layout
 
@@ -800,7 +770,7 @@ flowchart TD
   P6 --> P65["predictions.json: the machines' predictions, their verdicts, the bus offset read to"]
   P6 --> P66["intended/: journal.jsonl, dNNNN.json, diff/, requests.jsonl, announced.json"]
   P6 --> P67["#lt;record#gt;.lock: versions, intended, intended-announce, ..."]
-  KEY --> P12["experiments/: #lt;id#gt;.json, each experiment; #lt;id#gt;.runs/, its runs"]
+  KEY --> P12["experiments/: ignored since 2026-11-01, never deleted"]
   KEY --> P7["sources/#lt;name#gt;.json: inferred definitions"]
   KEY --> P8["logs/"]
   P8 --> P81["orchestra-host.log"]
@@ -875,7 +845,7 @@ Both backends refuse points stamped more than 60 s in the future. The conformanc
 | Extra | What it adds |
 |---|---|
 | `bus-redis`, `bus-rabbitmq`, `bus-kafka`, `bus` | Client libraries for the server buses. |
-| `sd` | numpy, scipy, numba, highspy: SD Lab's strategies, the Dynamics page's simulation (`sd/simulate.py`), the observability report (`sd/observability.py`, numpy only) and experiments (`sd/experiments/`). |
+| `sd` | numpy, scipy, numba, highspy: SD Lab's strategies, the Dynamics page's simulation (`sd/simulate.py`), the observability report (`sd/observability.py`, numpy only) and prediction judging's forward run (`sd/equations/`). |
 | `sd-research` | More libraries for a few research strategies. |
 | `dev` | pytest, httpx, ruff. |
 
@@ -905,16 +875,10 @@ so most page requests do no expensive work:
 | **Machines** (`/machines`) | Every machine seen on the bus (and counted-traffic machines and plugin placeholders), its instances, mode and kind, whether it is active, the event map with hand-offs and counted traffic, communication loops, and a dialog per machine with its series, last events (envelopes only) and log tail. With eras, the map and cards are the current era's by default (`MachineIndex(since, until)`; `/api/machines?era=<id>\|none\|all`). | `web/machines.py`, `web/traffic.py`, `web/machine_logs.py`, `static/netgraph.js`, `static/loops.js` |
 | **Instruments** (`/instruments`) | What measures the system, apart from the machines: each `[[collect]]`, `[[scrape]]` and `[[sources]]` entry (and a plugin's), with its kind (script, URL, source), target, interval, last write and points, failures, last error and log. Read from the runtime record's `instruments` and `orchestra.toml`, never by running an instrument. `/api/instruments`, `/api/instruments/<name>/log`. | `web/instruments.py`, `static/instruments.html` |
 | **Dynamics** (`/dynamics`) | The model as a stock-and-flow graph, with feedback loops marked balancing or reinforcing, history charts, each stock's and flow's drawer (a flow's lists each machine hypothesis with its why, or "no machine associated yet"), a flows table with "machines (hypotheses)" and their confidence, a simulation from the start of the era and a projection forward, and stepping through saved versions. With eras, a timeline picks the era (`/api/dynamics/model?era=`) and lists what changed at its start (before → after, appeared, disappeared, carried from the prior). "Rediscover now" runs discovery in the background. | `web/dynamics.py`, `sd/simulate.py`, `static/sd-graph.js`, `static/sd-layout.js`, `static/layout-worker.js` |
-| **Experiments** (`/experiments`, `/experiments/<id>`) | What machines did with the model. The list: each experiment's machine (linking to its card), title and purpose, status, base version and era, latest run and when, and its prediction's verdict; filtered by machine, status and era (`?owner=&status=&era=`; an era's are those made on its model or predicting the change that began it). One experiment: the prediction it became (expectation, change id, era, verdict and evidence), its edits as an equation diff against the base (before and after side by side), its runs (forward: each stock's base and experiment trajectories with their bands, the hour measured before "now" and what was measured since, limits and not-trusted reasons in callouts above the charts; replay: measured against both simulations per stock and each flow's fit, better, same or worse; inverse: targets, holds, the changes found and the new draft's diff, side effects by size, alternatives, the uniqueness check and an `ambiguous` warning), and the edit log in order with refused batches. These pages follow the browser's light or dark setting (`class="themed"`, `static/experiments.css`); the others are dark. | `static/experiments.html`, `static/experiment.html`, `static/experiment-view.js` (pure renderers, tested in Node by `tests/pages/experiments_render.mjs`), `static/predictions.js` (shared with Dynamics), `static/charts.js` (bands) |
+| ~~Experiments~~ | Removed on 2026-11-01 (the page, `/experiments/<id>`, `/api/experiments*`): for people, the declared layer's expected effects and `orchestra.prediction.made` replaced it. | |
 
-**Experiments** are read under `/api/experiments` (the list, with each one's latest run and verdict,
-`?owner=&status=&era=`; one experiment, its diff, its runs, one run in full, a forward run's
-measured levels (`.../runs/<run>/measured`: the stocks before its now and since, up to its horizon
-or the present, read from the metrics store on request) and its prediction and verdict) and the
-eras under `/api/dynamics/eras`, through the same `Experiments` class the machines use; there is
-no route that makes, edits, runs or commits one (rule 9). The Dynamics page links each era to the
-experiments tied to it and each prediction to the experiment it came from. A machine asks what a
-change would do through an experiment.
+The eras are read under `/api/dynamics/eras` (`sd/reads.py`). The web UI has no
+experiments route (the Experiments pages were removed on 2026-11-01).
 
 **Authentication** (`web/auth.py`) is the app's outermost middleware, a plain ASGI one, so it is in
 front of every route: Orchestra's pages and `/api/*`, the static files, any websocket, and every
@@ -976,8 +940,8 @@ configuration, and every probe runs in a thread pool with a time limit.
 | `orchestra sd predictions [--json]` | The predictions recorded and their verdicts, by era (`sd/predictions_report.py`). | nothing |
 | `orchestra sources check\|infer\|preview QUERY` | Probes the sources, runs an inference round, previews a query's fan-out. | `sources/` cache on infer |
 
-Machines reach the model, its eras, predictions and experiments through the events endpoint's
-model and experiments API and the Python API; people see them on the web.
+Machines reach the model, its eras and predictions through the events endpoint's model API and the
+Python API; people see them on the web.
 
 ## Plugins
 
@@ -1023,7 +987,7 @@ divided.
 | 6 | Every equation records its origin | `Equation.origin` is a required field (`sd/model.py`). Conservation writes `fitted`/`poisson-mle`, the net-flow layer `fitted`/`least-squares`, and SD Lab `discovered`/`sdlab:<strategy>`. `sd/attribute.py` associates machines with flows only as inferred hypotheses with evidence and confidence (`flow.evidence["machines"]`), never from a label or a declaration; `Machine.attributed` holds flow ids as hypotheses. A machine's draft expected effect (`sd/intended/machine_ops.py`) is an unpublished prediction, not an association; the expected flows drawn from it carry no machine (`sd/intended/diff.py`). |
 | 7 | Stocks are discovered, not configured; measurements are not machines | `Config` has no stock or flow bindings. `sd/discover.py` decides from the data alone. A series' declared kind (counter or level, from a `[[series]]` definition) is the only hint it takes. Instruments label points `instrument=<name>` (`collect/round.py`), announce nothing, and are shown on the Instruments page. A writer label is provenance only (`sd.series.written_by`). An instrument attached to a declared machine (`sd/intended/`, `web/measured.py`) is declared provenance kept in the declared layer: never written on a point, never read by discovery or `sd/attribute.py`, and it makes no machine. A declared stock, effect or flow binds no series and is matched to what discovery finds only by the `link` op. |
 | 8 | The core stays up | `web/core.py` and `web/core_explore.py` import only the bus, the metrics store, the runtime record and the configuration. Every probe runs under `TIMEOUT` (4 s), each component in a lane of its own with at most one probe in flight (`core.Lane`), so a hung store never times out another component's card; the explorer has workers of its own. A plugin that fails, or a part of one (static files, router, a page), is left out and reported. |
-| 9 | Humans talk only to the Supervisor; UI and CLI read-only except observations | The web app has four POST routes: "rediscover" (an observation), the Core page's bus probe, `POST /api/intended/control` (an observation from rule 9's closed list, `sd/intended/controls.py`, refusing a machine or attachment and any value) and `POST /api/intended/request` (a request, published as `orchestra.intent.requested` from `owner`, which changes nothing until the Supervisor applies it); its experiment routes only read. Any path that changes machines belongs to a plugin. The events endpoint is the bus, and the model and experiments, reached over HTTP for machines, as the Python helpers are; an experiment changes no machine and no model (a commit is a prediction: a statement about the model); the web UI and CLI gain no write from it (`events endpoint` only prints where it is). A machine declares through the events endpoint's `POST /intended` (read with `GET /intended` and `GET /intended/design`): a declaration with its provenance, changing no machine, no configuration and no discovered version. |
+| 9 | Humans talk only to the Supervisor; UI and CLI read-only except observations | The web app has four POST routes: "rediscover" (an observation), the Core page's bus probe, `POST /api/intended/control` (an observation from rule 9's closed list, `sd/intended/controls.py`, refusing a machine or attachment and any value) and `POST /api/intended/request` (a request, published as `orchestra.intent.requested` from `owner`, which changes nothing until the Supervisor applies it). Any path that changes machines belongs to a plugin. The events endpoint is the bus, and the model, reached over HTTP for machines, as the Python helpers are; reading the model changes no machine and no model; the web UI and CLI gain no write from it (`events endpoint` only prints where it is). A machine declares through the events endpoint's `POST /intended` (read with `GET /intended` and `GET /intended/design`): a declaration with its provenance, changing no machine, no configuration and no discovered version. |
 | 10 | One package, no path hacks | `pyproject.toml` packages only `orchestra`. No module changes `sys.path`. `orchestra/sdlab` is excluded from ruff (`extend-exclude`) and its README records its source commit. |
 
 **Known departures** (as of `69111d58`). These are places where the code goes further than the
@@ -1044,9 +1008,9 @@ These are plans, not features. Each is described in `docs/proposals/` or `docs/r
   (`docs/proposals/event-sources.md`).
 - Ghost machines, the environment as a flow's driver, and leverage points
   (`docs/proposals/environment-and-ghost-machines.md`).
-- Delays and non-linear forms found by discovery (the equation language writes them, and
-  experiments run them), priors a human hands in (eras' priors are built), and prospective model
-  versions beyond experiments (`docs/proposals/system-dynamics-core.md`,
+- Delays and non-linear forms found by discovery (the equation language writes them, and the
+  forward run runs them), priors a human hands in (eras' priors are built), and prospective model
+  versions (`docs/proposals/system-dynamics-core.md`,
   `docs/proposals/orchestra-kernel.md`, `docs/roadmap/README.md`).
 - Collectors that skip repeated values (the collectors' half of "each series' real resolution",
   `docs/roadmap/README.md` H1).

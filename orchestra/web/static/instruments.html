@@ -27,15 +27,16 @@
 </style>
 </head>
 <body>
-<nav id="nav"><a href="/">Dashboard</a><a href="/machines">Machines</a><a href="/instruments" class="on">Instruments</a><a href="/dynamics">Dynamics</a><a href="/experiments">Experiments</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
+<nav id="nav"><a href="/">Dashboard</a><a href="/machines">Machines</a><a href="/instruments" class="on">Instruments</a><a href="/dynamics">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="iwrap">
-  <div class="intro">An instrument measures the running system and never acts on it: a script Orchestra runs (<code>[[collect]]</code>), a URL it reads (<code>[[scrape]]</code>), or another store it reads at each discovery (<code>[[sources]]</code>). Instruments are not machines: their series are labelled <code>instrument=&lt;name&gt;</code>, which says who measured them, never who did the work. Machines are on the Machines page, known by their events on the bus. <b>Measures machine</b> names the declared machines an instrument is attached to: the owner's statement of which series measure which machine, never a machine made from a series. Click an instrument for its log.</div>
+  <div class="intro">An instrument measures the running system and never acts on it: a script Orchestra runs, a URL it reads, or another metrics store it reads. Click one for its series, each with its latest value, and its log.<details class="more"><summary>more about this page</summary>Instruments are not machines: their series are labelled <code>instrument=&lt;name&gt;</code>, which says who measured them, never who did the work. Machines are on the Machines page, known by their events on the bus. <b>Measures machine</b> names the declared machines an instrument is attached to: the owner's statement of which series measure which machine, never a machine made from a series.</details></div>
   <div id="state" class="muted" style="font-size:12px;margin-bottom:8px"></div>
   <div class="scroll-x"><table class="itable" id="list"></table></div>
   <div id="errors" class="muted" style="font-size:12px;margin-top:10px"></div>
 </div>
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
+<script src="/static/sd-graph.js?v={{v}}"></script>
 <script>
 const draftPill = (x, now = Date.now() / 1000) => (x.expires && x.expires < now
   ? `<span class="ipill bad">draft · expired ${esc(ago(now - x.expires))} ago, still recording · left out of discovery</span>`
@@ -96,10 +97,29 @@ function fromHash() {
   openDrawer(`<h3>${esc(name)} <span class="tag">${x ? "source" : "not here"}</span></h3><div class="muted">${x ? "A source is another store, read at each discovery: it has no log of its own here. Its state is in its row." : `No instrument called <span class="num">${esc(name)}</span> is configured: the link may be from an older configuration.`}</div>`, { key: "i:" + name });
 }
 window.addEventListener("hashchange", fromHash);
+// an instrument's series, named as the Dynamics page names the stocks and flows they become
+// (SDGraph.seriesName: a pile "write (held) · delivery sail", the sentence its view gives it under it), with the
+// latest value of each and how long ago it was written; the raw series key on hover
+function seriesTable(d, now, name) {
+  const inst = INSTRUMENTS.find((i) => i.name === name), views = inst && inst.views ? { [name]: inst.views } : null;
+  if (!d.ok) return `<div class="muted">series not shown: ${esc(d.error)}</div>`;
+  if (!d.series.length) return `<div class="muted">no series written in the last ${Math.round(d.window_s / 60)} minutes</div>`;
+  const refs = d.series.map((r) => ({ name: r.name, labels: r.labels }));
+  const key = (r) => `${r.name}{${Object.entries(r.labels).map(([k, v]) => `${k}="${v}"`).join(",")}}`;
+  const rows = d.series.map((r, i) => { const n = SDGraph.seriesName(refs[i], refs, views, name);
+    return `<tr title="${esc(key(r))}"><td><b>${esc(n.name)}</b>${n.family ? ` <span class="muted">${esc(n.family)}</span>` : ""}${n.about ? `<div class="muted about">${esc(n.about)}</div>` : ""}</td>
+      <td class="num" style="text-align:right">${esc(String(+r.value.toFixed(3)))}</td><td class="muted" style="white-space:nowrap">${ago(now - r.at)} ago</td></tr>`; }).join("");
+  return `<table class="itable series"><tr><th>series</th><th style="text-align:right">now</th><th>written</th></tr>${rows}</table>`
+    + (d.more ? `<div class="muted">and ${d.more} more</div>` : "");
+}
 async function openLog(name) {
-  let d;
-  try { d = await (await fetch(`/api/instruments/${encodeURIComponent(name)}/log`)).json(); } catch (e) { d = { ok: false, error: "the web server did not answer" }; }
-  openDrawer(`<h3 data-drawer-key="i:${esc(name)}">${esc(name)} <span class="tag">instrument</span></h3>` + (d.ok ? `<div class="muted" style="font-size:11.5px">${esc(d.path)}</div><div class="logs">${esc(d.lines.join("\n"))}</div>` : `<div class="muted">${esc(d.error)}</div>`), { key: "i:" + name });
+  let d, sr;
+  const get = async (what) => { try { return await (await fetch(`/api/instruments/${encodeURIComponent(name)}/${what}`)).json(); } catch (e) { return { ok: false, error: "the web server did not answer" }; } };
+  [d, sr] = await Promise.all([get("log"), get("series")]);
+  const now = Date.now() / 1000;
+  openDrawer(`<h3 data-drawer-key="i:${esc(name)}">${esc(name)} <span class="tag">instrument</span></h3>`
+    + `<h4>Series <span class="muted">(${sr.ok ? sr.series.length + sr.more : "?"}, latest values)</span></h4>${seriesTable(sr, now, name)}<h4>Log</h4>`
+    + (d.ok ? `<div class="muted" style="font-size:11.5px">${esc(d.path)}</div><div class="logs">${esc(d.lines.join("\n"))}</div>` : `<div class="muted">${esc(d.error)}</div>`), { key: "i:" + name });
   // a log opens at its newest line
   const box = document.querySelector("#drawer .logs"); if (box) box.scrollTop = box.scrollHeight;
 }

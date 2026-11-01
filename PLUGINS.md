@@ -1741,8 +1741,8 @@ How to stay compatible:
     `series_key`), `orchestra.sd.predictions` (`Predictions`, `PredictionError`, `expectation`,
     `plain`), `orchestra.sd.eras` (`recorded`), `orchestra.sd.discover` (`MIN_COVER`,
     `MIN_STEPS`), `orchestra.sd.flows_of` (`flows_of`, `name_unit`),
-    `orchestra.sd.experiments.api` (`Experiments`, `ExperimentError`),
-    `orchestra.sd.experiments.language` (`reference`);
+    `orchestra.sd.reads` (`ModelReads`, `ReadError`),
+    `orchestra.sd.equations.language` (`reference`);
   - **the intended model:** prefer `project.intended`; the names its callers share come from
     `orchestra.sd.intended.ops` (`ENV_NAME`, `OPTION`), `.names` (`resolve`, `ABSENT`, `WAITS`,
     `WAITS_LINK`), `.keys` (`Keys`) and `.checks` (`PROVENANCE`);

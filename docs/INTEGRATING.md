@@ -44,34 +44,46 @@ run with `measure` is a `[[collect]]` instrument. It runs in one of two ways:
 - with the Workflows plugin installed, as a scheduled item (`[workflows.every.<name>]`) that runs
   it once per interval (§5.5).
 
-**(d) The bridges plugin's readers, where one exists.** They cover Jira (Data Center or Cloud:
-issues, changes and comments, plus counts by status category), Slack *pings* (mentions of you and
-DMs to you, and whether you answered), and GitHub issues and pull requests (`~/orchestra-bridges/README.md`).
-*Use this when* one already reads what you need, because then the integration is configuration only
-(`[bridges.jira]` and so on). So check (d) before you write (c). Never run both over the same items:
-they would publish the same changes twice.
+There is no fourth strategy of "the bridges plugin's own reader". **The bridges plugin is a
+library** (the owner, 2026-11-01: "a library or framework so that AI agents within my repo ...
+could write scripts in the target repo to do the metrics and event collection"): kits, fakes,
+templates and a scaffold. It reads no system itself; every collector, for (b) and (c), is a script
+in the owner's repository (§3.1), scaffolded from a kit and edited there like any other code. Its
+older direct readers (`[bridges.jira]`, `[bridges.slack]`, `[bridges.github]`) are being retired
+into scaffolded examples: do not configure them for a new integration.
 
 | System | Series | Events |
 |---|---|---|
 | Chronosphere | (a), §8 | none: a metrics store has no item events |
 | PagerDuty | (c)'s `measure`: open incidents | (c), §5 |
-| Jira | (d) `jira_issues`, or (c)'s `measure` | (d) on Data Center, or (c), §6 |
-| Slack | (c)'s `measure`: messages per channel | (c) for channel history, §7; (d) for pings to you |
+| Jira | (c)'s `measure`: issues by status | (c), §6 |
+| Slack | (c)'s `measure`: messages per channel | (c), for channel history and pings to you, §7 |
 
 ## 3. Rules that bind every strategy
 
-1. **Where files go.** By default everything goes in the state directory, `~/.orchestrator/<key>/`
-   (find it with `python -c "from orchestra.config import load_project; print(load_project().state_dir)"`
-   in the repository):
-   - the program: `machines/<name>/` (`machine.toml`, `<name>.py`, `test_<name>.py`, `AGENTS.md`);
+1. **Where files go.** **The program goes in the owner's repository**, the target repository
+   Orchestra runs in: `.orchestra/machines/<name>/` (`machine.toml`, `<name>.py`,
+   `test_<name>.py`, `AGENTS.md`), scaffolded with `--root repo`. There a coding tool (the
+   owner's, or the Coordinator's worker on a ticket) edits it, its test runs with the
+   repository's, and it lands by a pull request the owner approves, like any other code. **The
+   state directory is the exception**: `--root state` writes `~/.orchestrator/<key>/machines/<name>/`
+   (find it with `python -c "from orchestra.config import load_project; print(load_project().state_dir)"`),
+   only when the owner says their repository must stay clean, or for a throwaway trial (§5.4).
+   Whichever holds the program, what changes as it runs stays in the state directory:
    - its cursor and the ids it has emitted: `kits/pollers/<name>/`;
    - the HTTP cache: `kits/cache/`.
 
-   Configuration entries go in the **private overlay** (`orchestra.local.toml` there), written
-   through `project.config_edit` with `target="overlay"`. The default target is the repository, so
-   always pass it. The company repository changes only through a pull request the owner approves;
-   then you scaffold with `--root repo`, which writes `.orchestra/machines/<name>/`, and use
-   `target="repo"`.
+   Configuration entries (the `[[machines]]` and `[[collect]]` that run it, with the owner's
+   credentials by reference) go in the **private overlay** (`orchestra.local.toml` in the state
+   directory), written through `project.config_edit` with `target="overlay"`. The default target is
+   the repository, so always pass it. **The kits are read-only**: their client sends GET (and the
+   few POSTs a search API needs) and nothing else. A write to the system (a label, a transition, a
+   comment, a Slack post) is never the collector's: it is an Outbox draft (the outbox plugin), sent
+   only as the owner's approval settings allow. **With the Supervisor**, you write none of this:
+   its `integrate_system` scaffolds into the repository (or, on the owner's word, the state
+   directory), names the path, and hands the script to the Coordinator as work when its test fails
+   or no kit has a template for the system; `approve_integration` writes the clearance, the
+   credentials' references and the overlay entries.
 2. **Credentials come from an environment variable or a token file, never from the config.**
    Never put a token in `orchestra.toml`, the overlay or `machine.toml`. Orchestra and the kits
    refuse a `token` key. `machine.toml` holds only the variable's *name* (`[settings] token_env`),
@@ -79,9 +91,10 @@ they would publish the same changes twice.
    file is `~/.config/orchestra-bridges/<name>-token` (`install -m 600 /dev/null <file>`, then the
    owner pastes the token in), outside every repository. `CachedClient(token_file=…)` reads it.
    Two cautions:
-   - A scaffolded program passes only `token_env`, so with it the variable must be set in the
-     environment of `orchestra run`, and every process the host launches inherits it. Where that
-     matters, pass `token_file` (§5.2 does).
+   - With `token_env`, the variable must be set in the environment of `orchestra run`, and every
+     process the host launches inherits it. Where that matters, name `[settings] token_file`
+     instead (§5.2 does). An HTTP Basic login (Jira Cloud: the account's email with the token)
+     names the account the same way, `user_env` or `user_file`.
    - Never print, log, echo or commit a token, and never ask for one in a chat. Ask the owner to
      set it.
 3. **Rate limits and caching.** `CachedClient` limits each host with Orchestra's own token bucket,
@@ -143,6 +156,19 @@ they would publish the same changes twice.
    in any output or file.
 10. **Confirm it works** with §9's commands and pages. A trial on a scratch project against the
     fake comes first, then the real system.
+11. **Behind a corporate proxy.** Orchestra's own HTTP (a `[[sources]]` store, a VictoriaMetrics
+    metrics store) uses Python's standard library, which takes `HTTPS_PROXY`, `HTTP_PROXY` and
+    `NO_PROXY` from the environment of `orchestra run` and `orchestra web`; every process the host
+    launches inherits them. Put the local hosts in `NO_PROXY` (`127.0.0.1,localhost`) or the web
+    UI's own calls and a local bus go through the proxy too. A proxy that re-signs TLS with a
+    corporate CA needs that CA trusted: for one store, `[[sources]] auth = { ca_file = "…" }`; for
+    everything in the process, `SSL_CERT_FILE=/path/to/corporate-ca-bundle.pem` (a bundle holding
+    the public CAs as well as the corporate one, or every other host fails). `uv` itself reads
+    `SSL_CERT_FILE`, or `UV_NATIVE_TLS=1` to use the system's store. The hosts to allow: `github.com`
+    (installing Orchestra and its plugins), `pypi.org` and `files.pythonhosted.org` (their
+    dependencies), `api.anthropic.com` (only if an AI agent machine runs here), and each system you
+    integrate or store you read, by the host its URL names. The browser showing the web UI also
+    loads its drawing libraries from `cdnjs.cloudflare.com` and `cdn.jsdelivr.net`.
 
 ## 4. The kits (`orchestra_bridges.kits`, in the bridges plugin)
 
@@ -410,8 +436,8 @@ open incidents, by service and urgency.
 
 ```bash
 cd <repository>
-orchestra bridges scaffold pagerduty pagerduty_alerts            # -> <state>/machines/pagerduty_alerts/
-uv run python -m pytest <state>/machines/pagerduty_alerts/test_pagerduty_alerts.py -q   # 4 passed
+orchestra bridges scaffold pagerduty pagerduty_alerts --root repo   # -> .orchestra/machines/pagerduty_alerts/
+uv run python -m pytest .orchestra/machines/pagerduty_alerts/test_pagerduty_alerts.py -q   # 4 passed
 ```
 
 The program (`pagerduty_alerts.py`) lists the open incidents each poll and reads by id each one
@@ -571,7 +597,7 @@ repository:
 ```python
 import sys
 from orchestra.config import load_project
-p = load_project(); d = p.state_dir / "machines" / "pagerduty_alerts"
+p = load_project(); d = p.repo_root / ".orchestra" / "machines" / "pagerduty_alerts"   # or p.state_dir / "machines" / ...
 for array, entry in [("machines", {"name": "pagerduty_alerts", "command": f"{sys.executable} {d}/pagerduty_alerts.py",
                                   "restart": "always"}),
                      ("collect", {"name": "pagerduty_alerts", "command": f"{sys.executable} {d}/pagerduty_alerts.py measure",
@@ -602,12 +628,12 @@ announced once. The instrument stores two points of `pagerduty_incidents_open`. 
 
 ### 5.5 Or as a scheduled item, when the Workflows plugin is installed
 
-Put `machine.json` beside the scaffolded files, in `<state>/machines/pagerduty_alerts/`:
+Put `machine.json` beside the scaffolded files, in `.orchestra/machines/pagerduty_alerts/`:
 
 ```json
 {"id": "pagerduty_alerts", "kind": "programmatic", "managed": "orchestra", "engagement": {"mode": "ad hoc"},
- "spec": {"command": "python /Users/<you>/.orchestrator/<key>/machines/pagerduty_alerts/pagerduty_alerts.py --once",
-          "role": "pagerduty_alerts", "exit": {"0": "landed", "1": "error", "2": "blocked"}}}
+ "spec": {"command": "python <repository>/.orchestra/machines/pagerduty_alerts/pagerduty_alerts.py --once",
+          "role": "pagerduty_alerts", "exit": {"0": "landed", "1": "error"}}}
 ```
 
 Then `p.config_edit.set("workflows.every.pagerduty_poll", {"every": "5m", "role": "pagerduty_alerts",
@@ -657,13 +683,8 @@ Once discovery finds `pagerduty_incidents_open` as a stock, the Supervisor (or y
 
 ## 6. Jira (Data Center)
 
-First check (d): `[bridges.jira]` reads Data Center with a personal access token (`JIRA_API_TOKEN`
-or `~/.config/orchestra-bridges/jira-token`). It publishes `jira.issue.created`, `.assigned`,
-`.transitioned`, `.updated` and `jira.comment.added` as the people who did them, and serves
-`jira_issues{jira_project, category}`. Build your own only for what it does not read:
-
 ```bash
-orchestra bridges scaffold jira jira_ops      # not "jira": that is the bridge's name
+orchestra bridges scaffold jira jira_ops --root repo   # not "jira": that is the system's (the machine's) name
 ```
 
 Set `[settings]` in `machine.toml`: `base_url = "https://jira.<company>.com"`, `jql = "project = OPS"`
@@ -676,18 +697,24 @@ drops summaries.
 
 To add **assignments**, keep the `assignee` items too in `keep_changes`
 (`{"id": h["id"], "field": "assignee", "to": item.get("to"), ...}`), then emit
-`jira.issue.assigned` with `stamp=f"{c['id']}:assignee"`. Use the same names the bridge uses, so
-the two never disagree. A changelog that the search cut short (`changelog.total > maxResults`)
+`jira.issue.assigned` with `stamp=f"{c['id']}:assignee"`. Use these event names, so
+every Jira collector agrees. A changelog that the search cut short (`changelog.total > maxResults`)
 needs `/rest/api/2/issue/<key>?expand=changelog`. Add that before you rely on long histories.
+
+**Jira Cloud** (an `atlassian.net` site) differs in two ways the template does not cover yet, so
+they are a change to the script: it logs in with HTTP Basic, the account's email and an API token
+together (`auth_format = "Basic {basic}"`; `[settings] user_file` or `user_env` names the email,
+`token_file` or `token_env` the token), and its search is `/rest/api/3/search/jql`. The Workflows
+plugin's `examples/delivery_live/machines/jira_live.py` (with its `jira_live/machine.toml`) is a working Cloud poller to copy from.
 
 ## 7. Slack (channel history, with mentions)
 
 The owner tracks "about six channels, mine and other teams'" and wants to "respond to Slack
-quickly" (work charter §3D). For pings to the owner, use (d), `[bridges.slack]`. For a channel's
-traffic, scaffold the `slack` kit:
+quickly" (work charter §3D). For a channel's traffic, and for pings to the owner (the mention
+filter below), scaffold the `slack` kit:
 
 ```bash
-orchestra bridges scaffold slack team_channels
+orchestra bridges scaffold slack team_channels --root repo
 ```
 
 Set `[settings]`: `channels = ["C0123", "C0456"]` (ids, not names), `every = "5m"` and
@@ -787,8 +814,9 @@ Run it at the end. Every line must be true.
       not the word (which matches `token_env` and `token_file`): `grep -rEn
       '(xox[bpa]-|Bearer [A-Za-z0-9._-]{12,}|[A-Za-z0-9+/=_-]{32,})' <overlay> <state>/machines/<name>
       <repository>` finds nothing but hashes you can explain.
-- [ ] Files are in `~/.orchestrator/<key>/machines/<name>/` and entries are in the overlay. Nothing
-      was committed to the company repository (or there is an open pull request the owner asked for).
+- [ ] Files are in `.orchestra/machines/<name>/` on a pull request the owner approves (or in
+      `~/.orchestrator/<key>/machines/<name>/` because the owner keeps the repository clean), and
+      entries are in the overlay. The program writes nothing to the system; any write is an Outbox draft.
 - [ ] The test passes against the fake, with the canary and token check.
 - [ ] Every event's `source` is the actor (`person.<system>.<account>` or `bot.<system>`), its
       `subject` is the item, its `type` is `<system>.<item>.<what>`, and its stamp changes only

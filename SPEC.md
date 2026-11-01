@@ -221,21 +221,19 @@ read the token, so can neither publish nor read. Anyone who can read the state d
 already write the file bus or the runtime record; the token adds no power beyond the Python
 helper's.
 
-**The model and experiments over HTTP** (`endpoint/api.py`). The same server, behind the same
-token, serves the model and experiments (§4.5) to a machine in any language: `GET /language`,
+**The model over HTTP** (`endpoint/api.py`). The same server, behind the same token, serves the
+model (§4.5) to a machine in any language: `GET /language`,
 `/model?version=&raw=` (equations in the language), `/model/versions`, `/eras` (each era's
 versions and the last boundary's comparison), `/observability`, `/series?ids=&start=&end=&span_s=
 &points=&limit=&after=` (each series summarised, its points on request, at most 5,000 a series
-and 20,000 an answer, paged by `after`), `/predictions[/<id>]`, `/experiments?owner=&status=`,
-`/experiments/<id>[/diff|/runs[/<run>]|/prediction]`, `/intended?version=` and `/intended/design`
-(the intended model's declared layer and its summary, §4.6); and `POST /equations/check`,
-`/experiments` (create), `/experiments/<id>/edits`, `/runs` (forward, replay, inverse), `/commit`
-and `/discard`, each body naming the machine's `source`, and `POST /intended` (one call to the
+and 20,000 an answer, paged by `after`), `/predictions[/<id>]`, `/intended?version=` and `/intended/design`
+(the intended model's declared layer and its summary, §4.6); and `POST /equations/check` and
+`POST /intended` (one call to the
 declared layer: `{source, author, turn, message, quote, reason, request?, ops}`, applied whole or
 refused with the op's `index`, §4.6). They answer what the Python API
-(`sd.experiments.api.Experiments`, `project.intended`) answers: `{"ok": true, ...}`, or `{"ok": false, "error"}` with
-400, 403 (not the owner), 404, 409 (not a draft) or 422 (an edit or equation refused, with the
-edit's `index`). Other methods are refused (405).
+(`sd.reads.ModelReads`, `project.intended`) answers: `{"ok": true, ...}`, or `{"ok": false, "error"}` with
+400, 404 or 422 (an op refused, with its `index`). Other methods are refused (405). The
+`/experiments` routes were removed on 2026-11-01 (§4.5).
 
 **How this fits rule 9.** Publishing is a machine's normal job, not a human's control of the
 system: the endpoint is the bus, reached over HTTP, exactly as the Python helper is the bus reached
@@ -394,7 +392,13 @@ Conservation (`sd/discover.py`):
    computer asleep writes nothing, and its machines' silence then is not theirs) is gone, or
    replaced, and is left out; one silent for less may be restarting, and keeps its stocks.
    Orchestra's own series but its event counters are left out too
-   (`orchestra_core_*`, `orchestra_host_up`: plumbing, not a measure of the system). Counters
+   (`orchestra_core_*`, `orchestra_host_up`: plumbing, not a measure of the system), and so are
+   the event counts of Orchestra's own events: a type in its namespace (`orchestra.*`: a machine
+   started or quiet, the model changed or stalled), whoever published it, or anything the host
+   (`orchestra-host`) published. They say what Orchestra did, not the system's work, and the host
+   is never a machine (AGENTS.md rule 2), so none is a flow. Told by the namespace and the
+   source, never by a list of names (`sd/series.py`, `orchestra_events`): the source
+   `orchestra-host` is reserved for the host, and nothing else may publish under it. Counters
    that move together in all but 3% of steps are one when one is Orchestra's count of the
    other's events, or both are one machine's: the machine's own, then the shorter name, is kept;
    two machines' counts of the same events both stay (each machine's stocks take their own) and
@@ -428,7 +432,17 @@ Conservation (`sd/discover.py`):
    completed before the best is chosen, so an exact balance that needs a rare counter beats a
    stand-in's near miss (another instrument's count of both ways out of a state, one a step late). A small set of chosen
    counters that cancels to nothing is dropped, and one that equals an unchosen counter is
-   replaced by it (`sd/collinear.py`). The level's own machine's counters are searched first
+   replaced by it (`sd/collinear.py`). A balance with more counters than the level's changes
+   can test sheds those that add nothing they can test: the changes over the whole window test
+   fewer counters than half the steps the level changed in, and always two (an inflow and an
+   outflow). Beyond that, squared error no longer tells a counter from a coincidence, and a
+   counter is taken out (the least counted first, until the limit) when no step pins it on its
+   own (one the balance fits, where it moved and no other counter of the balance moved the level
+   the same way) and without it as many steps are exact. A counter whose removal leaves fewer
+   steps exact stays, so an exact balance is never reduced (a quiet shelf baked, sold, discarded
+   and eaten from at once). A balance assembled from the level's own machine's counters and
+   another's on their residual is held to the limit as a whole, shedding only the other's
+   (`sd/balance.py`, `supported`). The level's own machine's counters are searched first
    (its record of its transitions, with Orchestra's counts of its events): when they balance it
    within the tolerance, that is its balance, and another machine's counter never replaces one
    of them (an oven's own counters come before the board's, however exactly they
@@ -484,7 +498,20 @@ Conservation (`sd/discover.py`):
    prefix aside, and the same labels): two warehouses drained in proportion to one order stream
    change in step and are two stocks (`levels_match`): the machine whose counters make the balance keeps it, the other is recorded as its
    twin (never two backlogs a source declared: two queues one consumer acknowledges at once change
-   alike and are still two). A level that only fills is a stock when its balance is exact, whatever feeds it (a
+   alike and are still two). A level that counts a stock's servers busy is that stock's
+   capacity, not a second stock (`sd/capacity.py`: the head chef busy, inspections started less
+   inspections done, inside the orders inspecting; two chefs, 0 to 2). Judged on the series' own
+   writes, never the grid, within a second plus the longer of the two write intervals: at 80% of
+   its writes it reads what its counters imply (as a passage's level must), at all but 3% it holds
+   no more than the stock, 80% of its outflows' events are some of the stock's outflows' (totals
+   within 3%), the stock's own writer counts what fills it, and that is no counter another
+   stock's balance takes nor (unless it is the stock's own inflow) one counting the same events.
+   It is judged once the stocks are final (after hops and passages), left out with why, and shown
+   in the stock's drawer (`capacity_of`: capacity k, the share of time busy, the mean occupancy,
+   its counters). A level fed by another stock's flow (a shelf the inspections passed fill, the
+   state after a stock) stays a stock, and so does another machine's count of its own work (an
+   agent's turns beside the tickets in review: which machine serves a flow is a hypothesis, rule
+   6), and a server who reports later than a write interval after the stock's writer. A level that only fills is a stock when its balance is exact, whatever feeds it (a
    terminal state, where other stocks' outflows end); one the system's flows explain only
    roughly is a tally of activity unless counters no ordinary stock uses balance it.
 
@@ -550,7 +577,14 @@ Conservation (`sd/discover.py`):
    all its evidence, so it does not come and go with the one event that takes the fill over the
    bar at the edge of a window), become a flow into the state and flows out of it. The state is the measured level whose raw points
    rise at the inflow's events and fall at the outflows' (`sd/between.py`: the grid misses it,
-   the raw points do not), and that both rose and fell by at least one in the window (the test
+   the raw points do not), that rose no more often than the inflow counted, that at each of its
+   own writes reads what the counters imply (the items moved in less those moved out up to then,
+   give or take a second for the order of two writers' writes, apart from the items there
+   before), at 80% of the writes where it, or the counters throughout that second, say something
+   is there (a state sampled coarsely misses the items that come and go between its writes, and
+   so do the counters' totals at those writes; a pile that reads empty while the counters say an
+   item is in, or moves while they say nothing moved, is another state), and that
+   both rose and fell by at least one in the window (the test
    is by magnitude, in the level's own unit, whatever that is: a level that only rises, the test
    reports read, 5 to 10, is a tally; one whose moves are all under one, a gate's duration of
    tenths of a second or a count scaled to fractions, moves no whole unit; a duration that moves
@@ -625,7 +659,10 @@ Every stock records **how far to trust it** (`sd/stocktrust.py`, `evidence.trust
 discovery and saved with the model version: the kind of evidence it stands on (`conservation`,
 `net_flow`, `passage`, `unmeasured`, `by_construction`), each measurement, and the weakest as one
 `score` from 0 to 1 with a `level` (high from 0.8, medium from 0.5, low from 0.2, else very low)
-and why. A balance's: the shift null (1 at the least p-value its shifts can give, 0 at p = 1), the
+and why. A passage's: the lesser of the share of its rises and falls that came at its counters'
+events and the share of the items its counters moved that those rises and falls moved (`4 of 50
+moves matched` scores 0.08, not 1.0; a version saved before the items were kept has only the
+first), its steps in step, and its units. A balance's: the shift null (1 at the least p-value its shifts can give, 0 at p = 1), the
 held-out R² (an exact balance's own R² on each half), the level reproduced (one less the running
 residual's spread over the level's), its units (`1 − e^(−units/20)`), and whether both halves chose
 the same counters (0.6 when not: its flows are not identified). A net flow's (`sd/netnull.py`): the
@@ -641,7 +678,7 @@ stock, and the stock's drawer every measurement.
 
 That score is the stock's **identity** trust: its accounting holds. Beside it, never folded into
 it, each measured stock records its **behaviour** trust (`sd/behaviour.py`,
-`sd/experiments/heldout.py`, `evidence.trust.behaviour`): the model run forward from half-way, two
+`sd/equations/heldout.py`, `evidence.trust.behaviour`): the model run forward from half-way, two
 thirds and five sixths of its own window, its inputs held as a forward run holds them, against the
 measured level; the RMS miss over the level's spread (`error`), the same for the level held
 (`hold_error`), how the miss grows with the horizon (`growth`, `z`), and `score = 1 / (1 + error)`.
@@ -661,6 +698,19 @@ level a definition named) overrides the name rule (`sd.series.Declared`), and a 
 another store was counting before the window began, so its first sample is a baseline, not
 events. When a source is missing the discovery is cached for the page with the reason, and never
 saved as a version (§4.4).
+
+**A quiet window** (`sd/quiet.py`). A stock that stops moving still holds its quantity. A stock
+of the current version that a discovery did not find is quiet when its series is still: written up
+to the end of the window (its last point within two steps or three of its own write intervals of
+it) and moving fewer than 5 times in it (a level's changes, a counter's events); a hidden stock,
+when every counter of its flows is still, however discovery left them out (unmoved, too few, or
+folded into another counter of the same few events). A quiet stock is carried into the discovery
+from that version with the flows that reach it, marked `evidence.quiet` (the version, and since
+when: the last time its series moved, else the window's start), before the structures are
+compared, so a quiet window never saves a poorer version. A series that stopped being written
+inside the window has stopped, not gone still, and a stock that moved and no longer balances is
+not quiet: both go as before. When nothing else changed, no version is saved and the record
+(`discovery.quiet`) and the page say `quiet since <time>: the model of v<N> stands`.
 
 **Eras** (`sd/eras.py`, `sd/prior.py`, `sd/compare.py`; goal G11). After a machine changes how
 the system works (a prompt or role edited, the configuration changed, a deploy) it is a different
@@ -710,7 +760,7 @@ discoveries the host publishes, as `orchestra-host` (its own events, so it write
   announcement; a flip that comes back within the hold is never announced. Versions are saved as
   before, unaffected.
 - `orchestra.model.diverged` and `orchestra.model.returned`: at each discovery the model
-  predicts every stock from its level now (`sd/experiments/forward.py`, no change: the central
+  predicts every stock from its level now (`sd/equations/forward.py`, no change: the central
   run and its 10–90% band), its band widened by the Poisson spread of its flows' events since. A stock's
   **gap** is its level less the central prediction, in half-widths of that band, judged against
   the oldest prediction that still reaches now (so a wrong rate shows as a growing gap). A stock
@@ -739,8 +789,8 @@ says what the change will do, as edits of the model, and once the change has run
 Orchestra judges it against what the era's discovery found.
 
 - **Recording.** The machine publishes `orchestra.prediction.made` from its own `source`
-  (directly over the events endpoint, with `sd.predictions.Predictions`, or by committing an
-  experiment, §4.5, which publish it for it). `data`: `change`, the id of the event that will
+  (directly over the events endpoint, with `sd.predictions.Predictions`, or through the
+  Supervisor's `confirm` of a declared expected effect, which publishes it for it). `data`: `change`, the id of the event that will
   make the change (chosen beforehand: the change is then published with that `id`); `expect`, a
   list of edits, each `{"flow", "factor"}` (its rate × r; `"param"` for one number; 0 is the
   flow disappearing), `{"flow", "unchanged": true}`, `{"flow", "equation", "params"}` (the flow's
@@ -785,7 +835,7 @@ Orchestra judges it against what the era's discovery found.
   stocks at the ends of a flow predicted to appear or disappear and the loops through them.
 - **The stocks** are run from their levels at the change over the horizon: with the
   prediction's own trajectories when given, else the previous era's model run forward with the
-  predicted edits applied as a draft (`sd/experiments/expect.py`, `forward.py`; needs
+  predicted edits applied as a draft (`sd/equations/predicted.py`, `forward.py`; needs
   `orchestra[sd]`). A stock moved as simulated when its mean level
   over the horizon's second half is within 2 standard errors of the run, the error being the run's
   band and the spread of single readings about it (readings minutes apart are far from
@@ -831,7 +881,8 @@ is right.
 
 A part discovery marked `simulated` (§5.2) is never an unpredicted change or side effect.
 
-A machine asks what a change would do through an **experiment** (§4.5).
+The experiments, through which a machine asked what a change would do, were removed on 2026-11-01
+(§4.5): a change's effect is stated as a prediction and judged on the eras.
 
 ### 4.4 Other stores (sources)
 
@@ -991,14 +1042,24 @@ infer` runs an inference round and prints the families, what was kept and what w
 built (the proposal's slices 2 and 3): the cache of settled chunks, the data script, fingerprints
 and `sd verify`, the Sources page, command/OAuth2/SigV4 auth, SQL sources.
 
-### 4.5 Experiments
+### 4.5 The equation language and the forward run
 
-`orchestra/sd/experiments/`; goals G5, G13 and G16. An **experiment** is a staged, editable copy
-of the model that any machine (an AI agent or any other program) changes and runs, to see what a
-change would do before making it, to test whether an equation explains what happened, or to ask
-what would have had to be different for an outcome to have been. Machines use it through the
-Python API (`sd.experiments.api.Experiments`) or the HTTP API beside the events endpoint (§3.1);
-the web UI only reads it (§10; AGENTS.md rule 9).
+`orchestra/sd/equations/`; goals G5 and G13. What prediction judging (§4.3), the divergence check
+(§4.2) and the behaviour trust need to run a model's equations: the language every rate is
+written in, the engine that steps it, and the forward run.
+
+**Experiments were removed on 2026-11-01** (the owner: "get rid of that and the code associated
+with it"). An experiment was a staged copy of the model a machine edited and ran forward, replayed
+over a past window or asked the inverse question of, and could commit as a prediction; the web
+UI's Experiments pages went first (§10), then the Python API (`sd.experiments.api`), the
+`/experiments` routes of the events endpoint's HTTP API, the record in `<state>/experiments/`,
+the edits, the replay, the inverse solver and the agents' `experiments` and `replay` tool groups.
+What replaced them: the declared layer's expected effects (§4.6) and the Supervisor's design
+tools in `~/orchestra-agents` (`declare_expected_effect`, and `confirm`, which publishes
+`orchestra.prediction.made` through Orchestra's `Events`), and for any machine
+`sd.predictions.Predictions` or a direct `orchestra.prediction.made` (§4.3). Predictions are made,
+recorded, judged and shown on the Dynamics page as before. An old `<state>/experiments/`
+directory is ignored: nothing reads it, and nothing deletes it.
 
 **The equation language** (`language.py`). One written form for a flow's rate, which a machine
 reads and writes alike: an expression in Python's syntax, per the model's time unit, over stock
@@ -1024,76 +1085,28 @@ written exactly so, which stay those forms.
 
 **The engine** (`engine.py`) steps a model written in the language as SD Lab's simulator steps
 the Dynamics page's projection (Euler steps; a stock's outflows share what it holds; levels
-floored at 0; inputs held between points), for many columns at once (a band's members, an
-inverse solver's candidates), with parameters set per column.
+floored at 0; inputs held between points), for many columns at once (a band's members), with
+parameters set per column.
 
-**The record** (`store.py`), `<state>/experiments/<id>.json`: `owner` (the machine's source;
-only it edits, commits or discards; anyone reads and runs), `title`, `purpose`, `status`
-(`draft`, `committed`, `discarded`), `base` (the model it was copied from, whole, with its label:
-by default the current era's latest model, the host's latest discovery; or a saved version),
-`draft`, `scenario`, `log` (every batch of edits, accepted or refused, with who and when), `runs`
-(each run in full in `<id>.runs/<run>.json`), `prediction` once committed, and `origin` for a
-draft the inverse solver made.
+**The forward run** (`forward.py`): a base model and a draft of it (the base with a
+prediction's expected edits applied, `predicted.py`; or the base itself) from the measured levels
+now, `horizon_s` ahead; each stock's and flow's trajectory as the central run and a band (10th–90th
+percentile of runs with every flow's rate × `exp(z · rel)`, `rel` its recorded relative error,
+`sd/trust.py`: `sqrt(dispersion / events)` for a Poisson fit, the slope's error at its R² for a
+net flow, `1/sqrt(events)` but at least 0.1 for an SD Lab rate, 0.5 for a declared equation,
+so every equation a prediction wrote; z shared by id between the two runs), widened by each
+stock's held-out replay error (`heldout.py`); the **limits** (a stock reaching 0, or leaving
+bounds the caller gives, in the central run and in what share of the runs, and whether the draft
+brings it); **not trusted here**, with the reason (a flow declared, carried from the prior, a net
+flow, replayed, fitted on few events, over a short time or at low R²; a stock touched by one,
+hidden, without a level now, whose base run since the era began misses its measured level by
+more than its own spread, whose run leaves the observed range, or one of whose changed flows runs
+outside what was seen). `forward.trajectories` is a prediction's `trajectories` from it.
 
-**Edits** (`edits.py`), applied as a batch, all or none: `add_flow`, `replace_flow` (a whole
-equation, and optionally new ends), `remove_flow`, `set_params`, `add_stock` (a hidden stock with
-an initial level), `remove_stock`, `set_level` (where a forward run starts a stock), `set_input`
-(a forward run's scenario for an input: hold, value, scale, step, ramp or a series) and
-`load_model` (the whole draft, in a simple form or as Orchestra writes models). Each is checked:
-ids, ends that are stocks, equations that parse and read only what the draft has, parameters all
-used; the whole draft again at the end. A refused batch changes nothing and says which edit and
-why. **Origins** (AGENTS.md rule 6): an equation an edit writes is `declared`, with method
-`experiment <id> by <source>`; one a `load_model` writes as the base has it keeps the base's own.
-`views.diff` says what a draft changed of its base.
-
-**Three runs**, each recorded with the experiment:
-
-- **forward** (`forward.py`): the base and the draft from the measured levels now, `horizon_s`
-  ahead; each stock's and flow's trajectory as the central run and a band (10th–90th percentile
-  of runs with every flow's rate × `exp(z · rel)`, `rel` its recorded relative error,
-  `sd/trust.py`: `sqrt(dispersion / events)` for a Poisson fit, the slope's error at its R² for a
-  net flow, `1/sqrt(events)` but at least 0.1 for an SD Lab rate, 0.5 for a declared equation,
-  so every equation an experiment wrote; z shared by id between the two runs); the **limits**
-  (a stock reaching 0, or leaving bounds the caller gives, in the central run and in what share of
-  the runs, and whether the experiment brings it); **not trusted here**, with the reason (a flow
-  declared, carried from the prior, a net flow, replayed, fitted on few events, over a short time
-  or at low R²; a stock touched by one, hidden, without a level now, whose base run since the era
-  began misses its measured level by more than its own spread, whose run leaves the observed
-  range, or one of whose changed flows runs outside what was seen);
-- **replay** (`replay.py`): both over a past window (`start`/`end`, `span_s`, or an `era`),
-  driven by its measured inputs and `observed()` flows, from the levels measured at its start,
-  against what was measured: per stock the run's error over the level's spread, per counted flow
-  the equation's one-step fit on the measured levels (Poisson deviance, and the share of a
-  constant rate's deviance it removes), and the experiment against the base (better, same,
-  worse). This is the backtest of an equation and the counterfactual replay;
-- **inverse** (`inverse.py`): targets over a past window (a stock's mean `scale`d from the base
-  replay's, its mean `level`, its highest `below` or lowest `above` a bound, a flow's `scale` or
-  `total`; several at once) and holds (a flow's equation kept, a series' history kept); greedy
-  forward selection finds the smallest set of changes (factors on numbers or whole rates, and
-  optionally a new inflow or outflow of a target stock) under which a replay meets the targets
-  within 5% and keeps the holds, the count of changes as the penalty and the base as the prior
-  (D4), all candidates of a step run as columns of one batch, under a deadline (`deadline_s`, at
-  most 300). It answers with a new draft (the caller's), whether the targets were reached (or the
-  best approach), the **side effects** (every stock and flow not named that moved more than 5%,
-  with how much), **alternatives** of the same size that also reach them, and a **uniqueness
-  check**: the base and the solved model each fabricate the window's data (Poisson counts,
-  `fabricate.py`), conservation discovers a model from each, and each flow's law is tested on the
-  counterfactual data; the flows whose laws changed should be the solved ones. `ambiguous` when an
-  alternative reaches the targets or the check disagrees. Its limits are said in the module: one
-  change ahead (a pair that only works together is missed), factors between 1/10 and 10, a
-  deterministic replay (the check is what says whether the data could show the solution), no new
-  hidden stock as a candidate, and anything not targeted or held may move.
-
-**Commit** (`api.commit`): a committed experiment becomes a G13 prediction (§4.3) of the change
-its owner will make, published from its owner's source with the experiment's id as `subject`: a
-flow whose classic numbers alone changed expects each `{"flow", "param", "factor"}`, any other
-changed flow its whole `{"flow", "equation", "params"}`, a removed flow `disappears`, an added one
-`{"from", "to", "appears", "equation", "params"}`; hidden stocks are not stated (no series could
-show them). Its forward run over the horizon is the prediction's `trajectories`. The machine then
-publishes its change carrying the returned `change` id, and the host judges it as any prediction.
-
-Nothing here changes a machine, the model or a metric: an experiment is a statement about the
-model (AGENTS.md rule 9 keeps humans to reading it).
+**Reading the model** (`sd/reads.py`, `ModelReads`): the model with its equations in the
+language (`views.py`), its versions, the eras, the observability report, the predictions and
+series, for a machine (the agents' model tools) and the HTTP API (§3.1) alike. Nothing here
+changes a machine, the model or a metric.
 
 ### 4.6 The intended model
 
@@ -1461,8 +1474,7 @@ keeps its own harness (`~/orchestra-agents/SPEC.md`).
     model/<record>.lock          held while a record is read and written (versions, intended, intended-announce, eras, …)
     model/intended/              the intended model (§4.6): journal.jsonl, dNNNN.json, diff/, requests.jsonl, announced.json
     model/eras.json, announce.json, predictions.json   the eras recorded, what the host last announced, the predictions and their verdicts (§4.3)
-    experiments/<id>.json        each experiment: its base, draft, scenario, edit log, runs and prediction (§4.5)
-    experiments/<id>.runs/<run>.json   each run of it in full
+    experiments/                 ignored: what the experiments kept, until they were removed on 2026-11-01 (§4.5); nothing reads or deletes it
     sources/<name>.json          each source's latest inference: its definitions, what was left out, its families (§4.4)
     sources/<name>.attempt.json  when its last inference round ran and failed, so the next waits (sources/cache.py)
     sources/<name>.reads.json    what the last reads of it returned, so the next asks only for the steps after (sources/catalogue.py)
@@ -1605,7 +1617,7 @@ through the APIs (§3.1, §4.5), and the web UI shows them.
 ## 10. Web UI
 
 Read-only for humans, except for observations: the Dynamics page's rediscover button and the
-intended model's closed list of page controls (§4.6, AGENTS.md rule 9). Navigation: Dashboard, Machines, Instruments, Dynamics, Experiments, Core.
+intended model's closed list of page controls (§4.6, AGENTS.md rule 9). Navigation: Dashboard, Machines, Instruments, Dynamics, Core.
 
 - **Dashboard:** panels as sections of one page on a 12-column grid (`static/dashboard.js`, with
   gridstack.js): the viewer drags a panel by its title bar and resizes it from its edges and
@@ -1682,8 +1694,7 @@ inside it, and only the environment (the clouds flows come from and go to) is ou
 crosses the frame is what the model does not explain. Subsystems (perhaps feedback loops in boxes
 of their own) are a later question. A **rediscover now** button reruns discovery in the background (an observation: it
 re-reads the metrics and may save a version, as the host does every 5 minutes). With eras, the
-timeline's era says which experiments were made on its model and which predicted the change that
-began it (each linking to its page), and each prediction links to the experiment it came from;
+timeline's era shows the predictions of the change that began it, with their verdicts;
 `/dynamics?era=<id>` opens an era.
 
 Both graphs are drawn by one renderer (`static/netgraph.js`). The Dynamics graph is laid out by
@@ -1716,28 +1727,8 @@ Dynamics page each loop is balancing or reinforcing and either "items circulate"
 material moving along a flow) or "information" (a level steering a rate). Clicking one highlights
 it. Pages read only the web server's background caches
 (`web/background.py`) and the host's cached discovery, never the stores on request.
-- **Experiments** (§4.5): what machines did with the model, read under `/api/experiments` (the
-  list, `?owner=&status=&era=`, each with its latest run and its prediction's verdict),
-  `/api/experiments/<id>` (its draft with equations in the language, scenario, edit log, runs and
-  prediction), `.../diff`, `.../runs`, `.../runs/<run>` (in full), `.../runs/<run>/measured` (a
-  forward run's stocks as measured, before its now and since, up to its horizon or the present)
-  and `.../prediction`. The list page (`/experiments`) shows each experiment's machine (linking to
-  its card), title and purpose, status, base version and era, latest run and when, and verdict,
-  filtered by machine, status and era (an era's: made on its model, or predicting the change that
-  began it). An experiment's page (`/experiments/<id>`) shows the prediction it became (what it
-  expects, the change id, the era the change began, linked, and the verdict with its evidence:
-  passed, no effect, side effect, model wrong elsewhere, interrupted), its edits as an equation
-  diff against its base (flows replaced, added and removed, each equation before and after side
-  by side with its numbers; stocks added and removed; input scenarios and starting levels), every
-  run (forward: per stock the base and the experiment from now over the horizon with their bands,
-  the hour measured before now and what was measured since, the limits hit and the not-trusted
-  reasons above the charts; replay: per stock measured against both simulations and the error of
-  each, per flow the one-step fit with better, same or worse; inverse: the targets, what was
-  held, the changes found and the new draft's diff, the side effects by size, the alternatives,
-  the uniqueness check and an unmistakable warning when `ambiguous`), and the edit log in order,
-  refused batches with the edit that failed and why. Charts are `static/charts.js` with bands.
-  These pages follow the browser's light or dark setting; the others are dark. The web UI changes
-  no experiment (AGENTS.md rule 9): machines make and run them.
+- **Experiments: removed on 2026-11-01** (the page, `/experiments/<id>` and `/api/experiments*`;
+  then the machines' side, §4.5). The owner's way to say what a change should do is now the declared layer's expected effects (§4.6) and `orchestra.prediction.made` (§4.3).
 - **Core:** the host (with the processes it keeps running: state, restarts, command), the bus and
   the metrics store, each probed against its real backend within a time limit; explorers for the
   metrics (a catalogue of every series with the project's label, naming any series in the file
@@ -1857,7 +1848,7 @@ plugins (rule 8).
 orchestra/
   cli.py  commands.py  config.py  overlay.py  config_edit.py  toml_text.py  events.py  runtime.py  host.py  launcher.py  collectors.py  plugins.py  tokens.py
   bus/       file, redis_streams, rabbitmq_streams, kafka
-  endpoint/  the events endpoint (§3.1): the token and the record, validate, server, api (the model and experiments)
+  endpoint/  the events endpoint (§3.1): the token and the record, validate, server, api (the model)
   collect/   instruments, a project's and the plugins' collectors and scrapes: spec, fetch,
              exposition (the Prometheus text format), round, runner
   metrics/   file, victoria, promql
@@ -1873,10 +1864,11 @@ orchestra/
              (which stocks what is measured determines), eras, prior and compare (eras, the
              previous era's model as a prior, the boundary before → after), loops, announce and
              diverge (the model's own events), predictions, verdict, judge and predictions_report
-             (the intended-effect test: the record, its rules, when and from what, the CLI's text)
-    experiments/  §4.5: language, forms, compile, engine (the equation language and its
-             stepper), store, edits, views, history, scenario, forward, replay, inverse,
-             fabricate, expect (to and from predictions), reads, api (the Python API)
+             (the intended-effect test: the record, its rules, when and from what, the CLI's text),
+             reads (the model as a machine reads it, §4.5)
+    equations/  §4.5: language, forms, compile, engine (the equation language and its
+             stepper), views, history, heldout, forward, predicted (a prediction's draft);
+             experiments, which kept these, were removed on 2026-11-01
   sdlab/     SD Lab's discovery research: ~70 strategies (needs the sd extra)
   web/       app, auth (the login, §10.2), core, core_explore, machines, instruments, traffic (counted traffic), dynamics, static/
 tests/

@@ -98,7 +98,7 @@ def test_orchestra_without_the_sd_extra(tmp_path):
         status, body = get(base + "/api/dynamics/observability", token)
         assert status == 503 and "orchestra[sd]" in body, (status, body)
         for path in ("/dynamics", "/core", "/api/dynamics/strategies", "/api/dynamics/eras",
-                     "/api/dynamics/history", "/api/dynamics/predictions", "/api/experiments"):
+                     "/api/dynamics/history", "/api/dynamics/predictions"):
             status, body = get(base + path, token)
             assert status in (200, 503), (path, status, body)
             if status == 503:

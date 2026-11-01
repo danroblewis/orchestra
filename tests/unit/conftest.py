@@ -7,13 +7,9 @@ import pytest
 from orchestra.sd.extra import installed
 
 NEEDS_SD = [
-    "test_experiment_pages.py",
-    "test_experiments_api.py",
-    "test_experiments_edits.py",
-    "test_experiments_forward.py",
-    "test_experiments_inverse.py",
-    "test_experiments_language.py",
-    "test_experiments_replay.py",
+    "test_equation_language.py",
+    "test_forward.py",
+    "test_model_reads.py",
 ]
 
 collect_ignore = [] if installed() else NEEDS_SD

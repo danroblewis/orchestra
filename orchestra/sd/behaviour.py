@@ -1,9 +1,9 @@
 """Each stock's behaviour trust, measured at discovery and saved with the model: how far the model,
 run forward from part-way through its own window, misses the measured level
-(``sd.experiments.heldout``). It sits beside the stock's identity trust in its evidence
+(``sd.equations.heldout``). It sits beside the stock's identity trust in its evidence
 (``trust["behaviour"]``) and never changes it: a stock can be certain to exist, with a balance
 that holds to the event, and still be projected badly by the equations of its flows. Forward runs
-widen their band by it (``sd.experiments.forward``).
+widen their band by it (``sd.equations.forward``).
 
 Read from the same readings discovery read (``dump``), on discovery's grid, so it costs a few
 replays and no query. A model whose replay cannot run (an equation that does not compile) gets no
@@ -11,9 +11,9 @@ record, and says why in ``model.discovery["behaviour"]``."""
 
 from __future__ import annotations
 
-from .experiments.heldout import FRACTIONS, measure
-from .experiments.history import read_window
-from .experiments.language import EquationError
+from .equations.heldout import FRACTIONS, measure
+from .equations.history import read_window
+from .equations.language import EquationError
 from .model import Model
 from .series import series_key
 

@@ -225,8 +225,8 @@ def test_the_dynamics_api_and_the_machines_api_show_each_era(tmp_path, monkeypat
     assert before["era"] is None and before["version"] < now["current"]
     assert not model_view(p, era="e9")["ok"]
 
-    from orchestra.sd.experiments.api import Experiments
-    got = Experiments(p).eras()
+    from orchestra.sd.reads import ModelReads
+    got = ModelReads(p).eras()
     assert [e["id"] for e in got["eras"]] == ["e1"] and got["current"] == "e1" and got["eras"][0]["subject"] == "workers"
     status = {f["id"]: f["status"] for f in got["comparison"]["flows"]}
     assert status["jobs_arrived_total"] == "changed" and status["jobs_done_total"] == "unchanged"

@@ -164,14 +164,14 @@ def test_the_apis_report_on_the_current_model_and_the_command_is_gone(project, c
     from fastapi.testclient import TestClient
 
     from orchestra.cli import main
-    from orchestra.sd.experiments.api import Experiments
+    from orchestra.sd.reads import ModelReads
     from orchestra.sd.store import ModelStore
     from orchestra.web.app import create_app
     from orchestra.web.auth import bearer
     ModelStore.for_state(project.state_dir).save(two_stocks())
     with pytest.raises(SystemExit):
         main(["--repo", str(project.repo_root), "sd", "observability"])
-    r = Experiments(project).observability()
+    r = ModelReads(project).observability()
     assert r["ok"] and r["rank"] == 1 and by_id(r)["y"]["would_determine"] == ["series on y", "counter on out_y"]
     d = TestClient(create_app(project), headers=bearer(project)).get("/api/dynamics/observability").json()
     assert d["ok"] and d["rank"] == 1 and by_id(d)["y"]["would_determine"] == ["series on y", "counter on out_y"]

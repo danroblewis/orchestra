@@ -3,7 +3,7 @@ of docs/rationale/lifted-models.md §3.3, fault detection by residuals in
 docs/proposals/control-theory.md).
 
 **Predictions.** At each of the host's discoveries the model predicts every stock from its
-measured level now, ``horizon_s`` ahead (``predict``: ``sd.experiments.forward`` with no change:
+measured level now, ``horizon_s`` ahead (``predict``: ``sd.equations.forward`` with no change:
 the central run and its 10–90% band from the flows' fitted uncertainty). That band is the parameters'
 uncertainty only; the events themselves come at random too, so each stock's band is widened by
 the spread of a Poisson count of its flows' events over the time since the prediction (its flows'
@@ -38,7 +38,7 @@ def predict(model: Model, history: dict, at: float, horizon_s: float) -> dict:
     """A prediction to judge later: per stock, the offsets, central run and band, and the events
     per second its flows move (for the count's own spread)."""
     from .discover import UNITS
-    from .experiments.forward import forward
+    from .equations.forward import forward
 
     r = forward(model, model, history, horizon_s=horizon_s, now=at, points=61)
     unit = UNITS.get(model.time_unit, 60.0)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import errno
+import json
 import os
 import sys
 import time
@@ -112,7 +113,6 @@ def cmd_metrics(args) -> int:
 
 def _predictions(models, args) -> int:
     """The predictions recorded and their verdicts, by era (sd/predictions.py, sd/judge.py)."""
-    import json
 
     from .sd import eras as era_record
     from .sd import predictions as P
@@ -145,48 +145,77 @@ def _why_no_model(project, models) -> str:
     return why
 
 
+def _discovered(m, strategy: str) -> None:
+    """A discovered model's summary: its stocks, how each balances, and what was left out."""
+    print(f"{strategy}, over the last {m.discovery['window_s'] / 60:g} min in {m.discovery['step_s']:g} s steps: {len(m.stocks)} stocks, "
+          f"{len(m.flows)} flows, {len(m.machines)} machines")
+    for st in m.stocks:
+        tr = st.evidence.get("trust") or {}
+        trust = f"; trust {tr['score']:.2f} ({tr['level']}, weakest: {tr.get('weakest') or '—'})" if tr else ""
+        if b := tr.get("behaviour"):
+            trust += f"; behaviour {b['score']:.2f} ({b['level']}, replay off by {b['error']:.2f}× its spread)"
+        if nf := st.evidence.get("net_flow"):
+            print(f"  stock {st.id}: no counters; net flow fitted as {nf['form']}   (R² {nf['r2']:.3f} over {nf['stretches']} "
+                  f"stretches of {nf['stretch_s']:g} s{trust})")
+            continue
+        if "balance" not in st.evidence:
+            print(f"  stock {st.id}: hidden (found by {strategy}, measured by no series{trust})")
+            continue
+        terms = " ".join(("+ " if b["sign"] > 0 else "− ") + b["series"] for b in st.evidence["balance"])
+        if st.evidence.get("balance_r2") is None:
+            why = "by construction: a count and its own turnover" if st.evidence.get("by_construction") else "measured by no series"
+            print(f"  stock {st.id}: Δ = {terms}   ({why}{trust})")
+            continue
+        print(f"  stock {st.id}: Δ = {terms}   (R² {st.evidence['balance_r2']:.3f}, exact in {st.evidence['exact_steps']:.0%} of steps{trust})")
+    print("left out:")
+    for k, why in m.discovery["left_out"].items():
+        print(f"  {k}: {why}")
+
+
 def cmd_sd(args) -> int:
     """The system dynamics model: discover it, show it, list its versions."""
     from .metrics import for_project as metrics_for
     from .sd.store import ModelStore
 
+    if args.action == "discover" and args.replay:
+        from .sd.snapshot import replay
+
+        m = replay(args.replay, strategy=args.strategy)
+        if args.json:
+            print(json.dumps(m.to_json()))
+        else:
+            _discovered(m, m.discovery.get("strategy") or "")
+            print(f"replayed from {args.replay}: nothing saved")
+        return 0
     project = _project(args)
     models = ModelStore.for_state(project.state_dir)
+    if args.action == "snapshot":
+        from .sd.rediscover import snapshot
+
+        if not args.dir:
+            sys.exit("orchestra sd snapshot: name the directory to write to")
+        d = snapshot(project, metrics_for(project), args.dir, strategy=args.strategy,
+                     window_s=args.minutes * 60 if args.minutes else None, step_s=args.step_s)
+        man = json.loads((d / "manifest.json").read_text())
+        print(f"{len(man['series'])} series over {(man['window']['end'] - man['window']['start']) / 60:g} min in "
+              f"{man['step']:g} s steps written to {d}; replay with orchestra sd discover --from {d}")
+        return 0
     if args.action == "discover":
         from .sd.rediscover import rediscover
 
         r = rediscover(project, metrics_for(project), strategy=args.strategy, window_s=args.minutes * 60 if args.minutes else None,
-                       step_s=args.step_s, note="discovered with orchestra sd discover", events=Events.for_project(project))
+                       step_s=args.step_s, note="discovered with orchestra sd discover", events=Events.for_project(project),
+                       snapshot=args.snapshot)
         m = r.model
-        print(f"{r.strategy}, over the last {m.discovery['window_s'] / 60:g} min in {m.discovery['step_s']:g} s steps: {len(m.stocks)} stocks, "
-              f"{len(m.flows)} flows, {len(m.machines)} machines")
-        for st in m.stocks:
-            tr = st.evidence.get("trust") or {}
-            trust = f"; trust {tr['score']:.2f} ({tr['level']}, weakest: {tr.get('weakest') or '—'})" if tr else ""
-            if b := tr.get("behaviour"):
-                trust += f"; behaviour {b['score']:.2f} ({b['level']}, replay off by {b['error']:.2f}× its spread)"
-            if nf := st.evidence.get("net_flow"):
-                print(f"  stock {st.id}: no counters; net flow fitted as {nf['form']}   (R² {nf['r2']:.3f} over {nf['stretches']} "
-                      f"stretches of {nf['stretch_s']:g} s{trust})")
-                continue
-            if "balance" not in st.evidence:
-                print(f"  stock {st.id}: hidden (found by {r.strategy}, measured by no series{trust})")
-                continue
-            terms = " ".join(("+ " if b["sign"] > 0 else "− ") + b["series"] for b in st.evidence["balance"])
-            if st.evidence.get("balance_r2") is None:
-                why = "by construction: a count and its own turnover" if st.evidence.get("by_construction") else "measured by no series"
-                print(f"  stock {st.id}: Δ = {terms}   ({why}{trust})")
-                continue
-            print(f"  stock {st.id}: Δ = {terms}   (R² {st.evidence['balance_r2']:.3f}, exact in {st.evidence['exact_steps']:.0%} of steps{trust})")
-        print("left out:")
-        for k, why in m.discovery["left_out"].items():
-            print(f"  {k}: {why}")
+        _discovered(m, r.strategy)
         if m.era:
             print(f"era {m.era} (from {_when(m.discovery.get('era_start'))}); the Dynamics page compares it with its prior")
         if err := m.discovery.get("plugins_error"):
             print(f"plugins could not be loaded: {err}; their simulated instruments are unknown, so no version is saved")
         else:
             print(f"saved as version {r.version}" if r.version else "structure unchanged: no new version")
+        if args.snapshot:
+            print(f"what it read is in {args.snapshot}; replay with orchestra sd discover --from {args.snapshot}")
         args.version = None
     if args.action == "predictions":
         return _predictions(models, args)
@@ -343,16 +372,21 @@ def build_parser(plugin_help: dict[str, str] | None = None) -> argparse.Argument
     s.set_defaults(fn=cmd_metrics)
 
     s = sub.add_parser("sd", help="the system dynamics model: discover it from the metrics, show it, list its versions, "
-                       "and list the predictions and their verdicts (predictions). Machines ask the model what a change would do "
-                       "through experiments (the events endpoint's HTTP API, or sd.experiments.api.Experiments; USING_ORCHESTRA.md §5.9)")
-    s.add_argument("action", choices=["show", "versions", "discover", "predictions"], help="show: the model and its stocks' "
-                   "latest levels; versions: every saved version; discover: discover the model now and print it; "
+                       "and list the predictions and their verdicts (predictions). Machines read the model through the events "
+                       "endpoint's HTTP API, or sd.reads.ModelReads (USING_ORCHESTRA.md §5.9)")
+    s.add_argument("action", choices=["show", "versions", "discover", "snapshot", "predictions"], help="show: the model "
+                   "and its stocks' latest levels; versions: every saved version; discover: discover the model now and print it; "
+                   "snapshot: write every series discovery would read to a directory; "
                    "predictions: the predictions recorded and their verdicts")
-    s.add_argument("--minutes", type=float, help="for discover: the window, in minutes back from now (default: [discovery] window)")
-    s.add_argument("--step-s", dest="step_s", type=float, help="for discover: seconds per step (default: [discovery] step)")
-    s.add_argument("--strategy", help="for discover: conservation or an SD Lab strategy (default: [discovery] strategy)")
+    s.add_argument("dir", nargs="?", help="for snapshot: the directory to write every series discovery would read to")
+    s.add_argument("--minutes", type=float, help="for discover and snapshot: the window, in minutes back from now (default: [discovery] window)")
+    s.add_argument("--step-s", dest="step_s", type=float, help="for discover and snapshot: seconds per step (default: [discovery] step)")
+    s.add_argument("--strategy", help="for discover: conservation or an SD Lab strategy (default: [discovery] strategy; "
+                   "with --from, the one the snapshot records)")
+    s.add_argument("--snapshot", help="for discover: also write every series it read to this directory, to replay later")
+    s.add_argument("--from", dest="replay", help="for discover: discover from a snapshot directory instead of the store; saves nothing")
     s.add_argument("--version", type=int, help="for show: this past version (default: the current one)")
-    s.add_argument("--json", action="store_true", help="for predictions: the answer as JSON")
+    s.add_argument("--json", action="store_true", help="for predictions, and discover --from: the answer as JSON")
     s.set_defaults(fn=cmd_sd)
 
     s = sub.add_parser("sources", help="other time-series stores ([[sources]]): check them, infer what to read, preview a query")
