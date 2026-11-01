@@ -259,8 +259,10 @@ one.
              "before": {"engagement": {"mode": "continuous"}, "steps": […]}}}
 ```
 
-`guessed` names a whole field or one item (`field[i]`). `latest` is the latest change's
-difference; the page marks it "just now" for ten minutes. `requested` is the owner's latest
+`guessed` names a whole field or one item (`field[i]`). `latest` is the machine's
+difference from its baseline (as last confirmed; while proposed, as first declared), by key, across
+every change since (`changes`, `quotes`), not only the last op's; the page marks it "just now" for
+ten minutes after the latest change. `requested` is the owner's latest
 request (§6.2) with no later op answering it: the page shows "asked the Supervisor · waiting". The
 machine also gains `comparison`: `heard`, "attached, nothing measured" or "declared, neither
 heard nor measured" (P5 §3; the same entries are open items in `design()`), beside P5's
