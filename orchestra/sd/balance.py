@@ -23,6 +23,16 @@ starting it from many places and keeping the best, which a search from one start
 of a balance alone often makes the fit worse (inflow without its outflows), and which local
 optimum a single start reaches depends on noise.
 
+A balance with more counters than the level's changes can test sheds the ones that add nothing
+it can test (``supported``). The changes can test fewer counters than half the units the level
+changed in over the whole window, and always two, an inflow and an outflow (``allowed``). Beyond
+that, the squared error no longer tells a counter from a coincidence: among the many subsets the
+search tries, one lowers it by chance. What still tells is exactness: a counter that makes no
+unit exact that the others leave inexact, and that no unit pins on its own (``alone``), is taken
+out. A counter whose removal leaves fewer units exact always stays, so an exact balance is never
+reduced, however many counters it has (a quiet shelf baked, sold, discarded and eaten from at
+once; a second outflow that only ever comes with the first).
+
 A counter far larger than the level (``resolvable``) is not searched: its squares' rounding is
 more than the level's variance.
 
@@ -143,6 +153,60 @@ def completed(g: list[list[float]], b: list[float], coef: dict[int, int], sse: f
         for k in pool:
             xr[k] -= sign * g[k][j]
     return (trial, max(0.0, e)) if e < EXACT_SSE else (coef, sse)
+
+
+def allowed(y: list[float]) -> int:
+    """How many counters the changes ``y`` of a level can test: fewer than half the units it changed
+    in, so that each half of the window holds more changes than counters, and never fewer than two
+    (an inflow and an outflow). Ten changes test four."""
+    return max(2, (sum(1 for v in y if abs(v) >= 0.5) - 1) // 2)
+
+
+def alone(j: int, coef: dict[int, int], y: list[float], xs: list[list[float]]) -> bool:
+    """Whether counter ``j`` of the balance ``coef`` is pinned by a unit of its own: one the balance
+    fits, in which ``j`` moved and no other counter of the balance moved the level the same way
+    (``j`` the only inflow that came, or the only outflow). There its coefficient is the unit's
+    change less the other way's, not a share of a sum it makes with others: a rejection the only
+    outflow beside an inflow, the level holding, pins the rejections as surely as a change would."""
+    for u, v in enumerate(y):
+        mine = coef[j] * xs[j][u]
+        if not mine or any(coef[k] * xs[k][u] * mine > 0 for k in coef if k != j):
+            continue
+        if abs(v - sum(sign * xs[k][u] for k, sign in coef.items())) <= 0.5:
+            return True
+    return False
+
+
+def exact_units(coef: dict[int, int], y: list[float], xs: list[list[float]]) -> int:
+    """How many units the balance ``coef`` explains exactly."""
+    return sum(1 for u, v in enumerate(y) if abs(v - sum(sign * xs[k][u] for k, sign in coef.items())) <= 0.5)
+
+
+def supported(coef: dict[int, int], y: list[float], xs: list[list[float]]) -> dict[int, int]:
+    """``coef``, while it has more counters than the level's changes can test (``allowed``), less
+    one counter that adds nothing they can test: no unit pins it on its own (``alone``), and
+    without it as many units are exact (the one that counted least first). Stops at the limit, or
+    when every counter left is pinned or makes some unit exact: an exact balance stays whole."""
+    coef, limit = dict(coef), allowed(y)
+    while len(coef) > limit:
+        now = exact_units(coef, y, xs)
+        idle = [j for j in coef if not alone(j, coef, y, xs)
+                and exact_units({k: s for k, s in coef.items() if k != j}, y, xs) >= now]
+        if not idle:
+            break
+        coef.pop(min(idle, key=lambda j: (sum(abs(v) for v in xs[j]), j)))
+    return coef
+
+
+def parsimonious(level, terms: list[tuple], steps: list[int] | None = None) -> list[tuple]:
+    """``supported`` on a balance assembled from two searches (``discover.own_balance``: a
+    machine's own counters, then another's on the residual they leave), each held to its own
+    limit, so that the whole is held to the level's. Over ``steps``, as the balance was found."""
+    idx = units(level.blocks, list(range(len(level.deltas))) if steps is None else steps)
+    y = [pick(level, u) for u in idx]
+    xs = [[pick(c, u) for u in idx] for c, _ in terms]
+    kept = supported({j: sign for j, (_, sign) in enumerate(terms)}, y, xs)
+    return [t for j, t in enumerate(terms) if j in kept]
 
 
 def penalty(sst: float) -> float:
@@ -276,6 +340,10 @@ def balance_of(y: list[float], xs: list[list[float]], counters: list, ls: LeastS
         # completes earns its bonus only completed, and short of it may score worse than nothing,
         # or than a stand-in's near miss, which no rare counter makes exact
         coef, sse = completed(ls.g, b, coef, sse, rare)
+        if (kept := supported(coef, y, xs)) != coef:
+            coef = kept
+            sse = max(0.0, yy - 2 * sum(s * b[j] for j, s in coef.items())
+                      + sum(s * t * ls.g[j][k] for j, s in coef.items() for k, t in coef.items()))
         key = (objective(sse, sum(cost[j] for j in coef)), len(coef), sorted(coef.items()))
         if best is None or key < best[0]:
             best = (key, coef, sse)
@@ -289,6 +357,10 @@ def balance_of(y: list[float], xs: list[list[float]], counters: list, ls: LeastS
         if (len(coef), sorted(coef.items())) == before:
             break
     coef, resid, sse = complete(coef, resid, sse, xs, rare)
+    if (kept := supported(coef, y, xs)) != coef:
+        coef = kept
+        resid = [v - sum(sign * xs[j][i] for j, sign in coef.items()) for i, v in enumerate(y)]
+        sse = sum(r * r for r in resid)
     if not any(j in live for j in coef) and not (sse < EXACT_SSE and sum(sum(abs(v) for v in xs[j]) for j in coef) >= MIN_EVENTS):
         coef, resid, sse = {}, list(y), yy            # rare counters alone: a balance only when exact on enough events between them
     chosen = [(counters[j], sign) for j, sign in sorted(coef.items())]
