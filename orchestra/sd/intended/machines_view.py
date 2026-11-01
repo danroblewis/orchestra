@@ -5,7 +5,7 @@ heard, then the announced one. A declaration never makes a machine exist in the 
 (rule 2 as amended): ``heard`` is whether its source (or an alias) is on the bus, read now, and
 an appended unheard machine carries no observed values (no subscribes, publishes or mode: what
 it is declared to receive and its engagement are under ``intent`` and ``intended_edges``). Each
-declared machine also gains ``comparison`` (§6.1): ``heard``, or "declared, neither heard nor
+declared machine also gains ``comparison`` (§6.1, ``measured.comparison``): ``heard``, or "declared, neither heard nor
 measured" while nothing is measured. Heard is one rule here and in ``design``
 (``heard_as``): the machine's id or one of its aliases (a counted ``<prefix>.<name>`` included)
 among the observed machines (``observed_ids``: those on the bus and those counted traffic names).
@@ -21,19 +21,13 @@ import re
 
 from .drafts import publishable
 from .keys import Keys
+from .machine_ops import ENVELOPE_DEFAULTS
+from .measured import comparison
 from .names import link, resolve
 from .requests import unanswered
 from .revise import pending_view
 
-ENVELOPE = ("title", "description", "tags", "kind", "managed", "engagement", "receives", "emits", "reads", "spec")
-HEARD = "heard"
-NEITHER = "declared, neither heard nor measured"
-
-
-def comparison(heard: bool) -> str:
-    """A declared machine's entry in the comparison. P5's attachments (C4) refine the unheard
-    case: "attached, nothing measured" and "measured, never heard" are set where ``measured`` is."""
-    return HEARD if heard else NEITHER
+ENVELOPE = tuple(ENVELOPE_DEFAULTS)
 
 
 def _norm(s: str) -> str:
@@ -149,14 +143,14 @@ def merge(out: dict, intended, model=None, predictions: list[dict] | None = None
             intent["alias_candidates"] = sorted(o for o in observed if o != mid and o not in layer["machines"]
                                                 and (_norm(o) == mid or _norm(o.rsplit(".", 1)[-1]) == mid))
         if heard:
-            seen.update(intent=intent, comparison=comparison(True))
+            seen.update(intent=intent, comparison=comparison(True, None))
         elif mid in by_id:                       # a plugin's placeholder: the declaration stands, and its kind
-            by_id[mid].update(intent=intent, kind=m["kind"], unseen=True, comparison=comparison(False))
+            by_id[mid].update(intent=intent, kind=m["kind"], unseen=True, comparison=comparison(False, None))
         else:                                    # nothing observed: no subscribes, publishes or mode of its own
             machines.append({"id": mid, "bootstrap": False, "mode": None, "kind": m["kind"],
                              "package": None, "about": {}, "unseen": True, "publishes": [], "subscribes": [],
                              "flows": [], "logs": [], "instances": [], "first_seen": None, "last_seen": None, "active": False,
-                             "intent": intent, "comparison": comparison(False)})
+                             "intent": intent, "comparison": comparison(False, None)})
         node = seen["id"] if heard else mid      # heard through an alias: the edges attach to the drawn node
         removed = (m.get("latest") or {}).get("removed") or {}
         for t in m.get("receives") or []:
