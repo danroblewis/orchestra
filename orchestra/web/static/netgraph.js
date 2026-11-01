@@ -174,15 +174,18 @@ const NetGraph = (() => {
   // rather than wherever the forces threw them.
   // ``TOP``: the band at the top of the drawing the controls (reset, tidy, fit) sit in: a fit keeps
   // every node below it
-  const NARROW = 600, MIN_K = 0.55, DESK_K = 0.85, TOP = 40;
+  const NARROW = 600, MIN_K = 0.55, DESK_K = 0.85, TOP = 40, REVEAL_ALPHA = 0.1;
   function create(container, { key, height = 600, isolateHops = 1, onClick, tip, boundary, layout, polish, isolatedRow = false } = {}) {
     container.innerHTML = "";
     const svgEl = document.createElementNS(NS, "svg");
     svgEl.setAttribute("class", "netgraph");
     container.appendChild(svgEl);
-    // with a layout engine, the drawing is shown once it is laid out and fitted, never cut off first
-    if (layout) { svgEl.style.visibility = "hidden"; setTimeout(() => { svgEl.style.visibility = ""; }, 10000); }   // never hidden for good
+    // the drawing is shown once it is laid out and fitted, never cut off or under the controls
+    // first: with a layout engine when the layout lands; with the forces once they have mostly
+    // settled (alpha below REVEAL_ALPHA), fitted then
+    svgEl.style.visibility = "hidden"; setTimeout(() => { svgEl.style.visibility = ""; }, 10000);   // never hidden for good
     const reveal = () => { svgEl.style.visibility = ""; };
+    const hidden = () => svgEl.style.visibility === "hidden";
     let H = height, Wd = container.clientWidth || 1000;
     const W = () => Wd;
     const svg = d3.select(svgEl).attr("viewBox", `0 0 ${W()} ${H}`).style("height", H + "px");
@@ -509,7 +512,7 @@ const NetGraph = (() => {
       // the first drawing fits the view (a layout still settling fits when it is done)
       // (a whole new layout is shown when it is done: glide reveals it)
       if (!drawnOnce) { drawnOnce = true; const whole = layout && fresh.length === NODES.length;
-        if (!settling) requestAnimationFrame(() => { refit(false); if (!whole) reveal(); }); else if (!whole) reveal(); }
+        if (!settling) requestAnimationFrame(() => { refit(false); if (!whole) reveal(); }); else if (layout && !whole) reveal(); }
       if (pinned) highlight(pinned.nodes, pinned.edges);
       else if (focused) applyFocus();
       else if (HOVER && byId.has(HOVER)) isolate(HOVER);           // the pointer is still on a node: keep its neighbourhood lit
@@ -605,9 +608,11 @@ const NetGraph = (() => {
         .force("edge", boundary ? towardEdge : null)
         .alpha(alpha);
       const whole = movable.size === NODES.length;
-      sim.on("tick", tick).on("end", () => { settling = null; for (const n of NODES) { n.fx = n.fy = null; n._new = false; }
-        if (isolatedRow && whole) rowIsolated();
-        save(); relabel(); if (again && !userZoomed) refit(); });
+      // the first settling is shown fitted once most of its movement is done, not while it flies apart
+      sim.on("tick", () => { tick(); if (hidden() && !layout && sim.alpha() < REVEAL_ALPHA) { if (!userZoomed) refit(false); reveal(); } })
+        .on("end", () => { settling = null; for (const n of NODES) { n.fx = n.fy = null; n._new = false; }
+          if (isolatedRow && whole) rowIsolated();
+          save(); relabel(); if (again && !userZoomed) refit(!hidden()); reveal(); });
       tick();
     }
     // the nodes linked to nothing (not placed by the viewer): in a row just under the rest
