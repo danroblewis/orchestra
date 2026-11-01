@@ -1714,9 +1714,35 @@ How to stay compatible:
 - **Pass `Plugin(...)` and `Declared(...)` fields by keyword** after `name`. `collectors` was added
   last, with a default, so plugins that do not use it are unaffected. The task system and the
   agents pass `pages`, `static` and `router` positionally, which ties them to the field order.
-- Import only the interfaces: `orchestra.plugins` (`Plugin`, `Page`, `Declared`),
-  `orchestra.launcher.Process`, `orchestra.collect.spec.Collector`, `orchestra.events`, `orchestra.metrics`, `orchestra.config`, and
-  `orchestra.runtime.alive` if you need it. Keep `orchestra.web.*` to tests.
+- Import only the modules plugins may rely on. These are what the plugins import today, and a
+  core test (`tests/unit/test_plugin_surface.py`) imports each name they use, so a rename fails in
+  the core first:
+  - **the plugin itself:** `orchestra.plugins` (`Plugin`, `Page`, `Declared`),
+    `orchestra.launcher` (`Process`, `NAME`), `orchestra.collect.spec` (`Collector`, `TIMEOUT_S`,
+    `check`), `orchestra.collect.round` (`collect`), `orchestra.guides` (`collect`);
+  - **configuration:** `orchestra.config` (`load_project`, `Project`, `ConfigError`,
+    `parse_duration`), `orchestra.config_edit` (`ConfigEdit`, `Change`, `plugin_checks`; prefer
+    `project.config_edit`), `orchestra.overlay` (`OVERLAY`, `REPO`, `describe`),
+    `orchestra.tokens` (`owner_only`);
+  - **the bus, the store and the record:** `orchestra.events` (`Events`, `event_time`,
+    `machine_and_instance`, `now`), `orchestra.endpoint`, `orchestra.metrics` (`MetricsStore`,
+    `Point`, `ProjectStore`, `for_project`, `step_sample`), `orchestra.runtime` (`alive`);
+  - **other stores:** `orchestra.sources` (`SourceError`, `report`), `orchestra.sources.spec`
+    (`Specs`, `for_project`, `load`), `.limits` (`Budget`, `RateLimit`, `store_dir`, `store_key`),
+    `.catalogue` (`Catalogue`), `.listing` (`listing`, `TooManyNames`), `.plan` (`counter_step`,
+    `grid_step`), `.fetch` (`accumulate`), `.report` (`check`);
+  - **the model:** `orchestra.sd.store` (`ModelStore`), `orchestra.sd.series` (`Declared`,
+    `series_key`), `orchestra.sd.predictions` (`Predictions`, `PredictionError`, `expectation`,
+    `plain`), `orchestra.sd.eras` (`recorded`), `orchestra.sd.discover` (`MIN_COVER`,
+    `MIN_STEPS`), `orchestra.sd.flows_of` (`flows_of`, `name_unit`),
+    `orchestra.sd.experiments.api` (`Experiments`, `ExperimentError`),
+    `orchestra.sd.experiments.language` (`reference`);
+  - **the intended model:** prefer `project.intended`; the names its callers share come from
+    `orchestra.sd.intended.ops` (`ENV_NAME`, `OPTION`), `.names` (`resolve`, `ABSENT`, `WAITS`,
+    `WAITS_LINK`), `.keys` (`Keys`) and `.checks` (`PROVENANCE`);
+  - **used today, to be moved out of the web package:** `orchestra.web.machine_logs` (`tail`,
+    `readable`), `orchestra.web.instruments` (`instruments_view`), `orchestra.web.dynamics`
+    (`model_view`). Do not add to these.
 - Don't set `Process.owner`, and don't depend on fields `/api/machines` does not document (§5).
 - A plugin built against a newer Orchestra that passes a keyword an older `Plugin` lacks raises
   `TypeError` when it loads. The web app reports it, the host logs it, and nothing else breaks.
