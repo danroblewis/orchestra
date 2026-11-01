@@ -33,6 +33,12 @@ test("the mode tag's class has no space in it, and a kind is said as announced",
   assert.match(Orchestra.machineCards.rows({ ...m, mode: null, kind: null, package: null, publishes: [], subscribes: [], flows: [], instances: [], first_seen: null }), /not announced.*not announced.*no package.*no events yet.*nothing.*nothing.*none hypothesised yet/s);
 });
 
+test("engaged and kind are rows of their own, so a narrow panel never wraps a kind under the engaged label", () => {
+  const rows = Orchestra.machineCards.rows(m);
+  assert.match(rows, /<div class="row"><span class="muted">engaged<\/span><span><span class="tag k-ad_hoc">ad hoc<\/span><\/span><\/div>/);
+  assert.match(rows, /<div class="row"><span class="muted" data-k="kind">kind<\/span><span><span class="tag">program<\/span><\/span><\/div>/);
+});
+
 test("a publishes chip shows the all-time count, and a rate only when there is one", () => {
   const rows = Orchestra.machineCards.rows(m);
   assert.match(rows, />order.baked · 12<\/span>/);

@@ -109,6 +109,7 @@
 <script src="/static/intended-dynamics.js?v={{v}}"></script>
 <script src="/static/intended-panel.js?v={{v}}"></script>
 <script src="/static/intended-drawers.js?v={{v}}"></script>
+<script src="/static/left-out.js?v={{v}}"></script>
 <script>
 // (a machine's colour, mcolor, is app.js's: the same on every page)
 let MODEL = null, VERSION = null;   // null: follow the current version
@@ -276,8 +277,7 @@ function resText(r) {
   return gap ? `changes about every ${gap}; discovery reads it at its changes` : "changes as things happen; discovery reads it at its changes";
 }
 const resOf = (d, key) => resText(((d || {}).resolution || {})[key]);
-const keyOf = (ref) => ref.name + (Object.keys(ref.labels || {}).filter((k) => k !== "project").length
-  ? "{" + Object.entries(ref.labels).filter(([k]) => k !== "project").sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}="${v}"`).join(",") + "}" : "");
+const keyOf = LeftOut.keyOf;
 // the stores the series were read from (orchestra.toml's [[sources]]), when there are others than
 // the project's own: each one's state, and why a discovery with one missing was not saved
 function sourcesNote(d) {
@@ -288,16 +288,16 @@ function sourcesNote(d) {
   return `<h3>Sources</h3>` + names.map(line).join("") + (d.not_saved ? `<div class="stale" style="font-size:12px">Not saved as a version: ${esc(d.not_saved)}</div>` : "")
     + (d.since_last_s ? `<div class="muted" style="font-size:12px">The discovery before this one was ${ago(d.since_last_s)} earlier; this one read its whole window again.</div>` : "");
 }
-// "Left out": its true count ("all 35" when nothing was kept), and the buckets add up to it: the
-// series the record names, by why, then the rest it does not name (left out at once, or folded into
-// a sum over instances), last
-function leftOutHead(d, lo) {
-  const n = d.looked_at ?? d.series, kept = (d.kept || []).length, left = n != null ? n - kept : Object.keys(lo).length;
-  return `<h3>Left out <span class="count">${n != null && kept === 0 ? `all ${n}` : `${left} of ${n ?? "?"}`}</span></h3>`;
+// "Left out": its true count ("all 35" only when the model uses none and none was kept), and the
+// buckets add up to it: the series the record names, by why, then the rest it does not name
+// (left out at once, or folded into a sum over instances), last (left-out.js counts them)
+function leftOutHead(d, lo, m) {
+  const c = LeftOut.counts(d, lo, m);
+  const used = c.used ? ` <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">· ${c.used} in the model${c.kept ? `, ${c.kept} considered` : ""}</span>` : "";
+  return `<h3>Left out <span class="count">${c.all ? `all ${c.n}` : `${c.left} of ${c.n ?? "?"}`}</span>${used}</h3>`;
 }
-function unnamedBucket(d, lo) {
-  const n = d.looked_at ?? d.series; if (n == null) return "";
-  const rest = n - (d.kept || []).length - Object.keys(lo).length; if (rest <= 0) return "";
+function unnamedBucket(d, lo, m) {
+  const rest = LeftOut.counts(d, lo, m).unnamed; if (rest <= 0) return "";
   const summed = Object.entries(d.summed || {});
   return `<details><summary>not named in this discovery's record <span class="count">${rest}</span> <span class="muted">· left out at once (Orchestra's own, or not being written)${summed.length ? ", or folded into a sum over instances" : ""}</span></summary>`
     + (summed.length ? `<div class="muted" style="font-size:12px;margin:4px 0">${summed.length} summed over their instances:</div><table class="dt">${summed.map(([k, v]) => `<tr><td class="num">${esc(k)}</td><td class="muted">${esc(v)}</td></tr>`).join("")}</table>` : "") + `</details>`;
@@ -375,7 +375,7 @@ function tables() {
       if (ev.balance) return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">changes by</span> ${ev.balance.map((b) => `<span class="ty">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join(" ")} <span class="muted">${passage ? "a passage: judged on its raw points; R² not used" : ev.balance_r2 == null ? (ev.by_construction ? "by construction: a count and its own turnover, no evidence" : "measured by no series") : `R² ${ev.balance_r2.toFixed(3)} · exact in ${Math.round(100 * ev.exact_steps)}% of steps`}${trustText(ev)}</span></div>`;
       if (ev.net_flow) return netFlowLine(s, ev);
       return ""; }).join("")
-    + leftOutHead(d, d.left_out) + keptNote(d, d.left_out) + leftOut(d.left_out) + unnamedBucket(d, d.left_out) : '<div class="muted">This version was declared, not discovered.</div>';
+    + leftOutHead(d, d.left_out, m) + keptNote(d, d.left_out) + leftOut(d.left_out) + unnamedBucket(d, d.left_out, m) : '<div class="muted">This version was declared, not discovered.</div>';
   Intended.tables();
   // what is counted is said: stocks hidden from the diagram, machines with flow hypotheses out of all machines
   const hid = window.ACC_HIDDEN || 0;
