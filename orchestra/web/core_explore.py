@@ -127,7 +127,7 @@ class Explorer:
             hide = {"project"}
             lines = [{"label": _label(lab, hide) or q, "points": [[t, v] for t, v in pts]} for lab, pts in result]
             lines.sort(key=lambda ln: -max((v for _, v in ln["points"]), default=0))
-            return {"ok": True, "lines": lines[:MAX_LINES], "matched": len(lines), "step": step,
+            return {"ok": True, "lines": lines[:MAX_LINES], "matched": len(lines), "step": step, "start": start, "end": end,
                     "engine": "victoriametrics" if m.name == "victoriametrics" else "orchestra (PromQL subset)"}
         return self._guard(go)
 

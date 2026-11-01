@@ -234,12 +234,13 @@ function setRange(h) { HOURS = h; try { localStorage.setItem("orchestra.core.qho
 const DEFAULT_QUERY = 'sum by (__name__)({__name__!~"orchestra.*"})';
 // the result's series, each with its colour for good, and the ones the viewer has selected: with a
 // selection only those are drawn, on a y axis fitted to them; clicking a selected one unselects it
-let QLINES = [], QSEL = new Set(), QTEXT = null;
+let QLINES = [], QSEL = new Set(), QTEXT = null, QRANGE = null, QSTEP = null;
 function drawQuery() {
   const out = $("mx-out");
   if (!QLINES.length) { out.innerHTML = `<div class="empty" style="margin-top:8px">no data in this range</div>`; return; }
   const shown = QSEL.size ? QLINES.filter((l) => QSEL.has(l.label)) : QLINES;
-  out.innerHTML = Charts.line(shown, { W: out.clientWidth, tight: QSEL.size > 0 })
+  out.innerHTML = Charts.line(shown, { W: out.clientWidth, tight: QSEL.size > 0, range: QRANGE,
+    onePoint: QSTEP ? `one ${ago(QSTEP)} step so far; pick a shorter range for finer` : undefined })
     + `<div class="ckeys qkeys">${QLINES.map((l, i) => `<span class="qk ${QSEL.has(l.label) ? "on" : ""} ${QSEL.size && !QSEL.has(l.label) ? "off" : ""}" data-k="${i}" title="click to ${QSEL.has(l.label) ? "unselect" : "show only the selected series"}"><i style="background:${l.color}"></i>${esc(l.label)}</span>`).join("")}`
     + (QSEL.size ? `<span class="qk clear" data-k="clear">show all</span>` : "") + `</div>`;
   out.querySelector(".ckeys:not(.qkeys)")?.remove();
@@ -259,6 +260,7 @@ async function runQuery() {
     if (!d.ok) { $("mx-out").innerHTML = `<div class="probe bad" style="margin-top:8px;white-space:pre-wrap">${esc(d.error)}</div>`; $("mx-engine").textContent = ""; return; }
     $("mx-engine").textContent = `${d.matched} series${d.matched > d.lines.length ? `, top ${d.lines.length} shown` : ""} · step ${ago(d.step)} · ${d.engine}`;
     if (q !== QTEXT) { QSEL = new Set(); QTEXT = q; }                  // a new query starts with nothing selected
+    QRANGE = d.start != null && d.end != null ? [d.start, d.end] : null; QSTEP = d.step;   // the axis spans the range picked
     QLINES = d.lines.map((l, i) => ({ ...l, color: Charts.PAL[i % Charts.PAL.length] }));
     QSEL = new Set([...QSEL].filter((lab) => QLINES.some((l) => l.label === lab)));
     drawQuery();

@@ -21,3 +21,12 @@ test("large values label the axis compactly", () => {
   assert.match(svg, />19\dG</);
   assert.doesNotMatch(svg, /000,000/);
 });
+
+test("a picked range keeps the axis, and the one-point note says what the caller says, away from the dot", () => {
+  const svg = Charts.line([{ label: "disk", points: [[86_000, 5]] }], { range: [0, 86_400], onePoint: "one 10m step so far; pick a shorter range for finer" });
+  assert.match(svg, /one 10m step so far; pick a shorter range for finer/);
+  assert.doesNotMatch(svg, /one point so far/);
+  const cx = +svg.match(/<circle data-i="0" cx="([\d.]+)"/)[1];
+  assert.ok(cx > 600, `the dot sits at the end of the day, not the middle (${cx})`);
+  assert.match(svg, /<text class="cnote" x="52" y="18" text-anchor="start">/);          // on the left, away from the dot
+});

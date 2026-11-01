@@ -106,3 +106,12 @@ def test_the_bus_cards_rate_says_the_window_it_observed():
     assert rate_over(180, 40, 40) == "over the last 3 min (the whole bus)"
     assert rate_over(120, 200, 5000) == "over the last 2 min (its last 200 events)"
     assert rate_over(60, 3, 3) == "over the last 60 s (the whole bus)"
+
+
+def test_a_query_answers_with_the_range_and_step_it_was_asked_over(tmp_path):
+    core = _core(tmp_path)
+    now = time.time()
+    core.metrics.write([Point("disk_bytes", 5.0, now - 30, {"project": "p1"})])
+    q = Explorer(core).query("disk_bytes", 24)
+    assert q["ok"] and q["step"] == 600
+    assert abs(q["end"] - now) < 5 and abs((q["end"] - q["start"]) - 24 * 3600) < 1

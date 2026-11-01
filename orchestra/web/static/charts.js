@@ -35,13 +35,17 @@ const Charts = (() => {
   // CSS variable (``var(--x)``): strokes are set as styles, so a page's theme can change them.
   // ``yMax``: the y axis stops there and a line running past it is cut at the plot's edge (a
   // projection far above what was measured); ``notes``: [{t, v, text}] said beside a point (its end
-  // value), at the edge when the point is past it
-  function line(lines, { unit = "", H = 200, W = 720, marks = [], tight = false, now = null, yMax = null, notes = [] } = {}) {
+  // value), at the edge when the point is past it. ``range``: [t0, t1], the x axis's span whatever
+  // the points cover (the range the viewer picked); ``onePoint``: what is said when every line has
+  // one point, placed away from the dot
+  function line(lines, { unit = "", H = 200, W = 720, marks = [], tight = false, now = null, yMax = null, notes = [],
+    range = null, onePoint: onePointText = "one point so far" } = {}) {
     const pts = lines.flatMap((l) => [...l.points, ...(l.band || []).flatMap(([t, a, b]) => [[t, a], [t, b]])]);
     if (!pts.length) return `<div class="empty">no points in this range</div>`;
     W = Math.max(320, Math.round(W));
     const L = 46, B = 18, T = 6, R = 8;
     let t0 = Math.min(...pts.map((p) => p[0])), t1 = Math.max(...pts.map((p) => p[0])) || t0 + 1;
+    if (range && range[1] > range[0]) { t0 = Math.min(t0, range[0]); t1 = Math.max(t1, range[1]); }
     if (t1 <= t0) { t0 -= 60; t1 += 60; }             // one instant: the point in the middle of two minutes
     let hi = Math.max(...pts.map((p) => p[1])), lo = Math.min(...pts.map((p) => p[1]));
     if (yMax != null && hi > yMax) hi = yMax;
@@ -64,7 +68,10 @@ const Charts = (() => {
     const paths = lines.map((l, i) => l.points.length === 1
       ? `<circle data-i="${i}" cx="${x(l.points[0][0]).toFixed(1)}" cy="${y(l.points[0][1]).toFixed(1)}" r="3.5" style="fill:${colorOf(l, i)}"/>`
       : `<path data-i="${i}" style="stroke:${colorOf(l, i)}"${l.dash ? ` stroke-dasharray="${l.dash}"` : ""} d="${l.points.map(([t, v], j) => (j ? "L" : "M") + x(t).toFixed(1) + "," + y(v).toFixed(1)).join(" ")}"/>`).join("");
-    const onePoint = lines.every((l) => l.points.length <= 1) ? `<text class="cnote" x="${(L + W - R) / 2}" y="${T + 12}" text-anchor="middle">one point so far</text>` : "";
+    const dotX = Math.max(...lines.filter((l) => l.points.length).map((l) => x(l.points[0][0])));
+    const left = dotX > (L + W - R) / 2;              // the note on the side away from the dot
+    const onePoint = lines.every((l) => l.points.length <= 1)
+      ? `<text class="cnote" x="${left ? L + 6 : W - R - 6}" y="${T + 12}" text-anchor="${left ? "start" : "end"}">${esc(onePointText)}</text>` : "";
     return `<svg class="chart" data-cid="${id}" viewBox="0 0 ${W} ${H}">${ticks}${xt}${mk}<clipPath id="${clip}"><rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}"/></clipPath><g class="bands" clip-path="url(#${clip})">${bands}</g><g class="lines" clip-path="url(#${clip})">${paths}</g>${said}${onePoint}<g class="hov"></g><rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/></svg>
       <div class="ckeys" data-for="${id}">${lines.map((l, i) => `<span data-i="${i}"><i style="${l.dash ? `background:none;border-top:2px dashed ${colorOf(l, i)};height:0` : `background:${colorOf(l, i)}`}${l.band ? `;box-shadow:0 0 0 3px color-mix(in srgb, ${colorOf(l, i)} 25%, transparent)` : ""}"></i>${esc(l.label)}</span>`).join("")}${unit ? `<span class="muted">${esc(unit)}</span>` : ""}</div>`;
   }
