@@ -154,6 +154,7 @@ const Live = (() => {
     const inp = document.getElementById("sim-h");
     inp.addEventListener("change", () => { try { localStorage.setItem("orchestra.dyn.horizon", String(Math.max(1, +inp.value || 30))); } catch (e) {} simChart(id); });
     simChart(id);
+    if (typeof IntendedDrawers !== "undefined") IntendedDrawers.expectSwitch("stock", id);     // "Expected: always show this stock" (intended-drawers.js)
   }
   async function simChart(id) {
     const el = document.getElementById("sim-chart"), note = document.getElementById("sim-note"); if (!el) return;
@@ -191,6 +192,7 @@ const Live = (() => {
       <h4>Rate, last hour (${per()}): observed and what the equation predicts from the levels</h4>
       ${Charts.line([{ label: "observed", points: obs, color: mcolor(f.machine) }, { label: "equation", points: model, color: "#e5e7eb" }], { W: 700, H: 240, unit: per() })}
       ${alts ? `<h4>Other forms considered (AIC; lower is better)</h4><table class="dt"><tr><th>form</th><th>AIC</th><th>worse by</th></tr><tr><td><b>${esc(e.form)}</b> (chosen)</td><td class="num">${fmt(q.aic)}</td><td></td></tr>${alts}</table>` : ""}`);
+    if (typeof IntendedDrawers !== "undefined") IntendedDrawers.expectSwitch("flow", fid);
   }
 
   // ---- the history chart ----
