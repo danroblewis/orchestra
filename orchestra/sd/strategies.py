@@ -31,7 +31,10 @@ without. Its flows are then merged with the counters:
   with one rate of several terms (``sd.rates.combine``), so every flow id is used once, and an
   unmeasured flow is kept only where it can carry anything: a stock whose counters balance it
   exactly (in ``FLAG_EXACT`` of the steps) has no unexplained change, and an unmeasured flow into
-  or out of it is dropped and recorded (a strategy that ignores ``known`` invents them).
+  or out of it is dropped and recorded (a strategy that ignores ``known`` invents them), and so
+  is one describing the whole change into or out of a stock its counters balance with an R² of
+  ``BALANCED_R2`` or more (the counters' flows are its change, and keep conservation's fits). A stock that only fills (an
+  ``accumulator``: a repository's commits) gets no flow out of it, measured or not.
 
 Its flows into or out of a stock with a fitted net flow take the place of conservation's (whose
 ids stay in the stock's evidence, ``conservation_fit``) only when they predict the level's changes
@@ -64,6 +67,7 @@ from .series import sample, series_key, sum_instances
 from .stocktrust import unmeasured
 
 CONSERVATION = "conservation"
+BALANCED_R2 = 0.98    # a counter balance this good is what a stock's change is: an SD Lab flow describing the whole change never replaces it
 DEFAULT = "kalman_lna"
 README = Path(__file__).resolve().parent.parent / "sdlab" / "discovery" / "strategies" / "README.md"
 
@@ -302,6 +306,8 @@ def _discover_with(dump, *, start: float, end: float, step: float, strategy: str
     f = UNITS[time_unit] / coarse                               # steps per time unit
     ref = lambda x: x if x in {st.id for st in base.stocks} else (f"input:{x}" if x in inputs else x)
     exact = {s.id for s in base.stocks if (s.evidence.get("exact_steps") or 0.0) >= FLAG_EXACT}
+    only_fills = {s.id for s in base.stocks if s.evidence.get("accumulator") and s.evidence.get("balance")}
+    balanced = {s.id for s in base.stocks if "net_flow" not in s.evidence and (s.evidence.get("balance_r2") or 0.0) >= BALANCED_R2}
 
     # merge SD Lab's flows with the counters
     by_ends: dict[tuple, list[Flow]] = {}
@@ -326,8 +332,17 @@ def _discover_with(dump, *, start: float, end: float, step: float, strategy: str
         events = sum((m.current().quality.get("events", 0.0) if m.current() else 0.0) for m in matched)
         if matched and events < MIN_EVENTS:
             continue                                            # too few events to carry a form: conservation's constant stays
+        if src in only_fills:
+            dropped.append({"from": src, "to": dst, "why": "its stock only fills (an accumulator): nothing flows out of it"})
+            continue
         if not matched and (src in exact or dst in exact):
             dropped.append({"from": src, "to": dst, "why": "no counter measures it, and its stock's counters balance it exactly"})
+            continue
+        if not residual_of[(src, dst)] and (src in balanced or dst in balanced):
+            dropped.append({"from": src, "to": dst, "why": f"its stock's counters balance it (R² ≥ {BALANCED_R2}): they describe its "
+                                                           "change, and keep their own fits" if matched else
+                                                           f"no counter measures it, and its stock's counters balance it (R² ≥ {BALANCED_R2}): "
+                                                           "they describe its change, not a flow found from its level"})
             continue
         for end_ in (src, dst):
             if end_ and end_ not in stock_ids and end_ not in hidden:

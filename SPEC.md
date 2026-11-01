@@ -337,6 +337,9 @@ matched back to the counters and their machines (`sd/strategies.py`); several be
 ends become one with one rate of several terms; one that no counter measures is kept, as
 unmeasured, only where the stock's balance is not exact (a strategy that ignores `known` invents
 flows for stocks whose counters already explain every step, and those are dropped and recorded).
+Where its flows describe the whole change rather than the residual, a stock whose counters
+balance it with an R² of 0.98 or more keeps its counters' fits and gets no unmeasured flow; and a
+stock that only fills (an accumulator: a repository's commits) gets no flow out of it.
 Its richer forms (gap, linear in several stocks or inputs, expressions, effects) are kept in
 each equation's `spec`, and its hidden stocks are drawn dashed. The host gives a strategy a
 deadline below `[discovery] every`, and one discovery runs at a time per project across
