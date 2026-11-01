@@ -15,7 +15,7 @@ SCRIPT = textwrap.dedent('''
 
     class Hide:
         def find_spec(self, name, path=None, target=None):
-            if name.split(".")[0] in {"numpy", "scipy", "numba", "highspy", "sympy"}:
+            if name.split(".")[0] in {"numpy", "scipy", "numba", "highspy"}:
                 raise ModuleNotFoundError(f"No module named {name!r}", name=name)
 
     sys.meta_path.insert(0, Hide())

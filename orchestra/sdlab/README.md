@@ -12,7 +12,7 @@ use the strategies directly.
 - **Strategies:** `discovery/strategies/README.md` lists them, one line each; the research behind
   them is in SD Lab's `docs/research/`. Results in that research: `kalman_lna` and `combined2`
   did best.
-- **Dependencies:** `uv sync --extra sd` (numpy, scipy, numba, highspy, sympy); the research
+- **Dependencies:** `uv sync --extra sd` (numpy, scipy, numba, highspy); the research
   strategies `numopt_cma`, `gradient` and `sindy` also need `--extra sd-research`.
 - **How Orchestra uses it:** `orchestra/sd/strategies.py`. Orchestra's own conservation step finds
   the stocks and the counters that measure flows; an SD Lab strategy then finds the equations from

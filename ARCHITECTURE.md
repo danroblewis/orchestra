@@ -869,7 +869,7 @@ Both backends refuse points stamped more than 60 s in the future. The conformanc
 | Extra | What it adds |
 |---|---|
 | `bus-redis`, `bus-rabbitmq`, `bus-kafka`, `bus` | Client libraries for the server buses. |
-| `sd` | numpy, scipy, numba, highspy, sympy: SD Lab's strategies, the Dynamics page's simulation (`sd/simulate.py`), the observability report (`sd/observability.py`, numpy only) and experiments (`sd/experiments/`). |
+| `sd` | numpy, scipy, numba, highspy: SD Lab's strategies, the Dynamics page's simulation (`sd/simulate.py`), the observability report (`sd/observability.py`, numpy only) and experiments (`sd/experiments/`). |
 | `sd-research` | More libraries for a few research strategies. |
 | `dev` | pytest, httpx, ruff. |
 
