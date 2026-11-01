@@ -242,7 +242,7 @@ class Launcher:
             run.started = time.time()
         run.state = "running"
         self._note(run, f"started `{shlex.join(argv)}` (pid {run.popen.pid})")
-        self.publish("orchestra.process.started", {"name": run.spec.name, "pid": run.popen.pid,
+        self._tell("orchestra.process.started", {"name": run.spec.name, "pid": run.popen.pid,
                                                    "command": argv, "owner": run.spec.owner})
 
     def _exited(self, run: _Run, code: int) -> None:
@@ -261,8 +261,8 @@ class Launcher:
             run.state = "gave_up"
             self._note(run, f"exited with code {code}; gave up after {run.failures} failures in a row, each within "
                             f"{self.stable_s:g} s of starting (fix it and change its entry, or restart orchestra run)")
-            self.publish("orchestra.process.exited", {"name": run.spec.name, "pid": pid, "code": code, "restart_in": None})
-            self.publish("orchestra.process.gave_up", {"name": run.spec.name, "code": code, "failures": run.failures})
+            self._tell("orchestra.process.exited", {"name": run.spec.name, "pid": pid, "code": code, "restart_in": None})
+            self._tell("orchestra.process.gave_up", {"name": run.spec.name, "code": code, "failures": run.failures})
             return
         delay = min(self.backoff * 2 ** run.quick, BACKOFF_MAX) if restart else None
         if restart:
@@ -271,13 +271,15 @@ class Launcher:
         else:
             run.state = "exited"
         self._note(run, f"exited with code {code} after {ran:.1f} s; " + (f"starting again in {delay:g} s" if restart else "not restarted"))
-        self.publish("orchestra.process.exited", {"name": run.spec.name, "pid": pid, "code": code, "restart_in": delay})
+        self._tell("orchestra.process.exited", {"name": run.spec.name, "pid": pid, "code": code, "restart_in": delay})
 
     def _grace(self, p: Process) -> float:
         return self.grace if p.stop_grace_s is None else float(p.stop_grace_s)
 
     def _stop(self, runs: list[_Run], why: str) -> None:
-        """Stop these processes and their groups: SIGTERM, then SIGKILL after each one's grace."""
+        """Stop these processes and their groups: SIGTERM, then SIGKILL after each one's grace.
+        Every process is killed first; only then is each exit published, each on its own, so a
+        failing bus can neither leave a process running nor skip the record."""
         live = [r for r in runs if r.popen is not None and r.popen.poll() is None]
         for r in live:
             _signal_group(r.popen.pid, signal.SIGTERM)
@@ -289,11 +291,19 @@ class Launcher:
                 pass
             _signal_group(r.popen.pid, signal.SIGKILL)
             r.popen.wait()
+        for r in live:
             self._note(r, f"stopped ({why})")
-            self.publish("orchestra.process.exited", {"name": r.spec.name, "pid": r.popen.pid,
-                                                      "code": r.popen.returncode, "restart_in": None})
+            self._tell("orchestra.process.exited", {"name": r.spec.name, "pid": r.popen.pid,
+                                                    "code": r.popen.returncode, "restart_in": None})
         for r in runs:
             r.popen, r.state = None, "exited"
+
+    def _tell(self, type_: str, data: dict) -> None:
+        """Publish one of the launcher's events; a bus that fails is logged, never stops the launcher."""
+        try:
+            self.publish(type_, data)
+        except Exception as e:  # noqa: BLE001 - the processes come first; the event is lost, and logged
+            self.log(f"launcher: {type_} for {data.get('name')} not published: {type(e).__name__}: {e}")
 
     def tick(self) -> None:
         """Start what is declared and not running, restart what exited, stop what is no longer

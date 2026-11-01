@@ -216,3 +216,17 @@ def test_a_host_that_takes_the_launch_over_replays_and_counts(bare, monkeypatch)
         t.join(5)
         if launcher is not None:
             launcher.join(5)
+
+
+def test_a_host_starts_and_stops_with_the_bus_down(bare, monkeypatch):
+    h = Host(bare)
+    monkeypatch.setattr(host_mod.signal, "signal", lambda *a: None)      # leave pytest's own handlers alone
+
+    def down(*a, **kw):
+        raise ConnectionError("bus down")
+    monkeypatch.setattr(h.events, "publish", down)
+    h.run(once=True)
+    assert str(os.getpid()) not in (runtime.read(bare).get("hosts") or {})      # unregistered all the same
+    log = (bare.logs_dir / "orchestra-host.log").read_text()
+    assert "orchestra.host.started not published: ConnectionError: bus down" in log
+    assert "orchestra.host.stopped not published" in log and "host stopped" in log

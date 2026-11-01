@@ -52,7 +52,9 @@ class KafkaBus:
         with self._lock:
             self._producer.produce(self._topic, json.dumps(event).encode(), partition=0,
                                    on_delivery=lambda err, _msg: err and errors.append(err))
-            self._producer.flush(30)
+            unsent = self._producer.flush(30)
+        if unsent:
+            raise BusError(f"Kafka append to {self._topic}: not acknowledged within 30 s")
         if errors:
             raise BusError(f"Kafka append to {self._topic} failed: {errors[0]}")
 

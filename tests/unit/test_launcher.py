@@ -419,3 +419,19 @@ def test_a_process_is_restarted_when_the_settings_it_names_change(project):
     assert fingerprint({"a": {"b": 1}}, ["a.b"]) != fingerprint({"a": {"b": 2}}, ["a.b"])
     assert fingerprint({}, ["a.b"]) != fingerprint({"a": {"b": None, "c": 1}}, ["a"]) and fingerprint({}, []) == ""
     assert check(Process("x", "true", config_keys="tools")) is not None
+
+
+def test_a_bus_that_fails_neither_leaves_a_process_running_nor_skips_the_record(project):
+    declare(project, ("one", SLEEPER, "always"), ("two", SLEEPER, "always"))
+    lines = []
+
+    def down(type_, data):
+        raise ConnectionError("bus down")
+    la = Launcher(project, down, lines.append, backoff=0.05, stable_s=5.0, give_up_after=3, grace=2.0)
+    until(lambda: all(r.popen is not None for r in la.runs.values()) and len(la.runs) == 2, la)
+    pids = [r.popen.pid for r in la.runs.values()]
+    assert runtime.read(project)["processes"]
+    la.stop_all()
+    assert not any(runtime.alive(p) for p in pids)
+    assert "processes" not in runtime.read(project)
+    assert sum("orchestra.process.exited for" in ln and "not published" in ln for ln in lines) == 2

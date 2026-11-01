@@ -502,6 +502,14 @@ class Host:
         if (d.get("launcher") or {}).get("pid") == os.getpid():
             d.pop("launcher")
 
+    def _tell(self, type_: str, data: dict) -> None:
+        """Publish one of the host's own events; a bus that is down is logged, and the host starts
+        (the collector's replay retries until the bus is back) and stops (unregistering) anyway."""
+        try:
+            self.events.publish(type_, data)
+        except Exception as e:  # noqa: BLE001 - the host runs without the event
+            self.log(f"{type_} not published: {type(e).__name__}: {e}")
+
     def stop(self, *_):
         self._stop.set()
 
@@ -510,8 +518,8 @@ class Host:
         if threading.current_thread() is threading.main_thread():
             signal.signal(signal.SIGTERM, self.stop)
             signal.signal(signal.SIGHUP, self.stop)       # a closed terminal stops the processes too
-        self.events.publish("orchestra.host.started", {"pid": os.getpid()})
-        self.events.publish("orchestra.machine.started", {"mode": "continuous", "listens_for": []})
+        self._tell("orchestra.host.started", {"pid": os.getpid()})
+        self._tell("orchestra.machine.started", {"mode": "continuous", "listens_for": []})
         self.log(f"host started (pid {os.getpid()}) for {self.project.key}")
         launching = discovering = None
         if not once:
@@ -549,6 +557,6 @@ class Host:
             if launching is not None:
                 launching.join()
             self._beat(0.0)
-            self.events.publish("orchestra.host.stopped", {"pid": os.getpid()})
+            self._tell("orchestra.host.stopped", {"pid": os.getpid()})
             runtime.update(self.project, self._unregister)
             self.log("host stopped")
