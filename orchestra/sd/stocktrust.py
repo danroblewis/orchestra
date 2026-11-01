@@ -15,7 +15,8 @@ reproduces the level but that the shift null matches as often is a coincidence.
   drivers, held-out R², the level reproduced by the integrated net flow, its stretches, and its R²
   itself (it explains only that share of the level's changes).
 - **passage** (``sd.passing``): a measured state each item leaves within a step, joined on its raw
-  points: the share of its rises and falls that came at the counters' events, and of steps in step.
+  points: the share of its rises and falls that came at the counters' events, and of the counters'
+  moves they account for (the lesser of the two), and of steps in step.
 - **unmeasured** (a hidden stock: no series measures it): 0. Its level is what counters imply, not a
   measurement; the counters' evidence belongs to its flows.
 - **by_construction** (a count of reporters and its own turnover, ``sd.construction``): 0. The
@@ -97,12 +98,19 @@ def net_flow(notes: dict, r2: float) -> dict:
 
 
 def passage(p) -> dict:
-    """A measured state joined on its raw points (``sd.passing.Passage``)."""
+    """A measured state joined on its raw points (``sd.passing.Passage``): ``matched`` is the
+    lesser of two shares, its rises and falls that came at the counters' events (of its own), and
+    the counters' moves those account for (of the moves: a level that rose twice, both at an in's
+    event, while the ins counted 25 moves matched 2 of 25, not 1.0)."""
     up, down = (p.rises or [0, 0]), (p.falls or [0, 0])
-    matched = (up[0] + down[0]) / max(1, up[1] + down[1])
+    hit, own = up[0] + down[0], up[1] + down[1]
+    counted = (up[2] + down[2]) if len(up) > 2 and len(down) > 2 else own    # a record from before the moves were kept
+    of_own, of_moves = hit / max(1, own), min(1.0, hit / max(1, counted))
+    matched = min(of_own, of_moves)
     in_step = 1 - p.out_of_step / max(1, p.moved)
     return scored("passage", {"matched": matched, "in_step": in_step, "units": 1 - math.exp(-p.moved / UNITS_SCALE)},
-                  {"units": p.moved, "matched_share": round(matched, 4)},
+                  {"units": p.moved, "matched_share": round(matched, 4), "matched_of_own": round(of_own, 4),
+                   "matched_of_moves": round(of_moves, 4), "matched_counts": f"{hit} of {counted} moves matched"},
                   ["a state each item leaves within a step: judged on its raw points, not on a balance of its changes"])
 
 

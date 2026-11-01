@@ -34,7 +34,7 @@ def test_a_wiggling_level_is_no_state_between_counters_that_count_at_every_sampl
     sparse = Series("x_level", {}, [(T0 + 1, 0.0), (T0 + 600.3, 1.0), (T0 + 600.6, 0.0), (T0 + 1200.3, 1.0), (T0 + 1200.6, 0.0)], [], False)
     rare_in = Series("moved_total", {}, [(T0, 0.0), (T0 + 600.3, 1.0), (T0 + 1200.3, 2.0)], [], True)
     rare_out = Series("passed_total", {}, [(T0, 0.0), (T0 + 600.6, 1.0), (T0 + 1200.6, 2.0)], [], True)
-    assert at_events(sparse, [rare_in], [rare_out], T0, T0 + 1800, 30) == ([2, 2], [2, 2])
+    assert at_events(sparse, [rare_in], [rare_out], T0, T0 + 1800, 30) == ([2, 2, 2], [2, 2, 2])
 
 
 def test_a_counter_no_machine_writes_never_joins_a_passage():

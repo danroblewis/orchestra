@@ -57,8 +57,8 @@ class Passage:
     measured: bool
     out_of_step: int              # steps in which the outs ran ahead of the ins, or more than a step behind
     moved: int                    # steps in which any of them moved
-    rises: list[int] = field(default_factory=list)   # a measured level's rises: [at an in's event, all]
-    falls: list[int] = field(default_factory=list)   # ... and its falls: [at an out's event, all]
+    rises: list[int] = field(default_factory=list)   # a measured level's rises: [at an in's event, all, the ins' moves]
+    falls: list[int] = field(default_factory=list)   # ... and its falls: [at an out's event, all, the outs' moves]
 
     @property
     def terms(self) -> list[tuple[Series, int]]:
@@ -162,7 +162,7 @@ def passages(found: list, counters: list[Series], levels: list[Series], *, start
     total = {c.key: sum(c.deltas) for c in counters}
     also = lambda cs: [*cs, *(d for c in cs for d in copies.get(c.key, ()))]     # the same events, counted again
     where = {"start": start, "end": end, "step": step, "writer_of": writer_of}
-    seen = lambda ins, outs: state_level(levels, also(ins), also(outs), **where) is not None
+    seen = lambda ins, outs: state_level(levels, also(ins), also(outs), counted=(ins, outs), **where) is not None
     while True:
         claims = _claims(found)
         alone = {k: next(iter(v))[1] for k, v in claims.items() if len(v) == 1}       # claimed by one stock, with its sign
@@ -179,7 +179,7 @@ def passages(found: list, counters: list[Series], levels: list[Series], *, start
         if got is None:
             return made
         _, ins, outs, bad, moved = got
-        state = state_level(levels, also(ins), also(outs), **where)
+        state = state_level(levels, also(ins), also(outs), counted=(ins, outs), **where)
         if state:
             level, up, down = state
             levels.remove(level)

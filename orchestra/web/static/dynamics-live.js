@@ -139,7 +139,7 @@ const Live = (() => {
   function trustRows(t) {
     const pct = (x) => (x == null ? "—" : (+x).toFixed(2));
     const parts = Object.entries(t.components || {}).map(([k, v]) => `${esc(k.replace("_", " "))} ${pct(v)}`).join(" · ");
-    const facts = [t.p_null != null ? `shift null p ${pct(t.p_null)}` : "", t.held_out_r2 != null ? `held-out R² ${pct(t.held_out_r2)}` : "",
+    const facts = [t.matched_counts ? esc(t.matched_counts) : "", t.p_null != null ? `shift null p ${pct(t.p_null)}` : "", t.held_out_r2 != null ? `held-out R² ${pct(t.held_out_r2)}` : "",
       t.cum_residual_ratio != null ? `running residual ${pct(t.cum_residual_ratio)} × the level's spread` : "", t.units != null ? `judged on ${t.units} unit${t.units === 1 ? "" : "s"} (steps, or stretches between a slow level's writes)` : "",
       t.persistence != null ? (t.persistence_of > 1 ? `found the same way in ${Math.round(100 * t.persistence)}% of the last ${t.persistence_of} discoveries` : "first discovery: nothing to compare with yet") : ""].filter(Boolean).join(" · ");
     return `<div>trust</div><div><b>${pct(t.score)}</b> ${esc(t.level)} <span class="muted">(${esc(t.kind.replace("_", " "))}; the weakest of: ${parts})</span>
@@ -177,6 +177,7 @@ const Live = (() => {
       ${s.series && resOf(MODEL.discovery, keyOf(s.series)) ? `<div>resolution</div><div>${esc(resOf(MODEL.discovery, keyOf(s.series)))}</div>` : ""}
       ${ev.balance ? `<div>balance</div><div class="num">Δ =${ev.balance.map((b) => `<span class="bal-term">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join("")}<span class="muted">${ev.trust && ev.trust.kind === "passage" ? "a passage: judged on its raw points; R² not used" : ev.balance_r2 == null ? (ev.by_construction ? "by construction: a count of reporters and its own turnover, so no evidence" : "measured by no series: no fit to report") : `R² ${ev.balance_r2} · exact in ${Math.round(100 * ev.exact_steps)}% of steps`}${ev.balance_r2_level != null ? ` · judged on the traffic through it (R² on the level itself ${ev.balance_r2_level})` : ""}</span></div>` : ""}
       ${ev.net_flow ? netFlowRows(s, ev, io) : ""}
+      ${ev.quiet ? `<div>held</div><div>from v${esc(String(ev.quiet.version))}: ${esc(ev.quiet.why)}</div>` : ""}
       ${ev.trust ? trustRows(ev.trust) : ""}</div>
       <h4 style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">Level: measured, as the equations run it, and projected
         <label class="muted" style="font-weight:400;font-size:11.5px">project <input id="sim-h" type="number" min="1" max="1440" value="${horizon()}" style="width:58px"> min ahead</label></h4>

@@ -48,7 +48,13 @@ def _read_tally() -> Series:
 
 
 def _merging() -> Series:
+    """MERGING as UC-3 read it: above zero at one raw point in the nine moves."""
     return _level("tasks_tickets", [(TO_MERGING[2], 1.0), (LANDED[2] + 0.001, 0.0)], 0.0)
+
+
+def _merging_every() -> Series:
+    """MERGING written at each move: in at each to-merging, out at each landing."""
+    return _level("tasks_tickets", sorted([(t, 1.0) for t in TO_MERGING] + [(t + 0.001, 0.0) for t in LANDED]), 0.0)
 
 
 def test_a_level_fills_and_drains_only_when_it_rises_and_falls_by_a_whole_item():
@@ -65,8 +71,10 @@ def test_a_tally_that_never_falls_is_never_the_state_between_two_counters():
     ins, outs = [_counter("to_merging_total", TO_MERGING)], [_counter("gate_runs_total", LANDED)]
     where = {"start": START, "end": END, "step": STEP, "writer_of": lambda s: s.labels.get("instrument")}
     assert state_level([_read_tally()], ins, outs, **where) is None
-    got = state_level([_read_tally(), _merging()], ins, outs, **where)
-    assert got is not None and got[0].name == "tasks_tickets"
+    got = state_level([_read_tally(), _merging_every()], ins, outs, **where)
+    assert got is not None and got[0].name == "tasks_tickets" and got[1] == [9, 9, 9]
+    # MERGING above zero at one raw point accounts for one of the nine moves: not measured by it
+    assert state_level([_read_tally(), _merging()], ins, outs, **where) is None
 
 
 def test_measured_between_takes_no_level_that_never_falls_for_a_buffer():
@@ -91,4 +99,6 @@ def test_with_the_tally_the_only_level_the_passage_state_is_the_hidden_one_its_c
     (p,) = passages(found, [ins, outs], [_read_tally()], **where)
     assert not p.measured and p.level.name == "after_to_merging_total" and p.evidence().get("hidden")
     (p,) = passages(found, [ins, outs], [_read_tally(), _merging()], **where)
+    assert not p.measured                     # one rise in nine moves: the state is the hidden one still
+    (p,) = passages(found, [ins, outs], [_read_tally(), _merging_every()], **where)
     assert p.measured and p.level.name == "tasks_tickets"

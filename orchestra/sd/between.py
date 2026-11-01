@@ -4,7 +4,12 @@ The grid samples a level at whole steps, so a state each item leaves within a se
 at every step; its raw points do not. The level that rises at an instant one of the passage's
 ins counted (at it, or no later than the level's own write interval after it), and falls at an
 instant one of its outs counted, is that state: most of its rises and of its falls (``MATCHED``)
-must, and it must have risen no more often than the ins counted. It must fill and drain in the
+must, and its rises must account for the ins' moves and its falls for the outs' (``accounts``):
+by magnitude, neither more nor fewer than the counters' moves in the window, within ``SAME_TOTAL``
+and one item. A level that rose twice while the ins counted 25 moves is another state that
+happened to move at two of them (delivery_sail's triage.waiting carried sail.waiting's moves,
+2 of 25, and scored as matched); a state the level's writes miss (each item gone between two
+writes) is not measured by it, and stays the hidden state its counters imply. It must fill and drain in the
 window by at least one of its unit (``fills_and_drains``): a level that only rises (a tally of
 reports read, 5 to 10 and never less) is a count of something, and one whose moves are all under
 one (a duration of tenths of a second) moves no whole unit; neither is the state items pass
@@ -41,6 +46,17 @@ def fills_and_drains(changes) -> bool:
     return any(d >= 1 - 1e-9 for d in changes) and any(d <= -1 + 1e-9 for d in changes)
 
 
+def moves(cs: list[Series], start: float, end: float) -> float:
+    """How many items the counters ``cs`` counted inside the window (a drop is a reset)."""
+    return sum((b - a) if b >= a else b for c in cs for (_, a), (t, b) in pairwise(c.points) if start < t <= end)
+
+
+def accounts(moved: float, counted: float) -> bool:
+    """Whether a level's moves one way (``moved``, by magnitude) account for the counters' moves
+    (``counted``): neither more nor fewer, within ``SAME_TOTAL`` and one item."""
+    return abs(moved - counted) <= SAME_TOTAL * max(moved, counted) + 1 + 1e-9
+
+
 def events(c: Series, start: float, end: float) -> list[float]:
     """The instants a counter counted, inside the window (a drop is a reset)."""
     return sorted(t for (_, a), (t, b) in pairwise(c.points) if start < t <= end and ((b - a) if b >= a else b) > 0)
@@ -63,10 +79,12 @@ def _covered(at: list[float], tol: float) -> float:
     return total
 
 
-def at_events(level: Series, ins: list[Series], outs: list[Series], start: float, end: float, step: float
-              ) -> tuple[list[int], list[int]] | None:
+def at_events(level: Series, ins: list[Series], outs: list[Series], start: float, end: float, step: float,
+              counted: tuple[list[Series], list[Series]] | None = None) -> tuple[list, list] | None:
     """The level's rises at the ins' events and its falls at the outs' events, each as [matched,
-    all]; None when it is not the state between them."""
+    all, the counters' moves]; None when it is not the state between them. ``counted``: the ins
+    and outs whose moves the level must account for, when ``ins`` and ``outs`` add copies of the
+    same events (whose instants it may match, but whose moves are not more items)."""
     pts = [(t, v) for t, v in level.points if start - step < t <= end]
     rises = [t for (_, a), (t, b) in pairwise(pts) if b > a and t > start]
     falls = [t for (_, a), (t, b) in pairwise(pts) if b < a and t > start]
@@ -80,14 +98,20 @@ def at_events(level: Series, ins: list[Series], outs: list[Series], start: float
     up, down = _hits(rises, into, tol), _hits(falls, out, tol)
     if up < MATCHED * len(rises) or down < MATCHED * len(falls) or len(rises) > len(into) * (1 + SAME_TOTAL) + 1:
         return None
-    return [up, len(rises)], [down, len(falls)]
+    cin, cout = counted or (ins, outs)
+    n_in, n_out = moves(cin, start, end), moves(cout, start, end)
+    risen = sum(b - a for (_, a), (t, b) in pairwise(pts) if b > a and t > start)
+    fallen = sum(a - b for (_, a), (t, b) in pairwise(pts) if b < a and t > start)
+    if not accounts(risen, n_in) or not accounts(fallen, n_out):
+        return None                                  # another state, moving at a few of the moves
+    return [up, len(rises), round(n_in)], [down, len(falls), round(n_out)]
 
 
 def state_level(levels: list[Series], ins: list[Series], outs: list[Series], *, start: float, end: float, step: float,
-                writer_of) -> tuple[Series, list[int], list[int]] | None:
+                writer_of, counted: tuple[list[Series], list[Series]] | None = None) -> tuple[Series, list, list] | None:
     """The level that is the state between ``ins`` and ``outs``: of those that qualify, the one
-    with the most rises at the ins' events, then the ins' machine's."""
-    scored = [(m, lv) for lv in levels if (m := at_events(lv, ins, outs, start, end, step))]
+    with the most rises at the ins' events, then the ins' machine's (``counted``: ``at_events``)."""
+    scored = [(m, lv) for lv in levels if (m := at_events(lv, ins, outs, start, end, step, counted))]
     if not scored:
         return None
     (up, down), level = max(scored, key=lambda x: (x[0][0][0], writer_of(x[1]) == writer_of(ins[0]), x[1].key))
