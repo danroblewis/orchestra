@@ -117,3 +117,17 @@ def test_a_series_of_the_age_view_is_the_age_of_its_place_never_its_name():
     places = Places([(x.name, x.labels, x.key) for x in (pile, age)], prov)
     assert _title(pile, places) == "write (held) · delivery_sail"
     assert _title(age, places) == "age of write (held) · delivery_sail"
+
+
+def test_a_place_value_with_no_words_keeps_the_series_name_and_dashes_spell_like_underscores():
+    # the R2 refuter: queue_depth{pile="3", shard="3"} was titled "3"; code-review.waiting fell back
+    from orchestra.sd.discover import _title
+    from orchestra.sd.series import Series
+    from orchestra.sd.titles import Places
+
+    num = Series("queue_depth", {"pile": "3", "shard": "3"}, [], [], False)
+    dash = Series("workflow_pile_items", {"workflow": "w", "pile": "code-review.waiting", "step": "code-review", "place": "waiting"}, [], [], False)
+    prov = {x.key: {"view": "count", "place": "pile"} for x in (num, dash)}
+    places = Places([(x.name, x.labels, x.key) for x in (num, dash)], prov)
+    assert _title(num, places).startswith("queue depth")
+    assert _title(dash, places) == "code-review (waiting) · w"

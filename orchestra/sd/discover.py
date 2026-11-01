@@ -193,6 +193,12 @@ def _named(s: Series, places: Places | None) -> dict:
     return {"named": "places"} if (places.move(s.labels, s.key) if s.counter else places.level(s.labels, s.key)) else {}
 
 
+def _never_falls(s: Series) -> bool:
+    """Whether a level never went down in the window: an accumulator only fills (its balance's
+    terms all add, and its level never fell: a repository's commits, unless force-pushed back)."""
+    return all(b >= a for (_, a), (_, b) in zip(s.points, s.points[1:]))
+
+
 def _words(v: str) -> list[str]:
     return [w for w in re.split(r"[\W_]+", v.lower()) if w]
 
@@ -1102,7 +1108,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                                 if p and not p.measured else {}),
                              **({"identification": identified[s.key].record()} if s.key in identified else {}),
                              "trust": stock_trust(s, exact, identified, by_cons, p),
-                             "written_by": writer_of(s), "accumulator": all(sign > 0 for _, sign in terms),
+                             "written_by": writer_of(s), "accumulator": all(sign > 0 for _, sign in terms) and _never_falls(s),
                              "balance": [{"series": c.key, "sign": sign} for c, sign in terms],
                              "held_minutes": round(carried / 60, 2),
                              **({"balance_r2_level": round(fit_of(s, terms, masks[s.key])[0], 4),

@@ -449,16 +449,15 @@ def test_a_stopping_host_ends_the_strategy_running_now():
 
 
 def _filling_and_slightly_off(tmp_path):
-    """``a`` only fills (a repository's commits); ``b`` fills and drains, its gauge one high now
-    and then, so neither is balanced exactly and both are handed over."""
+    """``a`` only fills (a repository's commits, never falling); ``b`` fills and drains, its gauge
+    one high now and then; both are handed over (``_every_measured_stock``)."""
     store = FileMetrics(tmp_path / "m.jsonl")
     rates = {"a_in_total": 20.0, "b_in_total": 20.0, "b_out_total": 20.0}
     machines = dict.fromkeys([*rates, "a", "b"], "m")
     off = lambda t: 1 if int(t - T0) // 30 % 29 == 0 else 0
     return store, *write(store, 90, random.Random(6), rates, {"a": {"a_in_total": 1}, "b": {"b_in_total": 1, "b_out_total": -1}},
                          machines, initial={"a": 30, "b": 30},
-                         extra=lambda t, v: [Point("a", v["a"] + off(t), t, {"project": "p", "machine": "m"}),
-                                             Point("b", v["b"] + off(t), t, {"project": "p", "machine": "m"})])
+                         extra=lambda t, v: [Point("b", v["b"] + off(t), t, {"project": "p", "machine": "m"})])
 
 
 def test_an_accumulator_gets_no_outflow_and_a_good_balance_no_unmeasured_inflow(tmp_path, monkeypatch):
@@ -478,3 +477,20 @@ def test_an_accumulator_gets_no_outflow_and_a_good_balance_no_unmeasured_inflow(
     whys = {(d["from"], d["to"]): d["why"] for d in m.discovery["dropped"]}
     assert "only fills" in whys[("a", None)] and "R² ≥ 0.98" in whys[(None, "a")] and "R² ≥ 0.98" in whys[(None, "b")]
     assert all(m.flow(f).current().method == "poisson-mle" for f in ("a_in_total", "b_in_total", "b_out_total")), "the counters keep their fits"
+
+
+def test_a_level_that_falls_is_no_accumulator_and_keeps_its_outflow(tmp_path, monkeypatch):
+    # the R2 refuter's case: commits balanced by one counter that adds, rewound by 2 at 8 force-pushes;
+    # every term adds, but the level fell: not an accumulator, so SD Lab's outflow (the rewinds) stays
+    store = FileMetrics(tmp_path / "m.jsonl")
+    rewinds = range(600, 5400, 600)
+    back = lambda t: -2 * sum(1 for k in rewinds if t - T0 >= k)
+    start, end = write(store, 90, random.Random(6), {"a_in_total": 20.0}, {"a": {"a_in_total": 1}}, {"a_in_total": "m", "a": "m"},
+                       initial={"a": 300}, extra=lambda t, v: [Point("a", v["a"] + back(t), t, {"project": "p", "machine": "m"})])
+    _every_measured_stock(monkeypatch)
+    monkeypatch.setattr("orchestra.sd.strategies.run_strategy", _fake({}, [{"from": "a", "to": None, "rate": {"form": "constant", "value": 0.6}}]))
+    monkeypatch.setattr("orchestra.sd.strategies.explains_residual", lambda *a: True)
+    m = discover_with(store.dump("", {"project": "p"}), start=start, end=end, step=30, strategy="fake")
+    a = m.stock("a")
+    assert a is not None and a.evidence["accumulator"] is False, a and a.evidence.get("accumulator")
+    assert [f.id for f in m.flows if f.src == "a"], [(f.id, f.src, f.dst) for f in m.flows]

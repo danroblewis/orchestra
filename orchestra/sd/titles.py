@@ -14,7 +14,9 @@ places' values) is named by the places, whether or not either is a stock: "write
 open_pr (waiting) · delivery_sail"; a value no place spells is said as it is ("<start>"). A state
 no series measures between such moves (a hidden passage, ``sd.passing``) is named by the places
 its moves name: the places its ins enter and its outs leave ("open_pr (waiting) … ci (waiting)",
-one place said once). Label values keep their spelling (``sail_check``, never "sail check")."""
+one place said once). Label values keep their spelling (``sail_check``, never "sail check"); "-" and
+"_" are alike inside a part (``code-review.waiting`` with ``step="code-review"``), and a place
+value with no letters in it (``pile="3"``) spells no words, so the series keeps its own name."""
 
 from __future__ import annotations
 
@@ -24,7 +26,13 @@ from .construction import WRITERS
 
 
 def _parts(value: str) -> list[str]:
-    return [p for p in re.split(r"[^\w]+", value) if p]
+    """A place value's parts: split where it is not a word, "-" and "_" kept inside a part
+    (``code-review.waiting``: code-review, waiting)."""
+    return [p for p in re.split(r"[^\w-]+", value) if p]
+
+
+def _same(a: str, b: str) -> bool:
+    return a.replace("-", "_") == b.replace("-", "_")
 
 
 class Places:
@@ -45,12 +53,12 @@ class Places:
         rec = self.provenance.get(key) or {}
         place = rec.get("place") if rec.get("view") == "count" else None
         value = labels.get(place) if place else None
-        if not value:
-            return None
+        if not value or not re.search(r"[^\W\d_]", value):
+            return None                                  # a value that spells no words (pile="3"): named by its series
         own = {k: v for k, v in sorted(labels.items()) if k != place and k not in WRITERS}
         spell: list[str] = []
         for part in _parts(value):
-            k = next((k for k, v in own.items() if v == part and k not in spell), None)
+            k = next((k for k, v in own.items() if _same(v, part) and k not in spell), None)
             if k is None:
                 return None
             spell.append(k)
