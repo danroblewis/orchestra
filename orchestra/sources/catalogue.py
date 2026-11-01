@@ -44,6 +44,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..collect.views import declared as declared_views
+from ..collect.views import provenance as instrument_views
 from ..metrics import MetricsStore
 from ..sd.series import Declared, series_key
 from . import SourceError
@@ -293,6 +295,8 @@ class Catalogue:
         if self.own is not None:
             out.dump = list(self.own.dump())
             out.status[OWN] = {"ok": True, "series": len(out.dump)}
+            # what the project's instruments say of the series they print (collect.views): a pile and its moves
+            out.provenance.update(instrument_views(out.dump, declared_views(self.project), series_key))
         own_names = {name for name, _, _ in out.dump}
         for name, why in self.specs.refused.items():
             out.status[name] = {"ok": False, "error": f"refused in orchestra.toml: {why}"}

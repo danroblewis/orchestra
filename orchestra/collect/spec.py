@@ -12,6 +12,9 @@ URL), and those the plugins declare (``Plugin.collectors``).
     simulated = true                 # a placeholder: every point labelled simulated="true" (sd.simulated)
     draft = true                     # an option being tried: points labelled draft="true", left out of discovery
     expires = "2026-11-08T00:00:00Z" # ... when the plugin removes the entry (RFC 3339, or unix seconds): data only
+    [collect.views]                  # optional: how it made the series it prints (``views``), for discovery
+    workflow_pile_items = { view = "count", place = "pile" }
+    workflow_item_moves_total = { view = "moves", starts = "to", stops = "from" }
 
     [[scrape]]
     name = "app"
@@ -31,6 +34,7 @@ from dataclasses import dataclass, replace
 from ..config import ConfigError, parse_duration
 from ..events import HOST
 from ..launcher import NAME, own_python
+from .views import View, parse
 
 EVERY_S = 60.0
 TIMEOUT_S = 10.0
@@ -49,10 +53,12 @@ class Collector:
     simulated: bool = False    # a placeholder's: its points are labelled simulated="true" (sd.simulated)
     draft: bool = False        # an option being tried: its points are labelled draft="true" (sd.simulated)
     expires: float | None = None   # a draft's: when its plugin removes it (unix seconds); data, never acted on here
+    views: tuple[View, ...] = ()   # how it made its series (``collect.views``): given as a table, kept parsed
 
     def __post_init__(self) -> None:
         if isinstance(self.target, list):      # a TOML array: kept as a tuple, so the collector stays hashable
             object.__setattr__(self, "target", tuple(self.target))
+        object.__setattr__(self, "views", parse(self.views))
 
     @classmethod
     def scrape(cls, name: str, url: str, **kw) -> Collector:
@@ -142,7 +148,8 @@ def _one(kind: str, entry: object) -> Collector:
     if expires is not None and not draft:
         raise ConfigError("expires goes with draft = true")
     return Collector(entry.get("name"), kind, entry.get("command" if kind == "collect" else "url"), every,
-                     min(timeout, every) if timeout > 0 else timeout, simulated=sim, draft=draft, expires=expires)
+                     min(timeout, every) if timeout > 0 else timeout, simulated=sim, draft=draft, expires=expires,
+                     views=entry.get("views"))
 
 
 def _expires(v) -> float | None:

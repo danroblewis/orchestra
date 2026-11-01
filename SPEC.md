@@ -272,6 +272,14 @@ discovery (`[[sources]]`) is in §4.4. The web UI lists them on the Instruments 
 failures and last error, its log, and whether it is `simulated` ("simulated: placeholder numbers")
 or a `draft` (with `expires`: "draft until … · left out of discovery"; §5.2).
 
+An instrument may say how it made the series it prints (**views**, `collect/views.py`, §5.2), as
+a source's definitions do: a `count` of things in a place (naming the place label), the `moves`
+between places (naming the labels of the place entered and left) or the `starts` and `stops` of
+one place, an `aggregate` over places that overlap, an `age`. The catalogue gives each matching
+point of that instrument the record `{source: "own", instrument, view, ...}` in the reading's
+provenance, and discovery reads it as it reads a source's (§4.3). A view describes how a series
+was made, never a machine or a flow (rules 6 and 7): it changes no equation.
+
 ### 4.3 The model
 
 `orchestra/sd/`: stocks (each bound to a series), flows (each bound to a counter), equations
@@ -463,7 +471,19 @@ Conservation (`sd/discover.py`):
    reading's provenance) is exact by construction, so no evidence (`sd/construction.py`): it is a
    stock only as a count of pods in a place (a deployment, node, namespace, service, job, phase or
    condition), marked `by_construction` with no R² and not counted in `discovery.stocks`; split by
-   what happened to a request (an HTTP status code, a method, an outcome) it is left out. A hidden
+   what happened to a request (an HTTP status code, a method, an outcome) it is left out. A
+   **pile** is the same construction declared by an instrument (§4.2): its level (`count` with a
+   `place`, `pile` among `construction.PLACES`) and the moves into and out of it come from one
+   record (the Workflows plugin's fold), so its balance is recorded, not fitted. Its own moves
+   (those whose entered or left label names the pile, in the same workflow) are its balance,
+   taken as declared before any search and never chosen; it is marked `by_construction` with no
+   R² and nil trust, kept whatever else it is split by (its instrument named its place), and its
+   moves are the flows between the piles, each marked `by_construction` in its `evidence`, two of
+   an instrument's moves never taken for one flow. The flows' rates are fitted like any other's:
+   they, the loops they close and agreement with an outside measurement are the evidence about
+   a pile, never its balance. A level an instrument says is an `aggregate` or an `age` is no
+   stock candidate. If the moves miss some of the level's changes, the level is searched like any
+   other and the reason says what the construction fitted. A hidden
    state (no series measures it, step 3) records no R² either (`balance_r2` null, `measured`
    false);
 3. a counter that leaves one stock and enters another is a **flow** between them; otherwise it
@@ -1264,6 +1284,9 @@ timeout = "20s"                  # default 10 s, never more than every
 simulated = true                 # optional: a placeholder; its points are labelled simulated="true"
 draft = true                     # optional: an option being tried; its points are labelled draft="true"
 expires = "2026-11-08T00:00:00Z" # with draft: when its plugin removes it (data only)
+[collect.views]                  # optional: how it made its series (§4.2), for discovery
+workflow_pile_items = { view = "count", place = "pile", where = { kind = "step" } }
+workflow_item_moves_total = { view = "moves", starts = "to", stops = "from" }
 
 [[scrape]]
 name = "app"
@@ -1291,6 +1314,13 @@ is read from the collectors the caller runs (the host's, the web server's loaded
 again once the configuration changed); only a caller with none (the CLI) loads the plugins for it.
 The web server reads `orchestra.toml` and the overlay again when either changed since it last read
 them (`config.fresh_config`) before it reads which entries are simulated or an option's entry.
+
+**Views** (`views`, a table by series name; a value is one view or a list, the first whose
+`where` labels a series carries is taken; `collect/views.py`): `count` with `place`; `moves` with
+`starts` and `stops`; `starts` or `stops` with `place`; `aggregate`; `age`. A plugin passes the same
+table, `Collector.collect(name, command, views={...})`. A table that cannot be read leaves the entry
+out with the reason (a plugin's: its `Collector` raises `ConfigError` when made). Discovery reads the
+views of the instruments in the runtime record and of `orchestra.toml`'s entries (§4.3).
 
 Each is an **instrument**: it measures the running system and never acts on it, so it is not a
 machine (AGENTS.md rule 7). Nothing is announced on the bus for it and it is never a machine on the
@@ -1321,7 +1351,7 @@ cannot start, an HTTP answer other than 200, or text over 10 MB) writes nothing,
 host's log and the instrument's, and is counted in `orchestra_collect_failures_total{collector}`,
 labelled `machine="orchestra-host"`. A round that succeeds adds a line to the instrument's log.
 Each instrument's health is in the runtime record (`instruments`: its kind, target, interval,
-owner and log, its last write and how many points, its failures and its last error), written when
+owner and log, its declared `views`, which discovery reads there for a plugin's instruments, its last write and how many points, its failures and its last error), written when
 an instrument is added, removed, fails, first writes or writes a different number of points, and
 otherwise at most every 5 s. The configuration (§8) is read again on the host's tick (every second) when
 either of its files changed: an instrument added starts at once, one removed stops (a round under way finishes and

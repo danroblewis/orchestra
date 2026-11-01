@@ -9,8 +9,9 @@ last round is still running skips its turn.
 
 An instrument is not a machine (AGENTS.md rule 7): nothing is announced on the bus for it. Its
 health is recorded where Orchestra's own processes are: in the runtime record under
-``instruments`` (what it is, its target, how often, its log, its last write and how many points,
-its failures and the last error), at most every ``RECORD_EVERY_S`` unless an instrument was added,
+``instruments`` (what it is, its target, how often, its log, the views it declared of its series
+(``views``: discovery reads them from there), its last write and how many points, its failures and
+the last error), at most every ``RECORD_EVERY_S`` unless an instrument was added,
 removed, failed, first wrote or wrote a different number of points; in its log
 (``<state>/logs/instruments/<name>.log``); and in the host's log.
 
@@ -37,6 +38,7 @@ from ..metrics import Point
 from ..metrics import for_project as metrics_for
 from .round import Round, collect
 from .spec import Collector, from_toml
+from .views import tables
 
 FAILURES = "orchestra_collect_failures_total"
 RECORD_EVERY_S = 5.0
@@ -126,7 +128,8 @@ class Collecting:
         """The instruments as the runtime record holds them."""
         with self._lock:
             return {n: {"kind": c.what, "target": c.shown, "every_s": c.every_s, "timeout_s": c.timeout_s, "owner": c.owner,
-                        **c.flags(), "log": str(self._log_of(c)), "failures": self.failures[n], **self.health.get(n, {})}
+                        **c.flags(), "log": str(self._log_of(c)), "failures": self.failures[n],
+                        **({"views": tables(c.views)} if c.views else {}), **self.health.get(n, {})}
                     for n, c in sorted(self.wanted.items())}
 
     def _record_health(self, now: float) -> None:
