@@ -49,8 +49,7 @@ const IntendedMachines = (() => {
   const measuredCount = (m) => { const ms = measuredOf(m); return ms ? ms.instances || 0 : 0; };
   const instList = (a) => ((a.instances || {}).list || []);
 
-  // ---- the map ----
-  // the declared links to add to the graph: [{from, to, kind, observed, gone, state, machine, type}]
+  // on the map, the declared links to add to the graph: [{from, to, kind, observed, gone, state, machine, type}]
   function links(d, hidden) {
     const fam = (t) => t.split(".")[0];
     return (d.intended_edges || []).filter((e) => !hidden.has(fam(e.kind === "publishes" ? e.to : e.from)))
@@ -122,8 +121,7 @@ const IntendedMachines = (() => {
     return { id: nid, levelOf: level, edgeLevel: (e) => ((e.cls || "").includes("im-gone-edge") && (e.source.id === nid || e.target.id === nid) ? 1 : null) };
   }
 
-  // ---- the cards ----
-  // declared machines first: the unconfirmed ones, then the rest of the declared, then the page's order
+  // the cards' order: declared machines first: the unconfirmed ones, then the rest of the declared, then the page's order
   function sort(ms) {
     const rank = (m) => (!m.intent ? 2 : m.intent.state === "proposed" ? 0 : 1);
     return [...ms].sort((a, b) => rank(a) - rank(b));
@@ -179,7 +177,7 @@ const IntendedMachines = (() => {
     if (pub && (it.emits || []).length) pub.innerHTML = `<span class="muted" data-k="publishes">publishes</span>${dec}${(it.emits || []).map((t) => `<span class="ty" title="declared: nothing published yet">${esc(t)} · 0</span>`).join("")}`;
   }
 
-  // ---- the panel: read-only renderings, and the requests ----
+  // the panel's read-only renderings: an event type as a chip, marked added or removed
   const chip = (t, st, extra = "") => `<span class="ty ${st === "add" ? "im-chip-add" : st === "gone" ? "im-chip-gone" : ""}">${esc(t)}</span>${st === "add" ? '<span class="im-tag im-t-add">+ added just now</span>' : st === "gone" ? '<span class="im-tag im-t-gone">− removed</span>' : ""}${extra}`;
   // who the owner's requests reach: the machines that listen for them (intended-core.js)
   const A = () => IntendedCore.asker(IntendedCore.listenersOf(list()));
@@ -304,7 +302,8 @@ const IntendedMachines = (() => {
     const q = fresh(it) && (it.latest.quotes || []).length ? it.latest.quotes : (it.provenance || {}).quote ? [it.provenance.quote] : [];
     const g = (it.guessed || []).length ? ` · ${[...new Set(it.guessed.map((x) => words(x.split("[")[0].replace(/^spec\./, ""))))].join(", ")} ${it.guessed.length === 1 ? "is a guess" : "are guesses"}` : "";
     if (!q.length) return g ? `<div class="im-why muted">${g.slice(3)}</div>` : "";
-    return `<div class="im-why muted">${fresh(it) ? "changed just now, " : ""}from your message${q.length > 1 ? "s" : ""}: ${q.map((x) => `<i>"${esc(x)}"</i>`).join(" and ")}${g}</div>`;
+    const p = it.provenance || {}, relayed = p.via && p.via !== "page" && p.source ? `, as ${esc(p.source)} quoted ${q.length > 1 ? "them" : "it"}` : "";
+    return `<div class="im-why muted">${fresh(it) ? "changed just now, " : ""}from your message${q.length > 1 ? "s" : ""}${relayed}: ${q.map((x) => `<i>"${esc(x)}"</i>`).join(" and ")}${g}</div>`;
   }
   function declaredPanel(m, d) {
     const it = m.intent, prog = it.kind === "programmatic", ext = it.managed === "external";

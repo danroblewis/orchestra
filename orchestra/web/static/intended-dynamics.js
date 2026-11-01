@@ -24,14 +24,7 @@ const Intended = (() => {
   const askers = () => { const x = it(); return x && Array.isArray(x.askers) ? x.askers : null; };
   const ask = (what) => IntendedCore.asker(askers()).ask(what);
 
-  // ---- keys: what marks match by, since discovered ids are not stable; the server's (sd/intended/keys.py),
-  // sent as ``intended.keys`` ({stocks: {id: key}, flows: {id: key}}), never made here ----
-  const keys = () => { const x = it(); return (x && x.keys) || { stocks: {}, flows: {} }; };
-  const stockKey = (s) => (s ? keys().stocks[s.id] || null : null);
-  const flowKey = (f) => (f ? keys().flows[f.id] || null : null);
-  const stockOfKey = (key) => (key ? MODEL.stocks.find((s) => keys().stocks[s.id] === key || s.id === key) : null);
-  const marksOf = (part, id) => { const x = it(); return (x && ((x.marks || {})[part === "stock" ? "stocks" : "flows"] || {})[id]) || []; };
-  const hasEarlier = () => { const x = it(), vs = (MODEL && MODEL.versions) || []; return !!x && vs.findIndex((v) => v.version === x.shown) > 0; };
+  const { stockKey, flowKey, stockOfKey, marksOf, hasEarlier, svgTag, svgRing, svgPin, hatch } = IntendedMarks;
   const nameOf = (id) => (id && MODEL.stocks.some((s) => s.id === id) ? stockName(id) : nice(id));
   // a stock of the base version, named as the page names stocks: by this model when it has it, else
   // among this model's stocks from the base's own series (web/intended.py removed_facts)
@@ -60,32 +53,7 @@ const Intended = (() => {
   const recording = (x) => ((x.measure || {}).recording && x.measure.recording.points ? x.measure.recording : null);
   const subline = (x) => (!x.measured ? "not measured" : recording(x) ? "no series yet · recording" : "no series of its own");
 
-  // ---- SVG marks: a pill tag, a ring, a pin, a hatch ----
-  // ``max``: the widest it may be (a ghost's tags stay within its box); longer text is cut, in full on hover
-  function svgTag(g, x, y, text, cls = "", max = Infinity) {
-    const fit = Math.max(4, Math.floor((max - 14) / 5.6)), shown = text.length > fit ? text.slice(0, fit - 1) + "…" : text;
-    const t = g.append("g").attr("class", "im-svgtag " + cls).attr("transform", `translate(${x},${y})`);
-    if (shown !== text) t.append("title").text(text);
-    t.append("rect").attr("x", 0).attr("y", -9).attr("width", shown.length * 5.6 + 14).attr("height", 16).attr("rx", 8);
-    t.append("text").attr("x", 7).attr("y", 3).text(shown);
-  }
-  function svgRing(g, s) {
-    g.insert("rect", ":first-child").attr("class", "im-ring").attr("x", -s.w / 2 - 6).attr("y", -s.h / 2 - 6).attr("width", s.w + 12).attr("height", s.h + 12).attr("rx", 10);
-  }
-  function svgPin(g, x, y, label) {
-    const p = g.append("g").attr("class", "im-pin").attr("transform", `translate(${x},${y})`);
-    p.append("circle").attr("cy", -6).attr("r", 4);
-    p.append("line").attr("x1", 0).attr("y1", -2).attr("x2", 0).attr("y2", 5);
-    if (label) p.append("text").attr("x", 7).attr("y", -2).text(label);
-  }
-  function hatch(g, s) {
-    const svg = g.node().ownerSVGElement;
-    if (svg && !svg.querySelector("#im-hatch")) d3.select(svg).insert("defs", ":first-child").html('<pattern id="im-hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" class="im-hatchline"/></pattern>');
-    g.append("rect").attr("class", "im-hatch").attr("x", -s.w / 2 + 1.5).attr("y", -s.h / 2 + 1.5).attr("width", s.w - 3).attr("height", s.h - 3).attr("rx", 4).attr("fill", "url(#im-hatch)");
-  }
-
-  // ---- the graph ----
-  // what the page's SDGraph.build made, with the intended model's parts added and its marks set
+  // the graph: what the page's SDGraph.build made, with the intended model's parts added and its marks set
   function extend(g) {
     const x = it();
     if (!x) return g;
@@ -195,7 +163,7 @@ const Intended = (() => {
     return !!(x.gone || x.predicted);
   }
 
-  // ---- the version bar: "changes since vN", on by default ----
+  // the version bar: "changes since vN", on by default
   function versionBar() {
     const x = it(), vs = MODEL.versions || [];
     if (!x || !hasEarlier()) return "";
@@ -206,7 +174,7 @@ const Intended = (() => {
   async function toggleSince() { ON = !ON; await load(); const b = $("im-since"); if (b) b.focus({ preventScroll: true }); }
   const param = () => (ON ? "" : "since=off");
 
-  // ---- the legend ----
+  // the legend's entries for the intended model
   function legend() {
     const x = it();
     if (!x) return "";
@@ -219,7 +187,7 @@ const Intended = (() => {
       + ((x.predicted || []).some((p) => !p.present) ? `<span class="lg im-lg"><i class="im-sw-pred"></i>predicted by a machine's expected effect</span>` : "");
   }
 
-  // ---- the tables: the Expected group, the marks, what was removed ----
+  // the tables: the Expected group, the marks, what was removed
   function statusText(x) {
     if (x.present) return `found as <b>${esc(nameOf(x.found_id || x.id))}</b>` + (x.declared ? "" : ` <span class="muted">· tracked by inference since v${esc(x.since_version ?? "?")}</span>`);
     const rec = recording(x), opt = rec && ((x.measure || {}).options || []).find((o) => o.key === x.measure.chosen);
@@ -270,7 +238,7 @@ const Intended = (() => {
     if (mk.includes("simulated")) r.cells[0].insertAdjacentHTML("beforeend", " " + tag("simulated", "im-t-sim"));
   }
 
-  // ---- the page controls: observations, recorded with the page as their provenance ----
+  // the page controls: observations, recorded with the page as their provenance
   async function control(ctl, part, key, from, after) {
     let d;
     try {

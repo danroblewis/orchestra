@@ -63,8 +63,7 @@ const Live = (() => {
   }
   const flowsOf = (sid) => ({ in: MODEL.flows.filter((f) => f.to === sid), out: MODEL.flows.filter((f) => f.from === sid) });
 
-  // ---- the diagram: what the network renderer draws inside each stock's box ----
-  // the tank (now against the highest level in the hour), the value, and the hour's sparkline
+  // inside each stock's box on the diagram: the tank (now against the highest level in the hour), the value, and the hour's sparkline
   function decorateStock(g, n, sz) {
     const id = n.sid, h = stockHist(id), vals = h.map((p) => p[1]), v = now(id);
     const max = Math.max(1e-9, ...vals, v || 0), min = Math.min(0, ...vals), col = n.color;
@@ -96,7 +95,7 @@ const Live = (() => {
     }
   }
 
-  // ---- hover and click ----
+  // the summary shown on hovering a stock
   function stockSummary(id) {
     const s = MODEL.stocks.find((x) => x.id === id), h = stockHist(id).map((p) => p[1]), v = now(id), io = flowsOf(id);
     const rows = [...io.in.map((f) => ["+", f]), ...io.out.map((f) => ["−", f])].map(([sg, f]) => `<div class="tr"><span>${sg} ${esc(flowName(f))}</span><b>${rateFmt(recentRate(f.id))}${per()}</b></div>`).join("");
@@ -266,7 +265,7 @@ const Live = (() => {
     if (typeof IntendedDrawers !== "undefined") IntendedDrawers.expectSwitch("flow", fid);
   }
 
-  // ---- the history chart ----
+  // the history chart under the diagram: every stock, each toggled from its key
   function chart() {
     const el = document.getElementById("hist"); if (!el || !MODEL) return;
     const ids = MODEL.stocks.map((s) => s.id).filter((id) => stockHist(id).length);

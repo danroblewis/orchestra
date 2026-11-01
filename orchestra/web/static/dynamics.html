@@ -99,6 +99,7 @@
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
 <script src="/static/vendor/d3.min.js"></script>
+<script src="/static/netgraph-geometry.js?v={{v}}"></script>
 <script src="/static/netgraph.js?v={{v}}"></script>
 <script src="/static/sd-graph.js?v={{v}}"></script>
 <script src="/static/loops.js?v={{v}}"></script>
@@ -107,6 +108,7 @@
 <script src="/static/charts.js?v={{v}}"></script>
 <script src="/static/predictions.js?v={{v}}"></script>
 <script src="/static/intended-core.js?v={{v}}"></script>
+<script src="/static/intended-marks.js?v={{v}}"></script>
 <script src="/static/intended-dynamics.js?v={{v}}"></script>
 <script src="/static/intended-panel.js?v={{v}}"></script>
 <script src="/static/intended-drawers.js?v={{v}}"></script>
@@ -173,10 +175,10 @@ function draw() {
       // laid out by ELK (sd-layout.js): the system in layers along its flows, clouds beside their stocks
       // then refined by springs, so nothing is left far from what it is connected to
       layout: window.ELK ? async (nodes, edges) => {
-        const geo = { size: NetGraph.size, frameOf: NetGraph.frameOf, tetherPlaces: NetGraph.tetherPlaces };
+        const geo = { size: NetGeometry.size, frameOf: NetGeometry.frameOf, tetherPlaces: NetGeometry.tetherPlaces };
         const elk = await SDLayout.layout(nodes, edges, { elk: new ELK(), ...geo, hierarchy: true });
         // unconnected groups side by side, filling the view's shape, then springs
-        return SDLayout.refine(nodes, edges, SDLayout.pack(nodes, edges, elk, geo), { ...geo, labelSize: NetGraph.labelSize });
+        return SDLayout.refine(nodes, edges, SDLayout.pack(nodes, edges, elk, geo), { ...geo, labelSize: NetGeometry.labelSize });
       } : null,
       // and then untangled in a worker (fewest lines behind boxes or crossing, every label readable)
       polish: window.Worker ? (nodes, edges, at, fixed) => new Promise((resolve, reject) => {

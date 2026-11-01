@@ -1,7 +1,7 @@
 // How good a drawn graph's layout is, as numbers: used by the layout tests (tests/layout) and
 // available in the browser (LayoutScore.score) to measure what is on screen.
 //
-// Input: nodes with x, y (centres) and their sizes (NetGraph.size), and edges as NetGraph takes
+// Input: nodes with x, y (centres) and their sizes (NetGeometry.size), and edges as NetGraph takes
 // them (source, target, or toEdge for an influence into a flow's middle). Edges are measured as
 // straight lines between the nodes' outlines; the renderer bends them a little.
 (function (root, factory) {

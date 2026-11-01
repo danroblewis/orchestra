@@ -349,9 +349,9 @@ draft = true</pre></div></div>
         if (E === "E2") svgTag(me, -48, 66, "changed just now", "mk-t-chg");
       }
       if (E === "E2") for (const t of [...ADDED, EMIT]) svg.selectAll("g.ng-node").filter((n) => n.id.includes("ev:" + t)).each(function () {
-        const g = d3.select(this), s = NetGraph.size(d3.select(this).datum()); if (t !== EMIT) svgRing(g, s, "mk-ring mk-ring-add"); svgTag(g, -s.w / 2, -s.h / 2 - 12, t === EMIT ? "+ coordinator to listen" : "+ new link", "mk-t-add"); });
+        const g = d3.select(this), s = NetGeometry.size(d3.select(this).datum()); if (t !== EMIT) svgRing(g, s, "mk-ring mk-ring-add"); svgTag(g, -s.w / 2, -s.h / 2 - 12, t === EMIT ? "+ coordinator to listen" : "+ new link", "mk-t-add"); });
       if (E === "E2") for (const t of REMOVED) svg.selectAll("g.ng-node").filter((n) => n.id.includes("ev:" + t)).each(function () {
-        const g = d3.select(this), s = NetGraph.size(d3.select(this).datum()); svgTag(g, -s.w / 2, -s.h / 2 - 12, "− link removed", "mk-t-gone"); });
+        const g = d3.select(this), s = NetGeometry.size(d3.select(this).datum()); svgTag(g, -s.w / 2, -s.h / 2 - 12, "− link removed", "mk-t-gone"); });
       if (E === "E3" || LAYOUT) return;
       // the highlight rule (P2 §7): the machine, its event types and the machines on them at full
       // colour; the next ring (their other event types, the machines on those) at .45; the rest shadowed.

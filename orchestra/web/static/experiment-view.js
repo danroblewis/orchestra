@@ -25,7 +25,7 @@ const ExperimentView = (() => {
   }
   const ends = (r, nm) => `${esc(nm.stock(r.from))} → ${esc(nm.stock(r.to))}`;
 
-  // ---- the edits: an equation diff against the base
+  // one side of an edit's equation diff against the base
   function side(r, other, nm, label) {
     if (!r) return `<div class="lbl">${label}</div><div class="none">${label === "before" ? "not in the base: added" : "removed"}</div>`;
     return `<div class="lbl">${label} <span class="muted">· ${ends(r, nm)}${r.origin ? ` · ${esc(r.origin)}` : ""}</span></div>
@@ -60,7 +60,7 @@ const ExperimentView = (() => {
     return JSON.stringify(v);
   }
 
-  // ---- the edit log, in order, refused batches included
+  // one op of the edit log (in order, refused batches included), as text
   function opText(e, nm) {
     const P = (p) => (p && Object.keys(p).length ? ` {${Object.entries(p).map(([k, v]) => `${k}: ${n(v)}`).join(", ")}}` : "");
     switch (e && e.op) {
@@ -87,7 +87,7 @@ const ExperimentView = (() => {
     }).join("")}</div>`;
   }
 
-  // ---- runs
+  // a run's charts are this wide
   const chartW = (W) => Math.max(320, Math.min(760, W || 600));
   function trustCallouts(r, nm) {
     const out = [];
@@ -211,7 +211,7 @@ const ExperimentView = (() => {
       <details class="how"><summary>how it is checked</summary>${esc(u.how || "")}</details>`;
   }
 
-  // ---- the prediction a committed experiment became
+  // the prediction a committed experiment became
   function prediction(p, rec, nm) {
     if (!p) return "";
     const v = p.verdict || null;

@@ -1,12 +1,11 @@
 // The Dynamics graph's layout, measured (orchestra/web/static/layout-score.js) on saved models
 // (tests/fixtures/dynamics). The graph is built and laid out by the same code the page runs:
-// sd-graph.js (model → graph), sd-layout.js (ELK, springs, untangling), netgraph.js (sizes, frame,
+// sd-graph.js (model → graph), sd-layout.js (ELK, springs, untangling), netgraph-geometry.js (sizes, frame,
 // clouds, labels).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -16,10 +15,8 @@ const FIXTURES = path.resolve(import.meta.dirname, "../fixtures/dynamics");
 const SDGraph = require(path.join(STATIC, "sd-graph.js"));
 const SDLayout = require(path.join(STATIC, "sd-layout.js"));
 const LayoutScore = require(path.join(STATIC, "layout-score.js"));
-// netgraph.js is a browser script (a global const); its pure parts need no DOM or d3
-const ctx = {};
-vm.runInNewContext(fs.readFileSync(path.join(STATIC, "netgraph.js"), "utf8") + "\nthis.NetGraph = NetGraph;", ctx);
-const { size, frameOf, tetherPlaces, labelSize, placeLabels } = ctx.NetGraph;
+// the renderer's pure geometry (netgraph-geometry.js) needs no DOM or d3
+const { size, frameOf, tetherPlaces, labelSize, placeLabels } = require(path.join(STATIC, "netgraph-geometry.js"));
 const inside = (n) => n.kind !== "cloud";
 
 async function laidOut(file) {

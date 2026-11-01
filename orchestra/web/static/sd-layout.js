@@ -1,6 +1,6 @@
 // The Dynamics graph's layout, by ELK's layered algorithm (elkjs): what is inside the system is
 // laid out in layers along its flows (material moves left to right), with as few crossings as it
-// can find; then the clouds go just outside the frame, beside their stocks (NetGraph.tetherPlaces).
+// can find; then the clouds go just outside the frame, beside their stocks (NetGeometry.tetherPlaces, netgraph-geometry.js).
 //
 // What ELK sees: every node inside the system at its drawn size, every flow between two of them,
 // and, for each auxiliary, a link to the stock its influence's flow runs into, so an auxiliary is

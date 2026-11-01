@@ -50,7 +50,7 @@
 let MACHINES = null;
 Orchestra.machineList = () => (MACHINES && MACHINES.machines) || [];
 
-// ---- Machines: a short list of the continuous machines and any other while it is active; a click
+// The Machines panel: a short list of the continuous machines and any other while it is active; a click
 // opens the machine's dialog. Every machine is on the Machines page. Whether a machine is active is
 // the bus's (its events within its own rhythm), the one predicate the headline and the rows share:
 // a continuous machine is one that said so when it started, never "running" on that word alone.
@@ -94,7 +94,7 @@ Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 
   document.addEventListener("orchestra:machinecards", refresh);
 } });
 
-// ---- Host: the Core services in a line, and the machine Orchestra runs on
+// The Host panel: the Core services in a line, and the machine Orchestra runs on
 Orchestra.panels.register({ id: "host", title: "Host", size: { w: 7, h: 9 }, mount(body, ui) {
   body.innerHTML = `<a class="panel corestrip" id="corestrip" href="/core" title="Orchestra's fundamental services: the Core page">Core …</a>
     <div class="panel" style="margin-bottom:0">
@@ -113,7 +113,7 @@ Orchestra.panels.register({ id: "host", title: "Host", size: { w: 7, h: 9 }, mou
   setInterval(refreshSystem, SYSTEM_POLL_MS); setInterval(refreshCoreStrip, 5000);
 } });
 let HOST_SUB = () => {};
-// ---- a one-line Core status; the detail is on the Core page ----
+// a one-line Core status; the detail is on the Core page
 async function refreshCoreStrip() {
   try {
     const c = await (await fetch("/api/core")).json();

@@ -188,8 +188,6 @@ class ConfigEdit:
         """The target file's text now (None: there is no overlay)."""
         return _read(self.file(target))
 
-    # what each change does to the document
-
     def set(self, key, value: Any, *, target: str = REPO, check: Check | None = None, dry_run: bool = False) -> Change:
         """Set ``key`` (``"queue.workers"``, or a list of parts) to ``value``."""
         return self.set_many({key if isinstance(key, str) else ".".join(key): value}, target=target, check=check,
@@ -260,8 +258,6 @@ class ConfigEdit:
             return f"removed {where}"
         return self._change(target, edit, check, dry_run)
 
-    # writing
-
     @contextmanager
     def _locked(self) -> Iterator[None]:
         """The project's configuration held against every other writer, in any process
@@ -301,9 +297,8 @@ class ConfigEdit:
             self.project.reload_config()
         return True
 
-    # the work
-
     def _repo_entry(self, parts: list[str], name: str) -> dict | None:
+        """The repository's entry ``name`` in the array of tables at ``parts``, or None."""
         items = tt.get(tomllib.loads(self.text(REPO) or ""), parts)
         i = tt.find(items if isinstance(items, list) else [], name)
         return None if i is None else items[i]

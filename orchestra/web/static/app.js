@@ -269,9 +269,10 @@ Orchestra.conn = (() => {
 })();
 
 
-// ---- log highlighting -------------------------------------------------------
-// Logs have no grammar, so this is lexical: each pattern below is tried at the
-// current position, first match wins, and everything else passes through escaped.
+// Log highlighting (highlightLog: the Core page, the machine dialog, and plugins' pages that load
+// app.js, the agents' among them, use it). Logs have no grammar, so this is lexical: each pattern
+// below is tried at the current position, first match wins, and everything else passes through
+// escaped.
 const LOG_RULES = [
   [/\x1b\[[0-9;]*m/y, null],                                                    // ANSI escapes: dropped
   [/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/y, "ts"],
