@@ -447,7 +447,7 @@ each pin), or narrow `match` to the families you did not pin.
    - labels that change with every request or sample (trace or request ids) are identity: sum
      them away, or leave the metric out.
 
-9. **Declare a stock you know.** When you know which level a set of counters fills and drains,
+9. **Name a balance you know.** When you know which level a set of counters fills and drains,
    say so: give the level and its flows one `stock` name and each its `role` (`"level"`,
    `"inflow"` or `"outflow"`; a flow is `kind = "counter"`). Discovery tries that balance first,
    before any search, and judges it by the same evidence as any other (enough stretches, a fit
@@ -455,7 +455,9 @@ each pin), or narrow `match` to the families you did not pin.
    declaration is a hypothesis, not a binding: one that does not fit is searched like any level,
    and the reason the level is left out (if it is) says how well the declared balance fitted. A
    stock found this way records `declared` (its origin) in its evidence; its flows are still
-   fitted. The level and its flows may be in different stores:
+   fitted. This is not the intended model's declared stock (a stock the owner expects, made with
+   `POST /intended`): that one is drawn as a ghost, never handed to discovery, and matched to
+   what discovery finds only by `link`. The level and its flows may be in different stores:
 
 ```toml
 [[sources]]

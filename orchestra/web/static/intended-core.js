@@ -28,5 +28,11 @@ const IntendedCore = (() => {
           : `To ${what}, ask the machine that listens for requests.`),
     };
   }
-  return { REQ, hears, listenersOf, asker };
+  // who put an element in the declared layer, from its provenance: "declared by you", "proposed by
+  // integrator"; the source as the call named it, never how the call came (a plugin, the endpoint)
+  function declaredBy(x) {
+    const p = (x && x.provenance) || {}, who = p.author === "owner" ? "you" : (p.source || p.author || "");
+    return who ? `${x.state === "proposed" ? "proposed" : "declared"} by ${who}` : "";
+  }
+  return { REQ, hears, listenersOf, asker, declaredBy };
 })();

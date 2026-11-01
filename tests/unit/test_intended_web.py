@@ -540,3 +540,19 @@ def test_a_misspelt_provenance_field_on_the_endpoint_is_refused_never_dropped(tm
     assert status == 400 and "reasn" in out["error"], out
     status, out = handle(project, "POST", "/intended", "", json.dumps({**body, "reasn": None, "reason": "spelt right"}).encode())
     assert status == 200 and out["ok"], out
+
+
+def test_the_expected_group_names_who_declared_never_a_plugin_by_assumption(tmp_path, monkeypatch):
+    # a stock declared by an integrating tool through the events endpoint's POST /intended: the
+    # Dynamics page's Expected group says who from the provenance, and its text names no plugin
+    from orchestra.endpoint.api import _intended
+
+    project = project_at(tmp_path, monkeypatch)
+    status, out = _intended(project, "declare", {}, {"source": "integrator", "author": "integrator",
+                                                       "ops": [{"op": "declare_stock", "id": "open_incidents", "name": "Open incidents"}]})
+    assert status == 200 and out["ok"], out
+    c = client(project)
+    stock = c.get("/api/intended").json()["layer"]["stocks"]["open_incidents"]
+    assert stock["provenance"]["source"] == "integrator"
+    page = c.get("/dynamics").text
+    assert "Declared through a plugin" not in page and "IntendedCore.declaredBy(x)" in page

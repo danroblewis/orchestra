@@ -22,3 +22,10 @@ test("asker says some, none and unknown", () => {
   assert.equal(none.sentence(what, doing), `Declaring what it is for needs a machine that listens for ${REQ}; none does, so nothing will act on it yet.`);
   assert.equal(unknown.sentence(what, doing), "To declare what it is for, ask the machine that listens for requests.");
 });
+
+test("declaredBy names who from the provenance, never how the call came", () => {
+  assert.equal(IntendedCore.declaredBy({ state: "declared", provenance: { source: "integrator", author: "integrator", via: "plugin" } }), "declared by integrator");
+  assert.equal(IntendedCore.declaredBy({ state: "declared", provenance: { author: "owner", via: "page" } }), "declared by you");
+  assert.equal(IntendedCore.declaredBy({ state: "proposed", provenance: { source: "agents", author: "agents" } }), "proposed by agents");
+  assert.equal(IntendedCore.declaredBy({ state: "declared" }), "");
+});

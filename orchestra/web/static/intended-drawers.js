@@ -100,6 +100,7 @@ const IntendedDrawers = (() => {
     openDrawer(`<h3 data-drawer-key="x:${esc(id)}">${esc(x.name || x.id)} <span class="tag">${esc(x.part)}</span> ${I().tag(t.text, t.cls)} ${I().tag(x.measured ? "no series yet" : "not measured", "im-t-ghost")}${x.simulated ? " " + I().tag("simulated", "im-t-sim") : ""}</h3>
       ${proposed}${pending}${x.description ? `<div class="im-desc">${esc(x.description)}</div>` : ""}
       <div class="muted im-said">${said}${quote} It is expected, not found: drawn as a ghost until a series measures it and a discovery finds it. Nothing about the model changes until then.</div>
+      <div class="muted im-said">Discovery is not told about this declaration; it appears in the model once discovery finds a matching level and it is linked.</div>
       <div class="def"><div>now</div><div class="num">—</div>
       <div>status</div><div>${status}</div>
       <div>declared</div><div>by ${esc(by)}${p.at ? " · " + I().hhmm(p.at) : ""}${near ? ` · beside <b>${esc(stockName(near.id))}</b>` : x.near ? ` · meant to sit beside <b>${esc(keyName(x.near))}</b> <span class="muted">(${stocks.length ? "not in this model" : "no model yet"})</span>` : ""}${x.note ? ` <span class="muted">(${esc(x.note)})</span>` : ""}</div>
