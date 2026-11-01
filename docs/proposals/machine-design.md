@@ -1,6 +1,7 @@
 # Machine design: the Supervisor declares, measures and drafts
 
-Status: draft for review, round 2, 2026-11-01. Nothing built. Proposal 4 of
+Status: reviewed, 2026-11-01 (panel round 1, judge's verdict round 2); aligned to
+intended-model.md round 2. Nothing built. Proposal 4 of
 `design-backwards.md` §7, for the agents plugin (`~/orchestra-agents`). Written from
 `design-backwards-notes.md` §9 and §13, the approved mockups (`mockups/README.md`, D1–D3,
 E1–E3), D20 and D21. The core's side (the declared layer, its API, the pages) is proposal 2,
@@ -14,7 +15,7 @@ The owner talks; the Supervisor declares, measures, drafts and refines; the page
   The owner rejected every other interface: "These are terrible. I don't want any of them. I want
   you to extend the Event Map page and the System Dynamics page." No chat on a page, no wizard, no
   new page. The panels on the pages are read-only indicators of the declaration; the only page
-  controls are confirm, discard, expect and ignore, and each is a request to the Supervisor (§2.4).
+  controls are expect, ignore, confirm, discard and the Universal | Programmatic switch (§2.4).
 - **The Supervisor does the work.** It declares stocks, effects, targets and machines; finds ways
   to measure what was declared and starts recording at once; drafts machines and refines them while
   the owner talks; runs the refinement passes; records each machine's expected effect. "These
@@ -116,10 +117,11 @@ the rule that a measurement is never removed to quiet a signal, meet here. The o
 Supervisor picks first records at once, into a **draft namespace** that expires (24 h by default)
 and that discovery does not read. It moves into the store when the owner keeps it
 (`keep_instrument`, on the owner's word or their expect click). Options the owner did not choose
-expire with their drafts, script and entry. A **simulated** instrument carries the instrument flag
-that excludes its series from discovery (a label is not enough: `simulated` is not one of
-discovery's non-identity labels, `sd/discover.py` `NOT_IDENTITY`), and it expires once a real
-option records: a ramp is not a measurement, so the never-remove rule does not protect it.
+expire with their drafts, script and entry. A **simulated** instrument's entry carries
+`simulated = true` (P2 §6.3): discovery reads its series like any other, every part fitted from
+them is marked `simulated` in the saved version, a prediction verdict never counts one, and they
+disappear when the instrument expires, once a real option records: a ramp is not a measurement, so
+the never-remove rule does not protect it.
 
 **The two cases the owner named.**
 
@@ -187,9 +189,14 @@ both layers, open differences, recent changes.
 
 ### 2.4 Confirm, discard and the person's request
 
-A click of confirm, discard, expect or ignore on a page sends a **request as the person's event**:
-a person's source, never the core's, and the core changes nothing on the click. The Supervisor
-wakes on it and calls `confirm`, `discard`, `mark_expected` or `ignore` itself. "Confirm it" in the
+The page's controls are of two kinds (P2 §6.2). **Observations** (expect, unexpect and ignore on a
+discovered part; confirm and discard on a stock, effect or flow) are recorded by the core and
+announced as `orchestra.intent.changed`; the Supervisor reads them and acts on any that need it
+(`keep_instrument` after an expect). **Requests** (confirm and discard on a machine or a pending
+change on one, and the Universal | Programmatic switch) are published as
+`orchestra.intent.requested` with source `owner` (the person), never the core's; the core changes
+nothing on the click. The Supervisor wakes on a request and calls `confirm`, `discard` or
+`refine_machine` (`set_kind`) itself, with the request's id in the provenance. "Confirm it" in the
 chat takes the same path. What confirm then does:
 
 - *Universal*: the draft implementation moves to the state directory's `machines/` (§2.1); the
@@ -206,7 +213,8 @@ Until confirm nothing runs and nothing is published: an unconfirmed machine cost
 Written in SPEC's `expect` kinds (`orchestra/sd/predictions.py`): a flow's `factor`, a flow that
 `appears` (`from`, `to`), a stock `below` or `above`. **Rates, not cumulative stocks**: the Feature
 Count Improver expects the DONE inflow at `factor 1.2` and the gate's rejection flow at `factor
-0.8`, and the flow its own emits count to `appear`. A stock with no series yet (Features before it
+0.8`, and a flow that `appears` from outside into the coordinator's queue, counted by its own
+`work.improvement_proposed` events (`from: null`, `to:` the coordinator's queue stock). A stock with no series yet (Features before it
 is matched) is not predicted on: the draft waits, and the panel says "waits for a series".
 
 At confirm, the Supervisor pre-allocates the id of the `system.changed` event that will announce
@@ -252,7 +260,7 @@ events aren't excessively deduplicated and serving multiple distinct purposes, o
 things."
 
 A Supervisor duty, `refine_map`, in its spec beside `keep_flow` (D20). It wakes on the review round
-when the map changed since its last pass, and on the person's confirm or discard request. A round
+when the map changed since its last pass, and on the owner's confirm or discard request (`orchestra.intent.requested`). A round
 runs at most `design_passes` passes (default 3), each reading the map with the previous pass's
 findings on it, and stops when a pass finds nothing new. **It proposes, never declares**: the
 round's findings are batched into one proposal, each with its reason, for the owner to confirm or
@@ -342,10 +350,13 @@ With the fake Claude (`tests/e2e/fake_claude.py`) unless marked otherwise.
    first points. *(§13.4, line 3)*
 7. An existing related series gets an `existing_series` option, no instrument and no binding.
    *(§13.4, line 4)*
-8. A simulated instrument's series is left out of discovery; it expires once a real option records.
+8. A simulated instrument's entry carries `simulated = true`; every part discovery fits from its
+   series is marked `simulated` in the saved version and is not counted in a prediction verdict;
+   once a real option records, the entry is removed and the next version has no simulated part.
    *(§13.4, line 7)*
 9. An unkept draft expires with its script and entry; `keep_instrument` moves it into the store,
-   and discovery reads it after.
+   and discovery reads it after; a simulated draft that expires leaves no part in the next
+   version.
 10. An option reading a company system not cleared for the model is recorded `needs approval` and
     nothing reads it; no credential value appears in any tool answer, file or transcript.
 11. `match` records a binding with origin `declared`; the discovered stock keeps its name.
@@ -358,7 +369,7 @@ With the fake Claude (`tests/e2e/fake_claude.py`) unless marked otherwise.
     confirm, as `supervisor`, subject `machine:<name>`, `data.change` equal to the id of the
     `system.changed` published at the agent's first turn; horizon at least three runs; an
     interrupting era leads to a fresh prediction. *(§13.4, line 13)*
-15. A person's confirm request wakes the Supervisor, which calls `confirm`, creates the role, then
+15. An `orchestra.intent.requested` confirm from `owner` wakes the Supervisor, which calls `confirm`, creates the role, then
     the agent, with its spec at the state path and nothing committed; discard leaves no file
     anywhere but the history.
 16. A refinement round over a map with an unheard emit, a duplicated purpose and an overloaded event
@@ -401,14 +412,14 @@ Read against P2's draft of 2026-11-01 (round 1); each line is the shape assumed 
 1. **The API**: `project.intended.apply(ops, provenance)` with provenance `{author, via, source,
    turn, message, quote}` and `guessed` fields per op; `design()` for `read_design`.
 2. **Instrument flags**: an instrument option or entry with `draft` (series kept in a draft
-   namespace discovery does not read, with an expiry) and `discover: false` (excluded from
-   discovery, for simulated); a `keep` that moves a draft into the store. Also: a `[[collect]]`
+   namespace discovery does not read, with an expiry) and a `keep` that moves a draft into the
+   store (P2 round 2 has no draft namespace yet); `simulated = true` as P2 §6.3 defines it. Also: a `[[collect]]`
    command may name a script in the state directory.
 3. **The person's request event** for page controls: assumed type `orchestra.intent.requested`,
-   source the person (`person/<holder>`), subject `<part>:<id>`, data `{control, part, id, from}`;
-   the core records nothing on the click. P2 states the rule 3 exception and the rule 9 wording.
-   (P2's round-1 draft records the click itself and announces `orchestra.intent.changed` from
-   `orchestra-host`; the work list replaces that.)
+   source `owner`, data `{control, part, id, change, from}`, for confirm and discard on a machine
+   and the kind switch; the core records nothing on such a click. Observations (expect, ignore)
+   are recorded and announced as `orchestra.intent.changed`. P2 states the rule 3 exception and
+   the rule 9 wording.
 4. **Match** as `link {id, found_as}` recorded as a manual binding with origin `declared`, drawn as
    an assumption; never a rename.
 5. **Change records with the previous value and the reason**, per edit (E2's "was continuous").
