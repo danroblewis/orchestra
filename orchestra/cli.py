@@ -109,6 +109,18 @@ def _predictions(models, args) -> int:
     return 0
 
 
+def _why_no_model(project, models) -> str:
+    """Why there is no saved model, as the Dynamics page says it (``web.dynamics``): from the
+    latest discovery's left-out list, or that none has run; and whether one will run by itself."""
+    from .web.dynamics import host_running, no_model_reason
+
+    cached = models.latest_discovery()
+    why = no_model_reason(cached[1].discovery) if cached else "no discovery has run yet"
+    if not host_running(project):
+        why += "; no orchestra run is running, so discovery will not run until it starts (orchestra sd discover looks once)"
+    return why
+
+
 def cmd_sd(args) -> int:
     """The system dynamics model: discover it, show it, list its versions."""
     from .metrics import for_project as metrics_for
@@ -152,14 +164,20 @@ def cmd_sd(args) -> int:
     if args.action == "predictions":
         return _predictions(models, args)
     if args.action == "versions":
+        if not models.versions():
+            print(f"no versions yet: {_why_no_model(project, models)}")
+            return 0
         for v in models.versions():
             era = f"  era {v['era']}" if v.get("era") else ""
             print(f"v{v['version']:<4} {_when(v['saved_at'])}  {v['stocks']} stocks, {v['flows']} flows ({v['fitted']} fitted){era}  {v['note']}")
         return 0
     m = models.load(args.version)
     if m is None:
-        print("no model yet")
-        return 1
+        if args.version is not None:
+            print(f"there is no version {args.version}")
+            return 1
+        print(f"no model yet: {_why_no_model(project, models)}")
+        return 0
     store = metrics_for(project)
     print(f"{m.name} (version {args.version or models.current_version()})")
     print("\nstocks (latest level):")
@@ -285,20 +303,23 @@ def build_parser(plugin_help: dict[str, str] | None = None) -> argparse.Argument
     s = sub.add_parser("web", help="serve the web UI (behind the project's web token), or print the token")
     s.add_argument("action", nargs="?", choices=["serve", "token"], default="serve",
                    help="serve (default), or token: print the token the web UI asks for")
-    s.add_argument("--port", type=int, default=8000)
-    s.add_argument("--host", default="127.0.0.1")
+    s.add_argument("--port", type=int, default=8000, help="the port to serve on (default 8000)")
+    s.add_argument("--host", default="127.0.0.1", help="the address to serve on (default 127.0.0.1, this computer only)")
     s.add_argument("--rotate", action="store_true", help="for token: replace it; every session ends")
     s.set_defaults(fn=cmd_web)
 
     s = sub.add_parser("metrics", help="the metrics store: backfill event counters from the log, list series")
-    s.add_argument("action", choices=["backfill", "series"])
+    s.add_argument("action", choices=["backfill", "series"], help="backfill: count the whole event log into "
+                   "orchestra_events_total again; series: list every series the store holds for this project")
     s.add_argument("--append", action="store_true", help="for backfill: keep existing points instead of replacing them")
     s.set_defaults(fn=cmd_metrics)
 
     s = sub.add_parser("sd", help="the system dynamics model: discover it from the metrics, show it, list its versions, "
                        "and list the predictions and their verdicts (predictions). Machines ask the model what a change would do "
                        "through experiments (the events endpoint's HTTP API, or sd.experiments.api.Experiments; USING_ORCHESTRA.md §5.9)")
-    s.add_argument("action", choices=["show", "versions", "discover", "predictions"])
+    s.add_argument("action", choices=["show", "versions", "discover", "predictions"], help="show: the model and its stocks' "
+                   "latest levels; versions: every saved version; discover: discover the model now and print it; "
+                   "predictions: the predictions recorded and their verdicts")
     s.add_argument("--minutes", type=float, help="for discover: the window, in minutes back from now (default: [discovery] window)")
     s.add_argument("--step-s", dest="step_s", type=float, help="for discover: seconds per step (default: [discovery] step)")
     s.add_argument("--strategy", help="for discover: conservation or an SD Lab strategy (default: [discovery] strategy)")
@@ -307,7 +328,8 @@ def build_parser(plugin_help: dict[str, str] | None = None) -> argparse.Argument
     s.set_defaults(fn=cmd_sd)
 
     s = sub.add_parser("sources", help="other time-series stores ([[sources]]): check them, infer what to read, preview a query")
-    s.add_argument("action", choices=["check", "infer", "preview"])
+    s.add_argument("action", choices=["check", "infer", "preview"], help="check: probe each source's endpoints and "
+                   "credentials; infer: run an inference round, what to read from each; preview: read a query's fan-out")
     s.add_argument("query", nargs="?", help="for preview: a PromQL query")
     s.add_argument("--source", help="for infer and preview: one source by name (preview default: the own store)")
     s.add_argument("--minutes", type=float, help="for preview: the window (default: [discovery] window)")
@@ -315,7 +337,8 @@ def build_parser(plugin_help: dict[str, str] | None = None) -> argparse.Argument
     s.set_defaults(fn=cmd_sources)
 
     s = sub.add_parser("events", help="the event log: info, the HTTP endpoint machines use, or copy it to another bus backend")
-    s.add_argument("action", choices=["info", "endpoint", "copy"])
+    s.add_argument("action", choices=["info", "endpoint", "copy"], help="info: the backend and how many events it holds; "
+                   "endpoint: where the events endpoint is; copy: copy the log to another backend (--to)")
     s.add_argument("--env", action="store_true", help="for endpoint: print export lines for a shell "
                    "(eval \"$(orchestra events endpoint --env)\")")
     s.add_argument("--to", help="for copy: the target bus URL")
