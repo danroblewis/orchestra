@@ -79,3 +79,16 @@ def test_measured_between_takes_no_level_that_never_falls_for_a_buffer():
     buffer = _level("buffer", [(TO_MERGING[-1], 1.0), (END - 20, 0.0)], 0.0)
     b2 = _counter("out_total", [*TO_MERGING[:-1], END - 20])
     assert measured_between([buffer], a, b2)
+
+
+def test_with_the_tally_the_only_level_the_passage_state_is_the_hidden_one_its_counters_imply():
+    from orchestra.sd.passing import passages
+    ins, outs = _counter("to_merging_total", TO_MERGING), _counter("gate_runs_total", LANDED)
+    review = Series("tasks_tickets", {"instrument": "tasks.tickets", "state": "IN_REVIEW"}, [], [0.0] * len(ins.values), False)
+    done = Series("tasks_tickets", {"instrument": "tasks.tickets", "state": "DONE"}, [], [0.0] * len(ins.values), False)
+    found = [(review, [(ins, -1)], 1.0, 1.0), (done, [(outs, 1)], 1.0, 1.0)]
+    where = {"start": START, "end": END, "step": STEP, "writer_of": lambda s: s.labels.get("instrument")}
+    (p,) = passages(found, [ins, outs], [_read_tally()], **where)
+    assert not p.measured and p.level.name == "after_to_merging_total" and p.evidence().get("hidden")
+    (p,) = passages(found, [ins, outs], [_read_tally(), _merging()], **where)
+    assert p.measured and p.level.name == "tasks_tickets"
