@@ -10,11 +10,12 @@ its inode, its size and the last line read still being where it was."""
 
 from __future__ import annotations
 
+import bisect
 import json
 import threading
 from pathlib import Path
 
-from . import Point, refuse_future, step_sample
+from . import Point, matchers_of, matches, refuse_future, step_sample
 
 
 class _Series:
@@ -156,6 +157,24 @@ class FileMetrics:
             self._sync()
             found = self._select(lambda n: n.startswith(prefix), labels)
             out = [(n, dict(s.labels), list(s.sorted_points())) for n, s in found]
+        return sorted(out, key=lambda g: (g[0], sorted(g[1].items())))
+
+    def recent(self, prefix, matchers=None, since=0.0, keep=1):
+        want = matchers_of(matchers)
+        keep = max(1, int(keep))
+        out = []
+        with self._index_lock:
+            self._sync()
+            for name, series in self._by_name.items():
+                if not name.startswith(prefix):
+                    continue
+                for s in series.values():
+                    if not matches(s.labels, want):
+                        continue
+                    pts = s.sorted_points()
+                    i = bisect.bisect_left(pts, since, key=lambda p: p[0])
+                    if i < len(pts):
+                        out.append((name, dict(s.labels), list(pts[max(i, len(pts) - keep):])))
         return sorted(out, key=lambda g: (g[0], sorted(g[1].items())))
 
     def delete(self, series_prefix, labels=None):

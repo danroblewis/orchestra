@@ -16,6 +16,8 @@ levels never wait on a remote source, which may take up to its timeout:
   chart shows the levels discovery saw (a level held for four seconds is a stock on a 5 s grid
   and invisible on a 15 s one).
 
+- **what attachments select** (``measured.py``): every declared machine's attached series, every
+  minute and at once when the declared layer changes, for the Machines and Instruments pages;
 - **counted traffic** (``traffic.py``): every series a source's definitions mark as traffic, read
   through the catalogue over the last hour every minute, for the Machines page's counted machines,
   channels and edges.
@@ -54,6 +56,7 @@ from .traffic import READ_S, READ_STEP_S, summarise
 INDEX_EVERY_S = 5.0
 FLOWS_EVERY_S = 60.0
 COUNTED_EVERY_S = 60.0
+MEASURED_EVERY_S = 60.0
 LEVELS_EVERY_S = 15.0
 HISTORY_EVERY_S = 15.0
 REMOTE_EVERY_S = 15.0        # remote levels and history, while a page asks for them
@@ -79,6 +82,8 @@ class Refresher:
         self.remote_levels: dict[str, dict] = {}
         self.history: dict = {}
         self.counted: dict | None = None                    # counted traffic, summarised (traffic.summarise)
+        self.measured: dict | None = None                   # what each attachment selects (measured.read_all)
+        self._measured_version: int | None = None
         self.at: dict[str, float] = {}
         self.errors: dict[str, str] = {}
         self.catalogue = Catalogue(project, metrics, infer=False, share=True)    # reads the host's inference, never starts one
@@ -158,6 +163,14 @@ class Refresher:
         now = time.time()
         got, failed = self.catalogue.counted(now - READ_S, now, READ_STEP_S)
         self.counted = {**summarise(got, now), "failed": failed}
+
+    def _measured(self) -> None:
+        from .measured import read_all
+
+        intended = self.models.intended()
+        self._measured_version = intended.current_version()
+        cur = intended.read()
+        self.measured = read_all(self.project, self.metrics, self.catalogue, cur["layer"])
 
     def model(self):
         cached = self.models.latest_discovery()
@@ -241,6 +254,9 @@ class Refresher:
                 self._do("counted", max(COUNTED_EVERY_S, self.remote_every), self._counted)
             if self.catalogue.specs.sources and self._wanted("remote"):
                 self._do("remote_levels", self.remote_every, self._remote_round)
+            if self.models.intended().current_version() != self._measured_version:
+                self.at.pop("measured", None)               # the declared layer changed: read its attachments now
+            self._do("measured", MEASURED_EVERY_S, self._measured)
             self._do("history", HISTORY_EVERY_S, self._history)
             self._stop.wait(1.0)
 

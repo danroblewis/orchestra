@@ -35,6 +35,7 @@ from .resolution import (
 )
 
 EVENT_COUNTER = "orchestra_events_total"   # Orchestra's own count of each event type, by source
+NOT_NAMED = ("project", "machine", "instrument", "simulated", "draft")   # labels never part of a part's id or name (discover._said, inputs._name)
 PLUMBING = re.compile(r"^orchestra_(?!events_total)")   # Orchestra's own other series (the host's, the Core page's probes): never a measure of the system
 OWN = re.compile(r"^orchestra_(host_|core_|collect_)|^orchestra_(stock|stock_sampled|flow_total)$")   # the ones Orchestra writes (the host, the Core page, the collectors' failures), or wrote before 2026-10-25
 

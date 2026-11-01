@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import math
 import re
-import time
 
 MACHINE_ID = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9_.\-]{0,80}$")
@@ -16,17 +15,16 @@ KINDS = ("universal", "programmatic")
 MANAGED = ("orchestra", "external")
 MODES = ("ad hoc", "continuous", "scheduled")
 MISSED = ("skip", "run once")
-ENVELOPE = ("id", "title", "description", "tags", "kind", "managed", "engagement", "receives", "emits", "reads", "spec")
 LISTS = ("tags", "receives", "emits", "reads")
 ENGAGEMENT = ("mode", "at", "tz", "missed")
 SCHEDULED_ONLY = ("at", "tz", "missed")
 # what the comparison derives on read (§5): an op carrying one is refused
 DERIVED = frozenset({"present", "heard", "recording", "points", "points_series", "measured", "met", "instances",
                      "candidates", "alias_candidates", "unexpected", "verdict", "verdicts"})
-AUTHOR_VIA = ("plugin", "page", "host")
-PROVENANCE = ("author", "via", "source", "at", "turn", "message", "quote", "reason", "request", "control", "page", "from")
+AUTHOR_VIA = ("plugin", "page")          # "host" (inference) joins once inference writes here
+PROVENANCE = ("author", "source", "turn", "message", "quote", "reason", "request")    # what a caller gives
+PAGE = ("control", "page", "from")                                                     # ... and a page control
 TARGET_OPS = ("below", "above", "within")
-PARTS = ("stock", "effect", "flow", "machine", "attachment", "event")
 MAX_TEXT = 4000
 
 
@@ -151,21 +149,27 @@ def target(t: dict) -> dict:
 
 
 def provenance(p: dict | None, via: str = "plugin") -> dict:
-    """A call's provenance, checked, with ``via`` and ``at`` filled in."""
+    """A call's provenance, checked, with ``via`` filled in from the store's caller, never from
+    the dict. In process ``via`` is the caller's argument, so a plugin's ``via: page`` is its
+    assertion, backed by nothing more than its quote is for ``author: owner``; what a page call
+    may do is rule 9's closed list all the same (``store.page_control``). ``at`` is stamped by
+    the store when it writes (``IntendedStore.apply``), never given."""
     p = dict(p or {})
-    if extra := sorted(set(p) - set(PROVENANCE)):
+    if "via" in p or "at" in p:
+        raise IntentError("provenance: via and at are set by the store, never given", status=400)
+    if via not in AUTHOR_VIA:
+        raise IntentError(f"via is one of {', '.join(AUTHOR_VIA)}, not {via!r}", status=400)
+    allowed = PROVENANCE + (PAGE if via == "page" else ())
+    if extra := sorted(set(p) - set(allowed)):
         raise IntentError(f"provenance: unknown field{'s' if len(extra) > 1 else ''} {', '.join(extra)}", status=400)
     author = p.get("author") or p.get("source")
     if not isinstance(author, str) or not author.strip():
         raise IntentError("provenance needs an author: owner, inference, or the plugin's source", status=400)
     p["author"] = author
-    p.setdefault("via", via)
-    if p["via"] not in AUTHOR_VIA:
-        raise IntentError(f"via is one of {', '.join(AUTHOR_VIA)}, not {p['via']!r}", status=400)
-    for k in ("source", "turn", "message", "quote", "reason", "request", "control", "page", "from"):
+    p["via"] = via
+    for k in ("source", "turn", "message", "quote", "reason", "request", *PAGE):
         if k in p:
             text(p[k], k)
-    if p["author"] == "owner" and p["via"] == "plugin" and not p.get("quote"):
+    if p["author"] == "owner" and via == "plugin" and not p.get("quote"):
         raise IntentError("a plugin's author: owner is backed by the owner's words: give the quote", status=400)
-    p["at"] = time.time() if p.get("at") is None else number(p["at"], "at")
     return {k: v for k, v in p.items() if v is not None}

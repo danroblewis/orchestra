@@ -7,7 +7,7 @@ import time
 from fastapi.testclient import TestClient
 from intended_seed import fixture, project_at, record_points, seed
 
-EXPECTED_STOCK = {"part", "id", "key", "name", "declared", "present", "measured", "near", "note", "provenance", "target",
+EXPECTED_STOCK = {"part", "id", "key", "name", "description", "declared", "present", "measured", "near", "note", "provenance", "target",
                   "candidates", "measure"}
 INTENDED = {"version", "since", "since_saved_at", "expected", "marks", "removed", "changes", "came_and_went", "ignored", "settled"}
 INTENT = {"state", "author", "kind", "heard", "title", "description", "tags", "managed", "engagement", "receives", "emits",
@@ -67,13 +67,14 @@ def test_the_machines_answer_keeps_the_fixture_shape_and_adds_intent(tmp_path, m
     assert set(want) <= set(got)
     m = next(x for x in got["machines"] if x["id"] == "feature_count_improver")
     assert set(want["machines"][0]) - {"group", "name", "kinds"} <= set(m)
-    assert m["unseen"] and m["kind"] == "universal"
+    assert m["unseen"] and m["kind"] == "universal" and m["subscribes"] == [] and m["mode"] is None
+    assert m["comparison"] == "declared, neither heard nor measured"
     assert INTENT <= set(m["intent"])
     assert m["intent"]["state"] == "proposed" and m["intent"]["author"] == "supervisor" and not m["intent"]["heard"]
     assert m["intent"]["guessed"] == ["receives[0]", "receives[1]"]
     edit = m["intent"]["expected_effect"]["edits"][0]
     assert edit == {"edit": {"stock": "features", "rises": True}, "label": "Features ↑", "link": "/dynamics#s:features",
-                    "publishable": False, "why": "waits for a series"}
+                    "publishable": False, "why": "waits for a link"}
     assert {"from": "session.settled", "to": "feature_count_improver", "kind": "subscribes", "state": "proposed",
             "observed": False, "gone": False} in got["intended_edges"]
     assert {"type": "work.requested", "description": None, "implicit": True} in got["intended_types"]

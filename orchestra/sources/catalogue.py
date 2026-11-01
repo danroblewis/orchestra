@@ -44,6 +44,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..collect.views import declared as declared_views
+from ..collect.views import provenance as instrument_views
 from ..metrics import MetricsStore
 from ..sd.series import Declared, series_key
 from . import SourceError
@@ -271,6 +273,20 @@ class Catalogue:
                     out.append({"source": spec.name, "name": name, "labels": labels, "points": pts, "kind": d.kind, **counted})
         return out, failed
 
+    def selected(self, name: str, keep, start: float, end: float, step: float) -> tuple[list[dict], str | None]:
+        """The series of one source's cached definitions that ``keep(definition)`` accepts, over
+        [start, end] (``counted``'s read, for any definitions: what an attachment selects,
+        ``web/measured.py``): name, labels (canonical), points; and why, when some could not be read."""
+        spec = self.spec(name)
+        until = time.monotonic() + spec.deadline
+        try:
+            defs = [d for d in self.inference(spec.name, start, end, until=until).kept if keep(d)]
+        except Exception as e:  # noqa: BLE001 - that source is missing, with why
+            return [], why(e)
+        results, errors = self._read_all(spec, defs, start, end, step, until) if defs else ({}, {})
+        out = [{"name": n, "labels": labels, "points": pts} for d in defs for n, labels, pts, _ in results.get(d.id, [])]
+        return out, (_failures(errors, {d.id: d.name for d in defs}, len(defs), spec.deadline) if errors else None)
+
     def read(self, start: float, end: float, step: float, *, keep: bool = True) -> Reading:
         """Every series for the window (see the module's docstring). ``keep``: the reads are kept
         for the next discovery and the project's other readers (``readcache.py``); False for a
@@ -279,6 +295,8 @@ class Catalogue:
         if self.own is not None:
             out.dump = list(self.own.dump())
             out.status[OWN] = {"ok": True, "series": len(out.dump)}
+            # what the project's instruments say of the series they print (collect.views): a pile and its moves
+            out.provenance.update(instrument_views(out.dump, declared_views(self.project), series_key))
         own_names = {name for name, _, _ in out.dump}
         for name, why in self.specs.refused.items():
             out.status[name] = {"ok": False, "error": f"refused in orchestra.toml: {why}"}

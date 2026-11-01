@@ -471,6 +471,23 @@ collectors=[Collector.scrape("slack", f"http://{slack.get('host', '127.0.0.1')}:
 An instrument says nothing about which machine does the work it measures. A machine is
 associated with a flow only by inference from its events (§4.5, §6.5).
 
+An instrument may say how it **made** its series (`views`, SPEC §4.2 and §5.2,
+`orchestra/collect/views.py`), so discovery does not take a balance that holds by construction
+for evidence. A pile's level and its moves from one record:
+
+```python
+Collector.collect("piles", ["python", "-m", "workflows.piles"], every_s=15, views={
+    "workflow_pile_items": {"view": "count", "place": "pile", "where": {"kind": "step"}},
+    "workflow_item_moves_total": {"view": "moves", "starts": "to", "stops": "from"},
+    "workflow_pile_oldest_seconds": {"view": "age"},
+})
+```
+
+The views are `count` (`place`), `moves` (`starts`, `stops`: the labels naming the place entered
+and the place left), `starts` / `stops` (`place`), `aggregate` and `age` (never a stock); a value
+may be a list of views told apart by `where`. A table that cannot be read raises `ConfigError` when
+the `Collector` is made. The host records them in the runtime record, where discovery reads them.
+
 ### 4.7.1 `guide`: how to configure the plugin
 
 `guide` is a markdown file shipped in the plugin's package (`Path(__file__).parent / "guide.md"`;
@@ -801,7 +818,51 @@ associate a machine with a flow. Orchestra's only series derived from the event 
   of one type step by step (`orchestra/sd/attribute.py`). A match is a correlation in time, not a
   cause. A flow with none reads "no machine associated yet".
 
-### 6.6 The whole path, in order
+### 6.6 The intended model
+
+What the owner intends (stocks, effects, flows, targets, expected marks, machines with their
+envelope and `spec`, event types, attachments) and what a plugin proposes, kept beside the
+discovered model (SPEC §4.6, `docs/proposals/intended-model.md`). A plugin declares and proposes;
+it never writes under `<state>/model/intended/` itself (AGENTS.md rule 5 as amended).
+
+- **In the host or the web server** (code a plugin runs there): `project.intended`, an
+  `IntendedStore`. `apply(ops, provenance)` applies one call, all its ops or none, and answers
+  `{"version", "changes"}` or raises `IntentError` with the refused op's `index`; `read(version)`
+  is the declared layer at `dN`; `diff(model, since)` is the comparison the Dynamics page reads;
+  `design()` is the summary of the layer and its open items, under 20 KB for 100 elements.
+  `provenance` is `{author, source, turn, message, quote, reason, request?}`: `author: owner`
+  needs the owner's words as `quote`, and `via` and `at` are set by the store.
+- **From any other process**: `POST /intended` on the host's events endpoint (SPEC §3.1), with
+  the project's token, body `{source, author, turn, message, quote, reason, request?, ops}`,
+  answered `{"ok": true, "version", "changes"}` or 422 `{"ok": false, "error", "index"}`; `GET
+  /intended?version=` and `GET /intended/design` read back.
+- **The events.** The host announces each accepted call as `orchestra.intent.changed` from
+  `orchestra-host`, one event per element the call touched (`subject` `<part>:<id>`, `data`
+  `{version, via, ops}`). The owner's clicks on a machine or an attachment (confirm, discard, the
+  kind switch) are published as `orchestra.intent.requested` from `owner` (`data` `{control,
+  part, id, change, from}`) and change nothing until a plugin answers by applying with
+  `provenance.request` set to the request's event id. Listen with the subject filter:
+  `orchestra.intent.changed:subject=machine:<id>`, `orchestra.intent.requested:subject=machine:<id>`.
+- A proposal (a machine always enters proposed) and a pending change are confirmed or discarded
+  only by the owner (quoted) or in answer to a request; an owner's quoted revision of a proposed
+  machine applies at once, and of a confirmed one waits as a pending change.
+- **Answering a request** takes the op it asked for: `provenance.request` must name an
+  unanswered request for the same part and id, with the same control (`confirm` for confirm,
+  `discard` for discard or a retract, and for `switch_kind` a `revise_machine` that sets `kind`
+  and nothing else, which then applies at once) and the same `change` when it names one; anything
+  else is a 422, and so is any call citing a request that is not open. Only the op that answers
+  a request clears it; citing it on another op does not. A request whose element was settled
+  some other way (the owner's quoted confirm, a retract, its change settled) is no longer open.
+  The request is noted before it is published, so a plugin may answer it as soon as it hears it.
+- **What is the owner's**: what the owner declared, and what the owner confirmed (on a page,
+  quoted, or by request; `confirmed.by` is `owner`), is retracted, unmarked, re-described or
+  re-targeted only by the owner ("the owner declared this: ask the owner"); re-marking the
+  owner's mark leaves it as it is. A key is expected or ignored, never both. A declared stock or
+  effect that a flow, a target, an expected effect or a pending change names is retracted only
+  after them, and an event type a machine names only after the machine changes. `via` is the
+  plugin's or the page's; nothing writes as `host` until inference does.
+
+### 6.7 The whole path, in order
 
 ```mermaid
 sequenceDiagram
