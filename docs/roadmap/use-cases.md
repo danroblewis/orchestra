@@ -411,6 +411,8 @@ is offered when a unit is reset and freed.
 
 ## UC-11: hotfixes across release branches (M5's X5; `examples/hotfixes`)
 
+Status (2026-11-01, X5, orchestra-workflows branch X567, `examples/hotfix_branches`): built; e2e (three release branches, fan-out by a `fanout` program, fan-in `all landed`, a dropped child leaves its parent `partial` with attention) and model acceptance pass. Discovery finds both workflows' piles by construction, every move as a flow within its workflow, and the one loop resolve → review → rejected → resolve. Gaps: the per-branch commit series are stocks whose inflows are fitted rates, not the single land counter (only their sum matches it); the parent following the slowest child is not representable (no flow across workflows); `else` → attention needs a `partial` step with a short `within`; the dependency between two hotfixes is not built.
+
 "We might see multiple concurrent release branches that all need hotfixes" (the owner, D21). User
 story 16.
 
@@ -434,6 +436,8 @@ The test: the three checks; with three branches, the parent is done when the thi
 takes `partial` when one does not; a dependency between two hotfixes holds the second's port.
 
 ## UC-12: staged rollout (M5's X6; `examples/staged-rollout`)
+
+Status (2026-11-01, X6, orchestra-workflows branch X567, `examples/staged_rollout`): built; e2e (four releases, 30 s stages, r3 rolled back once by the metric `on` at fifty) and model acceptance pass. Needed in the plugin: a metric label from the item's field (`{item: release}`) and an offered step's metric done-when read from its turn's end. Discovery finds the four stage piles and rollback by construction, each stage → rollback and rollback → end, and the domain series fed by hundred → end; the error ratio and traffic share are never stocks, though for incidental reasons (`*_ratio` read as utilisation; the share changes too rarely). The rollback loop is not found: no move's form reads the error ratio.
 
 "We might see a staged production rollout" (the owner, D21). User story 7 is its feature-flag
 form.
@@ -459,6 +463,8 @@ The test: the three checks; a condition met only after holding for D; a missing 
 meets it; one release scripted to fail at fifty is rolled back by the metric `on`, once.
 
 ## UC-13: customer-owned deployments (M5's X7; `examples/customer-deployments`)
+
+Status (2026-11-01, X7, orchestra-workflows branch X567, `examples/customer_deployments`): built with 4 customers × 3 releases (not forty × two); e2e (outbox after an approval, `customer.scheduled`, deployed with the version equal to the item's `release`, a `within` guard → overdue with attention, late deploy through overdue to verify) and model acceptance pass. Discovery finds the piles per workflow by construction, never joined across workflows, deploy → overdue → verify, nothing per customer, the oldest-age series never a stock, the registry count fed by verify → end; deploy → overdue is fitted on the oldest age (the guard's clock). Not built: the chase step and loop; the release's `partial` ends it rather than raising attention. No loop is named.
 
 "We might see customer-owned deployments" (the owner, D21).
 
