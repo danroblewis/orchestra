@@ -307,6 +307,11 @@ The environment variable `ORCHESTRA_EVENTS_URL` overrides it. The stream is name
 needs its extra (`bus-redis` and so on). `orchestra events copy --to URL` copies the log to
 another backend.
 
+The file bus (`events.jsonl`) is never rotated: it grows with every event, and every reader (the
+host, the web server) replays it from the start when it starts. `orchestra events info` says how
+many events it holds. To keep it bounded, use Redis, RabbitMQ or Kafka, moving the log there with
+`orchestra events copy --to <url>`.
+
 ```toml
 [events]
 url = "redis://127.0.0.1:6379/0"
