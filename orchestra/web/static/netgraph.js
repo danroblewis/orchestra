@@ -157,26 +157,6 @@ const NetGraph = (() => {
     return out;
   }
 
-  // ---- elementary cycles (small graphs): each cycle once, as a list of node ids ----
-  function cycles(nodeIds, edges, { max = 40, maxLen = 14 } = {}) {
-    const adj = new Map(nodeIds.map((id) => [id, []]));
-    edges.forEach((e) => { if (adj.has(e.source) && adj.has(e.target)) adj.get(e.source).push(e.target); });
-    const order = new Map(nodeIds.map((id, i) => [id, i])), out = [];
-    for (const start of nodeIds) {
-      const s = order.get(start), stack = [start], onPath = new Set([start]);
-      const go = (v) => {
-        if (out.length >= max) return;
-        for (const w of adj.get(v)) {
-          if (w === start) { out.push([...stack]); continue; }
-          if (order.get(w) < s || onPath.has(w) || stack.length >= maxLen) continue;
-          stack.push(w); onPath.add(w); go(w); stack.pop(); onPath.delete(w);
-        }
-      };
-      go(start);
-    }
-    return out;
-  }
-
   // ---- the renderer ----
   // ``boundary``: {inside: node => bool, label}: a frame around the nodes inside (the system),
   // with every other node kept outside it, so what crosses the frame is visibly what crosses the
@@ -758,5 +738,5 @@ const NetGraph = (() => {
     }));
   }
 
-  return { create, cycles, loopList, size, frameOf, tetherPlaces, labelSize, placeLabels };
+  return { create, loopList, size, frameOf, tetherPlaces, labelSize, placeLabels };
 })();

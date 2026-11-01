@@ -14,13 +14,10 @@ current era (``sd.rediscover``), and the previous era's model is its prior (``sd
   envelope, never ``data``). A filter is an event type, or a glob of types, optionally followed by
   ``:`` and ``field=glob`` pairs separated by commas, on ``source`` and ``subject``:
 
-      eras_from = ["config.changed", "role.changed:source=supervisor", "gate.landed:subject=orchestra.toml"]
+      eras_from = ["config.changed", "deploy.finished:subject=billing*", "release.*:source=ci"]
 
-  The default is ``["config.changed"]``, what the Supervisor publishes when it changes the
-  configuration; ``[]`` leaves only ``system.changed``. A change of what is measured only (an
-  instrument or a source added) is no change to the system, and the Supervisor announces it as
-  ``instruments.changed``, which begins none: an era begun there would drop the history a new
-  source brings.
+  The default is ``["config.changed"]``, the conventional type any machine may publish when it
+  changes the configuration; ``[]`` leaves only ``system.changed``.
 
 Orchestra's own events (types beginning ``orchestra.``) never begin one.
 

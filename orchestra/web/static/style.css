@@ -126,7 +126,7 @@ g.ng-label:focus-visible .ng-elabel { fill:#fff; text-decoration:underline }
 .ng-more { position:absolute; right:8px; top:50%; transform:translateY(-50%); z-index:2; background:var(--panel); border-color:var(--accent); color:var(--text); box-shadow:0 2px 10px #0008 }
 /* a flow nothing moved through lately: its line and label step back */
 .ng-edge.ng-quiet .ng-line { opacity:.35 } .ng-label.ng-quiet .ng-elabel { opacity:.65 }
-.ng-edge.ev-seen .ng-line { opacity:.85 } .ng-edge.ev-unseen .ng-line { opacity:.55 } .ng-edge .ng-line.ng-hover { stroke-width:2; opacity:1 }
+.ng-edge.ev-seen .ng-line { opacity:.85 } .ng-edge.ev-unseen .ng-line { opacity:.55 } .ng-edge.ev-declared-listener .ng-line { opacity:.4 } .ng-edge .ng-line.ng-hover { stroke-width:2; opacity:1 }
 .ng-pol.X { background:#1f2937; color:#cbd5e1 } .ng-pol.L { background:#3b2f0b; color:#fcd34d }
 .ng-kind { display:inline-block; font-size:10.5px; border:1px solid var(--border2); border-radius:999px; padding:0 7px; margin-right:6px; color:var(--text2) } .ng-kind.mat { border-color:#14532d; color:#86efac }
 .ng-edge.ev-handoff .ng-line { stroke-linecap:round }

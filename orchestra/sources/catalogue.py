@@ -363,8 +363,3 @@ class Catalogue:
                     return []
             return results[(source, ref.name)].get(series_key(ref.name, ref.labels), [])
         return read
-
-    def read_ref(self, ref, start: float, end: float, step: float) -> list[tuple[float, float]]:
-        """One remote series' points (``reader``): empty when the source fails (why is in
-        ``errors``) or the definition is gone."""
-        return self.reader(start, end, step)(ref)

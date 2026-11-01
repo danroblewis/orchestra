@@ -7,7 +7,7 @@ Quiet means what the Machines page means by not active (``cadence.py``): an inst
 cadence of its own (at least ``MIN_BEATS`` beats on the bus) and has now been silent longer than
 ``active_within`` its cadence. Observed only (AGENTS.md rule 2): beats are its events, never what
 it says of itself; the one thing read from its announcement is its mode, so an instance that says
-it is engaged ad hoc (a worker started per ticket) is never called quiet, its silence being its
+it is engaged ad hoc (a job started per request) is never called quiet, its silence being its
 nature. Orchestra's host itself and the instruments' old announcements are left out.
 
 Announced once per silence: an instance heard again may be announced again when it next falls
@@ -23,7 +23,7 @@ from .cadence import BEATS, BURST_S, active_within, gaps
 from .events import HOST, event_time, for_an_instrument, machine_and_instance
 
 QUIET = "orchestra.machine.quiet"
-ANNOUNCE = ("orchestra.machine.started", "orchestra.machine.subscribed")
+ANNOUNCE = "orchestra.machine.started"
 MIN_BEATS = 3                     # two gaps: a cadence of its own, not one interval
 AD_HOC = ("ad hoc", "ad_hoc", "ad-hoc")
 
@@ -47,7 +47,7 @@ class QuietWatch:
             if seen - rec["last"] > BURST_S and seen > rec["beats"][-1]:
                 rec["beats"].append(seen)
             rec["last"] = max(rec["last"], seen)
-        if ev.get("type") in ANNOUNCE:
+        if ev.get("type") == ANNOUNCE:
             mode = (ev.get("data") or {}).get("mode")
             if isinstance(mode, str) and mode:
                 rec["mode"] = mode

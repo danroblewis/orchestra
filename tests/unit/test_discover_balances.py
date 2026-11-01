@@ -356,10 +356,10 @@ def events_each_second(seconds, step, *, seed=1):
 def test_one_event_counted_by_two_machines_is_one_flow_and_a_co_flow(tmp_path):
     # the board starts an order (its waiting drops, its baking rises) and the oven counts the same
     # loaf loaded (its loaves rise): one event, counted by two machines, moving each one's own
-    # material. One counter is kept in every balance: the board's, which moves material between
-    # its own stocks; so there is one flow, waiting -> baking, and a co-flow of the same events
-    # into the oven's loaves, with one equation (one event has one rate), proportional to the
-    # waiting orders, which none of the stocks the event moves is kept from driving
+    # material. The board's count, which moves material between its own stocks, is the flow,
+    # waiting -> baking; the oven's loaves are balanced by the oven's own count of the same events,
+    # which measures the co-flow into them, with one equation (one event has one rate),
+    # proportional to the waiting orders, which none of the stocks the event moves is kept from driving
     lab = lambda m: {"project": "p", "machine": m}
     st = {"waiting": 0, "baking": 0, "loaves": 0, "placed": 0, "started": 0, "baked": 0, "loaded": 0, "cooled": 0}
 
@@ -391,8 +391,9 @@ def test_one_event_counted_by_two_machines_is_one_flow_and_a_co_flow(tmp_path):
     assert (co.src, co.dst) == (None, "oven_loaves") and co.evidence["co_flow_of"] == "started_total"
     assert f["started_total"].evidence["co_flows"] == ["started_total@oven"]
     assert not any(x.src is None and x.dst == "oven_loaves" and x.id != co.id for x in m.flows)
-    assert 'loaded_total{machine="oven"}' in m.discovery["left_out"]
-    assert [o["name"] for o in f["started_total"].evidence["same_as"]] == ["loaded_total"]
+    assert co.counter.name == "loaded_total" and 'loaded_total{machine="oven"}' not in m.discovery["left_out"]
+    assert balance_of(m, "oven_loaves") == {("loaded_total", 1), ("cooled_total", -1)}, m.stock("oven_loaves").evidence["balance"]
+    assert "loaded_total" not in [o["name"] for o in f["started_total"].evidence.get("same_as", [])]
     assert not ({"baking", "oven_loaves"} & set(f["started_total"].evidence.get("not_drivers", {}))), f["started_total"].evidence
     eq = f["started_total"].current()
     assert eq.form == "proportional" and eq.inputs == ["waiting"], (eq.form, eq.inputs, eq.quality)

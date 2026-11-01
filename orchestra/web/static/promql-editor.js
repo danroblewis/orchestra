@@ -273,5 +273,5 @@ const PromEditor = (() => {
       focus() { ta.focus(); },
     };
   }
-  return { create, context, tokens };
+  return { create };
 })();

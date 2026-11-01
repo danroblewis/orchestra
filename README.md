@@ -11,19 +11,8 @@ This is an **empty Orchestra**: the bus, the metrics store, the model, the boots
 web UI, with no machines of its own. Machines come from other packages. A **plugin** is a package
 installed in the same environment as `orchestra web` that registers itself in the entry-point
 group `orchestra.plugins` (`orchestra/plugins.py`, `SPEC.md` §10.1): it adds its pages, API routes
-and machine cards to the web UI. Two exist: the task system `orchestra-tasking` (package
-`tasking`, plugin `tasks`, command `orchestra tasks`: tickets and a scheduler that offers work over the bus;
-[github.com/danroblewis/orchestra-tasking](https://github.com/danroblewis/orchestra-tasking),
-private) and the AI agents that fill its roles, `orchestra-agents` (package `orchestra_agents`,
-plugin `agents`; private). Each repository's README says what it holds. How the task system left
-this repository is in `docs/proposals/empty-orchestra.md`.
-
-Each plugin has a demo, one command from its checkout (`uv run demo/run.py`; each demo's README
-says what runs). The task system's runs programs only, and shows the pages the plugin adds and the
-hand-offs on the Machines page. The agents' is the sample: AI agents beside a program worker on one
-queue of tickets, with a system dynamics model discovered from the run. The sample models the task
-pipeline itself; it has no domain of its own, so no loop between a domain and its process appears
-there yet (`docs/roadmap/use-cases.md`, UC-3b, is the sample that will).
+and machine cards to the web UI. Plugins live in their own repositories, and PLUGINS.md (§8)
+lists them.
 
 - `SPEC.md` is the design of what exists.
 - `AGENTS.md` is the list of rules that must not be broken.
@@ -81,6 +70,8 @@ metrics store (`[metrics] url`: file or VictoriaMetrics). `deploy/dev/compose.ya
 them locally. Series that live in another store (Prometheus, VictoriaMetrics, Mimir, Chronosphere)
 are read in place by naming it under `[[sources]]` (SPEC §4.4); `orchestra sources infer` shows
 what Orchestra will read from it.
+To connect Jira, Slack, PagerDuty or a Prometheus store, ask the Supervisor, or follow
+[docs/INTEGRATING.md](docs/INTEGRATING.md) with your own coding tool.
 
 Machines are your programs, and none needs to import Orchestra. Measurements come from
 instruments, which are not machines: a script that prints measurements in the Prometheus text

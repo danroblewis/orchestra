@@ -292,7 +292,7 @@ What the Machines page knows about a machine, and where it comes from (`orchestr
 |---|---|
 | The machine and its instances | The envelope's `source`: `baker/2` is instance `2` of machine `baker`. |
 | What it publishes | The `type` of the events it emitted, counted over all time and the last day. |
-| What it listens for, its mode, kind, package, name and group | Its own announcement, `orchestra.machine.started` (or the older `orchestra.machine.subscribed`). This is the one event type whose `data` Orchestra reads, because it is Orchestra's own. Mode and kind are kept per instance. |
+| What it listens for, its mode, kind, package, name and group | Its own announcement, `orchestra.machine.started`. This is the one event type whose `data` Orchestra reads, because it is Orchestra's own. Mode and kind are kept per instance. |
 | Its flows | The flows of the latest discovery its events are hypothesised to be associated with (`sd.attribute`). No series is listed: a machine does not produce metrics, and a series labelled `machine=X` never makes a machine X, an instance of it, or keeps it active. |
 | Last seen, and whether it is active | Its latest event (an announcement, a publication, a heartbeat), never in the future; never a write to a series. It is active while that is within 2.5 times its own observed cadence, and never less than 2 minutes. The cadence is the median gap between its recent beats: an event is a beat when it comes more than 48 s (the floor over the margin) after the instance's previous event, so a restart's announcements or one run's few events are one beat, and a job that publishes rarely is judged by its own rhythm (a cadence over a day counts as a day). |
 | Hand-offs (dotted edges) | Inferred from envelopes alone: one machine acted on a `subject`, then another machine acted on the same subject. |
@@ -869,7 +869,7 @@ Both backends refuse points stamped more than 60 s in the future. The conformanc
 | Extra | What it adds |
 |---|---|
 | `bus-redis`, `bus-rabbitmq`, `bus-kafka`, `bus` | Client libraries for the server buses. |
-| `sd` | numpy, scipy, numba, highspy, sympy: SD Lab's strategies, the Dynamics page's simulation (`sd/simulate.py`), the observability report (`sd/observability.py`, numpy only) and experiments (`sd/experiments/`). |
+| `sd` | numpy, scipy, numba, highspy: SD Lab's strategies, the Dynamics page's simulation (`sd/simulate.py`), the observability report (`sd/observability.py`, numpy only) and experiments (`sd/experiments/`). |
 | `sd-research` | More libraries for a few research strategies. |
 | `dev` | pytest, httpx, ruff. |
 
@@ -1001,8 +1001,8 @@ The host loads them again each time `orchestra.toml` or the private overlay chan
 (`Host._plugin_processes`) and instruments. A plugin that raises, one whose name an earlier plugin
 took, and a script or stylesheet missing from a plugin's static directory are reported (`/api/plugins`, the host's log) and
 left out, and it never takes the web app or the host down. Orchestra knows nothing of what a
-plugin's routes or pages mean. The two plugins today are the task system (`~/orchestra-tasking`)
-and the AI agents (`~/orchestra-agents`), both in their own repositories.
+plugin's routes or pages mean. Plugins live in their own repositories; PLUGINS.md (§8) lists
+them.
 
 ## The invariants, and where the code holds them
 

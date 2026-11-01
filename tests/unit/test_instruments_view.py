@@ -61,3 +61,13 @@ def test_each_instrument_says_whether_it_is_simulated_or_a_draft(project):
     c = Collecting(project, lambda *_: None, plugin_collectors=[Collector("ramp", "collect", "x", owner="features", simulated=True)])
     c.wanted = {"features.ramp": Collector("features.ramp", "collect", "x", owner="features", simulated=True)}
     assert c.snapshot()["features.ramp"]["simulated"] is True
+
+
+def test_the_page_lists_every_instrument_an_attachment_may_name(project):
+    from orchestra.sd.intended.instruments import Instruments
+
+    runtime.update(project, lambda d: d.__setitem__("instruments", {"features.ramp": {"kind": "collect", "last_write": 5.0}}))
+    v = instruments_view(project)
+    by = {i["name"]: i for i in v["instruments"]}
+    assert set(by) == set(Instruments(project).kinds()) == {"features.ramp", "tides", "app", "rig"}
+    assert (by["features.ramp"]["kind"], by["features.ramp"]["running"]) == ("collector", False)

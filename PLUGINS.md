@@ -758,7 +758,7 @@ reads its `data` (`web/machines.py`):
 |---|---|---|
 | `mode` | `continuous`, `scheduled` or `ad hoc` | instance |
 | `kind` | `program`, `agent`, `person`, `service` | instance |
-| `listens_for` | event types it reads (older: `orchestra.machine.subscribed` with `types`) | machine (union) |
+| `listens_for` | event types it reads | machine (union) |
 | `package` | your plugin's name, so your card draws it | machine (latest that says one) |
 | `log` | its log file; shown only if inside the repository or the state directory | instance |
 | `name`, `group` (or `team`) | a display name and a group label | machine (latest announcement) |
@@ -954,146 +954,27 @@ These follow from AGENTS.md. The plugins' own `AGENTS.md` files repeat them.
 
 ---
 
-## 8. The existing plugins as worked examples
+## 8. The existing plugins
 
-### 8.1 The task system: `orchestra-tasking`, plugin `tasks`
+Each lives in its own repository, whose README and SPEC say what it does; `pyproject.toml`'s
+extras install it beside Orchestra (`orchestra[tasking]`, ...). What each registers here, in one
+sentence:
 
-```toml
-[project.entry-points."orchestra.plugins"]
-tasks = "tasking.web:plugin"
-```
-
-```python
-# tasking/web.py
-def plugin(orchestra_project) -> Plugin:
-    """The plugin for the repository Orchestra serves (its entry point, in pyproject.toml)."""
-    project = Project.from_orchestra(orchestra_project)
-    return Plugin("tasks", [Page("/tickets", "Tickets", STATIC / "tickets.html")],
-                  STATIC, router(project), scripts=["tasks-boot.js"], stylesheets=["tasks.css"],
-                  processes=processes(project), collectors=collectors(project))
-
-
-def processes(project: Project) -> list[Process]:
-    if not set_up(project):
-        return []
-    return [Process("scheduler", [sys.executable, "-m", "orchestra", "tasks", "run", "--wait"])]
-
-
-def collectors(project: Project) -> list[Collector]:
-    if not set_up(project):
-        return []
-    step = max(1.0, float(project.orchestra.config.discovery_step))
-    return [Collector.collect("tickets", f"{shlex.quote(sys.executable)} -m orchestra tasks metrics", every_s=step, timeout_s=min(step, 10.0))]
-
-```
-
-| Field | What it registers |
-|---|---|
-| `pages` | `/tickets` ("Tickets"): the ticket graph |
-| `static`, `scripts` | one loader, `tasks-boot.js`, which loads `tasks.js`, then `attention.js` (the blocked-ticket banner) and `tasks-panel.js` (the Tasks panel, `Orchestra.panels.register({id: "tasks", ...})`) |
-| `stylesheets` | `tasks.css` |
-| `router` | `/api/plugins/tasks/state`, `/board`, `/attention`, `/tickets/{id}`, `/metrics` (the measurements as Prometheus text), and `POST /control` (operator controls, published as the machine `task_web`). A router dependency reloads the configuration (`project.reload_config()`, the overlay merged) on every request, so the capacity ceiling is live |
-| `machines` | none. The scheduler is no machine (below); `task_web` and `merge_gate` appear once seen |
-| `processes` | `tasks.scheduler`, only when `orchestra.toml` has `[project]` or `[tasks]` |
-| `collectors` | `tasks.tickets`: `orchestra tasks metrics` every discovery step, printing `tasks_tickets{state}`, `tasks_tickets_created_total{by}`, `tasks_ticket_transitions_total{from,to,by}` and `tasks_worktrees{state}` from the task system's record. A command rather than a scrape of `/metrics`, because `orchestra run` does not know the web server's port; the text is the same |
-
-Its config sections: `[project]`, `[tasks]`, `[gate]`, `[staging]`. State:
-`~/.orchestrator/<key>/tasks/`. The scheduler is an implementation detail of the plugin, not a
-machine: one daemon standing in for each machine's own scheduler (the worker's queue, the
-reviewer's, the merge gate, the answers to a planner's requests). It never announces itself and
-never publishes as `task_scheduler`: its offers and releases go out as `worker` or `reviewer`,
-its answers and what a request made as the asker, the gate's acts as `merge_gate` (which announces
-itself, `listens_for: ["review.approved"]`), and it publishes nothing that restates another
-machine's act (no `ticket.transitioned`). So it is on no page but the Core page's process list.
-The table of who publishes what is in orchestra-tasking's SPEC.md section 3.
-
-### 8.2 The AI agents: `orchestra-agents`, plugin `agents`
-
-```toml
-[project.entry-points."orchestra.plugins"]
-agents = "orchestra_agents.web:plugin"
-```
-
-```python
-# orchestra_agents/web.py
-def plugin(orchestra_project) -> Plugin:
-    """The plugin for the repository Orchestra serves (its entry point, in pyproject.toml)."""
-    project = Project.of(orchestra_project)
-    return Plugin("agents", [Page("/agents", "Agents", STATIC / "agents.html")], STATIC, router(project),
-                  scripts=["attention.js", "machine-cards.js"], stylesheets=["agents.css"],
-                  machines=declared(project), processes=processes(project), collectors=collectors(project))
-
-
-def processes(project) -> list[Process]:
-    return ([Process("host", [sys.executable, "-m", "orchestra_agents", "run", "--wait"], stop_grace_s=STOP_GRACE_S)]
-            if set_up(project) else [])
-
-
-def collectors(project) -> list[Collector]:
-    if not set_up(project):
-        return []
-    step = max(1.0, float(project.orchestra.config.discovery_step))
-    return [Collector.collect("turns", f"{shlex.quote(sys.executable)} -m orchestra_agents metrics", every_s=step, timeout_s=min(step, 10.0))]
-
-
-def declared(project) -> list[Declared]:
-    work = project.config.work
-    return [Declared(a.name, "agent", "continuous" if a.resident else "ad hoc", listens_for(a, work))
-            for a in all_agents(project).values()]
-```
-
-| Field | What it registers |
-|---|---|
-| `pages` | `/agents` ("Agents"): roles, agents, teams, wake-ups |
-| `scripts` | `attention.js` (the way to the Supervisor chat on every page) and `machine-cards.js`, which loads `agents.js` on demand (transcripts, chat, session chips) and registers `Orchestra.machineCards.register("agents", ...)`: resident agents as a row, workers and reviewers as the tickets they are on; the host has no card |
-| `stylesheets` | `agents.css` |
-| `router` | `GET /org`, `/state`, `/agents`, `/agents/{name}`, `/roles/{name}`, `/teams/{name}`, `/attention`, `/sessions/{id}/transcript`, `/metrics` (the measurements as Prometheus text); `POST /attention/seen`, and `POST /supervisor`: the one human write, the Supervisor chat (rule 9) |
-| `machines` | each configured agent (kind `agent`; continuous when resident, ad hoc otherwise; `listens_for` as it announces itself). The host is no machine and is not declared |
-| `processes` | `agents.host`, only when `orchestra.toml` has `[agents]`; `stop_grace_s=30`, longer than the host's worst-case shutdown (20 s), so Orchestra never kills it halfway and orphans its sessions |
-| `collectors` | `agents.turns`: `orchestra-agents metrics` every discovery step, printing `agents_working{role,machine}`, `agent_turns_started_total{role,machine}` and `agent_turns_finished_total{role,machine}` from the agents' runtime record |
-
-The plugin provides an implementation of a machine (the AI agent), the means to configure one
-(roles, harness, model, engagement, permissions), a shared runtime that runs the configured
-agents (the host) and UI additions. The host is no machine (§6.1): it never announces itself,
-never publishes as `agents` and writes no metrics. It announces each agent instance it starts, as
-that instance (`supervisor`, `worker/1`, `reviewer/1`, ...), with `kind: "agent"`, the events the
-host watches on the agent's behalf as `listens_for` (its `wake_on`, the answers to its own
-requests, and for the Supervisor the end of the tickets it created for the human and
-`ticket.created`), and extra fields (`role`, `harness`, `model`) that reach the card as
-`m.about`. State: `~/.orchestrator/<key>/agents/`; the organisation's records are in
-the repository under `.orchestra/`.
-
-### 8.3 The bridges: `orchestra-bridges`, plugin `bridges`
-
-```toml
-[project.entry-points."orchestra.plugins"]
-bridges = "orchestra_bridges.plugin:plugin"
-```
-
-```python
-# orchestra_bridges/plugin.py (main)
-def plugin(project) -> Plugin:
-    raw = project.config.raw
-    configured = [s for s in SYSTEMS if section(raw, s) is not None] + jira_sections(raw)
-    scrapes = [(s, url) for s in configured if (url := metrics_url(section(raw, s), PORTS.get(s)))]
-    return Plugin(
-        "bridges",
-        processes=[Process(s, [sys.executable, "-m", "orchestra_bridges", s], stop_grace_s=10,
-                           config_keys=[f"bridges.{s}", "bridges.people"]) for s in configured],
-        collectors=[Collector.scrape(s, url, every_s=SCRAPE_EVERY_S) for s, url in scrapes],
-        guide=Path(__file__).parent / "guide.md",
-        check=lambda raw, repo_root: check(raw, repo_root=None))
-```
-
-It has **no pages, router or scripts**: what the bridges show is Orchestra's own Machines page
-and series. It declares one process per configured bridge (GitHub issues, GitHub pull requests,
-Jira, Slack) and one instrument per bridge (a scrape of the bridge's own `/metrics`). It declares
-**no machine**: a bridge is a relay (§6.1). The machines are the actors it relays, each published
-with the actor as the source (`person.<login>`, or `bot.<name>` for a bot or the system itself,
-e.g. `bot.jira` for an automation with no author), and announced first with `kind: "person"` or
-`program` and `package: "bridges"`. A guard (`orchestra_bridges/relay.py`) refuses any other
-source. A gap in what a bridge saw is a measurement in its instrument, not an event. It keeps no
-state of its own: it rebuilds from its events' ids and its instrument's series at start.
+- **`tasks`** ([orchestra-tasking](https://github.com/danroblewis/orchestra-tasking)): a Tickets
+  page, a Tasks panel, its routes, its scheduler process and one instrument of its tickets' counts.
+- **`agents`** ([orchestra-agents](https://github.com/danroblewis/orchestra-agents)): an Agents
+  page, the Supervisor chat, machine cards, its routes, its agents as declared machines, the host
+  process that runs them and one instrument of their turns.
+- **`bridges`** ([orchestra-bridges](https://github.com/danroblewis/orchestra-bridges)): no pages;
+  one process and one scrape per configured bridge, a guide and a configuration check.
+- **`desk`** ([orchestra-desk](https://github.com/danroblewis/orchestra-desk)): the Desk and
+  Ledger pages, their routes, its processes and instruments, a guide and a configuration check.
+- **`outbox`** ([orchestra-outbox](https://github.com/danroblewis/orchestra-outbox)): the Outbox
+  page, its routes, one declared machine, its processes and instruments, a guide and a
+  configuration check.
+- **`workflows`** ([orchestra-workflows](https://github.com/danroblewis/orchestra-workflows)): the
+  Items and Piles pages, read-only routes, its processes and instruments, a guide and a
+  configuration check.
 
 ---
 
@@ -1787,46 +1668,41 @@ How to stay compatible:
 
 ---
 
-## 12. Pitfalls the existing plugins hit
+## 12. Pitfalls plugins have hit
 
 ### 12.1 Announcements
 
 - **Announce before your first event, once per instance, with `package`.** Without `package`, the
   machine is not yours and your card never draws it. Without `listens_for`, the map infers what you
   read from hand-offs.
-- **Announce only what you act on as yourself.** The agents' host used to announce that it listened
-  for `task.assigned`, `task.released` and `task.attention_needed`, which its agents act on, not
-  the host (fixed in orchestra-agents `ca04f16`).
-- **Publish as the right source.** The same commit fixed snapshot queries that went out under the
-  host's default source, so the map showed the host asking the task system. Pass `source=` every time.
-- **Don't describe yourself.** Announcements and declarations carried `does` and `description`
-  fields that nothing read. They were removed (orchestra_2 `6d80b787`, orchestra-agents `ba7135c`).
-  Orchestra reads `mode`, `kind`, `listens_for`, `log`, `package`, `name` and `group`. Anything else
-  is passed to your card as `m.about`, and only the latest announcement's `about` survives.
-- **A sync announces in its own time.** The GitHub bridge announces each person stamped with the
-  time of their first event, with a stable id (`github:announce:...`), so a re-read never
-  duplicates it, and announces again only when the name or team changed.
+- **Announce only what you act on as yourself.** A host that announces it listens for the events
+  its machines act on draws the host, not the machines, as their listener.
+- **Publish as the right source.** A query sent under a process's default source shows that
+  process asking on the map. Pass `source=` every time.
+- **Don't describe yourself.** Orchestra reads `mode`, `kind`, `listens_for`, `log`, `package`,
+  `name` and `group`. Anything else is passed to your card as `m.about`, and only the latest
+  announcement's `about` survives; a field nothing reads is noise.
+- **A sync announces in its own time.** A bridge that replays history announces each actor stamped
+  with the time of its first event, with a stable id, so a re-read never duplicates it, and
+  announces again only when the name or group changed.
 - **Announcing is not living.** Announcements do not count towards a machine's cadence. A machine
   that announces and then falls silent goes inactive.
 
 ### 12.2 Instance naming
 
 A source is `<machine>/<instance>`. Two programs that publish as the same source are, to Orchestra
-and to any protocol keyed on the source, **one instance**. In the agents' demo, the agents' host
-names its AI workers `worker/1`, `worker/2`, so the program worker had to be named `worker/shell`
-(`shell_worker.py shell`). Otherwise two machines would both have held one assignment. Choose an
-instance name that cannot collide, and label your series `machine=<machine>`,
-`instance=<instance>` to match the source.
+and to any protocol keyed on the source, **one instance**, and both would hold one assignment.
+Choose an instance name that cannot collide with another program's (`worker/shell` beside
+`worker/1`), and label your series `machine=<machine>`, `instance=<instance>` to match the source.
 
 ### 12.3 Kind per instance
 
 `kind` and `mode` belong to each instance; its latest announcement stands. A machine whose
 instances differ gets a combined `kind` such as `"agent ×2, program ×1"`, with the counts in
-`kinds` (`{"agent": 2, "program": 1}`) and each instance's own kind in `instances[i].kind`. The
-agents' cards compared `m.kind === "agent"` and lost the worker's card when the program worker
-joined it (fixed in `91ce6dd`: `m.kinds && m.kinds.agent ? "agent" : m.kind`). Read `kinds` or
-`instances` and never compare `kind` exactly. A declared `kind` fills in only when no instance
-announced one.
+`kinds` (`{"agent": 2, "program": 1}`) and each instance's own kind in `instances[i].kind`. A card
+that compares `m.kind === "agent"` loses the machine when a program instance joins it: read
+`kinds` or `instances` and never compare `kind` exactly. A declared `kind` fills in only when no
+instance announced one.
 
 ### 12.4 A scrape labels points with its own name, as `instrument`
 
@@ -1841,10 +1717,8 @@ machine; both are gone. So:
 - the scrape's name no longer has to match a machine's. Name it for what it reads;
 - collected series changed identity at the upgrade (`machine=<name>` before, `instrument=<name>`
   after), so a series' history splits there. Stores were not rewritten. A process that reads its
-  own counts back at start by the scrape's label must change: the Slack bridge's `_stored` reads
-  by `machine="bridges.slack"`, which new points carry only if its `/metrics` serves that label
-  itself. Read by `instrument=` (or serve the label), and expect the old points under `machine=`
-  until they age out.
+  own counts back at start by the scrape's label reads by `instrument=` (or serves the label
+  itself), and finds the old points under `machine=` until they age out.
 
 ### 12.5 An editable install imports the working tree
 
@@ -1865,12 +1739,11 @@ machine; both are gone. So:
 
 ### 12.6 Smaller ones
 
-- `plugin()` runs often (§2). The agents' plugin builds an `AgentStore` and an `Events` in its
-  router on every call; keep yours lazy.
+- `plugin()` runs often (§2): build stores and clients lazily, not on every call.
 - `orchestra run` passes its whole environment to every process it starts. Never put a secret in
-  it (the Slack bridge reads its token from a file outside the repository for this reason).
-- `stop_grace_s` must exceed your own shutdown, or Orchestra kills you halfway and your children
-  are orphaned (the agents' 30 s against their 20 s worst case).
+  it: read a token from a file outside the repository.
+- `stop_grace_s` must exceed your own worst-case shutdown, or Orchestra kills you halfway and your
+  children are orphaned.
 - Every-page stylesheets restyle every page: prefix your selectors.
 - Use `sys.executable` in process commands, not `python`.
 - A series named `orchestra_*` is refused by instruments and left out by discovery.
@@ -1884,8 +1757,8 @@ Gaps and inconsistencies in the plugin interface on `main` today. This is a list
 1. **The web app never reloads plugins.** The host asks for processes and collectors again on
    every `orchestra.toml` change; the web app calls `plugin()` once at start. Declarations that
    depend on config (the bridges', the heartbeat's) are stale until `orchestra web` restarts.
-2. **No CLI extension point**, and the `orchestra` CLI cannot list the installed plugins or their
-   errors. Only `/api/plugins` in the web app can.
+2. **The `orchestra` CLI cannot list the installed plugins or their errors.** Only `/api/plugins`
+   in the web app can.
 3. **`/api/plugins` lists pages, scripts and errors only.** A plugin with no pages, such as the
    bridges, is invisible there. Its processes show on the Core page, its instruments on the
    Instruments page, its declared machines on the Machines page, and its stylesheets nowhere.

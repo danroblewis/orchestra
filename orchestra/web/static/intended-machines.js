@@ -188,12 +188,12 @@ const IntendedMachines = (() => {
   const ask = (what = "ask the Supervisor") => `<span class="im-ask">${esc(what)}</span>`;
   const h4 = (t, note = "", tag = "") => `<h4>${esc(t)}${note ? ` <span class="muted im-h4note">${note}</span>` : ""}${tag}</h4>`;
 
-  // the opaque spec, as declared: lists as numbered steps or bullets, text as a value, a table for
+  // the opaque spec, as declared and in its order: every list numbered, text as a value, a table for
   // a flat object (arguments, environment), anything deeper as nested rows; a key the latest
   // change rewrote is marked
   function specValue(k, v, mono) {
     if (v == null || v === "") return '<span class="muted">none</span>';
-    if (Array.isArray(v)) return `<${k === "steps" ? "ol" : "ul"} class="im-list">${v.map((x) => `<li>${typeof x === "object" ? esc(JSON.stringify(x)) : esc(x)}</li>`).join("")}</${k === "steps" ? "ol" : "ul"}>`;
+    if (Array.isArray(v)) return `<ol class="im-list">${v.map((x) => `<li>${typeof x === "object" ? esc(JSON.stringify(x)) : esc(x)}</li>`).join("")}</ol>`;
     if (typeof v === "object") {
       const flat = Object.values(v).every((x) => x == null || typeof x !== "object");
       if (flat) return `<table class="dt im-args">${Object.entries(v).map(([a, b]) => `<tr><td class="num">${esc(a)}</td><td>${esc(b ?? "")}</td></tr>`).join("")}</table>`;
@@ -212,12 +212,8 @@ const IntendedMachines = (() => {
     }
     return out.join("");
   }
-  // the interface a Programmatic machine's engagement asks for, in words (P4 §2.3, notes §13.2)
-  const MODE_NOTE = {
-    "ad hoc": (ext, known) => (ext ? `started by its trigger; it is known by ${known}.` : "Orchestra runs the command once for each offer it accepts, and it exits."),
-    continuous: (ext, known) => (ext ? `no command; it is known by ${known}.` : "a daemon; <code>orchestra run</code> starts the command and keeps it running."),
-    scheduled: (ext, known) => (ext ? `its own scheduler starts it; it is known by ${known}.` : "Orchestra runs the command at the time given, and it exits."),
-  };
+  // what a Programmatic machine's declared engagement says, in words, and nothing of who runs it
+  const MODE_NOTE = { "ad hoc": "declared as engaged ad hoc", continuous: "declared as engaged continuously", scheduled: "declared as engaged on a schedule" };
   function engagementRow(it) {
     const e = it.engagement || {}, was = before(it).engagement;
     let html = ind(["ad hoc", "continuous", "scheduled"], e.mode, it.kind === "programmatic" ? "tabs" : "");
@@ -314,14 +310,14 @@ const IntendedMachines = (() => {
     listeners.published = new Set(d.machines.filter((x) => x.id !== m.id).flatMap((x) => (x.publishes || []).map((p) => p.type)));
     const tag = stateTag(m), switching = (ASKED[m.id] || it.requested || {}).control === "switch_kind", canSwitch = it.state === "proposed" && !switching;
     const kind = field("kind", (canSwitch ? `<span class="im-seg big">${["universal", "programmatic"].map((k) => `<button class="${it.kind === k ? "on" : ""}" ${it.kind === k ? "disabled" : `onclick="IntendedMachines.request('switch_kind','${esc(m.id)}')"`} title="${it.kind === k ? "its kind" : "asks the Supervisor to switch it"}">${k === "universal" ? "Universal" : "Programmatic"}</button>`).join("")}</span>` : ind(["Universal", "Programmatic"], prog ? "Programmatic" : "Universal"))
-      + `<div class="muted im-note">${prog ? "a program: a command and its interface" : "described by what it achieves: its steps, its invariants and what it uses"}${canSwitch ? " · switching asks the Supervisor" : switching ? " · a switch was asked of the Supervisor: waiting" : ""}</div>`);
+      + `<div class="muted im-note">${prog ? "a program: a command and its interface" : "described by what it achieves"}${canSwitch ? " · switching asks the Supervisor" : switching ? " · a switch was asked of the Supervisor: waiting" : ""}</div>`);
     const byInstruments = !it.heard && (it.attachments || []).length;
     const known = byInstruments ? "the instruments attached to it (Measured by, below)" : "its events";
-    const managed = field("managed", ind(["orchestra", "external"], it.managed) + `<div class="muted im-note">${ext ? `runs elsewhere: known by ${known}; Orchestra starts nothing` : prog ? "started and kept by <code>orchestra run</code> once confirmed" : "started and kept by Orchestra once confirmed"}</div>`);
+    const managed = field("managed", ind(["orchestra", "external"], it.managed) + `<div class="muted im-note">${ext ? `runs elsewhere: known by ${known}` : "managed by orchestra"}</div>`);
     const text = (f, label) => field(label, (it[f] ? box(it[f]) : '<span class="muted">none</span>') + (guessed(it, f) ? guess : "") + (f in before(it) ? '<span class="im-tag im-t-chg">changed just now</span>' : ""));
     const tags = field("tags", (it.tags || []).map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">none</span>');
     const body = prog
-      ? `${engagementRow(it)}<div class="im-tabbody"><div class="muted im-tabnote">The interface for ${esc((it.engagement || {}).mode || "its engagement")}${ext ? ", run elsewhere" : ""}: ${(MODE_NOTE[(it.engagement || {}).mode] || (() => ""))(ext, known)}</div>${spec(it, true) || '<span class="muted">nothing declared yet</span>'}</div>${text("title", "title")}${text("description", "description")}${tags}`
+      ? `${engagementRow(it)}<div class="im-tabbody"><div class="muted im-tabnote">${cap(MODE_NOTE[(it.engagement || {}).mode] || "no engagement declared")}${ext ? "; it runs elsewhere" : ""}.</div>${spec(it, true) || '<span class="muted">nothing declared yet</span>'}</div>${text("title", "title")}${text("description", "description")}${tags}`
       : `${engagementRow(it)}${text("title", "title")}${text("description", "description")}${tags}${spec(it, false)}`;
     const heard = it.heard;
     const insts = heard ? "" : `${h4("Instances")}<div class="muted">none heard on the bus</div>`;
@@ -334,7 +330,7 @@ const IntendedMachines = (() => {
       ${h4("Emits")}${types(it, "emits", listeners)}
       ${h4("Reads")}${reads(it)}
       ${insts}${effect(it)}${tail}
-      <div class="muted im-foot">${byInstruments ? 'Measured, never heard: no "last seen", never "active". ' : ""}Every field is read-only: ${ask()} to change any of it.${it.state === "proposed" ? " Confirm asks the Supervisor; it then records the expected effect as a prediction, judged once its horizon has passed. Until then nothing runs and nothing is published." : ""}</div>`;
+      <div class="muted im-foot">${byInstruments ? 'Measured, never heard: no "last seen", never "active". ' : ""}Every field is read-only: ${ask()} to change any of it.${it.state === "proposed" ? " Confirm asks the Supervisor." : ""}</div>`;
   }
   // a machine nothing declared: what the bus observed of it, and its dialog for the rest
   function observedPanel(m) {
@@ -423,5 +419,5 @@ const IntendedMachines = (() => {
   }
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && (OPEN || UNKNOWN) && !$("overlay").classList.contains("open")) close(); });
   return { links, edgeStyle, decorate, focusSpec, sort, decorateCards, draw, open, close, unknown, request, opened: () => OPEN,
-           fresh, added, removed };
+           added };
 })();

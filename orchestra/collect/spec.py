@@ -13,8 +13,8 @@ URL), and those the plugins declare (``Plugin.collectors``).
     draft = true                     # an option being tried: points labelled draft="true", left out of discovery
     expires = "2026-11-08T00:00:00Z" # ... when the plugin removes the entry (RFC 3339, or unix seconds): data only
     [collect.views]                  # optional: how it made the series it prints (``views``), for discovery
-    workflow_pile_items = { view = "count", place = "pile" }
-    workflow_item_moves_total = { view = "moves", starts = "to", stops = "from" }
+    items = { view = "count", place = "place" }
+    item_moves_total = { view = "moves", starts = "to", stops = "from" }
 
     [[scrape]]
     name = "app"

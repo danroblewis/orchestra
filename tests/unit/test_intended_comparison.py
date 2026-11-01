@@ -174,3 +174,16 @@ def test_design_says_why_the_comparison_failed(tmp_path, monkeypatch):
     monkeypatch.setattr(IntendedStore, "diff", broken)
     d = it.design(hold=3)
     assert d["comparison_error"] == "RuntimeError: boom" and d["stabilised"] is None
+
+
+def test_a_passing_state_stock_gets_the_servers_level_key_and_an_expect_on_it_is_accepted(tmp_path):
+    from orchestra.web.intended import observation
+    implied = Stock("after_in", "after in", series=None, evidence={"level": {"name": "after_in_total", "labels": {"instrument": "i"}}})
+    f = Flow("f", "f", "a", "after_in", SeriesRef("moved_total", {"instrument": "i"}))
+    ms = saved(tmp_path, model([st("a"), implied], [f]))
+    keys = block(ms)["keys"]
+    assert keys == {"stocks": {"a": "a", "after_in": "after_in_total"}, "flows": {"f": "a -> after_in_total by moved_total"}}
+    op, _ = observation({"control": "expect", "part": "stock", "key": keys["stocks"]["after_in"], "page": "dynamics"}, ms)
+    assert op == {"op": "expect", "part": "stock", "key": "after_in_total"}
+    op, _ = observation({"control": "expect", "part": "flow", "key": keys["flows"]["f"], "page": "dynamics"}, ms)
+    assert op["key"] == "a -> after_in_total by moved_total"

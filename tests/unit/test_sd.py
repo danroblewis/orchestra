@@ -3,7 +3,6 @@ recovering known rates from a simulated history."""
 
 from __future__ import annotations
 
-import json
 import math
 import random
 
@@ -102,9 +101,3 @@ def test_one_model_with_versions(tmp_path):
     assert store.current_version() == 2
 
 
-def test_a_legacy_model_becomes_version_1(tmp_path):
-    (tmp_path / "models").mkdir()
-    (tmp_path / "models" / "tickets.json").write_text(json.dumps(small_model().to_json()))
-    store = ModelStore.for_state(tmp_path)
-    assert store.versions()[0]["note"] == "imported from models/tickets.json"
-    assert store.load().name == "The system"

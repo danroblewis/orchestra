@@ -36,7 +36,7 @@ from .drafts import publishable
 from .expected import is_mark
 from .facts import LIMIT_S, within
 from .keys import Keys
-from .machines_view import comparison, heard_as
+from .machines_view import heard_as
 from .requests import open_requests
 
 LAST = 20
@@ -129,7 +129,7 @@ def design(intended, hold: int, block: dict | None = None, observed: set[str] | 
         open_items += [{"what": meas.NOTHING, "part": "attachment", "id": aid, "machine": v["machine"]}
                        for aid, v in views.items() if v.get("comparison") == meas.NOTHING]
     if heard is not None and views is not None:
-        open_items += [{"what": comparison(False), "part": "machine", "id": mid}
+        open_items += [{"what": meas.comparison(False, None), "part": "machine", "id": mid}
                        for mid, m in layer["machines"].items()
                        if m.get("state") == "declared" and heard_as(mid, m, heard) is None
                        and not meas.machine_measured([v for v in views.values() if v["machine"] == mid])["measured"]]

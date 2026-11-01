@@ -1,7 +1,9 @@
 // Render the Machines page's frames E1–E4 from the real web app, check each frame's DOM, and write
 // tests/screenshots/intended/<frame>.png (full page) and <frame>-1440x900.png (the first screen).
 //   node tests/screenshots/intended/render.cjs [frame ...]       (from the repository root)
-// Each frame: serve_frame.py serves a seeded project (intended_frames.py) on its own port; headless
+// It is run by hand, and by no test (the unit tests check the same frames' API answers,
+// tests/unit/test_intended_frames.py).
+// Each frame: serve_frame.py serves a seeded project (tests/unit/machine_frames.py) on its own port; headless
 // Chrome for Testing logs in with the project's token, opens /machines#<machine> (the panel open on
 // it), with the map pinned where the mockups pinned it (mockups/fixtures/layouts.json and the
 // places in mockups/additions.js), waits for it to settle, checks the frame's structure and that
@@ -68,7 +70,8 @@ const CHECKS = {
     const on = [...side.querySelectorAll(".im-ind span.on")].map((e) => e.textContent);
     if (!on.includes("orchestra") || !on.includes("continuous")) f.push(`indicators: ${on}`);
     if ([...side.querySelectorAll(".im-tag")].filter((e) => e.textContent === "a guess").length !== 2) f.push("not two guesses");
-    if (side.querySelectorAll("ol.im-list li").length !== 5) f.push("not five steps");
+    const steps = [...side.querySelectorAll("h4")].find((h) => h.textContent.startsWith("Steps"));
+    if (!steps || !steps.nextElementSibling || steps.nextElementSibling.querySelectorAll("li").length !== 5) f.push("not five steps");
     if (side.querySelectorAll(".im-pred").length !== 4) f.push("not four expected-effect rows");
     const node = document.querySelector('g.ng-node[data-id="m:feature_count_improver"]');
     if (!node || !node.classList.contains("im-proposed") || !node.textContent.toLowerCase().includes("unconfirmed")) f.push("node not drawn unconfirmed");
@@ -94,7 +97,7 @@ const CHECKS = {
   },
   E3: (id, mode) => {
     const f = [], side = document.getElementById("im-side"), t = side.textContent;
-    for (const s of ["Nightly metrics", "added by you", "The interface for"]) if (!t.includes(s)) f.push(`panel lacks "${s}"`);
+    for (const s of ["Nightly metrics", "added by you", "Declared as engaged"]) if (!t.includes(s)) f.push(`panel lacks "${s}"`);
     if ((side.querySelector(".im-seg button.on") || {}).textContent !== "Programmatic") f.push("kind is not Programmatic");
     const on = [...side.querySelectorAll(".im-ind span.on")].map((e) => e.textContent), label = (s) => [...side.querySelectorAll(".im-tabbody .im-fl")].some((e) => e.textContent === s);
     const want = { adhoc: ["orchestra", "ad hoc"], continuous: ["orchestra", "continuous"], external: ["external", "continuous"] }[mode];

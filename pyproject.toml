@@ -23,7 +23,7 @@ bus-rabbitmq = ["pika>=1.3"]
 bus-kafka = ["confluent-kafka>=2.5"]
 bus = ["redis>=5.0", "pika>=1.3", "confluent-kafka>=2.5"]
 # SD Lab's discovery strategies (orchestra/sdlab)
-sd = ["numpy>=2.0", "scipy>=1.14", "numba>=0.61", "highspy>=1.8", "sympy>=1.13"]
+sd = ["numpy>=2.0", "scipy>=1.14", "numba>=0.61", "highspy>=1.8"]
 sd-research = ["cma>=4.0", "cvxpy>=1.6", "jax>=0.5", "pysindy>=2.0"]
 # Plugins: each is its own package in its own repository; `orchestra[tasking]` installs it beside Orchestra.
 tasking = ["orchestra-tasking @ git+https://github.com/danroblewis/orchestra-tasking"]

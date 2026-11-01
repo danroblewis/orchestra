@@ -20,20 +20,12 @@ const Intended = (() => {
   const agoText = (t) => { const s = Date.now() / 1000 - t; return s < 90 ? "just now" : ago(s) + " ago"; };
   const vlabel = () => { const x = it(); return x && x.shown ? `v${x.shown}` : "this discovery"; };
 
-  // ---- keys (sd/intended/keys.py): what marks match by, since discovered ids are not stable ----
-  const LEFT_OUT = new Set(["instrument", "machine", "source", "project", "instance", "simulated"]);
-  const seriesKey = (ref) => {
-    if (!ref) return null;
-    const ls = Object.entries(ref.labels || {}).filter(([k]) => !LEFT_OUT.has(k)).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-    return ls.length ? `${ref.name}{${ls.map(([k, v]) => `${k}="${v}"`).join(",")}}` : ref.name;
-  };
-  const stockKey = (s) => (s && seriesKey(s.series)) || (s ? `stock:${s.id}` : null);
-  const stockKeyOf = (id) => stockKey(MODEL.stocks.find((s) => s.id === id)) || id;
-  function flowKey(f) {
-    const counter = seriesKey(f.counter) || (f.measured_by || []).map(seriesKey).filter(Boolean).sort().join("+");
-    return `${f.from ? stockKeyOf(f.from) : "outside"} -> ${f.to ? stockKeyOf(f.to) : "outside"}` + (counter ? ` by ${counter}` : "");
-  }
-  const stockOfKey = (key) => (key ? MODEL.stocks.find((s) => stockKey(s) === key || s.id === key) : null);
+  // ---- keys: what marks match by, since discovered ids are not stable; the server's (sd/intended/keys.py),
+  // sent as ``intended.keys`` ({stocks: {id: key}, flows: {id: key}}), never made here ----
+  const keys = () => { const x = it(); return (x && x.keys) || { stocks: {}, flows: {} }; };
+  const stockKey = (s) => (s ? keys().stocks[s.id] || null : null);
+  const flowKey = (f) => (f ? keys().flows[f.id] || null : null);
+  const stockOfKey = (key) => (key ? MODEL.stocks.find((s) => keys().stocks[s.id] === key || s.id === key) : null);
   const marksOf = (part, id) => { const x = it(); return (x && ((x.marks || {})[part === "stock" ? "stocks" : "flows"] || {})[id]) || []; };
   const hasEarlier = () => { const x = it(), vs = (MODEL && MODEL.versions) || []; return !!x && vs.findIndex((v) => v.version === x.shown) > 0; };
   const nameOf = (id) => (id && MODEL.stocks.some((s) => s.id === id) ? stockName(id) : nice(id));
@@ -49,7 +41,7 @@ const Intended = (() => {
   const removedStockName = (r) => baseEnd(r.id, r.series, r.full_name || r.name);
   // a removed flow by its counter, as the page names flows (its own family: its other labels said)
   const removedFlowName = (r) => (r.counter ? SDGraph.flowName({ stocks: [], flows: [{ id: "g", from: r.from, to: r.to, counter: r.counter }] }, { id: "g" }) : r.name || r.key);
-  const who = (p) => (!p ? "" : p.author === "owner" ? "you" : p.author === "supervisor" || p.source === "supervisor" ? "the Supervisor" : p.author || p.source || "");
+  const who = (p) => { if (!p) return ""; if (p.author === "owner") return "you"; const w = p.source || p.author || ""; return w && `the ${w.charAt(0).toUpperCase() + w.slice(1)}`; };   // as byWhom on the Machines page
   // what a declared element's tag says: who put it there; "not in vN" only for a part an earlier
   // version had (a mark tracked by inference since a version), never for one never measured or
   // never found (mockups/README.md: a declared stock with no series is "not measured")
@@ -310,5 +302,5 @@ const Intended = (() => {
     return new Set(x.expected.filter((e) => e.near).map((e) => stockOfKey(e.near)).filter(Boolean).map((s) => s.id));
   }
   return { extend, decorator, tip, click, versionBar, toggleSince, param, legend, tables, control, sig, it, marksOf, stockKey, flowKey,
-    declTag, statusText, recording, nameOf, who, agoText, hhmm, vlabel, tag, nearIds, expectedIds, hasEarlier, baseEnd, removedStockName, removedFlowName, isOn: () => ON };
+    declTag, recording, nameOf, who, agoText, hhmm, vlabel, tag, nearIds, expectedIds, baseEnd, removedStockName, removedFlowName };
 })();

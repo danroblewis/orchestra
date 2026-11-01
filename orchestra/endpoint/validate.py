@@ -7,8 +7,7 @@ which are checked and then left to ``orchestra.events.envelope`` to write. Anyth
 refused by name, so a misspelt field is not silently lost.
 
 Orchestra's own types (``orchestra.*``) are the host's to publish, except the announcements a
-machine makes of itself (``orchestra.machine.started`` and the older
-``orchestra.machine.subscribed``) and the predictions a machine makes of its changes
+machine makes of itself (``orchestra.machine.started``) and the predictions a machine makes of its changes
 (``orchestra.prediction.made``, ``sd.predictions``). The source ``orchestra-host`` is the host's own. ``data`` is
 never read (AGENTS.md rule 3): only its size counts, through the body's."""
 
@@ -27,7 +26,7 @@ MAX_SOURCE = 256
 MAX_TEXT = 1024                 # subject, correlationid, causationid
 MAX_ID = 256
 
-ANNOUNCEMENTS = ("orchestra.machine.started", "orchestra.machine.subscribed")
+ANNOUNCEMENTS = ("orchestra.machine.started",)
 STATEMENTS = ("orchestra.prediction.made",)          # what a machine says of its own changes (sd.predictions)
 MACHINES_MAY = (*ANNOUNCEMENTS, *STATEMENTS)
 OPTIONAL_TEXT = ("subject", "correlationid", "causationid")

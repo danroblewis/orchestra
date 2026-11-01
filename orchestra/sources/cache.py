@@ -36,7 +36,7 @@ import time
 from pathlib import Path
 
 from . import PastDeadline, Source, SourceError
-from .infer import Inference, _declared, infer, settings_key
+from .infer import Inference, declared_definitions, infer, settings_key
 from .listing import TooManyNames
 from .spec import DeclaredSeries, SourceSpec
 from .transform import TransformError
@@ -161,7 +161,7 @@ def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries]
     are none to read."""
     key = settings_key(spec, declared, repo_root)
     if not spec.infer:                     # only what is declared: nothing to infer, nothing to cache
-        return Inference(spec.name, time.time(), key, _declared(spec, declared),
+        return Inference(spec.name, time.time(), key, declared_definitions(spec, declared),
                          notes=["infer = false: only the declared series are read, never the schema"])
     old = cached(state_dir, spec.name)
     same = old is not None and old.key == key        # older definitions under other settings would not be what was asked for

@@ -1,4 +1,4 @@
-"""Changing a project's configuration: the one way anything (a plugin's tool, the Supervisor)
+"""Changing a project's configuration: the one way anything (a plugin's tool, a machine)
 changes a setting, in the repository's ``orchestra.toml`` or in the private overlay
 (``orchestra/overlay.py``), so that no plugin opens or edits either file itself.
 
@@ -19,11 +19,10 @@ changes a setting, in the repository's ``orchestra.toml`` or in the private over
   ``Change``: the file, its text before and after, one line saying what changed, and the keys of
   the merged configuration whose value changed (none when the overlay's value still wins).
 
-``dry_run=True`` returns the ``Change`` without writing it, for a caller with checks of its own
-(the Supervisor refuses what looks like a secret); ``apply`` then writes it, unless the file
-changed in between. ``restore`` puts a change's file back as it was, when it still holds what the
-change wrote. Committing is the caller's choice: Orchestra never commits, and the overlay lives
-outside the repository, so it is never committed.
+``dry_run=True`` returns the ``Change`` without writing it, for a caller with checks of its own;
+``apply`` then writes it, unless the file changed in between. ``restore`` puts a change's file
+back as it was, when it still holds what the change wrote. Committing is the caller's choice:
+Orchestra never commits, and the overlay lives outside the repository, so it is never committed.
 
 In the overlay an entry is replaced whole by name when merged, so ``add_entry`` there starts from
 the repository's entry of that name, and ``remove_entry`` there writes ``{ name, enabled = false }``

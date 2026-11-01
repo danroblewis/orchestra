@@ -5,8 +5,8 @@ the fields each frame draws (docs/proposals/intended-model.md §6.1, §7)."""
 import time
 
 import pytest
-from intended_frames import ADDED, EMIT, FCI, NM, REMOVED, SAIL, replay_observed, seed_frame
 from intended_seed import project_at
+from machine_frames import ADDED, EMIT, FCI, NM, REMOVED, SAIL, replay_observed, seed_frame
 from test_intended_api_shapes import client, machines
 
 

@@ -15,21 +15,10 @@
   .mwrap h2 { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:18px 0 8px; display:flex; gap:8px; align-items:center }
   .evmap { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:6px }
   .evmap svg { display:block; width:100%; height:600px; font-size:11px }
-  .evmap .n circle.body { fill:var(--rc, #94a3b8); stroke:var(--border2); stroke-width:1.5 }
-  .evmap .n text.initial { fill:#0b0d12; font-weight:800; font-size:15px } .evmap .n.program text.initial { fill:var(--text2) }
-  .evmap .n text.name { fill:var(--text); font-weight:600; font-size:11.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
-  .evmap .n.program circle.body { fill:var(--panel3); stroke:#94a3b8; stroke-width:1.5 } .evmap .n.program.bootstrap circle.body { stroke:#fbbf24; stroke-width:2 }
-  .evmap .n .halo { fill:none; stroke:url(#halo); stroke-width:4; stroke-dasharray:14 10; stroke-linecap:round; filter:drop-shadow(0 0 5px #60a5fa); animation:halo 2.4s linear infinite; transform-box:fill-box; transform-origin:center }
-  @keyframes halo { to { transform:rotate(360deg) } }
-  .evmap .n.cyc circle, .evmap .n.cyc rect { stroke-width:3 } .evmap .n.event rect { fill:#0b0e14; stroke:#6b5313 } .evmap .n text.ev { fill:#fcd34d; font-family:var(--mono); font-size:10px; font-weight:600 }
-  .evmap .n text { fill:var(--text); font-weight:600; pointer-events:none } .evmap .n .sub { fill:var(--muted); font-weight:400; font-size:9.5px }
-  .evmap .e { fill:none; stroke:#4b5563; stroke-width:1.4; opacity:.85 } .evmap .e.seen { stroke:#22c55e } .evmap .e.cyc { stroke:#fcd34d }
-  .evmap .dim { opacity:.1 } .evmap .n { cursor:grab }
   .evmap .legend { color:var(--muted); font-size:10.5px; margin-top:6px; display:flex; gap:14px; flex-wrap:wrap } .evmap .legend i { display:inline-block; width:18px; border-top:2px solid; margin-right:5px; vertical-align:middle }
-  .evmap .loops { font-size:12px; color:var(--text2); margin-top:8px } .evmap .loops b { color:#fcd34d }
   .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(380px, 100%), 1fr)); gap:12px }
   .cards .panel:focus-visible { outline:2px solid var(--accent); outline-offset:1px }
-  .cards .panel { margin:0; transition:box-shadow .3s } .cards .panel.flash { box-shadow:0 0 0 2px var(--accent) } .cards h3 { margin:0 0 6px; font-size:14px; display:flex; gap:8px; align-items:center }
+  .cards .panel { margin:0; transition:box-shadow .3s } .cards h3 { margin:0 0 6px; font-size:14px; display:flex; gap:8px; align-items:center }
   .row { font-size:12px; margin:4px 0; display:flex; gap:6px; flex-wrap:wrap; align-items:baseline } .row > .muted:first-child { width:84px; flex:none }
   .ty { background:var(--panel3); border:1px solid var(--border); border-radius:999px; padding:0 8px; font-size:11px; font-family:var(--mono); max-width:100%; overflow-wrap:anywhere }
   .cards .panel { min-width:0; overflow:hidden } .row > span:not(.muted:first-child) { min-width:0 }
@@ -60,6 +49,7 @@
 <script src="/static/sd-graph.js?v={{v}}"></script>
 <script src="/static/edge-color.js?v={{v}}"></script>
 <script src="/static/loops.js?v={{v}}"></script>
+<script src="/static/machine-graph.js?v={{v}}"></script>
 <script src="/static/intended-machines.js?v={{v}}"></script>
 <script>
 let DATA = null, ERA = "";   // "": the current era
@@ -76,70 +66,13 @@ function eraPicker(d) {
 Orchestra.machineList = () => (DATA ? DATA.machines : []);
 Orchestra.machinePanel = (id) => IntendedMachines.open(id);     // a machine opens in the panel beside the map
 
-// The observed machines and event types as the map's graph: machines publish event types
-// (machine → event), machines listen for event types (event → machine).
+// The map's graph (machine-graph.js): machines publish event types, listen for them, and which
+// listener edges a hand-off was observed through; with the declared layer's links (intended-machines.js)
 function machineGraph(d) {
-  const nodes = {}, evNodes = {}, links = {};
-  for (const m of d.machines) nodes["m:" + m.id] = { id: "m:" + m.id, kind: m.bootstrap ? "program" : "machine", label: m.name || m.id, mid: m.id, group: m.group,
-                                                     bootstrap: m.bootstrap, active: m.active, machine: true, instances: m.instances, mode: m.mode };
-  const day = {};
-  for (const m of d.machines) for (const p of m.publishes) day[p.type] = (day[p.type] || 0) + p.day;
-  const evNode = (type) => { const id = "ev:" + type; evNodes[id] = evNodes[id] || { id, kind: "event", label: type, cnt: day[type] || 0 }; return id; };
-  const link = (a, b, seen, inferred = false) => { const k = a + ">" + b;
-    links[k] = links[k] || { source: a, target: b, seen: 0, inferred, handoffs: 0 };
-    if (!inferred) { links[k].inferred = false; links[k].seen += seen || 0; } return links[k]; };
-  for (const m of d.machines) {
-    for (const p of m.publishes) link("m:" + m.id, evNode(p.type), p.day);
-    for (const t of m.subscribes) link(evNode(t), "m:" + m.id, day[t] || 0);
-  }
-  // hand-offs: a machine acted on a subject right after another machine's event about it, so it
-  // is inferred to listen for that event type (a dotted line, where nothing announced it)
-  for (const h of d.handoffs || []) {
-    if (!nodes["m:" + h.to] || !h.via) continue;
-    const l = link(evNode(h.via), "m:" + h.to, 0, true);
-    l.handoffs += h.day; if (l.inferred) l.seen += h.day;
-  }
-  // what a declaration says a machine listens for and emits (intended-machines.js): drawn even when
-  // nobody listens yet; a link the latest change removed stays, as a ghost
   const intents = new Map(d.machines.filter((m) => m.intent).map((m) => [m.id, m.intent]));
-  for (const e of IntendedMachines.links(d, EV_HIDDEN)) {
-    if (!nodes["m:" + e.machine]) continue;
-    const [a, b] = e.kind === "publishes" ? ["m:" + e.machine, evNode(e.type)] : [evNode(e.type), "m:" + e.machine];
-    const fresh = links[a + ">" + b] === undefined, l = link(a, b, 0);
-    if (fresh) l.declared = !e.observed;
-    if (e.gone) l.gone = true;
-    else if (IntendedMachines.added(intents.get(e.machine), e.kind === "publishes" ? "emits" : "receives").includes(e.type)) l.added = true;
-  }
-  // An event nobody listens for is a dead end on the map; hide those unless asked, so the
-  // picture is the communication pattern rather than the catalogue of everything published.
-  let ls = Object.values(links);
-  if (!window.EV_SHOW_ALL) { const watched = new Set(ls.filter((l) => l.source.startsWith("ev:")).map((l) => l.source)); ls = ls.filter((l) => !l.target.startsWith("ev:") || watched.has(l.target) || l.declared || l.gone); }
-  // Collapse event nodes that connect exactly the same publishers and listeners into one
-  // multi-line node: the map is about who talks to whom, not the catalogue of names.
-  const sig = {};
-  for (const n of Object.values(evNodes)) {
-    const ins = ls.filter((l) => l.target === n.id).map((l) => l.source).sort().join(","), outs = ls.filter((l) => l.source === n.id).map((l) => l.target).sort().join(",");
-    if (!ins && !outs) continue;
-    (sig[ins + "|" + outs] = sig[ins + "|" + outs] || []).push(n);
-  }
-  const alias = {};
-  for (const group of Object.values(sig)) {
-    if (group.length < 2) continue;
-    group.sort((a, b) => b.cnt - a.cnt || a.label.localeCompare(b.label));
-    const id = "ev:group:" + group.map((n) => n.id).join("+");
-    evNodes[id] = { id, kind: "event", label: group[0].label, labels: group.map((n) => n.label), cnt: group.reduce((a, n) => a + n.cnt, 0) };
-    for (const n of group) { alias[n.id] = id; delete evNodes[n.id]; }
-  }
-  if (Object.keys(alias).length) {
-    const merged = {};
-    for (const l of ls) { const a = alias[l.source] || l.source, b = alias[l.target] || l.target, k = a + ">" + b;
-      merged[k] = merged[k] || { ...l, source: a, target: b, seen: 0, handoffs: 0 }; merged[k].seen += l.seen; merged[k].handoffs += l.handoffs || 0;
-      merged[k].inferred = merged[k].inferred && l.inferred; merged[k].declared = merged[k].declared && l.declared; merged[k].gone = merged[k].gone && l.gone; merged[k].added = merged[k].added || l.added; }
-    ls = Object.values(merged);
-  }
-  const used = new Set(ls.flatMap((l) => [l.source, l.target]));
-  // every machine is drawn, connected or not; events only when something links them
-  return { nodes: [...Object.values(nodes), ...Object.values(evNodes).filter((n) => used.has(n.id))], links: ls };
+  const intended = IntendedMachines.links(d, EV_HIDDEN).map((e) => ({ ...e, kind: e.kind === "publishes" ? "publishes" : "listens",
+    added: !e.gone && IntendedMachines.added(intents.get(e.machine), e.kind === "publishes" ? "emits" : "receives").includes(e.type) }));
+  return MachineGraph.graph(d, { intended, showAll: !!window.EV_SHOW_ALL, hidden: (type) => EV_HIDDEN.has(family(type)) });
 }
 // Counted traffic (read from another system's bus by a source, never events): each channel is a
 // box, each producer → channel and channel → consumer a double line labelled with its rate. A count
@@ -197,7 +130,7 @@ function eventMap(d0) {
   if (!$("evsvg-host") || window.EV_DRAWN_MODE !== EV_MODE) {      // each view has a layout of its own
     window.EV_DRAWN_MODE = EV_MODE; window.LOOPSIG = null;
     $("evmap-host").innerHTML = `<div class="evmap"><div class="evbar" id="ev-bar"></div><div id="evsvg-host"></div>
-      <div class="legend">${EV_MODE === "machines" ? "" : '<span><i style="border-color:#4b5563"></i>publishes / listens for</span><span><span style="color:#fcd34d">▭</span> event type</span>'}${(d0.channels || []).length ? '<span><i style="border-top:5px double #94a3b8"></i>counted: a producer\'s or consumer\'s count on another system\'s bus, with its rate (no events)</span><span><span style="color:#67e8f9">▭</span> channel, with what waits in it</span>' : ""}<span>○ machine</span><span>halo: active by its own rhythm (heard within 2.5× its usual gap, at least 2 min; with no cadence yet, the 2-minute floor)</span><span><span style="color:#fbbf24">○</span> the host: running by the runtime record, not by its rhythm</span><span><i style="border-top:2px dashed #a78bfa"></i>dashed violet: declared, not observed (a guess)</span>${EV_MODE === "machines" ? "<span>an arrow: the machine publishes something the other listens for (hover a line for which); arrowheads at both ends: they talk both ways; thicker: more in the last 24 h; grey: not seen in 24 h</span>" : "<span>lines take their machine's colour: solid, it publishes; dashed, it listens; grey, not seen in 24 h</span>"}<span>dotted: inferred, not announced: the machine acted on something (an event's subject) right after this event about it</span><label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_ALL ? "checked" : ""} onchange="window.EV_SHOW_ALL=this.checked;window.LOOPSIG=null;render()"> show events nobody listens for</label><span>· drag nodes (they stay where dropped; double-click to release), scroll to zoom, hover to isolate, click a machine for its details and log</span></div>
+      <div class="legend">${EV_MODE === "machines" ? "" : '<span><i style="border-color:#4b5563"></i>publishes / handed on to</span><span><span style="color:#fcd34d">▭</span> event type</span>'}${(d0.channels || []).length ? '<span><i style="border-top:5px double #94a3b8"></i>counted: a producer\'s or consumer\'s count on another system\'s bus, with its rate (no events)</span><span><span style="color:#67e8f9">▭</span> channel, with what waits in it</span>' : ""}<span>○ machine</span><span>halo: active by its own rhythm (heard within 2.5× its usual gap, at least 2 min; with no cadence yet, the 2-minute floor)</span><span><span style="color:#fbbf24">○</span> the host: running by the runtime record, not by its rhythm</span><span><i style="border-top:2px dashed #a78bfa"></i>dashed violet: declared, not observed (a guess)</span>${EV_MODE === "machines" ? "<span>an arrow: the other machine acted next on a subject after this one's event about it, an observed hand-off (hover a line for which events); arrowheads at both ends: they talk both ways; thicker: more in the last 24 h; grey: not seen in 24 h</span><span><i style=\"border-top:1px dashed #64748b;opacity:.6\"></i>dashed and faint: declared only: the other announced it listens for what this one publishes, but no hand-off between them was observed</span>" : "<span>lines take their machine's colour: into an event type, the machine publishes it; out of one, a hand-off through it to the machine was observed on some subject; grey, not seen in 24 h</span><span><i style=\"border-top:1px dashed #64748b;opacity:.6\"></i>dashed and faint: a declared listener: the machine announced it listens for the type, but no hand-off through it was observed</span>"}<span>dotted: inferred, not announced: the machine acted on something (an event's subject) right after this event about it, without saying it listens for it</span><span>communication cycles count observed hand-offs only</span><label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_ALL ? "checked" : ""} onchange="window.EV_SHOW_ALL=this.checked;window.LOOPSIG=null;render()"> show events nobody listens for</label><span>· drag nodes (they stay where dropped; double-click to release), scroll to zoom, hover to isolate, click a machine for its details and log</span></div>
       <div class="ng-loops" id="loops"></div></div>`;
     GRAPH = NetGraph.create($("evsvg-host"), { key: "machines." + EV_MODE, height: 600, isolateHops: EV_MODE === "machines" ? 1 : 2, isolatedRow: true,
       onClick: (x, kind) => { if (kind === "node" && x.machine) openMachine(x.mid || x.label); },   // the panel (or, elsewhere, the dialog)
@@ -216,41 +149,54 @@ function eventMap(d0) {
   // an edge takes the colour of its machine (the publisher's, or the listener's: dashed), toned
   // down so the machines stand out (edge-color.js); unseen in 24 h: near-grey and fainter
   const nodeColor = (id) => { const n = nodes.find((x) => x.id === id); return !n ? "#94a3b8" : n.stroke === "#fbbf24" ? "#fbbf24" : n.color; };
+  // a listener edge: solid when a hand-off through the type to it was observed, dotted when only
+  // hand-offs say it listens (it never announced it), dashed and faint when it only announced it
+  const subjects = (n) => `${n} subject${n === 1 ? "" : "s"}`;
   const evEdges = g.links.map((l) => {
-    const listen = l.source.startsWith("ev:"), base = nodeColor(listen ? l.target : l.source);
-    return { id: l.source + ">" + l.target, source: l.source, target: l.target, seen: l.seen, dashed: listen && !l.inferred, inferred: l.inferred,
-             dash: l.inferred ? "1 5" : undefined, vias: l.inferred ? [`inferred: acted next on ${l.handoffs} subject${l.handoffs === 1 ? "" : "s"} after this event (24 h)`] : undefined,
-             color: edgeColor(base, l.seen ? (listen ? "listen" : "publish") : "unseen"), hoverColor: base,
-             width: l.inferred ? 1.4 + Math.min(2.5, Math.log10(1 + l.seen)) : l.seen ? 1.5 : 1, cls: (l.seen ? "ev-seen" : "ev-unseen") + (l.inferred ? " ev-handoff" : ""),
-             gone: l.gone, declared: l.declared, ...withCls(IntendedMachines.edgeStyle(l), l.seen ? "ev-seen" : l.declared || l.gone || l.added ? "" : "ev-unseen") };
+    const listen = l.source.startsWith("ev:"), base = nodeColor(listen ? l.target : l.source), dl = listen && l.declaredListener;
+    const vias = !listen ? undefined : l.inferred ? [`inferred: acted next on ${subjects(l.handoffs)} after this event (24 h)`]
+      : dl ? ["declared listener: it announced it listens for this, but no hand-off through it was seen"] : [`observed: acted next on ${subjects(l.observed)} after this event`];
+    const cls = (l.seen && !dl ? "ev-seen" : l.declared || l.gone || l.added ? "" : "ev-unseen") + (l.inferred ? " ev-handoff" : "") + (dl ? " ev-declared-listener" : "");
+    return { id: l.source + ">" + l.target, source: l.source, target: l.target, seen: l.seen, inferred: l.inferred, observed: l.observed, from: l.from, declaredListener: dl,
+             dash: l.inferred ? "1 5" : dl ? "5 4" : undefined, vias,
+             color: edgeColor(base, l.seen && !dl ? (listen ? "listen" : "publish") : "unseen"), hoverColor: base,
+             width: l.inferred ? 1.4 + Math.min(2.5, Math.log10(1 + l.seen)) : dl ? 1 : l.seen ? 1.5 : 1, cls,
+             gone: l.gone, declared: l.declared, ...withCls(IntendedMachines.edgeStyle(l), cls) };
   });
   IntendedMachines.decorate(d, nodes, g.links.filter((l) => l.declared || l.gone || l.added).map((l) => ({ ...l, ev: l.source.startsWith("ev:") ? l.source : l.target })));
-  // machine → machine, through an event type one publishes and the other listens for
-  const chains = [];
-  for (const a of evEdges) if (a.source.startsWith("m:") && a.target.startsWith("ev:") && !a.gone)
-    for (const b of evEdges) if (b.source === a.target && b.target.startsWith("m:") && !b.gone) chains.push({ source: a.source, target: b.target, via: a.target, evIds: [a.id, b.id], seen: Math.min(a.seen, b.seen), inferred: b.inferred, declared: !!(a.declared || b.declared) });
+  // machine → machine, through an event type one publishes and the other listens for; observed when
+  // a hand-off from the one through it to the other was seen (machine-graph.js)
+  // declared: one of its two edges is the declared layer's, not observed
+  const evById = new Map(evEdges.map((e) => [e.id, e]));
+  const chains = MachineGraph.chains(evEdges).map((c) => ({ ...c, declared: c.evIds.some((i) => (evById.get(i) || {}).declared) }));
   let drawNodes = nodes, drawEdges = evEdges;
   if (EV_MODE === "machines") {
     const label = (ev) => (nodes.find((n) => n.id === ev) || {}).lines || [ev.slice(3)];
     const pairs = new Map();
     for (const c of chains) {
-      const k = c.source + ">" + c.target, p = pairs.get(k) || { id: k, source: c.source, target: c.target, vias: [], seen: 0, inferred: true, declared: true };
-      p.vias.push(...label(c.via)); p.seen += c.seen; p.inferred = p.inferred && c.inferred; p.declared = p.declared && c.declared; pairs.set(k, p);
+      const k = c.source + ">" + c.target, p = pairs.get(k) || { id: k, source: c.source, target: c.target, vias: [], seen: 0, inferred: true, observed: false, declared: true };
+      // what was handed on is named; what the other only said it listens for, once nothing was
+      if (c.observed && !p.observed) { p.vias = []; p.seen = 0; p.inferred = true; }
+      if (c.observed || !p.observed) { p.vias.push(...label(c.via)); p.seen += c.seen; p.inferred = p.inferred && c.inferred; }
+      p.declared = p.declared && c.declared; p.observed = p.observed || c.observed; pairs.set(k, p);
     }
     drawNodes = nodes.filter((n) => n.machine).map((n) => ({ ...n, charge: -2200 }));   // room between machines for their lines
-    // two machines that talk both ways: one line, arrowheads at both ends (A→B's colour, toned)
+    // two machines that talk both ways (both observed, or both only declared): one line, arrowheads
+    // at both ends (A→B's colour, toned)
     const merged = new Map();
     for (const p of pairs.values()) {
       const back = pairs.get(p.target + ">" + p.source);
-      if (back && p.source !== p.target) {
+      if (back && p.source !== p.target && back.observed === p.observed) {
         const [a, b] = p.source < p.target ? [p, back] : [back, p], k = a.id;
-        if (!merged.has(k)) merged.set(k, { id: k, source: a.source, target: a.target, both: true, alias: b.id, seen: a.seen + b.seen, inferred: a.inferred && b.inferred, declared: a.declared && b.declared,
+        if (!merged.has(k)) merged.set(k, { id: k, source: a.source, target: a.target, both: true, alias: b.id, seen: a.seen + b.seen, inferred: a.inferred && b.inferred, observed: p.observed, declared: a.declared && b.declared,
           vias: [...[...new Set(a.vias)].map((v) => "→ " + v), ...[...new Set(b.vias)].map((v) => "← " + v)] });
       } else merged.set(p.id, { ...p, vias: [...new Set(p.vias)] });
     }
-    drawEdges = [...merged.values()].map((p) => { const base = nodeColor(p.source), decl = p.declared && !p.seen;
-      return { ...p, color: decl ? "#a78bfa" : edgeColor(base, p.seen ? "publish" : "unseen"), hoverColor: decl ? "#c4b5fd" : base, bend: p.both ? 0 : 22, dash: decl ? "5 4" : p.inferred ? "1 5" : undefined,
-               width: 1.2 + Math.min(3, Math.log10(1 + p.seen)), cls: (decl ? "im-decl-edge" : p.seen ? "ev-seen" : "ev-unseen") + (p.inferred && !decl ? " ev-handoff" : ""), distance: 190 }; });
+    // declared and never seen: the declared layer's guess (violet); otherwise observed, or a declared listener only
+    drawEdges = [...merged.values()].map((p) => { const base = nodeColor(p.source), decl = p.declared && !p.seen, dl = !p.observed && !decl;
+      return { ...p, color: decl ? "#a78bfa" : edgeColor(base, p.seen && !dl ? "publish" : "unseen"), hoverColor: decl ? "#c4b5fd" : base, bend: p.both ? 0 : 22, dash: decl ? "5 4" : p.inferred ? "1 5" : dl ? "5 4" : undefined,
+               vias: dl ? [...p.vias, "declared only: the other announced it listens for this, but nothing was handed on between them"] : p.vias,
+               width: dl ? 1 : 1.2 + Math.min(3, Math.log10(1 + p.seen)), cls: decl ? "im-decl-edge" : (p.seen && !dl ? "ev-seen" : "ev-unseen") + (p.inferred ? " ev-handoff" : "") + (dl ? " ev-declared-listener" : ""), distance: 190 }; });
     const aliasOf = new Map(drawEdges.filter((e) => e.alias).map((e) => [e.alias, e.id]));
     for (const c of chains) { const k = c.source + ">" + c.target; c.machineId = aliasOf.get(k) || k; }
   }
@@ -263,11 +209,11 @@ function eventMap(d0) {
   // the opened machine and its neighbours fill the view, readable; closing goes back to the whole map
   const fitKey = open ? open + "|" + EV_MODE : null;
   if (fitKey !== window.EV_FITTED) { window.EV_FITTED = fitKey; const g = GRAPH; requestAnimationFrame(() => g.fitAround(open ? "m:" + open : null)); }
-  // communication cycles (loops.js): machine → machine when one publishes an event type the other
-  // listens for. Two machines that talk both ways directly are an exchange (a request and its reply);
+  // communication cycles (loops.js): machine → machine when one handed something on to the other
+  // through an event type (an observed hand-off, never only an announcement). Two machines that talk both ways directly are an exchange (a request and its reply);
   // the rest is shown as its feedback structures and their independent loops, not every cycle
   const name = (id) => { const n = nodes.find((x) => x.id === id); return n ? (n.lines ? n.lines.join("/") : n.label) : id; };
-  const mm = chains;
+  const mm = chains.filter((c) => c.observed);
   const machineIds = nodes.filter((n) => n.machine).map((n) => n.id);
   const r = Loops.analyse(machineIds, mm, { exchanges: true });
   const vias = (ls) => (EV_MODE === "machines" ? [] : [...new Set(ls.map((l) => l.via))]);
@@ -276,7 +222,7 @@ function eventMap(d0) {
     return [...inf].map(([v, i]) => esc(name(v)) + (i ? " (inferred)" : "")).join(", "); };
   const items = [];
   for (const x of r.exchanges) items.push({ nodes: [...x.nodes, ...vias(x.there), ...vias(x.back)], edges: [...x.there, ...x.back].flatMap((l) => l.ids),
-    html: `<span class="ng-pol X" title="an exchange: each publishes something the other listens for">⇄</span><b>${esc(name(x.nodes[0]))} ⇄ ${esc(name(x.nodes[1]))}</b>: <span class="muted">→</span> ${viaText(x.there)} <span class="muted">←</span> ${viaText(x.back)}` });
+    html: `<span class="ng-pol X" title="an exchange: each handed something on to the other">⇄</span><b>${esc(name(x.nodes[0]))} ⇄ ${esc(name(x.nodes[1]))}</b>: <span class="muted">→</span> ${viaText(x.there)} <span class="muted">←</span> ${viaText(x.back)}` });
   for (const st of r.structures) for (const l of st.loops) {
     const links = l.links.flat();
     items.push({ nodes: [...l.nodes, ...vias(links)], edges: links.flatMap((x) => x.ids),
@@ -288,7 +234,7 @@ function eventMap(d0) {
   window.LOOPSIG = lsig; GRAPH.highlight(null);
   const st = r.structures[0];
   $("loops").innerHTML = items.length ? `<div class="head">Communication cycles · click one to highlight it · ${r.exchanges.length} exchange${r.exchanges.length === 1 ? "" : "s"} (two machines talking both ways)${st ? ` · ${r.structures.reduce((a, x) => a + x.loops.length, 0)} independent loop${r.structures.reduce((a, x) => a + x.loops.length, 0) === 1 ? "" : "s"} of three or more machines, which make up all ${r.structures.reduce((a, x) => a + x.cycles, 0)}${r.structures.some((x) => x.cycles >= 2000) ? "+" : ""} cycles between them` : ""}</div><div id="looplist"></div>`
-    : "<span class='muted'>No communication cycles: nothing any machine publishes reaches a machine that can publish back to it.</span>";
+    : "<span class='muted'>No communication cycles: nothing any machine handed on reached a machine that handed something back to it.</span>";
   if (items.length) NetGraph.loopList($("looplist"), GRAPH, items);
 }
 function cards() {

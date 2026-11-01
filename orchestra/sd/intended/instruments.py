@@ -13,8 +13,6 @@ from __future__ import annotations
 from .attach import parse
 from .checks import IntentError
 
-OWN_KINDS = ("script", "URL", "collector")
-
 
 class Instruments:
     def __init__(self, project):
@@ -32,21 +30,19 @@ class Instruments:
         return self._specs
 
     def kinds(self) -> dict[str, str]:
-        """Every instrument's name and kind: ``script``, ``URL``, ``collector`` (a plugin's, kind
-        not recorded) or ``source``."""
+        """Every instrument's name and kind, as the Instruments page lists them
+        (``collect.kinds.instrument_kinds``)."""
         if self._kinds is None:
             from ... import runtime
+            from ...collect.kinds import instrument_kinds
             from ...collect.spec import from_toml
 
             try:
                 record = runtime.read(self.project).get("instruments") or {}
             except Exception:  # noqa: BLE001 - no record: the configuration's entries stand
                 record = {}
-            out = {n: r.get("kind") if r.get("kind") in OWN_KINDS else "collector" for n, r in record.items()}
             found, _ = from_toml(getattr(self.project.config, "raw", None) or {})
-            out |= {c.name: c.what for c in found}
-            out |= {s.name: "source" for s in self.specs().sources}
-            self._kinds = out
+            self._kinds = instrument_kinds(record, found, self.specs().sources)
         return self._kinds
 
     def source(self, name: str):
@@ -55,12 +51,12 @@ class Instruments:
     def definitions(self, name: str) -> list:
         """A source's definitions: the host's cached inference, or only the declared ones."""
         from ...sources.cache import cached
-        from ...sources.infer import _declared
+        from ...sources.infer import declared_definitions
 
         spec = self.source(name)
         if spec is None:
             return []
-        declared = _declared(spec, self.specs().declared)
+        declared = declared_definitions(spec, self.specs().declared)
         inf = cached(self.project.state_dir, name) if spec.infer else None
         seen = {d.id for d in declared}
         return declared + [d for d in (inf.kept if inf else []) if d.id not in seen]
@@ -76,7 +72,7 @@ class Instruments:
             return
         spec = self.source(name)
         prefix, _ = parse(att.get("match"))
-        prefix = prefix.removeprefix(f"{spec.prefix}:")
+        prefix = prefix.removeprefix(spec.series_prefix)
         defs = [d for d in self.definitions(name) if d.name.startswith(prefix)]
         dropping = [d for d in defs if drops(d, label, spec.aliases())]
         if defs and len(dropping) == len(defs):

@@ -16,11 +16,18 @@ joins two stocks (each took its own machine's copy). Three passes, in this order
 - ``unify_same_flows``: two counters of the same events, each in a balance (two machines' counts
   of one event; a move recorded in two hops, a moment apart, through a state the grid never sees
   held), become one in every balance, so the one flow runs between the stocks and, where the
-  event moves two machines' stocks, is a co-flow (``sd.ends``).
+  event moves two machines' stocks, is a co-flow (``sd.ends``); never two a measured level lies
+  between (``measured_between``).
 
 A restated balance must still fit as a stock's (the caller's ``fits``), or the level keeps what it
 had. Each pass returns the balances and, per counter replaced, why (for the record, when no
-balance keeps it)."""
+balance keeps it).
+
+Right after the join (so identification judges each stock on its own counters) and again once
+every balance is final, ``own_counters_back`` gives each stock back its own writer's
+counter of events ``unify_same_flows`` joined to another writer's: one event, two writers' records
+(the worker's review request moves a ticket and starts the reviewer's turn), each stock balanced by
+its own, the pair still one flow and a co-flow with one rate (``sd.ends``)."""
 
 from __future__ import annotations
 
@@ -28,6 +35,7 @@ from itertools import combinations
 
 from .balance import fit_of
 from .collinear import decompose
+from .live import balance_steps
 from .series import EVENT_COUNTER, Series, written_by
 
 
@@ -100,11 +108,36 @@ def _held_together(found: list, a: Series, b: Series) -> bool:
     return any(any(c is a for c, _ in terms) and any(c is b for c, _ in terms) for _, terms, _, _ in found)
 
 
-def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamped, writer_of, fits
-                     ) -> tuple[list, dict[str, str], list[tuple[Series, Series]]]:
+def measured_between(levels: list[Series], a: Series, b: Series) -> bool:
+    """Whether a measured level is the buffer between two counters: one fills it and the other
+    drains it (either way round), within half a unit in every step where the level and both
+    counters are live, and in at least one of those steps the counters differ and the level moved
+    by a whole unit with them. However seldom it moved (the shelf an order leaves within seconds,
+    read as held in two steps of an hour, too few to be a stock), the grid tells the two apart in
+    its steps: its inflow and its outflow, never one flow. A gauge whose moves are all fractions
+    (a rating, a mean age) explains no difference of counts, and is never a buffer."""
+    for lv in levels:
+        if lv.counter:
+            continue
+        steps = balance_steps(lv, [a, b])
+        if not any(abs(lv.deltas[i]) >= 1 and a.deltas[i] != b.deltas[i] for i in steps):
+            continue
+        if any(fit_of(lv, [(a, sg), (b, -sg)], steps)[1] >= 1.0 - 1e-9 for sg in (1, -1)):
+            return True
+    return False
+
+
+def buffers(levels: list[Series], unit: dict[str, str]):
+    """``measured_between`` over the levels in the counters' own unit, for ``unify_same_flows``."""
+    return lambda a, b: measured_between([lv for lv in levels if unit[lv.key] == unit[a.key]], a, b)
+
+
+def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamped, writer_of, fits,
+                     between=lambda a, b: False) -> tuple[list, dict[str, str], list[tuple[Series, Series]]]:
     """Two counters of the same events (``same``: in the same steps, or one stamped up to a step
     after the other), each in a balance, become one counter in every balance, unless a balance
-    holds both (``_held_together``). Within a machine the flow then runs between its stocks
+    holds both (``_held_together``) or a measured level lies between them (``between``:
+    ``measured_between``). Within a machine the flow then runs between its stocks
     instead of leaving one and entering the other from outside; where the two counters are two
     machines' records of one event moving each one's own material (an order accepted leaves the
     board's waiting and takes one of the kitchen's cooks), the one counter is claimed by both
@@ -115,7 +148,9 @@ def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamp
     customers' count of the same returns: a stock's own machine's counters come first), then the
     one stamped first (the flow's events are judged against the levels just before them, which
     the later stamp has already moved), then the one that leaves the balances fitting best. Returns the balances,
-    why each counter dropped was (by key), and the pairs joined (kept, dropped)."""
+    why each counter dropped was (by key), and the pairs joined (kept, dropped). Where the dropped
+    one was another writer's stock's own, that stock takes it back once every balance is final
+    (``own_counters_back``)."""
     found = list(found)
     notes: dict[str, str] = {}
     joined: list[tuple[Series, Series]] = []
@@ -123,7 +158,7 @@ def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamp
     gone: set[str] = set()
     for a, b in combinations(sorted(used), 2):
         ca, cb = used[a], used[b]
-        if a in gone or b in gone or _held_together(found, ca, cb) or not same(ca, cb):
+        if a in gone or b in gone or _held_together(found, ca, cb) or not same(ca, cb) or between(ca, cb):
             continue
         best = None
         for keep, drop in ((ca, cb), (cb, ca)):
@@ -147,3 +182,27 @@ def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamp
             joined.append((keep, drop))
             gone.add(drop.key)
     return found, notes, joined
+
+
+def own_counters_back(found: list, joined: list[tuple[Series, Series]], masks: dict[str, list[int]], writer_of, fits
+                      ) -> tuple[list, dict[str, tuple[Series, Series]]]:
+    """Each stock whose writer wrote a counter that ``unify_same_flows`` joined to another writer's
+    (``joined``: (kept, dropped)) takes its own back, where its balance still holds the kept one and
+    still fits with its own: no stock is balanced by another instrument's count of its events while
+    its own exists. Orchestra's event counter is no one's own. Returns the balances and, per counter
+    given back (by its key), the pair (kept, given back): the two stay one flow and a co-flow
+    (``sd.ends.claims``)."""
+    out, back = [], {}
+    for s, terms, r2, exact in found:
+        for keep, drop in joined:
+            w = writer_of(drop)
+            if (EVENT_COUNTER in (keep.name, drop.name) or w is None or w == writer_of(keep) or writer_of(s) != w
+                    or not any(c is keep for c, _ in terms) or any(c is drop for c, _ in terms)):
+                continue
+            mine = [(drop if c is keep else c, sg) for c, sg in terms]
+            r2b, exact2 = fit_of(s, mine, masks[s.key])
+            if fits(s, r2b, exact2):
+                terms, r2, exact = mine, r2b, exact2
+                back[drop.key] = (keep, drop)
+        out.append((s, terms, r2, exact))
+    return out, back

@@ -118,8 +118,7 @@ is unchanged and replay never lies (`docs/proposals/event-sources.md` §1).
 
 **Subscriptions.** Until the bus adapters provide subscriptions with leases
 (`docs/proposals/empty-orchestra.md` §3), a machine reads the bus by offset and announces what it
-listens for in `orchestra.machine.started` (the older `orchestra.machine.subscribed` with
-`data.types` is read too). The Machines page draws
+listens for in `orchestra.machine.started`. The Machines page draws
 the graph of publishers, event types and listeners from what it observes.
 
 ---
@@ -175,8 +174,8 @@ JSON), `subject`, `time` (RFC 3339 with a timezone; normalised to UTC millisecon
 event through `orchestra.events.Events.publish`, which makes the envelope (AGENTS.md rules 3 and
 5): it never reads `data`, and never touches a backend. It refuses, with a reason: an unknown
 field; a missing or malformed `type` or `source` (`<machine>` or `<machine>/<instance>`); a type
-starting `orchestra.` other than a machine's own announcements, `orchestra.machine.started` and
-`orchestra.machine.subscribed`, and its predictions, `orchestra.prediction.made` (403); the source `orchestra-host` (403); text fields over their
+starting `orchestra.` other than a machine's own announcement, `orchestra.machine.started`,
+and its predictions, `orchestra.prediction.made` (403); the source `orchestra-host` (403); text fields over their
 limits (type and source 256 characters, subject and the extensions 1024, id 256); a body over
 1 MB (413). The answer is `201 {"ok": true, "id", "duplicate": false, "event"}`. **Idempotency:**
 no backend refuses a repeated id, so the endpoint keeps the ids of the bus's last 10,000 events
@@ -376,7 +375,8 @@ Conservation (`sd/discover.py`):
    that move together in all but 3% of steps are one when one is Orchestra's count of the
    other's events, or both are one machine's: the machine's own, then the shorter name, is kept;
    two machines' counts of the same events both stay (each machine's stocks take their own) and
-   become one afterwards where they join two stocks (step 2). Counters that differ in a label whose
+   become one flow afterwards where they join two stocks, each stock still balanced by its own
+   (step 2). Counters that differ in a label whose
    values tell measured levels apart (pods started in us-east, and pods started or stopped in
    us-west) are never one, however often their events coincide (rolling deploys that reach every
    region in the same minutes), and never join one passage (step 3). Counters that differ only by
@@ -401,7 +401,9 @@ Conservation (`sd/discover.py`):
    (least squares on all counters rounded to ±1, nothing, each counter alone, the best pairs)
    with the best kept, on the counters' Gram matrix so each candidate move is cheap
    (`sd/balance.py`). A balance exact in every step earns back most of one penalty, so the rare
-   counter that completes it (a refund among a hundred orders) is kept. A small set of chosen
+   counter that completes it (a refund among a hundred orders) is kept; every start's result is
+   completed before the best is chosen, so an exact balance that needs a rare counter beats a
+   stand-in's near miss (another instrument's count of both ways out of a state, one a step late). A small set of chosen
    counters that cancels to nothing is dropped, and one that equals an unchosen counter is
    replaced by it (`sd/collinear.py`). The level's own machine's counters are searched first
    (its record of its transitions, with Orchestra's counts of its events): when they balance it
@@ -422,7 +424,15 @@ Conservation (`sd/discover.py`):
    copy of one of them); another machine's counter that no other stock claims to the level's
    own counters that sum to it; and two machines' counts of one flow, one leaving a stock and
    the other entering another, to one counter in both balances (one that a stock of its own
-   machine holds before another machine's copy, then the one stamped first). Last, two or three
+   machine holds before another machine's copy, then the one stamped first), unless a measured
+   level in their unit is the one less the other (either way round, within half a unit) in every
+   step where it and both are live, and moved by a whole unit in a step where they differ,
+   however seldom it moves (a shelf left within seconds): that level is the buffer between them,
+   and they are its inflow and outflow. Right after the join, and again once every balance is final, a stock whose own
+   writer's count was joined to another writer's takes its own back, so it is identified on
+   its own counters: no stock is balanced by another instrument's count of its events while its
+   own exists. The two
+   stay one flow and its co-flow, with one rate, each measured by its own writer's series. Last, two or three
    of a balance's counters whose signed sum one unused counter counts by itself (each a moment
    before or after the other: running totals never more than an event apart) give way to it
    (`sd/parsimony.py`: the customers' orders less the app's are the takers' own orders taken),
@@ -618,7 +628,8 @@ system, so a new **era** begins, and the era is the window the model is discover
   `data`): `system.changed`, the generic mark any machine publishes when it changed the system
   (`source`: the machine; `subject`: what it changed, optionally), always does; `[discovery]
   eras_from` names more, as filters `type[:source=glob,subject=glob]` (default
-  `["config.changed"]`, what the Supervisor publishes when it changes the configuration).
+  `["config.changed"]`, the conventional type any machine may publish when it changes the
+  configuration).
   Orchestra's own events (`orchestra.*`) never do. The host records each such event once as an
   era `e1`, `e2`, … (`model/eras.json`: start, label `type from source`, the cause event's id,
   type, source and subject) and announces it, `orchestra.era.started` (subject the era's id,
@@ -1128,7 +1139,7 @@ it (rule 7).
   are resolved one way everywhere (`intended/names.py`): a declared id through its `found_as`
   (without one, "waits for a link" when its measure has a chosen option, else "waits for a
   series"), or a discovered key; otherwise, a discovered id included, "not in the model" (an
-  unresolved end of a flow is named: "tickets_open: not in the model"). A draft names keys; a
+  unresolved end of a flow is named: "orders_open: not in the model"). A draft names keys; a
   plugin publishing a draft as
   `orchestra.prediction.made` turns them into the era's ids. A target on an effect found only as
   an input is judged on that input's series. A recording is read for the project's own points. A
@@ -1288,8 +1299,8 @@ simulated = true                 # optional: a placeholder; its points are label
 draft = true                     # optional: an option being tried; its points are labelled draft="true"
 expires = "2026-11-08T00:00:00Z" # with draft: when its plugin removes it (data only)
 [collect.views]                  # optional: how it made its series (§4.2), for discovery
-workflow_pile_items = { view = "count", place = "pile", where = { kind = "step" } }
-workflow_item_moves_total = { view = "moves", starts = "to", stops = "from" }
+items = { view = "count", place = "place", where = { kind = "step" } }
+item_moves_total = { view = "moves", starts = "to", stops = "from" }
 
 [[scrape]]
 name = "app"
@@ -1424,7 +1435,7 @@ url = "file"            # or http://host:8428 (VictoriaMetrics)
 auth = "on"             # the web UI asks for the project's token (§10.2); "off" only on a loopback bind
 [discovery]             # strategy, window, step, every, [discovery.options]
 strategy = "kalman_lna"
-eras_from = ["config.changed", "role.changed:source=supervisor"]   # begin an era, besides system.changed (§4.3)
+eras_from = ["config.changed", "deploy.finished:subject=billing*"]   # begin an era, besides system.changed (§4.3)
 prior_for = "60m"       # how long a new era carries what it has not found of its prior (default: window)
 announce_hold = 3       # discoveries a structure change holds before orchestra.model.changed
 announce_gap = "30m"    # the least time between two orchestra.model.changed
@@ -1557,11 +1568,20 @@ intended model's closed list of page controls (§4.6, AGENTS.md rule 9). Navigat
   minutes; the cadence is the gap observed between its bursts of events, so a job that runs
   rarely is active between its runs; never by a write to a series, whatever its labels, and never
   by anything stamped in the future), the event map (by default machines only: an
-  arrow where one publishes an event type the other listens for, one line with two arrowheads where
+  arrow where one machine handed something on to the other, one line with two arrowheads where
   two talk both ways, thicker with more traffic, the event types on hover; or with the event types
-  as boxes; event families, the name up to its first dot, can be hidden; dotted, the hand-offs
-  inferred from the envelope: one machine acted on a subject after another did, which connects
-  machines that announce nothing, such as a system brought in from outside; and **counted
+  as boxes; event families, the name up to its first dot, can be hidden. A hand-off is inferred
+  from the envelope alone: one machine acted on a subject right after another's event about it,
+  credited to an event type the receiver announced it listens for when there is one. What a
+  machine announces it listens for is a declaration, not a hand-off: an event type → machine line
+  is solid only when a hand-off through that type to that machine was observed on some subject in
+  the era (the API's `handoffs`, by `via` and `to`), and a machine → machine arrow only when one
+  from that publisher was; a listener that announced the type and received nothing through it
+  keeps a faint dashed **declared listener** line, so the announcement stays visible without
+  reading as traffic (two machines that publish and listen for the same type are not thereby
+  talking: the workflows plugin's `offer.*` events, worker → merge gate). Dotted, a hand-off through
+  a type the receiver never announced, which connects machines that announce nothing, such as a
+  system brought in from outside (`static/machine-graph.js`); and **counted
 traffic** (§2, §4.4): each channel a box with what waits in it, each producer → channel and channel
 → consumer a double line labelled with its rate per minute, a count no machine is attributed to
 coming from or going to a grey "unattributed" stub), its feedback loops, and the flows of the
@@ -1633,7 +1653,8 @@ not every cycle: a graph's feedback structures (its strongly connected parts) ar
 each an independent loop set (the shortest cycle through each link, kept only when it adds a link,
 after Oliva 2004), with cycles through the same nodes merged as routes of one loop; all other
 cycles are combinations of these. On the event map two machines that talk both ways are an
-exchange, listed apart, and a loop has at least three machines ("communication cycles"). On the
+exchange, listed apart, and a loop has at least three machines ("communication cycles", made of
+observed hand-offs only: a declared listener closes no cycle). On the
 Dynamics page each loop is balancing or reinforcing and either "items circulate" (every link
 material moving along a flow) or "information" (a level steering a rate). Clicking one highlights
 it. Pages read only the web server's background caches

@@ -7,7 +7,7 @@ on the always-imported path imports these modules at module level."""
 
 from __future__ import annotations
 
-MODULES = {"numpy", "scipy", "numba", "highspy", "sympy"}
+MODULES = {"numpy", "scipy", "numba", "highspy"}
 INSTALL = "pip install 'orchestra[sd]'"
 
 

@@ -24,7 +24,7 @@ from the previous era's model that this era has not measured yet (origin ``prior
 not trusted when a flow into or out of it is not, when it is hidden (no series measures it, so it
 starts at 0), when it has no measured level now, or when the model's own run since the era began
 (``sd.simulate``) misses its measured level by more than the level's own variation
-(``MAX_ERA_ERROR``): the stand-in for a validation bar until one is defined
+(an ``era_errors`` above 1): the stand-in for a validation bar until one is defined
 (docs/proposals/control-theory.md §7.1)."""
 
 from __future__ import annotations
@@ -40,7 +40,6 @@ FLOOR_REPLAYED = 0.1
 MIN_EVENTS = 20
 MIN_MINUTES = 10.0
 MIN_R2 = 0.5
-MAX_ERA_ERROR = 1.0
 
 
 def spread(f: Flow, replayed_rates: list[float] | None = None) -> tuple[float, str]:

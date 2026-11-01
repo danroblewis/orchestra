@@ -14,8 +14,8 @@ Which series are counts of reporters and their turnover is the source's to say: 
 views (``count``, ``starts``, ``stops``), passed to discovery as the reading's provenance.
 
 **Piles** are the other construction: an instrument that counts the items in each pile and every
-move between piles from one record (the Workflows plugin's ``workflow_pile_items{workflow, pile}``
-and ``workflow_item_moves_total{workflow, from, to}``, from one fold) says so with its views
+move between piles from one record (``items{place}`` and
+``item_moves_total{from, to}``, from one record) says so with its views
 (``orchestra.collect.views``): the level's ``count`` names its ``place`` label, a move's ``moves``
 names the labels of the place it ``starts`` (enters) and ``stops`` (leaves), or a counter is the
 ``starts`` or ``stops`` of one place. The level and its own moves are then one construction: every
