@@ -14,8 +14,8 @@ done and passed a stranger test.
 
 ## 1. What was built, and where
 
-**Core, `~/orchestra_2`** (GitHub danroblewis/orchestra). `main` is pushed at `0320aecf` (code at `0d975c8c`),
-with the UX review's three rounds and the refinement-marks fix. It holds
+**Core, `~/orchestra_2`** (GitHub danroblewis/orchestra). `main` is `ddbabd8c` (code at `1f01a878`, pushed),
+with the UX review's three rounds and the discovery fixes. It holds
 the intended model in `orchestra/sd/intended/` (declared stocks, effects,
 targets, machines and events, the expected set, three states, version diffs, provenance), the
 Dynamics states D1 to D3, the Machines states E1 to E4, instruments on declared machines, collector
@@ -36,8 +36,8 @@ is the holder", pushed. M4 and M5 are complete.
 
 **Live demo, `~/orchestra-live-demo`** (not a git repository), behind orchestra.dansproject.space
 on :8096. It runs the agents' demo with `--dummy` from worktrees on branch `demo-live` (core
-`~/orchestra-wt/demo`, agents `~/orchestra-agents-wt-demo`); it was restarted on core `0d975c8c`
-at about 12:00Z. The login link is in `~/orchestra-live-demo/LOGIN.txt`.
+`~/orchestra-wt/demo`, agents `~/orchestra-agents-wt-demo`); it was restarted on core `2dac4bb4`
+at about 12:45Z. The login link is in `~/orchestra-live-demo/LOGIN.txt`.
 
 ## 2. Status per task
 
@@ -56,7 +56,7 @@ at about 12:00Z. The login link is in `~/orchestra-live-demo/LOGIN.txt`.
 | C1 | done | layered review, 3 fix rounds |
 | C2, C3 | done | D1 to D3 and E1 to E4 render from real page code |
 | C4 | done | measured instances, `[intended] max_instances=50` |
-| C5 | done with caveats | subtraction audit applied; UC-1..3 at 9, 8, 5 of 10 |
+| C5 | done with caveats | subtraction audit applied; UC-1..3 at 9, 8, 6 of 10 |
 | C6 | not done | file-bus rotation, "later, if time"; never dispatched |
 | C7, C8 | done | collector provenance; API fields for A1 |
 | C9 | done | the map draws only observed hand-offs |
@@ -146,7 +146,8 @@ The last green run per repository, as logged. `ruff check` was clean at every pu
 
 | Repository | Commit | Result |
 |---|---|---|
-| core | `0d975c8c` | unit 948 passed, rc=0; screenshots 6 passed |
+| core | `1f01a878` | unit 956 passed, rc=0 |
+| core | `0d975c8c` | screenshots 6 passed |
 | core | `513a998d` | unit+metrics+sources 1079 passed, 25 skipped, rc=0 |
 | agents | `30a84fe` | unit 533 passed, 1 skipped, rc=0 |
 | agents | `80c115c` | full suite 408 passed, 2 skipped, rc=0, 19m44s |
@@ -160,38 +161,39 @@ workflow test keeps the first claim per offer. Proven 20/20 under 8-suite load; 
 ## 6. Model acceptance
 
 Ten checks per use case, on verified clones. UC-1 went from 6 to 9/10, UC-2 from 6 to 8, UC-3
-from 4 to 5. None passes yet. What is left is sampling windows (case settings) and two UC-3
-defects in the core.
+from 4 to 6. None passes yet. What is left is mostly sampling windows (case settings).
 
-- **UC-1 (bakery): 9/10 on `b59f7ad1`.** The first attempt never ran (a linked worktree shares the
-  main checkout's state). A clone scored 6/10 with two counter-merge bugs, fixed by the restate fix
-  (`94e3f774`, `befc2638`, one refuter round): a stock keeps its own writer's counters, and a level
-  that is exactly one counter minus the other stops their merge. The re-score finds customers
-  waiting, on shelf and a lease-expired flow; no regressions. The miss: the rating is read by
-  assigned, not placed.
+- **UC-1 (bakery): 9/10 on `b59f7ad1`.** A clone scored 6/10 with two counter-merge bugs, fixed
+  by the restate fix (one refuter round): a stock keeps its own writer's counters. The re-score
+  finds customers waiting, on shelf and a lease-expired flow; no regressions. The miss: the rating
+  is read by assigned, not placed.
 - **UC-2 (tasking programs): 8/10 on `849dfd28`.** Now found: REJECTED as a stock, the rework loop,
   the capacity rate; every balance exact, nothing forbidden, no discovery bug. The misses are
   sampling: OPEN was non-zero in 1 of 421 five-second steps, READY_FOR_REVIEW and IN_REVIEW never.
   Sampling every 1 s would fix all four.
-- **UC-3 (agents and a program): 5/10 on `849dfd28`.** Now found: IN_REVIEW, the rejection loop,
-  the reviewer's agents balanced by its own turns. Short windows remain, and two discovery
-  defects: a level that never falls was taken as the buffer between APPROVED→MERGING and landed
-  (a buffer must fill and drain), and `orchestra_events_total{type=gate.landed}` became a flow
-  beside the gate's own counter (possibly a regression from `b59f7ad1`).
+- **UC-3 (agents and a program): 6/10 on `1f01a878`.** Two discovery defects found at 5/10 were
+  fixed (`1f01a878`, one refuter round; neither a regression). A buffer between two counters must
+  fill and drain within the window (`fills_and_drains` in `orchestra/sd/between.py`). A bus count
+  is filed under another writer's counter only when that counter names the event's machine and
+  counts alike; timing alone is no evidence. Now IN_REVIEW to MERGING to DONE is joined. The misses are sampling, plus one
+  new spurious fit: `repo_commits` balanced by five counters, among them the host's own events.
 
-<!-- PENDING: uc3-fixes branch (the never-falling buffer and the duplicate gate.landed flow): outcome and merge -->
-Pending at the time of writing: the two UC-3 fixes on branch `uc3-fixes`.
+<!-- PENDING: host-events branch (Orchestra's own event types kept out of balances; a parsimony bound): outcome and merge -->
+Pending at the time of writing: the third discovery fix, on branch `host-events`.
 
 ## 7. Live model spend
 
 A3 $6.33 (Haiku with Sonnet fallback turns), A3b $0.19, I3 about $0.13. Total about $6.65,
-approximate, under the $30 cap.
+under the $30 cap.
 
 ## 8. Open findings and follow-ups
 
+<!-- PENDING: release gate (subtraction audit with contract drift, layered review per repository, final verifier; fixes on each repository's gate branch) -->
+Pending at the time of writing: the release gate, launched at about 12:47Z.
+
 **Core.**
 - The loop finder sees no cycle when a turn's end is fitted on the oldest item's age (W6).
-- The event map overflows about 10 px at 390 px width.
+- The event map overflows 10 px at 390 px width.
 - Fixed: the Machines page now marks every edit of a refinement, not the last (`b8847702`).
 - D3's screenshot 503 is the simulate endpoint without numpy/scipy: sync worktrees with
   `--extra sd` too (now in COORDINATOR.md, which also forbids syncing your main checkout).
@@ -214,10 +216,9 @@ approximate, under the $30 cap.
   `propose_measurements` needs `list_metrics` first; events must be heard or announced;
   `read_events` returns the newest 20; effects and confirm accept only model flows; no time zone
   is guessed; a loop is a machine, not a duty.
-- Still seen on Haiku in A3b: turn 1 declared an extra machine; it refused to link `repo_files`
-  (it counts every tracked file, not notes files) and recorded its own instrument; turn 5's
-  scheduling removed all the receives (the tool now warns); transcript redaction's email pattern
-  turns flow ids containing `@` into `[email]`.
+- Still seen on Haiku in A3b: an extra machine declared in turn 1; its own instrument instead of
+  `repo_files` (which counts every file); turn 5's scheduling removed all receives (now warned);
+  redaction turns flow ids containing `@` into `[email]`.
 - A5's block is bypassed by a full-path `gh` or an explicit pushurl.
 
 **Workflows.**
@@ -235,9 +236,8 @@ not re-verified.
 **Tasking.** The scheduler has the parent leak H7 fixed in the agents host: after SIGKILL of
 `orchestra run` it is reparented to pid 1. Not fixed; tasking is the prototype.
 
-**Housekeeping.** Worktrees left: core `~/orchestra-wt/C1`, `C2`, `demo`; agents
-`~/orchestra-agents-wt-A3`, `-A3b`, `-C5`, `-demo`; workflows `~/orchestra-workflows-wt-fix`,
-`-wt-X34`; the clone `~/orchestra-bakery-clone-UC1b`. Keep both `demo` worktrees.
+**Housekeeping.** Worktrees left: `~/orchestra-wt/C1`, `C2`; `~/orchestra-agents-wt-A3`, `-A3b`,
+`-C5`; `~/orchestra-workflows-wt-fix`, `-wt-X34`; clone `~/orchestra-bakery-clone-UC1b`.
 
 ## 9. What the coordinator got wrong
 
@@ -249,6 +249,5 @@ not re-verified.
 - **Your venv may have lost its plugins.** A `uv sync` may have removed the plugins from the venv
   that serves :8040. `~/orchestra_2/.venv` now holds only the core. Check that server and
   reinstall the plugins if they are missing.
-- **A suite ran on a moving worktree.** The restate refuter checked out `main`'s two files in the
-  restate worktree while the coordinator's suite ran there. That run was thrown away and the suite
-  re-run on the fixed branch.
+- **A suite ran on a moving worktree.** The restate refuter checked out `main`'s files in the
+  worktree where the coordinator's suite ran. That run was thrown away and re-run.
