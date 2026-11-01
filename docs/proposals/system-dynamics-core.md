@@ -1,6 +1,12 @@
 # Proposal: a system dynamics model at the centre of Orchestra
 
-Status: draft 2, 2026-10-24. Nothing built. An argument and a plan.
+Status: draft 2, 2026-10-24. An argument and a plan. Built since (2026-11-01): the model at the
+centre is `orchestra/sd/` (stocks and flows discovered from the metrics with fitted equations,
+versions and eras, predictions and their verdicts, experiments); other stores are read through
+`orchestra/sources/`; what the owner expects beside the model is the intended model
+(`orchestra/sd/intended/`). Items, the runtime and machines left the core
+(`empty-orchestra.md`) for plugins (the Workflows plugin, `workflows.md`); the planner (§7) is not
+built.
 
 Draft 2 changes:
 - Our work is now one system coupled to a larger one (production, and its change process).

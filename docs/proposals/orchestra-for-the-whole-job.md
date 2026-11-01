@@ -1,6 +1,11 @@
 # Proposal: Orchestra for the whole job
 
-Status: draft, 2026-10-24. Nothing built.
+Status: draft, 2026-10-24. Built since (2026-11-01), in plugins rather than in the core (§7's
+package layout was not followed; `empty-orchestra.md`): the desk's conditions and ledger
+(orchestra-desk), the outbox (orchestra-outbox), readers of outside systems (orchestra-bridges),
+work items with workflows as data (orchestra-workflows, `workflows.md`) and the Supervisor
+(orchestra-agents). In the core, §4.1's sources are only other time-series stores
+(`[[sources]]`, `orchestra/sources/`).
 
 Reads with:
 - `docs/work-charter.md` — what is expected of me, and why;

@@ -81,7 +81,7 @@ optimal control does.
 
 | Told | Verdict | What it is in Orchestra |
 |---|---|---|
-| System identification | **Right, and it is what's built.** More precisely: grey-box, multivariable, positive (compartmental), closed-loop identification with Poisson counting noise | Discovery: conservation, SD Lab strategies, `sd/fit.py` |
+| System identification | **Right, and it is what's built.** More precisely: grey-box, multivariable, positive (compartmental), closed-loop identification with Poisson counting noise | Discovery: conservation (`sd/discover.py`, Poisson fits of the counted flows) and the net-flow layer (`sd/netflow.py`, least squares), then SD Lab's strategies (`sd/strategies.py`) |
 | Observability and state estimation (Kalman filters) | **Right, but two different things.** Observability is a structural question: can a hidden stock be determined from these sensors at all? Estimation is the filter that does it. Orchestra has the filter (`kalman_lna`, `mass_balance`) but no observability check | Hidden stocks (dashed); `kalman_lna` |
 | Controllability | **Right, but a weak guide on its own.** Linear controllability ignores floors, caps and positivity, which dominate SD models. What the plan wants (leverage points) is closer to **sensitivity analysis** and **input–output pairing** (the relative gain array, Bristol 1966) | Leverage points (H2); "never two machines steering one stock" |
 | Optimal control | **Right but secondary.** It needs an explicit cost function. The owner's goals ("meet the expectations of the people who judge my work") are constraints more than a cost | Not planned; would be G10's objective |

@@ -1,7 +1,14 @@
 # Proposal: Orchestra's kernel, and the task system decomposed into machines
 
-Status: proposal, 2026-10-24, for the session of 2026-10-25. Builds on the decided principles at
-the top of `system-dynamics-core.md`:
+Status: proposal, 2026-10-24, for the session of 2026-10-25; partly built, partly superseded by
+`empty-orchestra.md` (2026-10-25). Built and kept in the core: primitives 1 (`orchestra/bus/`), 4
+and 5 (instruments, `orchestra/collect/`, and `orchestra/metrics/`), 6 and 7 (`orchestra/sd/`:
+the model store and inference, the model discovered rather than declared) and 12's interventions
+as predictions judged by refitting (`sd/predictions.py`, `sd/judge.py`). The item store, the
+dispatcher and the executors left the core: the Workflows plugin's floor and the agents' host
+(`workflows.md`, `machine-design.md`); §4a's ticket collectors and the declared factory were
+removed with the task system. Builds on the decided principles at the top of
+`system-dynamics-core.md`:
 - system-dynamics-first;
 - machines attributed to flows;
 - equations observed, not proclaimed.

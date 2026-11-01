@@ -1,7 +1,12 @@
 # Proposal: events, external systems, and data infrastructure
 
-Status: draft, 2026-10-24, from a design conversation. Nothing built. Decisions marked
-**Decided** were agreed in that conversation; the rest are recommendations.
+Status: draft, 2026-10-24, from a design conversation. Decisions marked **Decided** were agreed in
+that conversation; the rest are recommendations. Built since (2026-11-01): §6's event bus, with
+the file, Redis Streams, RabbitMQ Streams and Kafka backends in `orchestra/bus/` and one
+conformance suite run against all of them (`tests/bus/`; subscribe and consumer groups are not
+built: readers follow offsets), and §4's metrics store (`orchestra/metrics/`: file and
+VictoriaMetrics). §3's adapters became plugins (orchestra-bridges). §7 is superseded by
+`orchestra-kernel.md` and then `empty-orchestra.md`.
 
 Related:
 - `system-dynamics-core.md` (stocks, flows, machines);
