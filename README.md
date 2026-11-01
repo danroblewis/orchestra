@@ -70,6 +70,8 @@ metrics store (`[metrics] url`: file or VictoriaMetrics). `deploy/dev/compose.ya
 them locally. Series that live in another store (Prometheus, VictoriaMetrics, Mimir, Chronosphere)
 are read in place by naming it under `[[sources]]` (SPEC §4.4); `orchestra sources infer` shows
 what Orchestra will read from it.
+To connect Jira, Slack, PagerDuty or a Prometheus store, ask the Supervisor, or follow
+[docs/INTEGRATING.md](docs/INTEGRATING.md) with your own coding tool.
 
 Machines are your programs, and none needs to import Orchestra. Measurements come from
 instruments, which are not machines: a script that prints measurements in the Prometheus text

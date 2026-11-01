@@ -166,12 +166,26 @@ uses.
 | `actor_source(system, account=None, bot=False)` (`kits.poller`) | the source of whoever acted |
 | `Prometheus(client, aliases, max_series=500)` (`kits.promql`) | `.instant(q)`, `.range(q, start, end, step)` and `.series(match)`, which return `Series(name, labels, points)`. It refuses an answer with more than `max_series` series |
 | `kits.fakes`: `FakeJira`, `FakeSlack`, `FakePagerDuty`, `FakePrometheus`, `CANARY` | `with FakePagerDuty(token="t") as f: f.url`. Use `f.set_status(...)` and `f.add_incident(...)` to change the world between polls, `f.fail_next(429)`, and `f.requests` to see what arrived |
-| `orchestra bridges scaffold <jira\|slack\|pagerduty\|promql> <name> [--root state\|overlay\|repo]` | writes `<root>/machines/<name>/` (`machine.toml`, `<name>.py`, `test_<name>.py`, `AGENTS.md`) and prints the `[[machines]]` and `[[collect]]` entries. `promql` only measures (no poller) |
+| `kits.fakes.FakeServer` | the base of every fake, for a system no kit knows: subclass it and implement `route(method, path, query, body)` (below) |
+| `orchestra bridges scaffold <jira\|slack\|pagerduty\|promql\|http> <name> [--root state\|overlay\|repo]` | writes `<root>/machines/<name>/` (`machine.toml`, `<name>.py`, `test_<name>.py`, `AGENTS.md`) and prints the `[[machines]]` and `[[collect]]` entries. `promql` only measures (no poller); `http` is any JSON API no kit knows |
+| `orchestra bridges integrations [--json]` | read-only: the kits, and each machine scaffolded under the three roots with its kit, clearance, data class, the token's variable NAME (never a value), whether its `[[machines]]` and `[[collect]]` entries are configured, and how many `# guess` marks are left |
 
 A scaffolded program runs as `python <name>.py [--once | --rounds N] [--every S] [--base-url URL]
-[--state-dir DIR] [--events-file FILE] [--ttl S] [--dry-run]`. `python <name>.py measure` is its
-`[[collect]]` command. Its `machine.toml` holds `[settings]` (`base_url`, `token_env`, `every`,
-`per_minute`, `ttl` and the kit's own keys), the clearance, and the `[[publishes]]` list.
+[--state-dir DIR] [--events-file FILE] [--ttl S] [--dry-run] [--set KEY=VALUE ...]`. `python
+<name>.py measure` is its `[[collect]]` command. `--set` gives one run a kit setting (a TOML value:
+`--set 'jql="project = ABC"'`), never the URL or the credentials; the scaffolded test uses it to give
+the run the scope its fake holds. Its `machine.toml` holds `[settings]` (`base_url`, `token_env`,
+`every`, `per_minute`, `ttl` and the kit's own keys), the clearance, and the `[[publishes]]` list.
+Values the template guessed (the site, the JQL, the channels, the queries, an API's paths) end in
+`# guess: ask the owner` (or `# guess: from the API's docs`): ask for each, and remove the mark once
+the value is the owner's.
+
+**Not yet cleared.** Run for good (no `--once`, no `--rounds`) with `clearance = "needs approval"`
+and a real `base_url`, the poller does not exit: it logs `waiting for approval` once, reads nothing,
+and re-reads `machine.toml` on its interval, polling as soon as it says `approved` (against a fake
+on this machine it polls at once). `--once`, `--rounds` and `measure` refuse with exit 2 before any
+request. The scaffolded test reads the token's variable name and the scope from `machine.toml`, so
+it still passes after the owner's values are filled in.
 
 **The scaffold's shape.** A scaffolded `<name>.py` is three functions and a `main`:
 
@@ -201,8 +215,11 @@ If you remove that line, the name comes from `[bridges.kits] tokens.<kit>`, wher
 name once for the project. A test run with `--state-dir` takes only `token_env`.
 
 **A system with no kit** (Jenkins, Opsgenie, a home-grown API). Start from the generic `http`
-template once it is listed (`orchestra bridges scaffold --help`; task I4 adds it). Until then,
-scaffold the closest template, rename its types and rewrite `keep_*`, `poll` and `measure`:
+template: `orchestra bridges scaffold http <name>`. Its `[settings]` name the list endpoint and
+where each item's id, change stamp, state and actor are (dotted paths), and its test carries a fake
+written on `FakeServer` (`FakeAPI`), to change to the API's real shapes. When the API is not a list
+of items, scaffold the closest template instead, rename its types and rewrite `keep_*`, `poll` and
+`measure`:
 
 - `pagerduty` for a list of items that each carry a status and who last changed it (Jenkins builds,
   alerts, deployments). This is the usual choice;
@@ -535,6 +552,13 @@ if __name__ == "__main__":
 
 ### 5.3 Run it: the entries, in the overlay
 
+**When.** The entries come last, after the owner's approval: scaffold, test against the fake, then
+(on the owner's word) set `clearance = "approved"` with `data_class`, and `token_env` to the name of
+the variable the owner set, and only then add the entries. The Supervisor's `integrate_system` flow
+works this way: it writes `[[machines]]` and `[[collect]]` at `approve_integration`, never before. A
+coding tool following this document does the same. An entry added early does no harm to the
+poller (it waits, above), but its `[[collect]]` measurement fails every round until approval.
+
 The scaffold prints the two entries. Add them with Orchestra's Python, from the repository:
 
 ```python
@@ -710,12 +734,12 @@ Set `[settings]`: `base_url` (the API root that serves `/api/v1/query`), `token_
 
 ## 9. Confirm it works
 
-There is no single `orchestra check` command yet (the scaffold's `AGENTS.md` mentions one). These
-checks do its job:
+There is no single `orchestra check` command for an integration. These checks do its job:
 
 | Check | What you should see |
 |---|---|
 | the program's test | passes, against the fake, with the canary check |
+| `orchestra bridges integrations` | the machine, `approved`, its token's variable name, both entries `yes`, no guesses left |
 | `<state>/logs/machines/<name>.log` | `poll N: K events`; no `poll failed` |
 | `<state>/logs/instruments/<name>.log` | `wrote N points` |
 | `orchestra metrics series \| grep pagerduty` | `pagerduty_incidents_open instrument=pagerduty_alerts service=PSVC001 urgency=high` (the name, then labels separated by spaces) |
@@ -758,6 +782,10 @@ Run it at the end. Every line must be true.
 - [ ] No event's `time` is more than 60 s in the future (check `orchestra run`'s output).
 - [ ] A ratio is printed only as a gauge beside its counts, and the outcomes are event types.
 - [ ] The machine is declared, or the declaration is handed to the Supervisor, with an expected effect.
+- [ ] The `[[machines]]` and `[[collect]]` entries were added after the approval, not before (§5.3).
+- [ ] `orchestra bridges integrations` lists the machine with `clearance` `approved`, the token as
+      `$<THE_VARIABLE>`, `[[machines]]` and `[[collect]]` `yes` (`-` for a measurement only) and
+      `guesses` `0`.
 
 ## 11. Troubleshooting
 
@@ -766,6 +794,8 @@ Run it at the end. Every line must be true.
   not in `orchestra run`'s environment is invisible to the processes the host launches.
 - **"… is not cleared"**: this is the compliance check working as intended. Use the fake
   (`--base-url http://127.0.0.1:…`) until the owner approves.
+- **`waiting for approval` in the poller's log**: its `[[machines]]` entry is in, the approval is
+  not. It reads nothing until `machine.toml` says `clearance = "approved"`, then polls on its own.
 - **HTTP 401 or 403**: the wrong token, or a scope it lacks (Slack: `channels:history`,
   `users:read`; PagerDuty: a read-only REST key sent as `Token token=…`; Jira DC: a personal access
   token sent as `Bearer`). Look at the status code only, never the body.
