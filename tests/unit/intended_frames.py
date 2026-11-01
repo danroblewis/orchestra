@@ -2,8 +2,8 @@
 machines replayed onto the project's bus as events (announcements, then what each published, and
 hand-offs by subject), the captured model saved as discovered versions (``intended_seed``), and the
 declared layer of each frame applied through the intended model's own ops. Nothing is faked in the
-answer of ``/api/machines``; the one exception is E4's ``measured`` block, P5's shape, which the
-core does not compute yet (C4) and the render harness adds as a stand-in (``MEASURED_E4``)."""
+answer of ``/api/machines``: E4's ``measured`` block is C4's, from a real ``[[scrape]]`` entry and
+its points."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import time
 
 from intended_seed import fixture, seed
 
+from orchestra.config import load_project
 from orchestra.events import Events
 
 FCI, NM, SAIL = "feature_count_improver", "nightly_metrics", "sail"
@@ -153,6 +154,30 @@ def e4_calls() -> list[tuple[list[dict], dict]]:
             ([{"op": "confirm", "part": "attachment", "id": "sail_company_prom"}], who)]
 
 
+# E4's instrument: the company's Prometheus, scraped (C4: an attachment names an instrument the
+# Instruments page lists), and the three runners' points as the scrape writes them
+COMPANY_PROM = """
+[[scrape]]
+name = "company_prom"
+url = "http://127.0.0.1:1/metrics"
+"""
+RUNNERS = [("runner-1", 1, 4), ("runner-2", 1, 2), ("runner-3", 0, 0)]
+
+
+def measure_sail(project) -> None:
+    from orchestra.metrics import Point
+    from orchestra.metrics import for_project as metrics_for
+
+    now, pts = time.time(), []
+    for runner, up, depth in RUNNERS:
+        for k in range(6):
+            t = now - 60 - (5 - k) * 30
+            lab = {"project": project.key, "instrument": "company_prom", "job": "sail", "runner": runner}
+            pts += [Point("sail_up", float(up), t, lab), Point("sail_queue_depth", float(depth), t, lab),
+                    Point("sail_runs_total", float(10 * k), t, lab)]
+    metrics_for(project).write(pts)
+
+
 def calls(frame: str) -> list[tuple[list[dict], dict]]:
     if frame == "E1":
         return e1_calls()
@@ -166,21 +191,15 @@ def calls(frame: str) -> list[tuple[list[dict], dict]]:
 
 
 def seed_frame(project, frame: str):
-    """The frame's project: the discovered versions, Features declared (D1), the frame's machine."""
-    store = seed(project, declared=False)
-    store.intended().apply([{"op": "declare_stock", "id": "features", "name": "Features", "near": 'tasks_tickets{state="DONE"}'}],
+    """The frame's project: the discovered versions, Features declared (D1), the frame's machine;
+    for E4 its instrument and points. Returns the project as reloaded (E4 adds configuration)."""
+    if frame == "E4":
+        project.config_file.write_text(project.config_file.read_text() + COMPANY_PROM)
+        project = load_project(project.repo_root)
+        measure_sail(project)
+    seed(project, declared=False)
+    project.intended.apply([{"op": "declare_stock", "id": "features", "name": "Features", "near": 'tasks_tickets{state="DONE"}'}],
                            owner("I'm going to create a Features stock."))
     for ops, prov in calls(frame):
-        store.intended().apply(ops, prov)
-    return store
-
-
-# P5's per-machine block (instruments-on-machines.md §3), which C4 computes: a stand-in for E4
-def measured_e4(now: float | None = None) -> dict:
-    now = now or time.time()
-    runners = [("runner-1", 1, 4, 60), ("runner-2", 1, 2, 75), ("runner-3", 0, 0, 90)]
-    return {"last_measured": now - 60, "attachments": [{
-        "id": "sail_company_prom", "instrument": "company_prom", "kind": "[[sources]]", "about": "the company's Prometheus",
-        "match": {"prefix": "sail_", "labels": {"job": "sail"}}, "instance_label": "runner", "state": "declared",
-        "series": [{"name": "sail_up", "count": 3}, {"name": "sail_queue_depth", "count": 3}, {"name": "sail_runs_total", "count": 3}],
-        "instances": [{"id": r, "state": "measured", "last": {"sail_up": up, "queue": q}, "at": now - s} for r, up, q, s in runners]}]}
+        project.intended.apply(ops, prov)
+    return project

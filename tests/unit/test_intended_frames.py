@@ -2,6 +2,8 @@
 real ``/api/machines``: the observed machines replayed from the capture, the declared machine with
 the fields each frame draws (docs/proposals/intended-model.md §6.1, §7)."""
 
+import time
+
 import pytest
 from intended_frames import ADDED, EMIT, FCI, NM, REMOVED, SAIL, replay_observed, seed_frame
 from intended_seed import project_at
@@ -11,7 +13,7 @@ from test_intended_api_shapes import client, machines
 def answer(tmp_path, monkeypatch, frame):
     project = project_at(tmp_path, monkeypatch)
     replay_observed(project)
-    seed_frame(project, frame)
+    project = seed_frame(project, frame)
     got = machines(client(project))
     for _ in range(50):                         # the background reader folds the replay in
         if {"worker", "reviewer", "coordinator"} <= {m["id"] for m in got["machines"]}:
@@ -63,3 +65,24 @@ def test_e4_a_declared_machine_never_heard_with_an_attachment(tmp_path, monkeypa
     assert it["state"] == "declared" and not it["heard"] and it["managed"] == "external"
     assert [(a["instrument"], a["state"], a["instance_label"]) for a in it["attachments"]] == [("company_prom", "declared", "runner")]
     assert not [e for e in got["intended_edges"] if SAIL in (e["from"], e["to"])]
+
+
+def test_e4_is_measured_by_its_attachment_and_never_heard(tmp_path, monkeypatch):
+    def measured(g):
+        ms = next(x for x in g["machines"] if x["id"] == SAIL).get("measured") or {}
+        return ms.get("attachments") and not ms.get("unknown")
+
+    project = seed_frame(project_at(tmp_path, monkeypatch), "E4")
+    c = client(project)
+    got = machines(c)
+    for _ in range(100):
+        if measured(got):
+            break
+        time.sleep(0.2)
+        got = machines(c)
+    sail = next(x for x in got["machines"] if x["id"] == SAIL)
+    assert sail["comparison"] == "measured, never heard" and sail["last_seen"] is None and not sail["active"]
+    ms = sail["measured"]
+    assert ms["measured"] and ms["instances"] == 3 and ms["instruments"] == ["company_prom"]
+    inst = ms["attachments"][0]["instances"]
+    assert inst["label"] == "runner" and [i["value"] for i in inst["list"]] == ["runner-1", "runner-2", "runner-3"]

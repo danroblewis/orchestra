@@ -163,6 +163,7 @@ function serve(frame, port) {
         for (const c of [CHECKS.common, ...checksOf(frame)]) fails.push(...await p.evaluate(`(${c.toString()})(${JSON.stringify(id)}, ${JSON.stringify(frame.split("-")[1] || "adhoc")})`));
         fails.push(...errors.filter((e) => !/favicon/.test(e)));
         await p.screenshot({ path: path.join(OUT, `${frame}-1440x900.png`) });
+        await p.evaluate(() => { const s = document.getElementById("im-side"); s.style.maxHeight = "none"; s.style.position = "static"; });   // the whole panel, on the full page
         await p.screenshot({ path: path.join(OUT, `${frame}.png`), fullPage: true });
         console.log(`${frame}: ${fails.length ? "FAILED\n  " + fails.join("\n  ") : "ok"} · ${path.relative(ROOT, path.join(OUT, frame + ".png"))}`);
         failed += fails.length ? 1 : 0;

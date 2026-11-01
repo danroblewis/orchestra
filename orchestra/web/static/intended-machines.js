@@ -43,8 +43,10 @@ const IntendedMachines = (() => {
     if (!it.heard) return { text: "declared · never heard", cls: "im-t-ghost" };
     return { text: "declared", cls: "im-t-decl" };
   }
-  const measuredOf = (m) => m.measured || null;                    // P5's per-machine block, when the server sends it
-  const measuredCount = (m) => { const ms = measuredOf(m); return ms ? (ms.attachments || []).reduce((a, x) => a + ((x.instances || []).filter((i) => i.state !== "quiet").length), 0) : 0; };
+  // P5's per-machine block (web/measured.py): {attachments, measured, last_measured, instances, instruments, unknown}
+  const measuredOf = (m) => (m.measured && !m.measured.unknown ? m.measured : null);
+  const measuredCount = (m) => { const ms = measuredOf(m); return ms ? ms.instances || 0 : 0; };
+  const instList = (a) => ((a.instances || {}).list || []);
 
   // ---- the map ----
   // the declared links to add to the graph: [{from, to, kind, observed, gone, state, machine, type}]
@@ -76,7 +78,7 @@ const IntendedMachines = (() => {
           n.tags = [{ text: it.author === "owner" ? "unconfirmed · added by you" : "unconfirmed", cls: "im-t-unconf" }];
         } else if (!it.heard) {
           n.cls = `${n.cls || ""} im-unheard`; n.halo = false; n.color = "transparent"; n.sub = "declared · never heard";
-          n.tags = [{ text: measuredOf(m) && measuredCount(m) ? "declared · measured" : "declared · unheard", cls: "im-t-ghost" }];
+          n.tags = [{ text: measuredOf(m) && measuredOf(m).measured ? "declared · measured" : "declared · unheard", cls: "im-t-ghost" }];
         }
         if (fresh(it)) (n.tags = n.tags || []).push({ text: "changed just now", cls: "im-t-chg", below: true });
         continue;
@@ -134,9 +136,10 @@ const IntendedMachines = (() => {
       const rows = [...card.querySelectorAll(".row")], row = (name) => rows.find((r) => r.firstElementChild && r.firstElementChild.textContent === name);
       const seen = row("seen"), ms = measuredOf(m);
       if (seen && !it.heard) {
-        const n = (ms && ms.attachments || []).length, inst = measuredCount(m);
-        seen.lastElementChild.innerHTML = `never heard${n ? ` · measured by ${n} instrument${n === 1 ? "" : "s"} · ${inst} instance${inst === 1 ? "" : "s"} (last hour)` : ""}${ms && ms.last_measured ? ` <span class="muted">· last measured ${ago(now() - ms.last_measured)} ago</span>` : ""}`;
-        if (inst && !card.querySelector(".im-meas-row")) seen.insertAdjacentHTML("afterend", `<div class="row im-meas-row"><span class="muted">measured ×${inst}</span>${ms.attachments.flatMap((a) => (a.instances || []).filter((i) => i.state !== "quiet").map((i) => `<span class="ty im-meas-chip">${esc(i.id)}</span>`)).join("")}<span class="muted">by ${ms.attachments.map((a) => esc(a.instrument)).join(", ")}</span></div>`);
+        const n = ms ? (ms.instruments || []).length : 0, inst = measuredCount(m);
+        seen.lastElementChild.innerHTML = `never heard${n ? ` · measured by ${n} instrument${n === 1 ? "" : "s"} · ${inst} instance${inst === 1 ? "" : "s"} (last hour)` : m.comparison ? ` · ${esc(m.comparison)}` : ""}${ms && ms.last_measured ? ` <span class="muted">· last measured ${ago(now() - ms.last_measured)} ago</span>` : ""}`;
+        const chips = ms ? ms.attachments.flatMap((a) => instList(a).filter((i) => i.measured).map((i) => i.value)) : [];
+        if (inst && !card.querySelector(".im-meas-row")) seen.insertAdjacentHTML("afterend", `<div class="row im-meas-row"><span class="muted">measured ×${inst}</span>${[...new Set(chips)].map((v) => `<span class="ty im-meas-chip">${esc(v)}</span>`).join("")}<span class="muted">by ${ms.instruments.map(esc).join(", ")}</span></div>`);
       }
       const plus = new Set([...added(it, "receives"), ...added(it, "emits")]), minus = new Set([...removed(it, "receives"), ...removed(it, "emits")]);
       if (plus.size || minus.size) card.querySelectorAll(".ty").forEach((c) => { const t = c.textContent.trim().split(" · ")[0];
@@ -216,19 +219,23 @@ const IntendedMachines = (() => {
       return `<a class="im-pred ${e.publishable ? "" : "im-wait"} ${up ? "up" : down ? "down" : ""}" href="${esc(e.link || "/dynamics")}"><b>${esc(e.label)}</b><span class="muted">${e.publishable ? "" : esc(e.why || "not publishable yet")}</span></a>`; }).join("");
     return `${h4("Expected effect", `a prediction, judged later · horizon ${span(ee.horizon_s)}`, verdict)}<div class="im-preds">${rows}</div>`;
   }
+  // "Measured by" (P5 §3): per attachment its instrument and kind, match, instance label, state, the
+  // series it matches, and its measured and quiet instances with their last values
   function measuredBy(m) {
-    const ms = measuredOf(m), atts = (ms && ms.attachments) || (m.intent.attachments || []);
+    const ms = m.measured && m.measured.attachments ? m.measured : null, atts = ms ? ms.attachments : (m.intent.attachments || []);
     if (!atts.length) return "";
     const one = (a) => {
-      const insts = a.instances || [], cols = [...new Set(insts.flatMap((i) => Object.keys(i.last || {})))];
+      const inst = a.instances || {}, list = inst.list || [], names = (a.names || []).map((x) => x.name);
+      const valueOf = (v, name) => { const x = (a.series || []).find((s) => s.name === name && (s.labels || {})[a.instance_label] === v); return x ? x.value : ""; };
       const state = a.state === "proposed" ? '<span class="im-tag im-t-unconf">unconfirmed</span>' : `<span class="im-tag im-t-decl">${esc(a.state || "declared")}</span>`;
-      const match = a.match ? [a.match.prefix ? `${a.match.prefix}*` : "", ...Object.entries(a.match.labels || {}).map(([k, v]) => `${k}="${v}"`)].filter(Boolean) : [];
-      return `<div class="im-attach"><div class="im-attach-head"><b>${esc(a.instrument)}</b>${a.kind ? ` <span class="ty">${esc(a.kind)}</span>` : ""}${a.about ? ` <span class="muted">${esc(a.about)}</span>` : ""} ${state}</div>
-        ${field("match", match.map((x) => `<span class="ty">${esc(x)}</span>`).join("") || '<span class="muted">everything the instrument records</span>')}
-        ${field("instances", a.instance_label ? `<span class="ty">${esc(a.instance_label)}</span>${ms ? ` <span class="muted">· ${insts.filter((i) => i.state !== "quiet").length} measured, ${insts.filter((i) => i.state === "quiet").length} quiet</span>` : ""}` : '<span class="muted">one: no instance label</span>')}
-        ${a.series ? field("series", a.series.map((s) => `<span class="ty">${esc(s.name)} ×${s.count}</span>`).join("") || '<span class="muted">none matches yet</span>') : ""}
-        ${insts.length ? `<table class="dt im-meas"><tr><th>${esc(a.instance_label || "instance")}</th><th>state</th>${cols.map((c) => `<th class="num">${esc(c)}</th>`).join("")}<th class="num">last point</th></tr>${insts.map((i) => `<tr><td class="num">${esc(i.id)}</td><td><span class="im-live ${i.state === "quiet" ? "off" : ""}"></span> ${esc(i.state || "measured")}</td>${cols.map((c) => `<td class="num">${esc((i.last || {})[c] ?? "")}</td>`).join("")}<td class="num">${i.at ? `${ago(now() - i.at)} ago` : ""}</td></tr>`).join("")}</table>
-          <div class="muted im-note">measured means points are arriving, not that it is up</div>` : ms ? "" : '<div class="muted im-note">what it measures is not reported by this server yet</div>'}</div>`;
+      const match = a.shown || (a.match ? [a.match.prefix ? `${a.match.prefix}*` : "", ...Object.entries(a.match.labels || {}).map(([k, v]) => `${k}="${v}"`)].filter(Boolean).join(" ") : "");
+      const status = a.status && a.status !== "measured" ? `<span class="im-tag im-t-ghost">${esc(a.comparison || a.status)}</span>` : "";
+      return `<div class="im-attach"><div class="im-attach-head"><b>${esc(a.instrument)}</b>${a.kind ? ` <span class="ty">${esc(a.kind)}</span>` : ""} ${state}${status}${a.shared ? '<span class="im-tag im-t-ghost" title="another declared machine\'s match selects the same series">shared</span>' : ""}</div>
+        ${field("match", match ? `<span class="ty">${esc(match)}</span>` : '<span class="muted">everything the instrument records</span>')}
+        ${field("instances", a.instance_label ? `<span class="ty">${esc(a.instance_label)}</span>${ms ? ` <span class="muted">· ${inst.measured || 0} measured, ${inst.quiet || 0} quiet${inst.too_many ? ", too many to list" : ""}</span>` : ""}${inst.note ? `<div class="muted im-note">${esc(inst.note)}</div>` : ""}` : '<span class="muted">one: no instance label</span>')}
+        ${ms ? field("series", (a.names || []).map((x) => `<span class="ty">${esc(x.name)} ×${x.count}</span>`).join("") || '<span class="muted">none matches yet</span>') : ""}
+        ${list.length ? `<div class="im-scroll"><table class="dt im-meas"><tr><th>${esc(a.instance_label)}</th><th>state</th>${names.map((c) => `<th class="num" title="${esc(c)}">${esc(a.match && a.match.prefix && c.startsWith(a.match.prefix) ? c.slice(a.match.prefix.length) : c)}</th>`).join("")}<th class="num">last</th></tr>${list.map((i) => `<tr><td class="num">${esc(i.value)}</td><td><span class="im-live ${i.measured ? "" : "off"}"></span> ${i.measured ? "measured" : "quiet"}</td>${names.map((c) => `<td class="num">${esc(valueOf(i.value, c))}</td>`).join("")}<td class="num">${i.last ? `${ago(now() - i.last)} ago` : ""}</td></tr>`).join("")}</table></div>
+          <div class="muted im-note">measured means points are arriving, not that it is up</div>` : ms ? "" : '<div class="muted im-note">what it measures is being read</div>'}</div>`;
     };
     return `${h4("Measured by", `${atts.length} instrument${atts.length === 1 ? "" : "s"} · declared provenance: what measures it, never a sign it runs`)}${atts.map(one).join("")}`;
   }
@@ -267,7 +274,7 @@ const IntendedMachines = (() => {
       : `${engagementRow(it)}${text("title", "title")}${text("description", "description")}${tags}${spec(it, false)}`;
     const heard = it.heard;
     const insts = heard ? "" : `${h4("Instances")}<div class="muted">none heard on the bus</div>`;
-    const tail = heard ? "" : `${measuredBy(m)}${h4("Flows (hypotheses)")}<div class="muted">none hypothesised yet${measuredOf(m) ? ": a machine that is only measured gets none; its route to the model is an expected effect" : ""}</div>${ext ? `${h4("Log")}<div class="muted">not readable: it runs outside the repository and the state directory</div>` : ""}`;
+    const tail = heard ? "" : `${measuredBy(m)}${h4("Flows (hypotheses)")}<div class="muted">none hypothesised yet${measuredOf(m) && measuredOf(m).measured ? ": a machine that is only measured gets none; its route to the model is an expected effect" : ""}</div>${ext ? `${h4("Log")}<div class="muted">not readable: it runs outside the repository and the state directory</div>` : ""}`;
     const aliases = (it.alias_candidates || []).length ? `<div class="muted im-note">heard under another name? ${it.alias_candidates.map((a) => `<span class="ty">${esc(a)}</span>`).join("")} ${ask("ask the Supervisor to join them")}</div>` : "";
     return `<div class="im-head"><span class="dot im-dashdot" style="--rc:${mcolor(m.id)}"></span><b>${esc(it.title || m.id)}</b><span class="im-tag ${tag.cls}">${tag.text}</span><button class="ctl im-close" onclick="IntendedMachines.close()" title="close the panel (Esc)">×</button></div>
       <div class="muted im-id">id and bus source <span class="ty">${esc(m.id)}</span>${heard ? ` <button class="ctl" onclick="openMachine('${esc(m.id)}',{dialog:true})">details and log</button>` : ""}</div>
