@@ -905,7 +905,7 @@ an old run is not current.
 | `--kind KIND=PATTERN` | repeatable | A kind rule, tried in order before the defaults `e2e=*e2e*`, `acceptance=*acceptance*`, `unit=*`. The pattern is a glob over the test's path (JUnit's `file`, else its `classname` with dots as slashes; pytest's node id file), over `path::name` when it has `::`, or a marker when it starts with `@` (`e2e=@e2e`: from `--run`'s reports or pytest's report log; a marker rule over reports with no markers matches nothing, and the log says so). The kind `ignore` drops what it matches. |
 | `--window N` | 10 | Runs per stream read and judged for flakiness. |
 | `--confirm N` | 3 | Consecutive passing runs that confirm a test. |
-| `--history FILE` | none | Where the instrument keeps the runs it has seen and its counters. Needed for flakiness and confirmation across rounds when each round has one report (run mode, or a runner that overwrites one file), and for the counters below. Put it outside version control (`.git/` works in a plain clone). |
+| `--history FILE` | none | Where the instrument keeps the runs it has seen and its counters. Needed for flakiness and confirmation across rounds when each round has one report (run mode, or a runner that overwrites one file), and for the counters below. Put it outside the repository, at an absolute path (under your home, say). |
 
 **Runs.** A report's *stream* is its file name with its digits ignored: `reports/<run>/tests.xml`
 files are one stream, and so are `unit-1712.xml` and `unit-1713.xml`. Each file is one run of its
@@ -1832,8 +1832,7 @@ versions. **Rediscover now** reruns discovery in the background, optionally with
 strategy for that run.
 
 **What if.** A machine asks the model what a change would do through an experiment (section
-5.9): any change to the equations, not only a flow scaled. The `orchestra sd whatif` command and
-`POST /api/dynamics/whatif` were removed on 2026-10-27.
+5.9): any change to the equations, not only a flow scaled.
 
 The other pages: **Machines** (section 5.6, with the event map and each machine's dialog),
 **Instruments** (section 3: each instrument's health and log), **Core** (the host and its processes, the bus and the store probed live, a series catalogue, a
@@ -2205,8 +2204,8 @@ printed it; `cat ~/.orchestrator/projects.json` lists every project's key.
 | `orchestra sources preview QUERY [--source NAME] [--minutes N] [--step-s S]` | Read a query's fan-out, with sparklines. |
 | `orchestra <plugin> [ARGS...]` | An installed plugin's own command line (`orchestra tasks`, `orchestra agents`, ...); `orchestra --help` lists them, `orchestra <plugin> --help` shows one. PLUGINS.md §4.10. |
 
-Every command takes `--repo PATH`. Removed on 2026-10-27: `orchestra sd whatif`, `sd predict`,
-`sd eras` and `sd observability`; their data is read through the HTTP API (section 5.9).
+Every command takes `--repo PATH`. The eras, predictions, observability and experiments are read
+through the HTTP API (section 5.9) and on the pages.
 
 ### Events Orchestra publishes
 

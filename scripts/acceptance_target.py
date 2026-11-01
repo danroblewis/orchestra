@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -43,6 +44,7 @@ def main() -> int:
         for p in (web, host):
             p.terminate()
             p.wait(timeout=10)
+        shutil.rmtree(home, ignore_errors=True)         # the temporary home this script made
 
 
 if __name__ == "__main__":

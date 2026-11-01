@@ -2,7 +2,8 @@
 
 Orchestra observes a system of machines (programs, AI agents, services, people) through an event
 bus and a metrics store, and keeps one system dynamics model of it: stocks, flows, feedback loops,
-and which machines drive which flows. Its aim is to find the loops between a project's own domain
+and hypotheses, with their evidence, about which machines drive which flows; and beside it, what
+you expect the system to be (the intended model). Its aim is to find the loops between a project's own domain
 and the processes used to develop it.
 
 **Documentation:** [USING_ORCHESTRA.md](USING_ORCHESTRA.md) (add your metrics, connect your machines, configure), [PLUGINS.md](PLUGINS.md) (write a plugin), [ARCHITECTURE.md](ARCHITECTURE.md) (how it works).
@@ -99,6 +100,8 @@ outside (`docs/roadmap/use-cases.md`).
 uv run python -m pytest                     # unit, and the file backends
 ORCHESTRA_TEST_REDIS_URL=redis://127.0.0.1:6379/15 uv run python -m pytest tests/bus   # see tests/bus/README.md
 tests/sources/rig/rig.sh start              # a store to read in place; see tests/sources/README.md
-python scripts/acceptance_target.py --port 8123 &   # prints ORCHESTRA_TARGET_TOKEN to export
+uv run python scripts/acceptance_target.py --port 8123 &   # prints ORCHESTRA_TARGET_TOKEN to export
 ORCHESTRA_TARGET_URL=http://127.0.0.1:8123 ORCHESTRA_TARGET_TOKEN=<token> uv run python -m pytest tests/acceptance
+uv run python -m pytest tests/e2e           # opt-in: real installs and processes on free ports
+uv run python -m pytest tests/screenshots   # opt-in: the approved frames, with node, puppeteer-core and Chrome for Testing
 ```

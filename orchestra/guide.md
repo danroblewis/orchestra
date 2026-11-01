@@ -166,7 +166,7 @@ and reads the report that run wrote:
 ```toml
 [[collect]]
 name = "tests"
-command = "python -m orchestra.instruments.test_reports --run 'uv run pytest -q' --kind e2e=@e2e --history .git/test-history.json"
+command = "python -m orchestra.instruments.test_reports --run 'uv run pytest -q' --kind e2e=@e2e"
 every = "10m"
 timeout = "6m"
 ```
@@ -191,10 +191,10 @@ timeout = "6m"
   fifth (at most 5 s). Time the suite and set `timeout` well above it; `every` at least that.
 - **Different schedules:** two entries (`tests-unit` every 5 m, `tests-e2e` every hour), each
   running its own subset; their series never collide.
-- **`--history FILE`**, outside version control (`.git/...` works in a plain clone, not in a
-  worktree, where `.git` is a file): needed for flakiness, confirmation and the
+- **`--history FILE`**, at an absolute path outside the repository (under the owner's home, say),
+  so no instrument writes inside it: needed for flakiness, confirmation and the
   `tests_added_total`/`tests_removed_total` counters that let discovery find the test count a
-  stock. Use it.
+  stock. Add it once you have chosen where it lives.
 - **Reports mode**, `--reports 'reports/**/*.xml' --max-age 2h`: when CI or a merge gate already
   writes reports; the instrument then runs nothing.
 - **Absent is not zero.** A kind the current run lacks prints nothing (a gap), not zeros; a run

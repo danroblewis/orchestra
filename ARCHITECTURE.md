@@ -117,7 +117,7 @@ Each component, its module, and what it depends on:
 | **Runtime record** | `orchestra/runtime.py` | `<state>/runtime.json`: the running hosts, the one host that launches, the web server, and the launched processes. Every write takes a file lock. A record holds a pid and the process's create time, so a reused pid is not mistaken for it. | config, `psutil`, `fcntl` |
 | **Event collector** | `orchestra/collectors.py` | Counts every event by type and source into `orchestra_events_total{type, source}`. Knows nothing about what events mean. | bus, metrics |
 | **Bootstrap host** | `orchestra/host.py` | `orchestra run`: Orchestra's own machine, `orchestra-host`. Registers itself, publishes `orchestra.host.started`/`stopped`, writes `orchestra_host_up`, runs the event collector, rediscovers the model on a timer, and (in the one host that launches) runs the launcher and the instruments. | everything below |
-| **Events endpoint** | `orchestra/endpoint/` (`__init__`, `validate`, `server`, `api`) | HTTP for machines in any language: `POST /events` checks one event's fields and publishes it through `Events.publish`; `GET /events?after=&types=&wait=&limit=` reads by offset, with a long poll. Beside them, the model and experiments API (`api.py`): `GET /model`, `/eras`, `/series`, `/observability`, `/predictions`, `/experiments...` and `POST /experiments...`, answering what the Python API answers. Served by the host that launches on `[events] listen` (127.0.0.1 and a port the system picks, by default), behind the project's token (`<state>/events.token`). Remembers recent ids, so a retried post is written once. | events (`Events`), runtime, the stdlib's `http.server`; experiments |
+| **Events endpoint** | `orchestra/endpoint/` (`__init__`, `validate`, `server`, `api`) | HTTP for machines in any language: `POST /events` checks one event's fields and publishes it through `Events.publish`; `GET /events?after=&types=&wait=&limit=` reads by offset, with a long poll. Beside them, the model and experiments API (`api.py`): `GET /model`, `/eras`, `/series`, `/observability`, `/predictions`, `/experiments...` and `POST /experiments...`, answering what the Python API answers; and the intended model's declared layer: `GET /intended`, `GET /intended/design` and `POST /intended` (one call to the declared layer, applied whole or refused). Served by the host that launches on `[events] listen` (127.0.0.1 and a port the system picks, by default), behind the project's token (`<state>/events.token`). Remembers recent ids, so a retried post is written once. | events (`Events`), runtime, the stdlib's `http.server`; experiments |
 | **Launcher** | `orchestra/launcher.py` | Keeps running the commands that `[[machines]]` and plugins (`Plugin.processes`) declare. Knows them only as processes: a name, a command, a pid, an exit code. | config, runtime, the host's `publish` |
 | **Instruments: collectors and scrapes** | `orchestra/collect/` (`spec`, `fetch`, `exposition`, `round`, `runner`) | Runs `[[collect]]` commands and reads `[[scrape]]` URLs (the project's and the plugins' `Plugin.collectors`) on intervals, parses the Prometheus text format, and writes the points labelled `project` and `instrument=<name>`, keeping the target's own labels (`machine` included; a target's `project` or `instrument` becomes `exported_project`, `exported_instrument`). Announces nothing on the bus. Keeps each instrument's health in the runtime record under `instruments`, and its log in `<state>/logs/instruments/<name>.log`. | metrics, runtime, launcher (log size) |
 | **Shipped instruments** | `orchestra/instruments/` (`test_reports`) | Scripts any repository can run under `[[collect]]`, standard library only, never imported by the core: `test_reports` runs the tests (or reads the reports something else wrote), reads JUnit XML and pytest report logs, and prints tests by kind and outcome, flaky and confirmed tests, and (with a history file) tests added and removed (USING_ORCHESTRA.md section 3.4). | nothing of Orchestra |
@@ -797,6 +797,8 @@ flowchart TD
   P6 --> P63["eras.json: the eras and the bus offset read to"]
   P6 --> P64["announce.json: what the host last announced, its predictions"]
   P6 --> P65["predictions.json: the machines' predictions, their verdicts, the bus offset read to"]
+  P6 --> P66["intended/: journal.jsonl, dNNNN.json, diff/, requests.jsonl, announced.json"]
+  P6 --> P67["#lt;record#gt;.lock: versions, intended, intended-announce, ..."]
   KEY --> P12["experiments/: #lt;id#gt;.json, each experiment; #lt;id#gt;.runs/, its runs"]
   KEY --> P7["sources/#lt;name#gt;.json: inferred definitions"]
   KEY --> P8["logs/"]
@@ -811,8 +813,10 @@ flowchart TD
   its real path (`config.project_key`). The state directory is created on first use, so a
   repository that already has an `orchestra.toml` does not need `orchestra init`.
 - `.lock` guards `runtime.json`. `discovery.lock` allows one discovery at a time.
+- SPEC.md §7 is the full list of what is kept here.
 - Logs rotate once at 5 MB, to `.log.1`.
-- Inside the repository, Orchestra writes only `orchestra.toml`, and only on `orchestra init`.
+- Inside the repository, Orchestra writes only `orchestra.toml`, on `orchestra init` and through
+  `project.config_edit`.
 - The private overlay is merged over `orchestra.toml` wherever the configuration is read
   (`Project.read_config`): `ORCHESTRA_CONFIG_OVERLAY`, else `orchestra.local.toml` in the state
   directory; a file in the repository is never read as one. Tables merge key by key (the
@@ -907,8 +911,8 @@ measured levels (`.../runs/<run>/measured`: the stocks before its now and since,
 or the present, read from the metrics store on request) and its prediction and verdict) and the
 eras under `/api/dynamics/eras`, through the same `Experiments` class the machines use; there is
 no route that makes, edits, runs or commits one (rule 9). The Dynamics page links each era to the
-experiments tied to it and each prediction to the experiment it came from. What used to be "what
-if" (`POST /api/dynamics/whatif`) was removed on 2026-10-27: a machine asks an experiment.
+experiments tied to it and each prediction to the experiment it came from. A machine asks what a
+change would do through an experiment.
 
 **Authentication** (`web/auth.py`) is the app's outermost middleware, a plain ASGI one, so it is in
 front of every route: Orchestra's pages and `/api/*`, the static files, any websocket, and every
@@ -971,9 +975,8 @@ configuration, and every probe runs in a thread pool with a time limit.
 | `orchestra sd predictions [--json]` | The predictions recorded and their verdicts, by era (`sd/predictions_report.py`). | nothing |
 | `orchestra sources check\|infer\|preview QUERY` | Probes the sources, runs an inference round, previews a query's fan-out. | `sources/` cache on infer |
 
-`sd whatif`, `sd predict`, `sd eras` and `sd observability` were removed on 2026-10-27: the owner
-does not use command lines. Machines reach the same data and more through the events endpoint's
-model and experiments API and the Python API; people see it on the web.
+Machines reach the model, its eras, predictions and experiments through the events endpoint's
+model and experiments API and the Python API; people see them on the web.
 
 ## Plugins
 
@@ -1019,7 +1022,7 @@ divided.
 | 6 | Every equation records its origin | `Equation.origin` is a required field (`sd/model.py`). Conservation writes `fitted`/`poisson-mle`, the net-flow layer `fitted`/`least-squares`, and SD Lab `discovered`/`sdlab:<strategy>`. `sd/attribute.py` associates machines with flows only as inferred hypotheses with evidence and confidence (`flow.evidence["machines"]`), never from a label or a declaration; `Machine.attributed` holds flow ids as hypotheses. |
 | 7 | Stocks are discovered, not configured; measurements are not machines | `Config` has no stock or flow bindings. `sd/discover.py` decides from the data alone. A series' declared kind (counter or level, from a `[[series]]` definition) is the only hint it takes. Instruments label points `instrument=<name>` (`collect/round.py`), announce nothing, and are shown on the Instruments page. A writer label is provenance only (`sd.series.written_by`). |
 | 8 | The core stays up | `web/core.py` and `web/core_explore.py` import only the bus, the metrics store, the runtime record and the configuration. Every probe runs under `TIMEOUT` (4 s). Plugins that fail are left out. |
-| 9 | Humans talk only to the Supervisor; UI and CLI read-only except observations | The web app has four POST routes: "rediscover" (an observation), the Core page's bus probe, `POST /api/intended/control` (an observation from rule 9's closed list, `sd/intended/controls.py`, refusing a machine or attachment and any value) and `POST /api/intended/request` (a request, published as `orchestra.intent.requested` from `owner`, which changes nothing until the Supervisor applies it); its experiment routes only read. Any path that changes machines belongs to a plugin. The events endpoint is the bus, and the model and experiments, reached over HTTP for machines, as the Python helpers are; an experiment changes no machine and no model (a commit is a prediction: a statement about the model); the web UI and CLI gain no write from it (`events endpoint` only prints where it is). |
+| 9 | Humans talk only to the Supervisor; UI and CLI read-only except observations | The web app has four POST routes: "rediscover" (an observation), the Core page's bus probe, `POST /api/intended/control` (an observation from rule 9's closed list, `sd/intended/controls.py`, refusing a machine or attachment and any value) and `POST /api/intended/request` (a request, published as `orchestra.intent.requested` from `owner`, which changes nothing until the Supervisor applies it); its experiment routes only read. Any path that changes machines belongs to a plugin. The events endpoint is the bus, and the model and experiments, reached over HTTP for machines, as the Python helpers are; an experiment changes no machine and no model (a commit is a prediction: a statement about the model); the web UI and CLI gain no write from it (`events endpoint` only prints where it is). A machine declares through the events endpoint's `POST /intended` (read with `GET /intended` and `GET /intended/design`): a declaration with its provenance, changing no machine, no configuration and no discovered version. |
 | 10 | One package, no path hacks | `pyproject.toml` packages only `orchestra`. No module changes `sys.path`. `orchestra/sdlab` is excluded from ruff (`extend-exclude`) and its README records its source commit. |
 
 **Known departures** (as of `69111d58`). These are places where the code goes further than the

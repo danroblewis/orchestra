@@ -2,7 +2,7 @@
 writes, printed in the Prometheus text format for a ``[[collect]]`` entry. Standard library only.
 
     python -m orchestra.instruments.test_reports --run 'uv run pytest -q' [--kind e2e=@e2e]...
-        [--run-timeout 4m] [--window 10] [--confirm 3] [--history .git/test-history.json]
+        [--run-timeout 4m] [--window 10] [--confirm 3] [--history FILE]
     python -m orchestra.instruments.test_reports --reports 'reports/*.xml' [--max-age 1h] [...]
 
 **Run mode, ``--run CMD``** (the usual one). The instrument runs the tests itself and reads the

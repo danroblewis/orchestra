@@ -826,8 +826,7 @@ is right.
 
 A part discovery marked `simulated` (§5.2) is never an unpredicted change or side effect.
 
-What a change would do is asked of an **experiment** (§4.5), which replaced the scale-and-add
-"what if" (and `orchestra sd whatif`, `POST /api/dynamics/whatif`) on 2026-10-27.
+A machine asks what a change would do through an **experiment** (§4.5).
 
 ### 4.4 Other stores (sources)
 
@@ -1434,27 +1433,38 @@ keeps its own harness (`~/orchestra-agents/SPEC.md`).
 ```
 ~/.orchestrator/                 (ORCHESTRATOR_HOME overrides)
   projects.json                  repository root → project key
+  stores/<store>/                what every project on this computer shares about another store it reads: its request rate and daily count (sources/limits.py, AGENTS.md rule 5)
+  python/<id>/                   python and python3 scripts that run Orchestra's own Python, for what the launcher starts (launcher.python_dir)
   <key>/
     project.json
     orchestra.local.toml         the private configuration overlay, if the owner writes one (§8)
     runtime.json                 the hosts', the launcher's, the events endpoint's, the web server's, the launched processes' and the instruments' records
+    .lock                        held while runtime.json is read and written
+    discovery.lock               one discovery at a time, across processes
+    config.lock                  held from the check to the write of a configuration change (project.config_edit)
     events.token                 the events endpoint's token (§3.1), readable by its owner only
     web.token                    the web UI's token (§10.2), readable by its owner only
     events.jsonl                 the event log, when [events] url = "file"
     metrics.jsonl                the metrics, when [metrics] url = "file"
     model/vNNNN.json             the model's versions
+    model/discovered.json        the latest discovery, cached for readers
+    model/recent_stocks.json     the stocks of the last discoveries, for each new stock's persistence (sd/persistence.py)
+    model/<record>.lock          held while a record is read and written (versions, intended, intended-announce, eras, …)
     model/intended/              the intended model (§4.6): journal.jsonl, dNNNN.json, diff/, requests.jsonl, announced.json
     model/eras.json, announce.json, predictions.json   the eras recorded, what the host last announced, the predictions and their verdicts (§4.3)
     experiments/<id>.json        each experiment: its base, draft, scenario, edit log, runs and prediction (§4.5)
     experiments/<id>.runs/<run>.json   each run of it in full
     sources/<name>.json          each source's latest inference: its definitions, what was left out, its families (§4.4)
+    sources/<name>.attempt.json  when its last inference round ran and failed, so the next waits (sources/cache.py)
+    sources/<name>.lock          one inference round at a time, across processes
     logs/orchestra-host.log
     logs/machines/<name>.log     each launched process's output (§5.1)
     logs/instruments/<name>.log  each instrument's standard error and rounds (§5.2)
 ```
 
-The project key is the repository directory's name plus a hash of its path. Nothing is written
-inside the repository except `orchestra.toml`.
+The project key is the repository directory's name plus a hash of its path. Inside the
+repository, Orchestra writes only `orchestra.toml`, on `orchestra init` and through
+`project.config_edit`.
 
 ---
 
@@ -1576,9 +1586,8 @@ since, and `restore(change)` puts the file back. Orchestra commits nothing: comm
 | `orchestra sd predictions [--json]` | The predictions recorded and their verdicts, by era; read only |
 | `orchestra sources check\|infer\|preview QUERY` | Other stores (§4.4): probe them, infer what to read, read a query's fan-out |
 
-`orchestra sd whatif`, `sd predict`, `sd eras` and `sd observability` were removed on 2026-10-27
-(the owner does not use command lines): machines ask what a change would do, predict, and read the
-eras and the observability report through the APIs (§3.1, §4.5), and the web UI shows them.
+Machines ask what a change would do, predict, and read the eras and the observability report
+through the APIs (§3.1, §4.5), and the web UI shows them.
 
 ---
 

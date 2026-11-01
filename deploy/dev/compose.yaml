@@ -42,16 +42,10 @@ services:
     ports: ["127.0.0.1:9092:9092"]
     volumes: ["kafka:/var/lib/kafka/data"]
 
-  nats:
-    image: nats:2.10.22
-    command: ["-js", "-sd", "/data", "-m", "8222"]
-    ports: ["127.0.0.1:4222:4222", "127.0.0.1:8222:8222"]
-    volumes: ["nats:/data"]
-
   victoriametrics:
     image: victoriametrics/victoria-metrics:v1.106.1
     command: ["-storageDataPath=/storage", "-retentionPeriod=100y", "-httpListenAddr=:8428", "-search.latencyOffset=0s", "-search.disableCache"]
     ports: ["127.0.0.1:8428:8428"]
     volumes: ["victoriametrics:/storage"]
 
-volumes: {redis: {}, rabbitmq: {}, kafka: {}, nats: {}, victoriametrics: {}}
+volumes: {redis: {}, rabbitmq: {}, kafka: {}, victoriametrics: {}}
