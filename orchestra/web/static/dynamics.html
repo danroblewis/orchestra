@@ -13,7 +13,7 @@
   .dynwrap { max-width:1500px; margin:0 auto; padding:16px 20px }
   .dynwrap .intro { font-size:12.5px; color:var(--text2); margin-bottom:12px; max-width:1100px }
   .dynhead { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:10px }
-  .dynhead h1 { font-size:15px; margin:0 }
+  .dynhead h1 { font-size:15px; margin:0 } .dynhead .redisc { margin-left:auto }
   .ver { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text2) }
   .ver button { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:12px; padding:1px 8px; cursor:pointer }
   .ver button:disabled { opacity:.35; cursor:default } .ver b { color:var(--text) } .ver .past { color:#fcd34d }
@@ -58,6 +58,8 @@
   .preds { margin-top:8px } .preds .pred { margin:4px 0; padding:4px 6px; border-left:3px solid var(--border2) } .preds .ev { margin:1px 0 0 10px; font-size:11px }
   .preds .pred.passed { border-color:#22c55e } .preds .pred.side, .preds .pred.wrong { border-color:#f59e0b } .preds .pred.none { border-color:#ef4444 }
   .erachg div { margin:2px 0 } .erachg .chg { color:#fcd34d } .erachg .gone { color:#fca5a5 } .erachg .new { color:#86efac }
+  /* a phone: the heading, the version bar and the rediscover button each on its own line */
+  @media (max-width:600px) { .dynhead { flex-direction:column; align-items:flex-start } .ver { flex-wrap:wrap } .dynhead .redisc { margin-left:0 } }
   .tables h3 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:12px 0 6px }
 </style>
 </head>
@@ -66,7 +68,7 @@
 <div class="dynwrap">
   <div class="intro">The system dynamics model of the system Orchestra covers. There is one model; it changes over time, and each change is kept as a version. Stocks are measured quantities (each bound to a series in the metrics store), flows move material between them with equations fitted from the history, and machines (programs, AI agents and people, known by their events) are associated with flows only as hypotheses, from their events matching a flow's counter. A flow may have several, or none yet; the associations never change an equation. Every equation says whether it was fitted or only declared.</div>
   <div class="dynhead"><h1 id="mname">The system</h1><span class="ver" id="ver"></span><span class="sum" id="sum"></span>
-    <span style="margin-left:auto;display:inline-flex;gap:8px;align-items:center"><span class="muted" id="redisc-note" style="font-size:11.5px"></span><button class="ctl" id="redisc" onclick="rediscover()" title="Discover the model again now, with the settings below">rediscover now</button></span></div>
+    <span class="redisc" style="display:inline-flex;gap:8px;align-items:center"><span class="muted" id="redisc-note" style="font-size:11.5px"></span><button class="ctl" id="redisc" onclick="rediscover()" title="Discover the model again now, with the settings below">rediscover now</button></span></div>
   <div class="panel eras" id="eras" style="display:none"></div>
   <details class="dset" id="dset"><summary>discovery: <b id="dset-sum">…</b></summary>
     <div class="dgrid">
@@ -79,6 +81,7 @@
       <div class="wide muted">These apply to "rediscover now" only. The host rediscovers every <span id="d-every"></span> with <code>[discovery]</code> in orchestra.toml.</div>
     </div></details>
   <div class="muted" id="sd-note" style="display:none;margin-bottom:6px"></div>
+  <div class="panel stale" id="render-err" role="alert" style="display:none;margin-bottom:6px"></div>
   <div class="diagram" id="diagram"></div>
   <div class="legend" id="legend"></div>
   <div class="ng-loops panel" id="loops" style="margin:0 0 10px"></div>
@@ -89,7 +92,7 @@
       <div class="panel"><h2 style="margin-top:0"><span>How it was found</span></h2><div id="found"></div></div>
     </div>
     <div>
-      <div class="panel"><h2 style="margin-top:0"><span>Stocks</span><span class="count" id="nstocks"></span></h2><table class="dt" id="stocks"></table></div>
+      <div class="panel"><h2 style="margin-top:0"><span>Stocks: level and trust</span><span class="count" id="nstocks"></span></h2><table class="dt" id="stocks"></table></div>
       <div class="panel"><h2 style="margin-top:0"><span>Machines with flow hypotheses</span><span class="count" id="nmachines"></span></h2><table class="dt" id="machines"></table></div>
     </div>
   </div>
@@ -108,6 +111,7 @@
 <script src="/static/intended-panel.js?v={{v}}"></script>
 <script src="/static/intended-drawers.js?v={{v}}"></script>
 <script src="/static/left-out.js?v={{v}}"></script>
+<script src="/static/evidence-text.js?v={{v}}"></script>
 <script>
 // (a machine's colour, mcolor, is app.js's: the same on every page)
 let MODEL = null, VERSION = null;   // null: follow the current version
@@ -315,13 +319,8 @@ function leftOut(lo) {
     return `<details ${g.startsWith("changed") ? "open" : ""}><summary>${esc(g)} <span class="count">${groups[g].length}</span></summary><table class="dt">${rows}</table></details>`;
   }).join("");
 }
-// how far to trust a stock (sd/stocktrust.py): the weakest of its measured evidence, 0 to 1; and its projection beside it (behaviour)
-function trustText(ev) {
-  const t = ev.trust;
-  const b = t && t.behaviour;
-  return t ? ` · trust ${t.score.toFixed(2)} (${esc(t.level)}${t.weakest ? `; weakest: ${esc(t.weakest.replace("_", " "))}` : ""})`
-    + (b ? ` · behaviour ${b.score.toFixed(2)} (${esc(b.level)}; replay off by ${b.error.toFixed(2)} × its spread)` : "") : "";
-}
+// how far to trust a stock (sd/stocktrust.py): the weakest of its measured evidence, 0 to 1; and its projection beside it (behaviour); evidence-text.js
+const trustText = Evidence.trust;
 // a stock no counters balance: its net flow fitted by least squares, or SD Lab's flows where they
 // predicted the level better on held-out data (conservation_fit names the fit they replaced)
 function netFlowLine(s, ev) {
@@ -348,11 +347,11 @@ function tables() {
     const end = (id) => (id ? stockName(id) : "outside");
     const same = SDGraph.sameAs(m, f);
     const zero = e && (q.events ?? 0) === 0 && (Object.values(e.params || {}).some((x) => x) || (e.spec && e.spec.value));
-    return `<tr data-fid="${esc(f.id)}" ${opens(`Live.openFlow('${esc(f.id)}')`)}><td>${esc(flowName(f))}<div class="muted" style="font-size:11px">${esc(end(f.from))} → ${esc(end(f.to))}${same.length ? ` · same events as ${same.map(esc).join(", ")}` : ""}</div></td><td class="num eq">${esc(eqText(f))}${e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}${SDGraph.correlational(m, f) ? `<div class="muted" style="font-family:inherit;font-size:11px">${esc(SDGraph.UNTESTED)}</div>` : ""}</td>
-      <td>${e ? `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span> <span class="muted num" ${zero ? 'title="0 increments seen in the window; the counter first appeared already above 0"' : ""}>${esc(e.form)} · ${q.events ?? 0} ev${zero ? "*" : ""} · disp ${q.events && q.dispersion != null ? q.dispersion.toFixed(1) : "—"}</span>${e.prior && e.prior.weight != null && e.origin !== "prior" ? `<div class="muted" style="font-size:11px">${Math.round(100 * e.prior.weight)}% from the prior (era ${esc(e.prior.era || "before")})</div>` : ""}${eraNote(f)}` : '<span class="muted">—</span>'}</td>
-      <td class="mcell">${(f.machines || []).length ? f.machines.map((h) => `<div title="${esc(h.why || h.origin || "")}"><span class="mdot" style="--c:${mcolor(h.machine)}"></span><a href="/machines#${encodeURIComponent(h.machine)}" onclick="event.stopPropagation()">${esc((byMachine[h.machine] || {}).name || h.machine)}</a>${h.confidence != null ? ` <span class="muted num">${Math.round(100 * h.confidence)}%</span>` : ""}</div>`).join("") : `<span class="muted" title="${esc(f.association || "")}">no machine associated yet</span>`}</td></tr>`; }).join("");
+    return `<tr data-fid="${esc(f.id)}" ${opens(`Live.openFlow('${esc(f.id)}')`)}><td>${esc(flowName(f))}<div class="muted" style="font-size:11px">${esc(end(f.from))} → ${esc(end(f.to))}${same.length ? ` · same events as ${same.map(esc).join(", ")}` : ""}</div></td><td class="num eq">${Evidence.tooFew(f) ? '<span class="muted">—</span>' : esc(eqText(f))}${!Evidence.tooFew(f) && e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}${SDGraph.correlational(m, f) ? `<div class="muted" style="font-family:inherit;font-size:11px">${esc(SDGraph.UNTESTED)}</div>` : ""}</td>
+      <td>${Evidence.tooFew(f) ? `<span class="muted num" title="fewer than ${Evidence.MIN_EVENTS} events in the window: no rate can be told from chance">${esc(Evidence.tooFewText(f))}</span>${eraNote(f)}` : e ? `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span> <span class="muted num" ${zero ? 'title="0 increments seen in the window; the counter first appeared already above 0"' : ""}>${esc(e.form)} · ${q.events ?? 0} ev${zero ? "*" : ""} · disp ${q.events && q.dispersion != null ? q.dispersion.toFixed(1) : "—"}</span>${e.prior && e.prior.weight != null && e.origin !== "prior" ? `<div class="muted" style="font-size:11px">${Math.round(100 * e.prior.weight)}% from the prior (era ${esc(e.prior.era || "before")})</div>` : ""}${eraNote(f)}` : '<span class="muted">—</span>'}</td>
+      <td class="mcell">${(f.machines || []).length ? f.machines.map((h) => `<div title="${esc(h.why || h.origin || "")}"><span class="mdot" style="--c:${mcolor(h.machine)}"></span><a href="/machines#${encodeURIComponent(h.machine)}" onclick="event.stopPropagation()">${esc((byMachine[h.machine] || {}).name || h.machine)}</a>${h.confidence != null ? ` <span class="muted num">${Math.round(100 * h.confidence)}%</span>` : ""}${Evidence.matched(h) ? `<div class="muted" style="font-size:11px">${esc(Evidence.matched(h))}</div>` : ""}</div>`).join("") : `<span class="muted" title="${esc(f.association || "")}">no machine associated yet</span>`}</td></tr>`; }).join("");
   // how far to trust each stock, as its drawer says it
-  const trustCell = (s) => { const t = (s.evidence || {}).trust; return t ? `<span class="num">${t.score.toFixed(2)}</span> <span class="muted">${esc(t.level)}</span>` : '<span class="muted">—</span>'; };
+  const trustCell = Evidence.trustCell;
   const stocksHtml = `<tr><th>stock</th><th>now</th><th>trust</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr data-sid="${esc(s.id)}" ${opens(`Live.openStock('${esc(s.id)}')`)}><td>${stockHead(s.id)}</td><td class="num">${m.levels[s.id] ? levelText(m.levels[s.id].v, s.unit) : "—"}</td><td>${trustCell(s)}</td>
       <td class="num muted bound">${s.series ? esc(keyOf(s.series)) + `<div style="font-family:inherit">${esc(resOf(m.discovery, keyOf(s.series)))}</div>` : "not measured"}</td></tr>`).join("");
   const hypm = m.machines.filter((x) => x.attributed.length), total = (window.MLIST || []).length;
@@ -364,13 +363,13 @@ function tables() {
   TABLES_SIG = sig;
   $("nflows").textContent = m.flows.length; $("nstocks").textContent = m.stocks.length; $("nmachines").textContent = `${hypm.length} of ${total || m.machines.length}`;
   $("flows").innerHTML = flowsHtml; $("stocks").innerHTML = stocksHtml; $("machines").innerHTML = machinesHtml;
-  const fitted = m.flows.filter((f) => f.current && f.current.origin === "fitted").length;
+  const fitted = m.flows.filter((f) => f.current && f.current.origin === "fitted" && !Evidence.tooFew(f)).length;
   const d = m.discovery || {};
   $("found").innerHTML = d.left_out ? `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d))} A level is a stock when counters balance it (R² ≥ ${d.min_r2}), or, with no counters, when the other series explain how it changes better than a steady drift does; a passage (a state each item leaves within a step) is judged on its raw points, its rises and falls matched to its counters, not on R².</div>`
     + (d.end && d.step ? `<div class="muted" style="font-size:12px;margin-bottom:6px">${plainWindow(d.end - d.start, d.step)}</div>` : "") + sourcesNote(d)
     + m.stocks.map((s) => { const ev = s.evidence || {};
       const passage = ev.trust && ev.trust.kind === "passage";
-      if (ev.balance) return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">changes by</span> ${ev.balance.map((b) => `<span class="ty">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join(" ")} <span class="muted">${passage ? "a passage: judged on its raw points; R² not used" : ev.balance_r2 == null ? (ev.by_construction ? "by construction: a count and its own turnover, no evidence" : "measured by no series") : `R² ${ev.balance_r2.toFixed(3)} · exact in ${Math.round(100 * ev.exact_steps)}% of steps`}${trustText(ev)}</span></div>`;
+      if (ev.balance) return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">changes by</span> ${ev.balance.map((b) => `<span class="ty">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join(" ")} <span class="muted">${passage ? "a passage: judged on its raw points; R² not used" : ev.balance_r2 == null ? (ev.by_construction ? "a count and its own turnover" : "measured by no series") : `R² ${ev.balance_r2.toFixed(3)} · exact in ${Math.round(100 * ev.exact_steps)}% of steps`}${trustText(ev)}</span></div>`;
       if (ev.net_flow) return netFlowLine(s, ev);
       return ""; }).join("")
     + leftOutHead(d, d.left_out, m) + keptNote(d, d.left_out) + leftOut(d.left_out) + unnamedBucket(d, d.left_out, m) : '<div class="muted">This version was declared, not discovered.</div>';
@@ -529,6 +528,9 @@ function offline() {
   if (at && $("ver") && !$("ver-asof")) $("ver").insertAdjacentHTML("beforeend", `<span class="stale" id="ver-asof">· as of ${esc(at)}: the server is not answering</span>`);
 }
 function online() { Orchestra.conn(true); const x = $("ver-asof"); if (x) x.remove(); }
+// the server answered but the page could not draw what it sent: say what broke, not that the server is down
+function renderError(e) { const x = $("render-err"); x.textContent = `This page could not draw the model: ${(e && e.message) || e}. The server is answering; the rest of the page may be incomplete.`; x.style.display = ""; console.error(e); }
+function rendered() { const x = $("render-err"); if (x) x.style.display = "none"; }
 // with no model yet: the declared layer still says what is expected, waiting for a model
 async function expectedWaiting() {
   let d = null;
@@ -548,9 +550,10 @@ function windowNote(d, busSince) {
   return parts.length ? `<div class="muted" style="font-size:12px;margin-top:6px">${parts.join(" · ")}</div>` : "";
 }
 async function load() {
+  let d;
+  try { d = await (await fetch(modelUrl())).json(); } catch (e) { offline(); return; }
+  online();
   try {
-    const d = await (await fetch(modelUrl())).json();
-    online();
     await loadKinds();
     showModelParts(d.ok);
     $("sd-note").textContent = d.sd_missing || ""; $("sd-note").style.display = d.sd_missing ? "" : "none";
@@ -565,22 +568,23 @@ async function load() {
           + `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d.discovery))} A level is a stock when counters balance it.</div>${keptNote(d.discovery, lo)}${leftOut(lo)}${unnamedBucket(d.discovery, lo)}</div>` : "");
       return;
     }
-    MODEL = d.model; versionBar(); erasBar(); draw(); tables();
+    MODEL = d.model; versionBar(); erasBar(); draw(); tables(); rendered();
     if (!HASH_SEEN) { HASH_SEEN = true; fromHash(); }
-  } catch (e) { offline(); }
+  } catch (e) { renderError(e); }
 }
 load();
 // follow the current model (a fit makes a new version), unless a past one is being read
 setInterval(async () => {
   if (VERSION !== null || ERA !== null) return;
+  let d;
+  try { d = await (await fetch(modelUrl(true))).json(); } catch (e) { offline(); return; }
+  online();
   try {
-    const d = await (await fetch(modelUrl(true))).json();
-    online();
     if (!d.ok) { if (!MODEL) load(); return; }
     const changed = !MODEL || d.model.version !== MODEL.version || d.model.as_of !== MODEL.as_of || Intended.sig(d.model) !== Intended.sig(MODEL);
     if (!MODEL) { showModelParts(true); MODEL = d.model; versionBar(); erasBar(); draw(); tables(); if (!HASH_SEEN) { HASH_SEEN = true; fromHash(); } return; }
-    MODEL = d.model; versionBar(); erasBar(); if (changed) draw(); tables();
-  } catch (e) { offline(); }
+    MODEL = d.model; versionBar(); erasBar(); if (changed) draw(); tables(); rendered();
+  } catch (e) { renderError(e); }
 }, 15000);
 // /dynamics#s:<stock> and #x:<expected part> open that part's drawer (the Machines page links here);
 // an s: not in this model falls back to the expected part of that id, and neither says why

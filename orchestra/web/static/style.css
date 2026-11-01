@@ -96,7 +96,7 @@ svg.netgraph { display:block; width:100%; min-height:0; font-size:11px; cursor:g
 /* keyboard focus on a node: a white ring outside a dark gap (focusRing in netgraph.js), readable on any node's colour */
 g.ng-node:focus, g.ng-label:focus { outline:none } .ng-focusring { fill:none; pointer-events:none; display:none } g.ng-node:focus-visible > .ng-focusring { display:inline }
 .ng-focusring.gap { stroke:#0b0d12; stroke-width:4 } .ng-focusring.ring { stroke:#fff; stroke-width:2 }
-g.ng-label:focus-visible .ng-elabel { fill:#fff; text-decoration:underline }
+g.ng-label:focus-visible .ng-elabel { fill:#fff; text-decoration:underline; stroke:var(--accent); stroke-width:6px }   /* a flow label's focus: a ring of the accent colour round its text */
 .ng-initial { fill:#0b0d12; font-weight:800; font-size:15px }
 .ng-name { fill:var(--text); font-weight:600; font-size:11.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
 .ng-sub { fill:var(--muted); font-size:9.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px }

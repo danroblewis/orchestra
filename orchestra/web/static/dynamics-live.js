@@ -137,6 +137,8 @@ const Live = (() => {
   }
   // how far to trust the stock (sd/stocktrust.py): each measurement of its evidence, the weakest as its score
   function trustRows(t) {
+    if (Evidence.byConstruction(t)) return `<div>trust</div><div><b>by construction: no evidence (D33)</b>${(t.why || []).map((w) => `<br><span class="muted">${esc(w)}</span>`).join("")}</div>
+      ${t.behaviour ? behaviourRows(t.behaviour) : ""}`;
     const pct = (x) => (x == null ? "—" : (+x).toFixed(2));
     const parts = Object.entries(t.components || {}).map(([k, v]) => `${esc(k.replace("_", " "))} ${pct(v)}`).join(" · ");
     const facts = [t.p_null != null ? `shift null p ${pct(t.p_null)}` : "", t.held_out_r2 != null ? `held-out R² ${pct(t.held_out_r2)}` : "",
@@ -250,7 +252,7 @@ const Live = (() => {
     openDrawer(`<h3 data-drawer-key="f:${esc(fid)}">${esc(flowName(f))} <span class="tag">flow</span></h3>
       <div class="def"><div>moves</div><div>${esc(f.from ? stockName(f.from) : "outside")} → ${esc(f.to ? stockName(f.to) : "outside")}</div>
       <div>equation</div><div class="num">${esc(eqText(f))}${SDGraph.correlational(MODEL, f) ? `<div class="muted" style="font-family:inherit">${esc(SDGraph.UNTESTED)}</div>` : ""}</div><div>machines</div><div>${(f.machines || []).length ? f.machines.map((h) => `<div><span class="mdot" style="--c:${mcolor(h.machine)}"></span><b><a href="/machines#${encodeURIComponent(h.machine)}" title="open it on the Machines page">${esc(h.machine)}</a></b>${h.confidence != null ? ` <span class="num">${Math.round(100 * h.confidence)}%</span>` : ""} <span class="muted">${esc(h.why || h.origin || "")}</span></div>`).join("") + '<div class="muted" style="font-size:11.5px">hypotheses: a match in time, not a cause; they change no equation, and two similar flows between the same stocks may not be told apart</div>' + byLabel : `<span class="muted">${esc(f.association || "no machine associated yet")}</span>${byLabel}`}</div>
-      <div>fit</div><div class="num">${esc(e.origin || "")} by ${esc(e.method || "")} · ${esc(e.form || "")} · ${q.events ?? 0} events${q.live_minutes ? ` over ${q.live_minutes} min` : ""}${q.dispersion != null ? ` · dispersion ${rateFmt(q.dispersion)}` : ""}${zeroEv ? `<div class="muted" style="font-family:inherit">${esc(zeroEv.slice(3))}</div>` : ""}</div>
+      <div>fit</div><div class="num">${Evidence.tooFew(f) ? `<b>${esc(Evidence.tooFewText(f))}</b>: ` : ""}${esc(e.origin || "")} by ${esc(e.method || "")} · ${esc(e.form || "")} · ${q.events ?? 0} events${q.live_minutes ? ` over ${q.live_minutes} min` : ""}${q.dispersion != null ? ` · dispersion ${rateFmt(q.dispersion)}` : ""}${zeroEv ? `<div class="muted" style="font-family:inherit">${esc(zeroEv.slice(3))}</div>` : ""}</div>
       ${(f.measured_by || []).length > 1 ? `<div>measured by</div><div class="num">${f.measured_by.map((c) => esc(c.name)).join(" + ")}</div>` : ""}
       ${SDGraph.sameAs(MODEL, f).length ? `<div>same events</div><div>as ${SDGraph.sameAs(MODEL, f).map(esc).join(", ")} <span class="muted">(another counter counts each of its events: one move, two names)</span></div>` : ""}
       <div>counter</div><div class="num">${esc(f.counter ? keyOf(f.counter) : "—")}${differs ? `<div class="muted" style="font-family:inherit">${esc(counts)}; drawn ${esc(endName(f.from))} → ${esc(endName(f.to))}${through ? ` because it passes through ${esc(through)}` : ""}</div>` : ""}</div>
