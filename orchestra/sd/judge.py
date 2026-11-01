@@ -44,7 +44,7 @@ from .compare import Z, compare
 from .loops import loops
 from .store import ModelStore
 from .trust import spread
-from .verdict import edit, law, level, outcome, stock_rows, unpredicted
+from .verdict import edit, law, level, outcome, simulated_ids, slope, stock_rows, unpredicted
 
 PATIENCE = 2.0
 SPLIT_STEPS = 10
@@ -219,7 +219,7 @@ def judge_one(project, metrics, store: ModelStore, p: dict, eras: list, now: flo
             return {**base, "verdict": "interrupted", "partial": None, "reason": "no_model_of_the_era"}
         return None
     expect = p["expect"]
-    edits = [e for e in expect if e["kind"] != "level"]
+    edits = [e for e in expect if e["kind"] not in ("level", "slope")]
     taken: set[str] = set()
     statuses = [{**e, **edit(e, comparison, model, taken)} for e in edits]
     waiting = any(s["status"] == "waiting" for s in statuses)
@@ -236,6 +236,10 @@ def judge_one(project, metrics, store: ModelStore, p: dict, eras: list, now: flo
     taken = set()
     statuses = [{**e, **edit(e, comparison, model, taken, laws, predicted)} for e in edits]
     levels = [{**e, **level(e, measured, span)} for e in expect if e["kind"] == "level"]
+    if slopes := [e for e in expect if e["kind"] == "slope"]:
+        before = measured_levels([prior, model], raw, era.start - span, era.start, step)
+        before = {k: [[t - span, v] for t, v in pts] for k, pts in before.items()}
+        statuses += [{**e, **slope(e, before, measured)} for e in slopes]
     if p.get("trajectories"):
         traj, why, origin = p["trajectories"], None, "prediction"
     else:
@@ -243,7 +247,7 @@ def judge_one(project, metrics, store: ModelStore, p: dict, eras: list, now: flo
         origin = "simulated" if traj else None
     rows = stock_rows(traj, measured, span) if traj else None
     loop_stocks = {lp["id"]: lp["stocks"] for m in (prior, model) if m is not None for lp in loops(m)}
-    extra = unpredicted(expect, comparison, statuses, model, loop_stocks, laws)
+    extra = unpredicted(expect, comparison, statuses, model, loop_stocks, laws, simulated_ids(prior, model))
     verdict = outcome(statuses, levels, extra, rows) or "undecided"
     out = {**base, "verdict": verdict, "expectations": statuses + levels, "unpredicted": extra,
            "stocks": {"from": origin, "rows": rows or [], **({"reason": why} if why else {})},
