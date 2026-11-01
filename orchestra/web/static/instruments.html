@@ -96,14 +96,15 @@ function fromHash() {
 }
 window.addEventListener("hashchange", fromHash);
 // an instrument's series, named as the Dynamics page names the stocks and flows they become
-// (SDGraph.seriesName: a pile "write (held) · delivery sail", its sentence under it), with the
+// (SDGraph.seriesName: a pile "write (held) · delivery sail", the sentence its view gives it under it), with the
 // latest value of each and how long ago it was written; the raw series key on hover
-function seriesTable(d, now) {
+function seriesTable(d, now, name) {
+  const inst = INSTRUMENTS.find((i) => i.name === name), views = inst && inst.views ? { [name]: inst.views } : null;
   if (!d.ok) return `<div class="muted">series not shown: ${esc(d.error)}</div>`;
   if (!d.series.length) return `<div class="muted">no series written in the last ${Math.round(d.window_s / 60)} minutes</div>`;
   const refs = d.series.map((r) => ({ name: r.name, labels: r.labels }));
   const key = (r) => `${r.name}{${Object.entries(r.labels).map(([k, v]) => `${k}="${v}"`).join(",")}}`;
-  const rows = d.series.map((r, i) => { const n = SDGraph.seriesName(refs[i], refs);
+  const rows = d.series.map((r, i) => { const n = SDGraph.seriesName(refs[i], refs, views, name);
     return `<tr title="${esc(key(r))}"><td><b>${esc(n.name)}</b>${n.family ? ` <span class="muted">${esc(n.family)}</span>` : ""}${n.about ? `<div class="muted about">${esc(n.about)}</div>` : ""}</td>
       <td class="num" style="text-align:right">${esc(String(+r.value.toFixed(3)))}</td><td class="muted" style="white-space:nowrap">${ago(now - r.at)} ago</td></tr>`; }).join("");
   return `<table class="itable series"><tr><th>series</th><th style="text-align:right">now</th><th>written</th></tr>${rows}</table>`
@@ -115,7 +116,7 @@ async function openLog(name) {
   [d, sr] = await Promise.all([get("log"), get("series")]);
   const now = Date.now() / 1000;
   openDrawer(`<h3 data-drawer-key="i:${esc(name)}">${esc(name)} <span class="tag">instrument</span></h3>`
-    + `<h4>Series <span class="muted">(${sr.ok ? sr.series.length + sr.more : "?"}, latest values)</span></h4>${seriesTable(sr, now)}<h4>Log</h4>`
+    + `<h4>Series <span class="muted">(${sr.ok ? sr.series.length + sr.more : "?"}, latest values)</span></h4>${seriesTable(sr, now, name)}<h4>Log</h4>`
     + (d.ok ? `<div class="muted" style="font-size:11.5px">${esc(d.path)}</div><div class="logs">${esc(d.lines.join("\n"))}</div>` : `<div class="muted">${esc(d.error)}</div>`), { key: "i:" + name });
   // a log opens at its newest line
   const box = document.querySelector("#drawer .logs"); if (box) box.scrollTop = box.scrollHeight;
