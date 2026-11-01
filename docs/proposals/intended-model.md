@@ -1,6 +1,7 @@
 # The intended model
 
-Status: draft for review, round 2, 2026-11-01. Nothing built. Proposal 2 of
+Status: reviewed, 2026-11-01 (panel round 1; judge's verdicts rounds 2–3); aligned to
+machine-design.md and instruments-on-machines.md as merged. Nothing built. Proposal 2 of
 `design-backwards.md` §7, written from `design-backwards-notes.md` §9, §11 and §13 and decision
 D21, for milestone M2 of `docs/roadmap/GOAL-2026-11-01-workflows.md`. The page states are the
 approved mockups `mockups/out/D1–D3`, `E1–E3` (`mockups/README.md`), with the corrections of §7.
@@ -56,12 +57,15 @@ discovered parts do so by **key** (§3.1), never by discovered id. None of it is
   a day" is a flow target). Per-item conditions ("each pull request reviewed within a day") are
   P3's floor, not targets.
 - **Machines.** Placed by name ("by name only", notes §9.3). The id is the `source` it is expected
-  to publish under; instances are learned, never declared (sources `<machine>/<instance>`, and
-  labels once an instrument is attached, P5). The core stores and checks only the **envelope**:
-  `id`, `title`, `description`, `tags`, `kind` ∈ `universal | programmatic | external` (the
-  owner's switch, plus external), `engagement` (`mode` ∈ `ad hoc | continuous | scheduled`;
-  `schedule` only when scheduled; `external` takes `continuous` or `scheduled`), `receives`,
-  `emits`, `reads`. Everything else is `spec`, an object stored exactly as sent, never checked,
+  to publish under, matching `^[a-z][a-z0-9_]{1,40}$` (P4 §2.3: "Feature Count Improver" is
+  `feature_count_improver`); instances are learned, never declared (sources
+  `<machine>/<instance>`, and labels once an instrument is attached, P5). The core stores and
+  checks only the **envelope** (P4 §2.3): `id`, `title`, `description`, `tags`, `kind` ∈
+  `universal | programmatic` (the owner's switch), `managed` ∈ `orchestra | external` (started by
+  `orchestra run` or the agents' host, or running elsewhere), `engagement` `{mode, at, tz,
+  missed}` (`mode` ∈ `ad hoc | continuous | scheduled`; `at`, `tz` and `missed` ∈ `skip | run
+  once` only when scheduled; any mode with either `managed`), `receives`, `emits`, `reads`.
+  `managed` and `engagement` are separate axes: a nightly Jenkins job is `external`, `scheduled`. Everything else is `spec`, an object stored exactly as sent, never checked,
   rendered by the page generically in the order its keys were declared. P4 owns the schema of
   `spec` per kind and the check that a Universal Machine "is not described in AI terms".
 
@@ -69,10 +73,10 @@ discovered parts do so by **key** (§3.1), never by discovered id. None of it is
 
   | kind (and mode) | `spec` |
   |---|---|
-  | `universal` | `invariants` (list), `steps` (ordered list), `uses: [{name, description, access: read\|act}]` ("just an interface for what it is able to use") |
-  | `programmatic`, `ad hoc` or `scheduled` | `command`; `arguments: [{name, description, default}]`, `environment: [{name, description, value}]`, `stdin: {description, example}`, `exit` |
-  | `programmatic`, `continuous` | `command` (a daemon); `protocol` (HTTP, GraphQL, gRPC, other), `listen`, `send`, `receive` (`{how: poll\|push, call, every_s}`), `health` |
-  | `external` | no `command` ("effectively continuous machines with no command"): `protocol`, `send`, `receive`, `health`, `source`, `runs_where`, `log` (shown only inside the repository or state directory) |
+  | `universal` | `invariants` (list), `steps` (numbered) |
+  | `programmatic`, `ad hoc` or `scheduled` | `command`, or for `managed: external` a `trigger` (a remote call that starts it: a Jenkins job's URL); `arguments`, `environment`, `stdin`, `exit` |
+  | `programmatic`, `continuous` | `command` (a daemon; none when external: "effectively continuous machines with no command"); `protocol` (`http`, `graphql`, `grpc`, `other`), `send`, `receive` (push, or a poll with its call and interval: `getTasks()` every 10 s) |
+  | any, `managed: external` | `source`: the relayed actor whose events it is (`bot.jira`), never the bridge (rule 2, D19); `log` shown only inside the repository or state directory |
 
 - **Events.** A declared event type: `type`, `description` (its purpose, which P4's refinement
   passes read). A type a machine names but nobody declared is declared implicitly, undescribed.
@@ -105,7 +109,8 @@ owner asks for are declared at once; machines always enter proposed. Whether thi
 
 Discovered ids are assigned by arrival order (`sd/discover.py` `unique_id`) and are not stable.
 A part's **key** is: for a stock, its series name plus `_identity(labels)` (the labels without
-`NOT_IDENTITY`: instrument, machine, source, project, instance); for a flow, its ends' keys plus
+`NOT_IDENTITY`: instrument, machine, source, project, instance, and also `simulated`, so a real
+series takes over a placeholder's mark); for a flow, its ends' keys plus
 its counter's key (none for a net flow). Marks, ignores, suggestions, settling and new/removed
 all match by key; the id is for display. The diff (§5) is computed on keys, inside `intended/`,
 not with `sd.compare`; parts `sd.prior` carries into an era are excluded, and each key counts
@@ -148,7 +153,8 @@ element until `retract`; a mark until `unexpect`. Nothing expires by time.
  "turn": "sessions/supervisor/41", "message": "msg_0193", "quote": "I'm going to create a Features stock."}
 ```
 
-`author` ∈ `owner | inference | <source>`. `via` is `plugin` (§6.3), `page` (§6.2, with
+`author` ∈ `owner | inference | <source>`; `reason` is the plugin's one-line why (P4 needs 1, 5).
+`via` is `plugin` (§6.3), `page` (§6.2, with
 `control`, `page`, `from`) or `host` (inference). Every change has an id (`c<seq>.<i>`: call,
 op). A **revision** by `author: owner` with a `quote` applies at once (E2: the Supervisor changes
 the machine as the owner talks); any other revision becomes a **pending change** on the element,
@@ -190,7 +196,7 @@ experience", D21):
   `orchestra-host` (its own type: `subject` `<part>:<id>`, `data` `{version, via, ops: [{op,
   part, id, change}]}`), following the journal by `seq`, so a call the web server wrote is
   announced once the host is up. A listener filters with the existing syntax,
-  `orchestra.intent.changed:subject=machine:feature-count-improver`.
+  `orchestra.intent.changed:subject=machine:feature_count_improver`.
 
 ## 6. The API
 
@@ -207,7 +213,8 @@ version, `since=off` drops the marks). The answer's `model` gains:
      "measured": false, "near": "tasks_tickets{state=\"DONE\"}", "note": null, "provenance": {…}, "target": null,
      "candidates": [{"key": "acceptance_tests_passing", "id": "acceptance_tests_passing", "why": "recorded by the chosen instrument"}],
      "measure": {"options": [{"key": "a", "title": "…", "how": "…", "kind": "script collector", "instrument": "features.acceptance",
-                              "simulated": false, "provenance": "free text from the plugin", "commit": "3f2c1aa", "first_points": [[t, 41]]}],
+                              "simulated": false, "cost": "…", "caveat": "…", "clearance": "…",
+                              "provenance": "free text from the plugin", "commit": "3f2c1aa", "first_points": [[t, 41]]}],
                  "chosen": "a",
                  "recording": {"instrument": "features.acceptance", "since": 1793503500, "points": 3, "every_s": 900,
                                "last": 46, "points_series": [[t, 41], [t, 43], [t, 46]]}}},
@@ -235,9 +242,9 @@ one.
 ```json
 "intent": {"state": "proposed", "author": "supervisor", "kind": "universal", "heard": false,
   "title": "Feature Count Improver", "description": "…", "tags": ["features", "feedback loop"],
-  "engagement": {"mode": "scheduled", "schedule": "daily 00:00"},
+  "managed": "orchestra", "engagement": {"mode": "scheduled", "at": "00:00", "tz": "America/Los_Angeles", "missed": "skip"},
   "receives": ["changes.requested", "gate.rejected", "gate.landed"], "emits": ["work.requested"],
-  "reads": ["features", "acceptance_tests_passing"], "spec": {"invariants": […], "steps": […], "uses": […]},
+  "reads": ["features", "acceptance_tests_passing"], "spec": {"invariants": […], "steps": […]},
   "guessed": ["receives[0]", "receives[1]"], "pending": [], "requested": null,
   "expected_effect": {"horizon_s": 604800, "prediction": null, "edits": [
      {"edit": {"stock": "features", "rises": true}, "label": "Features ↑", "link": "/dynamics#s:features",
@@ -257,7 +264,7 @@ top level gains `intended_edges` (`{from, to, kind, state, observed, gone}`) and
 
 **Also:** `GET /api/intended?version=`, `/api/intended/versions`, `/api/intended/journal?after=`,
 `/api/intended/diff?d=&v=&since=`, and `/api/intended/script?instrument=` (the script of an
-option, read only inside the repository; its `[[collect]]` entry through `project.config`).
+option, read only inside the repository or the state directory, where P4 writes them, as logs are; its `[[collect]]` entry through `project.config`).
 
 ### 6.2 The page controls: observations and requests
 
@@ -268,7 +275,7 @@ A closed list; no control carries a value.
 | `expect`, `unexpect` | D2 Changes panel; D3 drawer switch | observation | a mark on a discovered key |
 | `ignore` | D2 Changes panel | observation | the suggestion to "ignored" |
 | `confirm`, `discard` on a stock, effect or flow (or a pending change on one) | D1 drawer; D2 panel | observation | a proposal declared or discarded |
-| `confirm`, `discard` on a machine (or a pending change on one); `switch_kind` | E1–E3 status strip, card; the Universal \| Programmatic switch | **request** | nothing changes until the Supervisor applies it |
+| `confirm`, `discard` on a machine or an attachment (or a pending change on one); `switch_kind` | E1–E3 status strip, card; the Universal \| Programmatic switch | **request** | nothing changes until the Supervisor applies it |
 
 An observation, `POST /api/intended/control {control, part, id, change?, from}`, records a
 declaration with `via: page` provenance, announced as `orchestra.intent.changed`; it changes no
@@ -293,8 +300,8 @@ expect {part, key} · unexpect · ignore · unignore    link {id, found_as}     
 propose_machine {id, envelope…, spec}                revise_machine {id, set, add, remove}
 declare_event {type, description}                    set_expected_effect {machine, edits, horizon_s}
 record_prediction {machine, prediction}              record_measurement {part, id, options, chosen?}
-confirm {part, id, change?} · discard {…} · retract {part, id}
-attach / detach                                      (P5 defines their bodies and comparison entries)
+confirm {part, id, change?} · discard {…} · retract {part, id}   (part may be "attachment")
+propose_attachment {machine, instrument, match?, instance_label?} · revise_attachment {id, set}   (P5)
 ```
 
 `project.intended.read(version=None)`, `.diff(model=None, since=None)` and `.design()` read back;
@@ -304,7 +311,8 @@ changes, unanswered requests, unsettled suggestions, absent expected parts, unpu
 and the last 20 changes, under 20 KB for 100 elements.
 
 **Measurement options** (the goal's decision 2): `record_measurement` stores the options (`key,
-title, how, kind, instrument, simulated, provenance, commit`) and `chosen`; the core proposes
+title, how, kind, instrument, simulated, cost, caveat, clearance, provenance, commit,
+first_points`) and `chosen`; the core proposes
 none. It stores the instrument's name, never a copy of its configuration.
 
 **Simulated series** (the coordinator's decision on item 10). A simulated option's `[[collect]]`
@@ -314,8 +322,10 @@ other, and marks every stock, flow, equation and machine hypothesis fitted from 
 `simulated: true` in the saved version, from the label, so the mark lives in `vN`. The pages draw
 simulated parts distinctly ("simulated"); a prediction verdict never counts a simulated part as an
 unpredicted change or side effect; a target backed only by simulated parts is never "met". When a
-real option records, the plugin removes the simulated entry; the next discovery no longer sees its
-series and the simulated parts leave the model. The expected mark survives by key: the key
+real option records, the plugin removes the simulated entry. Its points stay in the store, so
+discovery reads a `simulated="true"` series only while a `simulated = true` entry names its
+instrument; once the entry is gone the series is left out (`left_out`: "simulated, expired") and
+the simulated parts leave the next version. The expected mark survives by key: the key
 excludes `instrument` (§3.1), so a real series of the same name and identity labels takes it;
 otherwise the Supervisor `link`s the declared stock to the real series' key.
 
@@ -330,7 +340,7 @@ The marks are the mockups' language (`mockups/README.md`). What each frame needs
 | D3, D3-closed | the drawer's switch "Expected: always show this stock" and provenance; the pin; Expected group | `expect`, `expected[]` |
 | E1 | the proposed machine dashed violet, "unconfirmed", engagement sub-line; the highlight; the panel: status strip with confirm / discard (requests), quote, kind row, envelope, `spec` rendered in order, "a guess" on guessed items, expected effect rows with label, link and "waits for a series"; its card first | `intent`, `intended_edges` |
 | E2 | "+ new link", "− link removed", "changed just now", "was continuous: …" from `latest.before`, "rewritten just now"; card chips marked | `intent.latest` |
-| E3, -continuous, -external | kind row (Programmatic / external) separate from the engagement tabs; `spec` by mode | `intent` |
+| E3, -continuous, -external | kind row (Universal \| Programmatic) and `managed` (orchestra / external) separate from the engagement tabs; `spec` by mode | `intent` |
 
 **Read-only renderings, "ask the Supervisor":** E3's "+ argument" and "+ variable" and its
 input-like boxes; D1's option radios; D1's "you can say whether that is this stock" (the
@@ -343,7 +353,7 @@ the + flow row.
 
 **No frame yet, one line each (or deferred):** settled parts lose their ring, no other mark;
 came-and-went and ignored are collapsed rows in the Changes panel; simulated parts with a "simulated" tag
-and a hatched fill; candidates as "may be this stock" lines; alias
+and a hatched fill; candidates as "may be this stock" lines; a linked stock as "linked by you (assumption)"; alias
 candidates as a line on the unheard machine's card; "declared · unheard" a dashed outline on the
 map; a confirmed machine's verdict a chip on its expected-effect rows; event descriptions on
 hover over an event type; a target a line in the drawer and Expected group; `retract` is the
@@ -412,15 +422,16 @@ a one-line addition made with C1).
 |---|---|
 | P4.1 API | `project.intended`: `apply`, `read`, `diff`, `design` (§6.3); provenance §4; `guessed` per op. |
 | P4.2 time | every change has an id and `at`; `latest.at` drives "just now". |
-| P4.3 fields | the envelope (§2) is checked; `spec` is P4's, per kind and mode, with the table of §2 as the starting schema and the "no AI terms" check. |
+| P4.3 fields | the envelope (§2, P4 §2.3) is checked; `spec` is P4's, per kind and mode, with the table of §2 as the starting schema and the "no AI terms" check. |
 | P4.4 options | `measure.options`, `measure.chosen`, in the declared layer. |
 | P4.5 matching | never automatic: `candidates` on read, `link` to set; P4 links in the same turn it instruments when they are the same quantity. |
-| P4.6 simulated | the `[[collect]]` flag and label; parts marked `simulated` in `vN`; P4 removes the entry when a real option records (§6.3). |
+| P4.6 simulated | the `[[collect]]` flag and label; parts marked `simulated` in `vN`; read only while the entry exists; P4 removes the entry when a real option records (§6.3). |
+| P4 need 2, draft namespace | **P4-owned**; the core has none. An unchosen option's instrument is ordinary; the agents plugin removes its entry after the expiry, and any points already written stay as real measurements. |
 | P4.7 ids | keys (§3.1). |
 | P4.8 page events | `orchestra.intent.changed` for observations, `orchestra.intent.requested` (source `owner`) for requests, which P4 handles; filter `…:subject=machine:<id>`. |
 | P4.9 predictions | `rises`/`falls` and `appears` (§2); unpublishable until linked. |
 | P4.10 summary | `design()`. |
-| P5 | `attach`/`detach` on the same `apply`, with their own comparison entries, defined in P5; `alias` (§6.3) joins a declared id to an observed source or a counted `<prefix>.<name>`, never inferred (name matches are `alias_candidates`, on read); `external` takes `continuous` or `scheduled`; the rule-5 amendment (§8); `dN` covers attachments (§5); observed facts derived on read (§5); persistence per element (§3.3). |
+| P5 | `propose_attachment`, `revise_attachment` on the same `apply`, with `confirm`/`discard`/`retract` taking `part: "attachment"` (confirm and discard on the page are requests), comparison entries defined in P5; `alias` (§6.3) joins a declared id to an observed source or a counted `<prefix>.<name>`, never inferred (name matches are `alias_candidates`, on read); `managed: external` takes any mode; the rule-5 amendment (§8); `dN` covers attachments (§5); observed facts derived on read (§5); persistence per element (§3.3). |
 
 ## 10. Acceptance tests
 
@@ -432,8 +443,9 @@ and the C2/C3 screenshot comparison against `mockups/out/` (with §7's correctio
 2. Past `dN` read back unchanged after later calls; numbered without gaps.
 3. Every element carries `provenance` (`author`, `via`, `at`); a plugin call keeps `source`, `turn`,
    `message`, `quote`; a page control keeps `control`, `page`, `from`; every change has an id.
-4. The store refuses any envelope key it does not know, a `kind` or `mode` outside its list,
-   `schedule` without `scheduled`, `external` with `ad hoc`; it stores `spec` exactly as sent.
+4. The store refuses any envelope key it does not know, an id not matching
+   `^[a-z][a-z0-9_]{1,40}$`, a `kind`, `managed`, `mode` or `missed` outside its list, and `at`
+   without `scheduled`; it accepts `managed: external` with every mode; it stores `spec` as sent.
 5. A declared stock with no series is in `expected` with `present: false`, `measured: false`, and
    in `changes` as ○; the model's `stocks` are unchanged by it.
 6. Discovery with and without a declared layer produces identical `model` bodies (not `saved_at`).
@@ -450,15 +462,15 @@ and the C2/C3 screenshot comparison against `mockups/out/` (with §7's correctio
 13. `ignore` moves a suggestion to `ignored`; `unignore` returns it.
 14. A declared flow with a `null` end, or two flows between its ends, gives `candidates` and no
     match.
-15. `/api/intended/control` accepts exactly the observations of §6.2 and refuses a machine target
+15. `/api/intended/control` accepts exactly the observations of §6.2 and refuses a machine or attachment target
     or any value (400); `/api/intended/request` publishes one `orchestra.intent.requested` from
     `owner` and writes no `dN`; neither writes `orchestra.toml` or a `vN`.
 16. A request with no later op answering it shows as `requested` on the machine; an `apply` with
     `request` set clears it.
 17. A series labelled `simulated="true"` yields a stock marked `simulated` in the saved version;
     a prediction verdict does not list it as unpredicted and a target on it is not met; after the
-    entry is removed it is gone from the next version, and a real series of the same key keeps
-    the expected mark.
+    entry is removed its points stay but it is gone from the next version (`left_out`), and a real
+    series of the same key (the `simulated` label left out) keeps the expected mark.
 18. Each accepted call is announced once as `orchestra.intent.changed` by `orchestra-host`, also
     one written while the host was down; the filter `…:subject=machine:<id>` selects it.
 19. The diff cache holds only structural entries; with the same `dN`, `vM`, `vK`, era, a machine
@@ -466,7 +478,8 @@ and the C2/C3 screenshot comparison against `mockups/out/` (with §7's correctio
     limit answers with the missing facts named.
 20. An op carrying a derived field (`present`, `heard`, …) is refused.
 21. `record_measurement` options come back as recorded with the recording read from the metrics
-    store; the core adds none; `/api/intended/script` refuses a path outside the repository.
+    store; the core adds none; `/api/intended/script` reads the repository and the state
+    directory and refuses any other path.
 22. `link` alone sets `found_as`; a stock recorded by the chosen instrument appears only in
     `candidates`. An effect may link to a series key.
 23. A declared machine never heard is in `/api/machines` with `unseen: true` and `intent`; once its
