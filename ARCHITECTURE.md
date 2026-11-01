@@ -911,7 +911,7 @@ experiments tied to it and each prediction to the experiment it came from. What 
 if" (`POST /api/dynamics/whatif`) was removed on 2026-10-27: a machine asks an experiment.
 
 **Authentication** (`web/auth.py`) is the app's outermost middleware, a plain ASGI one, so it is in
-front of every route: Orchestra's pages and `/api/*`, the static files, the websocket, and every
+front of every route: Orchestra's pages and `/api/*`, the static files, any websocket, and every
 plugin's pages, static directory and router, mounted before or after it. Only `GET /health` is
 open. The credential is the project's web token, `<state>/web.token` (owner-only, made on first
 use, re-read when the file changes; `orchestra/tokens.py` makes it and the events endpoint's).

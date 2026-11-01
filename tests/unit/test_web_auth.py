@@ -9,7 +9,7 @@ import subprocess
 import pytest
 from fastapi import APIRouter, Request
 from fastapi.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from orchestra import plugins
 from orchestra.config import ConfigError, init_project
@@ -60,8 +60,24 @@ def set_auth(project, value: str) -> None:
     project.reload_config()
 
 
+WS = "/test-websocket"
+
+
+def with_ws(app):
+    """The app with a websocket route of the test's own, so the auth middleware's websocket branch
+    is covered though no page opens a websocket."""
+    async def hold(ws: WebSocket) -> None:
+        await ws.accept()
+        try:
+            await ws.receive_text()
+        except WebSocketDisconnect:
+            return
+    app.add_api_websocket_route(WS, hold)
+    return app
+
+
 def logged_in(project) -> TestClient:
-    c = TestClient(create_app(project))
+    c = TestClient(with_ws(create_app(project)))
     r = c.post("/login", data={"token": auth.token(project), "next": "/core"}, headers={"Origin": ORIGIN}, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/core"
     return c
@@ -112,8 +128,8 @@ def test_a_post_without_a_login_is_refused_and_does_nothing(project):
 
 
 def test_the_websocket_is_refused_without_a_login(project):
-    c = TestClient(create_app(project))
-    with pytest.raises(WebSocketDisconnect) as e, c.websocket_connect("/api/events"):
+    c = TestClient(with_ws(create_app(project)))
+    with pytest.raises(WebSocketDisconnect) as e, c.websocket_connect(WS):
         pass
     assert e.value.code == 1008
 
@@ -126,7 +142,7 @@ def test_after_logging_in_pages_apis_plugins_and_the_websocket_pass(project):
     assert c.get("/api/plugins/outbox/state").json() == {"ok": True}
     assert c.get("/outbox").text.endswith("the outbox")
     assert c.get("/api/session").json() == {"ok": True, "auth": True, "via": "cookie"}
-    with c.websocket_connect("/api/events", headers={"Origin": ORIGIN}):
+    with c.websocket_connect(WS, headers={"Origin": ORIGIN}):
         pass
     r = c.post("/api/plugins/outbox/send", json={"id": 7}, headers={"Origin": ORIGIN})
     assert r.json() == {"ok": True, "sent": 7}
@@ -144,10 +160,10 @@ def test_the_session_cookie_is_httponly_and_samesite_strict(project):
 
 
 def test_a_bearer_token_passes_without_a_cookie_or_an_origin(project):
-    c = TestClient(create_app(project), headers=auth.bearer(project))
+    c = TestClient(with_ws(create_app(project)), headers=auth.bearer(project))
     assert c.get("/api/core").status_code == 200
     assert c.post("/api/plugins/outbox/send", json={"id": 3}).json()["sent"] == 3
-    with c.websocket_connect("/api/events"):
+    with c.websocket_connect(WS):
         pass
 
 
@@ -215,7 +231,7 @@ def test_a_same_origin_post_by_referer_passes(project):
 
 def test_a_cross_site_websocket_with_the_cookie_is_refused(project):
     c = logged_in(project)
-    with pytest.raises(WebSocketDisconnect), c.websocket_connect("/api/events", headers={"Origin": "https://evil.example"}):
+    with pytest.raises(WebSocketDisconnect), c.websocket_connect(WS, headers={"Origin": "https://evil.example"}):
         pass
 
 
@@ -271,18 +287,18 @@ def test_off_is_refused_on_anything_but_loopback(project):
 
 def test_off_on_loopback_serves_this_computer_only(project):
     set_auth(project, "off")
-    c = TestClient(create_app(project, "127.0.0.1"), base_url="http://127.0.0.1:8000")
+    c = TestClient(with_ws(create_app(project, "127.0.0.1")), base_url="http://127.0.0.1:8000")
     assert c.get("/api/core").status_code == 200
     assert c.get("/api/session").json() == {"ok": True, "auth": False}
     assert c.post("/api/plugins/outbox/send", json={"id": 4}).json()["sent"] == 4
-    with c.websocket_connect("/api/events", headers={"Host": "127.0.0.1:8000"}):
+    with c.websocket_connect(WS, headers={"Host": "127.0.0.1:8000"}):
         pass
     # a tunnel or proxy in front of it, or a name that resolves here (DNS rebinding): refused
     assert c.get("/api/core", headers={"X-Forwarded-For": "1.2.3.4"}).status_code == 403
     assert c.get("/api/core", headers={"Cf-Connecting-Ip": "1.2.3.4"}).status_code == 403
     assert c.get("/api/core", headers={"Host": "demo.trycloudflare.com"}).status_code == 403
     assert c.post("/api/plugins/outbox/send", json={"id": 1}, headers={"Origin": "https://evil.example"}).status_code == 403
-    with pytest.raises(WebSocketDisconnect), c.websocket_connect("/api/events", headers={"Host": "127.0.0.1:8000",
+    with pytest.raises(WebSocketDisconnect), c.websocket_connect(WS, headers={"Host": "127.0.0.1:8000",
                                                                                   "Origin": "https://evil.example"}):
         pass
     assert c.get("/login", follow_redirects=False).headers["location"] == "/"

@@ -5,7 +5,6 @@ closed list of page controls, web/intended.py). Every route, a plugin's too, is 
 
 from __future__ import annotations
 
-import asyncio
 import os
 import threading
 import time
@@ -13,7 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import psutil
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -493,22 +492,12 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         }
 
     @app.get("/api/events")
-    async def get_events(since: int = 0) -> dict:
-        evs, nxt = events.read(since)
+    def get_events(since: int = 0) -> dict:
+        """Every event after ``since``, in order, nothing cut off, and ``next``: where the next
+        call resumes, right after the last one returned. A plain ``def``, so a hung bus holds a
+        worker thread, never the event loop the Core page's probes answer on (rule 8)."""
+        evs, nxt = events.after(since)
         return {"events": evs, "next": nxt}
-
-    @app.websocket("/api/events")
-    async def ws_events(ws: WebSocket) -> None:
-        await ws.accept()
-        _, offset = events.read(0, limit=1)
-        try:
-            while True:
-                evs, offset = events.read(offset)
-                for e in evs:
-                    await ws.send_json(e)
-                await asyncio.sleep(1)
-        except WebSocketDisconnect:
-            return
 
     stamp = project.config_stamp()
     declare, loaded_collectors = mount_plugins(app, project, stylesheets)

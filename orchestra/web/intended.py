@@ -24,6 +24,7 @@ import shlex
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from ..sd.intended import IntentError
@@ -235,7 +236,7 @@ def install(app: FastAPI, project, events, metrics, observed=None) -> None:
             store = intended()
             op, prov = observation(body, store.models)
             return {"ok": True, **store.apply([op], prov, via="page")}
-        return answer(go)
+        return await run_in_threadpool(answer, go)     # the file lock off the event loop (rule 8)
 
     @app.post("/api/intended/request")
     async def intended_request(request: Request):
@@ -243,4 +244,4 @@ def install(app: FastAPI, project, events, metrics, observed=None) -> None:
             body = await request.json()
         except ValueError:
             return JSONResponse({"ok": False, "error": "the body must be a JSON object"}, status_code=400)
-        return answer(lambda: {"ok": True, "event": owner_requests.publish(intended(), events, body)["id"]})
+        return await run_in_threadpool(answer, lambda: {"ok": True, "event": owner_requests.publish(intended(), events, body)["id"]})

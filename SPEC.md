@@ -1796,7 +1796,7 @@ Anyone who reaches the web UI could otherwise use every page and every plugin's 
 server on `127.0.0.1` is reached by more than its owner: a tunnel or proxy on the same computer
 publishes it, other local users reach it, and any web page a browser visits can send it requests.
 So every route asks for the project's **web token**: Orchestra's pages and `/api/*`, the static
-files, the websocket, and every plugin's pages, static directory and router. `GET /health` alone
+files, any websocket, and every plugin's pages, static directory and router. `GET /health` alone
 is open. One ASGI middleware in front of the whole app checks it (`web/auth.py`); no page and no
 plugin does, so none can forget to, and the Core page stays independent of the model and the
 plugins (rule 8).

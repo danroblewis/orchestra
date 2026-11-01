@@ -328,7 +328,7 @@ does it in a router dependency, `Depends(fresh)`).
 
 `orchestra web` puts every route behind the project's web token (`orchestra/web/auth.py`,
 USING_ORCHESTRA.md "Logging in to the web UI"): your pages, your static directory, your router,
-and the websocket. It does this in one middleware in front of the whole app, so a plugin adds
+and any websocket you add. It does this in one middleware in front of the whole app, so a plugin adds
 nothing and cannot forget it:
 
 - a request reaches your handler only when it carries a valid session cookie or
