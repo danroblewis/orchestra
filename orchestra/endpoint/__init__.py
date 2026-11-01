@@ -16,7 +16,8 @@ project's token in ``ORCHESTRA_EVENTS_TOKEN``. A machine the host did not launch
 - ``GET /health``: whether it is up, without the token;
 - beside them, the model and experiments (``api.py``): ``GET /model``, ``/eras``, ``/series``,
   ``/experiments``… and ``POST /experiments``…, what ``sd.experiments.api.Experiments`` does from
-  Python (SPEC §3.1, §4.5).
+  Python (SPEC §3.1, §4.5); and the intended model's declared layer: ``GET /intended``,
+  ``GET /intended/design`` and ``POST /intended`` (one call to it, ``sd.intended``, SPEC §4.6).
 
 Every request but ``/health`` carries ``Authorization: Bearer <token>``. The token is the
 project's, kept in ``<state>/events.token`` (readable by its owner only), so another local user's

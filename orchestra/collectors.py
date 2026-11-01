@@ -28,7 +28,6 @@ from .events import event_time
 from .metrics import MetricsStore, Point
 
 EVENTS = "orchestra_events_total"
-LEGACY = ("orchestra_stock", "orchestra_flow_total", "orchestra_stock_sampled")    # names before 2026-10-25
 
 
 def collapse(points: list[Point]) -> list[Point]:
@@ -75,8 +74,7 @@ def backfill(events: list[dict], *, project: str, store: MetricsStore) -> Backfi
     for ev in events:
         points += col.observe(ev)
     points = collapse(points)
-    for name in (EVENTS, *LEGACY):
-        store.delete(name, {"project": project})
+    store.delete(EVENTS, {"project": project})
     store.write(points)
     stamps = [t for t in (event_time(e) for e in events) if t is not None]
     types = Counter()

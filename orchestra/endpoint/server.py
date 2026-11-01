@@ -171,8 +171,9 @@ def _handler(ep: EventsEndpoint) -> type[BaseHTTPRequestHandler]:
             if path == "/health":
                 return path
             if path != "/events" and not api.known(path):
-                self._send(404, {"ok": False, "error": f"no {path} here: POST /events, GET /events, GET /health, and the model "
-                                                       "and experiments (GET /model, /experiments, ...: USING_ORCHESTRA.md §5.9)"})
+                self._send(404, {"ok": False, "error": f"no {path} here: POST /events, GET /events, GET /health, the model "
+                                                       "and experiments (GET /model, /experiments, ...: USING_ORCHESTRA.md §5.9), "
+                                                       "and the intended model (GET /intended, GET /intended/design, POST /intended)"})
                 return None
             if not ep.authorized(self.headers.get("Authorization")):
                 self._send(401, {"ok": False, "error": "needs Authorization: Bearer <token> (ORCHESTRA_EVENTS_TOKEN, "

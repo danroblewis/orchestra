@@ -29,7 +29,7 @@ in the runtime record under ``processes`` for the Core page. A plugin's processe
 with them.
 
 Inside every command Orchestra runs, ``python`` and ``python3`` are the Python Orchestra runs in
-(``orchestra.launcher_env``: ``child_env``, ``own_python``, re-exported here).
+(``orchestra.launcher_env``: ``child_env``, ``own_python``).
 
 Orchestra starts commands and knows nothing else of them: a process is not a machine to it until
 it publishes (AGENTS.md rules 1 and 2)."""
@@ -53,7 +53,7 @@ import psutil
 
 from . import runtime
 from .config import ConfigError, Project
-from .launcher_env import PYTHONS, child_env, own_python, python_dir  # noqa: F401 - re-exported: plugins and collect import them from here
+from .launcher_env import child_env, own_python
 
 RESTARTS = ("always", "on-failure", "never")
 NAME = re.compile(r"^[A-Za-z0-9_.-]+$")

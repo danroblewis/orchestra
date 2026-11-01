@@ -43,3 +43,13 @@ def test_events_appended_between_end_and_the_read_are_all_folded():
         idx.update()
     assert idx.total["a"]["thing.done"] == idx.offset           # every event read was folded, none pushed out
     assert idx.offset >= 5
+
+
+def test_bus_since_is_the_earliest_any_instance_was_first_seen():
+    from orchestra.web.machines import _ListBus
+
+    idx = MachineIndex(_ListBus([{"type": "a", "source": "x/1", "time": T.format(3)}, {"type": "a", "source": "y", "time": T.format(1)}]))
+    assert idx.bus_since() is None
+    idx.update()
+    from orchestra.events import event_time
+    assert idx.bus_since() == event_time({"time": T.format(1)})

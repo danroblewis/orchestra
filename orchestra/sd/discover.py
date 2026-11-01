@@ -245,18 +245,6 @@ def first_stamped(a: Series, b: Series) -> bool:
     return sum(1 for x, y in zip(ta, tb) if x < y) > sum(1 for x, y in zip(ta, tb) if x > y)
 
 
-def _loglik(y: list[float], mu: list[float]) -> float:
-    ll = 0.0
-    for c, m in zip(y, mu):
-        if m <= 1e-12:
-            if c > 0:
-                return -math.inf
-            continue
-        ll += c * math.log(m) - m - math.lgamma(c + 1)
-    return ll
-
-
-
 def events_of(points: list[tuple[float, float]], live: list[tuple[float, float]]) -> list[tuple[float, float]]:
     """A counter's increments inside the live time, as (time, count); a drop is a reset. Before
     a counter's first point nothing had been counted (``sample``), so that point is its first

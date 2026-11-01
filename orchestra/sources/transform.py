@@ -26,7 +26,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from ..launcher import child_env
+from ..launcher_env import child_env
 from ..sd.units import from_name
 from .spec import KINDS, NAME, SourceSpec
 from .views import Definition

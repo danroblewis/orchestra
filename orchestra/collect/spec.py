@@ -33,7 +33,8 @@ from dataclasses import dataclass, replace
 
 from ..config import ConfigError, parse_duration
 from ..events import HOST
-from ..launcher import NAME, own_python
+from ..launcher import NAME
+from ..launcher_env import own_python
 from .views import View, parse
 
 EVERY_S = 60.0

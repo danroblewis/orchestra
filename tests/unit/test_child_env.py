@@ -1,4 +1,4 @@
-"""What a process Orchestra starts finds as `python` (orchestra/launcher.py, child_env): Orchestra's
+"""What a process Orchestra starts finds as `python` (orchestra/launcher_env.py, child_env): Orchestra's
 own Python, even inside `sh -c`, while the project's `uv run python` stays the project's."""
 
 import os
@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from orchestra import launcher
+from orchestra import launcher_env
 from orchestra.collect.round import collect
 from orchestra.collect.spec import Collector
 
@@ -35,8 +35,8 @@ def test_python_inside_sh_c_is_orchestras(tmp_path, failing_python_first):
 
 
 def test_the_directory_put_first_runs_orchestras_python(tmp_path, failing_python_first):
-    d = launcher.python_dir()
-    env = launcher.child_env({"X": "1"})
+    d = launcher_env.python_dir()
+    env = launcher_env.child_env({"X": "1"})
     assert env["PATH"].split(os.pathsep)[0] == d and env["X"] == "1"
     for name in ("python", "python3"):
         out = subprocess.run([os.path.join(d, name), "-c", "import sys; print(sys.prefix)"],
@@ -55,18 +55,18 @@ def test_a_shim_when_sys_executable_has_no_python_beside_it(tmp_path, failing_py
     (alone / "python").write_text("#!/bin/sh\nexit 9\n")          # another interpreter beside it
     (alone / "python").chmod(0o755)
     monkeypatch.setattr(sys, "executable", str(exe))
-    d = launcher.python_dir()
+    d = launcher_env.python_dir()
     assert d is not None and d != str(alone) and d.startswith(str(tmp_path / "home"))
     out = subprocess.run([os.path.join(d, "python"), "-c", "print(42)"], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "42"
-    assert launcher.python_dir() == d                               # made once, found again
+    assert launcher_env.python_dir() == d                               # made once, found again
 
 
 def test_virtual_env_of_orchestras_own_is_dropped(monkeypatch):
     monkeypatch.setenv("VIRTUAL_ENV", sys.prefix)
-    assert "VIRTUAL_ENV" not in launcher.child_env()
+    assert "VIRTUAL_ENV" not in launcher_env.child_env()
     monkeypatch.setenv("VIRTUAL_ENV", "/somewhere/else/.venv")
-    assert launcher.child_env()["VIRTUAL_ENV"] == "/somewhere/else/.venv"
+    assert launcher_env.child_env()["VIRTUAL_ENV"] == "/somewhere/else/.venv"
 
 
 @pytest.mark.skipif(shutil.which("uv") is None, reason="uv is not installed")
@@ -79,7 +79,7 @@ def test_uv_run_python_is_still_the_projects(tmp_path, failing_python_first, mon
     monkeypatch.setenv("VIRTUAL_ENV", sys.prefix)                      # as under `uv run orchestra`
     made = subprocess.run(["uv", "venv", "-q", "--python", sys.executable, str(proj / ".venv")], check=False,
                           cwd=proj,
-                          capture_output=True, text=True, env=launcher.child_env())
+                          capture_output=True, text=True, env=launcher_env.child_env())
     if made.returncode != 0:
         pytest.skip(f"uv cannot make a venv here: {made.stderr.strip()}")
     cmd = ["sh", "-c", "uv run --offline -q python -c 'import sys; print(\"prefix{p=\\\"\" + sys.prefix + \"\\\"} 1\")'"]

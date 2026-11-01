@@ -495,7 +495,6 @@ class Host:
     def _register(self, d: dict) -> None:
         d["hosts"] = {k: r for k, r in (d.get("hosts") or {}).items() if runtime.holds(r)}
         d["hosts"][str(os.getpid())] = runtime.me()
-        d.pop("host", None)                       # the record before hosts and launcher were kept apart
 
     def _unregister(self, d: dict) -> None:
         (d.get("hosts") or {}).pop(str(os.getpid()), None)

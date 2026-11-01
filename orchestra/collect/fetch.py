@@ -19,7 +19,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from ..launcher import child_env
+from ..launcher_env import child_env
 from .spec import Collector
 
 MAX_BYTES = 10_000_000

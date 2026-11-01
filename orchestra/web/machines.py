@@ -219,6 +219,11 @@ class MachineIndex:
         if isinstance(d.get("log"), str) and d["log"]:
             self.logs[machine][instance or ""] = d["log"]
 
+    def bus_since(self) -> float | None:
+        """When the bus was first heard: the earliest any instance was first seen, or None."""
+        with self._lock:
+            return min((v["first"] for insts in self.instances.values() for v in insts.values()), default=None)
+
     def events_of(self, machine: str) -> list[dict]:
         """The machine's last events, newest first (envelopes only)."""
         with self._lock:

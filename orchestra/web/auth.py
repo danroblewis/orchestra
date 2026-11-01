@@ -1,5 +1,5 @@
 """The web UI's authentication: one ASGI middleware in front of every route, Orchestra's and the
-plugins' alike (pages, ``/api/*``, static files, the websocket), so no page or plugin does it.
+plugins' alike (pages, ``/api/*``, static files, any websocket a plugin adds), so no page or plugin does it.
 
 - **The credential** is the project's web token, ``<state>/web.token`` (owner-only, never in the
   configuration; ``orchestra web token`` prints it, ``--rotate`` replaces it). It is re-read when the

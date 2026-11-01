@@ -201,8 +201,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
             attach_dynamics(project, out, since, core.metrics)
             attach_askers(out)
         elif bg.ready("index"):                     # no model: how long the bus has been heard, so the page can say how much data there is
-            with bg.index._lock:
-                out["bus_since"] = min((v["first"] for insts in bg.index.instances.values() for v in insts.values()), default=None)
+            out["bus_since"] = bg.index.bus_since()
         if not sd_installed():                      # conservation only: say what is missing, and how to have it
             out["sd_missing"] = needs_sd("behaviour trust, simulation, experiments and SD Lab's strategies")
         return out
