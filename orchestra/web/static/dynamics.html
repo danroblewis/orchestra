@@ -381,7 +381,7 @@ function tables() {
   // what is counted is said: stocks hidden from the diagram, machines with flow hypotheses out of all machines
   const hid = window.ACC_HIDDEN || 0;
   const hyp = new Set(m.flows.flatMap((f) => (f.machines || []).map((h) => h.machine))).size;
-  $("sum").innerHTML = `${m.stocks.length} stocks${hid ? ` (${hid} hidden: only fill · <a href="#" onclick="showAcc(true);return false">show</a>)` : ""} · ${m.flows.length} flows (${fitted} fitted) · ${hyp} machine${hyp === 1 ? "" : "s"} with flow hypotheses${total ? ` (of ${total})` : ""}${m.stored ? "" : ' · <span class="stale">not stored yet: <code>orchestra sd declare</code></span>'}${m.levels_error ? ` · <span class="stale">levels: ${esc(m.levels_error)}</span>` : ""}`;
+  $("sum").innerHTML = `${m.stocks.length} stocks${hid ? ` (${hid} hidden: only fill · <a href="#" onclick="showAcc(true);return false">show</a>)` : ""} · ${m.flows.length} flows (${fitted} fitted) · ${hyp} machine${hyp === 1 ? "" : "s"} with flow hypotheses${total ? ` (of ${total})` : ""}${m.stored ? "" : ' · <span class="stale">not saved yet: a discovery saves a version once it finds stocks and every source answered; <code>orchestra sd discover</code> runs one now</span>'}${m.levels_error ? ` · <span class="stale">levels: ${esc(m.levels_error)}</span>` : ""}`;
 }
 // Eras (sd/eras.py): a new one begins when a machine changes the system; each is discovered from
 // its own data, with the era before as its prior. The timeline picks the era to show (a past
