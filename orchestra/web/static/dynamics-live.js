@@ -118,6 +118,11 @@ const Live = (() => {
     if ((ev.twins || []).length) {
       rows.push(`<div>why one stock</div><div>one stock, measured ${ev.twins.length + 1} ways: ${esc(s.series ? keyOf(s.series) : s.id)} (kept)${ev.twins.map((t) => `, ${esc(t.series)} <span class="muted">(changes equal in ${Math.round(100 * (t.equal_steps || 0))}% of steps${t.change_correlation != null ? `, correlate by ${(+t.change_correlation).toFixed(2)}` : ""})</span>`).join("")}</div>`);
     }
+    // a level that counts this stock's servers busy (sd/capacity.py): its capacity, not a second stock
+    for (const v of ev.capacity_of || []) {
+      const k = v.capacity, u = v.utilisation != null ? `, busy ${Math.round(100 * v.utilisation)}% of the time${k > 1 && v.mean_occupancy != null ? ` (mean occupancy ${(+v.mean_occupancy).toFixed(2)})` : ""}` : "";
+      rows.push(`<div>capacity ${esc(String(k))}</div><div>${esc(v.series)}: the same items as ${esc(stockName(s.id))}, capacity ${esc(String(k))}${u}. It counts the ones being served (started by ${esc((v.starts || []).join(", "))}), never holds more than this stock, and its items leave as this stock's do (${esc((v.ends_as || []).join(", "))}), on its own writes within ${esc(String(v.tolerance_s))} s: counted once, here, not as a second stock.</div>`);
+    }
     return rows.join("");
   }
   // the instruments that wrote a hidden stock's balance counters: what its level is implied from
