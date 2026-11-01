@@ -1,131 +1,202 @@
-"""A flag that is a stock's capacity of one: a level of 0 and 1 balanced exactly (the head chef
-busy: inspections started less inspections done) whose items are already in another stock (the
-orders inspecting). It is one while one of that stock's items is in it, it never holds more than
-that stock does, every item leaving it leaves that stock too (its outflows count the same events as
-some of the stock's), and what fills it is no other stock's flow: its inflow moves an item within
-the stock (an order waiting for the chef starts its inspection), not into it. Kept as a stock it
-counts those items twice, and its inflow comes from outside the model, which it never did.
+"""A level that counts a stock's servers busy: its capacity, not a second stock. The head chef's
+busy flag, balanced exactly by inspections started less inspections done, holds one of the orders
+inspecting while the chef works on it; two chefs' count of inspections under way, 0 to 2, holds two.
+Kept as a stock it counts those orders twice, and its inflow comes from outside the model, which it
+never did. In system dynamics a server is the capacity of one stock, not a second stock: the items
+are one stock (the orders under inspection) and the servers are a parameter of its outflow.
 
-In system dynamics a single server's "busy" is the capacity of one stock, not a second stock: the
-items are one stock (the orders under inspection) and the server is a parameter of its outflow
-(capacity 1, busy so much of the time). So the flag is left out of the stocks, with why, and
-shown in that stock's evidence as its view (``views``: capacity 1, utilisation, its counters): a
-merged thing is shown, never dropped (AGENTS.md rule 7).
+Such a level (``busy``) of whole items, 0 to its most ``k``, is the capacity of ``stock`` when, on
+the series' own writes (never the grid, whose step would decide it):
 
-What it does not take: a shelf of 0 and 1 (its inflow, the inspections passed, is another stock's
-outflow, so its items arrive from a stock of the model); a 0/1 level beside the customers waiting
-(contained, but its items leave by other events than theirs); a stock the operator declared or a
-pile its instrument built (never re-judged)."""
+- its balance holds on its writes: at ``MATCHED`` of them it reads what its counters imply (ins
+  less outs since the window began, apart from the items there before) at some instant within
+  the tolerance (``between.follows``, as a passage's level must);
+- it holds no more than the stock: at all but ``SAME_TOTAL`` of its writes, at most the stock's
+  most within the tolerance;
+- its items leave as the stock's do: ``MATCHED`` of its outflows' events are, one to one, events
+  of some of the stock's outflows within the tolerance, and their totals agree within ``SAME_TOTAL``;
+- the stock's own writer counts what fills it (the board counts the inspections started): another
+  machine's count of its own work (an agent's turns beside the tickets in review, UC-3's
+  ``agents_working``) is that machine's stock, however its events coincide with the stock's;
+- what fills it is no stock's flow (then its items arrive from a stock of the model: a shelf of 0
+  and 1 the inspections passed fill, the state after a stock that its outflow fills): no counter
+  another stock's balance takes, nor one counting the same events as such a flow, unless it
+  counts this stock's own inflow's (the chef starts an order the moment it is baked).
+
+The tolerance is ``ORDER`` (a second) plus the longer of the two levels' write intervals: two
+writers sampling on their own schedules may stamp one instant up to an interval apart, and events
+further apart than that are different instants. A writer whose events run later than its own write
+interval (a chef who reports 8 s after the board on 5 s writes) is not resolved, and its level stays
+a stock. The level is left out, with why, and shown in the stock's evidence (``capacity_of``:
+capacity k, the share of time busy, the mean occupancy, its counters): a merged thing is shown,
+never dropped (AGENTS.md rule 7). A stock the operator declared or a pile its instrument built is
+never judged."""
 
 from __future__ import annotations
 
-from itertools import combinations
+from bisect import bisect_left, bisect_right
+from itertools import combinations, pairwise
+from statistics import median
 
-from .drivers import behind
-from .series import Series
+from .between import MATCHED, ORDER, follows
+from .resolution import value_at
+from .series import Series, writer_of
 
-CONTAINED = 0.97     # the share of steps the flag may not exceed the stock in (two instruments' writes a moment apart)
-SAME_STEPS = 0.03    # as sd.discover: counts of the same events differ in no more than this share of the steps they moved in
-
-
-def is_flag(s: Series) -> bool:
-    """A level that only ever takes 0 and 1, and was 1 at some point."""
-    values = {v for _, v in s.points}
-    return values <= {0.0, 1.0} and 1.0 in values
+SAME_TOTAL = 0.03    # how far apart two counts of the same events' totals may be; the share of its writes a server count may exceed the stock in
+VIEW = "the same items as"   # the reason's opening: never an input (sd.inputs), never a level a passage runs through
 
 
-def _summed(terms: list, sign: int, steps: list[int], n: int) -> list[float]:
-    on = set(steps)
-    return [sum(c.deltas[i] for c, sg in terms if sg == sign) if i in on else 0.0 for i in range(n)]
+def _window(s: Series, start: float, end: float) -> list[tuple[float, float]]:
+    return [(t, v) for t, v in s.points if start < t <= end]
 
 
-def same_events(a: list[float], b: list[float]) -> bool:
-    """Two per-step counts of the same events: their totals agree and they differ in no more than
-    ``SAME_STEPS`` of the steps either moved in, or one runs no more than a step behind the other."""
-    ta, tb = sum(a), sum(b)
-    if ta <= 0 or abs(ta - tb) > max(1.0, SAME_STEPS * tb):
-        return False
-    moved = sum(1 for x, y in zip(a, b) if x or y)
-    differ = sum(1 for x, y in zip(a, b) if x != y)
-    return differ <= SAME_STEPS * moved or behind(a, b) or behind(b, a)
-
-
-def contained(flag: Series, stock: Series, steps: list[int]) -> float:
-    """The share of ``steps`` after which the flag holds no more than the stock."""
-    both = [i for i in steps if i + 1 < min(len(flag.values), len(stock.values))]
-    if not both:
-        return 0.0
-    return sum(1 for i in both if flag.values[i + 1] <= stock.values[i + 1] + 1e-9) / len(both)
-
-
-def view_of(flag: tuple, found: list, masks: dict[str, list[int]], same) -> dict | None:
-    """The stock the flag is a capacity-of-one view of, with the evidence, or None."""
-    s, terms, _, exact = flag
-    ins, outs = [c for c, sg in terms if sg > 0], [c for c, sg in terms if sg < 0]
-    if not ins or not outs:
+def capacity(s: Series, start: float, end: float) -> int | None:
+    """The most a level of whole items held in the window, when it never went below 0 and held
+    something: how many servers it counts. None for anything else."""
+    vals = [v for _, v in _window(s, start, end)]
+    if not vals or any(v < 0 or abs(v - round(v)) > 1e-9 for v in vals) or max(vals) < 1:
         return None
-    steps = masks.get(s.key) or []
-    n = len(s.deltas)
+    return round(max(vals))
+
+
+def interval(s: Series, start: float, end: float) -> float:
+    """The level's usual gap between writes in the window."""
+    ts = [t for t, _ in _window(s, start, end)]
+    return median([b - a for a, b in pairwise(ts)]) if len(ts) > 1 else 0.0
+
+
+def stamps(cs: list[Series], start: float, end: float) -> list[float]:
+    """The instants the counters counted, once per item, inside the window (a drop is a reset)."""
+    out: list[float] = []
+    for c in cs:
+        for (_, a), (t, b) in pairwise(c.points):
+            n = (b - a) if b >= a else b
+            if start < t <= end and n > 0:
+                out += [t] * round(n)
+    return sorted(out)
+
+
+def matched(a: list[float], b: list[float], tol: float) -> int:
+    """How many of ``a``'s instants have one of ``b``'s within ``tol``, each of ``b``'s used once."""
+    used, hit = [False] * len(b), 0
+    for t in a:
+        i = bisect_left(b, t - tol)
+        while i < len(b) and b[i] <= t + tol and used[i]:
+            i += 1
+        if i < len(b) and b[i] <= t + tol:
+            used[i], hit = True, hit + 1
+    return hit
+
+
+def same_events(a: list[float], b: list[float], tol: float) -> bool:
+    """Two counts of the same events, by their instants: totals within ``SAME_TOTAL`` of each
+    other, and ``MATCHED`` of ``a``'s matched to ``b``'s within ``tol`` (as a passage's moves)."""
+    if not a or abs(len(a) - len(b)) > max(1.0, SAME_TOTAL * len(b)):
+        return False
+    return matched(a, b, tol) >= MATCHED * len(a) - 1e-9
+
+
+def held_within(busy: Series, stock: Series, start: float, end: float, tol: float) -> bool:
+    """Whether at all but ``SAME_TOTAL`` of ``busy``'s writes it held no more than the stock's most
+    within ``tol`` (a writer that once reports a moment late)."""
+    ts = [t for t, _ in stock.points]
+    writes = _window(busy, start, end)
+    over = 0
+    for t, v in writes:
+        lo, hi = bisect_left(ts, t - tol), bisect_right(ts, t + tol)
+        over += v > max([value_at(stock, t - tol), *(stock.points[i][1] for i in range(lo, hi))]) + 1e-9
+    return bool(writes) and over <= SAME_TOTAL * len(writes)
+
+
+def occupancy(s: Series, start: float, end: float) -> float | None:
+    """The level's mean over the window, each value weighted by how long it was held."""
+    pts = [(start, value_at(s, start)), *_window(s, start, end), (end, None)]
+    span = end - start
+    return sum(v * (b - a) for (a, v), (b, _) in pairwise(pts)) / span if span > 0 else None
+
+
+def view_of(entry: tuple, found: list, start: float, end: float, implied: frozenset | set = frozenset(), apart=None) -> dict | None:
+    """The stock ``entry``'s level is the capacity of, with the evidence, or None. ``implied``: the
+    keys of stocks whose level a passage's counters imply (``sd.passing``), never a host: a measured
+    level is never folded into a state no series measures. ``apart(a, b)``: two levels that name
+    different things (pods in us-east and in us-west, two consumer groups' lag), never one's capacity."""
+    s, terms = entry[0], entry[1]
+    k = capacity(s, start, end)
+    ins, outs = [c for c, sg in terms if sg > 0], [c for c, sg in terms if sg < 0]
+    if k is None or not ins or not outs:
+        return None
     best = None
-    for a, aterms, _, _ in found:
-        if a is s:
+    for a, aterms, *_ in found:
+        if a is s or not a.points or a.key in implied or (apart and apart(s, a)):
             continue
-        others = [x for x in found if x[0] is not s and x[0] is not a]
-        # what fills the flag is no stock's flow (then its items come from a stock of the model:
-        # from this one, the flag is the state after it), unless it is this stock's own inflow too
-        # (the item enters both at once, or a step apart)
-        mine_in = [cb for cb, sg in aterms if sg > 0]
-        flows = [cb for _, bterms, _, _ in others for cb, _ in bterms] + [cb for cb, sg in aterms if sg < 0]
-        if any((cb is c or same(c, cb)) and not any(m is c or same(c, m) for m in mine_in) for c in ins for cb in flows):
+        # the start of service is the stock's own record (the board counts the inspections it
+        # starts): another machine's count of its own work that coincides with the stock's items
+        # (an agent's turns, beside the tickets in review) is that machine's stock, and which
+        # machine serves which flow is only ever a hypothesis (AGENTS.md rule 6)
+        if writer_of(a) is None or not any(writer_of(c) == writer_of(a) for c in ins):
             continue
-        shared = sorted(set(steps) & set(masks.get(a.key) or []))
-        share = contained(s, a, shared)
-        if share < CONTAINED:
+        tol = ORDER + max(interval(s, start, end), interval(a, start, end))
+        agree, said = follows(_window(s, start - tol, end), ins, outs, start, end, tol, tol)
+        if not said or agree < MATCHED * said:
+            continue                             # it does not read what its counters imply on its own writes
+        if not held_within(s, a, start, end, tol):
             continue
-        mine = _summed(terms, -1, shared, n)
+        # what fills it is no stock's flow: never a counter another stock's balance (or this
+        # stock's outflow) takes, and never one counting the same events as such a flow unless
+        # it is this stock's own inflow (the chef starts an order the moment it is baked)
+        mine_in = [c for c, sg in aterms if sg > 0]
+        flows = [cb for x in found if x[0] is not s and x[0] is not a for cb, _ in x[1]] + [c for c, sg in aterms if sg < 0]
+        at = lambda cs: stamps(cs, start, end)
+        if any(cb is c for c in ins for cb in flows) or any(
+                same_events(at([c]), at([cb]), tol) and not any(m is c or same_events(at([c]), at([m]), tol) for m in mine_in)
+                for c in ins for cb in flows):
+            continue
+        mine = at(outs)
         aouts = [c for c, sg in aterms if sg < 0]
-        ends = next((sub for k in range(len(aouts), 0, -1) for sub in combinations(aouts, k)
-                     if same_events(mine, _summed([(c, -1) for c in sub], -1, shared, n))), None)
-        if ends is None:
-            continue
-        cand = (share, a, ends)
-        if best is None or share > best[0]:
-            best = cand
+        ends = next((sub for n in range(len(aouts), 0, -1) for sub in combinations(aouts, n) if same_events(mine, at(list(sub)), tol)), None)
+        if ends is not None:
+            best = (a, ends, tol)
+            break
     if best is None:
         return None
-    share, a, ends = best
-    held = [s.values[i + 1] for i in steps if i + 1 < len(s.values)]
+    a, ends, tol = best
+    mean = occupancy(s, start, end)
     return {"stock": a, "record": {
-        "series": s.key, "capacity": 1, "utilisation": round(sum(held) / len(held), 4) if held else None,
-        "contained_steps": round(share, 4), "exact_steps": round(exact, 4),
+        "series": s.key, "capacity": k, "utilisation": None if mean is None else round(mean / k, 4),
+        "mean_occupancy": None if mean is None else round(mean, 4), "tolerance_s": round(tol, 3),
         "starts": [c.key for c in ins], "ends": [c.key for c in outs], "ends_as": [c.key for c in ends]}}
 
 
-def capacity_views(found: list, masks: dict[str, list[int]], left_out: dict[str, str], same,
-                   protected: frozenset | set = frozenset()) -> tuple[list, dict[str, list[dict]], dict[str, str]]:
-    """``found`` without the flags that are another stock's capacity of one; per kept stock's key,
-    its views; and per counter of a view no stock now uses, why (for ``left_out``). ``same``: two
-    counters of the same events; ``protected``: keys never judged (declared, constructed)."""
+def why(s: Series, a: Series, rec: dict) -> str:
+    k, u, m = rec["capacity"], rec["utilisation"], rec["mean_occupancy"]
+    busy = "" if u is None else f", busy {u:.0%} of the time" + ("" if k == 1 else f" (mean occupancy {m:.2f})")
+    return (f"{VIEW} {a.key}: its capacity of {k} ({'a flag' if k == 1 else f'{k} servers'}), not a second stock. On its own "
+            f"writes it reads what its counters imply, holds no more than that stock, and its items leave as that stock's "
+            f"do ({', '.join(rec['ends_as'])}), within {rec['tolerance_s']:g} s; what fills it is no stock's flow. The items are "
+            f"counted once, in that stock, shown in its drawer: capacity {k}{busy}")
+
+
+def capacity_views(found: list, left_out: dict[str, str], start: float, end: float, protected: frozenset | set = frozenset(),
+                   implied: frozenset | set = frozenset(), apart=None) -> tuple[list, dict[str, list[dict]], dict[str, str]]:
+    """``found`` without the levels that are another stock's capacity; per kept stock's key, its
+    capacities (``capacity_of``); and per counter of one no stock now uses, why (for ``left_out``).
+    ``protected``: keys never judged (declared, constructed, a passage's); ``implied``: never hosts; ``apart``: as ``view_of``."""
     kept = list(found)
     views: dict[str, list[dict]] = {}
     notes: dict[str, str] = {}
     for x in found:
         s = x[0]
-        if s.key in protected or not is_flag(s):
+        if s.key in protected or s.key in views:
             continue
-        v = view_of(x, kept, masks, same)
+        v = view_of(x, kept, start, end, implied, apart)
         if v is None:
             continue
         a, rec = v["stock"], v["record"]
         kept = [y for y in kept if y[0] is not s]
         views.setdefault(a.key, []).append(rec)
-        u = rec["utilisation"]
-        left_out[s.key] = (f"a flag: the same items as {a.key}, a capacity-of-one view of it (it holds no more than that stock "
-                           f"in {rec['contained_steps']:.0%} of steps, and every item leaving it leaves that stock too, counted "
-                           f"by {', '.join(rec['ends_as'])}); its balance is exact, but the items are counted once, in that "
-                           f"stock, shown in its drawer: capacity 1" + (f", busy {u:.0%} of the time" if u is not None else ""))
-        for k in rec["starts"]:
-            notes[k] = f"the start of {s.key}, the capacity-of-one view of {a.key}: it moves items within that stock, not between stocks"
-        for k in rec["ends"]:
-            notes[k] = f"the end of {s.key}, the capacity-of-one view of {a.key}: the same items leaving it as {', '.join(rec['ends_as'])}"
+        left_out[s.key] = why(s, a, rec)
+        for key in rec["starts"]:
+            notes[key] = f"the start of {s.key}, the capacity of {a.key}: it moves items within that stock, not between stocks"
+        for key in rec["ends"]:
+            notes[key] = f"the end of {s.key}, the capacity of {a.key}: the same items leaving it as {', '.join(rec['ends_as'])}"
     return kept, views, notes

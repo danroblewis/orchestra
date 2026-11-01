@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 
+from .capacity import VIEW
 from .live import regular
 from .series import NOT_NAMED, PLUMBING, Series, series_key
 
@@ -40,7 +41,7 @@ def offered_inputs(series: list[Series], stocks: set[str], left_out: dict[str, s
     for s in series:
         why = left_out.get(series_key(s.name, s.labels), "")
         if s.counter or s.key in stocks or PLUMBING.match(s.name) or not any(s.deltas) or not regular(s.points) \
-                or why.startswith(("a flag", "the same as")):
+                or why.startswith(("a flag", "the same as", VIEW)):
             continue
         groups[_group(s)].append(s)
     inputs, refs = {}, {}

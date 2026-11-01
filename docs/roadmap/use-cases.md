@@ -110,12 +110,17 @@ stock in the orders network; one flow per instance; an unmeasured flow on an exa
 stock; duplicate flow ids; the same level as two stocks.
 The busy flags are never stocks either: the head chef's `bakery_chef_busy` is balanced exactly by
 inspections started less inspections done when the head chef's writes line up with the board's
-(97.5% of steps on 2026-11-01 09:11, 100% in U1's run, under 97% in rerun 2: the flag check's
-threshold, at its edge), but its items are the orders inspecting. A flag that never holds more
-than another stock, whose items leave by that stock's outflows and which no stock's flow fills is
-that stock's capacity of one (`sd/capacity.py`): left out, and shown in the orders inspecting's
-drawer as capacity 1 with the share of time the chef is busy. The single server is a parameter of
-the one stock, not a second stock (U5).
+on the grid (97.5% of steps on 2026-11-01 09:11, 100% in U1's run, under 97% in rerun 2: the
+grid's flag check, at its edge), but its items are the orders inspecting. A level of 0 to k that
+reads what its counters imply, holds no more than another stock, whose items leave by that
+stock's outflows, and whose start the stock's own writer counts (and no other stock's flow) is
+that stock's capacity of k (`sd/capacity.py`), judged on the series' own writes so the outcome
+is the same at every step: left out, and shown in the orders inspecting's drawer as capacity k
+with the share of time busy. The servers are a parameter of the one stock, not a second stock
+(U5). A count of servers stays a stock when another machine's instrument counts its starts
+(UC-3's `agents_working{role}`: the agents' turns beside the tickets in review are the agents'
+stock, and who serves which flow is a hypothesis), and when the server reports later than a
+write interval after the stock's writer (not resolved).
 
 Not expected after the 2026-10-26 runs (judged "expectation wrong" or "the bakery's own"):
 the expo's bake and pass queues (the board's states seen again from the dispatcher, with no

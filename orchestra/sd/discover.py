@@ -34,8 +34,8 @@ equation of each flow, and the machine behind each flow:
    event counter to the machine counters it sums, another machine's copy to the machine's own,
    two machines' counts of one flow to one). Two levels that change alike in nearly every step,
    or that the same counters balance, are one stock measured twice: the machine whose counters
-   make the balance keeps it, the other is recorded as its twin. A flag whose items are another
-   stock's is its capacity of one, shown in that stock's evidence (``sd.capacity``). Two levels of one name that
+   make the balance keeps it, the other is recorded as its twin. A level that counts a stock's
+   servers busy is its capacity, shown in that stock's evidence (``sd.capacity``). Two levels of one name that
    differ in what they measure (pods by region, and pods) are never twins, and a level is never
    balanced by the counters of another level of its name (``barred_counters``).
 3. **Connect flows.** A counter that is an outflow of one stock and an inflow of another is a flow
@@ -1040,19 +1040,12 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # twins are joined among the identified only: a copy that loses to a level identification then
     # refuses would leave neither (the order backlog and a per-partition maximum)
     found, twins = twin_levels(found, left_out, lambda a, b: same_flow(a, b, n), declared_keys | constructed_, unit)
-    # a flag whose items are another stock's (the head chef busy, inside the orders inspecting) is
-    # that stock's capacity of one: shown in its evidence, not a second stock (sd.capacity)
-    found, views, made = capacity_views(found, masks, left_out, lambda a, b: same_flow(a, b, n) or lagged_flow(a, b),
-                                        declared_keys | constructed_)
-    notes.update(made)
     # a state each item leaves within a step is empty at almost every step of the grid, so the
     # chain through it runs past it (sd.hops) or ends at outside and begins again there
     # (sd.passing); joined through it
     where = {"start": start, "end": end, "step": step, "writer_of": writer_of}
     stock_keys = {s.key for s, _, _, _ in found}
-    viewed = {r["series"] for rs in views.values() for r in rs}
-    levels = [s for s in series if not s.counter and s.key not in stock_keys and s.key not in viewed
-              and not left_out.get(s.key, "").startswith(("the same as", SHORT))]
+    levels = [s for s in series if not s.counter and s.key not in stock_keys and not left_out.get(s.key, "").startswith(("the same as", SHORT))]
     found, hopped, revived = split_hops(found, counters, copies, levels, first_stamped=first_stamped, **where)
     for d in revived:                      # a copy that came back as a hop of its own stands for itself
         counters.append(d)
@@ -1069,6 +1062,12 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         found.append((p.level, p.terms, None if r2 is None else max(0.0, r2), exact))
         left_out.pop(p.level.key, None)
         passed[p.level.key] = p
+    # a level that counts a stock's servers busy (the head chef, inside the orders inspecting) is
+    # that stock's capacity: shown in its evidence, not a second stock (sd.capacity); judged on the
+    # final stocks, so the stock it is shown in is one
+    found, views, made = capacity_views(found, left_out, since, end, declared_keys | constructed_ | set(passed), set(passed),
+                                        lambda a, b: counts_apart(a, b, named))
+    notes.update(made)
     # each stock balanced by its own writer's count of events joined to another writer's (sd.restate):
     # it measures that stock's co-flow, so it is no longer left out, nor one the kept counter stands for
     found, late = own_counters_back(found, [(k, d) for k, d in joined if d.key not in {c.key for c in counters}],
@@ -1107,7 +1106,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                                  "balance_on": "traffic: the balance's error against what went in"}
                                 if not unfit and s.traffic and s.traffic[0] == "backlog" and r2 > fit_of(s, terms, masks[s.key])[0] + 1e-6 else {}),
                              **({"twins": twins[s.key]} if s.key in twins else {}), **(p.evidence() if p else {}),
-                             **({"views": views[s.key]} if s.key in views else {}),
+                             **({"capacity_of": views[s.key]} if s.key in views else {}),
                              **({"declared": pins[s.key].record()} if s.key in declared_keys else {}),
                              **({"balance_on": f"the stretches between the writes of its slowest series ({len(s.blocks)} in the window)"}
                                 if s.blocks and any(c.blocks for c, _ in terms) else {})}))
