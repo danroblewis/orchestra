@@ -1,6 +1,6 @@
 # Where each user story's parts belong
 
-Status: draft for the owner's review, 2026-10-27. Not committed.
+Status: draft for the owner's review, 2026-10-27.
 
 The owner asked: "explore these user stories and figure out which parts should be implemented in
 Orchestra, which parts would be changes to Plugins, and which parts would be implemented in the

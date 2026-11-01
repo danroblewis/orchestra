@@ -1,6 +1,8 @@
 # Instruments on machines: the integration step
 
-Status: reviewed, 2026-11-01 (panel round 1, judge's verdict round 2); aligned to intended-model.md as of its round-1 revision; coverage pass 2026-11-01, aligned to intended-model.md as merged (round 3). Nothing built. Proposal 5 of `design-backwards.md`
+Status: reviewed, 2026-11-01 (panel round 1, judge's verdict round 2); aligned to intended-model.md as of its round-1 revision; coverage pass 2026-11-01, aligned to intended-model.md as merged (round 3). Built in the core: C4 of milestone M2, merge
+09b001f4 (attachments, instances from a label, the Machines panel's "Measured by" and the
+Instruments page). Proposal 5 of `design-backwards.md`
 §7, written from that file's §5 and `design-backwards-notes.md` §9 (items 7 and 12, and "the
 invariants this touches") and §13.1. It builds on proposal 2 (`intended-model.md`, as
 merged), which defines declared machines and the declared layer; §8 lists what is taken from

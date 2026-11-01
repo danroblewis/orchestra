@@ -1,7 +1,11 @@
 # Workflows: a plugin for any company's workflows
 
 Status: reviewed, 2026-11-01 (panel round 1; judge's verdict round 2); aligned to intended-model.md
-and machine-design.md as merged; coverage pass 2026-11-01. Nothing built. Proposal 3 of `design-backwards.md`
+and machine-design.md as merged; coverage pass 2026-11-01. Built in `~/orchestra-workflows` (milestone M4: the record W2, merge
+a4965d8; the floor W4, e8ef051; piles W3, 637f358; definitions W5, 2bcf7fa; the task loop W6,
+3a20fc5; the pages W7, 063f5ef; milestone M5's examples X1–X7, merges b522889, 39cb87e, 5dff1f9) and
+in the core (C7, the piles' construction as a place, merge cc546b49). Not built: file-bus rotation
+(C6, §2.6; `docs/proposals/file-bus-rotation.md`). Proposal 3 of `design-backwards.md`
 §7, from `design-backwards-notes.md` §1–§8, §10, §12; the owner's decisions are D21. It builds a
 new private repository, `~/orchestra-workflows` (plugin `workflows`). Nothing is copied from
 `~/orchestra-tasking`, whose SPEC was read as a list of capabilities only. The owner: "Do not let
@@ -343,8 +347,8 @@ that opened it as `causationid`.
 
 The page's sections, each with the exact call:
 
-1. **Open the bus as yourself**: `Events.for_project(Project.find(os.environ["ORCHESTRA_REPO"]),
-   source="worker/1")`, or the events endpoint (`ORCHESTRA_EVENTS_ENDPOINT`, `_TOKEN`). **Announce**
+1. **Open the bus as yourself**: `Events.for_project(load_project(),
+   source="worker/1")` (`orchestra.config.load_project` reads `ORCHESTRA_REPO`), or the events endpoint (`ORCHESTRA_EVENTS_ENDPOINT`, `_TOKEN`). **Announce**
    `orchestra.machine.started` (kind, mode, `listens_for: [offer.made, offer.withdrawn]`, roles).
    **Follow from now**: start at `events.end()`, read on with `events.after(offset)`.
 2. **Claim** an offer for your role (`to` absent or yours), then **read the bus from the offer to

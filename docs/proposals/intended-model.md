@@ -1,7 +1,10 @@
 # The intended model
 
 Status: reviewed, 2026-11-01 (panel round 1; judge's verdicts rounds 2–3); aligned to
-machine-design.md and instruments-on-machines.md as merged; coverage pass 2026-11-01. Nothing built. Proposal 2 of
+machine-design.md and instruments-on-machines.md as merged; coverage pass 2026-11-01. Built in the core (milestone M2 of the run below): C1, the declared
+layer, its comparison and API (merge d6f5b08b); C2, the Dynamics page's frames D1–D3 (10d68213);
+C3, the Machines page's frames E1–E4 (2833bb93); C8, the declaration fields the agents' tools
+need (9e3dd554). Proposal 2 of
 `design-backwards.md` §7, written from `design-backwards-notes.md` §9, §11 and §13 and decision
 D21, for milestone M2 of `docs/roadmap/GOAL-2026-11-01-workflows.md`. The page states are the
 approved mockups `mockups/out/D1–D3`, `E1–E3` (`mockups/README.md`), with the corrections of §7.

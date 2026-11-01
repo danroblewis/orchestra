@@ -1,8 +1,8 @@
 # Orchestra's architecture
 
 This document explains how Orchestra works: its parts, how data moves through them, where state
-lives, and where the code holds each of the rules in `AGENTS.md`. It describes `main` as of commit
-`828da6d0`. It is written for the owner, for an SRE who has to run Orchestra, and for engineers
+lives, and where the code holds each of the rules in `AGENTS.md`. It describes the `gate` branch as
+of commit `69111d58` (2026-11-01). It is written for the owner, for an SRE who has to run Orchestra, and for engineers
 new to the code.
 
 `SPEC.md` is the full design and goes into more detail. `AGENTS.md` lists the rules. Where this
@@ -292,7 +292,7 @@ What the Machines page knows about a machine, and where it comes from (`orchestr
 |---|---|
 | The machine and its instances | The envelope's `source`: `baker/2` is instance `2` of machine `baker`. |
 | What it publishes | The `type` of the events it emitted, counted over all time and the last day. |
-| What it listens for, its mode, kind, package, name and group | Its own announcement, `orchestra.machine.started`. This is the one event type whose `data` Orchestra reads, because it is Orchestra's own. Mode and kind are kept per instance. |
+| What it listens for, its mode, kind, package, name and group | Its own announcement, `orchestra.machine.started` (its fields: SPEC §2, "The announcement"). This is the one event type whose `data` Orchestra reads, because it is Orchestra's own. |
 | Its flows | The flows of the latest discovery its events are hypothesised to be associated with (`sd.attribute`). No series is listed: a machine does not produce metrics, and a series labelled `machine=X` never makes a machine X, an instance of it, or keeps it active. |
 | Last seen, and whether it is active | Its latest event (an announcement, a publication, a heartbeat), never in the future; never a write to a series. It is active while that is within 2.5 times its own observed cadence, and never less than 2 minutes. The cadence is the median gap between its recent beats: an event is a beat when it comes more than 48 s (the floor over the margin) after the instance's previous event, so a restart's announcements or one run's few events are one beat, and a job that publishes rarely is judged by its own rhythm (a cadence over a day counts as a day). |
 | Hand-offs (dotted edges) | Inferred from envelopes alone: one machine acted on a `subject`, then another machine acted on the same subject. |
@@ -1023,7 +1023,7 @@ divided.
 | 9 | Humans talk only to the Supervisor; UI and CLI read-only except observations | The web app has four POST routes: "rediscover" (an observation), the Core page's bus probe, `POST /api/intended/control` (an observation from rule 9's closed list, `sd/intended/controls.py`, refusing a machine or attachment and any value) and `POST /api/intended/request` (a request, published as `orchestra.intent.requested` from `owner`, which changes nothing until the Supervisor applies it); its experiment routes only read. Any path that changes machines belongs to a plugin. The events endpoint is the bus, and the model and experiments, reached over HTTP for machines, as the Python helpers are; an experiment changes no machine and no model (a commit is a prediction: a statement about the model); the web UI and CLI gain no write from it (`events endpoint` only prints where it is). |
 | 10 | One package, no path hacks | `pyproject.toml` packages only `orchestra`. No module changes `sys.path`. `orchestra/sdlab` is excluded from ruff (`extend-exclude`) and its README records its source commit. |
 
-**Known departures** (as of `828da6d0`). These are places where the code goes further than the
+**Known departures** (as of `69111d58`). These are places where the code goes further than the
 table above says. They are listed here so nobody relies on the rule being absolute:
 
 - `web/core_explore.py:_vm` sends the PromQL editor's queries straight to VictoriaMetrics' HTTP
@@ -1038,24 +1038,21 @@ table above says. They are listed here so nobody relies on the rule being absolu
 
 These are plans, not features. Each is described in `docs/proposals/` or `docs/roadmap/`:
 
-- Subscriptions with leases on the bus, and model tools for the Supervisor
-  (`docs/proposals/empty-orchestra.md` §3, §10).
 - Running machines on a clock (`docs/roadmap/decisions.md`, D7).
 - The later slices of reading other stores: a cache of settled chunks, fingerprints and
   `sd verify`, a Sources page, command, OAuth2 and SigV4 auth, and SQL sources
   (`docs/proposals/time-series-sources.md`).
-- The rest of event sources: a Pub/Sub preset, the topology poller, and bridges from Jira, Slack
-  and others (`docs/proposals/event-sources.md`).
+- The rest of event sources: a Pub/Sub preset and the topology poller
+  (`docs/proposals/event-sources.md`).
 - Ghost machines, the environment as a flow's driver, and leverage points
   (`docs/proposals/environment-and-ghost-machines.md`).
 - Delays and non-linear forms found by discovery (the equation language writes them, and
   experiments run them), priors a human hands in (eras' priors are built), and prospective model
   versions beyond experiments (`docs/proposals/system-dynamics-core.md`,
   `docs/proposals/orchestra-kernel.md`, `docs/roadmap/README.md`).
-- Experiments, phases 2 and 3: the agents' tools and skill for them (in `~/orchestra-agents`), and
-  the web pages that show them (`docs/roadmap/goals.md` G5, G16).
 - Collectors that skip repeated values (the collectors' half of "each series' real resolution",
   `docs/roadmap/README.md` H1).
+- File-bus rotation and `EventBus.start()` (`docs/proposals/file-bus-rotation.md`).
 
 ## Where to read next
 

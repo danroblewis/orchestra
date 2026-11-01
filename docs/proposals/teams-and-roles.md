@@ -1,6 +1,8 @@
 # Proposal: Teams and Roles, in four stages
 
-Status: Stage 1 built and checkpointed, 2026-10-11. Stage 2 core built the same
+**Superseded 2026-10-25 (`empty-orchestra.md`): the task system it describes was removed.**
+
+Status (as it stood): Stage 1 built and checkpointed, 2026-10-11. Stage 2 core built the same
 day: roles, agents, and teams as three stores, the loop running agents, prompts
 assembled from roles plus responsibilities plus access, the Supervisor's design
 guide and tools, the Agents page. Jobs, curated documents, votes, experiments,

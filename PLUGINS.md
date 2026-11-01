@@ -220,7 +220,7 @@ class Page:
 @dataclass
 class Declared:
     id: str                                   # the machine, as its events' source names it
-    kind: str = "program"                     # what the package says it is: program, person, service, ...
+    kind: str | None = "program"              # what the package says it is: program, person, service, ...; None: unknown
     mode: str | None = None                   # continuous | scheduled | ad hoc
     listens_for: list[str] = field(default_factory=list)
 
@@ -254,10 +254,14 @@ class Process:
 class Collector:
     name: str
     kind: str                  # "collect" (a command) or "scrape" (a URL)
-    target: str                # the command, or the URL
+    target: str | tuple[str, ...]   # the command (a string, or its words as a list), or the URL
     every_s: float = EVERY_S   # 60 s
     timeout_s: float = TIMEOUT_S   # 10 s, never more than every_s
     owner: str = "project"     # "project", or the plugin that declared it
+    simulated: bool = False    # a placeholder's: its points are labelled simulated="true"
+    draft: bool = False        # an option being tried: its points are labelled draft="true"
+    expires: float | None = None   # a draft's: when its plugin removes it (unix seconds)
+    views: tuple[View, ...] = ()   # how it made its series (orchestra/collect/views.py)
 
     @classmethod
     def scrape(cls, name: str, url: str, **kw) -> Collector: ...
@@ -357,6 +361,13 @@ response (`mount_plugins.declare`):
 - A machine not seen yet is added with `"unseen": true`, `package` = the plugin's name, and the
   declared `kind`, `mode` and `listens_for` (as `subscribes`). Cards draw it greyed or dashed
   ("declared, not run yet").
+- **One id, one machine.** When several plugins declare the same id, the first plugin's
+  declaration adds the machine; a later one only fills in `package` and `kind` where they are
+  still empty, as for an observed machine.
+- **`kind=None` means unknown.** The placeholder's kind is left empty (the card says "not
+  announced") until the machine announces one or another declaration fills it in. Declare
+  `None` when the plugin does not know what fills the place (a role any program, agent or person
+  may take).
 - Only `orchestra web` reads `machines`, and only once at start (§2). A machine declared because a
   section exists in `orchestra.toml` appears only after `orchestra web` restarts.
 
@@ -473,7 +484,8 @@ associated with a flow only by inference from its events (§4.5, §6.5).
 
 An instrument may say how it **made** its series (`views`, SPEC §4.2 and §5.2,
 `orchestra/collect/views.py`), so discovery does not take a balance that holds by construction
-for evidence. A pile's level and its moves from one record:
+for evidence. For example, the Workflows plugin's own instrument, whose places are its piles (a
+`count` names its own `place` label, whatever it is called): a level and its moves from one record:
 
 ```python
 Collector.collect("piles", ["python", "-m", "workflows.piles"], every_s=15, views={
@@ -720,10 +732,10 @@ publishing is infrastructure, and the rule (AGENTS.md rule 2) is the same for ev
   system's scheduler publishes offers as `worker` or `reviewer`, answers as the asker and gate
   acts as `merge_gate`; the agents' host publishes a session's events as the agent's instance
   and a team's probe as the team's lead. Guard it in your own `publish`: refuse your process's
-  own name, as `tasking/events.py` and `orchestra_agents/events.py` do.
+  own name (see each plugin's AGENTS.md and tests for how the existing ones do it).
 - They **never write metrics directly**. Keep the counts in your own record and declare an
   instrument (`Plugin.collectors`, §4.7) that prints them: `tasks.tickets` (`orchestra tasks metrics`),
-  `agents.turns` (`orchestra-agents metrics`). Keep series names stable across such a change;
+  `agents.turns` (`orchestra agents metrics`). Keep series names stable across such a change;
   the instrument adds `instrument=<plugin>.<name>`.
 - They **act only as the machines they implement**, and each of those machines announces what
   it listens for: what the infrastructure watches on the machine's behalf is the machine's
@@ -733,9 +745,7 @@ publishing is infrastructure, and the rule (AGENTS.md rule 2) is the same for ev
 
 Write a conformance test that fails when your infrastructure announces itself or publishes as
 itself, and check `/api/machines` after an end-to-end run: no node, edge or hand-off names it.
-The existing ones: orchestra-tasking's `tests/e2e/test_handoffs_e2e.py` (no event, node, edge or
-metric of `task_scheduler`), and orchestra-agents' `tests/unit/test_host_is_no_machine.py` and
-`test_the_agents_host_is_no_machine` in its `tests/e2e/test_dummy_demo_e2e.py`.
+Each existing plugin has such tests: see that plugin's AGENTS.md and tests.
 
 ### 6.2 Identity: sources and instances
 
@@ -752,20 +762,13 @@ machine.
 ### 6.3 Announcing: `orchestra.machine.started`
 
 When an instance starts, it announces itself. This is Orchestra's own event type, so Orchestra
-reads its `data` (`web/machines.py`):
+reads its `data`: the fields it reads, which are kept per instance and which per machine, are
+stated once, in SPEC §2. Give `package` (your plugin's name) so your card draws the machine.
 
-| `data` field | Meaning | Kept per |
-|---|---|---|
-| `mode` | `continuous`, `scheduled` or `ad hoc` | instance |
-| `kind` | `program`, `agent`, `person`, `service` | instance |
-| `listens_for` | event types it reads | machine (union) |
-| `package` | your plugin's name, so your card draws it | machine (latest that says one) |
-| `log` | its log file; shown only if inside the repository or the state directory | instance |
-| `name`, `group` (or `team`) | a display name and a group label | machine (latest announcement) |
-| anything else | passed unread to your card as `m.about` (scalars and lists only) | machine (latest announcement) |
-
-Announcements are not counted as beats when Orchestra judges whether a machine is active. A
-machine stays active while its events keep coming at their usual cadence.
+An announcement is a beat like any other event when Orchestra judges whether a machine is active
+(`web/machines.py`, `quiet.py`): a burst of events (an announcement and the first events at a
+restart) counts as one beat. A machine stays active while its beats keep coming at their usual
+cadence.
 
 ### 6.4 Publishing and listening
 
@@ -789,28 +792,22 @@ evs, offset = events.after(offset)        # every event after offset, in order; 
 
 ### 6.5 Metrics
 
-The metrics store is filled by instruments. For what a plugin's process counts, the way is to
-serve it on `/metrics` in the Prometheus text format and declare the scrape in `Plugin.collectors`
-(§4.7), or have the project declare it (`[[scrape]]`). The scrape's points are labelled
-`instrument=<plugin>.<name>`; the series stay a measurement of the system, not a machine's.
+The metrics store is filled by instruments; a machine never writes metrics (AGENTS.md rules 2
+and 7). For what a plugin's process counts, keep the count in the plugin's own record and declare
+an instrument in `Plugin.collectors` (§4.7) that reads it: a command that prints it in the
+Prometheus text format (the heartbeat in §9 does this), or a scrape of a `/metrics` the process
+serves. The instrument's points are labelled `instrument=<plugin>.<name>`; the series stay a
+measurement of the system, not a machine's.
 
-Writing through Orchestra's store directly also works, and the heartbeat in §9 does it:
-
-```python
-from orchestra.metrics import Point, ProjectStore, for_project
-store = ProjectStore(for_project(project), project.key)        # or orchestra.metrics.for_repo()
-store.write([Point("heartbeat_beats_total", 42, time.time(), {"machine": "heartbeat"})])
-```
-
-A `machine` label written this way, or served on `/metrics`, is a label like any other: the
-machine's card lists such series, but the label never makes a machine, and is never read to
-associate a machine with a flow. Orchestra's only series derived from the event log is
+A `machine` label the instrument prints is a label like any other: the machine's card lists such
+series, but the label never makes a machine, and is never read to associate a machine with a
+flow. Orchestra's only series derived from the event log is
 `orchestra_events_total{type,source}`, its count of the bus, and it is secondary.
 
 - Name each series for what it measures, with its unit. A counter ends in `_total`. Never start a
   name with `orchestra_`. Whether a series is a stock or a flow is for discovery to decide (rules
   6 and 7), not you.
-- Serve or write on a schedule, even when nothing changed. Points stamped more than 60 s in the
+- Print or serve on a schedule, even when nothing changed. Points stamped more than 60 s in the
   future are refused.
 - Which flows a machine's work relates to is never declared, by you or anyone. Discovery infers
   it, as hypotheses with evidence and a confidence, only from event counts on Orchestra's bus: a
@@ -841,8 +838,7 @@ it never writes under `<state>/model/intended/` itself (AGENTS.md rule 5 as amen
   `{version, via, ops}`). The owner's clicks on a machine or an attachment (confirm, discard, the
   kind switch) are published as `orchestra.intent.requested` from `owner` (`data` `{control,
   part, id, change, from}`) and change nothing until a plugin answers by applying with
-  `provenance.request` set to the request's event id. Listen with the subject filter:
-  `orchestra.intent.changed:subject=machine:<id>`, `orchestra.intent.requested:subject=machine:<id>`.
+  `provenance.request` set to the request's event id.
 - A proposal (a machine always enters proposed) and a pending change are confirmed or discarded
   only by the owner (quoted) or in answer to a request; an owner's quoted revision of a proposed
   machine applies at once, and of a confirmed one waits as a pending change.
@@ -869,6 +865,7 @@ sequenceDiagram
     autonumber
     participant Host as orchestra run (host + launcher)
     participant Proc as plugin process (heartbeat.beat)
+    participant Inst as plugin instrument (heartbeat.beats)
     participant Bus as event bus
     participant Store as metrics store
     participant Web as orchestra web (background index)
@@ -880,7 +877,12 @@ sequenceDiagram
     Proc->>Bus: orchestra.machine.started (source heartbeat)<br/>{package, mode, kind, listens_for, log}
     loop every [heartbeat] every
         Proc->>Bus: heartbeat.beat {n}
-        Proc->>Store: heartbeat_beats_total{machine="heartbeat"}
+        Proc->>Proc: counts.json in <state>/heartbeat/
+    end
+    loop every 5 s (Plugin.collectors)
+        Host->>Inst: run [sys.executable, -m, heartbeat.measure]
+        Inst-->>Host: heartbeat_beats_total{machine="heartbeat"} (Prometheus text)
+        Host->>Store: the points, labelled instrument="heartbeat.beats"
     end
     Web->>Bus: read new events (incrementally)
     Web->>Store: read series labelled machine=... (listed on the card; never make a machine)
@@ -904,8 +906,8 @@ These follow from AGENTS.md. The plugins' own `AGENTS.md` files repeat them.
 **A plugin may:**
 
 - define any domain: tickets, agents, people, pings. These live in the plugin, never in Orchestra (rule 1);
-- run processes and instruments through `orchestra run`, publish and listen on the bus, and serve
-  or write series;
+- run processes and instruments through `orchestra run`, publish and listen on the bus, and
+  measure through its instruments;
 - add pages, routes, panels and machine cards, and give humans a way to change the system. **Rule
   9: humans change the system only through plugins.** Orchestra's own UI and CLI are read-only
   except for rediscovering the model. The paths that exist are the agents' Supervisor chat (which
@@ -934,9 +936,12 @@ These follow from AGENTS.md. The plugins' own `AGENTS.md` files repeat them.
   write Orchestra's `runtime.json`, `events.jsonl` or `metrics.jsonl`. Other stores
   (`[[sources]]`) are read only, through `orchestra.sources`;
 - **keep state anywhere but its own place**: `~/.orchestrator/<key>/<plugin>/`
-  (`project.state_dir / "tasks"`, `.../"agents"`), or the bus and the store themselves (the bridges
-  keep nothing else). Records that belong in the repository go in a directory of your own (the
-  agents use `.orchestra/`);
+  (`project.state_dir / "tasks"`, `.../"agents"`), or the bus and the store themselves. Records
+  that belong in the repository go in a directory of your own (the agents use `.orchestra/`). One
+  directory is shared, and each file in it has one owner: `<state>/machines/<id>/` holds a
+  machine's own files, where `machine.toml` with a top-level `kit` key is the bridges' scaffolded
+  poller, `machine.toml` without it is the agents' machine spec, and `machine.json` is the
+  Workflows program host's. Read and write only your own; skip the others;
 - **split the system** (rule 4): no topic, model or view per package. A plugin's events go on the
   project's one bus;
 - import Orchestra's web app, host or model from runtime code. The bridges state it as their rule
@@ -973,7 +978,7 @@ sentence:
   page, its routes, one declared machine, its processes and instruments, a guide and a
   configuration check.
 - **`workflows`** ([orchestra-workflows](https://github.com/danroblewis/orchestra-workflows)): the
-  Items and Piles pages, read-only routes, its processes and instruments, a guide and a
+  Items, Piles and Workflows pages, read-only routes, its processes and instruments, a guide and a
   configuration check.
 
 ---
@@ -986,10 +991,11 @@ We build `orchestra-heartbeat`, a plugin with one machine, `heartbeat`. It:
   `[heartbeat]` section;
 - announces itself, publishes `heartbeat.beat` on an interval, listens for `heartbeat.ping` and
   answers each with `heartbeat.pong`;
-- writes `heartbeat_beats_total` and `heartbeat_pongs_total`;
+- keeps its counts in its own state, which the plugin's instrument (`heartbeat.beats`) prints as
+  `heartbeat_beats_total` and `heartbeat_pongs_total`;
 - adds a page (`/heartbeat`), an API route, a Dashboard panel and its machine card.
 
-All of the code below was run against Orchestra `main` (828da6d0): the tests pass, and
+All of the code below was run against Orchestra as of 2026-11-01: the tests pass, and
 `orchestra run` plus `orchestra web` served it as described in §9.6.
 
 ### 9.1 Layout
@@ -1001,6 +1007,7 @@ orchestra-heartbeat/
     __init__.py         the plugin's and the machine's names
     config.py           [heartbeat] in orchestra.toml
     machine.py          the process: python -m heartbeat.machine
+    measure.py          the instrument: python -m heartbeat.measure
     plugin.py           the entry point: plugin(project) -> Plugin, and the router
     static/
       heartbeat.html    the page
@@ -1115,26 +1122,28 @@ def settings(raw: dict[str, Any]) -> Settings:
     return Settings(every=every)
 ```
 
-`heartbeat/machine.py`: the machine. It imports only `orchestra.config`, `orchestra.events` and
-`orchestra.metrics`, and keeps its logic in a class a test can drive without a process:
+`heartbeat/machine.py`: the machine. It imports only `orchestra.config` and `orchestra.events`,
+and keeps its logic in a class a test can drive without a process:
 
 ```python
 """The machine ``heartbeat``: ``python -m heartbeat.machine``, which ``orchestra run`` keeps running
 as ``heartbeat.beat``. It announces itself, publishes ``heartbeat.beat`` every ``[heartbeat] every``,
-answers each ``heartbeat.ping`` with a ``heartbeat.pong`` about the same subject, and writes two
-series labelled ``machine="heartbeat"``."""
+answers each ``heartbeat.ping`` with a ``heartbeat.pong`` about the same subject, and keeps its two
+counts in its own state file, which the plugin's instrument (``heartbeat.measure``) prints. A
+machine never writes metrics (AGENTS.md rules 2 and 7)."""
 
 from __future__ import annotations
 
+import json
 import os
 import signal
 import sys
 import threading
 import time
+from pathlib import Path
 
 from orchestra.config import load_project
 from orchestra.events import Events
-from orchestra.metrics import Point, ProjectStore, for_project
 
 from . import MACHINE, PACKAGE
 from .config import settings
@@ -1142,9 +1151,14 @@ from .config import settings
 BEAT, PING, PONG = "heartbeat.beat", "heartbeat.ping", "heartbeat.pong"
 
 
+def counts_file(project) -> Path:
+    """Where the machine keeps its counts: the plugin's own place in the state directory."""
+    return project.state_dir / PACKAGE / "counts.json"
+
+
 class Heart:
-    def __init__(self, events: Events, store, every: float, clock=time.time):
-        self.events, self.store, self.every, self.clock = events, store, every, clock
+    def __init__(self, events: Events, counts: Path, every: float, clock=time.time):
+        self.events, self.counts, self.every, self.clock = events, counts, every, clock
         self.beats = self.pongs = 0
         self.offset = events.end()           # listen from now: pings sent before it started are not its
 
@@ -1157,7 +1171,7 @@ class Heart:
     def beat(self) -> None:
         self.beats += 1
         self.events.publish(BEAT, {"n": self.beats})
-        self.measure()
+        self.record()
 
     def answer(self) -> int:
         """Answer the pings published since the last call; returns how many."""
@@ -1169,14 +1183,15 @@ class Heart:
                 n += 1
         self.pongs += n
         if n:
-            self.measure()
+            self.record()
         return n
 
-    def measure(self) -> None:
-        now = self.clock()
-        labels = {"machine": MACHINE}
-        self.store.write([Point("heartbeat_beats_total", self.beats, now, labels),
-                          Point("heartbeat_pongs_total", self.pongs, now, labels)])
+    def record(self) -> None:
+        """Keep the counts where the instrument reads them: written whole, then moved into place."""
+        self.counts.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.counts.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"beats": self.beats, "pongs": self.pongs}))
+        tmp.replace(self.counts)
 
     def run(self, stop: threading.Event) -> None:
         self.announce()
@@ -1191,8 +1206,7 @@ class Heart:
 
 def main() -> int:
     project = load_project()                  # ORCHESTRA_REPO, which the launcher sets
-    heart = Heart(Events.for_project(project, source=MACHINE), ProjectStore(for_project(project), project.key),
-                  settings(project.config.raw).every)
+    heart = Heart(Events.for_project(project, source=MACHINE), counts_file(project), settings(project.config.raw).every)
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
@@ -1208,15 +1222,54 @@ if __name__ == "__main__":
 
 Notes: it opens the bus with `source=MACHINE`; it handles SIGTERM, so the launcher's stop is
 clean; its counters start again from zero after a restart, which is a counter reset as in
-Prometheus. The pong's data belongs to this machine; Orchestra never reads it.
+Prometheus. It writes no metrics: its counts are its own record, in the plugin's place in the
+state directory. The pong's data belongs to this machine; Orchestra never reads it.
+
+`heartbeat/measure.py`: the instrument that measures it, which `orchestra run` runs on its
+interval because the plugin declares it in `Plugin.collectors`:
+
+```python
+"""The plugin's instrument: ``python -m heartbeat.measure``, which ``orchestra run`` runs on its
+interval (``Plugin.collectors``). It prints the machine's two counts in the Prometheus text format
+and exits; Orchestra stores them labelled ``instrument="heartbeat.beats"``. Before the machine's
+first beat it prints nothing."""
+
+from __future__ import annotations
+
+import json
+import sys
+
+from orchestra.config import load_project
+
+from . import MACHINE
+from .machine import counts_file
+
+
+def text(counts: dict) -> str:
+    labels = f'{{machine="{MACHINE}"}}'
+    return "".join(f"# TYPE heartbeat_{k}_total counter\nheartbeat_{k}_total{labels} {int(counts.get(k, 0))}\n"
+                   for k in ("beats", "pongs"))
+
+
+def main() -> int:
+    path = counts_file(load_project())        # ORCHESTRA_REPO, which the host sets for an instrument too
+    if path.is_file():
+        sys.stdout.write(text(json.loads(path.read_text())))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
 
 `heartbeat/plugin.py`: the entry point. It does no work when called; the router opens the bus and
 the store per request:
 
 ```python
 """The heartbeat as an Orchestra plugin (``orchestra/plugins.py``): its page, its API, its every-page
-script and look, the machine it declares, and the process ``orchestra run`` keeps running for it,
-only in a project whose orchestra.toml has a ``[heartbeat]`` section.
+script and look, the machine it declares, the process ``orchestra run`` keeps running for it and
+the instrument that measures it, only in a project whose orchestra.toml has a ``[heartbeat]``
+section.
 
 Orchestra calls ``plugin(project)`` in the web server once, when it starts, and in ``orchestra run``
 each time orchestra.toml changes, so it does no work and opens nothing: the router opens the bus
@@ -1229,6 +1282,7 @@ import time
 from pathlib import Path
 
 from fastapi import APIRouter
+from orchestra.collect.spec import Collector
 from orchestra.events import Events
 from orchestra.launcher import Process
 from orchestra.metrics import for_project
@@ -1252,6 +1306,7 @@ def plugin(project) -> Plugin:
         stylesheets=["heartbeat.css"],
         machines=[Declared(MACHINE, "program", "continuous", [PING])] if configured else [],
         processes=[Process("beat", [sys.executable, "-m", "heartbeat.machine"], stop_grace_s=5)] if configured else [],
+        collectors=[Collector.collect("beats", [sys.executable, "-m", "heartbeat.measure"], every_s=5)] if configured else [],
     )
 
 
@@ -1261,7 +1316,7 @@ def router(project) -> APIRouter:
     @r.get("/state")
     def state() -> dict:
         """The machine's last beats and pongs (its own events, so it reads their data), and its
-        beat counter as the metrics store has it."""
+        beat counter as its instrument stored it."""
         events = Events.for_project(project)
         try:
             evs, _ = events.read(0, limit=500)           # the last 500 events on the bus
@@ -1405,11 +1460,12 @@ def project(tmp_path, monkeypatch):
 ```
 
 `tests/test_plugin.py`: the declaration as a pure function, Orchestra finding the installed entry
-point, the web app serving it, and the machine driven in-process:
+point, the web app serving it, and the machine and its instrument driven in-process:
 
 ```python
 """The plugin's declaration, Orchestra finding it, and the web app serving it."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -1418,8 +1474,10 @@ from orchestra.config import Config, Project
 from orchestra.events import Events
 from orchestra.plugins import load
 from orchestra.web.app import create_app
+from orchestra.web.auth import bearer
 
-from heartbeat.machine import Heart
+from heartbeat.machine import Heart, counts_file
+from heartbeat.measure import text
 from heartbeat.plugin import plugin
 
 
@@ -1434,6 +1492,8 @@ def test_it_runs_only_where_it_is_configured():
     [p] = on.processes
     assert (p.name, p.argv(), p.restart) == ("beat", [sys.executable, "-m", "heartbeat.machine"], "always")
     assert [(m.id, m.kind, m.mode, m.listens_for) for m in on.machines] == [("heartbeat", "program", "continuous", ["heartbeat.ping"])]
+    [c] = on.collectors
+    assert (c.name, c.kind, c.target, c.every_s) == ("beats", "collect", (sys.executable, "-m", "heartbeat.measure"), 5)
 
 
 def test_orchestra_finds_the_installed_plugin():
@@ -1442,7 +1502,7 @@ def test_orchestra_finds_the_installed_plugin():
 
 
 def test_the_web_app_serves_its_page_script_and_api_and_declares_its_machine(project):
-    c = TestClient(create_app(project))
+    c = TestClient(create_app(project), headers=bearer(project))   # every route is behind the web token
     d = c.get("/api/plugins").json()
     assert {"plugin": "heartbeat", "path": "/heartbeat", "title": "Heartbeat"} in d["pages"] and d["errors"] == []
     assert "/plugins/heartbeat/static/heartbeat.js" in d["scripts"]
@@ -1458,11 +1518,8 @@ def test_the_web_app_serves_its_page_script_and_api_and_declares_its_machine(pro
     assert (hb["package"], hb["kind"], hb["unseen"]) == ("heartbeat", "program", True)
 
 
-def test_the_machine_beats_answers_pings_and_measures(project):
-    from orchestra.metrics import ProjectStore, for_project
-
-    store = ProjectStore(for_project(project), project.key)
-    heart = Heart(Events.for_project(project, source="heartbeat"), store, every=1.0, clock=lambda: 1_793_000_000.0)
+def test_the_machine_beats_answers_pings_and_keeps_its_counts(project):
+    heart = Heart(Events.for_project(project, source="heartbeat"), counts_file(project), every=1.0, clock=lambda: 1_793_000_000.0)
     heart.announce()
     heart.beat()
     Events.for_project(project, source="tester").publish("heartbeat.ping", subject="p1")
@@ -1472,14 +1529,14 @@ def test_the_machine_beats_answers_pings_and_measures(project):
         ("orchestra.machine.started", "heartbeat", None), ("heartbeat.beat", "heartbeat", None),
         ("heartbeat.ping", "tester", "p1"), ("heartbeat.pong", "heartbeat", "p1")]
     assert evs[0]["data"]["package"] == "heartbeat" and evs[0]["data"]["listens_for"] == ["heartbeat.ping"]
-    assert store.latest("heartbeat_pongs_total", {"machine": "heartbeat"})[1] == 1
+    assert 'heartbeat_pongs_total{machine="heartbeat"} 1\n' in text(json.loads(counts_file(project).read_text()))
 ```
 
 `tests/test_orchestra_run.py`: end to end through a real `orchestra run`:
 
 ```python
 """End to end: `orchestra run` starts the process the plugin declares, the machine beats and answers
-a ping on the bus and writes its series, and stopping `orchestra run` stops it."""
+a ping on the bus, the plugin's instrument stores its counts, and stopping `orchestra run` stops it."""
 
 import os
 import signal
@@ -1511,7 +1568,7 @@ def test_orchestra_run_keeps_the_heartbeat_running(project):
         wait_for(lambda: any(e["type"] == "heartbeat.beat" for e in on_bus()))
         bus.publish("heartbeat.ping", subject="e2e")
         wait_for(lambda: any(e["type"] == "heartbeat.pong" and e.get("subject") == "e2e" for e in on_bus()))
-        assert wait_for(lambda: for_project(project).latest("heartbeat_beats_total", {"machine": "heartbeat"}))
+        assert wait_for(lambda: for_project(project).latest("heartbeat_beats_total", {"instrument": "heartbeat.beats"}))
         started = [e for e in on_bus() if e["type"] == "orchestra.process.started"]
         assert [(e["data"]["name"], e["data"]["owner"]) for e in started] == [("heartbeat.beat", "heartbeat")]
     finally:
@@ -1567,8 +1624,8 @@ What the run showed:
 - after publishing a `heartbeat.ping` with subject `by-hand` from another source (`tester`), the
   state showed `('heartbeat.pong', 'by-hand')`, and `/api/machines` showed `heartbeat` with
   `package: heartbeat`, `kind: program`, `kinds: {program: 1}`, `mode: continuous`, `subscribes:
-  [heartbeat.ping]`, `metrics: [heartbeat_beats_total, heartbeat_pongs_total]`, `active: true`, its
-  log, and publishes `heartbeat.beat` and `heartbeat.pong`. The Machines map drew `tester →
+  [heartbeat.ping]`, `active: true`, its log, and publishes `heartbeat.beat` and `heartbeat.pong`;
+  `/api/instruments` listed `heartbeat.beats`, the instrument whose points `beats_total` reads. The Machines map drew `tester →
   heartbeat`;
 - `/api/core` listed the process `heartbeat.beat`: running, `owner: heartbeat`, 0 restarts;
 - in a browser: a "Heartbeat" link in the navigation, the page, a "Heartbeat" panel on the
@@ -1601,18 +1658,17 @@ own tests stand in fake entry points instead: `monkeypatch.setattr(plugins, "ent
 `plugins.load(project, found=...)`, or `Host(project, found=lambda: [EntryPoint()])`
 (`tests/unit/test_plugins.py`, `tests/unit/test_launcher.py`).
 
-**The web app with the plugin mounted.** `TestClient(create_app(load_project(repo)))` serves your
-pages, static files and routes, and `/api/machines` with your declarations merged
-(`orchestra-tasking/tests/unit/test_plugin.py`). `/api/machines` answers `{"ok": false, "warming":
+**The web app with the plugin mounted.** `TestClient(create_app(project), headers=bearer(project))`
+(`orchestra.web.auth.bearer`: every route is behind the web token) serves your pages, static files
+and routes, and `/api/machines` with your declarations merged. `/api/machines` answers `{"ok": false, "warming":
 true}` until its background read finishes, so poll it.
 
 **Real processes, end to end.** Start `orchestra run` (and `orchestra web` on a free port) as
 subprocesses from the plugin's environment (`Path(sys.executable).with_name("orchestra")`, or
 `[sys.executable, "-m", "orchestra", "run"]`). Wait for the bus, the store or HTTP to show the
-result, then SIGTERM the host and check the process's log in `<state>/logs/machines/` (an instrument's is in `<state>/logs/instruments/`). Examples:
-`orchestra-bridges/tests/e2e/test_orchestra_run.py`, and `orchestra-tasking/tests/e2e/test_demo_e2e.py`,
-which reuses `demo/run.py`'s own `make_project`/`start`/`stop` and runs the Tickets page in
-headless Chrome when one is at hand.
+result, then SIGTERM the host and check the process's log in `<state>/logs/machines/` (an instrument's is in `<state>/logs/instruments/`). The
+heartbeat's `tests/test_orchestra_run.py` (§9.5) is one; for the existing plugins' e2e tests, see
+each plugin's AGENTS.md and tests.
 
 **Fixtures every level shares:**
 
@@ -1647,10 +1703,9 @@ How it stands today:
   environments (`[tool.uv] override-dependencies`), and each one's `uv.lock` pins the commit. Orchestra's extras (`tasking`,
   `agents`, `bridges`, `desk`, `outbox`, `workflows`) install them from their repositories. They run against that commit until `uv lock --upgrade-package
   orchestra` moves it, or against a local checkout laid over them (`uv run --with-editable`).
-- The interface changes in lockstep with its users. For example, `Declared` lost its
-  `description` field in orchestra_2 `6d80b787`, and the agents dropped the argument the same day
-  (orchestra-agents `ba7135c`). Kind per instance (`f6402f05`) changed what `m.kind` holds, and the
-  agents' cards followed (`91ce6dd`).
+- The interface changes in lockstep with its users: a field removed from `Declared`, or a change
+  to what `m.kind` holds, is followed the same day by every plugin that used it (see each plugin's
+  AGENTS.md and tests).
 
 How to stay compatible:
 
@@ -1679,14 +1734,15 @@ How to stay compatible:
   its machines act on draws the host, not the machines, as their listener.
 - **Publish as the right source.** A query sent under a process's default source shows that
   process asking on the map. Pass `source=` every time.
-- **Don't describe yourself.** Orchestra reads `mode`, `kind`, `listens_for`, `log`, `package`,
-  `name` and `group`. Anything else is passed to your card as `m.about`, and only the latest
-  announcement's `about` survives; a field nothing reads is noise.
+- **Don't describe yourself.** Orchestra reads only the fields SPEC §2 lists; anything else is
+  passed to your card as `m.about`, and only the latest announcement's `about` survives; a field
+  nothing reads is noise.
 - **A sync announces in its own time.** A bridge that replays history announces each actor stamped
   with the time of its first event, with a stable id, so a re-read never duplicates it, and
   announces again only when the name or group changed.
-- **Announcing is not living.** Announcements do not count towards a machine's cadence. A machine
-  that announces and then falls silent goes inactive.
+- **Announcing is not living.** An announcement is one beat, like any event, and a burst of events
+  counts as one beat. A machine that announces and then falls silent goes inactive after its
+  usual cadence.
 
 ### 12.2 Instance naming
 

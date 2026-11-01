@@ -85,7 +85,7 @@ numbers came from." This horizon makes discovery earn trust on systems whose str
   intended-effect and null tests that read the response, so causal claims are tested, not
   inferred from correlation. Until it exists, every net-flow stock's driver is a correlation
   (refuted against time trends, held-out halves and shifted drivers, but never tested).
-- Discovery follow-ups in the owner's order (`docs/HANDOFF-2026-10-25.md`): eras; auxiliaries;
+- Discovery follow-ups in the owner's order: eras; auxiliaries;
   explicit counter/gauge typing; one stock measured by two series; a flow-aware layout; then
   capacity-limited forms.
 - The Dynamics page shows, for every stock, measured against simulated against projected, and for

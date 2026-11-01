@@ -6,7 +6,7 @@ machines write. The workflow `.claude/workflows/model-acceptance.js` runs a case
 judges against the expectations below, and has three skeptics try to refute every pass.
 
 What "meaningful" means here comes from the owner's judgement of earlier models
-(`docs/HANDOFF-2026-10-25.md`, `docs/analysis-method.md` §6, `docs/proposals/system-dynamics-core.md` §3):
+(`docs/analysis-method.md` §6, `docs/proposals/system-dynamics-core.md` §3):
 
 - Stocks are conserved levels that are sensed, not reported; each is paired with where its
   contents go (its opposite or its sink).
