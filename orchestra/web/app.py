@@ -8,10 +8,7 @@ from __future__ import annotations
 import os
 import threading
 import time
-from dataclasses import replace
-from pathlib import Path
 
-import psutil
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -25,25 +22,16 @@ from .background import Refresher
 from .core import CoreProbe
 from .core_explore import Explorer
 from .dynamics import era_eras, model_view, predictions_view
+from .experiments_routes import install as install_experiments
 from .intended import attach_dynamics, attach_machines
 from .intended import install as install_intended
 from .machines import model_parts
+from .pages import STATIC, render
+from .plugins_mount import mount_plugins
 from .sd_extra import install as install_sd_extra
 from .sd_extra import unavailable
+from .system import install as install_system
 from .traffic import merge as merge_counted
-
-STATIC = Path(__file__).parent / "static"
-
-
-def render(file: Path, stylesheets: list[str]) -> str:
-    """An HTML page as served: ``{{v}}`` is the newest asset's mtime, so a browser never keeps a
-    stale stylesheet or script after an upgrade, and the plugins' stylesheets are linked at the
-    end of its head (after Orchestra's own) unless the page links them already."""
-    v = str(int(max(p.stat().st_mtime for p in STATIC.glob("*"))))
-    html = file.read_text(encoding="utf-8").replace("{{v}}", v)
-    links = "".join(f'<link rel="stylesheet" href="{s}">\n' for s in stylesheets if s not in html)
-    at = html.find("</head>")
-    return html[:at] + links + html[at:] if at >= 0 else links + html
 
 
 def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
@@ -144,7 +132,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         out["config"]["removed"] = cfg.layers.removed if cfg.layers else []
         return out
 
-    # ---- Core: the fundamental services. Kept independent of the model and the machines, so
+    # Core: the fundamental services. Kept independent of the model and the machines, so
     # the page works when they do not (see web/core.py).
     @app.get("/core", response_class=HTMLResponse)
     async def core_page() -> str:
@@ -334,62 +322,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         from ..sd.experiments.reads import eras
         return eras(bg.models)
 
-    # ---- Experiments (sd/experiments/): machines make and run them (the events endpoint's HTTP
-    # API, the Python API); here they are only read (AGENTS.md rule 9)
-    def experiments():
-        from ..sd.experiments.api import Experiments
-        return Experiments(project, metrics=core.metrics)
-
-    def answered(fn):
-        from fastapi.responses import JSONResponse
-
-        from ..sd.experiments.api import ExperimentError
-        try:
-            return fn()
-        except ExperimentError as e:
-            return JSONResponse({"ok": False, "error": str(e)}, status_code=e.status)
-
-    @app.get("/experiments", response_class=HTMLResponse)
-    async def experiments_page() -> str:
-        return page("experiments.html")
-
-    @app.get("/experiments/{eid}", response_class=HTMLResponse)
-    async def experiment_page(eid: str) -> str:
-        return page("experiment.html")
-
-    @app.get("/api/experiments")
-    def experiments_list(owner: str | None = None, status: str | None = None, era: str | None = None):
-        """Every experiment: who made it, its title and purpose, status, base, latest run and the
-        verdict of its prediction; ``era``: those made on its model or predicting its change."""
-        return answered(lambda: experiments().list(owner, status, era))
-
-    @app.get("/api/experiments/{eid}")
-    def experiment_one(eid: str, base: bool = False):
-        """One experiment: its draft (equations in the language), scenario, edit log, runs and prediction."""
-        return answered(lambda: experiments().get(eid, base))
-
-    @app.get("/api/experiments/{eid}/diff")
-    def experiment_diff(eid: str):
-        return answered(lambda: experiments().diff(eid))
-
-    @app.get("/api/experiments/{eid}/runs")
-    def experiment_runs(eid: str):
-        return answered(lambda: experiments().runs(eid))
-
-    @app.get("/api/experiments/{eid}/runs/{rid}")
-    def experiment_run(eid: str, rid: str):
-        """One run in full: forward (trajectories and band), replay (observed against simulated, scores) or inverse."""
-        return answered(lambda: experiments().run_result(eid, rid))
-
-    @app.get("/api/experiments/{eid}/runs/{rid}/measured")
-    def experiment_run_measured(eid: str, rid: str, before_s: float = 3600.0):
-        """A forward run's stocks as measured: before its now, and since (up to its horizon or the present)."""
-        return answered(lambda: experiments().measured(eid, rid, before_s))
-
-    @app.get("/api/experiments/{eid}/prediction")
-    def experiment_prediction(eid: str):
-        """The prediction a committed experiment became, with its verdict once judged."""
-        return answered(lambda: experiments().prediction(eid))
+    install_experiments(app, project, core.metrics, page)
 
     @app.get("/api/machines")
     def machines(era: str | None = None) -> dict:
@@ -442,54 +375,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
             return {"ok": False, "error": why}
         return {"ok": True, "path": str(path), "lines": tail(path, lines)}
 
-    gpu_history: list[dict] = []
-
-    def gpu_sample() -> dict | None:
-        """Apple GPU utilization from the IOAccelerator performance counters (no sudo).
-        Returns None on non-Apple hosts or when ioreg is unavailable."""
-        import plistlib
-        import shutil
-        import subprocess
-        if not shutil.which("ioreg"):
-            return None
-        try:
-            raw = subprocess.run(["ioreg", "-r", "-d", "1", "-c", "IOAccelerator", "-a"], capture_output=True, timeout=3, check=False).stdout
-            items = plistlib.loads(raw) if raw else []
-        except Exception:  # noqa: BLE001 - a host without this tool has no GPU reading
-            return None
-        for it in items:
-            ps = it.get("PerformanceStatistics") or {}
-            if "Device Utilization %" in ps:
-                return {"name": it.get("IOClass", "GPU"), "utilization": int(ps.get("Device Utilization %", 0)),
-                        "renderer": int(ps.get("Renderer Utilization %", 0)), "tiler": int(ps.get("Tiler Utilization %", 0)),
-                        "memory_used": int(ps.get("In use system memory", 0)), "memory_alloc": int(ps.get("Alloc system memory", 0))}
-        return None
-
-    @app.get("/api/system")
-    def system(gpu_window: int = 240) -> dict:
-        """Host utilization. Sync so the CPU sampling interval runs in a worker thread.
-        gpu_window is the seconds of GPU history to return (kept for up to one hour)."""
-        gpu = gpu_sample()
-        if gpu is not None:
-            gpu_history.append({"t": time.time(), "u": gpu["utilization"]})
-            del gpu_history[:-1800]
-        cutoff = time.time() - max(30, min(gpu_window, 3600))
-        vm = psutil.virtual_memory()
-        try:
-            disk = psutil.disk_usage(str(project.repo_root))
-        except OSError:
-            disk = psutil.disk_usage("/")
-        load = psutil.getloadavg() if hasattr(psutil, "getloadavg") else (0, 0, 0)
-        return {
-            "cpu_percent": psutil.cpu_percent(percpu=True, interval=0.25),
-            "load": [round(x, 2) for x in load],
-            "memory": {"percent": vm.percent, "used": vm.used, "total": vm.total},
-            "disk": {"percent": disk.percent, "used": disk.used, "total": disk.total, "path": str(project.repo_root)},
-            "gpu": gpu,
-            "gpu_history": [p for p in gpu_history if p["t"] >= cutoff],
-            "gpu_window": max(30, min(gpu_window, 3600)),
-            "now": time.time(),
-        }
+    install_system(app, project)
 
     @app.get("/api/events")
     def get_events(since: int = 0) -> dict:
@@ -504,73 +390,3 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     plugin_collectors.update(stamp=stamp, list=loaded_collectors)
     app.add_middleware(AuthMiddleware, project=project, on=auth_on)   # added last: the outermost, in front of every route
     return app
-
-
-def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
-    """Pages, static files and API routes of the installed plugins (orchestra/plugins.py).
-    Adds their every-page stylesheets to ``stylesheets``; returns what adds their declared
-    machines to the observed ones, and their collectors (each with its owner), which discovery
-    reads the simulated flag from."""
-    from .. import plugins as plug
-    loaded = plug.load(project)
-    taken = {getattr(r, "path", None) for r in app.routes}
-    pages, scripts, errors = [], [], list(loaded.errors)
-    for p in loaded.plugins:
-        for what, files, into in (("script", p.scripts, scripts), ("stylesheet", p.stylesheets, stylesheets)):
-            for f in files:
-                if p.static and (p.static / f).is_file():
-                    into.append(f"/plugins/{p.name}/static/{f}")
-                else:
-                    errors.append({"plugin": p.name, "error": f"{what} {f} is not a file in its static directory; left out"})
-        if p.static:
-            app.mount(f"/plugins/{p.name}/static", StaticFiles(directory=str(p.static)), name=f"plugin-{p.name}")
-        if p.router is not None:
-            app.include_router(p.router, prefix=f"/api/plugins/{p.name}")
-        for pg in p.pages:
-            if pg.path in taken:
-                errors.append({"plugin": p.name, "error": f"page {pg.path} is already served"})
-                continue
-            taken.add(pg.path)
-            pages.append({"plugin": p.name, "path": pg.path, "title": pg.title})
-
-            def serve(f=pg.file) -> str:
-                return render(Path(f), stylesheets)
-            app.add_api_route(pg.path, serve, methods=["GET"], response_class=HTMLResponse, include_in_schema=False)
-
-    @app.get("/api/plugins")
-    def plugin_list() -> dict:
-        """The installed plugins' pages (for the navigation), any that failed to load, and the
-        project's own plugins and overrides as they were loaded (``local``; the Core page lists them)."""
-        return {"ok": True, "pages": pages, "scripts": scripts, "errors": errors, "local": loaded.local}
-
-    @app.get("/api/guides")
-    def guides() -> dict:
-        """How to configure Orchestra and each installed plugin, for an AI operator: Orchestra's
-        guide, then each plugin's (orchestra/guides.py), read now."""
-        from .. import guides as g
-        return {"ok": True, "guides": g.collect(project, loaded)}
-
-    declared = [(p.name, d) for p in loaded.plugins for d in p.machines]
-
-    def declare(machines: list[dict]) -> None:
-        """Observed machines keep what was observed; a declaration names the package and the kind
-        of a machine that announced neither, and adds a machine not seen yet (marked so). The first
-        plugin to declare an id adds it; a later declaration of that id only fills in what is
-        still empty: of an observed machine its package and kind, of a placeholder also its mode
-        and what it listens for (added to). A kind of None is unknown: left empty."""
-        seen = {m["id"]: m for m in machines}
-        for pkg, d in declared:
-            m = seen.get(d.id)
-            if m is not None:
-                m["package"] = m.get("package") or pkg
-                m["kind"] = m.get("kind") or d.kind
-                if m.get("unseen"):
-                    m["mode"] = m.get("mode") or d.mode
-                    m["subscribes"] = [*m["subscribes"], *(t for t in d.listens_for if t not in m["subscribes"])]
-                continue
-            m = {"id": d.id, "bootstrap": False, "mode": d.mode, "kind": d.kind, "package": pkg, "about": {},
-                 "unseen": True, "publishes": [], "subscribes": list(d.listens_for), "flows": [], "logs": [],
-                 "instances": [], "first_seen": None, "last_seen": None, "active": False}
-            machines.append(m)
-            seen[d.id] = m
-    return declare, [replace(c, owner=p.name) for p in loaded.plugins for c in p.collectors]

@@ -52,7 +52,6 @@ class EventsEndpoint:
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
-    # ---- what it does ----
     def publish(self, body: bytes) -> tuple[int, dict]:
         fields = check(parse(body))
         with self._lock:
@@ -105,7 +104,6 @@ class EventsEndpoint:
         scheme, _, given = (header or "").partition(" ")
         return scheme.lower() == "bearer" and hmac.compare_digest(given.strip().encode(), self.token.encode())
 
-    # ---- serving ----
     def start(self) -> str:
         """Bind, record the address and serve in the background; returns the URL."""
         try:

@@ -64,7 +64,6 @@ class Explorer:
     def core_timeout() -> float:
         return 8.0
 
-    # ---- metrics ----
     def _dump(self):
         m = self.core.metrics
         if m is None:
@@ -127,7 +126,6 @@ class Explorer:
                     "engine": "victoriametrics" if m.name == "victoriametrics" else "orchestra (PromQL subset)"}
         return self._guard(go)
 
-    # ---- events ----
     def _events(self):
         def read():
             bus = self.core.events.bus

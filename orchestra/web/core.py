@@ -103,7 +103,6 @@ class CoreProbe:
         except Exception as e:  # noqa: BLE001 - a bad metrics URL must not stop the page
             self._note("metrics", f"cannot open the metrics store: {type(e).__name__}: {e}", level="error")
 
-    # ---- the core log ----
     def _note(self, component: str, msg: str, level: str = "info") -> None:
         self.log.append({"t": time.time(), "component": component, "level": level, "msg": msg})
 
@@ -117,7 +116,6 @@ class CoreProbe:
     def _labels(self, **kw) -> dict[str, str]:
         return {"project": self.project.key, **kw}
 
-    # ---- components ----
     def _processes(self, record: dict) -> list[dict]:
         """What the host's launcher keeps running (orchestra/launcher.py), as it recorded them."""
         out = []
@@ -259,7 +257,6 @@ class CoreProbe:
                    "info" if out.get("ok") else "error")
         return out
 
-    # ---- logs ----
     def log_sources(self) -> list[dict]:
         out = [{"id": "host", "name": "Orchestra host (bootstrap)"}, {"id": "core", "name": "Core"},
                {"id": "events", "name": "Event stream"}]

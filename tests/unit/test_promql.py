@@ -66,5 +66,5 @@ def test_the_file_store_answers_query_range_for_one_project(tmp_path):
                  for t in (0, 600)])
     out = {lab["__name__"]: pts for lab, pts in store.query_range('sum by (__name__) ({__name__=~".+"})', 0, 600, 600, {"project": "p"})}
     assert out == {"a_total": [(0, 1.0), (600, 1.0)], "b_level": [(0, 5.0), (600, 5.0)]}
-    with pytest.raises(MetricsError, match=""):
+    with pytest.raises(MetricsError):
         store.query_range("sum by (", 0, 600, 600, {"project": "p"})

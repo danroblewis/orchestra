@@ -118,7 +118,6 @@ class Draft:
             raise EditError(f"{what}: no stock {v} in the draft (null for outside); its stocks: {', '.join(sorted(self.stock_ids()))}")
         return v
 
-    # ---- the operations
     def add_flow(self, e: dict) -> None:
         fid = _id(e.get("id"), "id")
         if any(f.id == fid for f in self.model.flows):
@@ -279,7 +278,6 @@ class Draft:
         if src == dst:
             raise EditError("a flow from a stock to itself moves nothing")
 
-    # ---- the batch
     def check(self) -> None:
         if errs := self.model.check():
             raise EditError("; ".join(errs))

@@ -87,7 +87,6 @@ class Experiments:
         self.models = ModelStore.for_state(project.state_dir)
         self.store = ExperimentStore.for_state(project.state_dir)
 
-    # ---- what it reads with
     @property
     def metrics(self):
         if self._metrics is None:
@@ -113,7 +112,6 @@ class Experiments:
             raise ExperimentError("this needs the machine's source: Experiments(project, source=...)", 400)
         return self.source
 
-    # ---- reads
     def language(self) -> dict:
         return {"ok": True, "language": reference()}
 
@@ -155,7 +153,6 @@ class Experiments:
             return {"ok": False, "error": str(e)}
         return {"ok": True, **p.describe()}
 
-    # ---- experiments
     def _get(self, eid: str) -> dict:
         try:
             return self.store.get(eid)
@@ -276,7 +273,6 @@ class Experiments:
             self.store.put(rec)
         return {"ok": True, "experiment": self.view(rec)}
 
-    # ---- runs
     def run(self, eid: str, mode: str, **options) -> dict:
         """One run of the experiment, recorded with it: ``forward`` (``horizon_s``, ``members``,
         ``seed``, ``bounds``, ``stocks``, ``points``), ``replay`` (a past window: ``start`` and
@@ -415,7 +411,6 @@ class Experiments:
         rep["experiment"] = made["experiment"]["id"]
         return {"mode": "inverse", **rep}
 
-    # ---- commit
     def commit(self, eid: str, horizon, change: str | None = None, subject: str | None = None, members: int = 24) -> dict:
         """The experiment as a prediction (``sd.predictions``) of the change the caller will make:
         its edits become the expected edits (``expect.expectations``), its forward run over the
