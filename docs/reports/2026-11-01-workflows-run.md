@@ -14,9 +14,9 @@ done and passed a stranger test.
 
 ## 1. What was built, and where
 
-**Core, `~/orchestra_2`** (GitHub danroblewis/orchestra). `main` is `c92d02fc` "Goal log: deflake
-merged; report draft dispatched", 4 goal-log commits ahead of origin; the code is pushed up to
-`b59f7ad1`. It holds the intended model in `orchestra/sd/intended/` (declared stocks, effects,
+**Core, `~/orchestra_2`** (GitHub danroblewis/orchestra). `main` is pushed at `849dfd28`, which
+merges `demo-live` (UX rounds 1 and 2, as `a9d733f2`) and the refinement-marks fix. It holds
+the intended model in `orchestra/sd/intended/` (declared stocks, effects,
 targets, machines and events, the expected set, three states, version diffs, provenance), the
 Dynamics states D1 to D3, the Machines states E1 to E4, instruments on declared machines, collector
 provenance and `pile` as a construction place, two rounds of discovery fixes, the four proposals
@@ -35,12 +35,9 @@ is the holder", pushed. M4 and M5 are complete.
 `orchestra_bridges/kits/`, four example machines in `examples/integrations/`.
 
 **Live demo, `~/orchestra-live-demo`** (not a git repository), behind orchestra.dansproject.space
-on :8096. It runs the agents' demo with `--dummy` from two worktrees on branch `demo-live`: core
-`~/orchestra-wt/demo` (`ab0cacaf`, with the UX review's round-1 fixes, not yet on `main`) and agents
-`~/orchestra-agents-wt-demo` (`34e6823`). The login link is in `~/orchestra-live-demo/LOGIN.txt`.
-
-<!-- PENDING: final core main commit and the push of its log commits -->
-Pending at the time of writing: the push of the core's goal-log commits.
+on :8096. It runs the agents' demo with `--dummy` from worktrees on branch `demo-live` (core
+`~/orchestra-wt/demo`, agents `~/orchestra-agents-wt-demo`); it was restarted from core `a9d733f2`
+at about 11:40Z. The login link is in `~/orchestra-live-demo/LOGIN.txt`.
 
 ## 2. Status per task
 
@@ -152,7 +149,7 @@ The last green run per repository, as logged. `ruff check` was clean at every pu
 
 | Repository | Commit | Result |
 |---|---|---|
-| core | `b59f7ad1` | unit 936 passed, rc=0 |
+| core | `849dfd28` | unit 947 passed, rc=0; two screenshot tests (D2, D-extras) known failing until UX round 3 |
 | core | `513a998d` | unit+metrics+sources 1079 passed, 25 skipped, rc=0 |
 | agents | `30a84fe` | unit 533 passed, 1 skipped, rc=0 |
 | agents | `80c115c` | full suite 408 passed, 2 skipped, rc=0, 19m44s |
@@ -167,23 +164,24 @@ workflow test keeps the first claim per offer. Proven 20/20 under 8-suite load; 
 
 Run on the C5 core, ten checks per use case.
 
-- **UC-1 (bakery): 6/10, fails.** The first attempt never ran: the harness cut it at 2.5 of 60
-  minutes, and a linked worktree shares the main checkout's state. The re-run on a clone scored 6/10
-  again. Its earlier misses were fixed; two new misses were counter-merge bugs in discovery
-  (customers waiting merged into the board's counters, inspections passed merged into picked up),
-  fixed in `b59f7ad1` after a refuter's round. Still missing for lack of data: on-shelf changed only
-  4 times, the rating is read by no flow (the D15 naming gap), and no lease expired in the window.
+- **UC-1 (bakery): 9/10 on core `b59f7ad1`, still not a pass.** The first attempt never ran (the
+  harness cut it at 2.5 minutes; a linked worktree shares the main checkout's state). A clone then
+  scored 6/10, with two counter-merge bugs in discovery. The restate fix (`94e3f774`, `befc2638`,
+  one refuter round) keeps a stock's own writer's counters after a merge, and stops a merge when a
+  measured level is exactly one counter minus the other and moves a whole unit where they differ.
+  The re-score (60 min, kalman_lna at 30 s) now finds customers waiting, inspecting to on shelf,
+  on shelf, and a lease-expired flow baking to waiting. No regressions: six exact stocks, 16 flows,
+  every origin fitted. The one miss: the rating is read by assigned, not by placed.
 - **UC-2 (tasking programs): 6/10, fails.** Short windows: levels that never change within a 5 s
   step. Nothing spurious.
 - **UC-3 (agents and a program): 4/10, fails.** Short windows, and one spurious stock balanced by
   a ticket flow, fixed by the second of two discovery fixes merged with C5.
 
-The judges saw no regression from M2. Tasking's `create_ticket`
-now requires a `milestone_id`. The working files are in the session scratchpad, which may not
+The working files are in the session scratchpad, which may not
 persist.
 
-<!-- PENDING: UC-1 re-score against core b59f7ad1 (score, remaining misses) -->
-Pending at the time of writing: the UC-1 re-score against core `b59f7ad1`.
+<!-- PENDING: UC-2 and UC-3 re-scores against core main -->
+Pending at the time of writing: the UC-2 and UC-3 re-scores against core `main`.
 
 ## 7. Live model spend
 
@@ -195,20 +193,18 @@ approximate, well under the $30 cap. The UX personas used the `--dummy` demo.
 **Core.**
 - The loop finder sees no cycle when a turn's end is fitted on the oldest item's age (W6).
 - The event map overflows about 10 px at 390 px width.
-- The Machines page marks only a refinement's last edit, so receives removed in the same
-  refinement never show as removed. A fix is in progress on branch `refine-marks`.
-
-<!-- PENDING: refine-marks outcome (the Machines page's refinement marks) -->
+- Fixed: the Machines page marked only a refinement's last edit. `orchestra/sd/intended/refinement.py`
+  now compares the machine with its baseline across every op (`9195af68`, merged as `b8847702`).
+- D3's screenshot 503 is the simulate endpoint without numpy/scipy: sync worktrees with
+  `--extra sd` too (now in COORDINATOR.md, which also forbids syncing your main checkout).
 - A heard declared machine drew dashed under C3's styling (I4); check it after C9.
 - "Whoever acts next" hand-offs draw coordinator to `bot.triage` via `attention.needed` (X34).
 - `find_repo_root` resolves linked worktrees to the main repository; `use-cases.md` "Adding a
   case" should say to use a clone.
 - `~/.orchestrator/projects.json` still lists the removed clone `~/orchestra-bakery-clone-UC1`.
 - C6 (file-bus rotation) is not built.
-- The UX round-1 fixes (`ab0cacaf`) are only on `demo-live`.
-
-<!-- PENDING: UX review of the core pages (branch demo-live, round 2): findings and what was merged -->
-Pending at the time of writing: the UX review of the core pages, round 2, on branch `demo-live`.
+<!-- PENDING: UX review round 3 (branch ux-round3: the 13 must items, the D2 and D-extras screenshot tests) -->
+Pending at the time of writing: UX review round 3 on branch `ux-round3`.
 
 **Agents.**
 - A3's failures (Haiku failed turns 1, 4, 6; Sonnet turn 1 twice: unoffered `repo_files`, events
