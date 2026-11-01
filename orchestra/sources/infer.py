@@ -90,7 +90,7 @@ def settings_key(spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Pa
     return hashlib.sha256(body.encode()).hexdigest()[:16]
 
 
-def _declared(spec: SourceSpec, declared: list[DeclaredSeries]) -> list[Definition]:
+def declared_definitions(spec: SourceSpec, declared: list[DeclaredSeries]) -> list[Definition]:
     """The hand-written and preset definitions: a ``select`` is a counter read from raw samples
     (view ``increments``, reset-safe, summed by its ``by`` labels), anything else a query."""
     aliases = spec.aliases()
@@ -262,6 +262,6 @@ def _infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], rep
             d.kind = "level"
             d.flags.append("named a rate, but it went below zero: read as a level")
     kept, left = rank(cands, spec, probes)
-    inf.kept = _declared(spec, declared) + kept
+    inf.kept = declared_definitions(spec, declared) + kept
     inf.left_out += left
     return inf

@@ -123,6 +123,12 @@ class SourceSpec:
                 out.setdefault(s, canonical)
         return out
 
+    @property
+    def series_prefix(self) -> str:
+        """What the series this source contributes are named with: ``<prefix>:``. An attachment's
+        match is stripped of it to compare with the source's own definitions' names."""
+        return f"{self.prefix}:"
+
     def where(self) -> str:
         """The server without path or credentials: what logs and pages may show."""
         u = urlsplit(self.url)

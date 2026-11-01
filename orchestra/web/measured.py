@@ -55,8 +55,7 @@ def read_all(project, metrics, catalogue, layer: dict, now: float | None = None)
         if spec is None:
             series |= dict.fromkeys((a["id"] for a in mine), None)
             continue
-        strip = f"{spec.prefix}:"
-        prefixes = [parse(a.get("match"))[0].removeprefix(strip) for a in mine]
+        prefixes = [parse(a.get("match"))[0].removeprefix(spec.series_prefix) for a in mine]
         try:
             got, why = catalogue.selected(name, lambda d, ps=prefixes: any(d.name.startswith(p) for p in ps),
                                           now - READ_S, now, READ_STEP_S)
@@ -80,7 +79,7 @@ def views(project, layer: dict, cache: dict | None, now: float | None = None) ->
         kind = kinds.get(a["instrument"])
         aliases, strip = None, ""
         if kind == "source" and (spec := ins.source(a["instrument"])) is not None:
-            aliases, strip = spec.aliases(), f"{spec.prefix}:"
+            aliases, strip = spec.aliases(), spec.series_prefix
         out.append(m.attachment_view(a, got.get(a["id"]), now, kind or "unknown", project.config.max_instances, aliases, strip))
     m.mark_shared(out)
     return out

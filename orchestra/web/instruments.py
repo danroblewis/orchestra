@@ -8,9 +8,10 @@ numbers), ``draft`` (an option being tried, left out of discovery) and ``expires
 when its plugin removes it; null). All of it is read from files, never by running or querying an
 instrument:
 
-- a script or a URL: the runtime record's ``instruments`` (written by the host that launches,
-  ``orchestra.collect.runner``), or, while no host runs, the entries ``orchestra.toml`` declares
-  (marked not running);
+- a script or a URL (or a plugin's collector): every name ``collect.kinds.instrument_kinds``
+  gives, the one list an attachment is checked against. One the running host records
+  (``orchestra.collect.runner``) is read from the record; the rest, declared in ``orchestra.toml``
+  or in the last record only, are marked not running;
 - a source: ``[[sources]]`` in ``orchestra.toml`` (its server, never its credentials), with how
   the latest discovery found it (``Model.discovery["sources"]``). A source is read at each
   discovery, not on an interval of its own, and writes nothing to the metrics store.
@@ -22,18 +23,21 @@ attachment selects, never from a read made for the page."""
 from __future__ import annotations
 
 from .. import runtime
+from ..collect.kinds import instrument_kinds
 from ..collect.spec import from_toml
 from ..config import ConfigError
 
 
-def _declared(project) -> tuple[list[dict], list[str]]:
+def _declared(project) -> tuple[list, list[str]]:
     try:
         raw = project.read_config().raw
     except (OSError, ValueError, ConfigError) as e:
         return [], [f"cannot read the configuration: {e}"]
-    found, errors = from_toml(raw)
-    return [{"name": c.name, "kind": c.what, "target": c.shown, "every_s": c.every_s, "owner": c.owner, **c.flags()}
-            for c in found], errors
+    return from_toml(raw)
+
+
+def _row(c) -> dict:
+    return {"name": c.name, "kind": c.what, "target": c.shown, "every_s": c.every_s, "owner": c.owner, **c.flags()}
 
 
 def _sources(project, discovery: dict | None) -> tuple[list[dict], list[str]]:
@@ -53,16 +57,22 @@ def _sources(project, discovery: dict | None) -> tuple[list[dict], list[str]]:
 
 
 def instruments_view(project, discovery: dict | None = None) -> dict:
-    """Every instrument, scripts and URLs first, then sources; and why any entry was left out."""
+    """Every instrument, scripts and URLs first, then sources; and why any entry was left out. The
+    names are ``collect.kinds.instrument_kinds``', as an attachment's check has them: one the
+    running host records is running; one only declared, or only in the last record (a plugin's
+    collector while no host runs), is not."""
     record = runtime.read(project)
     running = runtime.launcher(record) is not None
     recorded = record.get("instruments") or {}
-    declared, errors = _declared(project)
-    if running and recorded:
-        unflagged = {"simulated": False, "draft": False, "expires": None}      # a record written before the flags
-        collectors = [{"name": n, **unflagged, **r, "running": True} for n, r in recorded.items()]
-    else:
-        last = {n: r for n, r in recorded.items()}
-        collectors = [{**last.get(d["name"], {}), **d, "running": False} for d in declared]
+    found, errors = _declared(project)
+    declared = {c.name: _row(c) for c in found}
+    unflagged = {"simulated": False, "draft": False, "expires": None}          # a record written before the flags
+    collectors = []
+    for name, kind in instrument_kinds(recorded, found).items():
+        r = recorded.get(name) or {}
+        if running and name in recorded:
+            collectors.append({"name": name, **unflagged, **r, "running": True})
+        else:
+            collectors.append({**unflagged, **r, "kind": kind, **declared.get(name, {"name": name}), "running": False})
     sources, more = _sources(project, discovery)
     return {"ok": True, "host_running": running, "instruments": collectors + sources, "errors": errors + more}
