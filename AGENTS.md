@@ -83,8 +83,11 @@ Rules 2, 3, 4, 5, 6, 7 and 9 were amended on 2026-11-01 for the intended model
    makes a version of the other, and a comparison names one of each.
 5. **State lives in `~/.orchestrator/<key>/`, except the event log and the
    metrics, which live in the configured bus and metrics store, and what every
-   project on the machine shares about another store it reads (its request
-   rate and daily count, `~/.orchestrator/stores/<store>/`, `sources/limits.py`).** Events go
+   project on the machine shares: about another store it reads (its request
+   rate and daily count, `~/.orchestrator/stores/<store>/`, `sources/limits.py`),
+   the index of projects (`~/.orchestrator/projects.json`, repository root to
+   key, `config.py`), and the scripts that run Orchestra's own Python for what
+   the launcher starts (`~/.orchestrator/python/<id>/`, `launcher_env.py`).** Events go
    through `orchestra.events.Events` over an `orchestra.bus.EventBus`; metrics
    through `orchestra.metrics.MetricsStore`; the model through
    `orchestra.sd.store.ModelStore`; the intended model through

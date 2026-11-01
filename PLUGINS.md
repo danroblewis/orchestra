@@ -913,7 +913,10 @@ These follow from AGENTS.md. The plugins' own `AGENTS.md` files repeat them.
   measure through its instruments;
 - add pages, routes, panels and machine cards, and give humans a way to change the system. **Rule
   9: humans change the system only through plugins.** Orchestra's own UI and CLI are read-only
-  except for rediscovering the model. The paths that exist are the agents' Supervisor chat (which
+  except for observations: rediscovering the model, and rule 9's closed list of intended-model
+  page controls (expect, unexpect, ignore, and confirm or discard on a stock, effect or flow),
+  each a declaration with its provenance; the owner's requests about a machine are published as
+  `orchestra.intent.requested` and change nothing until a machine acts on them. The paths that exist are the agents' Supervisor chat (which
   changes the configuration through its tools, by `project.config_edit`, in `orchestra.toml` or
   the owner's overlay, after which the host restarts processes accordingly)
   and the task system's operator controls (pause pickup, capacity, stop a ticket's holder;

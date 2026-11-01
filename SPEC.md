@@ -12,11 +12,11 @@ Orchestra infers it, as hypotheses with their evidence.
 Its main use case is finding the feedback loops between a project's own domain and the processes
 used to develop it: do our workflows and AI agents change the measures the project exists for?
 
-This version is an **empty Orchestra**: the bus, the metrics store, the model, the bootstrap host
-and the web UI, with no machines of its own beyond the host, and no AI: an AI agent is a machine
-like any other, run by whatever runs it. Task management lives in its own repository
-(`~/orchestra-tasking`), the AI agents in another (`~/orchestra-agents`);
-each adds its pages here as a plugin (§10.1). How they left is in
+This version is an **empty Orchestra**: the bus, the metrics store, the model with the declared
+layer beside it (what the owner expects, the intended model, §4.6), the bootstrap host and the
+web UI, with no machines of its own beyond the host, and no AI: an AI agent is a machine like any
+other, run by whatever runs it. The machines' work and how it is organised live in plugins, each
+in its own repository, which add their pages here (§10.1). How the task system left is in
 `docs/proposals/empty-orchestra.md`.
 
 This document is the design of what exists. `AGENTS.md` lists the rules that must not be broken;
@@ -65,7 +65,11 @@ the clock) or **ad hoc** (a fresh instance per piece of work).
 **The announcement.** When an instance starts it announces itself with `orchestra.machine.started`
 from its own `source`. It is a plain event: a machine sends it over HTTP like any other (§3.1). It
 is Orchestra's own event type, so Orchestra reads its `data` (`web/machines.py`). This is the one
-full statement of the fields Orchestra reads; every other document points here:
+full statement of the fields Orchestra reads; every other document points here. The events
+endpoint refuses an announcement whose `data` is not an object, whose `listens_for` is not a list
+of event types, or whose `mode`, `kind`, `log`, `package`, `name`, `group` or `team` is not a
+string (`endpoint/validate.py`); a reader takes any other shape already on the bus as empty
+(`events.announcement`):
 
 | `data` field | What it says | Kept per |
 |---|---|---|
@@ -1460,6 +1464,7 @@ keeps its own harness (`~/orchestra-agents/SPEC.md`).
     experiments/<id>.runs/<run>.json   each run of it in full
     sources/<name>.json          each source's latest inference: its definitions, what was left out, its families (§4.4)
     sources/<name>.attempt.json  when its last inference round ran and failed, so the next waits (sources/cache.py)
+    sources/<name>.reads.json    what the last reads of it returned, so the next asks only for the steps after (sources/catalogue.py)
     sources/<name>.lock          one inference round at a time, across processes
     logs/orchestra-host.log
     logs/machines/<name>.log     each launched process's output (§5.1)
@@ -1468,7 +1473,8 @@ keeps its own harness (`~/orchestra-agents/SPEC.md`).
 
 The project key is the repository directory's name plus a hash of its path. Inside the
 repository, Orchestra writes only `orchestra.toml`, on `orchestra init` and through
-`project.config_edit`.
+`project.config_edit`, and the private overlay when the owner points `ORCHESTRA_CONFIG_OVERLAY`
+at a file inside it (a relative path is read against the repository root, `config.overlay_file`).
 
 ---
 
