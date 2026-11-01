@@ -38,11 +38,9 @@ instrument: it measures and never acts (`docs/machines.md`).
 **(c) A Programmatic Machine that polls an API.** *Use this when* you want **events**: what happened
 to each item, and who did it. You build it from a kit (§4). The program reads what changed since
 its cursor, every N minutes (5 by default), and publishes one CloudEvent per change. The same file
-run with `measure` is a `[[collect]]` instrument. It runs in one of two ways:
-- as a `[[machines]]` entry: a continuous process with its own interval loop, kept running by
-  `orchestra run`. This needs no plugin;
-- with the Workflows plugin installed, as a scheduled item (`[workflows.every.<name>]`) that runs
-  it once per interval (§5.5).
+run with `measure` is a `[[collect]]` instrument. It runs as a `[[machines]]` entry: a continuous
+process with its own interval loop, kept running by `orchestra run`, never as a Workflows item
+(§5.5).
 
 There is no fourth strategy of "the bridges plugin's own reader". **The bridges plugin is a
 library** (the owner, 2026-11-01: "a library or framework so that AI agents within my repo ...
@@ -781,7 +779,7 @@ Run it at the end. Every line must be true.
 - [ ] No event's `time` is more than 60 s in the future (check `orchestra run`'s output).
 - [ ] A ratio is printed only as a gauge beside its counts, and the outcomes are event types.
 - [ ] The machine is declared, or the declaration is handed to the Supervisor, with an expected effect.
-- [ ] The entries (`[[machines]]`, or the `workflows.every` item of §5.5, and `[[collect]]`) were
+- [ ] The entries (`[[machines]]` and `[[collect]]`) were
       added after the approval, not before (§5.3).
 - [ ] `orchestra bridges integrations` lists the poller with `clearance` `approved`, the token as
       `$<THE_VARIABLE>`, `scheduled` `[[machines]]` or `every` (`-` for a measurement only),
