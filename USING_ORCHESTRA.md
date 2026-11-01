@@ -334,7 +334,7 @@ url = "http://127.0.0.1:8428"
 | `step` | duration | `"30s"` | The grid discovery samples on: the finest change it sees. |
 | `every` | duration | `"5m"` (300 s) | How often the host rediscovers. An SD Lab strategy gets 80% of this as its deadline. |
 | `[discovery.options]` | table | empty | Passed to the strategy as it is. |
-| `eras_from` | array of strings | `["config.changed"]` | Events that begin an era, besides `system.changed`, which always does (section 5.7). Each is an event type or a glob of types, optionally with `:source=…` and `subject=…` globs, comma-separated: `"role.changed:source=supervisor"`. Only the envelope is matched, never `data`. `[]` leaves only `system.changed`. |
+| `eras_from` | array of strings | `["config.changed"]` | Events that begin an era, besides `system.changed`, which always does (section 5.7). Each is an event type or a glob of types, optionally with `:source=…` and `subject=…` globs, comma-separated: `"deploy.finished:subject=billing*"`. `config.changed` is the conventional type any machine may publish when it changes the configuration. Only the envelope is matched, never `data`. `[]` leaves only `system.changed`. |
 | `prior_for` | duration | the window | How long a new era carries the parts of the previous era's model it has not found yet. |
 | `announce_hold` | whole number | `3` | How many discoveries in a row a structure change must hold before Orchestra publishes `orchestra.model.changed`. |
 | `announce_gap` | duration | `"30m"` | The least time between two `orchestra.model.changed`. |
@@ -1403,7 +1403,7 @@ eras_from` (section 2), by type and optionally by source and subject:
 
 ```toml
 [discovery]
-eras_from = ["config.changed", "role.changed:source=supervisor", "deploy.finished:subject=billing*"]
+eras_from = ["config.changed", "release.*:source=ci", "deploy.finished:subject=billing*"]
 ```
 
 The host records each era once (`e1`, `e2`, ...) and announces it as `orchestra.era.started`

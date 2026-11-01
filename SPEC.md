@@ -618,7 +618,8 @@ system, so a new **era** begins, and the era is the window the model is discover
   `data`): `system.changed`, the generic mark any machine publishes when it changed the system
   (`source`: the machine; `subject`: what it changed, optionally), always does; `[discovery]
   eras_from` names more, as filters `type[:source=glob,subject=glob]` (default
-  `["config.changed"]`, what the Supervisor publishes when it changes the configuration).
+  `["config.changed"]`, the conventional type any machine may publish when it changes the
+  configuration).
   Orchestra's own events (`orchestra.*`) never do. The host records each such event once as an
   era `e1`, `e2`, … (`model/eras.json`: start, label `type from source`, the cause event's id,
   type, source and subject) and announces it, `orchestra.era.started` (subject the era's id,
@@ -1424,7 +1425,7 @@ url = "file"            # or http://host:8428 (VictoriaMetrics)
 auth = "on"             # the web UI asks for the project's token (§10.2); "off" only on a loopback bind
 [discovery]             # strategy, window, step, every, [discovery.options]
 strategy = "kalman_lna"
-eras_from = ["config.changed", "role.changed:source=supervisor"]   # begin an era, besides system.changed (§4.3)
+eras_from = ["config.changed", "deploy.finished:subject=billing*"]   # begin an era, besides system.changed (§4.3)
 prior_for = "60m"       # how long a new era carries what it has not found of its prior (default: window)
 announce_hold = 3       # discoveries a structure change holds before orchestra.model.changed
 announce_gap = "30m"    # the least time between two orchestra.model.changed
