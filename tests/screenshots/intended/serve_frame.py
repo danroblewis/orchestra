@@ -1,6 +1,6 @@
 """Serve one Machines-page frame from the real web app (render.cjs starts it):
 
-    PYTHONPATH=tests/unit uv run python tests/screenshots/intended/serve_frame.py E1 8191
+    PYTHONPATH=tests/unit uv run python tests/screenshots/intended/serve_frame.py E1 <port>
 
 A throwaway project under a temporary ORCHESTRATOR_HOME, seeded by ``intended_frames.seed_frame``
 (the captured machines replayed onto its bus, the captured model as discovered versions, the

@@ -15,7 +15,8 @@ const PC = process.env.PC || fs.readdirSync(path.join(HOME, ".npm/_npx")).map((d
 const CH = process.env.CH || (() => { const base = path.join(HOME, ".cache/puppeteer/chrome"); const v = fs.readdirSync(base).sort().pop();
   return path.join(base, v, "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"); })();
 const puppeteer = require(PC);
-const BASE_PORT = +(process.env.PORT || 8191);
+// a free port for each frame's server (never a fixed one: other work may be serving there)
+const freePort = () => new Promise((resolve) => { const s = require("net").createServer(); s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => resolve(p)); }); });
 const FRAMES = { E1: "feature_count_improver", E2: "feature_count_improver", E3: "nightly_metrics", "E3-continuous": "nightly_metrics",
   "E3-external": "nightly_metrics", E4: "sail" };
 const want = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(FRAMES);
@@ -140,8 +141,8 @@ function serve(frame, port) {
   const b = await puppeteer.launch({ executablePath: CH, headless: true, userDataDir: profile, args: ["--no-first-run", "--hide-scrollbars"] });
   let failed = 0;
   try {
-    for (const [k, frame] of want.entries()) {
-      const id = FRAMES[frame], port = BASE_PORT + k, srv = await serve(frame, port), errors = [];
+    for (const frame of want) {
+      const id = FRAMES[frame], port = await freePort(), srv = await serve(frame, port), errors = [];
       try {
         const ctx = await b.createBrowserContext(), p = await ctx.newPage();
         p.on("pageerror", (e) => errors.push(`page error: ${e.message}`));
