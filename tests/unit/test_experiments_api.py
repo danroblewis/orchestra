@@ -1,6 +1,6 @@
 """Experiments for any machine: the Python API (sd/experiments/api.py), the HTTP API beside the
-events endpoint (endpoint/api.py, behind its token, answering what the Python API answers), the web
-UI's read-only routes, and a committed experiment judged as a prediction (goal G13) on the
+events endpoint (endpoint/api.py, behind its token, answering what the Python API answers), no web
+page (removed 2026-11-01), and a committed experiment judged as a prediction (goal G13) on the
 predictions test system (``test_predictions.pipeline``: a known change to a pipeline's rates)."""
 
 import json
@@ -169,29 +169,24 @@ def test_the_http_api_needs_the_token_and_answers_what_the_python_api_answers(pr
         ep.stop()
 
 
-def test_the_web_ui_reads_experiments_and_cannot_change_them(project, h):
+def test_the_web_ui_has_no_experiments_page(project, h):
+    """The Experiments page and its read routes were removed (2026-11-01): the declared layer's
+    expected effects and ``orchestra.prediction.made`` replaced them for people; machines keep the
+    Python and HTTP APIs above."""
     from fastapi.testclient import TestClient
 
     from orchestra.web.app import create_app
     from orchestra.web.auth import bearer
 
     x = api(project, h)
-    eid = x.create("seen on the web")["experiment"]["id"]
-    x.edit(eid, [{"op": "remove_flow", "id": "side"}])
-    rid = x.run(eid, "replay", start=h["start"], end=h["at"])["run"]["id"]
+    eid = x.create("not on the web")["experiment"]["id"]
     web = TestClient(create_app(project), headers=bearer(project))
-    assert [e["id"] for e in web.get("/api/experiments").json()["experiments"]] == [eid]
-    assert web.get(f"/api/experiments/{eid}").json()["experiment"]["changes"] == 1
-    assert web.get(f"/api/experiments/{eid}/diff").json()["diff"]["flows"]["removed"][0]["id"] == "side"
-    assert web.get(f"/api/experiments/{eid}/runs").json()["runs"][0]["id"] == rid
-    assert web.get(f"/api/experiments/{eid}/runs/{rid}").json()["run"]["mode"] == "replay"
-    assert web.get(f"/api/experiments/{eid}/prediction").status_code == 404
-    assert web.get("/api/experiments/x-000000000000").status_code == 404
-    for method, path in (("post", "/api/experiments"), ("post", f"/api/experiments/{eid}/edits"), ("post", f"/api/experiments/{eid}/runs"),
-                         ("post", f"/api/experiments/{eid}/commit"), ("post", "/api/dynamics/whatif")):
-        assert getattr(web, method)(path, json={}).status_code in (404, 405), f"{path}: humans only read (AGENTS.md rule 9)"
+    for path in ("/experiments", f"/experiments/{eid}", "/api/experiments", f"/api/experiments/{eid}", f"/api/experiments/{eid}/runs"):
+        assert web.get(path).status_code == 404, path
+    for path in ("/api/experiments", f"/api/experiments/{eid}/edits", "/api/dynamics/whatif"):
+        assert web.post(path, json={}).status_code in (404, 405), f"{path}: humans only read (AGENTS.md rule 9)"
     assert web.get("/api/dynamics/eras").json()["ok"]
-    assert TestClient(create_app(project)).get("/api/experiments").status_code == 401
+    assert "/experiments" not in web.get("/static/app.js").text
 
 
 # --- committed, and judged (G13)

@@ -1,4 +1,4 @@
-// Predictions (sd/predictions.py, sd/judge.py) as the Dynamics and Experiments pages show them:
+// Predictions (sd/predictions.py, sd/judge.py) as the Dynamics page shows them:
 // what a machine said its change would do, and the verdict once the horizon passed, with the
 // evidence. Pure: each function returns HTML. ``names`` gives a stock's and a flow's name
 // ({stock(id), flow(id)}); without it ids are shown in plain words.
@@ -6,12 +6,8 @@ const Predictions = (() => {
   const nice = (s) => (s || "outside").toLowerCase().replace(/_/g, " ");
   const n3 = (v) => (v == null ? "—" : Math.abs(v) >= 100 ? (+v).toFixed(0) : (+v).toFixed(2));
   const dur = (s) => (s >= 3600 ? `${+(s / 3600).toFixed(1)} h` : `${Math.round(s / 60)} min`);
-  // the verdict's class (its colour), and its mark: never colour alone
+  // the verdict's class (its colour)
   const CLASS = { "passed": "passed", "side effect": "side", "model wrong elsewhere": "wrong", "no effect": "none", "interrupted": "interrupted", "undecided": "undecided" };
-  const MARK = { "passed": "✓", "side effect": "!", "model wrong elsewhere": "!", "no effect": "✗", "interrupted": "⏸", "undecided": "?" };
-  const badge = (verdict, partial) => (verdict
-    ? `<span class="verdict ${CLASS[partial || verdict] || ""}">${MARK[verdict] || ""} ${esc(verdict)}${partial ? ` (so far: ${esc(partial)})` : ""}</span>`
-    : '<span class="verdict waiting">… waiting</span>');
 
   function expectText(e, names = {}) {
     const fl = (id) => (names.flow ? names.flow(id) : nice(id)), st = (id) => (names.stock ? names.stock(id) : nice(id));
@@ -41,16 +37,15 @@ const Predictions = (() => {
     return ev;
   }
 
-  // one prediction as a line with its evidence under it; ``link(p)``: HTML after its head (a link
-  // to the experiment it came from)
-  function one(p, { names = {}, link = () => "" } = {}) {
-    if (p.status === "invalid") return `<div class="pred none">${esc(p.source || "?")}: an invalid prediction: ${esc(p.why)}${link(p)}</div>`;
+  // one prediction as a line with its evidence under it
+  function one(p, { names = {} } = {}) {
+    if (p.status === "invalid") return `<div class="pred none">${esc(p.source || "?")}: an invalid prediction: ${esc(p.why)}</div>`;
     const what = (p.expect || []).length ? p.expect.map((e) => expectText(e, names)).map(esc).join(", ") : "nothing changes (the null test)";
-    const head = `<b>${esc(p.source || "?")}</b> predicted: ${what}, judged ${dur(p.horizon_s)} after the change${link(p)}`;
+    const head = `<b>${esc(p.source || "?")}</b> predicted: ${what}, judged ${dur(p.horizon_s)} after the change`;
     if (p.status !== "judged") return `<div class="pred">${head} · <span class="muted">${p.era ? "waiting for the horizon" : "waiting for its change to begin an era"}</span></div>`;
     const v = p.verdict;
     const verdict = v.verdict === "interrupted" ? `interrupted by era ${esc(v.interrupted_by)} (so far: ${esc(v.partial || "nothing")})` : esc(v.verdict);
     return `<div class="pred ${CLASS[v.partial || v.verdict] || ""}">${head} · <b>${verdict}</b>${v.late ? ' <span class="muted">(made after the change)</span>' : ""}${evidence(v, names).map((x) => `<div class="ev">${x}</div>`).join("")}</div>`;
   }
-  return { one, evidence, expectText, badge, CLASS };
+  return { one, evidence, expectText, CLASS };
 })();

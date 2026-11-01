@@ -5,7 +5,6 @@ collected, so the unit suite passes with and without the extra. Each also skips 
 from orchestra.sd.extra import installed
 
 NEEDS_SD = [
-    "test_experiment_pages.py",
     "test_experiments_api.py",
     "test_experiments_edits.py",
     "test_experiments_forward.py",

@@ -1,4 +1,4 @@
-"""The web UI: Dashboard, Machines, Instruments, Dynamics, Experiments and Core. Read-only for humans: nothing here
+"""The web UI: Dashboard, Machines, Instruments, Dynamics and Core. Read-only for humans: nothing here
 changes the system (AGENTS.md rule 9) beyond observations (rediscovering, and the intended model's
 closed list of page controls, web/intended.py). Every route, a plugin's too, is behind the project's web token
 (web/auth.py), which the app's outermost middleware checks."""
@@ -203,7 +203,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
             with bg.index._lock:
                 out["bus_since"] = min((v["first"] for insts in bg.index.instances.values() for v in insts.values()), default=None)
         if not sd_installed():                      # conservation only: say what is missing, and how to have it
-            out["sd_missing"] = needs_sd("behaviour trust, simulation, experiments and SD Lab's strategies")
+            out["sd_missing"] = needs_sd("behaviour trust, simulation and SD Lab's strategies")
         return out
 
     @app.get("/api/dynamics/predictions")
@@ -322,63 +322,6 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         """The eras, each era's versions, and what changed at the last boundary (sd/compare.py)."""
         from ..sd.experiments.reads import eras
         return eras(bg.models)
-
-    # ---- Experiments (sd/experiments/): machines make and run them (the events endpoint's HTTP
-    # API, the Python API); here they are only read (AGENTS.md rule 9)
-    def experiments():
-        from ..sd.experiments.api import Experiments
-        return Experiments(project, metrics=core.metrics)
-
-    def answered(fn):
-        from fastapi.responses import JSONResponse
-
-        from ..sd.experiments.api import ExperimentError
-        try:
-            return fn()
-        except ExperimentError as e:
-            return JSONResponse({"ok": False, "error": str(e)}, status_code=e.status)
-
-    @app.get("/experiments", response_class=HTMLResponse)
-    async def experiments_page() -> str:
-        return page("experiments.html")
-
-    @app.get("/experiments/{eid}", response_class=HTMLResponse)
-    async def experiment_page(eid: str) -> str:
-        return page("experiment.html")
-
-    @app.get("/api/experiments")
-    def experiments_list(owner: str | None = None, status: str | None = None, era: str | None = None):
-        """Every experiment: who made it, its title and purpose, status, base, latest run and the
-        verdict of its prediction; ``era``: those made on its model or predicting its change."""
-        return answered(lambda: experiments().list(owner, status, era))
-
-    @app.get("/api/experiments/{eid}")
-    def experiment_one(eid: str, base: bool = False):
-        """One experiment: its draft (equations in the language), scenario, edit log, runs and prediction."""
-        return answered(lambda: experiments().get(eid, base))
-
-    @app.get("/api/experiments/{eid}/diff")
-    def experiment_diff(eid: str):
-        return answered(lambda: experiments().diff(eid))
-
-    @app.get("/api/experiments/{eid}/runs")
-    def experiment_runs(eid: str):
-        return answered(lambda: experiments().runs(eid))
-
-    @app.get("/api/experiments/{eid}/runs/{rid}")
-    def experiment_run(eid: str, rid: str):
-        """One run in full: forward (trajectories and band), replay (observed against simulated, scores) or inverse."""
-        return answered(lambda: experiments().run_result(eid, rid))
-
-    @app.get("/api/experiments/{eid}/runs/{rid}/measured")
-    def experiment_run_measured(eid: str, rid: str, before_s: float = 3600.0):
-        """A forward run's stocks as measured: before its now, and since (up to its horizon or the present)."""
-        return answered(lambda: experiments().measured(eid, rid, before_s))
-
-    @app.get("/api/experiments/{eid}/prediction")
-    def experiment_prediction(eid: str):
-        """The prediction a committed experiment became, with its verdict once judged."""
-        return answered(lambda: experiments().prediction(eid))
 
     @app.get("/api/machines")
     def machines(era: str | None = None) -> dict:

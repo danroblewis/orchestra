@@ -991,8 +991,10 @@ and `sd verify`, the Sources page, command/OAuth2/SigV4 auth, SQL sources.
 of the model that any machine (an AI agent or any other program) changes and runs, to see what a
 change would do before making it, to test whether an equation explains what happened, or to ask
 what would have had to be different for an outcome to have been. Machines use it through the
-Python API (`sd.experiments.api.Experiments`) or the HTTP API beside the events endpoint (§3.1);
-the web UI only reads it (§10; AGENTS.md rule 9).
+Python API (`sd.experiments.api.Experiments`) or the HTTP API beside the events endpoint (§3.1).
+The web UI's Experiments pages were removed on 2026-11-01 (§10): for people, the declared layer's
+expected effects (§4.6) and `orchestra.prediction.made` (§4.3) replaced them. The APIs stay because
+the agents' modeling tools (`~/orchestra-agents`, `modeling.py`) call them.
 
 **The equation language** (`language.py`). One written form for a flow's rate, which a machine
 reads and writes alike: an expression in Python's syntax, per the model's time unit, over stock
@@ -1583,7 +1585,7 @@ eras and the observability report through the APIs (§3.1, §4.5), and the web U
 ## 10. Web UI
 
 Read-only for humans, except for observations: the Dynamics page's rediscover button and the
-intended model's closed list of page controls (§4.6, AGENTS.md rule 9). Navigation: Dashboard, Machines, Instruments, Dynamics, Experiments, Core.
+intended model's closed list of page controls (§4.6, AGENTS.md rule 9). Navigation: Dashboard, Machines, Instruments, Dynamics, Core.
 
 - **Dashboard:** panels as sections of one page on a 12-column grid (`static/dashboard.js`, with
   gridstack.js): the viewer drags a panel by its title bar and resizes it from its edges and
@@ -1660,8 +1662,7 @@ inside it, and only the environment (the clouds flows come from and go to) is ou
 crosses the frame is what the model does not explain. Subsystems (perhaps feedback loops in boxes
 of their own) are a later question. A **rediscover now** button reruns discovery in the background (an observation: it
 re-reads the metrics and may save a version, as the host does every 5 minutes). With eras, the
-timeline's era says which experiments were made on its model and which predicted the change that
-began it (each linking to its page), and each prediction links to the experiment it came from;
+timeline's era shows the predictions of the change that began it, with their verdicts;
 `/dynamics?era=<id>` opens an era.
 
 Both graphs are drawn by one renderer (`static/netgraph.js`). The Dynamics graph is laid out by
@@ -1694,28 +1695,8 @@ Dynamics page each loop is balancing or reinforcing and either "items circulate"
 material moving along a flow) or "information" (a level steering a rate). Clicking one highlights
 it. Pages read only the web server's background caches
 (`web/background.py`) and the host's cached discovery, never the stores on request.
-- **Experiments** (§4.5): what machines did with the model, read under `/api/experiments` (the
-  list, `?owner=&status=&era=`, each with its latest run and its prediction's verdict),
-  `/api/experiments/<id>` (its draft with equations in the language, scenario, edit log, runs and
-  prediction), `.../diff`, `.../runs`, `.../runs/<run>` (in full), `.../runs/<run>/measured` (a
-  forward run's stocks as measured, before its now and since, up to its horizon or the present)
-  and `.../prediction`. The list page (`/experiments`) shows each experiment's machine (linking to
-  its card), title and purpose, status, base version and era, latest run and when, and verdict,
-  filtered by machine, status and era (an era's: made on its model, or predicting the change that
-  began it). An experiment's page (`/experiments/<id>`) shows the prediction it became (what it
-  expects, the change id, the era the change began, linked, and the verdict with its evidence:
-  passed, no effect, side effect, model wrong elsewhere, interrupted), its edits as an equation
-  diff against its base (flows replaced, added and removed, each equation before and after side
-  by side with its numbers; stocks added and removed; input scenarios and starting levels), every
-  run (forward: per stock the base and the experiment from now over the horizon with their bands,
-  the hour measured before now and what was measured since, the limits hit and the not-trusted
-  reasons above the charts; replay: per stock measured against both simulations and the error of
-  each, per flow the one-step fit with better, same or worse; inverse: the targets, what was
-  held, the changes found and the new draft's diff, the side effects by size, the alternatives,
-  the uniqueness check and an unmistakable warning when `ambiguous`), and the edit log in order,
-  refused batches with the edit that failed and why. Charts are `static/charts.js` with bands.
-  These pages follow the browser's light or dark setting; the others are dark. The web UI changes
-  no experiment (AGENTS.md rule 9): machines make and run them.
+- **Experiments: removed on 2026-11-01** (the page, `/experiments/<id>` and `/api/experiments*`).
+  The owner's way to say what a change should do is now the declared layer's expected effects (§4.6) and `orchestra.prediction.made` (§4.3).
 - **Core:** the host (with the processes it keeps running: state, restarts, command), the bus and
   the metrics store, each probed against its real backend within a time limit; explorers for the
   metrics (a catalogue of every series with the project's label, naming any series in the file

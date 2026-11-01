@@ -326,26 +326,6 @@ class Experiments:
         except NotFound as e:
             raise ExperimentError(str(e), 404) from None
 
-    def measured(self, eid: str, rid: str, before_s: float = 3600.0) -> dict:
-        """What was measured of a forward run's stocks: ``before_s`` before the run's now, and
-        since, up to its horizon or the present (so the forecast can be held against what
-        happened). Read-only; another run's mode answers with nothing (its result has its own)."""
-        rec = self._get(eid)
-        run = self.run_result(eid, rid)["run"]
-        r = run["result"]
-        if run["mode"] != "forward":
-            return {"ok": True, "mode": run["mode"], "stocks": {}}
-        now = float(r["now"])
-        before = float(_num(before_s, "before_s", 60.0, 86400.0, 3600.0))
-        start, end = now - min(before, max(600.0, float(r["horizon_s"]))), min(now + float(r["horizon_s"]), max(time.time(), now))
-        try:
-            h = self.history(_union(self._base(rec), self._draft(rec)), start, max(end, now + 1.0))
-        except Exception as e:  # noqa: BLE001 - the page shows the run without it
-            return {"ok": False, "error": f"the measured levels could not be read: {type(e).__name__}: {e}", "stocks": {}}
-        want = set(r["stocks"])
-        return {"ok": True, "mode": "forward", "now": now, "start": start, "end": end,
-                "stocks": {sid: [p for p in pts if start <= p[0] <= end] for sid, pts in (h.get("stocks") or {}).items() if sid in want}}
-
     def _window(self, options: dict) -> tuple[float, float]:
         start, end = options.get("start"), options.get("end")
         if options.get("era"):
