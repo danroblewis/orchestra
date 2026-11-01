@@ -37,7 +37,7 @@ const Intended = (() => {
   const marksOf = (part, id) => { const x = it(); return (x && ((x.marks || {})[part === "stock" ? "stocks" : "flows"] || {})[id]) || []; };
   const hasEarlier = () => { const x = it(), vs = MODEL.versions || []; return !!x && vs.findIndex((v) => v.version === x.shown) > 0; };
   const nameOf = (id) => (id && MODEL.stocks.some((s) => s.id === id) ? stockName(id) : nice(id));
-  const who = (p) => (!p ? "" : p.author === "owner" ? "you" : p.author === "supervisor" || p.source === "supervisor" ? "the Supervisor" : p.author || p.source || "");
+  const who = (p) => { if (!p) return ""; if (p.author === "owner") return "you"; const w = p.source || p.author || ""; return w && `the ${w.charAt(0).toUpperCase() + w.slice(1)}`; };   // as byWhom on the Machines page
   // what a declared element's tag says: who put it there; once there is an earlier version, why it is a ghost
   const declTag = (x) => {
     if (x.state === "proposed") return { text: `unconfirmed · proposed by ${who(x.provenance)}`, cls: "im-t-user" };

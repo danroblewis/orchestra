@@ -59,7 +59,7 @@ const IntendedDrawers = (() => {
     if (x.present && x.found_id && MODEL.stocks.some((s) => s.id === x.found_id)) { Live.openStock(x.found_id); return; }
     const p = x.provenance || {}, t = I().declTag(x), m = x.measure, near = x.near && MODEL.stocks.find((s) => I().stockKey(s) === x.near || s.id === x.near);
     const by = I().who(p), owner = p.author === "owner";
-    const said = owner ? `You declared it ${I().agoText(p.at)}${p.source === "supervisor" ? " in the Supervisor's chat" : ""}` : `${by[0].toUpperCase() + by.slice(1)} ${x.state === "proposed" ? "proposed" : "declared"} it ${I().agoText(p.at)}`;
+    const said = owner ? `You declared it ${I().agoText(p.at)}` : `${by[0].toUpperCase() + by.slice(1)} ${x.state === "proposed" ? "proposed" : "declared"} it ${I().agoText(p.at)}`;
     const quote = p.quote ? `: <i>"${esc(p.quote)}"</i>` : ".";
     const proposed = x.state === "proposed" ? `<div class="im-status">unconfirmed: ${esc(by)} proposed it, and it is not expected until you confirm it
       <span class="im-acts"><button class="ctl im-primary" onclick="Intended.control('confirm','${esc(x.part)}','${esc(x.id)}','its drawer',()=>IntendedDrawers.openExpected('${esc(x.id)}'))">confirm</button>
@@ -76,9 +76,9 @@ const IntendedDrawers = (() => {
       ${(x.candidates || []).length ? `<div>may be</div><div>${x.candidates.map((c) => `<b>${esc(I().nameOf(c.id))}</b> <span class="muted">(${esc(c.why)})</span>`).join(", ")}<br><span class="muted">whether it is this ${esc(x.part)} is for you to say: ask the Supervisor to link them</span></div>` : ""}
       ${targetLine(x.target)}
       <div>machines</div><div><span class="muted">none: an expected ${esc(x.part)} has no flows until discovery finds one</span></div></div>
-      <h4>How to measure it <span class="muted im-h4note">· the Supervisor's options; it chose one with you in its chat</span></h4>
+      <h4>How to measure it <span class="muted im-h4note">· the Supervisor's options</span></h4>
       ${m && (m.options || []).length ? `<div class="im-opts">${m.options.map((o) => option(o, m.chosen) + (o.key === m.chosen ? recordingBlock(m) : "")).join("")}</div>
-        <div class="muted im-facts" style="margin-top:6px">The choice is read only here: to switch to another option, tell the Supervisor in its chat.</div>`
+        <div class="muted im-facts" style="margin-top:6px">The choice is read only here: ask the Supervisor to switch to another option.</div>`
         : '<div class="muted">No way to measure it is recorded yet: ask the Supervisor to measure it.</div>'}
       <h4>Level</h4><div class="muted" style="font-size:12px">No series is bound to it yet: nothing to draw. Once a discovery finds a stock in what ${m && m.recording && m.recording.instrument ? esc(m.recording.instrument) : "its instrument"} records, it is shown here, and you can tell the Supervisor whether that is this ${esc(x.part)}.</div>`);
     const opt = m && (m.options || []).find((o) => o.key === m.chosen);
