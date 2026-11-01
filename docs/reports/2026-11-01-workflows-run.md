@@ -2,8 +2,8 @@
 
 The unattended run of [GOAL-2026-11-01-workflows.md](../roadmap/GOAL-2026-11-01-workflows.md),
 run by [COORDINATOR.md](../roadmap/COORDINATOR.md). It started at 2026-11-01T04:41Z; this report
-was written at about 11:10Z. The progress log in the goal document is the source of truth. Its
-times stamped before the 06:12Z correction are wrong (section 9).
+was written at about 11:10Z. The goal document's progress log is the source of truth; its
+times before the 06:12Z correction are wrong.
 
 In short: the four proposals are reviewed and on `main`. The core has the intended model and the
 Dynamics and Machines pages in the mocked states. The Supervisor has its design tools, the
@@ -14,8 +14,8 @@ done and passed a stranger test.
 
 ## 1. What was built, and where
 
-**Core, `~/orchestra_2`** (GitHub danroblewis/orchestra). `main` is pushed at `849dfd28`, which
-merges `demo-live` (UX rounds 1 and 2, as `a9d733f2`) and the refinement-marks fix. It holds
+**Core, `~/orchestra_2`** (GitHub danroblewis/orchestra). `main` is pushed at `0320aecf` (code at `0d975c8c`),
+with the UX review's three rounds and the refinement-marks fix. It holds
 the intended model in `orchestra/sd/intended/` (declared stocks, effects,
 targets, machines and events, the expected set, three states, version diffs, provenance), the
 Dynamics states D1 to D3, the Machines states E1 to E4, instruments on declared machines, collector
@@ -36,8 +36,8 @@ is the holder", pushed. M4 and M5 are complete.
 
 **Live demo, `~/orchestra-live-demo`** (not a git repository), behind orchestra.dansproject.space
 on :8096. It runs the agents' demo with `--dummy` from worktrees on branch `demo-live` (core
-`~/orchestra-wt/demo`, agents `~/orchestra-agents-wt-demo`); it was restarted from core `a9d733f2`
-at about 11:40Z. The login link is in `~/orchestra-live-demo/LOGIN.txt`.
+`~/orchestra-wt/demo`, agents `~/orchestra-agents-wt-demo`); it was restarted on core `0d975c8c`
+at about 12:00Z. The login link is in `~/orchestra-live-demo/LOGIN.txt`.
 
 ## 2. Status per task
 
@@ -99,7 +99,7 @@ Added in the run, in the log's words where it gives them:
 - The Supervisor writes to the state directory or overlay, never the base branch; unchosen options
   go to a draft namespace; data-class checks; A3 narrowed to D1+E2 with a Sonnet fallback.
 - Simulated placeholders: "discovery reads them, every part fitted from them is marked `simulated`
-  in the saved version, verdicts and targets skip those parts, and they disappear when the
+  ..., verdicts and targets skip those parts, and they disappear when the
   instrument expires". Reason: you wanted placeholders to exercise the rest.
 - "Draft options use a core `draft`+`expires` instrument flag (discovery leaves them out)".
 - "P3's Items/Piles/Workflows pages kept as the plugin's own read-only views (owner to confirm)".
@@ -108,12 +108,10 @@ Added in the run, in the log's words where it gives them:
 - P3 deferred checkpoints and archive, lifecycle 2 to 3, DST, adoption, and a program host beyond
   a command. Reason: scope. They are designed, not built.
 - "Keep Features as the narrative"; A3 and the demo use notes files from `repo_stats` and a
-  machine that adds files, so the prediction is judged within the run. Reason: your remark that
-  Features may be hard to test.
+  machine that adds files, so the prediction is judged within the run. Reason: your remark.
 - "A polling relay publishes as the actor (person.<system>.<account> / bot.<system>), never as
-  itself (D19)"; examples write to the overlay; bridges are checked before writing a poller.
-- "Nothing scheduled before approval" (I3).
-- "A model-acceptance case must use a detached clone, not a worktree".
+  itself (D19)"; bridges are checked before writing a poller.
+- "Nothing scheduled before approval" (I3); "a model-acceptance case must use a detached clone".
 
 P6 recorded them in `docs/roadmap/decisions.md`.
 
@@ -122,7 +120,6 @@ P6 recorded them in `docs/roadmap/decisions.md`.
 **The live demo.** `~/orchestra-live-demo/restart.sh` stops what it started, syncs both
 `demo-live` worktrees, starts the demo with `--dummy` on `PORT` (default 8096), re-adds the
 tickets and re-seeds the declared layer. Log in with the link in `LOGIN.txt` beside it.
-`start-copy.sh` and `stop-copy.sh` run private copies.
 
 **The Supervisor design scenario.** In `~/orchestra-agents`, run
 `ORCHESTRA_LIVE_DESIGN=rehearse uv run python -m pytest tests/live/test_design_live.py` for a free
@@ -149,7 +146,7 @@ The last green run per repository, as logged. `ruff check` was clean at every pu
 
 | Repository | Commit | Result |
 |---|---|---|
-| core | `849dfd28` | unit 947 passed, rc=0; two screenshot tests (D2, D-extras) known failing until UX round 3 |
+| core | `0d975c8c` | unit 948 passed, rc=0; screenshots 6 passed |
 | core | `513a998d` | unit+metrics+sources 1079 passed, 25 skipped, rc=0 |
 | agents | `30a84fe` | unit 533 passed, 1 skipped, rc=0 |
 | agents | `80c115c` | full suite 408 passed, 2 skipped, rc=0, 19m44s |
@@ -186,25 +183,29 @@ Pending at the time of writing: the UC-2 and UC-3 re-scores against core `main`.
 ## 7. Live model spend
 
 A3 $6.33 (Haiku with Sonnet fallback turns), A3b $0.19, I3 about $0.13. Total about $6.65,
-approximate, well under the $30 cap. The UX personas used the `--dummy` demo.
+approximate, well under the $30 cap.
 
 ## 8. Open findings and follow-ups
 
 **Core.**
 - The loop finder sees no cycle when a turn's end is fitted on the oldest item's age (W6).
 - The event map overflows about 10 px at 390 px width.
-- Fixed: the Machines page marked only a refinement's last edit. `orchestra/sd/intended/refinement.py`
-  now compares the machine with its baseline across every op (`9195af68`, merged as `b8847702`).
+- Fixed: the Machines page now marks every edit of a refinement, not the last (`b8847702`).
 - D3's screenshot 503 is the simulate endpoint without numpy/scipy: sync worktrees with
   `--extra sd` too (now in COORDINATOR.md, which also forbids syncing your main checkout).
-- A heard declared machine drew dashed under C3's styling (I4); check it after C9.
+- A heard declared machine drew dashed (I4); check it after C9.
 - "Whoever acts next" hand-offs draw coordinator to `bot.triage` via `attention.needed` (X34).
 - `find_repo_root` resolves linked worktrees to the main repository; `use-cases.md` "Adding a
   case" should say to use a clone.
 - `~/.orchestrator/projects.json` still lists the removed clone `~/orchestra-bakery-clone-UC1`.
 - C6 (file-bus rotation) is not built.
-<!-- PENDING: UX review round 3 (branch ux-round3: the 13 must items, the D2 and D-extras screenshot tests) -->
-Pending at the time of writing: UX review round 3 on branch `ux-round3`.
+- UX review (C5's gate): two rounds (4 personas, 136 findings in round 1) and a third
+  that found the final list already done. It changed drawers, honest liveness and counts, the
+  declared layer's wording, keyboard and focus, the phone layout, and fits that show what they
+  leave out. Quiet machines show counts, not rates. Round 3 fixed "Left out all 86" beside a
+  10-stock model and two screenshot tests (merged as `0d975c8c`). Dropped as matching the approved
+  design: "declared by you", the "100%?" labels, the stock level's type size, and the colours,
+  which are yours to choose.
 
 **Agents.**
 - A3's failures (Haiku failed turns 1, 4, 6; Sonnet turn 1 twice: unoffered `repo_files`, events
