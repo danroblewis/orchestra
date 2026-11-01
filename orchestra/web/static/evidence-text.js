@@ -35,6 +35,18 @@ const Evidence = (() => {
     if (h.test === "step by step" && h.equal_steps_moving === 1) return `${m} of ${m} events matched`;
     return `${m} events to ${Math.round(c.flow ?? 0)} counted`;
   }
-  return { trust, trustCell, byConstruction, tooFew, tooFewText, matched, MIN_EVENTS };
+  // a match in time cannot tell apart machines whose events all come within one step of each other
+  // (sd/attribute.py: a hypothesis is a match in time): one machine that matches 3 or more flows at
+  // STRONG, or 3 or more machines that match one flow so, says so once beside the flow's hypotheses
+  const STRONG = 0.85, MANY = 3;
+  const UNTOLD = "events within one step: timing cannot tell these apart";
+  function untold(m, f) {
+    const strong = (g) => ((g || {}).machines || []).filter((h) => h.machine && (h.confidence ?? 0) >= STRONG);
+    const mine = strong(f);
+    if (mine.length >= MANY) return UNTOLD;
+    const flowsOf = (mc) => ((m || {}).flows || []).filter((g) => strong(g).some((h) => h.machine === mc)).length;
+    return mine.some((h) => flowsOf(h.machine) >= MANY) ? UNTOLD : "";
+  }
+  return { trust, trustCell, byConstruction, tooFew, tooFewText, matched, untold, MIN_EVENTS };
 })();
 if (typeof module !== "undefined") module.exports = Evidence;
