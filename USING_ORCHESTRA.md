@@ -1120,11 +1120,18 @@ curl -sf "$ORCHESTRA_EVENTS_ENDPOINT/events?after=0&types=order.placed,order.can
 | `after` | `0` | The offset to read after: `0` is the start of the bus, `end` its current end (only what comes next). |
 | `types` | every type | Comma-separated types to return. `next` moves past the events read either way. |
 | `wait` | `0` | Seconds (at most 30) to hold the request until a matching event arrives: a long poll. |
-| `limit` | `1000` | At most this many events (at most 10,000); read again from `next` for the rest. |
+| `limit` | `1000` | A page covers at most this many offsets (at most 10,000); read again from `next` for the rest. |
 
 To follow the bus, call it in a loop with `after` set to the last `next`, and keep `next` where
-you will find it after a restart. An offset is a cursor: never compute one. On the file bus a
-page cut at `limit` may repeat an event after an unreadable line; drop repeats by `id`.
+you will find it after a restart. An offset is a cursor: never compute one. Each page is a bounded
+read forward, so following `next` from 0 returns every event once, none repeated, even past an
+unreadable line on the file bus or events a Kafka retention removed (those offsets are skipped).
+With `types`, a call reads past up to 100,000 events of other types looking for a match before it
+answers (or waits).
+
+The web server's `GET /api/events?since=<offset>&limit=<n>` (the token's page reads, default 1000
+and at most 10,000) pages the same way and answers `{"events": [...], "next": <offset>}`; an empty
+page means nothing more now.
 
 `GET /health` answers `{"ok": true}` without the token, for a program waiting for
 `orchestra run` to be up.

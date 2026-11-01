@@ -119,6 +119,25 @@ def test_reading_from_an_offset_by_type_and_in_pages(ep):
     assert call(ep, "GET", "/events?after=end")[1] == {"ok": True, "events": [], "next": 5}
 
 
+def test_pages_step_over_a_malformed_line_without_repeating_an_event(ep, project):
+    for i in range(3):
+        call(ep, "POST", "/events", {"type": "a", "source": "m", "data": i})
+    with project.events_file.open("a") as f:
+        f.write("{torn\n")
+    for i in range(5):
+        call(ep, "POST", "/events", {"type": "b", "source": "m", "data": i})
+    seen, after, pages = [], 0, 0
+    while True:
+        out = call(ep, "GET", f"/events?after={after}&limit=4")[1]
+        if not out["events"]:
+            break
+        pages += 1
+        seen += [(e["type"], e["data"]) for e in out["events"]]
+        after = out["next"]
+    assert seen == [("a", 0), ("a", 1), ("a", 2), ("b", 0), ("b", 1), ("b", 2), ("b", 3), ("b", 4)]
+    assert pages == 3 and after == 9
+
+
 def test_a_long_poll_returns_when_a_matching_event_arrives(ep):
     later = threading.Timer(0.6, lambda: [call(ep, "POST", "/events", {"type": "noise", "source": "m"}),
                                           call(ep, "POST", "/events", {"type": "wanted", "source": "m"})])

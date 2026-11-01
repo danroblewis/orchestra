@@ -33,6 +33,7 @@ SEEN_MAX = 10_000
 WAIT_MAX_S = 30.0
 LIMIT_DEFAULT = 1000
 LIMIT_MAX = 10_000
+SCAN_MAX = 100_000            # events one GET /events reads past looking for the asked types
 POLL_S = 0.2
 DRAIN_MAX = 16 * MAX_BODY     # a body this large is read and thrown away before it is refused
 
@@ -74,17 +75,20 @@ class EventsEndpoint:
         offset = self._end() if after == "end" else int(number(after, "after", 0, 0, 2**62, integer=True))
         deadline = time.monotonic() + wait
         while True:
-            if self._end() != offset:
+            scanned = 0
+            # a bounded page at a time, the lock held for one page only (Events.page): offsets are
+            # cursors, so a skipped malformed line or a retention gap never repeats an event; pages
+            # with nothing of the asked types are read past, up to SCAN_MAX events a call
+            while scanned < SCAN_MAX and self._end() != offset:
                 with self._lock:
-                    evs, nxt = self.events.after(offset)
-                if len(evs) > limit:              # offsets count events, so the page ends limit past the start
-                    evs, nxt = evs[:limit], offset + limit
+                    evs, nxt = self.events.page(offset, limit)
+                scanned += max(1, nxt - offset)
                 offset = nxt
                 if types is not None:
                     evs = [e for e in evs if e.get("type") in types]
                 if evs:
                     return {"ok": True, "events": evs, "next": offset}
-            if time.monotonic() >= deadline or self._stop.is_set():
+            if time.monotonic() >= deadline or self._stop.is_set() or scanned >= SCAN_MAX:
                 return {"ok": True, "events": [], "next": offset}
             self._stop.wait(min(POLL_S, max(0.0, deadline - time.monotonic())))
 

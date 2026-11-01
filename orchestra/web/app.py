@@ -34,6 +34,9 @@ from .sd_extra import unavailable
 from .system import install as install_system
 from .traffic import merge as merge_counted
 
+EVENTS_PAGE = 1000              # /api/events' default page
+EVENTS_PAGE_MAX = 10_000
+
 
 @contextlib.asynccontextmanager
 async def _lifespan(app: FastAPI):
@@ -388,11 +391,18 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     install_system(app, project)
 
     @app.get("/api/events")
-    def get_events(since: int = 0) -> dict:
-        """Every event after ``since``, in order, nothing cut off, and ``next``: where the next
-        call resumes, right after the last one returned. A plain ``def``, so a hung bus holds a
-        worker thread, never the event loop the Core page's probes answer on (rule 8)."""
-        evs, nxt = events.after(since)
+    def get_events(since: int = 0, limit: int = EVENTS_PAGE) -> dict:
+        """The events after ``since``, in order, at most ``limit`` (capped at ``EVENTS_PAGE_MAX``),
+        and ``next``: where the next call resumes. Following ``next`` from 0 reads every event once
+        (``Events.page``: offsets are cursors, so a skipped line never repeats one); an empty page
+        means nothing more now. A plain ``def``, so a hung bus holds a worker thread, never the
+        event loop the Core page's probes answer on (rule 8)."""
+        limit = max(1, min(limit, EVENTS_PAGE_MAX))
+        evs, nxt = events.page(since, limit)
+        for _ in range(EVENTS_PAGE_MAX // limit):     # pages of only malformed lines: read past them
+            if evs or nxt >= events.end():
+                break
+            evs, nxt = events.page(nxt, limit)
         return {"events": evs, "next": nxt}
 
     stamp = project.config_stamp()
