@@ -37,8 +37,10 @@ def listens(t: str) -> bool:
 
 def askers(machines: list[dict]) -> list[str]:
     """The machines (as the Machines page lists them) that listen for the owner's requests: who a
-    page names when it says to ask, the same rule as the pages' (static/intended-core.js)."""
-    return sorted(m["id"] for m in machines if any(listens(t) for t in m.get("subscribes") or ()))
+    page names when it says to ask, the same rule as the pages' (static/intended-core.js). A
+    placeholder a plugin declared but the bus has not heard (``unseen``) is not one: nothing on
+    the bus listens yet."""
+    return sorted(m["id"] for m in machines if not m.get("unseen") and any(listens(t) for t in m.get("subscribes") or ()))
 
 
 def check(body: dict) -> dict:

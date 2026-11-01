@@ -340,7 +340,7 @@ const IntendedMachines = (() => {
       <div class="muted im-id">id and bus source <span class="ty">${esc(m.id)}</span> <button class="ctl" onclick="openMachine('${esc(m.id)}',{dialog:true})">details and log</button></div>
       <div class="muted im-why">Nothing is declared of it: what follows is what the bus shows and what it announced.</div>
       <div class="im-obs">${Orchestra.machineCards.rows(m)}</div>
-      <div class="muted im-foot">To declare what it is for, what it should listen for or what effect it should have, ${ask()}.</div>`;
+      ${m.bootstrap || m.active_by === "runtime" ? "" : `<div class="muted im-foot"><span class="im-ask">${esc(A().sentence("declare what it is for, what it should listen for or what effect it should have", "Declaring what it is for"))}</span></div>`}`;
   }
 
   function draw(d) {

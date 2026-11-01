@@ -556,13 +556,17 @@ def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
         """Observed machines keep what was observed; a declaration names the package and the kind
         of a machine that announced neither, and adds a machine not seen yet (marked so). The first
         plugin to declare an id adds it; a later declaration of that id only fills in what is
-        still empty, as for an observed machine. A kind of None is unknown: left empty."""
+        still empty: of an observed machine its package and kind, of a placeholder also its mode
+        and what it listens for (added to). A kind of None is unknown: left empty."""
         seen = {m["id"]: m for m in machines}
         for pkg, d in declared:
             m = seen.get(d.id)
             if m is not None:
                 m["package"] = m.get("package") or pkg
                 m["kind"] = m.get("kind") or d.kind
+                if m.get("unseen"):
+                    m["mode"] = m.get("mode") or d.mode
+                    m["subscribes"] = [*m["subscribes"], *(t for t in d.listens_for if t not in m["subscribes"])]
                 continue
             m = {"id": d.id, "bootstrap": False, "mode": d.mode, "kind": d.kind, "package": pkg, "about": {},
                  "unseen": True, "publishes": [], "subscribes": list(d.listens_for), "flows": [], "logs": [],

@@ -101,6 +101,7 @@ def test_two_plugins_declaring_one_machine_make_one_placeholder(project, monkeyp
     assert len(machines) == 1, machines                     # the first declaration adds it
     [m] = machines
     assert (m["package"], m["kind"], m["subscribes"], m["unseen"]) == ("agents", "agent", ["offer.made"], True)
+    assert m["mode"] == "ad hoc"                            # a later declaration fills in what is still empty
 
 
 def test_a_declared_kind_of_none_is_unknown(project, monkeypatch):

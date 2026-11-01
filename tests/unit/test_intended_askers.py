@@ -17,6 +17,8 @@ def test_only_a_machine_that_listens_for_requests_is_an_asker():
           {"id": "quiet"}, {"id": "other", "subscribes": ["orchestra.prediction.*"]}]
     assert askers(ms) == ["all", "intents", "operator"]
     assert askers([]) == []
+    # declared by a plugin, never heard: nothing on the bus listens, so nobody is named
+    assert askers([{"id": "supervisor", "subscribes": [REQUESTED], "unseen": True}]) == []
 
 
 def test_the_dynamics_answer_names_who_listens_for_requests(tmp_path, monkeypatch):

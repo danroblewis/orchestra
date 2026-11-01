@@ -5,8 +5,9 @@
 const IntendedCore = (() => {
   const REQ = "orchestra.intent.requested";
   const hears = (t) => t === REQ || t === "*" || t === "orchestra.*" || (t.endsWith(".*") && REQ.startsWith(t.slice(0, -1)));
-  // the ids of the machines (as /api/machines lists them) that listen for a request
-  const listenersOf = (machines) => (machines || []).filter((x) => (x.subscribes || []).some(hears)).map((x) => x.id);
+  // the ids of the machines (as /api/machines lists them) that listen for a request; a placeholder a
+  // plugin declared but the bus has not heard (unseen) is none: nothing on the bus listens yet
+  const listenersOf = (machines) => (machines || []).filter((x) => !x.unseen && (x.subscribes || []).some(hears)).map((x) => x.id);
   const NONE = "no machine listens for requests";
   // ``ids``: the listeners, or null while the bus has not been read (then nobody is named)
   function asker(ids) {
@@ -21,6 +22,10 @@ const IntendedCore = (() => {
       title: (what) => (some ? `asks ${who} to ${what}` : known ? `publishes a request to ${what}; ${NONE}` : `asks the machine that listens for requests to ${what}`),
       // "asked <machine>" (the request was sent)
       asked: () => (some ? `asked ${who}` : "asked"),
+      // a whole sentence: "To <what>, ask X."; with no listener, that <doing> needs one and nothing will act yet
+      sentence: (what, doing) => (some ? `To ${what}, ask ${who}.`
+        : known ? `${doing} needs a machine that listens for ${REQ}; none does, so nothing will act on it yet.`
+          : `To ${what}, ask the machine that listens for requests.`),
     };
   }
   return { REQ, hears, listenersOf, asker };
