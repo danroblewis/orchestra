@@ -205,8 +205,246 @@ pull requests awaiting review, comments awaiting an answer, pull requests awaiti
 loops: an unanswered review request re-posted after a day; comments re-engaging the worker until
 approvals suffice; a SAIL failure looping back to the work.
 
+## UC-7 onward: the example workflows (`~/orchestra-workflows/examples/<name>/`)
+
+The seven example workflows of `docs/proposals/workflows.md` §9 (from
+`design-backwards-notes.md` §10), written 2026-11-01 for milestone M5 of
+[GOAL-2026-11-01-workflows.md](GOAL-2026-11-01-workflows.md), where they are X1–X7 in this order.
+The owner: "We want some examples of how people would actually use this, and we want them
+tested." None is built yet; all seven are planned for M5 of this run, which is the first
+milestone sacrificed if the run is short, so each case below says what it waits on. The task loop
+(workflows.md §9 example 1, task W6, acceptance test 22) is the plugin's first example and the
+successor of UC-2 once the task system is not installed; it is not a case of its own here.
+
+**What every example shares.** Each is a tiny target repository with its own `.orchestra/`
+(definitions, programs, resource kinds, a `[[collect]]` for its domain series), scripted machines
+(programs, and agents on the dummy harness: no model, no network), and fake bridges that publish
+the outside events on a script as the relayed actors (`bot.github`, `person.owner`), never as the
+bridge (D19). One command runs it (proposed: `uv run python -m orchestra_workflows demo <name>`,
+as example 1's `demo task-loop`), for its test and for the UX review. The run lasts until every
+expected move has been seen at least five times (UC-1's threshold for a flow).
+
+The three checks, the same for every example (workflows.md §9):
+
+1. **Piles over time** match the script: at named moments of the script, each step pile's
+   `workflow_pile_items{workflow, pile}` in the metrics store has the count the script implies.
+2. **The model** (`model-acceptance`): every step pile is recorded `by_construction` (until the
+   core's two discovery inputs exist, a level balanced exactly by its moves); the R² of 1.000 of a
+   pile's balance is no evidence and is not scored as one. The expected loops and the domain
+   series below are what is scored.
+3. **The event map** shows the declared machines and hand-offs; no node, edge or `source` names
+   the recorder, the floor or the program host, and dispatch appears as `<planner>/dispatch`
+   (D17).
+
+Forbidden in every example: a stock from `workflow_pile_oldest_seconds` or from a declared pile
+(they carry the `age` and `aggregate` views); holds by role, or a role's capacity setting, as a
+stock; a flow per machine instance; the domain series as a tally of the workflow's own events;
+a `<step>.held` pile of a step nothing is offered for (an outside wait), which stays empty, taken
+for a stock; a machine node for a metric condition (`metric:<series>` is a recorder fact, never a
+source, rule 7).
+
+## UC-7: the owner's delivery through the company gate (M5's X1; `examples/delivery`, name proposed)
+
+workflows.md §7's SAIL table, the one example that uses every word of the vocabulary. Set aside
+by the owner as the generic problem's first target ("we ignore SAIL for now", notes §11); it is
+built here as an example on fakes, never against the company's systems. It is the workflow form
+of UC-6 and of G8's loop from step 4 onward; the Jira half (`jira-hygiene`) is a second workflow
+on the same item, not a step.
+
+Item: a Jira ticket. Starts: `jira.issue.assigned` to the owner. Planner: `supervisor` (so
+dispatch is `supervisor/dispatch`). Steps: write (role `worker`, needs a worktree), open the PR
+(`person: owner`; the worker drafted the text), ci (outside: GitHub, `head_sha` equal to the item's
+`commit`), review (outside: people, `github.pr.approved` count ≥ 2), nudge (role `nudger` drafts,
+the outbox sends), sail (the outbox adds the label after approval), sail-check (outside: SAIL's
+action), triage-failure (program `sail_triage`).
+
+Script: ten tickets; two CI failures; one "changes requested"; one review left a day (scaled) so
+the nudge runs; one company-wide SAIL failure retried; one SAIL failure sent back to write. The
+outbox's approvals come from a scripted approver.
+
+Expected stocks: `write.waiting`, `write.held`, `open_pr.waiting`, `ci.waiting`, `review.waiting`,
+`nudge.waiting`, `sail.waiting`, `sail_check.waiting`, `triage_failure.waiting` (each
+`by_construction`); `jira-hygiene`'s piles apart.
+Expected flows: the moves `<start>` → write; write waiting ↔ held; write → open_pr (ready);
+open_pr → ci; ci → review (success) and ci → write (failure, rework); review → write (`on`
+changes requested); review → nudge (the `within` guard) and nudge → review; review → sail; sail →
+sail_check; sail_check → `<end>` (success) and → triage_failure; triage_failure → sail_check
+(company-wide, rounds 3) and → write.
+Expected loops: rework to the same worker instance (CI failure, changes requested, a SAIL failure
+not company-wide); the nudge loop on a stale review; the retry loop through triage; the worker
+role's capacity and the worktree pool limiting `write.held`.
+The domain series: commits on the example repository's `main` (a `[[collect]]`), whose inflow is
+the sail_check → `<end>` move.
+Forbidden (beyond the shared list): the approvals counted toward `count ≥ 2` as a stock; the two
+workflows' piles summed; a node or `source` for the bridge itself (D19).
+Needs beyond W5: person offers, `count ≥ n`, a field equality, the outbox as a `who` (all §12.1,
+"built with the examples that need them").
+The test: the example's one test runs the script and passes the three checks; the item's page
+names, for a ticket after rework, the CI failure fact that sent it back.
+
+## UC-8: team pull-request review (M5's X2; `examples/team-review`)
+
+The owner: "check for pull requests from my team; read them, understand them, contextualize
+them, give feedback as comments; approve the pull requests if warranted; make sure the pull
+requests get merged; if they have test failures, remind them to attempt to sail again. if there
+are failures, check if there are company-wide issues that are affecting them." User stories 4
+and 14.
+
+Item: a pull request. Starts: `github.pr.review_requested` naming the owner. Steps: read (role
+`pr_reader`, an agent on the dummy harness: reads and drafts comments), comment (the outbox posts
+them, after approval), approve (`person: owner`, within a day), merge-watch (outside: GitHub,
+done when `github.pr.merged`; `on` failing checks → remind; within two days → stale), remind
+(role `nudger` drafts, a program checks for company-wide failures, the outbox sends; → merge-watch),
+stale (attention to the planner). New commits (`github.pr.synchronize`) move it back to read.
+**One pull request in two workflows:** the same pull requests also enter a second, one-step
+workflow over the same subjects (for example a team-wide merge watch starting on
+`github.pr.opened`), so each item has two positions.
+
+Expected stocks: the piles of read, comment, approve, merge-watch and remind, per workflow, never
+summed across workflows (the Piles page never sums them either).
+Expected flows: each workflow's `<start>` counter (`workflow_item_moves_total{from="<start>"}`)
+stays its own flow, though both are filled by events about the same subjects; read → comment →
+approve → merge-watch → `<end>`; merge-watch → remind → merge-watch; merge-watch → stale;
+`on` synchronize back to read.
+Expected loops: the reminder loop on failing checks; re-reading after new commits.
+The domain series: review comments posted on the fake GitHub, read from its API by a
+`[[collect]]`, whose inflow is the comment step's move.
+Forbidden: the two workflows' `<start>` counters merged into one flow, or their piles into one
+stock; a flow between piles of different workflows.
+Needs beyond W5: person offers; the outbox as a `who`.
+The test: the three checks, and at a named moment one pull request is in both workflows with a
+position in each.
+
+## UC-9: on-call (M5's X3; `examples/on-call`)
+
+The owner: "get an alert from pagerduty; do a quick impact analysis, search for correlated
+signals, check SLO's for worrying numbers; check logs for error rate change in any services, for
+evidence of an outage; disqualify an outage if possible; then wait for a triage-agent comment to
+be added to the pagerduty alert's jira ticket, review it, determine a course of action; perform
+the steps to fix the issue; consider updating a runbook." User story 5.
+
+Item: an alert. Starts: the fake PagerDuty's alert event. Steps: analyse (program
+`impact_analysis`: correlated signals, SLOs, log error rates; `no outage` → `<end>`, disqualified),
+await-triage (outside: the triage agent's comment on the alert's Jira ticket, from the fake Jira as
+the relayed `bot.triage`; within 15 minutes → attention), decide (role `responder`, an agent:
+the course of action), fix (role `fixer`, or `person: owner`; done when a **metric condition**
+holds: the fake service's error-rate gauge under its threshold for D), runbook (role `responder`:
+consider updating it). A metric `on` (the error rate back under threshold, with an exit threshold)
+ends an item from any step before fix as resolved.
+
+Expected stocks: the piles of analyse, await-triage, decide, fix and runbook.
+Expected inputs: the fake service's error-rate gauge, read by the metric conditions (and by the
+resolved move's rate, if discovery relates them), never a stock.
+Expected flows: `<start>` → analyse; analyse → `<end>` (disqualified) and → await-triage;
+await-triage → decide; decide → fix; fix → runbook; runbook → `<end>`; the metric `on` → `<end>`;
+fix → decide (a fix whose condition is not met within its guard).
+Expected loops: a failed fix returning to decide; alerts that disqualify themselves.
+The domain series: runbooks in the example repository (a `[[collect]]` counting the files under
+`runbooks/`), whose inflow is the runbook step's `updated` move.
+Forbidden: the error-rate gauge as a stock; the metric condition's facts as a flow or an edge of
+their own (they are recorder facts, on no bus); a gap in the error-rate series counted as "below".
+The test: the three checks; a scripted gap in the error-rate series resets the condition's
+duration, and the item's page names the `metric:<series>` fact that moved it.
+
+## UC-10: release-candidate verification (M5's X4; `examples/rc-verification`)
+
+Some companies "have Release Candidates and Release Candidate verification steps" (the owner, D21).
+
+Item: a release candidate. Starts: `every` an interval (the cut is scheduled), or a request.
+Steps: cut (program `rc_cutter`), verify (role `verifier`, programs and an agent on the dummy
+harness; needs a `staging` unit, a resource kind of capacity 2 with make, reset and release
+scripts), release (`person: release_manager`, within a day). Outcomes: verify `verified` →
+release, `rejected` → `<end>` (rejected), and the cutter cuts the next candidate on a rejection.
+
+Expected stocks: the piles of cut, verify and release.
+Expected flows: `<start>` → cut; cut → verify; verify waiting ↔ held; verify → release; verify →
+`<end>` (rejected); release → `<end>` (released).
+Expected loops: the staging pool limiting `verify.held` (a capacity-limited form, H1; "no unit" as
+the wait reason when the pool is full); rejections raising the rate of new candidates.
+The domain series: release tags in the example repository (a `[[collect]]` counting `v*` tags),
+whose inflow is release → `<end>`.
+Forbidden: the staging pool's capacity as a stock; `floor_resources{kind="staging"}` as a stock of
+the candidates' network (it may be read as the limit, never balance the piles).
+Needs beyond W5: person offers.
+The test: the three checks; with three candidates in verify at once, one waits with "no unit" and
+is offered when a unit is reset and freed.
+
+## UC-11: hotfixes across release branches (M5's X5; `examples/hotfixes`)
+
+"We might see multiple concurrent release branches that all need hotfixes" (the owner, D21). User
+story 16.
+
+Items: a hotfix (workflow `hotfix`) and one child per release branch (workflow `port`, children by
+`item.requested` with `parent`). Hotfix steps: fan-out (program `porter` requests a child per
+branch), wait (fan-in: `all` children ended `landed`, else the named outcome `partial` →
+attention). Port steps: port (program `porter`: a clean cherry-pick → review, a conflict →
+resolve), resolve (role `conflict_resolver`, an agent; needs a worktree), review (role
+`reviewer`; `rejected` → resolve as rework), land (program `landing`) → `<end>`.
+
+Expected stocks: the hotfix's fan-out and wait piles; the port piles, each child counted once, in
+its own workflow.
+Expected flows: the moves of both workflows; the hotfix wait → `<end>` when the last child lands.
+Expected loops: conflict → resolve → review → rejected → resolve; the parent's completion following
+the slowest child (representable as the wait pile's outflow tracking the port's land moves).
+The domain series: hotfix commits on the `release/*` branches of the example repository (a
+`[[collect]]`, one series per branch), whose inflow is the port workflow's land move.
+Forbidden: a child counted in the parent's piles; a stock per branch (per-branch views are
+declared piles, `aggregate`, shown on the Piles page only); a flow per branch.
+The test: the three checks; with three branches, the parent is done when the third child lands and
+takes `partial` when one does not; a dependency between two hotfixes holds the second's port.
+
+## UC-12: staged rollout (M5's X6; `examples/staged-rollout`)
+
+"We might see a staged production rollout" (the owner, D21). User story 7 is its feature-flag
+form.
+
+Item: a release. Steps: canary, ten, fifty, hundred (each: program `rollout` sets the stage on the
+fake fleet; done when a **metric condition** holds, "the canary's error rate under 0.1% for 30
+minutes", scaled; a `within` guard per stage → attention), rollback (program `rollback`) →
+`<end>` (rolled back). A metric `on` (the error rate above its threshold, with an exit threshold
+for hysteresis) moves the item from any stage to rollback.
+
+Expected stocks: the piles of the four stages and of rollback.
+Expected inputs: the fake fleet's error-rate gauge (and the share of traffic on the new version,
+which the rollout program sets), never stocks.
+Expected flows: `<start>` → canary; each stage → the next; hundred → `<end>`; any stage →
+rollback; rollback → `<end>`.
+Expected loops: the rollback loop (a high error rate moving releases out of their stages, as far as
+"the error rate drives the rollback move" is representable).
+The domain series: releases fully rolled out on the fake fleet (its own count), whose inflow is
+hundred → `<end>`.
+Forbidden: the error rate or the traffic share as a stock; a machine node or `source` for the
+metric (rule 7); the condition's facts as bus events.
+The test: the three checks; a condition met only after holding for D; a missing series never
+meets it; one release scripted to fail at fifty is rolled back by the metric `on`, once.
+
+## UC-13: customer-owned deployments (M5's X7; `examples/customer-deployments`)
+
+"We might see customer-owned deployments" (the owner, D21).
+
+Item: a customer × release pair (subject `<customer>@<release>`), many per release: a program
+`fanout` requests one per customer when a release is published. Steps: notify (the outbox sends,
+after a scripted approval), schedule (outside: the customer, the fake bridge's `customer.scheduled`;
+within N days → chase), chase (role `account_agent` drafts, the outbox sends; → schedule), deploy
+(outside: the fake bridge sees the deployment, its version equal to the item's `release` field),
+verify (program `verify_deploy`) → `<end>`; overdue (a guard's named step past the release's
+deadline: attention to the planner).
+
+Expected stocks: the piles of notify, schedule, chase, deploy, verify and overdue.
+Expected flows: the moves between them; schedule → chase → schedule; any wait → overdue.
+Expected loops: the chase loop on a silent customer; overdue escalation.
+The domain series: customers on the latest release (the fake registry's count), whose inflow is
+verify → `<end>`.
+Forbidden: a stock or flow per customer; `workflow_pile_oldest_seconds` (long waits make it
+tempting) as a stock.
+Needs beyond W5: a field equality; the outbox as a `who`.
+The test: the three checks with forty customers over two releases (eighty items); the Piles page's
+oldest item and wait reasons match the script.
+
 ## Adding a case
 
 A case needs: a start command, a stop, a duration, the repository that writes its metrics, and
-the expectations in the four lists above. Expectations are structure, not numbers: a case that
+the expectations in the four lists above; an example workflow (UC-7 onward) also names its
+domain series, the test that runs its three checks, and what it needs beyond the vocabulary
+already built. Expectations are structure, not numbers: a case that
 only passes with a tuned rate is reported as a gap, not fixed to pass.
