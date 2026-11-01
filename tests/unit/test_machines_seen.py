@@ -130,6 +130,14 @@ def test_kind_and_mode_belong_to_instances_and_a_machine_whose_instances_differ_
     assert (seen["baker"]["kind"], seen["baker"]["mode"]) == ("program", "ad hoc")
 
 
+def test_a_mode_some_instances_never_announced_says_how_many():
+    # R2, the information designer: "×4 · ad hoc ×2, continuous ×1" read as if every instance said
+    evs = [announce("w/1", T0, mode="ad hoc"), announce("w/2", T0, mode="ad hoc"), announce("w/3", T0, mode="continuous"),
+           {"type": "work.done", "source": "w/4", "time": iso(T0 + 1)}]
+    seen = {m["id"]: m for m in machines_view(evs, now=T0 + 10)["machines"]}
+    assert seen["w"]["mode"] == "ad hoc ×2, continuous ×1, 1 unannounced"
+
+
 def test_a_young_machines_rate_is_over_its_life_not_ten_minutes():
     """A machine first seen 50 s ago that published 10 events publishes about 10 a minute, not 1."""
     evs = [{"type": "order.baked", "source": "baker", "time": iso(T0 + 5 * k)} for k in range(10)]

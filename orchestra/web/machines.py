@@ -275,7 +275,7 @@ class MachineIndex:
                 cards = list(self.cards[m].values()) if m in self.cards else []
                 said = {f: next((c[f] for c in reversed(cards) if c.get(f)), None) for f in ("package", "name", "group")}
                 about = {k: v for c in cards for k, v in c.get("about", {}).items()}
-                machines.append({"id": m, "bootstrap": m == HOST, "mode": of_instances(Counter(self.mode[m].values())),
+                machines.append({"id": m, "bootstrap": m == HOST, "mode": of_instances(Counter(self.mode[m].values()), n_inst),
                                  "kind": of_instances(kinds, n_inst) or ("program" if m == HOST else "person" if asker else None), "kinds": dict(kinds),
                                  **({"note": ASKER_NOTE} if asker else {}),
                                  **said, "about": about, "publishes": pubs,
@@ -314,9 +314,12 @@ def model_parts(model) -> dict:
 
     def ref(r):
         return {"name": r.name, "labels": dict(r.labels)} if r is not None else None
-    return {"stocks": [{"id": s.id, "name": s.name, "series": ref(s.series)} for s in model.stocks],
+    # ``named``: the part's name is the server's title (sd.titles), shown as it is
+    keep = lambda ev, ks: {k: v for k, v in (ev or {}).items() if k in ks}
+    return {"stocks": [{"id": s.id, "name": s.name, "series": ref(s.series), "evidence": keep(s.evidence, ("named", "passing", "hidden"))}
+                       for s in model.stocks],
             "flows": [{"id": f.id, "name": f.name, "from": f.src, "to": f.dst, "counter": ref(f.counter),
-                       "measured_by": [ref(c) for c in f.measured_by], "evidence": {k: v for k, v in (f.evidence or {}).items() if k == "same_as"}}
+                       "measured_by": [ref(c) for c in f.measured_by], "evidence": keep(f.evidence, ("same_as", "named"))}
                       for f in model.flows]}
 
 
