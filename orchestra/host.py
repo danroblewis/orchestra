@@ -444,7 +444,7 @@ class Host:
         self.events.publish("orchestra.host.started", {"pid": os.getpid()})
         self.events.publish("orchestra.machine.started", {"mode": "continuous", "listens_for": []})
         self.log(f"host started (pid {os.getpid()}) for {self.project.key}")
-        launching = None
+        launching = discovering = None
         if not once:
             if other := self._claim():
                 self.log(f"launcher: another orchestra run (pid {other}) runs this project and keeps its processes; this one starts none")
@@ -452,7 +452,8 @@ class Host:
                 launching = threading.Thread(target=self._launch, name="launcher")
                 launching.start()
             threading.Thread(target=self._collect, args=(launching is not None,), name="collector", daemon=True).start()
-            threading.Thread(target=self._discover, name="discovery", daemon=True).start()
+            discovering = threading.Thread(target=self._discover, name="discovery", daemon=True)
+            discovering.start()
         try:
             while not self._stop.is_set():
                 self._beat(1.0)
@@ -463,6 +464,10 @@ class Host:
             pass
         finally:
             self._stop.set()
+            from .sd.bounded import kill_running
+            kill_running()                            # a strategy mid-discovery runs in a session of its own
+            if discovering is not None:
+                discovering.join(timeout=5)
             if launching is not None:
                 launching.join()
             self._beat(0.0)

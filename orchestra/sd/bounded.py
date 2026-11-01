@@ -7,7 +7,10 @@ Python process of their own (``python -m orchestra.sd.bounded``, the jobs as JSO
 input), which is killed when the deadline passes, with every process it started (it runs in a
 session of its own, and the whole group is killed: a strategy that works in a pool of worker
 processes, such as the vendored z3robust, would otherwise leave them running). The discovery then
-keeps conservation's own fits, and says so. Without one (tests, a direct call), they run here."""
+keeps conservation's own fits, and says so. Without one (tests, a direct call), they run here.
+
+The running child's group is registered while it runs, so a host that stops mid-discovery ends it
+too (``kill_running``): its session of its own keeps any terminal signal from reaching it."""
 
 from __future__ import annotations
 
@@ -16,6 +19,10 @@ import os
 import signal
 import subprocess
 import sys
+import threading
+
+_running: set[int] = set()             # the process groups of the strategies running now
+_lock = threading.Lock()
 
 
 class Late(Exception):
@@ -36,16 +43,31 @@ def _bounded(cmd: list[str], given: str, deadline: float) -> str:
     outlasted ``deadline``. Either way, every process it started is killed after it."""
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                             start_new_session=True)
+    with _lock:
+        _running.add(proc.pid)
     try:
-        out, err = proc.communicate(given, timeout=deadline)
-    except subprocess.TimeoutExpired:
-        _kill_group(proc.pid)
-        proc.communicate()
-        raise Late(f"stopped at its deadline of {deadline:g} s") from None
+        try:
+            out, err = proc.communicate(given, timeout=deadline)
+        except subprocess.TimeoutExpired:
+            _kill_group(proc.pid)
+            proc.communicate()
+            raise Late(f"stopped at its deadline of {deadline:g} s") from None
+    finally:
+        with _lock:
+            _running.discard(proc.pid)
     _kill_group(proc.pid)                  # its workers may outlive it even when it answered
     if proc.returncode != 0:
         raise Late(f"its process failed: {(err.strip().splitlines() or ['no message'])[-1]}")
     return out
+
+
+def kill_running() -> None:
+    """Kill every strategy process running now, with what it started: for a host that stops
+    while a discovery runs. The discovery waiting on it then fails (``Late``) at once."""
+    with _lock:
+        groups = list(_running)
+    for pgid in groups:
+        _kill_group(pgid)
 
 
 def _kill_group(pgid: int) -> None:

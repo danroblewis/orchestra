@@ -413,3 +413,34 @@ def test_each_stock_gets_a_behaviour_trust_beside_its_identity_trust(tmp_path):
         assert 0.0 <= b["score"] <= 1.0 and b["score"] == pytest.approx(1 / (1 + b["error"]), abs=1e-3)
         assert b["growth"] >= 0 and b["z"] > 0 and b["pairs"] > 10
         assert t["score"] == pytest.approx(min(t["components"].values())), "the identity trust is still the weakest of its own"
+
+
+def test_a_stopping_host_ends_the_strategy_running_now():
+    # `orchestra run` stopped mid-discovery: the strategy's process, in a session of its own, is
+    # killed (kill_running) and the discovery waiting on it fails at once instead of running on
+    import sys
+    import threading
+    import time as _time
+
+    from orchestra.sd import bounded
+
+    got: list = []
+
+    def run():
+        try:
+            bounded._bounded([sys.executable, "-c", "import time; time.sleep(60)"], "", 60.0)
+        except bounded.Late as e:
+            got.append(e)
+    t = threading.Thread(target=run)
+    t.start()
+    for _ in range(100):
+        if bounded._running:
+            break
+        _time.sleep(0.05)
+    assert bounded._running
+    started = _time.monotonic()
+    bounded.kill_running()
+    t.join(10)
+    assert not t.is_alive() and _time.monotonic() - started < 5
+    assert got and "its process failed" in str(got[0])
+    assert not bounded._running
