@@ -168,22 +168,22 @@ from 4 to 6. None passes yet. What is left is mostly sampling windows (case sett
   finds customers waiting, on shelf and a lease-expired flow; no regressions. The miss: the rating
   is read by assigned, not placed.
 - **UC-2 (tasking programs): 8/10 on `849dfd28`.** Now found: REJECTED as a stock, the rework loop,
-  the capacity rate; every balance exact, nothing forbidden, no discovery bug. The misses are
-  sampling: OPEN was non-zero in 1 of 421 five-second steps, READY_FOR_REVIEW and IN_REVIEW never.
-  Sampling every 1 s would fix all four.
-- **UC-3 (agents and a program): 6/10 on `1f01a878`.** Two discovery defects found at 5/10 were
-  fixed (`1f01a878`, one refuter round; neither a regression). A buffer between two counters must
-  fill and drain within the window (`fills_and_drains` in `orchestra/sd/between.py`). A bus count
-  is filed under another writer's counter only when that counter names the event's machine and
-  counts alike; timing alone is no evidence. Now IN_REVIEW to MERGING to DONE is joined. The misses are sampling, plus one
-  new spurious fit: `repo_commits` balanced by five counters, among them the host's own events.
+  the capacity rate; no discovery bug. The misses are
+  sampling: OPEN was non-zero in 1 of 421 five-second steps. Sampling every 1 s would fix all four.
+- **UC-3 (agents and a program): 6/10 on `1f01a878`.** Two discovery fixes (one refuter round,
+  neither defect a regression): a buffer must fill and drain within the window, and a bus count
+  joins another writer's counter only when that counter names the event's machine. Now IN_REVIEW
+  to MERGING to DONE is joined. Left: sampling, and a spurious `repo_commits` balance using the
+  host's own events.
 
-<!-- PENDING: host-events branch (Orchestra's own event types kept out of balances; a parsimony bound): outcome and merge -->
-Pending at the time of writing: the third discovery fix, on branch `host-events`.
+A third fix removes that fit (`9e8565df`, one refuter round). Counts of Orchestra's own events
+(`orchestra.*` types, source `orchestra-host`) are left out of discovery. A balance may have fewer
+counters than half the steps its level changed in; an exact balance is never reduced. Replayed,
+UC-2 and UC-3's first re-run are unchanged; UC-3's second loses only the spurious fit.
 
 ## 7. Live model spend
 
-A3 $6.33 (Haiku with Sonnet fallback turns), A3b $0.19, I3 about $0.13. Total about $6.65,
+A3 $6.33 (Haiku, some Sonnet turns), A3b $0.19, I3 about $0.13. Total about $6.65,
 under the $30 cap.
 
 ## 8. Open findings and follow-ups
@@ -192,17 +192,18 @@ under the $30 cap.
 Pending at the time of writing: the release gate, launched at about 12:47Z.
 
 **Core.**
-- The loop finder sees no cycle when a turn's end is fitted on the oldest item's age (W6).
+- The loop finder misses cycles when a turn's end is fitted on the oldest item's age.
 - The event map overflows 10 px at 390 px width.
 - Fixed: the Machines page now marks every edit of a refinement, not the last (`b8847702`).
 - D3's screenshot 503 is the simulate endpoint without numpy/scipy: sync worktrees with
   `--extra sd` too (now in COORDINATOR.md, which also forbids syncing your main checkout).
-- A heard declared machine drew dashed (I4); check it after C9.
+- A heard declared machine drew dashed (I4); recheck.
 - "Whoever acts next" hand-offs draw coordinator to `bot.triage` via `attention.needed` (X34).
 - `use-cases.md` "Adding a case" should say to use a clone: `find_repo_root` maps a worktree to
   its main repository.
 - `~/.orchestrator/projects.json` still lists the removed clone `~/orchestra-bakery-clone-UC1`.
 - C6 (file-bus rotation) is not built.
+- Model acceptance should record the series it discovers from; UC-1's runs cannot be replayed.
 - UX review (C5's gate): two rounds (4 personas, 136 findings in round 1) and a third
   that found the final list already done. It changed drawers, honest liveness and counts, the
   declared layer's wording, keyboard and focus, the phone layout, and fits that show what they
@@ -226,7 +227,7 @@ Pending at the time of writing: the release gate, launched at about 12:47Z.
   wait-then-retry, one step by two machines, an outcome straight to attention, fan-in steps needing
   a who, a program not told its step, related non-child items, person offers.
 - The floor announces `coordinator/dispatch` even when a definition names another planner.
-- A pass-on is withdrawn for capacity after its claim.
+- A pass-on is withdrawn after its claim, for capacity.
 - `examples/demo_kit.py` and `examples/common.py` duplicate each other.
 - `examples/task_loop/README.md` still describes the type-based map edge C9 removed.
 
