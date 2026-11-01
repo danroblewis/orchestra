@@ -55,7 +55,7 @@ uv tool install /path/to/orchestra            # or from a checkout
 Plugins are extras too, each a package of its own that the extra installs beside Orchestra:
 
 ```bash
-uv tool install 'orchestra[sd,tasking,agents,bridges,desk,outbox] @ git+https://github.com/danroblewis/orchestra@main'
+uv tool install 'orchestra[sd,tasking,agents,bridges,desk,outbox,workflows] @ git+https://github.com/danroblewis/orchestra@main'
 ```
 
 A plugin's command line comes with it as a subcommand of `orchestra`, named for the plugin
@@ -70,7 +70,7 @@ Extras add optional parts:
 |---|---|
 | `sd` | SD Lab's discovery strategies (`kalman_lna` and about 70 others). Without it, discovery uses `conservation`, Orchestra's own. |
 | `bus-redis`, `bus-rabbitmq`, `bus-kafka` | The client library for that event bus. `bus` installs all three. |
-| `tasking`, `agents`, `bridges`, `desk`, `outbox` | A plugin: its package (`orchestra-tasking`, …), from its own repository. |
+| each plugin's extra (PLUGINS.md) | A plugin: its package (`orchestra-tasking`, …), from its own repository. |
 
 `deploy/dev/compose.yaml` in Orchestra's repository starts Redis, RabbitMQ, Kafka and
 VictoriaMetrics locally, if you want server backends to try.

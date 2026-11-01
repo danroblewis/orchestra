@@ -1001,8 +1001,8 @@ The host loads them again each time `orchestra.toml` or the private overlay chan
 (`Host._plugin_processes`) and instruments. A plugin that raises, one whose name an earlier plugin
 took, and a script or stylesheet missing from a plugin's static directory are reported (`/api/plugins`, the host's log) and
 left out, and it never takes the web app or the host down. Orchestra knows nothing of what a
-plugin's routes or pages mean. The two plugins today are the task system (`~/orchestra-tasking`)
-and the AI agents (`~/orchestra-agents`), both in their own repositories.
+plugin's routes or pages mean. Plugins live in their own repositories; PLUGINS.md (§8) lists
+them.
 
 ## The invariants, and where the code holds them
 

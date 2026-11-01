@@ -1757,8 +1757,8 @@ Gaps and inconsistencies in the plugin interface on `main` today. This is a list
 1. **The web app never reloads plugins.** The host asks for processes and collectors again on
    every `orchestra.toml` change; the web app calls `plugin()` once at start. Declarations that
    depend on config (the bridges', the heartbeat's) are stale until `orchestra web` restarts.
-2. **No CLI extension point**, and the `orchestra` CLI cannot list the installed plugins or their
-   errors. Only `/api/plugins` in the web app can.
+2. **The `orchestra` CLI cannot list the installed plugins or their errors.** Only `/api/plugins`
+   in the web app can.
 3. **`/api/plugins` lists pages, scripts and errors only.** A plugin with no pages, such as the
    bridges, is invisible there. Its processes show on the Core page, its instruments on the
    Instruments page, its declared machines on the Machines page, and its stylesheets nowhere.
