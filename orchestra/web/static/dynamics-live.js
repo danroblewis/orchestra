@@ -308,10 +308,12 @@ const Live = (() => {
   function toggle(id) { HIDDEN = HIDDEN || new Set(); HIDDEN.has(id) ? HIDDEN.delete(id) : HIDDEN.add(id); try { localStorage.setItem("orchestra.dyn.hidden", JSON.stringify([...HIDDEN])); } catch (e) {} chart(); }
 
   // a flow's label on the diagram: the equation, or, where the observed rate parts from it, the
-  // observed rate first ("0.00 now · eq 1.50 /min"); quiet when nothing moved over the recent window
+  // observed rate first ("0.00 now · eq 1.50 /min"); quiet when nothing moved over the recent window.
+  // A flow with too few events to fit has no rate to show: its label says so, never an "eq"
   function edgeLabel(e) {
     const f = MODEL && MODEL.flows.find((x) => x.id === e.fid); if (!f || !e.eqLabel) return null;
-    const a = against(f), first = a.differs ? `${rateFmt(a.obs)} now · eq ${rateFmt(a.eq)} ${per()}` : e.eqLabel;
+    const a = against(f), few = typeof Evidence !== "undefined" && Evidence.tooFew(f);
+    const first = few ? Evidence.tooFewText(f) : a.differs ? `${rateFmt(a.obs)} now · eq ${rateFmt(a.eq)} ${per()}` : e.eqLabel;
     return { label: [first, ...(Array.isArray(e.label) ? e.label.slice(1) : [])], quiet: !!a.quiet && HISTORY != null };
   }
   let GRAPH = null;
