@@ -11,11 +11,17 @@ const seenText = (m, now = Date.now() / 1000) => (m.first_seen ? `first ${ago(no
 // the Dashboard, Dynamics); no machine, or "none": grey
 const MPAL = ["#60a5fa", "#f59e0b", "#e879f9", "#22c55e", "#f87171", "#38bdf8", "#facc15", "#a78bfa", "#fb923c", "#2dd4bf"];
 const mcolor = (id) => { if (!id || id === "none") return "#94a3b8"; let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return MPAL[h % MPAL.length]; };
-const hhmm = (t) => new Date(t * 1000).toTimeString().slice(0, 5);
 const ago = (sec) => (sec < 60 ? `${Math.round(sec)}s` : sec < 3600 ? `${Math.round(sec / 60)}m` : `${(sec / 3600).toFixed(1)}h`);
 const fmtBytes = (b) => (b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)} GB` : `${Math.round(b / (1 << 20))} MB`);
 
 window.Orchestra = window.Orchestra || {};
+// One time formatter, with the zone, for every page (a plugin's pages delegate to it: workflows'
+// WFTime.when): "12:03 PST"; {seconds: true} "12:03:07 PST"; {date: true} "Nov 1, 12:03 PST".
+// ``t`` in seconds since the epoch; none reads "—"
+Orchestra.when = (t, o = {}) => (t == null ? "—" : new Date(t * 1000).toLocaleString(undefined, {
+  ...(o.date ? { month: "short", day: "numeric" } : {}), hour: "2-digit", minute: "2-digit", ...(o.seconds ? { second: "2-digit" } : {}),
+  hourCycle: "h23", timeZoneName: "short" }));
+const hhmm = (t) => Orchestra.when(t);
 // Whether a machine is active, said the same way everywhere (the Dashboard's row, a card's seen row,
 // the map's tooltip, the dialog), with the rule the judgement used: heard within 2.5× its usual gap,
 // at least 2 minutes; with no cadence yet, the 2-minute floor alone. The host's flag is the runtime
@@ -254,8 +260,7 @@ if (/^#token=/.test(location.hash)) { try { history.replaceState(history.state, 
 // ``Orchestra.asOf(seconds)`` is that time as HH:MM (or HH:MM:SS), or "" before any answer.
 Orchestra.conn = (() => {
   let last = null;
-  const hm = (t, s) => new Date(t).toTimeString().slice(0, s ? 8 : 5);
-  Orchestra.asOf = (s) => (last ? hm(last, s) : "");
+  Orchestra.asOf = (s) => (last ? Orchestra.when(last / 1000, { seconds: !!s }) : "");
   return (ok, opts = {}) => {
     const el = $("conn");
     if (ok) last = Date.now();

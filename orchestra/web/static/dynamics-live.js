@@ -37,7 +37,7 @@ const Live = (() => {
   }
   const inputHist = (name) => (HISTORY && HISTORY.inputs && HISTORY.inputs[name]) || [];
   // what a chart's points span, said plainly: "since 01:37 · 6 min of data" (never "last hour" over minutes)
-  const hm = (t) => new Date(t * 1000).toTimeString().slice(0, 5);
+  const hm = (t) => Orchestra.when(t);
   const spanText = (pts) => { if (!pts || !pts.length) return "no data yet"; const a = pts[0][0], b = pts[pts.length - 1][0], m = (b - a) / 60;
     return `since ${hm(a)} · ${m < 1 ? `${Math.round(b - a)} s` : m < 90 ? `${Math.round(m)} min` : `${(m / 60).toFixed(1)} h`} of data`; };
   // a flow's machines, as hypotheses with their confidence: never one name as if it were a fact
@@ -227,7 +227,7 @@ const Live = (() => {
     const yMax = seen.length ? Math.max(...seen) * 1.5 + 1 : null;
     const endText = end ? `+${horizon()} min: ${fmt(Math.round(end[1] * 100) / 100)}` : "";
     el.innerHTML = Charts.line([...(measured ? [measured] : []),
-      { label: `the equations, from ${new Date(d.start * 1000).toTimeString().slice(0, 5)}`, points: era, color: "#e5e7eb", dash: "6 4" },
+      { label: `the equations, from ${Orchestra.when(d.start)}`, points: era, color: "#e5e7eb", dash: "6 4" },
       { label: `projected, next ${horizon()} min${endText ? ` (${endText})` : ""}`, points: proj, color: stockColor(id), dash: "2 3" }],
       { W: 700, H: 240, now: d.now, yMax: yMax != null && end && end[1] > yMax ? yMax : null, notes: end ? [{ t: end[0], v: end[1], text: endText }] : [],
         marks: [{ t: d.now, label: "now" }, ...(era.length ? [{ t: d.start, label: "era began" }] : [])] });

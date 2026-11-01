@@ -298,7 +298,7 @@ function sourcesNote(d) {
 // a quiet window (sd/quiet.py): the stocks whose series did not move, held from the current version
 function quietNote(d) {
   const q = d.quiet; if (!q) return "";
-  const when = q.since != null ? new Date(q.since * 1000).toISOString().slice(0, 16).replace("T", " ") + " UTC" : null;
+  const when = q.since != null ? Orchestra.when(q.since, { date: true }) : null;
   return `<div class="stale" style="font-size:12px;margin-bottom:6px">${esc(q.note || `quiet${when ? " since " + when : ""}: ${q.stocks.length} stock${q.stocks.length === 1 ? "" : "s"} of v${q.version} held`)} <span class="muted">(${esc(q.stocks.join(", "))}: their series were written to the end of the window and hardly moved, so nothing says they are gone)</span></div>`;
 }
 // "Left out": its true count ("all 35" only when the model uses none and none was kept), and the
@@ -399,7 +399,7 @@ function erasBar() {
   $("eras").style.display = "";
   const now = Date.now() / 1000, shown = m.era ?? "none", current = m.current_era ?? "none";
   const segs = [{ id: "none", label: "before any era", start: null }, ...eras];
-  const when = (t) => (t ? new Date(t * 1000).toLocaleString() : "the start");
+  const when = (t) => (t ? Orchestra.when(t, { date: true }) : "the start");
   const bar = segs.map((e, i) => { const end = i + 1 < segs.length ? segs[i + 1].start : now, len = e.start ? Math.max(1, end - e.start) : Math.max(1, (end - eras[0].start) / 4 || 1);
     return `<button class="${e.id === shown ? "on" : ""} ${e.id === current ? "cur" : ""}" style="flex-grow:${Math.max(0.15, Math.sqrt(len))}" onclick="pickEra('${esc(e.id)}')"
       title="${esc(e.id === "none" ? "before any era" : `${e.id}: ${e.label}${e.subject ? " (" + e.subject + ")" : ""}, from ${when(e.start)}`)}${e.id === current ? " · current" : ""}">${esc(e.id === "none" ? "before" : e.id)}</button>`; }).join("");
@@ -457,7 +457,7 @@ function versionBar() {
       <span class="muted">${same ? `same structure as v${esc(m.current ?? "—")}, refitted` : `a new structure, not saved yet (the newest saved is v${esc(m.current ?? "—")})`} · rediscovered by the host every few minutes; saved as a version when its structure changes${m.discovery && m.discovery.live_minutes != null ? ` · fitted over ${m.discovery.live_minutes} min when every series involved was being written` : ""}</span>`;
   } else {
     const v = vs[i] || {}, past = m.version !== m.current;
-    const when = v.saved_at ? new Date(v.saved_at * 1000).toLocaleString() : "";
+    const when = v.saved_at ? Orchestra.when(v.saved_at, { date: true }) : "";
     html = `<button ${i <= 0 ? "disabled" : ""} onclick="step(-1)" title="older version">‹</button>
     <span>version <b>${m.version}</b> of ${vs.length}${past ? ' <span class="past">· a past version</span>' : " · current"}</span>
     <button onclick="step(1)" title="${i >= vs.length - 1 ? "the latest discovery" : "newer version"}">›</button>
@@ -561,7 +561,7 @@ async function expectedWaiting() {
 function windowNote(d, busSince) {
   const dd = d.discovery || {}, w = dd.window_s || (dd.end && dd.start ? dd.end - dd.start : null), now = Date.now() / 1000;
   const parts = [w ? `window ${ago(w)}` : "", busSince ? `the first event on this project's bus is stamped ${ago(now - busSince)} ago (by its source; the bus keeps no time of receipt), so at most that much data` : "",
-    d.as_of ? `last discovery ${new Date(d.as_of * 1000).toTimeString().slice(0, 5)} (${ago(now - d.as_of)} ago)` : ""].filter(Boolean);
+    d.as_of ? `last discovery ${Orchestra.when(d.as_of)} (${ago(now - d.as_of)} ago)` : ""].filter(Boolean);
   return parts.length ? `<div class="muted" style="font-size:12px;margin-top:6px">${parts.join(" · ")}</div>` : "";
 }
 async function load() {
