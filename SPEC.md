@@ -20,7 +20,7 @@ each adds its pages here as a plugin (§10.1). How they left is in
 `docs/proposals/empty-orchestra.md`.
 
 This document is the design of what exists. `AGENTS.md` lists the rules that must not be broken;
-`docs/proposals/` holds what is proposed and not yet built.
+`docs/proposals/` holds the proposals; each says in its status line what of it is built.
 
 ---
 

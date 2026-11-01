@@ -1,8 +1,11 @@
 # Design a system backwards
 
-Status: draft for the owner's review, 2026-10-31. Nothing built. The north star for everything
-after the task system; the owner's decisions of the same day are D21 in
-`docs/roadmap/decisions.md`.
+Status: draft for the owner's review, 2026-10-31; its proposals were written and built on
+2026-11-01, each saying in its own status line what of it is built: the intended model
+(`intended-model.md`, in the core) and instruments on machines (`instruments-on-machines.md`, in
+the core); the workflows (`workflows.md`, in `orchestra-workflows`); machine design
+(`machine-design.md`, in `orchestra-agents`). The north star for everything after the task system;
+the owner's decisions of 2026-10-31 are D21 in `docs/roadmap/decisions.md`.
 
 Written from the owner's thinking of 2026-10-31, after a week of trying to use Orchestra at work.
 It builds on the curious observer (`docs/roadmap/use-cases.md` UC-0: observe, then influence,
