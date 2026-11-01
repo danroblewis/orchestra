@@ -28,9 +28,10 @@ was found in the era is then merged with its prior, the latest version of anothe
 (``sd.prior.merge``), compared with it (``sd.compare``: ``discovery["era_comparison"]``), and
 saved as a version when its structure changed or it is the era's first.
 
-**A quiet window** (``sd.quiet``). A stock of the current version whose series did not move in the
-window (or moved in too few steps to judge) is carried into the discovery from that version, with
-its flows, before the structures are compared: a window with too little motion is no evidence
+**A quiet window** (``sd.quiet``). A stock of the current version whose series was written to the
+end of the window and moved fewer than five times in it (for a hidden stock, every counter of its
+flows) is carried into the discovery from that version, with its flows, before the structures are
+compared: a window with too little motion is no evidence
 that a stock is gone, so it never saves a poorer version. When nothing else changed, no version
 is saved and the record says ``quiet since <time>: the model of v<N> stands``. An era younger than two
 steps is not discovered: its model is its prior, carried whole. With no era (no change was ever
@@ -179,7 +180,7 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
             m.discovery["since_last_s"] = round(now - prev[0])      # the machine slept, or nothing ran: this window was read whole, as always
         cur = store.load()
         vs = store.versions()
-        m = quiet.hold(m, cur, vs[-1]["version"] if vs else None, prev[1] if prev else None)
+        m = quiet.hold(m, cur, vs[-1]["version"] if vs else None, reading.dump)
         changed = m.stocks and (cur is None or structure(cur) != structure(m) or cur.era != m.era)
         if m.discovery.get("quiet") and not changed:
             m.discovery["quiet"]["note"] = quiet.stands(m)      # nothing but quiet: the current version stands

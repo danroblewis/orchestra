@@ -541,10 +541,13 @@ Conservation (`sd/discover.py`):
    all its evidence, so it does not come and go with the one event that takes the fill over the
    bar at the edge of a window), become a flow into the state and flows out of it. The state is the measured level whose raw points
    rise at the inflow's events and fall at the outflows' (`sd/between.py`: the grid misses it,
-   the raw points do not), whose rises account for the inflow's moves and falls for the outflows'
-   (by magnitude, neither more nor fewer than the counters moved in the window, within 3% and one
-   item: a pile that rose at 2 of 25 moves is another state that moved at two of them, and a
-   state each item leaves between two of the level's writes is not measured by it), and that
+   the raw points do not), that rose no more often than the inflow counted, that at each of its
+   own writes reads what the counters imply (the items moved in less those moved out up to then,
+   give or take a second for the order of two writers' writes, apart from the items there
+   before), at 80% of the writes where it, or the counters throughout that second, say something
+   is there (a state sampled coarsely misses the items that come and go between its writes, and
+   so do the counters' totals at those writes; a pile that reads empty while the counters say an
+   item is in, or moves while they say nothing moved, is another state), and that
    both rose and fell by at least one in the window (the test
    is by magnitude, in the level's own unit, whatever that is: a level that only rises, the test
    reports read, 5 to 10, is a tally; one whose moves are all under one, a gate's duration of
@@ -620,9 +623,10 @@ Every stock records **how far to trust it** (`sd/stocktrust.py`, `evidence.trust
 discovery and saved with the model version: the kind of evidence it stands on (`conservation`,
 `net_flow`, `passage`, `unmeasured`, `by_construction`), each measurement, and the weakest as one
 `score` from 0 to 1 with a `level` (high from 0.8, medium from 0.5, low from 0.2, else very low)
-and why. A passage's: the share of its rises and falls that came at its counters' events, the
-lesser of that over its own moves and over the counters' moves (`2 of 25 moves matched` scores
-0.08, not 1.0), its steps in step, and its units. A balance's: the shift null (1 at the least p-value its shifts can give, 0 at p = 1), the
+and why. A passage's: the lesser of the share of its rises and falls that came at its counters'
+events and the share of the items its counters moved that those rises and falls moved (`4 of 50
+moves matched` scores 0.08, not 1.0; a version saved before the items were kept has only the
+first), its steps in step, and its units. A balance's: the shift null (1 at the least p-value its shifts can give, 0 at p = 1), the
 held-out R² (an exact balance's own R² on each half), the level reproduced (one less the running
 residual's spread over the level's), its units (`1 − e^(−units/20)`), and whether both halves chose
 the same counters (0.6 when not: its flows are not identified). A net flow's (`sd/netnull.py`): the
@@ -660,15 +664,17 @@ events. When a source is missing the discovery is cached for the page with the r
 saved as a version (§4.4).
 
 **A quiet window** (`sd/quiet.py`). A stock that stops moving still holds its quantity. A stock
-of the current version that a discovery did not find, whose series was left out for too little
-motion (a level that did not change in the window, or changed in fewer than 5 steps; for a hidden
-stock, every counter of its flows did not move or counted fewer than 5 events), is carried into
-the discovery from that version with the flows that reach it, marked `evidence.quiet` (the
-version, and since when), before the structures are compared. A window with too little motion is
-no evidence that a stock is gone, so it never saves a poorer version; a stock whose series is no
-longer written, or that moved and no longer balances, goes as before. When nothing else changed,
-no version is saved and the record (`discovery.quiet`) and the page say `quiet since <time>: the
-model of v<N> stands`.
+of the current version that a discovery did not find is quiet when its series is still: written up
+to the end of the window (its last point within two steps or three of its own write intervals of
+it) and moving fewer than 5 times in it (a level's changes, a counter's events); a hidden stock,
+when every counter of its flows is still, however discovery left them out (unmoved, too few, or
+folded into another counter of the same few events). A quiet stock is carried into the discovery
+from that version with the flows that reach it, marked `evidence.quiet` (the version, and since
+when: the last time its series moved, else the window's start), before the structures are
+compared, so a quiet window never saves a poorer version. A series that stopped being written
+inside the window has stopped, not gone still, and a stock that moved and no longer balances is
+not quiet: both go as before. When nothing else changed, no version is saved and the record
+(`discovery.quiet`) and the page say `quiet since <time>: the model of v<N> stands`.
 
 **Eras** (`sd/eras.py`, `sd/prior.py`, `sd/compare.py`; goal G11). After a machine changes how
 the system works (a prompt or role edited, the configuration changed, a deploy) it is a different

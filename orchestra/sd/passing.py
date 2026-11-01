@@ -57,8 +57,8 @@ class Passage:
     measured: bool
     out_of_step: int              # steps in which the outs ran ahead of the ins, or more than a step behind
     moved: int                    # steps in which any of them moved
-    rises: list[int] = field(default_factory=list)   # a measured level's rises: [at an in's event, all, the ins' moves]
-    falls: list[int] = field(default_factory=list)   # ... and its falls: [at an out's event, all, the outs' moves]
+    rises: list[int] = field(default_factory=list)   # a measured level's rises: [at an in's event, all, items at them, items the ins moved]
+    falls: list[int] = field(default_factory=list)   # ... and its falls: [at an out's event, all, items at them, items the outs moved]
 
     @property
     def terms(self) -> list[tuple[Series, int]]:

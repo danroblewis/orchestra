@@ -290,7 +290,7 @@ function sourcesNote(d) {
 function quietNote(d) {
   const q = d.quiet; if (!q) return "";
   const when = q.since != null ? new Date(q.since * 1000).toISOString().slice(0, 16).replace("T", " ") + " UTC" : null;
-  return `<div class="stale" style="font-size:12px;margin-bottom:6px">${esc(q.note || `quiet${when ? " since " + when : ""}: ${q.stocks.length} stock${q.stocks.length === 1 ? "" : "s"} of v${q.version} held`)} <span class="muted">(${esc(q.stocks.join(", "))}: their series did not move in the window, so nothing says they are gone)</span></div>`;
+  return `<div class="stale" style="font-size:12px;margin-bottom:6px">${esc(q.note || `quiet${when ? " since " + when : ""}: ${q.stocks.length} stock${q.stocks.length === 1 ? "" : "s"} of v${q.version} held`)} <span class="muted">(${esc(q.stocks.join(", "))}: their series were written to the end of the window and hardly moved, so nothing says they are gone)</span></div>`;
 }
 // "Left out": its true count ("all 35" only when the model uses none and none was kept), and the
 // buckets add up to it: the series the record names, by why, then the rest it does not name

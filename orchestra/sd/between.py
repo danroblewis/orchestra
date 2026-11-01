@@ -4,12 +4,14 @@ The grid samples a level at whole steps, so a state each item leaves within a se
 at every step; its raw points do not. The level that rises at an instant one of the passage's
 ins counted (at it, or no later than the level's own write interval after it), and falls at an
 instant one of its outs counted, is that state: most of its rises and of its falls (``MATCHED``)
-must, and its rises must account for the ins' moves and its falls for the outs' (``accounts``):
-by magnitude, neither more nor fewer than the counters' moves in the window, within ``SAME_TOTAL``
-and one item. A level that rose twice while the ins counted 25 moves is another state that
-happened to move at two of them (delivery_sail's triage.waiting carried sail.waiting's moves,
-2 of 25, and scored as matched); a state the level's writes miss (each item gone between two
-writes) is not measured by it, and stays the hidden state its counters imply. It must fill and drain in the
+must, and it must have risen no more often than the ins counted. At each of its own writes it
+must read what the counters imply (``follows``): the items the ins moved in less those the outs
+moved out, up to then, give or take ``ORDER`` seconds for the order of two writers' writes,
+apart from a constant (the items there before). A state sampled coarsely misses the items that come and
+go between two of its writes, and so do the counters' totals at those writes; a level that is
+another state reads zero where the counters say an item is in, and moves where they say nothing
+moved (delivery_sail's triage.waiting rose at 2 of sail.waiting's 25 moves and was bound as it):
+at most ``1 - MATCHED`` of the writes where either says something may disagree. It must fill and drain in the
 window by at least one of its unit (``fills_and_drains``): a level that only rises (a tally of
 reports read, 5 to 10 and never less) is a count of something, and one whose moves are all under
 one (a duration of tenths of a second) moves no whole unit; neither is the state items pass
@@ -24,7 +26,7 @@ is chosen."""
 
 from __future__ import annotations
 
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from itertools import pairwise
 from statistics import median
 
@@ -33,6 +35,7 @@ from .series import Series
 MATCHED = 0.8         # the share of a level's rises (and falls) that must come at the passage's events
 CHANCE = 0.5          # the share of the window the events' tolerance may cover, at most, for a match to mean anything
 SAME_TOTAL = 0.03
+ORDER = 1.0           # seconds: how far apart two writers' writes of one instant may be stamped
 
 
 def fills_and_drains(changes) -> bool:
@@ -51,10 +54,40 @@ def moves(cs: list[Series], start: float, end: float) -> float:
     return sum((b - a) if b >= a else b for c in cs for (_, a), (t, b) in pairwise(c.points) if start < t <= end)
 
 
-def accounts(moved: float, counted: float) -> bool:
-    """Whether a level's moves one way (``moved``, by magnitude) account for the counters' moves
-    (``counted``): neither more nor fewer, within ``SAME_TOTAL`` and one item."""
-    return abs(moved - counted) <= SAME_TOTAL * max(moved, counted) + 1 + 1e-9
+def _counts(c: Series, start: float, end: float) -> list[tuple[float, float]]:
+    return [(t, (b - a) if b >= a else b) for (_, a), (t, b) in pairwise(c.points) if start < t <= end and ((b - a) if b >= a else b) > 0]
+
+
+def follows(pts: list[tuple[float, float]], cin: list[Series], cout: list[Series], start: float, end: float, step: float,
+            tol: float) -> tuple[int, int]:
+    """Of the level's writes in the window where it says something is there, or the counters say
+    so throughout ``tol`` of it, how many read what the counters imply: [agreeing, all such writes]. The implied level at a write
+    is the ins' moves less the outs' since the window began, at any instant within ``tol`` of
+    it (``tol``: the lesser of ``ORDER`` and the level's write interval); the level is compared
+    with it apart from the offset most writes share (the items there before)."""
+    moved = sorted([*((t, n) for c in cin for t, n in _counts(c, start - step, end)),
+                    *((t, -n) for c in cout for t, n in _counts(c, start - step, end))])
+    at = [t for t, _ in moved]
+    run = [0.0]
+    for _, n in moved:
+        run.append(run[-1] + n)                     # run[i]: the implied level after the first i moves
+    writes = [(t, v) for t, v in pts if t > start]
+    if not writes:
+        return 0, 0
+    offsets: dict[float, int] = {}
+    for t, v in writes:
+        k = round(v - run[bisect_right(at, t)], 6)
+        offsets[k] = offsets.get(k, 0) + 1
+    base = max(offsets, key=lambda k: (offsets[k], -abs(k)))
+    agree = said = 0
+    for t, v in writes:
+        lo, hi = bisect_right(at, t - tol), bisect_right(at, t + tol)
+        implied = run[lo:hi + 1]
+        if abs(v - base) < 0.5 and any(abs(x) < 0.5 for x in implied):
+            continue                                 # nothing there, by the level, and maybe by the counters
+        said += 1
+        agree += 1 if any(abs(v - base - x) < 0.5 for x in implied) else 0
+    return agree, said
 
 
 def events(c: Series, start: float, end: float) -> list[float]:
@@ -82,9 +115,10 @@ def _covered(at: list[float], tol: float) -> float:
 def at_events(level: Series, ins: list[Series], outs: list[Series], start: float, end: float, step: float,
               counted: tuple[list[Series], list[Series]] | None = None) -> tuple[list, list] | None:
     """The level's rises at the ins' events and its falls at the outs' events, each as [matched,
-    all, the counters' moves]; None when it is not the state between them. ``counted``: the ins
-    and outs whose moves the level must account for, when ``ins`` and ``outs`` add copies of the
-    same events (whose instants it may match, but whose moves are not more items)."""
+    all, the items the matched ones moved, the items the counters moved]; None when it is not the
+    state between them. ``counted``: the ins and outs whose moves the level must follow, when
+    ``ins`` and ``outs`` add copies of the same events (whose instants it may match, but whose
+    moves are not more items)."""
     pts = [(t, v) for t, v in level.points if start - step < t <= end]
     rises = [t for (_, a), (t, b) in pairwise(pts) if b > a and t > start]
     falls = [t for (_, a), (t, b) in pairwise(pts) if b < a and t > start]
@@ -99,12 +133,15 @@ def at_events(level: Series, ins: list[Series], outs: list[Series], start: float
     if up < MATCHED * len(rises) or down < MATCHED * len(falls) or len(rises) > len(into) * (1 + SAME_TOTAL) + 1:
         return None
     cin, cout = counted or (ins, outs)
-    n_in, n_out = moves(cin, start, end), moves(cout, start, end)
-    risen = sum(b - a for (_, a), (t, b) in pairwise(pts) if b > a and t > start)
-    fallen = sum(a - b for (_, a), (t, b) in pairwise(pts) if b < a and t > start)
-    if not accounts(risen, n_in) or not accounts(fallen, n_out):
-        return None                                  # another state, moving at a few of the moves
-    return [up, len(rises), round(n_in)], [down, len(falls), round(n_out)]
+    agree, said = follows(pts, cin, cout, start, end, step, min(tol, ORDER))
+    if agree < MATCHED * said:
+        return None                                  # another state: it does not read what the counters imply
+    rose = {t: b - a for (_, a), (t, b) in pairwise(pts) if b > a and t > start}
+    fell = {t: a - b for (_, a), (t, b) in pairwise(pts) if b < a and t > start}
+    hit_in = sum(n for t, n in rose.items() if _hits([t], into, tol))
+    hit_out = sum(n for t, n in fell.items() if _hits([t], out, tol))
+    return ([up, len(rises), round(hit_in, 6), round(moves(cin, start, end), 6)],
+            [down, len(falls), round(hit_out, 6), round(moves(cout, start, end), 6)])
 
 
 def state_level(levels: list[Series], ins: list[Series], outs: list[Series], *, start: float, end: float, step: float,
