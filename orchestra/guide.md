@@ -20,7 +20,7 @@ metrics live**, and **how the model is discovered**.
   overlay wins); arrays of tables (`[[machines]]`, `[[collect]]`, `[[scrape]]`, `[[sources]]`,
   `[[series]]`, a plugin's arrays) by `name`, an overlay entry replacing the repository's of that
   name whole; `{ name = "x", enabled = false }` in the overlay removes the repository's `x`.
-  `[overlay] secret = ["desk.me"]` hides those values from pages (private, not a credential).
+  `[overlay] secret = ["desk.owner"]` hides those values from pages (private, not a credential).
 - **Credentials never go in either file.** They come from environment variables or files outside
   the repository (`[[sources]]` `auth = { bearer_file = "~/..." }` or `{ bearer_env = "..." }`). A literal secret in a
   `[[sources]]` entry refuses the source.

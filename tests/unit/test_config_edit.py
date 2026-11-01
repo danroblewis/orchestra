@@ -9,6 +9,7 @@ import tomllib
 import pytest
 import tomlkit
 
+from orchestra import plugins
 from orchestra import toml_text as tt
 from orchestra.config import OVERLAY_ENV, ConfigError, init_project
 from orchestra.config_edit import Change
@@ -44,6 +45,7 @@ command = "pytest"
 @pytest.fixture
 def project(tmp_path, monkeypatch):
     monkeypatch.setenv("ORCHESTRATOR_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(plugins, "entry_points", lambda group: [])    # the installed plugins' checks are theirs
     monkeypatch.delenv(OVERLAY_ENV, raising=False)
     monkeypatch.delenv("ORCHESTRA_REPO", raising=False)
     r = tmp_path / "repo"
@@ -64,16 +66,16 @@ def test_set_in_the_repository_keeps_comments_and_reloads(project):
     assert not again.changed and again.keys == []
     both = project.config_edit.set_many({"tasks.workers": 4, "tasks.reviewers": 2})
     assert both.keys == ["tasks.reviewers", "tasks.workers"] and both.what == "tasks.workers = 4, tasks.reviewers = 2"
-    assert project.config_edit.set_many({"tasks.workers": 5, "desk.me": "U1"}, target="overlay").what == (
-        "tasks.workers, desk.me in the private overlay")
+    assert project.config_edit.set_many({"tasks.workers": 5, "desk.owner": "person.u1"}, target="overlay").what == (
+        "tasks.workers, desk.owner in the private overlay")
 
 
 def test_set_in_the_overlay_creates_it_privately_and_wins(project):
-    c = project.config_edit.set("desk.me", "U0123", target="overlay")
-    assert c.before is None and c.file == str(project.overlay_file) and "U0123" not in c.what
+    c = project.config_edit.set("desk.owner", "person.u0123", target="overlay")
+    assert c.before is None and c.file == str(project.overlay_file) and "u0123" not in c.what
     assert stat.S_IMODE(os.stat(project.overlay_file).st_mode) == 0o600
     assert project.config_file.read_text() == TEXT                          # the repository's file is untouched
-    assert project.config.raw["desk"] == {"me": "U0123"} and project.config.layers.set >= {"desk"}
+    assert project.config.raw["desk"] == {"owner": "person.u0123"} and project.config.layers.set >= {"desk"}
     over = project.config_edit.set("tasks.workers", 5, target="overlay")
     assert over.keys == ["tasks.workers"] and project.config.raw["tasks"]["workers"] == 5
     shadowed = project.config_edit.set("tasks.workers", 4)                   # the repository's: the overlay still wins
@@ -137,7 +139,7 @@ def test_dry_run_apply_and_restore(project):
         ed.apply(c)
     assert ed.restore(c) and project.config_file.read_text() == TEXT
     assert not ed.restore(c)                                                 # the file no longer holds what it wrote
-    o = ed.set("desk.me", "x", target="overlay")
+    o = ed.set("desk.owner", "person.x", target="overlay")
     assert ed.restore(o) and not project.overlay_file.exists()               # an overlay it created is gone again
 
 
