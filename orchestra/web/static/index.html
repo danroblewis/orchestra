@@ -76,7 +76,8 @@ Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 
       body.innerHTML = (run.length ? Orchestra.machineCards.sort(run).map((m) => {
         const kind = m.kind || "";
         const own = Orchestra.machineCards.summary(m), lv = Orchestra.liveness(m);
-        const right = [live(m), own != null ? own : lv.detail ? esc(lv.detail) : ""].filter(Boolean).join(" · ");
+        // a package's own summary is its own element beside the bus's word, never joined by a dot to it
+        const right = own != null ? `${live(m)} <span class="own">${own}</span>` : [live(m), lv.detail ? esc(lv.detail) : ""].filter(Boolean).join(" · ");
         return `<div class="mline" data-id="${esc(m.id)}" tabindex="0" role="button" aria-label="${esc(m.id)}: open its details" onclick="openMachine(this.dataset.id)" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openMachine(this.dataset.id)}" title="click for its details">
           <span class="d" style="background:${m.active ? "#22c55e" : "#64748b"}"></span><b>${esc(m.id)}</b>
           <span>${kind ? `<span class="k">${esc(kind)}</span> ` : ""}${m.mode ? `<span class="k">${esc(m.mode)}</span>` : ""}${m.package ? `<span class="k" title="the package this machine belongs to">${esc(m.package)}</span>` : ""}</span>

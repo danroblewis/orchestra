@@ -36,7 +36,10 @@ Orchestra.liveness = (m, now = Date.now() / 1000) => {
     title: "by the runtime record: the host process is in it; it publishes only when it starts and stops" };
   if (!m.last_seen) return { word: "never heard", cls: "quiet", detail: "", title: m.intent ? "declared: nothing on the bus under it" : "nothing on the bus under it yet" };
   const cads = [m.cadence_s, ...(m.instances || []).map((i) => i.cadence_s)].filter((g) => g), g = cads.length ? Math.min(...cads) : null;
-  if (m.active && !g && Orchestra.continuous(m)) return { word: "active", cls: "live", detail: `publishes continuously · last event ${ago(now - m.last_seen)} ago`,
+  // events too close together to make beats: how often, on average, never "continuously" (beside an
+  // announced "ad hoc" that would read as a contradiction)
+  const n = (m.publishes || []).reduce((a, p) => a + (p.count || 0), 0), every = n > 1 ? (m.last_seen - m.first_seen) / (n - 1) : null;
+  if (m.active && !g && Orchestra.continuous(m)) return { word: "active", cls: "live", detail: `${every ? `about every ${ago(every)} · ` : ""}last event ${ago(now - m.last_seen)} ago`,
     title: "heard within the last 2 minutes; its events come too close together to make a cadence of beats" };
   const rule = g ? `usual gap ${ago(g)}` : "no cadence yet: judged by the 2-minute floor";
   if (m.active) return { word: "in rhythm", cls: "live", detail: `${rule} · last event ${ago(now - m.last_seen)} ago`,
