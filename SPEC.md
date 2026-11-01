@@ -1051,8 +1051,11 @@ the owner intends and what a plugin or inference proposes, beside the discovered
 a declared stock binds no series, a declared flow changes no equation, and discovery never reads
 it (rule 7).
 
-- **Elements.** Stocks and effects (`name`, `unit`, `near`, `note`, `found_as` set only by
-  `link`, `measure`: the plugin's options and the chosen one), flows (`from`, `to`: declared or
+- **Elements.** Stocks and effects (`name`, `description`, `unit`, `near`, `note`, `found_as` set
+  only by `link`, `measure`: the plugin's options and the chosen one; an option's fields `key`,
+  `title`, `how`, `kind`, `instrument`, `simulated`, `cost`, `caveat`, `clearance`, `provenance`,
+  `commit`, `first_points`, and what it names as text, `system`, `series`, `url`, `command`, its
+  credential only as `bearer_env`, an environment variable's name, and a url never with a password), flows (`from`, `to`: declared or
   discovered stock keys, `null` outside), targets (`{op: below|above|within, value, hi?, over_s}`,
   judged on the mean over `over_s`: a level, or a flow's count over the window; met, missed or
   unknown, never met on simulated parts), expected marks and ignores (by key), machines (the

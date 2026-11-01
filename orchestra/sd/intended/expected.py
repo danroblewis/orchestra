@@ -82,7 +82,7 @@ def level_entry(el: dict, row: dict, keys, facts, version_label: str) -> dict:
     present = row["present"]
     found = _stock(keys, el.get("found_as"))
     out = {"part": el["part"], "id": el["id"], "key": el.get("found_as"), "name": el["name"],
-           "declared": el.get("state") == "declared", "present": present,
+           "description": el.get("description"), "declared": el.get("state") == "declared", "present": present,
            "measured": present or bool(rec.get("points")), "near": el.get("near"), "note": el.get("note"),
            "unit": el.get("unit"), "linked": el.get("linked"), "found_id": found.id if found else None,
            "simulated": placeholder or _simulated(found), "target": target_of(el.get("target"), "stock", el.get("found_as"), keys, facts),

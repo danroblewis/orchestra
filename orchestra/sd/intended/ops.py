@@ -19,6 +19,8 @@ binds no series and is matched to one only by ``link`` (rule 7 as amended)."""
 
 from __future__ import annotations
 
+import re
+
 from . import machine_ops
 from .checks import IntentError, make_slug, no_derived, only, slug, strings, target, text
 from .consent import consents, guard_owners, may_settle, owner_asks, owners
@@ -27,7 +29,11 @@ from .revise import revise, settle_pending
 GROUP = {"stock": "stocks", "effect": "effects", "flow": "flows", "machine": "machines", "attachment": "attachments",
          "event": "events"}
 OPTION = ("key", "title", "how", "kind", "instrument", "simulated", "cost", "caveat", "clearance", "provenance", "commit",
-          "first_points")
+          "first_points", "bearer_env", "system", "series", "url", "command")
+# what an option names, as text: the company system it reads, the series, where and how (machine-design §2.2)
+OPTION_TEXT = {"system": 200, "series": 1000, "url": 2000, "command": 2000}
+ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")   # a credential is named by its variable, never given
+URL_SECRET = re.compile(r"://[^/@\s]*:[^/@\s]*@")          # user:password@ in a url
 
 
 def empty() -> dict:
@@ -54,11 +60,11 @@ def element(layer: dict, part: str, eid) -> dict:
 
 
 def declare_level(layer: dict, op: dict, ctx: dict, part: str) -> tuple[str, str]:
-    only(op, ("id", "name", "unit", "near", "note"), f"declare_{part}")
+    only(op, ("id", "name", "description", "unit", "near", "note"), f"declare_{part}")
     name = text(op.get("name"), "name", required=True, limit=200)
     eid = slug(op.get("id") or make_slug(name))
-    fields = {"name": name, "unit": text(op.get("unit"), "unit", limit=64), "near": text(op.get("near"), "near", limit=1000),
-              "note": text(op.get("note"), "note")}
+    fields = {"name": name, "description": text(op.get("description"), "description"), "unit": text(op.get("unit"), "unit", limit=64),
+              "near": text(op.get("near"), "near", limit=1000), "note": text(op.get("note"), "note")}
     group = layer[GROUP[part]]
     other = "effects" if part == "stock" else "stocks"
     if eid in layer[other]:
@@ -179,6 +185,7 @@ def record_measurement(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
         if extra := sorted(set(o) - set(OPTION)):
             raise IntentError(f"an option's unknown field{'s' if len(extra) > 1 else ''}: {', '.join(extra)}")
         text(o.get("key"), "an option's key", required=True, limit=40)
+        _option_names(o)
         out.append(dict(o))
     keys = [o["key"] for o in out]
     if len(set(keys)) != len(keys):
@@ -188,6 +195,17 @@ def record_measurement(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
         raise IntentError(f"chosen must be one of the options' keys ({', '.join(keys)}), not {chosen!r}")
     el["measure"] = {"options": out, "chosen": chosen, "change": ctx["change"]}
     return part, eid
+
+
+def _option_names(o: dict) -> None:
+    """What an option names is text; its credential only by the environment variable that holds it."""
+    for k, limit in OPTION_TEXT.items():
+        text(o.get(k), f"an option's {k}", limit=limit)
+    if o.get("url") and URL_SECRET.search(o["url"]):
+        raise IntentError("an option's url carries no password: name the credential by its environment variable (bearer_env)")
+    env = o.get("bearer_env")
+    if env is not None and (not isinstance(env, str) or not ENV_NAME.match(env)):
+        raise IntentError(f"an option's bearer_env is the name of an environment variable (WORK_TOKEN), never a value, not {env!r}")
 
 
 def confirm(layer: dict, op: dict, ctx: dict, accept: bool) -> tuple[str, str]:

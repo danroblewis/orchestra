@@ -210,7 +210,7 @@ version, `since=off` drops the marks). The answer's `model` gains:
 "intended": {
   "version": 7, "since": 14, "since_saved_at": 1793498000,
   "expected": [
-    {"part": "stock", "id": "features", "key": null, "name": "Features", "declared": true, "present": false,
+    {"part": "stock", "id": "features", "key": null, "name": "Features", "description": null, "declared": true, "present": false,
      "measured": false, "near": "tasks_tickets{state=\"DONE\"}", "note": null, "provenance": {…}, "target": null,
      "candidates": [{"key": "acceptance_tests_passing", "id": "acceptance_tests_passing", "why": "recorded by the chosen instrument"}],
      "measure": {"options": [{"key": "a", "title": "…", "how": "…", "kind": "script collector", "instrument": "features.acceptance",
@@ -304,7 +304,7 @@ else on the panels is rendered read-only with "ask the Supervisor" (§7).
 name `guessed` fields. The ops:
 
 ```
-declare_stock {id?, name, unit?, near?, note?}       declare_effect {same}
+declare_stock {id?, name, description?, unit?, near?, note?}   declare_effect {same}
 declare_flow {from, to, name?}                       set_target {part, id|key, op, value, hi?, over_s}
 expect {part, key} · unexpect · ignore · unignore    link {id, found_as}       alias {machine, observed}
 propose_machine {id, envelope…, spec}                revise_machine {id, set, add, remove}
@@ -322,8 +322,10 @@ and the last 20 changes, under 20 KB for 100 elements.
 
 **Measurement options** (the goal's decision 2): `record_measurement` stores the options (`key,
 title, how, kind, instrument, simulated, cost, caveat, clearance, provenance, commit,
-first_points`) and `chosen`; the core proposes
-none. It stores the instrument's name, never a copy of its configuration.
+first_points`, and what the option names: `system`, `series`, `url`, `command` as text, and
+`bearer_env`, the name of the environment variable that holds its credential, never a value; a
+url with a password is refused) and `chosen`; the core proposes none. It stores the
+instrument's name, never a copy of its configuration.
 
 **Simulated series** (the coordinator's decision on item 10). A simulated option's `[[collect]]`
 entry carries `simulated = true` (written by the plugin through `project.config_edit`), and the
