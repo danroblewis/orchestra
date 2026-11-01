@@ -1563,11 +1563,20 @@ intended model's closed list of page controls (§4.6, AGENTS.md rule 9). Navigat
   minutes; the cadence is the gap observed between its bursts of events, so a job that runs
   rarely is active between its runs; never by a write to a series, whatever its labels, and never
   by anything stamped in the future), the event map (by default machines only: an
-  arrow where one publishes an event type the other listens for, one line with two arrowheads where
+  arrow where one machine handed something on to the other, one line with two arrowheads where
   two talk both ways, thicker with more traffic, the event types on hover; or with the event types
-  as boxes; event families, the name up to its first dot, can be hidden; dotted, the hand-offs
-  inferred from the envelope: one machine acted on a subject after another did, which connects
-  machines that announce nothing, such as a system brought in from outside; and **counted
+  as boxes; event families, the name up to its first dot, can be hidden. A hand-off is inferred
+  from the envelope alone: one machine acted on a subject right after another's event about it,
+  credited to an event type the receiver announced it listens for when there is one. What a
+  machine announces it listens for is a declaration, not a hand-off: an event type → machine line
+  is solid only when a hand-off through that type to that machine was observed on some subject in
+  the era (the API's `handoffs`, by `via` and `to`), and a machine → machine arrow only when one
+  from that publisher was; a listener that announced the type and received nothing through it
+  keeps a faint dashed **declared listener** line, so the announcement stays visible without
+  reading as traffic (two machines that publish and listen for the same type are not thereby
+  talking: the workflows plugin's `offer.*` events, worker → merge gate). Dotted, a hand-off through
+  a type the receiver never announced, which connects machines that announce nothing, such as a
+  system brought in from outside (`static/machine-graph.js`); and **counted
 traffic** (§2, §4.4): each channel a box with what waits in it, each producer → channel and channel
 → consumer a double line labelled with its rate per minute, a count no machine is attributed to
 coming from or going to a grey "unattributed" stub), its feedback loops, and the flows of the
@@ -1639,7 +1648,8 @@ not every cycle: a graph's feedback structures (its strongly connected parts) ar
 each an independent loop set (the shortest cycle through each link, kept only when it adds a link,
 after Oliva 2004), with cycles through the same nodes merged as routes of one loop; all other
 cycles are combinations of these. On the event map two machines that talk both ways are an
-exchange, listed apart, and a loop has at least three machines ("communication cycles"). On the
+exchange, listed apart, and a loop has at least three machines ("communication cycles", made of
+observed hand-offs only: a declared listener closes no cycle). On the
 Dynamics page each loop is balancing or reinforcing and either "items circulate" (every link
 material moving along a flow) or "information" (a level steering a rate). Clicking one highlights
 it. Pages read only the web server's background caches
