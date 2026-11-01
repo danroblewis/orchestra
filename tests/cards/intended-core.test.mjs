@@ -26,6 +26,10 @@ test("asker says some, none and unknown", () => {
 test("declaredBy names who from the provenance, never how the call came", () => {
   assert.equal(IntendedCore.declaredBy({ state: "declared", provenance: { source: "integrator", author: "integrator", via: "plugin" } }), "declared by integrator");
   assert.equal(IntendedCore.declaredBy({ state: "declared", provenance: { author: "owner", via: "page" } }), "declared by you");
+  // through a plugin or the endpoint, author: owner is the caller's assertion: the page says who made it
+  assert.equal(IntendedCore.declaredBy({ state: "declared", provenance: { author: "owner", source: "worker/1", via: "endpoint", quote: "q" } }),
+    "declared by owner (quoted), per worker/1");
+  assert.equal(IntendedCore.declaredBy({ state: "proposed", provenance: { author: "owner", via: "plugin", quote: "q" } }), "proposed by owner (quoted), per a plugin");
   assert.equal(IntendedCore.declaredBy({ state: "proposed", provenance: { source: "agents", author: "agents" } }), "proposed by agents");
   assert.equal(IntendedCore.declaredBy({ state: "declared" }), "");
 });

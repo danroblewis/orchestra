@@ -89,7 +89,8 @@ const IntendedDrawers = (() => {
     const p = x.provenance || {}, t = I().declTag(x), m = x.measure, near = x.near && stocks.find((s) => I().stockKey(s) === x.near || s.id === x.near);
     const affects = declaredBy(x.id);
     const by = I().who(p), owner = p.author === "owner";
-    const said = owner ? `You declared it ${I().agoText(p.at)}` : `${by[0].toUpperCase() + by.slice(1)} ${x.state === "proposed" ? "proposed" : "declared"} it ${I().agoText(p.at)}`;
+    const relayed = owner && IntendedCore.owner(p) !== "you";        // author: owner asserted by a plugin or an endpoint caller
+    const said = owner ? (relayed ? `Declared for you ${I().agoText(p.at)} by ${p.source || "a plugin"}, quoting you` : `You declared it ${I().agoText(p.at)}`) : `${by[0].toUpperCase() + by.slice(1)} ${x.state === "proposed" ? "proposed" : "declared"} it ${I().agoText(p.at)}`;
     const quote = p.quote ? `: <i>"${esc(p.quote)}"</i>` : ".";
     const proposed = x.state === "proposed" ? `<div class="im-status">unconfirmed: ${esc(by)} proposed it, and it is not expected until you confirm it
       <span class="im-acts"><button class="ctl im-primary" onclick="Intended.control('confirm','${esc(x.part)}','${esc(x.id)}','its drawer',()=>IntendedDrawers.openExpected('${esc(x.id)}'))">confirm</button>

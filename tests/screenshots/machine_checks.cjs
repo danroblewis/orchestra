@@ -79,7 +79,7 @@ const CHECKS = {
   },
   E3: (id, mode) => {
     const f = [], side = document.getElementById("im-side"), t = side.textContent;
-    for (const s of ["Nightly metrics", "added by you", "Declared as engaged"]) if (!t.includes(s)) f.push(`panel lacks "${s}"`);
+    for (const s of ["Nightly metrics", "added by owner (quoted), per supervisor", "Declared as engaged"]) if (!t.includes(s)) f.push(`panel lacks "${s}"`);
     if ((side.querySelector(".im-seg button.on") || {}).textContent !== "Programmatic") f.push("kind is not Programmatic");
     const on = [...side.querySelectorAll(".im-ind span.on")].map((e) => e.textContent), label = (s) => [...side.querySelectorAll(".im-tabbody .im-fl")].some((e) => e.textContent === s);
     const want = { adhoc: ["orchestra", "ad hoc"], continuous: ["orchestra", "continuous"], external: ["external", "continuous"] }[mode];
@@ -93,7 +93,7 @@ const CHECKS = {
   },
   E4: () => {
     const f = [], side = document.getElementById("im-side"), t = side.textContent;
-    for (const s of ["SAIL", "declared · never heard", "declared by you", "none heard on the bus", "Measured by", "company_prom", "runner-3", "Flows (hypotheses)", "not readable"])
+    for (const s of ["SAIL", "declared · never heard", "declared by owner (quoted), per supervisor", "none heard on the bus", "Measured by", "company_prom", "runner-3", "Flows (hypotheses)", "not readable"])
       if (!t.includes(s)) f.push(`panel lacks "${s}"`);
     if (side.querySelectorAll("table.im-meas tr").length !== 4) f.push("the measured table has not three rows");
     const node = document.querySelector('g.ng-node[data-id="m:sail"]');

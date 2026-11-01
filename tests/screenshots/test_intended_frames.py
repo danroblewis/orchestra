@@ -38,7 +38,7 @@ def test_every_frame_renders_without_errors(frames):
 
 def test_d1_the_ghost_and_how_to_measure_it(frames):
     d = frames["D1"]
-    assert d["ghost"]["tags"][0].startswith("expected · declared by you")
+    assert d["ghost"]["tags"][0].startswith("expected · declared by owner (quoted), per supervisor")
     assert "im-ghost" in d["ghost"]["cls"]
     assert d["switch"] is None                         # one version: nothing to compare with
     dr = d["drawer"]
@@ -67,7 +67,7 @@ def test_d2_changes_since_the_previous_version(frames):
     assert d["acc"]["ring"] and d["acc"]["tags"] == ["new in v2"]
     assert d["newEdge"] and d["removedEdge"] and "gone in v2" in d["removedLabel"]
     # Features was never in a version: its tag says who declared it, never "not in v2" (mockups/README.md)
-    assert d["ghost"]["tags"][0].startswith("expected · declared by you")
+    assert d["ghost"]["tags"][0].startswith("expected · declared by owner (quoted), per supervisor")
     assert d["legend"][2:] == ["new in this version", "removed since last version"]
     assert any(t.startswith("may be: acceptance tests passing") for t in d["ghost"]["tags"])
     rows = d["changes"]["rows"]
@@ -88,7 +88,7 @@ def test_d3_the_expected_switch_and_the_pin(frames):
     c = frames["D3-closed"]
     assert c["acc"]["pin"] and not c["acc"]["ring"]
     rows = [r.lstrip("⌖") for r in c["expectedGroup"]]
-    assert rows[0].startswith("Features declared by you") and rows[1] == "acceptance tests passing"
+    assert rows[0].startswith("Features declared by owner (quoted), per supervisor") and rows[1] == "acceptance tests passing"
     assert c["nstocks"] == "8 found · 2 expected"
 
 

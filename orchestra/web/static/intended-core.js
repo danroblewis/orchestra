@@ -30,10 +30,10 @@ const IntendedCore = (() => {
   }
   // the owner, as the provenance says: "you" for the owner's own click on a page; through a plugin
   // or the endpoint, author: owner is the caller's assertion backed by its quote, so the page says
-  // who made it: "the owner (quoted), per worker/1"
+  // who made it: "owner (quoted), per worker/1"
   function owner(p) {
     if (!p || p.via === "page" || !p.via) return "you";
-    return `the owner (quoted), per ${p.source || (p.via === "endpoint" ? "a caller of the endpoint" : "a plugin")}`;
+    return `owner (quoted), per ${p.source || (p.via === "endpoint" ? "a caller of the endpoint" : "a plugin")}`;
   }
   // who put an element in the declared layer, from its provenance: "declared by you", "proposed by
   // integrator"; the source as the call named it
