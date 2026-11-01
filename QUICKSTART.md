@@ -14,6 +14,7 @@ from then on the Supervisor writes every setting from what you tell it in the ch
 You need:
 
 - macOS or Linux, `git`, and [uv](https://docs.astral.sh/uv/);
+- [Claude Code](https://docs.claude.com/en/docs/claude-code), installed and logged in (`claude --version`): the agents run on it;
 - a git repository with tests.
 
 ## 1. Install
@@ -88,12 +89,13 @@ The Supervisor writes the workflow (`declare_workflow`) to
 needing a `worktree`, then a `review` step for the role `reviewer` (`approved` ends it, `rejected`
 goes back to `write`, `rounds` 3). The built-in worker and reviewer agents take those roles, and
 the worktrees are built in (each made from `origin/main`, fetched: your repository needs an
-`origin` with a `main` branch; nothing is pushed to it). The **Workflows** page draws it; **Items** shows each piece of work.
+`origin` with a `main` branch; nothing is pushed to it). The **Machines** page shows the roles
+and who hands work to whom; **Items** shows each piece of work and its step.
 
 **Starting a piece of work.** Type: *"Start the task loop on adding a /version endpoint that
 returns the app version, with a test."* The Supervisor asks which workflow if more than one fits,
 then starts the item and answers with its id (for example `task_loop-3fa2c1`) and its link on
-**Items** (`/items/<id>`); ask it where the item is at any time. If `orchestra run` is not
+**Items** (`/items#item=<id>`); ask it where the item is at any time. If `orchestra run` is not
 running, it says so and starts nothing. The approved change is a commit on the item's branch in
 its worktree; you merge it.
 
@@ -114,12 +116,10 @@ its worktree; you merge it.
 | Page | What it shows |
 |---|---|
 | Agents | The Supervisor's chat, every agent, and what each one is doing |
-| Workflows | Each workflow, drawn: its steps, who does each, and where a result goes |
 | Items | Each piece of work: its step, who holds it, and why it waits |
 | Machines | Who does the work (agents, programs, people), and who hands work to whom |
 | Instruments | Each measurement: when it last ran, and what it wrote |
 | Dynamics | The model: stocks, flows, and how well they fit, and what you expect beside it ([the intended model](USING_ORCHESTRA.md#what-you-expect-the-intended-model)). The first model appears once something measured moves. |
-| Experiments | Edits to the model's equations, run forward and compared with what was measured |
 | Core | The bus, the metrics store, and the processes. Up even when everything else is broken. |
 
 ## Hook in your project
@@ -138,6 +138,7 @@ Inside these commands, `python` is Orchestra's own Python. For your project's Py
 
 ## Safety
 
+- Agents run as you, with your Claude Code login.
 - Agents work in local worktrees, on local branches. Nothing is pushed unless a program you add pushes.
 - The web UI listens on localhost only, and needs the login token.
 - Orchestra runs no AI. The pages change nothing but observations: rediscovering the model, and
