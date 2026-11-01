@@ -2260,16 +2260,28 @@ through the HTTP API (section 5.9) and on the pages.
 
 ### Events Orchestra publishes
 
-All from `source = "orchestra-host"`. Nothing is published for an instrument.
+Every event type Orchestra itself publishes, with its `source`. Nothing is published for an
+instrument. Each row links to the section that gives its `data` in full.
 
-| Type | `data` |
-|---|---|
-| `orchestra.host.started`, `orchestra.host.stopped` | `pid` |
-| `orchestra.machine.started` (the host's own) | `mode = "continuous"`, `listens_for = []` |
-| `orchestra.process.started` | `name`, `pid`, `command`, `owner` |
-| `orchestra.process.exited` | `name`, `pid`, `code`, `restart_in` (seconds, or null) |
-| `orchestra.process.gave_up` | `name`, `code`, `failures` |
-| `orchestra.core.bus_probe` | `note`: the web server's Core page probe, appended and read back by offset |
+| Type | `source` | `data` | Details |
+|---|---|---|---|
+| `orchestra.host.started`, `orchestra.host.stopped` | `orchestra-host` | `pid` | [§1](#start-a-project) |
+| `orchestra.machine.started` (the host's own) | `orchestra-host` | `mode = "continuous"`, `listens_for = []` | [§5.4](#54-announcing-a-machine-orchestramachinestarted) |
+| `orchestra.process.started` | `orchestra-host` | `name`, `pid`, `command`, `owner` | [§5.5](#55-processes-the-launcher-runs-machines) |
+| `orchestra.process.exited` | `orchestra-host` | `name`, `pid`, `code`, `restart_in` (seconds, or null) | [§5.5](#55-processes-the-launcher-runs-machines) |
+| `orchestra.process.gave_up` | `orchestra-host` | `name`, `code`, `failures` | [§5.5](#55-processes-the-launcher-runs-machines) |
+| `orchestra.machine.quiet` | `orchestra-host` (the launching host only) | `machine`, `instance`, `last_seen`, `usual_gap`, `quiet_for`, `mode`; `subject` the machine | [§5.7](#57-marking-a-change-to-the-system-systemchanged) |
+| `orchestra.era.started` | `orchestra-host` | `era`, `start`, `label`, `cause`; `subject` the era | [§5.7](#57-marking-a-change-to-the-system-systemchanged) |
+| `orchestra.model.changed` | `orchestra-host` | `added`, `removed`, `era`, `held`, `first_seen` | [§5.7](#57-marking-a-change-to-the-system-systemchanged) |
+| `orchestra.model.diverged`, `orchestra.model.returned` | `orchestra-host` | `stocks`, `diverged`, `era`, `era_start` (`returned`: with `diverged_since`) | [§5.7](#57-marking-a-change-to-the-system-systemchanged) |
+| `orchestra.model.stalled`, `orchestra.model.resumed` | `orchestra-host` | `kind`, `id`, `name`, `since`, … (`resumed`: with `stalled_since`); `subject` `stock:<id>` or `flow:<id>` | [§5.7](#57-marking-a-change-to-the-system-systemchanged) |
+| `orchestra.prediction.judged` | `orchestra-host` | the verdict; `subject` and `causationid` the prediction's event id, `correlationid` the change's id | [§5.8](#58-saying-what-a-change-will-do-predictions) |
+| `orchestra.intent.changed` | `orchestra-host` | `version`, `via`, `ops` (that element's changes); `subject` `<part>:<id>`, one event per element a call to the intended model touched. Delivery is at least once per element: a publish that fails partway repeats the elements already sent, so de-duplicate by `version` and change ids (SPEC §4.6). | [§6](#what-you-expect-the-intended-model) |
+| `orchestra.intent.requested` | `owner` (the web server, for a page's request) | `control`, `part`, `id`, `change`, `from`; `subject` `<part>:<id>` | [§6](#what-you-expect-the-intended-model) |
+| `orchestra.core.bus_probe` | `orchestra-host` (the web server's Core page probe) | `note`: appended and read back by offset | the Core page's test write (`web/core.py`) |
+
+Machines publish `orchestra.machine.started` (their own) and `orchestra.prediction.made`; they
+are Orchestra's types, but not Orchestra's events.
 
 ### Series Orchestra writes
 
