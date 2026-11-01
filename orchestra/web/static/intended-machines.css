@@ -1,0 +1,101 @@
+/* The declared layer on the Machines page (intended-machines.js): the marks of mockups/README.md
+   ("unconfirmed" dashed violet, "declared · never heard" an outline, green for what a change added,
+   struck through for what it removed, gold for "changed just now"), the details panel beside the
+   map, and the highlight rule's two shades. In the pages' tokens. */
+:root { --im-user:#c4b5fd; --im-add:#86efac; --im-gone:#fca5a5 }
+
+/* the map and the panel side by side; the panel only while open */
+.im-row { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; align-items:start }
+.im-row.open { grid-template-columns:minmax(0,1fr) 380px }
+.im-row > #evmap-host { min-width:0 }
+.im-side { display:none; margin:0; font-size:12.5px; min-width:0; overflow:auto; max-height:calc(100vh - 24px); position:sticky; top:12px; border-color:#5b21b6; border-style:dashed }
+.im-row.open .im-side { display:block }
+.im-side.im-side-declared { border-color:var(--border2); border-style:solid }
+.im-side.im-side-observed { border-color:var(--border2); border-style:solid }
+@media (max-width:1000px) { .im-row.open { grid-template-columns:minmax(0,1fr) } .im-side { position:static; max-height:none } }
+
+/* tags, in the panel, on the cards and on the map (netgraph's ``tags``) */
+.im-tag { display:inline-block; font-size:9.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; border:1px solid var(--border2); border-radius:4px; padding:0 5px; line-height:15px; vertical-align:1px; white-space:nowrap; margin-left:4px }
+.im-t-unconf { color:#ddd6fe; border-color:#5b21b6; border-style:dashed; background:#1b1430 }
+.im-t-ghost { color:var(--text2); border-style:dashed }
+.im-t-decl { color:#fde68a; border-color:#92400e }
+.im-t-obs { color:var(--text2) }
+.im-t-add { color:var(--im-add); border-color:#166534; background:#0f2a1a }
+.im-t-gone { color:var(--im-gone); border-color:#7f1d1d }
+.im-t-chg { color:#fcd34d; border-color:#92400e; background:#2a2208 }
+.ng-tag rect { fill:var(--panel2); stroke:var(--border2); stroke-width:1 }
+.ng-tag text { font-size:8.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; fill:var(--text2) }
+.ng-tag.im-t-unconf rect { fill:#1b1430; stroke:#7c3aed; stroke-dasharray:3 2 } .ng-tag.im-t-unconf text { fill:#ddd6fe }
+.ng-tag.im-t-ghost rect { stroke-dasharray:3 2 }
+.ng-tag.im-t-add rect { fill:#0f2a1a; stroke:#166534 } .ng-tag.im-t-add text { fill:var(--im-add) }
+.ng-tag.im-t-gone rect { fill:#2a0f0f; stroke:#7f1d1d } .ng-tag.im-t-gone text { fill:var(--im-gone) }
+.ng-tag.im-t-chg rect { fill:#2a2208; stroke:#92400e } .ng-tag.im-t-chg text { fill:#fcd34d }
+
+/* the map's marks */
+.ng-node.im-proposed > circle:not(.ng-halo) { stroke:var(--im-user) !important; stroke-width:2.2 !important; stroke-dasharray:5 3; fill-opacity:.55 }
+.ng-node.im-proposed .ng-sub { fill:var(--im-user) }
+.ng-node.im-unheard > circle:not(.ng-halo) { fill:transparent !important; stroke:var(--text2) !important; stroke-width:1.6 !important; stroke-dasharray:4 3 }
+.ng-node.im-unheard .ng-initial { fill:var(--text2) }
+.ng-node.im-decl-event .ng-box { stroke-dasharray:5 3 }
+.ng-node.im-ring-add .ng-box { stroke:#22c55e; stroke-width:2.2; filter:drop-shadow(0 0 5px #22c55eaa) }
+.ng-edge.im-add-edge .ng-line { opacity:1; filter:drop-shadow(0 0 4px #22c55e) }
+.ng-edge.im-gone-edge .ng-line { opacity:.5 }
+.ng-edge.im-decl-edge .ng-line { opacity:.8 }
+/* the highlight rule: full, .7, .45, then ng-dim (.1) */
+.ng-shade1 { opacity:.7; transition:opacity .15s } .ng-shade2 { opacity:.45; transition:opacity .15s }
+.ng-node.ng-focus .ng-name { font-size:12.5px }
+
+/* the cards */
+.cards .panel.im-card { opacity:1; border:1px dashed #5b21b6; background:linear-gradient(#1b143055, transparent 60%), var(--panel2) }
+.cards .panel.im-card-declared { opacity:1; border:1px dashed var(--border2) }
+.cards .panel.im-open { box-shadow:0 0 0 2px var(--accent) }
+.cards h3 { flex-wrap:wrap } .im-by { font-size:11.5px; font-weight:400 }
+.ty.im-chip-add { border-color:#166534; color:var(--im-add) } .ty.im-chip-gone { text-decoration:line-through; color:var(--muted); border-style:dashed }
+.ty.im-meas-chip { border-color:#0e7490; color:#67e8f9 }
+
+/* the panel */
+.im-side h4 { margin:14px 0 6px; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); display:flex; gap:6px; align-items:center; flex-wrap:wrap }
+.im-h4note { text-transform:none; letter-spacing:0; font-weight:400 }
+.im-head { display:flex; align-items:center; gap:6px; font-size:14px; flex-wrap:wrap } .im-close { margin-left:auto !important }
+.im-dashdot { width:12px; height:12px; background:none !important; border:2px dashed var(--rc) }
+.im-id { font-size:11.5px; margin:2px 0 0 18px }
+.im-status { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:8px 0 4px; padding:6px 8px; border-radius:8px; background:#1b1430; border:1px dashed #5b21b6; color:#ddd6fe; font-size:12px }
+.im-status-declared { background:var(--panel); border:1px solid var(--border2); color:var(--text) }
+.im-pending { background:#2a2208; border-color:#92400e; color:#fde68a }
+.im-acts { display:flex; gap:4px; flex:none } .im-acts .ctl { margin:0 }
+.im-waiting { font-size:11px; color:var(--im-user); white-space:nowrap }
+button.ctl.im-primary { color:var(--text); border-color:var(--accent); background:#13233f }
+.im-why { font-size:11.5px; margin:4px 0 8px }
+.im-f { display:grid; grid-template-columns:84px 1fr; gap:8px; margin:6px 0; align-items:baseline }
+.im-fl { color:var(--muted); font-size:12px } .im-fv { min-width:0; overflow-wrap:anywhere } .im-fv .ty { margin:0 4px 3px 0; display:inline-block }
+.im-ro { color:var(--text); font-size:12.5px; padding:1px 0 1px 8px; border-left:2px solid var(--border2) }
+.im-ro.mono { font-family:var(--mono); font-size:11.5px } .im-ro.inline { display:inline-block; padding:0 6px; margin:0 3px; border:1px dotted var(--border2); border-radius:4px }
+.im-ind { display:inline-flex; gap:2px; cursor:default; flex-wrap:wrap } .im-ind > span { font-size:11.5px; color:var(--muted); padding:1px 8px; border:1px dotted transparent; border-radius:10px }
+.im-ind > span.on { color:var(--text); border:1px solid var(--border2); background:var(--panel3); font-weight:600 } .im-ind > span.on::before { content:"● "; color:var(--accent); font-size:8px; vertical-align:2px }
+.im-ind.tabs > span.on { border-color:var(--accent) }
+.im-seg { display:inline-flex } .im-seg button { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); font:inherit; font-size:12.5px; font-weight:600; padding:3px 14px; cursor:pointer; margin-left:-1px }
+.im-seg button:first-child { border-radius:6px 0 0 6px; margin-left:0 } .im-seg button:last-child { border-radius:0 6px 6px 0 }
+.im-seg button.on { color:var(--text); background:var(--panel2); border-color:var(--accent); position:relative; z-index:1; cursor:default }
+.im-ask { display:inline-block; font-size:10.5px; color:var(--im-user); border:1px dashed #5b21b6; border-radius:4px; padding:0 6px; margin-top:3px; cursor:default }
+.im-ask::before { content:"✎ " }
+.im-note { font-size:11px; margin-top:2px } .im-was { font-size:11px; margin-top:3px }
+.im-list { margin:0; padding-left:20px; color:var(--text) } .im-list li { margin:3px 0; line-height:1.45 }
+.im-chips { display:flex; flex-wrap:wrap; gap:4px 5px; align-items:center } .im-chips .muted { font-size:11.5px; margin-right:4px } .im-chips .im-tag { margin-left:0 }
+a.ty.im-metric { font-family:inherit; border-color:#0e7490; color:#67e8f9; text-decoration:none }
+.im-preds { display:flex; flex-direction:column; gap:4px }
+.im-pred { display:flex; align-items:baseline; gap:6px; padding:4px 8px; border:1px solid var(--border); border-left:3px solid var(--border2); border-radius:6px; background:var(--panel); color:var(--text); text-decoration:none; font-size:12px }
+.im-pred:hover { border-color:var(--accent) } .im-pred.up { border-left-color:#166534 } .im-pred.down { border-left-color:#7f1d1d } .im-pred.im-wait { border-style:dashed }
+.im-pred .muted { margin-left:auto; font-size:11px; color:var(--accent) }
+.im-tabnote { font-size:11.5px; margin:2px 0 6px }
+.im-tabbody { border:1px solid var(--border); border-radius:8px; padding:8px 10px; background:var(--panel); margin:2px 0 6px }
+table.dt.im-args, table.dt.im-meas { width:100%; border-collapse:collapse; font-size:11.5px; table-layout:fixed }
+table.dt.im-args td, table.dt.im-meas td, table.dt.im-meas th { padding:2px 4px; border-bottom:1px solid var(--border); text-align:left; overflow-wrap:anywhere }
+table.dt.im-args td.num { font-family:var(--mono); color:var(--text); width:48% } table.dt.im-meas th { color:var(--muted); font-size:10.5px; font-weight:600 }
+.im-scroll { overflow-x:auto } table.dt.im-meas { table-layout:auto } table.dt.im-meas td, table.dt.im-meas th { white-space:nowrap; overflow-wrap:normal }
+pre.im-eg { margin:4px 0 0; font-size:10.5px; padding:5px 7px }
+.im-attach { border:1px solid var(--border); border-radius:8px; padding:8px 10px; background:var(--panel); margin:4px 0 }
+.im-attach-head { margin-bottom:4px }
+.im-live { display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e; box-shadow:0 0 6px #22c55e } .im-live.off { background:var(--muted); box-shadow:none }
+.im-foot { font-size:11px; margin-top:12px; border-top:1px solid var(--border); padding-top:8px }
+.im-side code { font-family:var(--mono); font-size:11.5px; background:var(--panel3); border:1px solid var(--border); border-radius:4px; padding:0 4px }
+.im-obs .row > .muted:first-child { width:84px; flex:none }
