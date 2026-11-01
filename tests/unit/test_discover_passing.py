@@ -82,6 +82,16 @@ def test_an_unmeasured_state_between_a_drain_and_fills_of_two_stocks_is_a_hidden
     assert hidden.series is None and hidden.evidence["hidden"] and "passing" in hidden.evidence
 
 
+def test_an_unmeasured_state_keeps_the_level_its_counters_imply_as_its_key(tmp_path):
+    from orchestra.sd.intended.keys import stock_key
+    from orchestra.sd.model import Model
+
+    m = chain(FileMetrics(tmp_path / "m.jsonl"), write_x=False, split=True)
+    hidden = Model.from_json(m.to_json()).stock("after_moved_total")
+    assert hidden.evidence["level"] == {"name": "after_moved_total", "labels": {"project": "p", "machine": "m"}}
+    assert stock_key(hidden) == "after_moved_total"                  # the level's key, never stock:<id>
+
+
 def test_a_drain_and_a_fill_of_one_stock_are_no_passage():
     # a taker called away and free again within a step: the free takers' own balance says it all
     cum = lambda xs: [0.0, *accumulate(xs)]

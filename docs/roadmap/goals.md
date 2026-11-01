@@ -102,6 +102,152 @@ marked as such. This is goal G1, and every other goal's tests depend on it.
   agents' tools (pi or MCP) and a skill explaining them, in `~/orchestra-agents`; phase 3, the
   web pages that show experiments and their runs.
 
+**The Workflows run (2026-11-01): G17–G22.** Written by the coordinator's run from the four reviewed proposals and the task table of
+[GOAL-2026-11-01-workflows.md](GOAL-2026-11-01-workflows.md) (milestones M2–M5), following D21;
+for the owner to confirm. Each acceptance list names the proposal's test numbers, which hold the
+exact wording. The run's defaults behind them are D22–D40 in [decisions.md](decisions.md).
+
+### G17. The intended model in the core, and the two pages (M2: C1–C3, C5)
+- **Why:** the owner: "Right now, both of those show only what truly exists. It doesn't have the
+  concept of a tentative or proposed change. There are two types of tentative changes - user
+  created and AI inferred. The user created one has precedence, but it's not real until the user
+  confirms it."
+- **What** (`docs/proposals/intended-model.md`):
+  - **C1, the store and API:** the declared layer in the model store as `dN` versions beside the
+    discovered `vN` (`ModelStore.intended()`, `project.intended`): declared stocks, effects,
+    flows, targets, expected marks, machines (the envelope only; `spec` stored unread) and event
+    types; proposed, declared and observed states; parts matched by key; the expected set;
+    "changes since vN"; provenance on every element and an id on every change; `apply`, `read`,
+    `diff`, `design`; the page's observations and requests; `orchestra.intent.changed` and
+    `orchestra.intent.requested`; simulated parts marked in `vN`. It runs nothing.
+  - **C2, the Dynamics page:** D1 (the ghost stock, the Expected group, "How to measure it" from
+    what the plugin recorded), D2 (the changes-since switch, new and removed marks, the Changes
+    panel, the legend), D3 (the expected switch, the pin).
+  - **C3, the Machines page:** E1 (the unconfirmed machine, the highlight and its two shades, the
+    details panel with the Universal and Programmatic forms), E2 (the live diff marks), E3 (ad hoc,
+    continuous, external; the kind row apart from the engagement tabs).
+  - **C5:** the existing cases still hold, and SPEC and AGENTS.md carry the amended rules 2, 4,
+    5, 6, 7 and 9 and rule 3's list (intended-model.md §8), each stated in the commit.
+- **Acceptance:**
+  - intended-model.md §10 tests 1–31: one journal line and one `dN` per call, all ops or none
+    (422 with the index); past versions unchanged and numbered without gaps; provenance kept; the
+    envelope checked and `spec` stored as sent; a declared stock with no series is an absent,
+    unmeasured expectation and changes no discovered stock; discovery's body identical with and
+    without a declared layer; new, removed, settled, came-and-went and ignored by key, including a
+    renamed collector and an era's prior; candidates never matched automatically, `link` alone
+    sets `found_as`; the control endpoint accepts exactly the observations and the request
+    endpoint publishes one request and writes no `dN`; simulated parts marked, skipped by
+    verdicts and targets, gone after expiry; each call announced once; derived fields refused;
+    `rises`/`falls` judged by slope; flow and stock targets on their means; the E1 highlight
+    opacities; the Core page answers with `intended/` broken (rule 8);
+  - test 32: the real pages, fed C1's answers for the fixtures in `mockups/fixtures/`, render
+    each frame of intended-model.md §7, compared with `mockups/out/D*.png` and `E*.png` (with
+    §7's corrections), and pass `ux-review` on the demo;
+  - C5: `model-acceptance` on UC-1–UC-3 scores no lower than before; `subtraction-audit` on the
+    core.
+
+### G18. Instruments attached to declared machines (M2: C4)
+- **Why:** the owner: "Because the Machines aren't likely to emit their actual metrics, and
+  because we would want to incorporate and model existing machines, we need to attach our
+  measurement instruments to Machines."
+- **What** (`docs/proposals/instruments-on-machines.md`): an attachment (a declared machine, an
+  instrument, an optional match and instance label) recorded in the declared layer; measured
+  instances per attachment within a cadence window; the metrics store's new `recent()` (a backend
+  contract change); "Measured by" in the machine's panel and "hung on" on the Instruments page.
+  Being measured never makes a machine seen or active, never binds a flow, and changes no point
+  or model (rules 2 and 7 amended in wording).
+- **Acceptance:** instruments-on-machines.md §6:
+  - unit, tests 1–14: an attachment recorded in a new `dN` with the store and `orchestra.toml`
+    unchanged; refusals with reasons; discovery equal with and without attachments, and
+    `sd.attribute` importing nothing of the intended model; `recent()` conformance on every
+    backend; measured, never heard, never active; instances, the window, the cap, two spellings of
+    one replica, one scrape on two machines, aliases; the store down answered in time; no page
+    control writes an attachment;
+  - end to end, tests 15–17, on the agents' demo with a declared external `postgres` and a
+    `[[collect]]` of `pg_connections{server}`: measured with two instances, then three; hung on
+    `postgres` on the Instruments page; no flow hypothesis names it after discovery.
+
+### G19. The Supervisor declares, measures and drafts (M3: A1–A3)
+- **Why:** the owner: "These configurations are complicated and annoying. I don't want to do
+  them. I want the Supervisor to set up my environment."
+- **What** (`docs/proposals/machine-design.md`, in `~/orchestra-agents`): the Supervisor's `design`
+  tools (`declare_stock`, `declare_effect`, `set_target`, `propose_measurements`,
+  `add_instrument`, `keep_instrument`, `match`, `mark_expected`/`ignore`, `rediscover`,
+  `declare_machine`, `refine_machine`, `declare_event`, `declare_expected_effect`,
+  `confirm`/`discard`, and `read_design`); writes to the state directory and the overlay, never
+  the base branch; the draft namespace; the clearance check for company systems; answering the
+  owner's page requests; the refinement passes (`refine_map`); prompts and the guide (A2): never
+  ask the owner to edit a file; the owner's scenario live (A3).
+- **Acceptance:** machine-design.md §7, with the fake Claude unless marked:
+  - tests 1–17: each tool refuses a missing reason, an invented quote and any caller but the
+    Supervisor; against a real empty Orchestra, one turn leaves the script at the state path, its
+    entry in the overlay, a stored point in the draft namespace and no commit on the base branch;
+    choosing an option changes nothing else; refusals before anything is written; the simulated
+    and draft lifecycles; `needs approval` and no credential anywhere; `match` with origin
+    `declared`; every field of each kind recorded, no AI terms in a Universal declaration;
+    six-edit refinements all or none; the expected effect published only at confirm, as
+    `supervisor`, tied to the `system.changed` of the agent's first turn; a page request confirmed
+    by the Supervisor with nothing committed; one refinement proposal with three findings; no
+    prompt or reply asks the owner to edit configuration;
+  - test 18: the six turns of machine-design.md §2.6 with the fake Claude on the agents' demo
+    with `--dummy`, after which P2's API answers the D1, D2, D3 and E2 shapes; again with
+    `[agents] tools_via = "bash"`;
+  - test 19, **live, marked** (A3): turns 1, 3, 4 and 5 to a Supervisor on Haiku (Sonnet on
+    failure) with the narrowed tool set; Features declared with at least one point, the
+    improver's receives and its 00:00 schedule as the owner said, its expected effect present;
+    transcripts saved, D1 and E2 screenshots kept, under $10.
+
+### G20. AI workers cannot push or merge (M3: A5)
+- **Why:** AI workers run with the user's credentials, and only the prompt said "do not push"
+  (notes §12); at work the base branch is protected.
+- **What:** the harness gives worker and reviewer sessions a git environment in which `git push`
+  to any remote fails and `gh pr merge` and `gh pr create` are disallowed: a configuration-level
+  block, not only the prompt; configurable off per project for machines that are allowed to; the
+  Supervisor's guide says so.
+- **Acceptance:** an end-to-end test where a worker session runs `git push` and `gh pr merge`,
+  sees both refused, and the refusals are in its transcript.
+
+### G21. The Workflows plugin: the record, piles, the floor, definitions, the task loop (M4: W1–W7)
+- **Why:** D21: the task system was a prototype, replaced by "a Workflows system" that handles any
+  company's workflows; "the ability to actually launch and setup Machine instances" is what must
+  remain.
+- **What** (`docs/proposals/workflows.md`, the new private repository `~/orchestra-workflows`):
+  - **W1** the repository and its rules (no `task.*` names, the import boundary), the machine
+    contract; **W2** the record: per-item logs of facts, recorded exactly once by event id, folds
+    order-independent per field, snapshots and the index, closing and deleting, the bus's gaps;
+    **W3** piles: step piles and their moves by construction, declared piles, wait reasons, the
+    `workflows.piles` instrument; **W4** the floor without workflows: requests and `every` items,
+    offers, claims, leases, capacity with preparations, take-backs, attention, resources with the
+    worktree kind, the program host, the reference machines; **W5** definitions: the loader, the
+    vocabulary as §7 scopes it, the position view, `all` fan-in, dependencies, metric conditions,
+    access; **W6** the task loop as example 1 with its one-command demo; **W7** the Items, Piles and
+    Workflows pages (read-only) and the Supervisor's `declare_workflow`.
+  - **Asked of the core** (not in this run's table): file-bus rotation with `EventBus.start()`;
+    provenance from plugin collectors; `pile` as a place of construction. The plugin works without
+    them.
+- **Acceptance:** workflows.md §12.2 tests 1–23:
+  - W1 (1): the suite exits 0, `GET /api/plugins` lists `workflows`, the import boundary is tested;
+  - W2 (2–6): exactly the non-excluded facts of the measured run's fixture recorded; 200
+    permutations fold equal; a crash at every point of a tick gives the uninterrupted logs; a gap
+    reported, nothing invented; closing and deleting; the measured budgets (a year under 10 MB,
+    the index rewrite under 100 ms, the 9,118-event run under 5 s, a 2,000-fact fold under 50 ms);
+  - W3 (7–9): each pile gauge equals the index and its change equals moves in minus out; discovery
+    records step piles `by_construction` (until then, exactly balanced levels) and no stock from
+    declared piles or ages; each wait reason from a scripted case;
+  - W4 (10–16): one claim wins; take-backs within lease plus a tick; capacity never exceeded
+    across 100 items; the worktree held across a pass-on and freed on a take-back; no half-claimed
+    unit after a crash; role-only and `every` items; offers as `coordinator/dispatch`, no source of
+    the plugin's own; a machine written only from `docs/machine-contract.md` completes ten offers;
+  - W5 (17–21): the loader's refusals, one sentence each; a two-step workflow with rework to the
+    same instance; `all` fan-in, a dependency, a cycle raising attention; metric conditions with
+    the duration, the gap and the recorder fact; access, and the drift test;
+  - W6 (22): ten items through the task loop on the reference machines with one rejection and one
+    gate conflict; the three checks of use-cases.md (UC-7 onward) pass; the Machines page shows
+    worker, reviewer, merge_gate and coordinator with the hand-offs worker → reviewer →
+    merge_gate;
+  - W7 (23): every `POST`, `PUT` and `DELETE` under `/api/plugins/workflows` answers 405;
+    `ux-review` on the demo.
+
 ## Next
 
 ### G6. Pull requests tracked to resolution, and external review
@@ -133,6 +279,24 @@ marked as such. This is goal G1, and every other goal's tests depend on it.
   - a ticket that depends on another branches from it;
   - when the first changes, the second is restacked;
   - both pull requests show the right base.
+
+### G22. The example workflows (M5: X1–X7; use cases UC-7–UC-13)
+- **Why:** the owner: "We want some examples of how people would actually use this, and we want
+  them tested." The examples are the Workflows plugin's suite and its documentation at once.
+- **What:** one tiny target repository per example under `~/orchestra-workflows/examples/`, each
+  with its own `.orchestra/`, scripted machines on the dummy harness and fake bridges, in this
+  order: X1 the owner's delivery through the company gate (UC-7), X2 team review (UC-8), X3
+  on-call (UC-9), X4 release-candidate verification (UC-10), X5 hotfixes across release branches
+  (UC-11), X6 staged rollout (UC-12), X7 customer-owned deployments (UC-13). The vocabulary words
+  left for later (`any`, `count ≥ n`, field equalities, person offers; workflows.md §12.1) are
+  built with the example that first needs them.
+- **Needs:** G21 through W6.
+- **Acceptance:** each example's one test passes its three checks (piles over time match the
+  script; `model-acceptance` finds its stocks, flows, loops and domain series and nothing on its
+  forbidden list; the event map shows its declared machines and hand-offs and nothing of the
+  plugin's infrastructure), plus the case's own check in use-cases.md; `layered-review` once on
+  the set. In the run's order of sacrifice M5 goes first: an example not built is reported, not
+  dropped from this list.
 
 ## Horizon (to be planned)
 
@@ -353,13 +517,17 @@ the change did what was intended.
 | Goal | Status |
 |---|---|
 | G1–G5 | In progress from 2026-10-27; G5's phase 1 (experiments in the core) built 2026-10-27, phases 2 (agents' tools and skill) and 3 (web pages) next |
-| G6–G7 | After G1 and G3 |
-| G8–G10 | To be planned |
+| G6–G7 | After G1 and G3. Written for the task system, which D21 replaces with the Workflows plugin (G21); to be restated against the floor once it runs, for the owner to confirm |
+| G8–G10 | To be planned; G8's loop is written as a workflow in UC-7 (G22's X1), on fakes |
 | G11–G12 | Built 2026-10-27 in Orchestra's core: eras with the previous era as the prior, the boundary comparison, the model's own events |
 | G13 | Built 2026-10-27 in Orchestra's core: predictions recorded on the bus, judged per era by lifted-models §3.1, `orchestra.prediction.judged`; equation expectations and committed experiments added the same day; the dummy-agent e2e is still to be written in `orchestra-agents` |
 | G14 | Built 2026-10-27: the test-report instrument in Orchestra, the gate's reruns and test reports in the task system; the dummy-agent e2e is still to be written in `orchestra-agents` |
 | G15 | After G3, G11 and G13 |
 | G16 | Inverse experiments and counterfactual replay built 2026-10-27 (with G5's phase 1); natural experiments and probes to come |
+| G17–G18 | Planned 2026-11-01 (M2 of the Workflows run); proposals 2 and 5 reviewed and merged; C1 dispatched |
+| G19–G20 | Planned 2026-11-01 (M3); proposal 4 (G19) reviewed and merged; A1 and A5 dispatched |
+| G21 | Planned 2026-11-01 (M4); proposal 3 reviewed and merged; W1 running |
+| G22 | Planned 2026-11-01 (M5, after W6); the first milestone given up if the run is short |
 
 Related work already in flight (2026-10-27):
 - agent tool permissions enforced;

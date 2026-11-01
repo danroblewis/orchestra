@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -67,10 +68,50 @@ class MetricsStore(Protocol):
         """Every series whose name starts with ``prefix`` (and matches ``labels``), with all its
         points in time order, in one pass: for catalogues and exploration."""
 
+    def recent(self, prefix: str, matchers=None, since: float = 0.0, keep: int = 1
+               ) -> list[tuple[str, dict[str, str], list[tuple[float, float]]]]:
+        """Every series whose name starts with ``prefix``, whose labels match ``matchers`` (a
+        list of ``(label, "=" | "=~", value)``, or a dict of equalities; ``matches``), and which has a
+        point at or after ``since``: its name, labels and last ``keep`` points at or after
+        ``since``, in time order. Nothing older than ``since`` is read on any backend."""
+
     def delete(self, series_prefix: str, labels: dict[str, str] | None = None) -> None:
         """Remove every series whose name starts with ``series_prefix`` (and matches ``labels``)."""
 
     def close(self) -> None: ...
+
+
+Matcher = tuple[str, str, str]
+
+
+def matchers_of(matchers) -> list[Matcher]:
+    """``(label, op, value)`` triples from a list of them or a dict of equalities; ``op`` is ``=``
+    (equal; a missing label is the empty string, as in Prometheus) or ``=~`` (a regular
+    expression that must match the whole value). Raises ``MetricsError`` on any other op or a bad
+    expression."""
+    if not matchers:
+        return []
+    items = [(k, "=", v) for k, v in matchers.items()] if isinstance(matchers, dict) else list(matchers)
+    out = []
+    for m in items:
+        if not (isinstance(m, tuple | list) and len(m) == 3) or m[1] not in ("=", "=~"):
+            raise MetricsError(f"a matcher is (label, '=' or '=~', value), not {m!r}")
+        if m[1] == "=~":
+            try:
+                re.compile(m[2])
+            except re.error as e:
+                raise MetricsError(f"{m[0]}=~{m[2]!r}: {e}") from None
+        out.append((str(m[0]), m[1], str(m[2])))
+    return out
+
+
+def matches(labels: dict[str, str], matchers: list[Matcher]) -> bool:
+    """Whether ``labels`` satisfy every matcher (``matchers_of``'s triples)."""
+    for k, op, v in matchers:
+        got = labels.get(k, "")
+        if (got != v) if op == "=" else (re.fullmatch(v, got) is None):
+            return False
+    return True
 
 
 FUTURE_SKEW_S = 60.0       # how far past now a point may be stamped (clocks drift) before it is refused

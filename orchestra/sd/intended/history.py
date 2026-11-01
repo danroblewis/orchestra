@@ -31,10 +31,13 @@ def version_keys(models, n: int) -> tuple[set[str], set[str]] | None:
     return _cache[ck]
 
 
-def presence(models, upto: int | None, shown: Keys | None) -> tuple[list[int], list[set[str]], list[set[str]]]:
+def presence(models, upto: int | None, shown: Keys | None,
+             saved: list[int] | None = None) -> tuple[list[int], list[set[str]], list[set[str]]]:
     """The saved versions up to ``upto`` and the shown model (when it is not one of them): their
-    numbers (0 for the live one) and their stock and flow keys, oldest first."""
-    nums = [v["version"] for v in models.versions() if upto is None or v["version"] <= upto]
+    numbers (0 for the live one) and their stock and flow keys, oldest first. ``saved``: the
+    saved versions' numbers, when the caller has read them already."""
+    saved = [v["version"] for v in models.versions()] if saved is None else saved
+    nums = [n for n in saved if upto is None or n <= upto]
     out_n, out_s, out_f = [], [], []
     for n in nums:
         got = version_keys(models, n)
@@ -74,9 +77,10 @@ def status(nums: list[int], sets: list[set[str]], key: str, hold: int) -> dict |
     return {"status": "came_and_went", "since": began, "run": run, "versions": sum(flags), "last": nums[end] or None}
 
 
-def statuses(models, upto: int | None, shown: Keys | None, hold: int) -> dict[str, dict[str, dict]]:
+def statuses(models, upto: int | None, shown: Keys | None, hold: int,
+             saved: list[int] | None = None) -> dict[str, dict[str, dict]]:
     """Every key's status, per part: ``{"stock": {key: {...}}, "flow": {...}}``."""
-    nums, s_sets, f_sets = presence(models, upto, shown)
+    nums, s_sets, f_sets = presence(models, upto, shown, saved)
     out: dict[str, dict[str, dict]] = {"stock": {}, "flow": {}}
     for part, sets in (("stock", s_sets), ("flow", f_sets)):
         for key in set().union(*sets) if sets else set():

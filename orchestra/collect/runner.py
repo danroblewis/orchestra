@@ -128,7 +128,7 @@ class Collecting:
         """The instruments as the runtime record holds them."""
         with self._lock:
             return {n: {"kind": c.what, "target": c.shown, "every_s": c.every_s, "timeout_s": c.timeout_s, "owner": c.owner,
-                        "log": str(self._log_of(c)), "failures": self.failures[n],
+                        **c.flags(), "log": str(self._log_of(c)), "failures": self.failures[n],
                         **({"views": tables(c.views)} if c.views else {}), **self.health.get(n, {})}
                     for n, c in sorted(self.wanted.items())}
 
@@ -155,8 +155,6 @@ class Collecting:
             for name, c in self.wanted.items():
                 run = self._busy.get(name)
                 if (run is not None and run.is_alive()) or now < self._due.get(name, 0.0):
-                    continue
-                if c.expired(time.time()):            # a draft past its expiry records nothing more
                     continue
                 self._due[name] = now + c.every_s
                 self._busy[name] = t = threading.Thread(target=self._round, args=(c,), name=f"collect-{name}", daemon=True)

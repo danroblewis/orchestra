@@ -953,6 +953,9 @@ sd-research = [
 tasking = [
     { name = "orchestra-tasking" },
 ]
+workflows = [
+    { name = "orchestra-workflows" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -971,6 +974,7 @@ requires-dist = [
     { name = "orchestra-desk", marker = "extra == 'desk'", git = "https://github.com/danroblewis/orchestra-desk" },
     { name = "orchestra-outbox", marker = "extra == 'outbox'", git = "https://github.com/danroblewis/orchestra-outbox" },
     { name = "orchestra-tasking", marker = "extra == 'tasking'", git = "https://github.com/danroblewis/orchestra-tasking" },
+    { name = "orchestra-workflows", marker = "extra == 'workflows'", git = "https://github.com/danroblewis/orchestra-workflows" },
     { name = "pika", marker = "extra == 'bus'", specifier = ">=1.3" },
     { name = "pika", marker = "extra == 'bus-rabbitmq'", specifier = ">=1.3" },
     { name = "psutil", specifier = ">=5.9" },
@@ -984,7 +988,7 @@ requires-dist = [
     { name = "tomlkit", specifier = ">=0.13" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
-provides-extras = ["dev", "bus-redis", "bus-rabbitmq", "bus-kafka", "bus", "sd", "sd-research", "tasking", "agents", "bridges", "desk", "outbox"]
+provides-extras = ["dev", "bus-redis", "bus-rabbitmq", "bus-kafka", "bus", "sd", "sd-research", "tasking", "agents", "bridges", "desk", "outbox", "workflows"]
 
 [[package]]
 name = "orchestra-agents"
@@ -1031,6 +1035,14 @@ dependencies = [
     { name = "orchestra" },
     { name = "psutil" },
     { name = "tomlkit" },
+]
+
+[[package]]
+name = "orchestra-workflows"
+version = "0.1.0"
+source = { git = "https://github.com/danroblewis/orchestra-workflows#58839144c11f2f5e6048b61dc778f28410632c38" }
+dependencies = [
+    { name = "orchestra" },
 ]
 
 [[package]]

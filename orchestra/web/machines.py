@@ -1,8 +1,9 @@
 """The Machines page's data: the machines seen on the event bus, their instances and how they are
 engaged, and the network of which machine publishes and which listens for which event types.
 
-A machine exists because it shows up on the bus (AGENTS.md rule 2): never because a series names
-it. An instrument (``[[collect]]``, ``[[scrape]]``, ``[[sources]]``) measures the system and is not
+A machine exists because it shows up on the bus or is counted (AGENTS.md rule 2), or because the
+owner declared it (the intended model; declared and measured-never-heard machines are placed by the
+declared layer, ``web/intended.py``, ``web/measured.py``): never because a series names it. An instrument (``[[collect]]``, ``[[scrape]]``, ``[[sources]]``) measures the system and is not
 a machine (rule 7): it is on the Instruments page, not here. Announcements the host made on an
 instrument's behalf before 2026-10-27 (``orchestra.machine.started`` with ``data.collector``) are
 left out, so a detector seen then is not a machine now.
@@ -83,6 +84,8 @@ from ..cadence import BEATS, BURST_S, DAY, active_within, gaps
 from ..events import HOST, event_time, for_an_instrument, machine_and_instance
 
 ANNOUNCE = ("orchestra.machine.started", "orchestra.machine.subscribed")
+# records about a declaration (the intended model), not work on their subject: never a hand-off
+NOT_WORK = ("orchestra.intent.changed", "orchestra.intent.requested")
 # the cadence rule (beats, bursts, how long an instance stays active) is orchestra/cadence.py's,
 # shared with the host's quiet watch (orchestra/quiet.py)
 RECENT = 60
@@ -157,7 +160,7 @@ class MachineIndex:
             self._announced(ev, machine, instance)
             return
         subject = ev.get("subject")
-        if subject:
+        if subject and ev.get("type") not in NOT_WORK:
             prev = self.last_on.pop(subject, None)
             if prev and prev[0] == machine:
                 trail = [*prev[1][-(TRAIL - 1):], ev["type"]]

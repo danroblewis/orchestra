@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Orchestra · Dynamics</title>
 <link rel="stylesheet" href="/static/style.css?v={{v}}">
+<link rel="stylesheet" href="/static/intended.css?v={{v}}">
 <style>
   :root { --canvas:#12151c; --fg:#e7eaf0 }
   .dynwrap { max-width:1500px; margin:0 auto; padding:16px 20px }
@@ -101,6 +102,9 @@
 <script src="/static/sd-layout.js?v={{v}}"></script>
 <script src="/static/charts.js?v={{v}}"></script>
 <script src="/static/predictions.js?v={{v}}"></script>
+<script src="/static/intended-dynamics.js?v={{v}}"></script>
+<script src="/static/intended-panel.js?v={{v}}"></script>
+<script src="/static/intended-drawers.js?v={{v}}"></script>
 <script>
 // one colour per machine, the same every time for the same id
 const MPAL = ["#60a5fa", "#f59e0b", "#e879f9", "#22c55e", "#f87171", "#38bdf8", "#facc15", "#a78bfa", "#fb923c"];
@@ -141,10 +145,11 @@ const stockColor = (id) => { const i = MODEL ? MODEL.stocks.findIndex((s) => s.i
   }
 function draw() {
   const m = MODEL, byMachine = Object.fromEntries(m.machines.map((x) => [x.id, x]));
-  const g = SDGraph.build(m, { showAll: window.SHOW_ALL, showAcc: window.SHOW_ACC, mcolor, stockColor });
+  // the intended model (intended-dynamics.js) adds its ghosts and marks to what discovery found
+  const g = Intended.extend(SDGraph.build(m, { showAll: window.SHOW_ALL, showAcc: window.SHOW_ACC, mcolor, stockColor }));
   const { nodes, edges, causal, flows, acc } = g;
   FLOWEDGE = g.flowEdge;
-  for (const n of nodes) n.decorate = n.sid ? Live.decorateStock : n.input ? Live.decorateInput : undefined;
+  for (const n of nodes) n.decorate = Intended.decorator(n, n.sid ? Live.decorateStock : n.input ? Live.decorateInput : undefined);
   const sig = JSON.stringify([nodes.map((n) => n.id), edges.map((e) => e.id)]);
   if (!GRAPH || sig !== GSIG || !document.querySelector("#diagram svg")) {
     if (!GRAPH || !document.querySelector("#diagram svg")) GRAPH = NetGraph.create($("diagram"), { key: "dynamics.v2", height: 620,   // v2: layouts saved before ELK are not reused
@@ -165,8 +170,8 @@ function draw() {
         w.onerror = (ev) => { reject(ev.message || ev); w.terminate(); };
         w.postMessage({ nodes, edges, at, fixed });
       }) : null,
-      tip: (x, kind) => kind === "node" ? (x.sid ? Live.stockSummary(x.sid) : x.fid ? Live.flowSummary(x.fid) : "") : (x.fid ? Live.flowSummary(x.fid) : ""),
-      onClick: (x, kind) => { if (x.sid) Live.openStock(x.sid); else if (x.fid) Live.openFlow(x.fid); } });
+      tip: (x, kind) => Intended.tip(x) ?? (kind === "node" ? (x.sid ? Live.stockSummary(x.sid) : x.fid ? Live.flowSummary(x.fid) : "") : (x.fid ? Live.flowSummary(x.fid) : "")),
+      onClick: (x, kind) => { if (Intended.click(x)) return; if (x.sid) Live.openStock(x.sid); else if (x.fid) Live.openFlow(x.fid); } });
     GSIG = sig;
     GRAPH.render(nodes, edges);
     loops(nodes, causal);
@@ -178,6 +183,7 @@ function draw() {
     return `<span class="lg prog" style="--c:${mcolor(id)}"><i></i>${esc(mc.name)} <span class="muted">${kindWord(id, mc.kind)}</span></span>`; }).join("")
     + `<label class="lg" style="cursor:pointer"><input type="checkbox" ${window.SHOW_ALL ? "checked" : ""} onchange="window.SHOW_ALL=this.checked;draw()" style="margin:0"> flows with no events</label>`
     + (acc.size ? `<label class="lg" style="cursor:pointer" title="stocks that only fill and that no flow shown feeds, such as the event bus's length"><input type="checkbox" ${window.SHOW_ACC ? "checked" : ""} onchange="window.SHOW_ACC=this.checked;draw()" style="margin:0"> stocks that only fill, fed by nothing shown (${acc.size})</label>` : "")
+    + Intended.legend()
     + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it, through rediscoveries; double-click to release) · tidy lays out the rest · reset starts over · scroll to zoom · hover or click a stock or a flow</span>`;
 }
 // Feedback loops (loops.js): the causal graph's feedback structures and an independent set of
@@ -296,10 +302,10 @@ function tables() {
   $("nflows").textContent = m.flows.length; $("nstocks").textContent = m.stocks.length; $("nmachines").textContent = m.machines.length;
   $("flows").innerHTML = `<tr><th>flow</th><th>equation</th><th>fit</th><th title="machines whose events match the flow's counter: hypotheses, with their confidence. Two similar flows between the same stocks may not be told apart, so a hypothesis may belong to a flow's twin.">machines (hypotheses)</th></tr>` + m.flows.map((f) => { const e = f.current, q = (e && e.quality) || {};
     const end = (id) => (id ? stockName(id) : "outside");
-    return `<tr><td>${esc(flowName(f))}<div class="muted" style="font-size:11px">${esc(end(f.from))} → ${esc(end(f.to))}</div></td><td class="num">${esc(eqText(f))}${e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}${SDGraph.correlational(m, f) ? `<div class="muted" style="font-family:inherit;font-size:11px">${esc(SDGraph.UNTESTED)}</div>` : ""}</td>
+    return `<tr data-fid="${esc(f.id)}"><td>${esc(flowName(f))}<div class="muted" style="font-size:11px">${esc(end(f.from))} → ${esc(end(f.to))}</div></td><td class="num">${esc(eqText(f))}${e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}${SDGraph.correlational(m, f) ? `<div class="muted" style="font-family:inherit;font-size:11px">${esc(SDGraph.UNTESTED)}</div>` : ""}</td>
       <td>${e ? `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span> <span class="muted num">${esc(e.form)} · ${q.events ?? 0} ev · disp ${(q.dispersion ?? 0).toFixed(1)}</span>${e.prior && e.prior.weight != null && e.origin !== "prior" ? `<div class="muted" style="font-size:11px">${Math.round(100 * e.prior.weight)}% from the prior (era ${esc(e.prior.era || "before")})</div>` : ""}${eraNote(f)}` : '<span class="muted">—</span>'}</td>
       <td>${(f.machines || []).length ? f.machines.map((h) => `<div title="${esc(h.why || h.origin || "")}"><span class="mdot" style="--c:${mcolor(h.machine)}"></span>${esc((byMachine[h.machine] || {}).name || h.machine)}${h.confidence != null ? ` <span class="muted num">${Math.round(100 * h.confidence)}%</span>` : ""}</div>`).join("") : `<span class="muted" title="${esc(f.association || "")}">no machine associated yet</span>`}</td></tr>`; }).join("");
-  $("stocks").innerHTML = `<tr><th>stock</th><th>now</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr><td>${stockHead(s.id)}</td><td class="num">${m.levels[s.id] ? m.levels[s.id].v + " " + esc(s.unit) : "—"}</td>
+  $("stocks").innerHTML = `<tr><th>stock</th><th>now</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr data-sid="${esc(s.id)}"><td>${stockHead(s.id)}</td><td class="num">${m.levels[s.id] ? m.levels[s.id].v + " " + esc(s.unit) : "—"}</td>
       <td class="num muted">${s.series ? esc(keyOf(s.series)) + `<div style="font-family:inherit">${esc(resOf(m.discovery, keyOf(s.series)))}</div>` : "not measured"}</td></tr>`).join("");
   $("machines").innerHTML = `<tr><th>machine</th><th>kind</th><th>flows (hypotheses)</th></tr>` + m.machines.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span>${esc(x.name)}${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
       <td>${kindWord(x.id, x.kind)}</td><td class="num">${x.attributed.length}</td></tr>`).join("");
@@ -312,6 +318,7 @@ function tables() {
       if (ev.net_flow) return netFlowLine(s, ev);
       return ""; }).join("")
     + `<h3>Left out <span class="count">${Object.keys(d.left_out).length} of ${d.looked_at ?? "?"}</span></h3>` + leftOut(d.left_out) : '<div class="muted">This version was declared, not discovered.</div>';
+  Intended.tables();
   $("sum").innerHTML = `${m.stocks.length} stocks · ${m.flows.length} flows (${fitted} fitted) · ${m.machines.length} machines${m.stored ? "" : ' · <span class="stale">not stored yet: <code>orchestra sd declare</code></span>'}${m.levels_error ? ` · <span class="stale">levels: ${esc(m.levels_error)}</span>` : ""}`;
 }
 // Eras (sd/eras.py): a new one begins when a machine changes the system; each is discovered from
@@ -395,6 +402,7 @@ function versionBar() {
     $("ver").innerHTML = `<button ${!vs.length ? "disabled" : ""} onclick="step(-1)" title="saved versions">‹</button>
       <span><b>latest discovery</b> · ${m.as_of ? ago(Date.now() / 1000 - m.as_of) + " ago" : ""}</span>
       <span class="muted">rediscovered by the host every few minutes; saved as a version when its structure changes (now version ${m.current ?? "—"})${m.discovery && m.discovery.live_minutes != null ? ` · fitted over ${m.discovery.live_minutes} min when every series involved was being written` : ""}</span>`;
+    Intended.versionBar();
     return;
   }
   const v = vs[i] || {}, past = m.version !== m.current;
@@ -403,6 +411,7 @@ function versionBar() {
     <span>version <b>${m.version}</b> of ${vs.length}${past ? ' <span class="past">· a past version</span>' : " · current"}</span>
     <button onclick="step(1)" title="${i >= vs.length - 1 ? "the latest discovery" : "newer version"}">›</button>
     <span class="muted" title="${esc(when)}">${esc(v.note || "")}${when ? " · " + esc(ago(Date.now() / 1000 - v.saved_at)) + " ago" : ""}</span>`;
+  Intended.versionBar();
 }
 function step(d) {
   ERA = null;
@@ -458,9 +467,16 @@ function showModelParts(on) {
   for (const id of ["legend", "loops", "histp", "tables"]) $(id).style.display = on ? "" : "none";   // not hidden: their classes set display
   if (!on) { $("sum").innerHTML = ""; $("ver").innerHTML = ""; }
 }
+// the model's address: a past version or era, and the base its changes are marked against ("since")
+function modelUrl(follow) {
+  const q = new URLSearchParams();
+  if (!follow && VERSION) q.set("version", VERSION); else if (!follow && ERA) q.set("era", ERA);
+  if (Intended.param()) q.set("since", "off");
+  return "/api/dynamics/model" + (q.toString() ? "?" + q : "");
+}
 async function load() {
   try {
-    const d = await (await fetch("/api/dynamics/model" + (VERSION ? `?version=${VERSION}` : ERA ? `?era=${encodeURIComponent(ERA)}` : ""))).json();
+    const d = await (await fetch(modelUrl())).json();
     await loadKinds();
     showModelParts(d.ok);
     $("sd-note").textContent = d.sd_missing || ""; $("sd-note").style.display = d.sd_missing ? "" : "none";
@@ -482,9 +498,9 @@ load();
 setInterval(async () => {
   if (VERSION !== null || ERA !== null) return;
   try {
-    const d = await (await fetch("/api/dynamics/model")).json();
+    const d = await (await fetch(modelUrl(true))).json();
     if (!d.ok) return;
-    const changed = !MODEL || d.model.version !== MODEL.version || d.model.as_of !== MODEL.as_of;
+    const changed = !MODEL || d.model.version !== MODEL.version || d.model.as_of !== MODEL.as_of || Intended.sig(d.model) !== Intended.sig(MODEL);
     if (!MODEL) showModelParts(true);
     MODEL = d.model; versionBar(); erasBar(); if (changed) draw(); tables();
   } catch (e) {}

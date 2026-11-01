@@ -3,11 +3,15 @@
 A machine always enters ``proposed``; the core checks its envelope only and stores ``spec`` as
 sent. Event types a machine names that nobody declared are declared implicitly, undescribed. A
 machine's expected effect is a **draft prediction**, never an association (rule 6 as amended):
-it adds no flow and no hypothesis. An alias joins a declared id to an observed name; it is never
-inferred."""
+it adds no flow and no hypothesis; once the machine is no longer proposed, a new expected effect
+waits as a pending change like any other revision, and new edits drop the prediction linked to
+the old ones. A revision answering the owner's ``switch_kind`` request (one that sets ``kind`` and
+nothing else) applies at once (``consent.py``). An alias joins a declared id to an observed name;
+it is never inferred."""
 
 from __future__ import annotations
 
+from .attach import parse
 from .checks import (
     LISTS,
     IntentError,
@@ -19,6 +23,7 @@ from .checks import (
     strings,
     text,
 )
+from .consent import verified
 from .revise import revise
 
 ENVELOPE_DEFAULTS = {"title": None, "description": None, "tags": [], "kind": "universal", "managed": "orchestra",
@@ -32,7 +37,8 @@ def _machine(layer: dict, mid) -> dict:
     return layer["machines"][mid]
 
 
-def _implicit_events(layer: dict, m: dict, ctx: dict) -> None:
+def implicit_events(layer: dict, m: dict, ctx: dict) -> None:
+    """Declare, undescribed, each event type the machine names that nobody declared."""
     for t in [*(m.get("receives") or []), *(m.get("emits") or [])]:
         layer["events"].setdefault(t, {"type": t, "description": None, "implicit": True, "provenance": ctx["provenance"],
                                        "change": ctx["change"]})
@@ -51,7 +57,7 @@ def propose_machine(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
     m.update(state="proposed", provenance=ctx["provenance"], change=ctx["change"], guessed=strings(op.get("guessed"), "guessed"),
              pending=[], aliases=[], expected_effect=None, latest=None)
     layer["machines"][mid] = m
-    _implicit_events(layer, m, ctx)
+    implicit_events(layer, m, ctx)
     return "machine", mid
 
 
@@ -65,12 +71,13 @@ def revise_machine(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
         raise IntentError("a machine's id is not revised: retract it and propose another")
     set_ = {k: envelope_field(k, v) for k, v in set_.items()}
     for what, d in (("add", add), ("remove", remove)):
-        for k, v in d.items():
-            if k not in LISTS:
-                raise IntentError(f"{what} takes the list fields ({', '.join(LISTS)}), not {k}")
-            strings(v, f"{what}.{k}")
-    revise(m, set_, add, remove, strings(op.get("guessed"), "guessed"), ctx)
-    _implicit_events(layer, m, ctx)
+        if bad := sorted(k for k in d if k not in LISTS):
+            raise IntentError(f"{what} takes the list fields ({', '.join(LISTS)}), not {', '.join(bad)}")
+    add = {k: strings(v, f"add.{k}") for k, v in add.items()}
+    remove = {k: strings(v, f"remove.{k}") for k, v in remove.items()}
+    switch = set(set_) == {"kind"} and not add and not remove and verified(ctx, "machine", m["id"], "switch_kind")
+    revise(m, set_, add, remove, strings(op.get("guessed"), "guessed"), ctx, waits_once_confirmed=True, consent=switch)
+    implicit_events(layer, m, ctx)
     return "machine", m["id"]
 
 
@@ -90,7 +97,12 @@ def set_expected_effect(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
     if horizon <= 0:
         raise IntentError("horizon_s must be above 0")
     prev = m.get("expected_effect") or {}
-    m["expected_effect"] = {"edits": checked, "horizon_s": horizon, "prediction": prev.get("prediction"), "change": ctx["change"]}
+    kept = prev.get("prediction") if prev.get("edits") == checked else None    # a verdict judged these edits, or none
+    effect = {"edits": checked, "horizon_s": horizon, "prediction": kept, "change": ctx["change"]}
+    if m.get("state") == "proposed":
+        m["expected_effect"] = effect
+    else:
+        revise(m, {"expected_effect": effect}, {}, {}, [], ctx, waits_once_confirmed=True)
     return "machine", m["id"]
 
 
@@ -117,30 +129,38 @@ def _attachment_fields(op: dict) -> dict:
     if "instrument" in op:
         out["instrument"] = text(op["instrument"], "instrument", required=True, limit=200)
     if "match" in op:
-        mt = op["match"]
-        if mt is not None and not (isinstance(mt, dict) and set(mt) <= {"prefix", "labels"}
-                                   and isinstance(mt.get("labels") or {}, dict)):
-            raise IntentError("match is {prefix?, labels?: {label: value, or =~regex}}")
-        out["match"] = mt
+        parse(op["match"])                              # refused here with the reason, never at read
+        out["match"] = op["match"]
     if "instance_label" in op:
         out["instance_label"] = text(op["instance_label"], "instance_label", limit=100)
     return out
 
 
+def _checked(att: dict, ctx: dict) -> None:
+    """The instrument exists, and a source's definitions keep the instance label (``instruments.py``);
+    unchecked for a store made without its project (a test's, a replay's)."""
+    if ctx.get("instruments") is not None:
+        ctx["instruments"].check(att)
+
+
 def propose_attachment(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
+    """An attachment: these series measure that declared machine (P5 §2). Only a declared machine
+    takes one; it is proposed, or declared when the owner asks for it (§3), and never makes a
+    machine, a flow or a binding."""
     only(op, ("machine", *ATTACH_FIELDS), "propose_attachment")
     m = _machine(layer, op.get("machine"))
     fields = _attachment_fields(op)
     if "instrument" not in fields:
         raise IntentError("an attachment names its instrument")
+    att = {"match": None, "instance_label": None, **fields}
+    _checked(att, ctx)
     base = make_slug(f"{m['id']}_{fields['instrument']}")
     aid, n = base, 1
     while aid in layer["attachments"]:
         n += 1
         aid = f"{base}_{n}"
-    layer["attachments"][aid] = {"id": aid, "machine": m["id"], "match": None, "instance_label": None, **fields,
-                                 "state": "proposed", "provenance": ctx["provenance"], "change": ctx["change"],
-                                 "guessed": strings(op.get("guessed"), "guessed"), "pending": []}
+    layer["attachments"][aid] = {"id": aid, "machine": m["id"], **att, "state": "proposed", "provenance": ctx["provenance"],
+                                 "change": ctx["change"], "guessed": strings(op.get("guessed"), "guessed"), "pending": []}
     return "attachment", aid
 
 
@@ -152,7 +172,9 @@ def revise_attachment(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
     set_ = op.get("set") or {}
     if not isinstance(set_, dict) or set(set_) - set(ATTACH_FIELDS):
         raise IntentError(f"set takes {', '.join(ATTACH_FIELDS)}")
-    revise(a, _attachment_fields(set_), {}, {}, strings(op.get("guessed"), "guessed"), ctx)
+    fields = _attachment_fields(set_)
+    _checked({**{k: a.get(k) for k in ATTACH_FIELDS}, **fields}, ctx)
+    revise(a, fields, {}, {}, strings(op.get("guessed"), "guessed"), ctx, waits_once_confirmed=True)
     return "attachment", a["id"]
 
 

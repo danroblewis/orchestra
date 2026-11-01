@@ -4,7 +4,8 @@ A **plugin** is a Python package, installed beside Orchestra, that adds things t
 project: the programs `orchestra run` keeps running, the instruments it measures with, the
 machines the Machines page lists before they are first seen, pages, API routes, Dashboard
 panels and machine cards in the web UI, and a subcommand of the `orchestra` command line. The task system (`~/orchestra-tasking`), the AI agents
-(`~/orchestra-agents`) and the bridges (`~/orchestra-bridges`) are plugins.
+(`~/orchestra-agents`), the bridges (`~/orchestra-bridges`), the desk (`~/orchestra-desk`), the
+outbox (`~/orchestra-outbox`) and workflows (`~/orchestra-workflows`) are plugins.
 
 This guide is for an engineer building one. It covers the interface exactly as the code on `main`
 defines it (`orchestra/plugins.py`, `orchestra/launcher.py`, `orchestra/collect/spec.py`,
@@ -817,7 +818,51 @@ associate a machine with a flow. Orchestra's only series derived from the event 
   of one type step by step (`orchestra/sd/attribute.py`). A match is a correlation in time, not a
   cause. A flow with none reads "no machine associated yet".
 
-### 6.6 The whole path, in order
+### 6.6 The intended model
+
+What the owner intends (stocks, effects, flows, targets, expected marks, machines with their
+envelope and `spec`, event types, attachments) and what a plugin proposes, kept beside the
+discovered model (SPEC §4.6, `docs/proposals/intended-model.md`). A plugin declares and proposes;
+it never writes under `<state>/model/intended/` itself (AGENTS.md rule 5 as amended).
+
+- **In the host or the web server** (code a plugin runs there): `project.intended`, an
+  `IntendedStore`. `apply(ops, provenance)` applies one call, all its ops or none, and answers
+  `{"version", "changes"}` or raises `IntentError` with the refused op's `index`; `read(version)`
+  is the declared layer at `dN`; `diff(model, since)` is the comparison the Dynamics page reads;
+  `design()` is the summary of the layer and its open items, under 20 KB for 100 elements.
+  `provenance` is `{author, source, turn, message, quote, reason, request?}`: `author: owner`
+  needs the owner's words as `quote`, and `via` and `at` are set by the store.
+- **From any other process**: `POST /intended` on the host's events endpoint (SPEC §3.1), with
+  the project's token, body `{source, author, turn, message, quote, reason, request?, ops}`,
+  answered `{"ok": true, "version", "changes"}` or 422 `{"ok": false, "error", "index"}`; `GET
+  /intended?version=` and `GET /intended/design` read back.
+- **The events.** The host announces each accepted call as `orchestra.intent.changed` from
+  `orchestra-host`, one event per element the call touched (`subject` `<part>:<id>`, `data`
+  `{version, via, ops}`). The owner's clicks on a machine or an attachment (confirm, discard, the
+  kind switch) are published as `orchestra.intent.requested` from `owner` (`data` `{control,
+  part, id, change, from}`) and change nothing until a plugin answers by applying with
+  `provenance.request` set to the request's event id. Listen with the subject filter:
+  `orchestra.intent.changed:subject=machine:<id>`, `orchestra.intent.requested:subject=machine:<id>`.
+- A proposal (a machine always enters proposed) and a pending change are confirmed or discarded
+  only by the owner (quoted) or in answer to a request; an owner's quoted revision of a proposed
+  machine applies at once, and of a confirmed one waits as a pending change.
+- **Answering a request** takes the op it asked for: `provenance.request` must name an
+  unanswered request for the same part and id, with the same control (`confirm` for confirm,
+  `discard` for discard or a retract, and for `switch_kind` a `revise_machine` that sets `kind`
+  and nothing else, which then applies at once) and the same `change` when it names one; anything
+  else is a 422, and so is any call citing a request that is not open. Only the op that answers
+  a request clears it; citing it on another op does not. A request whose element was settled
+  some other way (the owner's quoted confirm, a retract, its change settled) is no longer open.
+  The request is noted before it is published, so a plugin may answer it as soon as it hears it.
+- **What is the owner's**: what the owner declared, and what the owner confirmed (on a page,
+  quoted, or by request; `confirmed.by` is `owner`), is retracted, unmarked, re-described or
+  re-targeted only by the owner ("the owner declared this: ask the owner"); re-marking the
+  owner's mark leaves it as it is. A key is expected or ignored, never both. A declared stock or
+  effect that a flow, a target, an expected effect or a pending change names is retracted only
+  after them, and an event type a machine names only after the machine changes. `via` is the
+  plugin's or the page's; nothing writes as `host` until inference does.
+
+### 6.7 The whole path, in order
 
 ```mermaid
 sequenceDiagram
@@ -1719,7 +1764,7 @@ How it stands today:
   compatibility check. A plugin is a `Plugin` dataclass instance, and that is the contract.
 - The plugins depend on `orchestra>=1.0.0a1,<1.0.0rc0`, from GitHub `main` in their own
   environments (`[tool.uv] override-dependencies`), and each one's `uv.lock` pins the commit. Orchestra's extras (`tasking`,
-  `agents`, `bridges`, `desk`, `outbox`) install them from their repositories. They run against that commit until `uv lock --upgrade-package
+  `agents`, `bridges`, `desk`, `outbox`, `workflows`) install them from their repositories. They run against that commit until `uv lock --upgrade-package
   orchestra` moves it, or against a local checkout laid over them (`uv run --with-editable`).
 - The interface changes in lockstep with its users. For example, `Declared` lost its
   `description` field in orchestra_2 `6d80b787`, and the agents dropped the argument the same day
