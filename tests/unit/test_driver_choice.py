@@ -76,7 +76,7 @@ def test_a_driver_that_does_not_carry_to_the_other_half_is_refuted():
     # worse than the flow's own constant does
     rng = random.Random(4)
     level = switching(rng, low=0.0, high=1.0, hold=(60, 200))
-    rate = lambda t: (0.5 + 8.0 * level(t)) if t < T0 + 1800 else 3.0  # noqa: E731
+    rate = lambda t: (0.5 + 8.0 * level(t)) if t < T0 + 1800 else 3.0
     forms = fit_flow(events_at(rng, rate), 60.0, {"input:x": gauge(level)}, None, {"input:x"})
     ev = forms[0]["driver"]
     assert forms[0]["inputs"] == [] and ev["beat_price"] >= 1, ev
