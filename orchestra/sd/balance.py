@@ -23,16 +23,15 @@ starting it from many places and keeping the best, which a search from one start
 of a balance alone often makes the fit worse (inflow without its outflows), and which local
 optimum a single start reaches depends on noise.
 
-A balance with more counters than the level's changes can test keeps only those that explain a
-change on their own (``supported``). The changes can test fewer than half as many counters as
-the units the level changed in, and always two, an inflow and an outflow (``allowed``): each half
-of the window, where a balance's choice is tested again (``sd.identify``), then holds more changes
-than counters. Beyond that, a counter that never moved alone where the level changed is told
-apart from the others only by how it adds to them, and among the many subsets the search tries
-one adds up by chance: a repository's commits, 24 in ten changes of two-minute stretches, as
-landings + review turns + supervisor turns. A counter that did move alone is evidence of its own,
-however few the changes; and on a level that changes in most steps (a shelf that sells, bakes and
-discards every minute) no counter ever moves alone, and none needs to.
+A balance with more counters than the level's changes can test sheds the ones that add nothing
+it can test (``supported``). The changes can test fewer counters than half the units the level
+changed in over the whole window, and always two, an inflow and an outflow (``allowed``). Beyond
+that, the squared error no longer tells a counter from a coincidence: among the many subsets the
+search tries, one lowers it by chance. What still tells is exactness: a counter that makes no
+unit exact that the others leave inexact, and that no unit pins on its own (``alone``), is taken
+out. A counter whose removal leaves fewer units exact always stays, so an exact balance is never
+reduced, however many counters it has (a quiet shelf baked, sold, discarded and eaten from at
+once; a second outflow that only ever comes with the first).
 
 A counter far larger than the level (``resolvable``) is not searched: its squares' rounding is
 more than the level's variance.
@@ -178,17 +177,36 @@ def alone(j: int, coef: dict[int, int], y: list[float], xs: list[list[float]]) -
     return False
 
 
+def exact_units(coef: dict[int, int], y: list[float], xs: list[list[float]]) -> int:
+    """How many units the balance ``coef`` explains exactly."""
+    return sum(1 for u, v in enumerate(y) if abs(v - sum(sign * xs[k][u] for k, sign in coef.items())) <= 0.5)
+
+
 def supported(coef: dict[int, int], y: list[float], xs: list[list[float]]) -> dict[int, int]:
-    """``coef``, when it has more counters than the level's changes can test (``allowed``), without
-    those no unit pins on their own (``alone``): taken out one at a time, the one that
-    counted least first, since taking one out may leave another alone in a unit. Counters that
-    each have a unit of their own all stay, however many; within the limit, all do."""
-    coef = dict(coef)
-    if len(coef) <= allowed(y):
-        return coef
-    while bare := [j for j in coef if not alone(j, coef, y, xs)]:
-        coef.pop(min(bare, key=lambda j: (sum(abs(v) for v in xs[j]), j)))
+    """``coef``, while it has more counters than the level's changes can test (``allowed``), less
+    one counter that adds nothing they can test: no unit pins it on its own (``alone``), and
+    without it as many units are exact (the one that counted least first). Stops at the limit, or
+    when every counter left is pinned or makes some unit exact: an exact balance stays whole."""
+    coef, limit = dict(coef), allowed(y)
+    while len(coef) > limit:
+        now = exact_units(coef, y, xs)
+        idle = [j for j in coef if not alone(j, coef, y, xs)
+                and exact_units({k: s for k, s in coef.items() if k != j}, y, xs) >= now]
+        if not idle:
+            break
+        coef.pop(min(idle, key=lambda j: (sum(abs(v) for v in xs[j]), j)))
     return coef
+
+
+def parsimonious(level, terms: list[tuple], steps: list[int] | None = None) -> list[tuple]:
+    """``supported`` on a balance assembled from two searches (``discover.own_balance``: a
+    machine's own counters, then another's on the residual they leave), each held to its own
+    limit, so that the whole is held to the level's. Over ``steps``, as the balance was found."""
+    idx = units(level.blocks, list(range(len(level.deltas))) if steps is None else steps)
+    y = [pick(level, u) for u in idx]
+    xs = [[pick(c, u) for u in idx] for c, _ in terms]
+    kept = supported({j: sign for j, (_, sign) in enumerate(terms)}, y, xs)
+    return [t for j, t in enumerate(terms) if j in kept]
 
 
 def penalty(sst: float) -> float:

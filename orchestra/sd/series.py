@@ -56,7 +56,8 @@ def orchestra_events(s: Series) -> bool:
     it), or anything the host published (``orchestra-host``, the provider, never a machine:
     AGENTS.md rule 2). Like ``orchestra_host_up`` (``PLUMBING``), they say what Orchestra did, never
     the work of the system, so no balance is made of them and no flow is attributed to the host.
-    Told by the namespace and the source, not by a list of names."""
+    Told by the namespace and the source, not by a list of names: the source ``orchestra-host``
+    is reserved for the host (``orchestra.events.HOST``), and nothing else may publish under it."""
     return s.name == EVENT_COUNTER and ((s.labels.get("type") or "").startswith("orchestra.")
                                         or (s.labels.get("source") or "").partition("/")[0] == HOST)
 

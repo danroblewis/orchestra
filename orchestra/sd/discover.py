@@ -85,7 +85,7 @@ from itertools import accumulate, pairwise
 from . import construction
 from .accept import accepted, stock_trust
 from .attribute import associate, candidates
-from .balance import MIN_EVENTS, MIN_GAIN, LeastSquares, balance, columns, fit_of
+from .balance import MIN_EVENTS, MIN_GAIN, LeastSquares, balance, columns, fit_of, parsimonious
 from .coarse import coarse, on_writes, slowest
 from .driverchoice import adjacency, choose
 from .drivers import AIC_MARGIN, EVENTS_PER_PARAM, behind, co_counting
@@ -672,6 +672,10 @@ def own_balance(s: Series, counters: list[Series], steps: list[int], fits) -> tu
     left = [d - sum(sign * c.deltas[i] for c, sign in terms) for i, d in enumerate(s.deltas)]
     residual = Series(s.name, s.labels, [], [0.0, *accumulate(left)], False, blocks=s.blocks)
     more, _, _ = balance(residual, foreign, None, steps)
+    # each search was held to its own limit (sd.balance.supported); the whole is held to the
+    # level's, by shedding only the other machine's counters: the machine's own are its record
+    if more:
+        more = [t for t in parsimonious(s, terms + more, steps) if not any(t[0] is c for c, _ in terms)]
     if more:
         r2b, exact2 = fit_of(s, terms + more, steps)
         if r2b > r2 + MIN_GAIN:
