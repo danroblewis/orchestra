@@ -155,6 +155,18 @@ into scaffolded examples: do not configure them for a new integration.
    in any output or file.
 10. **Confirm it works** with §9's commands and pages. A trial on a scratch project against the
     fake comes first, then the real system.
+11. **Behind a corporate proxy.** Orchestra's own HTTP (a `[[sources]]` store, a VictoriaMetrics
+    metrics store) uses Python's standard library, which takes `HTTPS_PROXY`, `HTTP_PROXY` and
+    `NO_PROXY` from the environment of `orchestra run` and `orchestra web`; every process the host
+    launches inherits them. Put the local hosts in `NO_PROXY` (`127.0.0.1,localhost`) or the web
+    UI's own calls and a local bus go through the proxy too. A proxy that re-signs TLS with a
+    corporate CA needs that CA trusted: for one store, `[[sources]] auth = { ca_file = "…" }`; for
+    everything in the process, `SSL_CERT_FILE=/path/to/corporate-ca-bundle.pem` (a bundle holding
+    the public CAs as well as the corporate one, or every other host fails). `uv` itself reads
+    `SSL_CERT_FILE`, or `UV_NATIVE_TLS=1` to use the system's store. The hosts to allow: `github.com`
+    (installing Orchestra and its plugins), `pypi.org` and `files.pythonhosted.org` (their
+    dependencies), `api.anthropic.com` (only if an AI agent machine runs here), and each system you
+    integrate or store you read, by the host its URL names. Nothing else is called.
 
 ## 4. The kits (`orchestra_bridges.kits`, in the bridges plugin)
 
