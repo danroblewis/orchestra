@@ -497,7 +497,11 @@ async function loadStrategies() {
   try {
     const d = await (await fetch("/api/dynamics/strategies")).json(); STRATS = d;
     const c = d.configured;
-    $("d-strategy").innerHTML = d.strategies.map((s) => `<option value="${esc(s.name)}" ${s.name === c.strategy ? "selected" : ""} title="${esc(s.description)}">${esc(s.name)}</option>`).join("");
+    // the configured default first, then Orchestra's own conservation, then SD Lab's research strategies
+    const opt = (s) => `<option value="${esc(s.name)}" ${s.name === c.strategy ? "selected" : ""} title="${esc(s.description)}">${esc(s.name)}${s.name === c.strategy ? " (configured)" : ""}</option>`;
+    const first = d.strategies.filter((s) => s.name === c.strategy), own = d.strategies.filter((s) => s.name === "conservation" && s.name !== c.strategy);
+    const rest = d.strategies.filter((s) => s.name !== c.strategy && s.name !== "conservation");
+    $("d-strategy").innerHTML = [...first, ...own].map(opt).join("") + (rest.length ? `<optgroup label="research strategies (SD Lab)">${rest.map(opt).join("")}</optgroup>` : "");
     $("d-window").value = Math.round(c.window_s / 60); $("d-step").value = Math.round(c.step_s); $("d-every").textContent = ago(c.every_s);
     $("d-options").value = Object.keys(c.options || {}).length ? JSON.stringify(c.options) : "";
     const desc = () => { const s = d.strategies.find((x) => x.name === $("d-strategy").value); $("d-desc").textContent = s ? s.description : ""; $("dset-sum").textContent = `${$("d-strategy").value} · ${$("d-window").value} min · ${$("d-step").value} s steps`;
