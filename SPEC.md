@@ -229,7 +229,11 @@ give (kind `person`, if they announce it), as with the helper.
 Measured series (`orchestra/metrics/`): name plus labels, like Prometheus, each carrying a
 `project` label. A JSONL file by default, or VictoriaMetrics (`[metrics] url =
 "http://host:port"`, or `ORCHESTRA_METRICS_URL`). The interface: `write`, `raw`, `range`,
-`latest`, `series`, `dump`, `delete`. A range carries the last value forward at each step.
+`latest`, `series`, `dump`, `recent`, `delete`. A range carries the last value forward at each step.
+`recent(prefix, matchers, since, keep)` answers every series whose name starts with `prefix`,
+whose labels match `matchers` (`=`, and `=~` for a regular expression over the whole value), with a
+point at or after `since`, and its last `keep` points; no backend reads anything older than `since`
+(the export's `start` on VictoriaMetrics), and `tests/metrics` holds every backend to it.
 
 The metrics are objective measurements of the running system, not of the machines, and the
 store is filled by **instruments** directly: a script the host runs (`[[collect]]`) or a URL it
@@ -1061,6 +1065,24 @@ it (rule 7).
   `revise_machine`, `declare_event`, `set_expected_effect`, `record_prediction`,
   `record_measurement`, `confirm`, `discard`, `retract`, `propose_attachment`,
   `revise_attachment`.
+- **Attachments** (docs/proposals/instruments-on-machines.md). `propose_attachment {machine,
+  instrument, match?, instance_label?}` says which series measure a declared machine: the
+  instrument's (as the Instruments page names it; refused when there is none), narrowed by
+  `match` `{prefix?, labels: {label: value | "=~regex"}}`, a source's labels canonical after
+  `[sources.labels]`; `instance_label` names its replicas (refused when every source definition
+  the match selects sums it away). It enters proposed and is declared by `confirm`; discarding
+  or retracting its machine removes it. Derived on read, never stored (`sd/intended/measured.py`,
+  `web/measured.py`): a series is **measured** while its last point is within `max(1 h,
+  active_within(cadence))` of its last `BEATS` points (`orchestra/cadence.py`), else quiet; an
+  attachment's instances are its instance label's values (more than `[intended] max_instances`,
+  50, list none), per attachment and never unioned; a machine shows the largest measured count
+  of its declared attachments. The web server reads what each attachment selects every minute
+  and when the layer changes (`MetricsStore.recent` for the own store, the sources' catalogue for
+  a source, over the last hour), under a time limit. `/api/machines` gives each declared machine
+  `measured` (`attachments`, `measured`, `last_measured`, `instances`, `instruments`, `unknown`)
+  and `comparison` (`heard`, "measured, never heard", "attached, nothing measured", "declared,
+  neither heard nor measured", "series unknown"). Being measured never makes a machine seen or
+  active, and an attachment is never read by discovery or `sd/attribute.py` (rules 2, 7).
 - **Announced.** After each accepted call the host publishes `orchestra.intent.changed` as
   `orchestra-host` (`subject` `<part>:<id>` of the call's first change, `data` `{version, via,
   ops}`), following the journal, so a call the web server wrote is announced once it is up.
@@ -1182,8 +1204,9 @@ instrument's series are never read by discovery ("a draft instrument's series");
 it records nothing more, and keeping it is the plugin's (it drops the flag).
 
 Each is an **instrument**: it measures the running system and never acts on it, so it is not a
-machine (AGENTS.md rule 7). Nothing is announced on the bus for it and it is not on the Machines
-page; the Instruments page lists it. Its name is its own: it may share a `[[machines]]` entry's
+machine (AGENTS.md rule 7). Nothing is announced on the bus for it and it is never a machine on the
+Machines page; a declared machine's dialog names the instruments attached to it (§4.6), and the
+Instruments page lists it. Its name is its own: it may share a `[[machines]]` entry's
 name (a scrape of the program that entry runs) without being that machine. A plugin's is named
 `<plugin>.<name>`, and a project entry of that name takes its place, with a line in the host's
 log; the plugins are asked for theirs again whenever the configuration (§8) changes.
@@ -1402,7 +1425,8 @@ intended model's closed list of page controls (§4.6, AGENTS.md rule 9). Navigat
   in the last two minutes; a click opens its dialog) and **Host** (a Core status strip; the
   host's CPU, GPU, memory and disk). A package adds panels of its own (`Orchestra.panels`, from its
   every-page script; §10.1).
-- **Machines:** every machine seen on the bus (never one a series names, never an instrument) with its instances, how each is engaged and what kind
+- **Machines:** every machine seen on the bus or counted, and every declared one (never one a series names, never an
+  instrument; a declared machine with instruments attached is "measured, never heard" until heard, §4.6) with its instances, how each is engaged and what kind
   it is (a machine whose instances differ says so: agent ×2, program ×1; what it listens for is the union over its
   instances, and its package, name and card are each instance's latest, so an instance that says less erases nothing
   another said), whether it is active (last
@@ -1431,7 +1455,9 @@ minutes, which allows for the store's scrape interval and the minute between rea
 - **Instruments:** every instrument (`web/instruments.py`): a script (`[[collect]]`), a URL
   (`[[scrape]]`) or a source (`[[sources]]`), the project's and the plugins', with its target, how
   often it is read, its last write and how many points, its failures and last error, and its log;
-  read from the runtime record and `orchestra.toml`, never by running or querying one.
+  read from the runtime record and `orchestra.toml`, never by running or querying one; and **hung
+  on**: the declared machines it is attached to, with their matches, "shared" where two machines
+  select one series, "series unknown" while what they select cannot be read (§4.6).
 - **Dynamics:** the model as a stock-and-flow network (stocks with their level, tank fill and
   sparkline; a valve per flow with its equation and the machines associated with it, as
   hypotheses with their confidence, or "no machine associated yet"; influences as dashed +/− links),

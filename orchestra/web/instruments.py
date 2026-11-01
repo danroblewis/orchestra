@@ -11,7 +11,11 @@ or querying an instrument:
   (marked not running);
 - a source: ``[[sources]]`` in ``orchestra.toml`` (its server, never its credentials), with how
   the latest discovery found it (``Model.discovery["sources"]``). A source is read at each
-  discovery, not on an interval of its own, and writes nothing to the metrics store."""
+  discovery, not on an interval of its own, and writes nothing to the metrics store.
+
+Each row also gains ``hung_on`` (``web/measured.py``, added by the route): the declared machines
+the instrument is attached to, from the declared layer and the background read of what each
+attachment selects, never from a read made for the page."""
 
 from __future__ import annotations
 

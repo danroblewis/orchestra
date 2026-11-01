@@ -107,13 +107,18 @@ def attach_dynamics(project, out: dict, since, metrics) -> None:
         out["model"]["intended"] = {"error": f"{type(e).__name__}: {e}"}
 
 
-def attach_machines(project, out: dict, model) -> None:
+def attach_machines(project, out: dict, model, measured: dict | None = None) -> None:
+    """The declared machines (``machines_view.merge``), and on each what its attached instruments
+    measure (``measured.merge_machines``, from the background read ``measured``)."""
     from ..sd import predictions as prediction_record
     from ..sd.intended.machines_view import merge
+    from .measured import merge_machines
 
     store = ModelStore.for_state(project.state_dir)
     try:
-        merge(out, store.intended(), model, prediction_record.recorded(store))
+        intended = store.intended()
+        merge(out, intended, model, prediction_record.recorded(store))
+        merge_machines(out, project, intended.read()["layer"], measured)
     except Exception as e:  # noqa: BLE001 - the observed machines are shown without the declared layer
         out["intended_error"] = f"{type(e).__name__}: {e}"
 

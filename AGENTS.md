@@ -45,7 +45,13 @@ Rules 2, 3, 4, 5, 6, 7 and 9 were amended on 2026-11-01 for the intended model
    A declaration persists until retracted. A declared machine is shown as declared, and as heard
    only once its `source` is on the bus; its declared envelope and `spec` are shown as the
    declaration, apart from what is observed, and never override what is observed, never make a
-   machine exist in the observed layer, and say nothing about flows. A log is
+   machine exist in the observed layer, and say nothing about flows.
+   Instruments may be attached to a declared machine
+   (`docs/proposals/instruments-on-machines.md`): declared provenance saying
+   which series measure it and which label counts its replicas. Being
+   measured never makes a machine seen or active. Measured instances are
+   counts of a label's values: never instances in the observed layer, never a
+   `source`, never active. A log is
    read only within the project's repository or state directory
    (`web/machine_logs.py`). The launcher (`orchestra/launcher.py`) starts the
    commands a project (`[[machines]]` in `orchestra.toml`) or a plugin
@@ -113,7 +119,12 @@ Rules 2, 3, 4, 5, 6, 7 and 9 were amended on 2026-11-01 for the intended model
    `instrument=<name>` (provenance), and the target's own labels are kept,
    `machine` included. A machine's existence is never inferred from who wrote
    a series, and a flow is never associated with a machine from a
-   measurement's label. The metrics store is filled by instruments directly;
+   measurement's label. Attaching an instrument to a declared machine is
+   declared provenance, like the `instrument=<name>` label: it is kept in the
+   declared layer, never written on a point, never read by discovery or by
+   `sd/attribute.py`, and never binds a series to a stock, a flow or a
+   machine's flow. An attachment never makes a machine; it only gives series
+   to a machine the owner declared. The metrics store is filled by instruments directly;
    `orchestra_events_total`, Orchestra's count of the bus, is the one series
    derived from the event log, and is secondary. Instruments expose plain
    series named for what they measure; the model generator decides what is a

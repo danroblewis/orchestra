@@ -16,6 +16,8 @@ series, a declared flow changes no equation. Discovery never reads it (rule 7 as
 | ``diff`` | the structural diff of ``dN``, ``vM``, ``vK``, cached |
 | ``facts``, ``expected``, ``view`` | the Dynamics page's block, with facts read under a time limit |
 | ``machines_view`` | the Machines page's ``intent``, edges and types |
+| ``attach``, ``instruments`` | P5's attachments: the match, and the instruments an attachment may name |
+| ``measured`` | whether a declared machine is measured, and its instances, derived on read |
 | ``requests`` | the owner's requests from the pages (``orchestra.intent.requested``) |
 | ``announce`` | the host's ``orchestra.intent.changed`` |
 | ``design`` | the plugin's summary |

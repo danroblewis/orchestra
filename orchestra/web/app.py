@@ -91,8 +91,14 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         """What measures the system (``[[collect]]``, ``[[scrape]]``, ``[[sources]]``): instruments,
         not machines. Read from the runtime record and orchestra.toml (web/instruments.py)."""
         from .instruments import instruments_view
+        from .measured import hung_on
         cached = bg.models.latest_discovery()
-        return instruments_view(project, cached[1].discovery if cached else None)
+        out = instruments_view(project, cached[1].discovery if cached else None)
+        try:                                        # which declared machines each one is attached to (web/measured.py)
+            hung_on(out["instruments"], project, bg.models.intended().read()["layer"], bg.measured)
+        except Exception as e:  # noqa: BLE001 - the instruments are shown without their attachments
+            out["hung_on_error"] = f"{type(e).__name__}: {e}"
+        return out
 
     @app.get("/api/instruments/{name}/log")
     def instrument_log(name: str, lines: int = 200) -> dict:
@@ -363,7 +369,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         if bg.counted and bg.counted.get("failed"):
             out["counted_failed"] = bg.counted["failed"]
         declare(out["machines"])
-        attach_machines(project, out, bg.model())       # the declared machines (web/intended.py)
+        attach_machines(project, out, bg.model(), bg.measured)   # the declared machines and what measures them (web/intended.py)
         # the host publishes only when it starts and stops; whether it runs is in the runtime record
         up = bool(runtime.hosts(runtime.read(project)))
         for m in out["machines"]:
