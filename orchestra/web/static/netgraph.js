@@ -323,6 +323,19 @@ const NetGraph = (() => {
           .selectAll("tspan").data(lines).join("tspan").attr("x", 0).attr("y", (l, i) => top + i * 14).text((l) => l);
         if (n.sub) g.append("text").attr("class", "ng-sub").attr("text-anchor", "middle").attr("y", top + lines.length * 14).text(n.sub);
       }
+      if (n.tags) drawTags(g, n, s);
+    }
+    // ``tags``: small labelled boxes stacked above a node (or below, ``below: true``), each
+    // {text, cls}: what the page wants said of it on the map ("unconfirmed", "+ new link")
+    function drawTags(g, n, s) {
+      const hh = s.r || s.h / 2, up = n.tags.filter((t) => !t.below), down = n.tags.filter((t) => t.below);
+      const one = (t, y) => {
+        const w = String(t.text).length * 5.6 + 10, tg = g.append("g").attr("class", "ng-tag " + (t.cls || "")).attr("transform", `translate(${-w / 2},${y})`);
+        tg.append("rect").attr("width", w).attr("height", 13).attr("rx", 3);
+        tg.append("text").attr("x", w / 2).attr("y", 9.5).attr("text-anchor", "middle").text(t.text);
+      };
+      up.forEach((t, i) => one(t, -hh - 18 - i * 15));
+      down.forEach((t, i) => one(t, hh + (n.sub ? 30 : 18) + i * 15));
     }
 
     function render(nodes, edges) {
@@ -392,6 +405,7 @@ const NetGraph = (() => {
       // the first drawing fits the view (a layout still settling fits when it is done)
       if (!drawnOnce) { drawnOnce = true; if (!settling) requestAnimationFrame(() => fit(false)); }
       if (pinned) highlight(pinned.nodes, pinned.edges);
+      else if (focused) applyFocus();
     }
     // a new node starts by the nodes it is linked to (or at its anchor, or the middle)
     function placeNew(edges, byId) {
@@ -514,7 +528,7 @@ const NetGraph = (() => {
     // hover: a node, its edges and their far ends; with two hops, also what those reach (a
     // machine, its event types, and the machines on the other side of them)
     function isolate(id) {
-      if (pinned) return;
+      if (pinned || focused) return;
       const ns = gNodes.selectAll("g.ng-node"), es = gEdges.selectAll("g.ng-edge"), ls = gLabels.selectAll("g.ng-label");
       // an edge with a ``hoverColor`` shows it while its neighbourhood is isolated, and goes back after
       const paint = (lit) => es.each(function (e) {
@@ -543,9 +557,32 @@ const NetGraph = (() => {
       pinned = nodeIds ? { nodes: nodeIds, edges: edgeIds } : null;
       const ns = gNodes.selectAll("g.ng-node"), es = gEdges.selectAll("g.ng-edge"), ls = gLabels.selectAll("g.ng-label");
       const N = new Set(nodeIds || []), E = new Set(edgeIds || []);
+      if (nodeIds) for (const sel of [ns, es, ls]) sel.classed("ng-shade1 ng-shade2", false);
       ns.classed("ng-dim", (n) => !!nodeIds && !N.has(n.id)).classed("ng-hl", (n) => N.has(n.id));
       es.classed("ng-dim", (e) => !!nodeIds && !E.has(e.id)).classed("ng-hl", (e) => E.has(e.id));
       ls.classed("ng-dim", (e) => !!nodeIds && !E.has(e.id));
+      if (!nodeIds && focused) applyFocus();
+    }
+    // a focus kept while a details panel is open: ``levelOf(node)`` is 1 (full colour), .7, .45 or
+    // anything lower (dimmed, ng-dim); an edge takes the lesser of its ends unless ``edgeLevel(e)``
+    // says otherwise. Hovering does not isolate while it holds; focus(null) lets go.
+    let focused = null;
+    const SHADES = [[0.7, "ng-shade1"], [0.45, "ng-shade2"]];
+    function applyFocus() {
+      const ns = gNodes.selectAll("g.ng-node"), es = gEdges.selectAll("g.ng-edge"), ls = gLabels.selectAll("g.ng-label");
+      const lv = new Map(NODES.map((n) => [n.id, focused ? focused.levelOf(n) : 1]));
+      const edgeLv = (e) => { const own = focused && focused.edgeLevel ? focused.edgeLevel(e) : null;
+        return own != null ? own : Math.min(lv.get(e.source.id) ?? 0, lv.get((e.toEdge ? e.toEdge.target : e.target).id) ?? 0); };
+      const cls = (sel, level) => { sel.classed("ng-dim", (x) => level(x) < 0.45); for (const [v, c] of SHADES) sel.classed(c, (x) => level(x) >= v && level(x) < (v === 0.7 ? 1 : 0.7)); };
+      cls(ns, (n) => lv.get(n.id) ?? 0); cls(es, edgeLv); cls(ls, edgeLv);
+      ns.classed("ng-focus", (n) => !!focused && focused.id === n.id);
+    }
+    function focus(spec) {
+      focused = spec;
+      if (!spec) { const all = [gNodes.selectAll("g.ng-node"), gEdges.selectAll("g.ng-edge"), gLabels.selectAll("g.ng-label")];
+        for (const sel of all) sel.classed("ng-dim ng-shade1 ng-shade2 ng-focus", false);
+        if (pinned) highlight(pinned.nodes, pinned.edges); return; }
+      if (!pinned) applyFocus();
     }
     // redraw the decorations of the given nodes (live data) without touching the layout
     function refreshNodes(update) {
@@ -557,7 +594,7 @@ const NetGraph = (() => {
         if (r && r > 0.01) g.append("path").attr("class", "ng-flowdash").attr("d", g.select(".ng-line").attr("d")).style("animation-duration", `${Math.max(0.25, Math.min(6, 8 / Math.sqrt(r))).toFixed(2)}s`);
       });
     }
-    return { render, highlight, refreshNodes, setRates, fit, tidy, edgesBetween: (ids) => EDGES.filter((e) => ids.includes(e.source.id) && ids.includes(e.target.id)) };
+    return { render, highlight, focus, refreshNodes, setRates, fit, tidy, edgesBetween: (ids) => EDGES.filter((e) => ids.includes(e.source.id) && ids.includes(e.target.id)) };
   }
 
   // a clickable list of loops under a graph: clicking one highlights it; clicking it again clears
