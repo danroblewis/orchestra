@@ -6,6 +6,12 @@ const Charts = (() => {
   const REG = new Map();
   let seq = 0;
   const num = (v) => (v == null ? "—" : Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : Math.abs(v) >= 10 ? (+v).toFixed(1) : (+v).toPrecision(3).replace(/\.?0+$/, ""));
+  // both ends of a range in one format, the larger end's (998–1,002, never 998.0–1,002)
+  const range = (lo, hi) => {
+    const m = Math.max(Math.abs(lo), Math.abs(hi));
+    const f = m >= 1000 ? (v) => Math.round(v).toLocaleString() : m >= 10 ? (v) => (+v).toFixed(1) : num;
+    return `${f(lo)}–${f(hi)}`;
+  };
   // an axis label short enough for the gutter: 193G, 4.5M, 12k, 0.25
   const compact = (v) => {
     const a = Math.abs(v);
@@ -71,7 +77,7 @@ const Charts = (() => {
     const id = register({ lines: [{ label: label || "value", points }], x, y, t0, t1, L: 0, R: 0, W: w, H: h, T: 0, B: 0, unit, dots: false });
     const d = points.map(([t, v], i) => (i ? "L" : "M") + x(t).toFixed(1) + "," + y(v).toFixed(1)).join(" ");
     return `<svg class="spark ${cls}" data-cid="${id}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><path class="a" d="${d} L${w},${h} L0,${h} Z"/><path class="l" d="${d}"/><g class="hov"></g></svg>
-      <div class="lbl-row"><span>${num(lo)}–${num(hi)}${unit}</span><span>${note ?? `last 15m · ${points.length} points from the store`}</span></div>`;
+      <div class="lbl-row"><span>${range(lo, hi)}${unit}</span><span>${note ?? `last 15m · ${points.length} points from the store`}</span></div>`;
   }
 
   // nearest point at or around t, by binary search

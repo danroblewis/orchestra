@@ -79,5 +79,30 @@ def test_the_events_chart_ends_at_now_and_draws_no_bucket_in_the_future(tmp_path
         core.events.bus.append({"type": "order.baked", "source": "baker/1", "ts": datetime.fromtimestamp(now - 240 + 60 * k, UTC).isoformat()})
     d = Explorer(core).events(1)
     pts = d["volume"][0]["points"]
-    assert len(pts) <= 5 and pts[-1][0] <= time.time()
-    assert sum(v for _, v in pts) == 5
+    assert len(pts) <= 5 and pts[-1][0] + d["bucket_s"] <= time.time()      # every bucket drawn has ended
+    assert sum(v for _, v in pts) + (d["open_bucket"] or {"events": 0})["events"] == 5
+    assert d["open_bucket"] and d["open_bucket"]["from"] == pts[-1][0] + d["bucket_s"]
+
+
+def test_the_total_is_the_buses_and_a_capped_read_says_so(tmp_path, monkeypatch):
+    from orchestra.web import core_explore
+
+    monkeypatch.setattr(core_explore, "EVENTS_READ", 5)
+    core = _core(tmp_path)
+    ts = datetime.now(UTC).isoformat()
+    for i in range(8):
+        core.events.bus.append({"type": "order.baked", "source": "baker/1", "time": ts, "i": i})
+    d = Explorer(core).events(1)
+    assert d["total"] == 8 and d["read"] == 5 and d["capped"] == 5 and d["in_range"] == 5
+    small = _core(tmp_path / "small")
+    small.events.bus.append({"type": "order.baked", "source": "baker/1", "time": ts})
+    assert "capped" not in Explorer(small).events(1)
+
+
+def test_the_bus_cards_rate_says_the_window_it_observed():
+    from orchestra.web.core import rate_over
+
+    assert rate_over(600, 200, 5000) == "over the last 10 min"
+    assert rate_over(180, 40, 40) == "over the last 3 min (the whole bus)"
+    assert rate_over(120, 200, 5000) == "over the last 2 min (its last 200 events)"
+    assert rate_over(60, 3, 3) == "over the last 60 s (the whole bus)"

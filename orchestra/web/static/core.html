@@ -145,7 +145,7 @@ function renderCore() {
   const busHtml = b.ok ? `<div class="kv">
       <div>backend</div><div><b>${esc(b.backend)}</b></div><div>at</div><div class="num">${esc(b.url)}</div>
       <div>stream</div><div class="num">${esc(b.stream)}</div><div>events</div><div class="num">${(b.events || 0).toLocaleString()}</div>
-      <div>rate</div><div class="num">${b.per_min_10m} / min over the last 10 min</div>
+      <div>rate</div><div class="num">${b.per_min_10m} / min ${esc(b.rate_over || "over the last 10 min")}</div>
       <div>last event</div><div>${b.last_event ? `${esc(b.last_event.type)} · ${ago(b.last_event.age_s)} ago` : "—"}</div>
       <div>read</div><div class="num">${b.read_ms} ms for the end and the latest 200</div></div>
       <div class="types">${types}</div>
@@ -272,7 +272,10 @@ async function loadEvents() {
   try {
     const d = await (await fetch("/api/core/events?hours=" + $("ex-hours").value)).json();
     if (!d.ok) { $("ex-vol").innerHTML = `<div class="probe bad">${esc(d.error)}</div>`; $("ex-note").textContent = ""; return; }
-    $("ex-note").textContent = `${d.backend} · ${d.in_range.toLocaleString()} of ${d.total.toLocaleString()} events in range`;
+    $("ex-note").textContent = `${d.backend} · ${d.in_range.toLocaleString()} ` + (d.capped
+      ? `in range of the last ${d.capped.toLocaleString()} read (${d.total.toLocaleString()} on the bus)`
+      : `of ${d.total.toLocaleString()} events in range`)
+      + (d.open_bucket ? ` · the bucket still open (${d.open_bucket.events.toLocaleString()} so far) is not drawn` : "");
     $("ex-vol").innerHTML = `<div class="sl">events per ${ago(d.bucket_s)} bucket, top types</div>` + Charts.line(d.volume, { W: $("ex-vol").clientWidth });
     const max = Math.max(1, ...d.machines.map((m) => m.events));
     $("ex-mach").innerHTML = `<table class="ct"><tr><th>machine</th><th>events</th><th></th><th>mostly</th></tr>${d.machines.map((m) =>

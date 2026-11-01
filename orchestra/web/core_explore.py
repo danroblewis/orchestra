@@ -16,6 +16,7 @@ from ..events import event_time, for_an_instrument
 from ..metrics import MetricsError
 
 MAX_LINES = 30
+EVENTS_READ = 300_000          # the explorer reads at most the bus's last this many events
 NICE_STEPS = [15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400]
 CACHE_S = 8.0
 
@@ -130,12 +131,13 @@ class Explorer:
                     "engine": "victoriametrics" if m.name == "victoriametrics" else "orchestra (PromQL subset)"}
         return self._guard(go)
 
-    def _events(self):
+    def _events(self) -> tuple[list[dict], int]:
+        """The bus's last ``EVENTS_READ`` events at most, and how many it holds."""
         def read():
             bus = self.core.events.bus
             end = bus.end()
-            evs, _ = bus.read(0, limit=min(end, 300_000))
-            return evs
+            evs, end = bus.read(max(0, end - EVENTS_READ), limit=EVENTS_READ)
+            return evs, end
         return self._cached("events", read)
 
     def events(self, hours: float) -> dict:
@@ -145,12 +147,13 @@ class Explorer:
             types: dict[str, dict] = {}
             by_machine: dict[str, Counter] = defaultdict(Counter)
             instruments: set[str] = set()       # announced for instruments before 2026-10-27: no machine's events
-            evs = self._events()
+            evs, on_bus = self._events()
             stamps = [_ts(e) for e in evs]
             first = min((t for t in stamps if t), default=now)
             t0 = max(since, first) if since else first
             width = max(60.0, (now - t0) / 48)
             nb = max(1, min(48, math.ceil((now - t0) / width)))    # the last bucket ends at now, none drawn in the future
+            done = min(nb, int((now - t0) // width))               # buckets that have ended; the last may still be open
             buckets: dict[str, Counter] = defaultdict(Counter)
             for e, t in zip(evs, stamps):
                 ty = e.get("type", "?")
@@ -169,9 +172,15 @@ class Explorer:
                         by_machine[who][ty] += 1
                     buckets[ty][min(nb - 1, int((t - t0) // width))] += 1
             top = [ty for ty, _ in sorted(((k, v["in_range"]) for k, v in types.items()), key=lambda x: -x[1])[:6] if types[ty]["in_range"]]
-            series = [{"label": ty, "points": [[t0 + i * width, buckets[ty].get(i, 0)] for i in range(nb)]} for ty in top]
+            # the bucket still open would read as a fall: drawn only when no bucket has ended yet
+            drawn = done if done >= 1 else nb
+            series = [{"label": ty, "points": [[t0 + i * width, buckets[ty].get(i, 0)] for i in range(drawn)]} for ty in top]
+            open_bucket = ({"from": t0 + done * width, "events": sum(b.get(done, 0) for b in buckets.values())}
+                           if drawn < nb else None)
             rows = [{**d, "machines": d["machines"].most_common(4)} for d in sorted(types.values(), key=lambda x: (-x["in_range"], -x["total"]))]
             machines = [{"machine": m, "events": sum(c.values()), "types": c.most_common(5)} for m, c in sorted(by_machine.items(), key=lambda x: -sum(x[1].values()))]
-            return {"ok": True, "backend": self.core.events.bus.name, "total": len(evs), "in_range": sum(d["in_range"] for d in types.values()),
+            return {"ok": True, "backend": self.core.events.bus.name, "total": on_bus, "read": len(evs),
+                    **({"capped": EVENTS_READ} if on_bus > len(evs) and len(evs) >= EVENTS_READ else {}),
+                    "in_range": sum(d["in_range"] for d in types.values()), "open_bucket": open_bucket,
                     "types": rows, "machines": machines, "instruments": sorted(instruments), "volume": series, "bucket_s": width, "from": t0}
         return self._guard(go)

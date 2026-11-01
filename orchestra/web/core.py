@@ -62,6 +62,16 @@ def redact(url: str | None) -> str:
     return urllib.parse.urlunsplit((p.scheme, netloc, p.path, p.query, ""))
 
 
+def rate_over(window: float, sampled: int, events: int) -> str:
+    """What the bus card's rate is over, as observed: ten minutes, or the shorter span the sample
+    covers (a young bus, or a busy one whose last ``sampled`` events took less)."""
+    if window >= 600:
+        return "over the last 10 min"
+    span = f"{round(window / 60)} min" if window >= 90 else f"{round(window)} s"
+    why = "the whole bus" if sampled >= events else f"its last {sampled} events"
+    return f"over the last {span} ({why})"
+
+
 def _ts(ev: dict) -> float | None:
     return event_time(ev)
 
@@ -211,10 +221,13 @@ class CoreProbe:
         stamps = [t for t in (_ts(e) for e in recent) if t]
         now = time.time()
         # over the last ten minutes, or over what the sample spans when that is shorter (a minute at
-        # least): a young bus, or one whose last 200 events took under ten minutes, is not divided by ten
+        # least): a young bus, or one whose last 200 events took under ten minutes, is not divided by
+        # ten, and the card says the window it observed
         recent_stamps = [t for t in stamps if t >= now - 600]
-        minutes = max(1.0, min(600.0, now - min(stamps)) / 60) if stamps else 10.0
-        out["per_min_10m"] = round(len(recent_stamps) / minutes, 2)
+        window = max(60.0, min(600.0, now - min(stamps))) if stamps else 600.0
+        out["per_min_10m"] = round(len(recent_stamps) / (window / 60), 2)
+        out["rate_window_s"] = round(window)
+        out["rate_over"] = rate_over(window, sampled=len(recent), events=end)
         out["last_event"] = ({"type": recent[-1].get("type"), "age_s": round(now - stamps[-1], 1)} if recent and stamps else None)
         types: dict[str, int] = {}
         for e in recent[-50:]:
