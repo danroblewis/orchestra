@@ -56,7 +56,7 @@ at about 12:00Z. The login link is in `~/orchestra-live-demo/LOGIN.txt`.
 | C1 | done | layered review, 3 fix rounds |
 | C2, C3 | done | D1 to D3 and E1 to E4 render from real page code |
 | C4 | done | measured instances, `[intended] max_instances=50` |
-| C5 | done with caveats | subtraction audit applied; UC-1..3 fail (section 6) |
+| C5 | done with caveats | subtraction audit applied; UC-1..3 at 9, 8, 5 of 10 |
 | C6 | not done | file-bus rotation, "later, if time"; never dispatched |
 | C7, C8 | done | collector provenance; API fields for A1 |
 | C9 | done | the map draws only observed hand-offs |
@@ -159,31 +159,33 @@ workflow test keeps the first claim per offer. Proven 20/20 under 8-suite load; 
 
 ## 6. Model acceptance
 
-Run on the C5 core, ten checks per use case.
+Ten checks per use case, on verified clones. UC-1 went from 6 to 9/10, UC-2 from 6 to 8, UC-3
+from 4 to 5. None passes yet. What is left is sampling windows (case settings) and two UC-3
+defects in the core.
 
-- **UC-1 (bakery): 9/10 on core `b59f7ad1`, still not a pass.** The first attempt never ran (the
-  harness cut it at 2.5 minutes; a linked worktree shares the main checkout's state). A clone then
-  scored 6/10, with two counter-merge bugs in discovery. The restate fix (`94e3f774`, `befc2638`,
-  one refuter round) keeps a stock's own writer's counters after a merge, and stops a merge when a
-  measured level is exactly one counter minus the other and moves a whole unit where they differ.
-  The re-score (60 min, kalman_lna at 30 s) now finds customers waiting, inspecting to on shelf,
-  on shelf, and a lease-expired flow baking to waiting. No regressions: six exact stocks, 16 flows,
-  every origin fitted. The one miss: the rating is read by assigned, not by placed.
-- **UC-2 (tasking programs): 6/10, fails.** Short windows: levels that never change within a 5 s
-  step. Nothing spurious.
-- **UC-3 (agents and a program): 4/10, fails.** Short windows, and one spurious stock balanced by
-  a ticket flow, fixed by the second of two discovery fixes merged with C5.
+- **UC-1 (bakery): 9/10 on `b59f7ad1`.** The first attempt never ran (a linked worktree shares the
+  main checkout's state). A clone scored 6/10 with two counter-merge bugs, fixed by the restate fix
+  (`94e3f774`, `befc2638`, one refuter round): a stock keeps its own writer's counters, and a level
+  that is exactly one counter minus the other stops their merge. The re-score finds customers
+  waiting, on shelf and a lease-expired flow; no regressions. The miss: the rating is read by
+  assigned, not placed.
+- **UC-2 (tasking programs): 8/10 on `849dfd28`.** Now found: REJECTED as a stock, the rework loop,
+  the capacity rate; every balance exact, nothing forbidden, no discovery bug. The misses are
+  sampling: OPEN was non-zero in 1 of 421 five-second steps, READY_FOR_REVIEW and IN_REVIEW never.
+  Sampling every 1 s would fix all four.
+- **UC-3 (agents and a program): 5/10 on `849dfd28`.** Now found: IN_REVIEW, the rejection loop,
+  the reviewer's agents balanced by its own turns. Short windows remain, and two discovery
+  defects: a level that never falls was taken as the buffer between APPROVED→MERGING and landed
+  (a buffer must fill and drain), and `orchestra_events_total{type=gate.landed}` became a flow
+  beside the gate's own counter (possibly a regression from `b59f7ad1`).
 
-The working files are in the session scratchpad, which may not
-persist.
-
-<!-- PENDING: UC-2 and UC-3 re-scores against core main -->
-Pending at the time of writing: the UC-2 and UC-3 re-scores against core `main`.
+<!-- PENDING: uc3-fixes branch (the never-falling buffer and the duplicate gate.landed flow): outcome and merge -->
+Pending at the time of writing: the two UC-3 fixes on branch `uc3-fixes`.
 
 ## 7. Live model spend
 
 A3 $6.33 (Haiku with Sonnet fallback turns), A3b $0.19, I3 about $0.13. Total about $6.65,
-approximate, well under the $30 cap.
+approximate, under the $30 cap.
 
 ## 8. Open findings and follow-ups
 
@@ -195,8 +197,8 @@ approximate, well under the $30 cap.
   `--extra sd` too (now in COORDINATOR.md, which also forbids syncing your main checkout).
 - A heard declared machine drew dashed (I4); check it after C9.
 - "Whoever acts next" hand-offs draw coordinator to `bot.triage` via `attention.needed` (X34).
-- `find_repo_root` resolves linked worktrees to the main repository; `use-cases.md` "Adding a
-  case" should say to use a clone.
+- `use-cases.md` "Adding a case" should say to use a clone: `find_repo_root` maps a worktree to
+  its main repository.
 - `~/.orchestrator/projects.json` still lists the removed clone `~/orchestra-bakery-clone-UC1`.
 - C6 (file-bus rotation) is not built.
 - UX review (C5's gate): two rounds (4 personas, 136 findings in round 1) and a third
@@ -205,15 +207,13 @@ approximate, well under the $30 cap.
   leave out. Quiet machines show counts, not rates. Round 3 fixed "Left out all 86" beside a
   10-stock model and two screenshot tests (merged as `0d975c8c`). Dropped as matching the approved
   design: "declared by you", the "100%?" labels, the stock level's type size, and the colours,
-  which are yours to choose.
+  which are yours.
 
 **Agents.**
-- A3's failures (Haiku failed turns 1, 4, 6; Sonnet turn 1 twice: unoffered `repo_files`, events
-  in the wrong field, a 360k-character `read_events`, no `link`, a level named as a flow,
-  `add_duty`, UTC) were fixed in A3b: `propose_measurements` needs `list_metrics` first; events go
-  in `receives` and must be heard or announced; `read_events` returns the newest 20 (at most 100)
-  with counts; the Supervisor links the declared stock itself; effects and confirm accept only
-  model flows; no time zone is guessed; a loop is a machine, not a duty.
+- A3's failures (Haiku failed turns 1, 4, 6; Sonnet turn 1 twice) were fixed in A3b:
+  `propose_measurements` needs `list_metrics` first; events must be heard or announced;
+  `read_events` returns the newest 20; effects and confirm accept only model flows; no time zone
+  is guessed; a loop is a machine, not a duty.
 - Still seen on Haiku in A3b: turn 1 declared an extra machine; it refused to link `repo_files`
   (it counts every tracked file, not notes files) and recorded its own instrument; turn 5's
   scheduling removed all the receives (the tool now warns); transcript redaction's email pattern
@@ -243,10 +243,9 @@ not re-verified.
 
 - **It pushed a red suite.** The plugin's `main` went out at `063f5ef` with 2 failing tests. The
   background suite command echoed `tail`'s exit code, not pytest's. A fix agent repaired it
-  (`bf6ecd7`, pushed after 331 passed). Since then the rc is read without a pipe.
-- **It guessed the time.** Log lines stamped 05:40Z to 15:45Z were estimates, not the clock. The
-  real start was 04:41Z and the correction came at 06:12Z. Those lines are in order but their
-  times are wrong.
+  (`bf6ecd7`, pushed after 331 passed). Now the rc is read directly.
+- **It guessed the time.** Log lines stamped 05:40Z to 15:45Z were estimates. The real start was
+  04:41Z; the correction came at 06:12Z. Those lines are in order, with wrong times.
 - **Your venv may have lost its plugins.** A `uv sync` may have removed the plugins from the venv
   that serves :8040. `~/orchestra_2/.venv` now holds only the core. Check that server and
   reinstall the plugins if they are missing.
