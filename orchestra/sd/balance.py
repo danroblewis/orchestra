@@ -9,7 +9,9 @@ step earns back most of one penalty (``COMPLETION``): the rare counter that make
 refund among a hundred orders) is then worth keeping, where alone it could never pay its way. A
 counter that counted fewer than ``MIN_EVENTS`` events is not searched: on three events a level
 and a counter coincide by chance as readily as a stock and its flow. It may only complete a
-balance (``complete``), exactly. The bar is on the evidence for the balance, not on each counter:
+balance (``complete``), exactly: wherever each start's search ends is completed before the best
+is chosen, so an exact balance that needs one beats a near miss by a stand-in no rare counter
+completes (another instrument's count of both ways out, one of them a step late). The bar is on the evidence for the balance, not on each counter:
 counters below the bar alone carry a balance only when together they make it exact in every step
 and counted at least ``MIN_EVENTS`` between them (a state work is sent back to, three rejections
 from review and one from the merge, four returns to work: eight changes, each explained, and no
@@ -115,6 +117,32 @@ def complete(coef: dict[int, int], resid: list[float], sse: float, xs: list[list
         trial[j] = sign
         pool.remove(j)
     return (trial, r, e) if e < EXACT_SSE else (coef, resid, sse)
+
+
+def completed(g: list[list[float]], b: list[float], coef: dict[int, int], sse: float, rare: list[int]
+              ) -> tuple[dict[int, int], float]:
+    """``complete`` on the Gram matrix, cheap enough to try on every balance the search ends at
+    (``balance_of``): the balance finished exactly by rare counters, or as it was."""
+    if sse < EXACT_SSE or not rare:
+        return coef, sse
+    trial, e = dict(coef), sse
+    xr = {j: b[j] - sum(s * g[j][k] for k, s in trial.items()) for j in rare}   # the residual's dot product with each
+    pool = [j for j in rare if j not in trial]
+    while e >= EXACT_SSE and pool:
+        best = None
+        for j in pool:
+            for sign in (1, -1):
+                e2 = e - 2 * sign * xr[j] + g[j][j]
+                if e2 < e - 1e-9 and (best is None or e2 < best[0]):
+                    best = (e2, j, sign)
+        if best is None:
+            break
+        e, j, sign = best
+        trial[j] = sign
+        pool.remove(j)
+        for k in pool:
+            xr[k] -= sign * g[k][j]
+    return (trial, max(0.0, e)) if e < EXACT_SSE else (coef, sse)
 
 
 def penalty(sst: float) -> float:
@@ -238,8 +266,16 @@ def balance_of(y: list[float], xs: list[list[float]], counters: list, ls: LeastS
     rare = [j for j, x in enumerate(xs) if any(x) and j not in live and resolvable(x, yy)]
     b = ls.against(y)
     best = None
+    seen: set[tuple] = set()
     for start in starts_for(ls, y, b, yy, live):
         coef, sse = search(ls.g, b, yy, cost, live, start, objective)
+        if (sig := tuple(sorted(coef.items()))) in seen:
+            continue
+        seen.add(sig)
+        # completed before it is compared (``completed``): an exact balance a rare counter
+        # completes earns its bonus only completed, and short of it may score worse than nothing,
+        # or than a stand-in's near miss, which no rare counter makes exact
+        coef, sse = completed(ls.g, b, coef, sse, rare)
         key = (objective(sse, sum(cost[j] for j in coef)), len(coef), sorted(coef.items()))
         if best is None or key < best[0]:
             best = (key, coef, sse)

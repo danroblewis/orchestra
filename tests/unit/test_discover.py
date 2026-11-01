@@ -254,3 +254,47 @@ def test_a_series_named_with_orchestras_prefix_is_left_out_with_why(tmp_path):
     assert "the orchestra_ prefix is Orchestra's own" in left_out['orchestra_disk_free_bytes{machine="telemetry"}']
     assert "rename it" in left_out['orchestra_disk_free_bytes{machine="telemetry"}']
     assert left_out['orchestra_host_up{machine="orchestra-host"}'].startswith("Orchestra's own")
+
+
+def review_level():
+    """A review state on a 30 s grid, three hours: most reviews enter and leave it within a step,
+    three stay a step or more, so the level moves in only six steps. In: ``entered`` (11);
+    out: ``approved`` (7) and ``rejected`` (4, too few to be searched); and another instrument's
+    ``finished`` turns, the approvals and rejections together, but its last one stamped a step late."""
+    t0, step = 1_800_000_000.0, 30
+    # (step it enters, step it leaves, how)
+    reviews = [(10, 10, "approved"), (30, 30, "rejected"), (50, 52, "approved"), (70, 70, "approved"), (90, 93, "rejected"),
+               (110, 110, "approved"), (130, 130, "rejected"), (150, 151, "approved"), (170, 170, "rejected"),
+               (190, 190, "approved"), (210, 210, "approved")]
+    stamps: dict[str, list[float]] = {"entered": [], "approved": [], "rejected": [], "finished": []}
+    for k, (a, b, how) in enumerate(reviews):
+        stamps["entered"].append(t0 + a * step + 5)
+        stamps[how].append(t0 + b * step + 15)
+        stamps["finished"].append(t0 + b * step + 15 + (step if k == len(reviews) - 1 else 0))
+    mine = {"project": "p", "instrument": "tickets"}
+    pts = []
+    for i in range(0, 3 * 3600, 10):
+        t = t0 + i
+        n = {k: sum(1 for x in v if x <= t) for k, v in stamps.items()}
+        pts += [Point("tickets_in_review", n["entered"] - n["approved"] - n["rejected"], t, mine),
+                Point("tickets_entered_total", n["entered"], t, mine), Point("tickets_approved_total", n["approved"], t, mine),
+                Point("tickets_rejected_total", n["rejected"], t, mine),
+                Point("turns_finished_total", n["finished"], t, {"project": "p", "instrument": "turns", "machine": "reviewer"})]
+    return pts, t0, t0 + 3 * 3600
+
+
+def test_an_exact_balance_a_rare_counter_completes_beats_a_stand_in(tmp_path):
+    # Two exits from a state, one of them rare (4 rejections): with only the searched counters the
+    # balance is entered − approved, four steps off, no better than nothing at all on a level that
+    # moved in six steps, and another instrument's finished turns (approvals and rejections
+    # together, one a step late) fit closer. Only completed with the rejections is the balance
+    # exact; the search must offer that completion, or a 0/1 level is left out as a flag.
+    store = FileMetrics(tmp_path / "m.jsonl")
+    pts, start, end = review_level()
+    store.write(pts)
+    m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
+    assert [s.series.name for s in m.stocks] == ["tickets_in_review"], m.discovery["left_out"]
+    st = m.stocks[0]
+    assert {(b["series"].partition("{")[0], b["sign"]) for b in st.evidence["balance"]} == \
+        {("tickets_entered_total", 1), ("tickets_approved_total", -1), ("tickets_rejected_total", -1)}, st.evidence["balance"]
+    assert st.evidence["exact_steps"] == 1.0
