@@ -119,6 +119,7 @@ from .properties import statistic
 from .resolution import LINEAR, intervals_with, real_points, steps_of
 from .restate import (
     buffers,
+    bus_copies,
     own_counters_back,
     split_event_counters,
     split_foreign_counters,
@@ -1021,6 +1022,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     found, late = own_counters_back(found, [(k, d) for k, d in joined if d.key not in {c.key for c in counters}],
                                     masks, writer_of, fits)
     own_back |= late
+    # Orchestra's count of an event type is filed under its machine's counter of the same moments
+    # where one is a flow: never a flow of its own (AGENTS.md rule 7, sd.restate.bus_copies)
+    own_back = bus_copies(found, own_back, copies, lambda a, b: counts_apart(a, b, named))
     for keep, drop in own_back.values():
         left_out.pop(drop.key, None)
         same_as[keep.key] = [x for x in same_as[keep.key] if (x["name"], x["labels"]) != (drop.name, drop.labels)]
