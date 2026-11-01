@@ -134,7 +134,8 @@ they would publish the same changes twice.
    hypothesis. It names the machine (`^[a-z][a-z0-9_]{1,40}$`, e.g. `pagerduty`), says
    `managed: "external"` (it runs elsewhere), gives its engagement and what it emits, joins it to
    the observed source (`alias` → `bot.pagerduty`), and predicts its effect ("a flow into open
-   incidents appears"). The owner confirms it, and it changes no flow and no equation.
+   incidents appears"). It changes no flow and no equation. The owner's confirm on the page is a
+   request that a listening machine, or you, must answer (§5.6); until then it stays proposed.
 9. **Test against a fake before any real call.** The kits' fakes (`FakeJira`, `FakeSlack`,
    `FakePagerDuty`, `FakePrometheus`) serve the real shapes, check the token and put `CANARY` in
    every text field. Each test checks the events (types, subjects, sources), that a restart
@@ -617,7 +618,7 @@ Then `p.config_edit.set("workflows.every.pagerduty_poll", {"every": "5m", "role"
 
 **The path is to ask the Supervisor first.** Tell it, in your report or in its chat, the machine,
 what it emits, its source and its expected effect. It declares them with `declare_machine` and
-`declare_expected_effect` (`docs/proposals/machine-design.md` §2.3), and the owner confirms them on
+`declare_expected_effect` (`docs/proposals/machine-design.md` §2.3); the owner confirms them on
 the page. With no Supervisor, post one call (`eval "$(orchestra events endpoint --env)"` sets
 both variables):
 
@@ -634,9 +635,25 @@ curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/intended" -H "Authorization: Bearer
    "edits": [{"from": null, "to": "open_incidents", "appears": true}]}]}'
 ```
 
-`PagerDuty` then shows as proposed, and the owner confirms it on the page. Once discovery finds
-`pagerduty_incidents_open` as a stock, the Supervisor `link`s `open_incidents` to it, and the
-prediction can be published.
+`PagerDuty` then shows as proposed. The owner's **confirm** on the page does not confirm it by
+itself: it is a request, published as `orchestra.intent.requested` from `owner`, and applied only
+by a machine that listens for it (the Supervisor, when the agents plugin runs). With none
+listening, you answer it: read the open request, then post one call citing the request's event id
+as `request`:
+
+```bash
+curl -sf "$ORCHESTRA_EVENTS_ENDPOINT/intended/design" -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN" |
+  python -c "import json,sys; print([o for o in json.load(sys.stdin)['open'] if o['what'] == 'unanswered request'])"
+# [{'what': 'unanswered request', 'part': 'machine', 'id': 'pagerduty', 'control': 'confirm', 'event': '<event id>', ...}]
+curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/intended" -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN" \
+  -H "Content-Type: application/json" -d '{"source": "integrator", "author": "integrator", "request": "<event id>",
+  "ops": [{"op": "confirm", "part": "machine", "id": "pagerduty"}]}'
+```
+
+The call must do exactly what the request asked (the same control, part and id, and the same
+`change` when it names one); anything else is refused. Otherwise the declaration stays proposed.
+Once discovery finds `pagerduty_incidents_open` as a stock, the Supervisor (or you, the same way)
+`link`s `open_incidents` to it, and the prediction can be published.
 
 ## 6. Jira (Data Center)
 
