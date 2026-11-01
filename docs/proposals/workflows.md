@@ -1,7 +1,7 @@
 # Workflows: a plugin for any company's workflows
 
 Status: reviewed, 2026-11-01 (panel round 1; judge's verdict round 2); aligned to intended-model.md
-and machine-design.md as merged. Nothing built. Proposal 3 of `design-backwards.md`
+and machine-design.md as merged; coverage pass 2026-11-01. Nothing built. Proposal 3 of `design-backwards.md`
 §7, from `design-backwards-notes.md` §1–§8, §10, §12; the owner's decisions are D21. It builds a
 new private repository, `~/orchestra-workflows` (plugin `workflows`). Nothing is copied from
 `~/orchestra-tasking`, whose SPEC was read as a list of capabilities only. The owner: "Do not let
@@ -138,7 +138,8 @@ lost record. The logs are a copy of the one bus and split nothing (rule 4).
 ### 2.6 A core change to request: file bus rotation
 
 The file bus has no rotation and grows without bound (notes §12). **The plugin works without it;
-history is bounded by the item logs' retention.** The request, as a task in `~/orchestra_2`:
+history is bounded by the item logs' retention.** The request is the goal document's core task C6
+(later in this run's order):
 
 *SPEC's bus section, replacing its sentence on the file bus:* "The file bus is a live segment,
 `events.jsonl`, and sealed segments, `events.d/<base>.jsonl`, where `<base>` is the offset of the
@@ -238,7 +239,7 @@ the same quantity (a bridge's count of open pull requests).
 | `workflow_pile_items{workflow, pile}`, declared piles | gauge | `aggregate`: no level candidate |
 | `workflow_pile_oldest_seconds{workflow, pile}` | gauge | `age`: no level candidate |
 
-Two discovery inputs are needed from the core (with proposal 5): plugin collectors cannot pass
+Two discovery inputs are needed from the core (the goal document's task C7, with proposal 5): plugin collectors cannot pass
 provenance today (only `[[sources]]` do, through `discover(provenance=)`), and `pile` is not in
 `construction.PLACES`. Until both exist, discovery sees step piles as levels with an exact balance,
 and §9's check expects that. The recorder and floor never write metrics directly (rules 2 and 7).
@@ -273,7 +274,8 @@ workflow: an item of one step), a recurring job (`every` an interval), an alert.
 first (W4); workflows are a layer that produces piles for it (W5). **One plugin, a hard boundary
 inside:** `record/`, `floor/`, `define/` and `programs/` meet only through stated APIs; `programs`
 imports neither of the first two and speaks only the bus contract. A test enforces it, so splitting
-the floor out later stays cheap. **Out of the core** (rule 1).
+the floor out later stays cheap. **Out of the core** (rule 1). **Probes** (the prototype's condition checks) are instruments, not
+the floor's; a workflow reads them only as metric conditions (§7).
 
 ### 5.2 Offers, claims, leases, capacity
 
@@ -294,7 +296,9 @@ count against it; a preparation past its timeout frees its unit and slot (reason
 **Pause**: `[workflows] paused`, or per role. **Times** are settings: `tick` 3 s, `heartbeat` 30 s,
 `lease` 180 s, `return_after` 60 s; a lease not longer than heartbeat plus tick is refused. Stopping
 a holder is a planner's `offer.withdraw_requested`, answered with `offer.withdrawn`: an act on the
-bus, not a page button (rule 9). **No half-claimed units.** Before publishing `offer.made` the floor
+bus, not a page button (rule 9). **Never beside the task system's scheduler.** Both would publish as `coordinator/dispatch`, so
+`workflows.floor` refuses to run (logged once, said to the Supervisor by `Plugin.check`) while the
+runtime record shows `tasks.scheduler` running for the same project. **No half-claimed units.** Before publishing `offer.made` the floor
 writes the unit → offer intent to `floor.json`. On start it reconciles with the bus: an offer never
 claimed is withdrawn and its unit freed; an intent with no offer on the bus is dropped and its unit
 freed.
@@ -394,7 +398,8 @@ at most 30) and said once to the planner.
 ## 7. The vocabulary, and nothing beyond it
 
 A workflow is written in exactly these words, the capabilities of notes §1 and no more. Anything that
-needs logic is a machine, never an expression or a script in the definition. A workflow these words
+needs logic is a machine, never an expression or a script in the definition. A milestone is a parent item
+(its children the work) or a dependency on one. A workflow these words
 cannot express is a finding about the vocabulary, taken one case at a time.
 
 | Word | Meaning |
@@ -458,10 +463,12 @@ with no way out, and a lease not longer than heartbeat plus tick; one sentence p
 
 ## 8. What lives where
 
-**A repository's `.orchestra/` folder and a plugin have the same shape.** The folder lives in the
-repository; when the repository may not hold it (a work repository the owner must not push
-Orchestra files to), the same shape lives in a folder beside the owner's private overlay, or in the
-state directory. The Supervisor chooses, by whether the repository can be pushed to.
+**A repository's `.orchestra/` folder and a plugin have the same shape.** The Supervisor's default
+root is the state directory (`~/.orchestrator/<key>/`, as machine-design.md §2.1 puts its writes),
+because at work the base branch is protected; `.orchestra/` in the repository is the alternate root
+when the repository can be pushed to, by pull request. Both hosts (this plugin's and the agents')
+read both roots. A `machine.json` holds the implementation only; the declared layer (proposal 2) is
+authoritative for what the map shows.
 
 ```
 .orchestra/
@@ -498,7 +505,9 @@ no human reads or writes these files (D21).
 tiny target repository under `~/orchestra-workflows/examples/<name>/` with its own `.orchestra/`, a
 README, scripted machines (programs, and agents on the dummy harness: no model, no network), fake
 bridges publishing outside events on a script, and one test with three checks (examples 2–8 are
-M5's, numbered X1–X7 there; they are the suite and the documentation at once):
+M5's, numbered X1–X7 there; they are the suite and the documentation at once; in M5 the 21 stories
+of `docs/user-stories.md` are also run through the vocabulary, and a story it cannot express is a
+vocabulary finding):
 
 1. **piles over time** match the script (from the metrics store, at named moments);
 2. **the model** (`model-acceptance`): step piles recorded `by_construction` (until the core's inputs
@@ -531,7 +540,10 @@ the tests and W7's UX review: `uv run python -m orchestra_workflows demo task-lo
 
 ## 10. Pages and tools
 
-Read-only for humans (rule 9), in Orchestra's frame, built in W7. **Items** (`/items`): the index,
+These are the plugin's own views of its own record, as the task system's Tickets page was, and
+add no page to the core; the owner's "no new page" (notes §13) was about the design map, so the
+owner must confirm these three (the coordinator's default: keep). Read-only for humans (rule 9), in
+Orchestra's frame, built in W7. **Items** (`/items`): the index,
 filtered by workflow, pile, field; an item's drawer folds its log live (timeline, provenance, each
 workflow's step and the facts that make it, the wait reason, facts not counted, offers, holders,
 relations, resources, the recorder's gaps). **Piles** (`/piles`): sizes over time from the series
@@ -589,8 +601,11 @@ overriding what is observed, saying nothing about flows (rule 2). **Pages, route
   said once; marked with the project's key in their git directory).
 - **The program host beyond a command** (argument, environment and stdin interfaces; continuous
   programs, notes §13.2), and **the other words**: `any`, `count ≥ n`, field equalities, person offers
-  (shown to the owner by orchestra-desk). The Supervisor's other workflow tools (`start_item`,
-  `set_capacity`, ...), beyond W7's `declare_workflow`.
+  (shown to the owner by orchestra-desk).
+- **Stacking**: a `depends_on` between items plus a `restack` program step (rebase a branch on its
+  parent's new head); a conflict is an outcome that goes to rework.
+- **The Supervisor's other workflow tools** (`start_item`, `set_capacity`, ...), beyond W7's
+  `declare_workflow`.
 
 ### 12.2 Acceptance tests, each a program's check
 
@@ -656,5 +671,6 @@ bus's retention defaults**, once rotation exists.
 
 Left to others: the declared layer and the machine envelope (proposal 2); the Supervisor's duties,
 the `kind` key's other schemas, the agents' host answering `offer.made` (proposal 4); the desk
-showing person offers (orchestra-desk, later); plugin collectors' provenance and `pile` as a place (the core, with proposal 5);
+showing person offers (orchestra-desk, later); plugin collectors' provenance and `pile` as a place (core task C7, with proposal 5); file bus
+rotation (core task C6, later);
 notes §12's other open items (M0).
