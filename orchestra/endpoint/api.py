@@ -1,6 +1,5 @@
 """The model over HTTP, served by the events endpoint (``server.py``) with the same token: what
-``sd.reads.ModelReads`` does from Python, for a machine in any language. (The ``/experiments``
-routes were removed on 2026-11-01 with the experiments, the owner.)
+``sd.reads.ModelReads`` does from Python, for a machine in any language.
 
 Reads (``GET``):
 
