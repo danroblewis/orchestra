@@ -6,7 +6,8 @@ and drained (``drain``: k per ready item a minute). At c = 3, 0.5, 3 and 0.3 the
 6 and the ready stock at 20; doubling the arrivals settles them at 12 and 30, the ready stock
 ×1.5."""
 
-from orchestra.sd.experiments.fabricate import as_history, fabricate
+from orchestra.sd.experiments.fabricate import fabricate
+from orchestra.sd.experiments.history import unit_s
 from orchestra.sd.model import Equation, Flow, Model, SeriesRef, Stock
 
 T0 = 1_800_000_000.0
@@ -33,3 +34,18 @@ def history_of(model: Model, *, minutes: int = 120, start_levels=None, seed: int
     lv = start_levels or {"queue": 6.0, "ready": 20.0}
     run = fabricate(model, {"inputs": {}}, start=T0, end=T0 + minutes * 60, step_s=step_s, seed=seed, levels=lv)
     return as_history(model, run)
+
+
+def as_history(model: Model, run: dict, *, flow_step: float = 30.0, inputs: dict | None = None) -> dict:
+    """The run as the web server's history (``sd.history.history``): levels at every step,
+    each flow's rate per time unit over each ``flow_step``, and the inputs given."""
+    unit = unit_s(model)
+    t = run["t"]
+    every = max(1, round(flow_step / run["step_s"]))
+    flows = {}
+    for f in model.flows:
+        c = run["counts"][f.id]
+        flows[f.id] = [[t[i], (c[i] - c[i - every]) * unit / (t[i] - t[i - every])] for i in range(every, len(t), every)]
+    return {"at": t[-1], "start": t[0], "stock_step": run["step_s"], "flow_step": every * run["step_s"], "time_unit": model.time_unit,
+            "stocks": {s.id: [[tt, v] for tt, v in zip(t, run["levels"][s.id])] for s in model.stocks if s.series is not None},
+            "flows": flows, "inputs": dict(inputs or {})}

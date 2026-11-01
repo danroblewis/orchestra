@@ -219,7 +219,6 @@ class Problem:
         self.deadline: float | None = None
         base = self.run([{}])
         self.base_means, self.base_totals = base["means"][0], base["totals"][0]
-        self.base_max, self.base_min = base["max"][0], base["min"][0]
 
     def run(self, columns: list[dict[str, float]]) -> dict:
         """The replay of each column (``{candidate key: factor}``), in batches: each stock's mean,
@@ -280,10 +279,6 @@ class Problem:
     def met(self, res: dict, j: int) -> bool:
         return bool(all(abs(m) <= TOL * (1 + 1e-9) if t["kind"] not in ("below", "above") else m <= 1e-9
                         for t, m in zip(self.targets, self.misses(res, j))))
-
-
-def _cost(support: dict, cands: dict[str, Candidate]) -> float:
-    return sum(1 + (STRUCTURE if cands[k].structural else 0.0) for k in support)
 
 
 def _refine(p: Problem, support: dict[str, float], deadline: float) -> tuple[dict[str, float], float]:

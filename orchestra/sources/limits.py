@@ -73,7 +73,6 @@ class RateLimit:
         self._mem = {"tokens": self.burst, "t": clock(), "hold": 0.0, "day": _day(clock()), "count": 0}
         self._lock = threading.Lock()
         self._sleep, self._clock = sleep, clock
-        self.waited = 0.0                        # seconds this process waited for the bucket
 
     def _state(self, fh) -> dict:
         try:
@@ -139,7 +138,6 @@ class RateLimit:
                 break
             if until is not None and time.monotonic() + wait > until:
                 raise PastDeadline(f"{where}: past the deadline (waiting {wait:.1f} s for the source's request rate)")
-            self.waited += wait
             self._sleep(min(wait, 5.0))
         if self.parent is not None:
             self.parent.take(until, where)
