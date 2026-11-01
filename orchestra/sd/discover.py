@@ -118,6 +118,7 @@ from .pins import declared as declared_stocks
 from .properties import statistic
 from .resolution import LINEAR, intervals_with, real_points, steps_of
 from .restate import (
+    measured_between,
     own_counters_back,
     split_event_counters,
     split_foreign_counters,
@@ -936,7 +937,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         found, made = pass_(found, counters, masks, writer_of, fits, MIN_EVENTS)
         notes.update(made)
     found, made, joined = unify_same_flows(found, masks, lambda a, b: (same_flow(a, b, n) or lagged_flow(a, b)) and not counts_apart(a, b, named),
-                                           first_stamped, writer_of, fits)
+                                           first_stamped, writer_of, fits,
+                                           lambda a, b: measured_between([lv for lv in series if unit[lv.key] == unit[a.key]], a, b))
     notes.update(made)
     for keep, drop in joined:              # a counter joined to another stands for nothing on its own
         same_as[keep.key] += [{"name": drop.name, "labels": drop.labels}, *same_as.pop(drop.key, [])]
@@ -944,6 +946,10 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         left_out[drop.key] = made[drop.key]
     dropped = {drop.key for _, drop in joined}
     counters = [c for c in counters if c.key not in dropped]
+    # each stock judged on its own writer's count of events joined to another writer's, before
+    # anything weighs its balance: judged on the other's, a stock its own counters balance exactly
+    # may fail identification on the other's lag (sd.restate.own_counters_back, again below)
+    found, own_back = own_counters_back(found, joined, masks, writer_of, fits)
     # a set of a balance's counters that one unused counter counts at once gives way to it
     # (sd.parsimony: the customers' orders less the app's are the takers' own orders taken)
     found, made = fewer_counters(found, counters, masks, fits, set(notes), writer_of)
@@ -983,7 +989,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     declared_keys = {s.key for s, _, _, _ in pinned if s.key in pins}
     # a balance is identified only by evidence that holds out of sample and beats chance (sd.identify);
     # a count of reporters and its own turnover is a balance by construction, no evidence at all
-    found, identified, constructed_, refused = accepted(pinned + kept, counters, barred, masks, provenance, left_out,
+    given = list({drop.key: drop for _, drop in own_back.values()}.values())
+    found, identified, constructed_, refused = accepted(pinned + kept, counters + given, barred, masks, provenance, left_out,
                                                          lambda a, b: same_flow(a, b, n) or lagged_flow(a, b), declared_keys)
     # twins are joined among the identified only: a copy that loses to a level identification then
     # refuses would leave neither (the order backlog and a per-partition maximum)
@@ -1012,8 +1019,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         passed[p.level.key] = p
     # each stock balanced by its own writer's count of events joined to another writer's (sd.restate):
     # it measures that stock's co-flow, so it is no longer left out, nor one the kept counter stands for
-    found, own_back = own_counters_back(found, [(k, d) for k, d in joined if d.key not in {c.key for c in counters}],
-                                        masks, writer_of, fits)
+    found, late = own_counters_back(found, [(k, d) for k, d in joined if d.key not in {c.key for c in counters}],
+                                    masks, writer_of, fits)
+    own_back |= late
     for keep, drop in own_back.values():
         left_out.pop(drop.key, None)
         same_as[keep.key] = [x for x in same_as[keep.key] if (x["name"], x["labels"]) != (drop.name, drop.labels)]

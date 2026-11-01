@@ -424,9 +424,13 @@ Conservation (`sd/discover.py`):
    copy of one of them); another machine's counter that no other stock claims to the level's
    own counters that sum to it; and two machines' counts of one flow, one leaving a stock and
    the other entering another, to one counter in both balances (one that a stock of its own
-   machine holds before another machine's copy, then the one stamped first). Once every balance
-   is final, a stock whose own writer's count was joined to another writer's takes its own back:
-   no stock is balanced by another instrument's count of its events while its own exists. The two
+   machine holds before another machine's copy, then the one stamped first), unless a measured
+   level is exactly the one less the other in every step, however seldom it moves (a shelf
+   left within seconds): that level is the buffer between them, and they are its inflow and
+   outflow. Right after the join, and again once every balance is final, a stock whose own
+   writer's count was joined to another writer's takes its own back, so it is identified on
+   its own counters: no stock is balanced by another instrument's count of its events while its
+   own exists. The two
    stay one flow and its co-flow, with one rate, each measured by its own writer's series. Last, two or three
    of a balance's counters whose signed sum one unused counter counts by itself (each a moment
    before or after the other: running totals never more than an event apart) give way to it

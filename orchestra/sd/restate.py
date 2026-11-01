@@ -16,13 +16,15 @@ joins two stocks (each took its own machine's copy). Three passes, in this order
 - ``unify_same_flows``: two counters of the same events, each in a balance (two machines' counts
   of one event; a move recorded in two hops, a moment apart, through a state the grid never sees
   held), become one in every balance, so the one flow runs between the stocks and, where the
-  event moves two machines' stocks, is a co-flow (``sd.ends``).
+  event moves two machines' stocks, is a co-flow (``sd.ends``); never two a measured level lies
+  between (``measured_between``).
 
 A restated balance must still fit as a stock's (the caller's ``fits``), or the level keeps what it
 had. Each pass returns the balances and, per counter replaced, why (for the record, when no
 balance keeps it).
 
-Last, once every balance is final, ``own_counters_back`` gives each stock back its own writer's
+Right after the join (so identification judges each stock on its own counters) and again once
+every balance is final, ``own_counters_back`` gives each stock back its own writer's
 counter of events ``unify_same_flows`` joined to another writer's: one event, two writers' records
 (the worker's review request moves a ticket and starts the reviewer's turn), each stock balanced by
 its own, the pair still one flow and a co-flow with one rate (``sd.ends``)."""
@@ -33,6 +35,7 @@ from itertools import combinations
 
 from .balance import fit_of
 from .collinear import decompose
+from .live import balance_steps
 from .series import EVENT_COUNTER, Series, written_by
 
 
@@ -105,11 +108,27 @@ def _held_together(found: list, a: Series, b: Series) -> bool:
     return any(any(c is a for c, _ in terms) and any(c is b for c, _ in terms) for _, terms, _, _ in found)
 
 
-def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamped, writer_of, fits
-                     ) -> tuple[list, dict[str, str], list[tuple[Series, Series]]]:
+def measured_between(levels: list[Series], a: Series, b: Series) -> bool:
+    """Whether a measured level is the buffer between two counters: one fills it and the other
+    drains it, exactly in every step where any of them is live, and it moved. However seldom it
+    moved (the shelf an order leaves within seconds, read as held in two steps of an hour, too
+    few to be a stock), the grid tells the two apart in its steps: its inflow and its outflow,
+    never one flow."""
+    for lv in levels:
+        steps = balance_steps(lv, [a, b])
+        if lv.counter or not any(lv.deltas[i] for i in steps):
+            continue
+        if any(fit_of(lv, [(a, sg), (b, -sg)], steps)[1] >= 1.0 - 1e-9 for sg in (1, -1)):
+            return True
+    return False
+
+
+def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamped, writer_of, fits,
+                     between=lambda a, b: False) -> tuple[list, dict[str, str], list[tuple[Series, Series]]]:
     """Two counters of the same events (``same``: in the same steps, or one stamped up to a step
     after the other), each in a balance, become one counter in every balance, unless a balance
-    holds both (``_held_together``). Within a machine the flow then runs between its stocks
+    holds both (``_held_together``) or a measured level lies between them (``between``:
+    ``measured_between``). Within a machine the flow then runs between its stocks
     instead of leaving one and entering the other from outside; where the two counters are two
     machines' records of one event moving each one's own material (an order accepted leaves the
     board's waiting and takes one of the kitchen's cooks), the one counter is claimed by both
@@ -130,7 +149,7 @@ def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamp
     gone: set[str] = set()
     for a, b in combinations(sorted(used), 2):
         ca, cb = used[a], used[b]
-        if a in gone or b in gone or _held_together(found, ca, cb) or not same(ca, cb):
+        if a in gone or b in gone or _held_together(found, ca, cb) or not same(ca, cb) or between(ca, cb):
             continue
         best = None
         for keep, drop in ((ca, cb), (cb, ca)):
