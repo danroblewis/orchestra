@@ -9,7 +9,9 @@ materials (an order baked leaves the board's baking stock and frees one of the e
 where each machine counted the event itself, ``sd.restate`` has made the two counters one).
 That is recorded as one flow per machine with the same counter: the counter's own machine (or the
 machine whose stocks it explains most) has the plain flow, the others ``<flow>@<machine>``, each
-naming the other in its evidence. The Dynamics page draws flows as edges between stocks, so every
+naming the other in its evidence. Where the other machine counted the same events itself and its
+stock is balanced by its own count (``sd.restate.own_counters_back``), its co-flow is measured by
+that count: one event, one rate, each machine's flow its own writer's series. The Dynamics page draws flows as edges between stocks, so every
 claim stays visible; one flow with four ends could not be drawn.
 
 A counter that drains no stock and that several stocks each take as an inflow, explaining at least
@@ -38,6 +40,7 @@ class Claim:
     share: float        # how much of the stock's variance the counter explains (balance.explained_share)
     machine: str | None
     accumulator: bool
+    counter: object = None   # the Series the stock's balance holds, when it is another writer's count of this counter's events
 
 
 @dataclass
@@ -49,15 +52,27 @@ class Move:
     evidence: dict = field(default_factory=dict)
 
 
-def claims(found: list, sid_of: dict, writer_of) -> dict[str, list[Claim]]:
-    """Per counter key, every stock's claim on it (``found``: (level, terms, r2, exact))."""
+def claims(found: list, sid_of: dict, writer_of, same: dict | None = None) -> dict[str, list[Claim]]:
+    """Per counter key, every stock's claim on it (``found``: (level, terms, r2, exact)). ``same``:
+    a counter of the same events as another (by key, that other's Series), whose claims are the
+    other's, each naming the series it holds (``Claim.counter``)."""
+    same = same or {}
     out: dict[str, list[Claim]] = defaultdict(list)
     for s, terms, _, _ in found:
         acc = all(sign > 0 for _, sign in terms)
         steps = balance_steps(s, [c for c, _ in terms])      # the steps the balance was found on
         for c, sign in terms:
-            out[c.key].append(Claim(sid_of[s.key], sign, explained_share(s, terms, c, steps), writer_of(s), acc))
+            key = same[c.key].key if c.key in same else c.key
+            out[key].append(Claim(sid_of[s.key], sign, explained_share(s, terms, c, steps), writer_of(s), acc,
+                                  c if c.key in same else None))
     return out
+
+
+def _measured_by(c, cs: list[Claim]):
+    """The series a flow of these claims is measured by: the one their stocks hold, when it is
+    another writer's count of ``c``'s events; else ``c``."""
+    held = {cl.counter.key: cl.counter for cl in cs if cl.counter is not None}
+    return next(iter(held.values())) if len(held) == 1 and all(cl.counter is not None for cl in cs) else c
 
 
 def _end(cs: list[Claim]) -> tuple[str | None, list[dict]]:
@@ -74,7 +89,7 @@ def copies(c, cs: list[Claim], fid: str) -> list[Move] | None:
     fills = sorted((cl for cl in cs if cl.sign > 0 and not cl.accumulator and cl.share >= COPY_SHARE), key=lambda cl: -cl.share)
     if len(fills) < 2 or any(cl.sign < 0 for cl in cs):
         return None
-    made = [Move(fid if i == 0 else f"{fid}>{cl.stock}", c, None, cl.stock,
+    made = [Move(fid if i == 0 else f"{fid}>{cl.stock}", _measured_by(c, [cl]), None, cl.stock,
                  {"copy_of": fid, "share": round(cl.share, 4),
                   "note": f"every event also fills {cl.stock}: the same events as {fid}, a copy, not a split"} if i else {})
             for i, cl in enumerate(fills)]
@@ -112,11 +127,12 @@ def moves(counters: list, by_counter: dict[str, list[Claim]], fid_of: dict[str, 
             conflicts += [{"end": "dst", "kept": dst, "others": lost_dst}] if lost_dst else []
             if conflicts:
                 ev["conflicts"] = conflicts
+            by = _measured_by(c, groups[machine])
             if machine != main:
                 ev["co_flow_of"] = fid
                 ev["note"] = (f"the same events as {fid}, which also move a stock {machine or 'another writer'} measures: "
-                              "one event, two materials")
-            made.append(Move(fid if machine == main else f"{fid}@{machine or 'other'}", c, src, dst, ev))
+                              "one event, two materials" + (f"; counted by {machine} itself ({by.key})" if by is not c else ""))
+            made.append(Move(fid if machine == main else f"{fid}@{machine or 'other'}", by, src, dst, ev))
         if len(made) > 1:
             made[0].evidence["co_flows"] = [m.id for m in made[1:]]
         out += made

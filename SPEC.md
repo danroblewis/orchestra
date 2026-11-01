@@ -375,7 +375,8 @@ Conservation (`sd/discover.py`):
    that move together in all but 3% of steps are one when one is Orchestra's count of the
    other's events, or both are one machine's: the machine's own, then the shorter name, is kept;
    two machines' counts of the same events both stay (each machine's stocks take their own) and
-   become one afterwards where they join two stocks (step 2). Counters that differ in a label whose
+   become one flow afterwards where they join two stocks, each stock still balanced by its own
+   (step 2). Counters that differ in a label whose
    values tell measured levels apart (pods started in us-east, and pods started or stopped in
    us-west) are never one, however often their events coincide (rolling deploys that reach every
    region in the same minutes), and never join one passage (step 3). Counters that differ only by
@@ -400,7 +401,9 @@ Conservation (`sd/discover.py`):
    (least squares on all counters rounded to ±1, nothing, each counter alone, the best pairs)
    with the best kept, on the counters' Gram matrix so each candidate move is cheap
    (`sd/balance.py`). A balance exact in every step earns back most of one penalty, so the rare
-   counter that completes it (a refund among a hundred orders) is kept. A small set of chosen
+   counter that completes it (a refund among a hundred orders) is kept; every start's result is
+   completed before the best is chosen, so an exact balance that needs a rare counter beats a
+   stand-in's near miss (another instrument's count of both ways out of a state, one a step late). A small set of chosen
    counters that cancels to nothing is dropped, and one that equals an unchosen counter is
    replaced by it (`sd/collinear.py`). The level's own machine's counters are searched first
    (its record of its transitions, with Orchestra's counts of its events): when they balance it
@@ -421,7 +424,10 @@ Conservation (`sd/discover.py`):
    copy of one of them); another machine's counter that no other stock claims to the level's
    own counters that sum to it; and two machines' counts of one flow, one leaving a stock and
    the other entering another, to one counter in both balances (one that a stock of its own
-   machine holds before another machine's copy, then the one stamped first). Last, two or three
+   machine holds before another machine's copy, then the one stamped first). Once every balance
+   is final, a stock whose own writer's count was joined to another writer's takes its own back:
+   no stock is balanced by another instrument's count of its events while its own exists. The two
+   stay one flow and its co-flow, with one rate, each measured by its own writer's series. Last, two or three
    of a balance's counters whose signed sum one unused counter counts by itself (each a moment
    before or after the other: running totals never more than an event apart) give way to it
    (`sd/parsimony.py`: the customers' orders less the app's are the takers' own orders taken),

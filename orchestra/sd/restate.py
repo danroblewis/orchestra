@@ -20,7 +20,12 @@ joins two stocks (each took its own machine's copy). Three passes, in this order
 
 A restated balance must still fit as a stock's (the caller's ``fits``), or the level keeps what it
 had. Each pass returns the balances and, per counter replaced, why (for the record, when no
-balance keeps it)."""
+balance keeps it).
+
+Last, once every balance is final, ``own_counters_back`` gives each stock back its own writer's
+counter of events ``unify_same_flows`` joined to another writer's: one event, two writers' records
+(the worker's review request moves a ticket and starts the reviewer's turn), each stock balanced by
+its own, the pair still one flow and a co-flow with one rate (``sd.ends``)."""
 
 from __future__ import annotations
 
@@ -115,7 +120,9 @@ def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamp
     customers' count of the same returns: a stock's own machine's counters come first), then the
     one stamped first (the flow's events are judged against the levels just before them, which
     the later stamp has already moved), then the one that leaves the balances fitting best. Returns the balances,
-    why each counter dropped was (by key), and the pairs joined (kept, dropped)."""
+    why each counter dropped was (by key), and the pairs joined (kept, dropped). Where the dropped
+    one was another writer's stock's own, that stock takes it back once every balance is final
+    (``own_counters_back``)."""
     found = list(found)
     notes: dict[str, str] = {}
     joined: list[tuple[Series, Series]] = []
@@ -147,3 +154,27 @@ def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamp
             joined.append((keep, drop))
             gone.add(drop.key)
     return found, notes, joined
+
+
+def own_counters_back(found: list, joined: list[tuple[Series, Series]], masks: dict[str, list[int]], writer_of, fits
+                      ) -> tuple[list, dict[str, tuple[Series, Series]]]:
+    """Each stock whose writer wrote a counter that ``unify_same_flows`` joined to another writer's
+    (``joined``: (kept, dropped)) takes its own back, where its balance still holds the kept one and
+    still fits with its own: no stock is balanced by another instrument's count of its events while
+    its own exists. Orchestra's event counter is no one's own. Returns the balances and, per counter
+    given back (by its key), the pair (kept, given back): the two stay one flow and a co-flow
+    (``sd.ends.claims``)."""
+    out, back = [], {}
+    for s, terms, r2, exact in found:
+        for keep, drop in joined:
+            w = writer_of(drop)
+            if (EVENT_COUNTER in (keep.name, drop.name) or w is None or w == writer_of(keep) or writer_of(s) != w
+                    or not any(c is keep for c, _ in terms) or any(c is drop for c, _ in terms)):
+                continue
+            mine = [(drop if c is keep else c, sg) for c, sg in terms]
+            r2b, exact2 = fit_of(s, mine, masks[s.key])
+            if fits(s, r2b, exact2):
+                terms, r2, exact = mine, r2b, exact2
+                back[drop.key] = (keep, drop)
+        out.append((s, terms, r2, exact))
+    return out, back

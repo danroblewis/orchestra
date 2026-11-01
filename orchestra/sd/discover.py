@@ -117,7 +117,12 @@ from .path import nelder_mead as _nelder_mead
 from .pins import declared as declared_stocks
 from .properties import statistic
 from .resolution import LINEAR, intervals_with, real_points, steps_of
-from .restate import split_event_counters, split_foreign_counters, unify_same_flows
+from .restate import (
+    own_counters_back,
+    split_event_counters,
+    split_foreign_counters,
+    unify_same_flows,
+)
 from .series import (
     EVENT_COUNTER,
     NOT_NAMED,
@@ -1005,6 +1010,13 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         found.append((p.level, p.terms, None if r2 is None else max(0.0, r2), exact))
         left_out.pop(p.level.key, None)
         passed[p.level.key] = p
+    # each stock balanced by its own writer's count of events joined to another writer's (sd.restate):
+    # it measures that stock's co-flow, so it is no longer left out, nor one the kept counter stands for
+    found, own_back = own_counters_back(found, [(k, d) for k, d in joined if d.key not in {c.key for c in counters}],
+                                        masks, writer_of, fits)
+    for keep, drop in own_back.values():
+        left_out.pop(drop.key, None)
+        same_as[keep.key] = [x for x in same_as[keep.key] if (x["name"], x["labels"]) != (drop.name, drop.labels)]
     stocks, sid_of, ids = [], {}, set()
     held: dict[str, dict] = {}       # the levels whose value was carried on their machine's word, and for how long
     for s, terms, r2, exact in found:
@@ -1036,7 +1048,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                                 if s.blocks and any(c.blocks for c, _ in terms) else {})}))
     # a counter in two balances connects those stocks (sd.ends: contested ends and co-flows)
     fid_of = {c.key: unique_id(_slug(c), writer_of(c), ids) for c in counters}
-    by_counter = claims(found, sid_of, writer_of)
+    by_counter = claims(found, sid_of, writer_of, {k: keep for k, (keep, _) in own_back.items()})
     flow_moves = moves(counters, by_counter, fid_of, writer_of)
     # a move between piles is a flow by construction: its ends are its instrument's; its rate is still fitted
     built_moves = {c.key for s, terms, _, _ in found if s.key in constructed_ for c, _ in terms}
@@ -1087,8 +1099,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     accumulators = {sid_of[s.key] for s, terms, _, _ in found if all(sign > 0 for _, sign in terms)}
     flows, measured = [], {}
     grouped: dict[str, list] = defaultdict(list)       # per counter: its flow, then its co-flows (ends.moves's order)
-    for mv in flow_moves:
-        grouped[mv.counter.key].append(mv)
+    for mv in flow_moves:                              # a co-flow its own writer counted is still the flow's events
+        grouped[mv.evidence.get("co_flow_of") or mv.evidence.get("copy_of") or mv.id].append(mv)
     series_of = {sid_of[s.key]: s for s, _, _, _ in found}
     # what each series a rate may read says of itself (name, labels, unit): a tie-break between drivers (sd.driverchoice)
     described = {sid_of[s.key]: (s.name, s.labels, unit.get(s.key)) for s in [*series_of.values(), *found_net]}
@@ -1134,14 +1146,16 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                 mv.evidence["driver"] = best["driver"]
             if barred:
                 mv.evidence["not_drivers"] = barred
-            if c.key in same_as:             # the counters of the same events this one stands for (one flow, measured twice)
-                mv.evidence["same_as"] = same_as[c.key]
+            # a co-flow its own writer counted is measured by that count, at the flow's one rate (sd.ends)
+            by = mv.counter
+            if same_as.get(by.key):          # the counters of the same events this one stands for (one flow, measured twice)
+                mv.evidence["same_as"] = same_as[by.key]
             # a counter summed over instances is not a series in the store: the flow is measured by each of them
-            flows.append(Flow(mv.id, _title(c), mv.src, mv.dst, None if c.members else ref(c),
+            flows.append(Flow(mv.id, _title(c), mv.src, mv.dst, None if by.members else ref(by),
                               [Equation(best["form"], {k: round(v, 6) for k, v in best["params"].items()}, "fitted", "poisson-mle",
                                         (live[0][0], end), None, dict(q), list(best["inputs"]))],
-                              [ref(m) for m in c.members], mv.evidence))
-            measured[mv.id] = c
+                              [ref(m) for m in by.members], mv.evidence))
+            measured[mv.id] = by
     flows += net_flows
     # which machines may be associated with each flow: hypotheses from the bus, never from who
     # wrote the counter; they change no equation and no structure (sd.attribute)
