@@ -19,3 +19,11 @@ test("the keys are the record's: labels sorted, no project label", () => {
   assert.equal(LeftOut.keyOf(ref("x", { b: "2", a: "1" })), 'x{a="1",b="2"}');
   assert.deepEqual([...LeftOut.used(m)].sort(), ['moved_total{to="OPEN"}', 'tickets{state="OPEN"}']);
 });
+
+test("the series left out at once are counted by the reasons the record gives, never a fixed phrase", () => {
+  const lo = { a: "too new to measure: its first point is after the window's last step", b: "too new to measure: …", c: "Orchestra's own (the host's and the Core page's plumbing)",
+               d: "a level that did not change" };
+  assert.equal(LeftOut.early(lo, 3), "2 too new to measure, 1 Orchestra's own");
+  assert.equal(LeftOut.early(lo, 5), "2 too new to measure, 1 Orchestra's own, 2 without a reason in the record");
+  assert.doesNotMatch(LeftOut.early(lo, 3), /not being written/);
+});

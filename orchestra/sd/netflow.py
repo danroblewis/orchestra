@@ -393,7 +393,7 @@ def fit(level, drivers: list[Driver], step: float, unit_s: float, defer: frozens
     if changes0 < EVENTS_PER_PARAM * 2:
         said = (f"only {changes0} of its {len(y0)} stretches" if changes0 < len(y0) else f"{changes0} stretches")
         return None, (f"and it changed in {said} of {k0 * step:g} s; fitting a net flow needs at least "
-                      f"{EVENTS_PER_PARAM * 2}: an input")
+                      f"{EVENTS_PER_PARAM * 2}, so it looks like an input")
     consider(k0, None, True)
     for d in drivers:
         k = max(k0, steps_of(d.resolution_s, step))

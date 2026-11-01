@@ -24,6 +24,19 @@ const LeftOut = (() => {
     const left = Math.max(names.length, n - u - kept);
     return { n, used: u, kept, named: names.length, left, unnamed: left - names.length, all: left === n };
   }
-  return { keyOf, used, counts };
+  // the reasons a series is left out before it is considered (web/dynamics.py EARLY), as said in a count
+  const EARLY = [["Orchestra's own", "Orchestra's own"], ["named orchestra_", "named orchestra_*"], ["no longer written", "no longer written"],
+    ["not written", "not written in the window"], ["too new", "too new to measure"]];
+  // the ``n`` series left out at once, by the reasons the record gives (``lo``), most first: "16 too
+  // new to measure, 1 Orchestra's own"; those it does not name are counted as such, never guessed
+  function early(lo, n) {
+    const by = new Map();
+    for (const why of Object.values(lo || {})) { const e = EARLY.find(([p]) => String(why).startsWith(p)); if (e) by.set(e[1], (by.get(e[1]) || 0) + 1); }
+    const parts = [...by.entries()].sort((a, b) => b[1] - a[1]).map(([label, k]) => `${k} ${label}`);
+    const named = [...by.values()].reduce((a, b) => a + b, 0);
+    if (n > named) parts.push(`${n - named} without a reason in the record`);
+    return parts.join(", ");
+  }
+  return { keyOf, used, counts, early };
 })();
 if (typeof module !== "undefined") module.exports = LeftOut;
