@@ -4,7 +4,12 @@ Orchestra on your own project in five steps:
 
 - **Measure it:** your tests and your own metrics, over time.
 - **Model it:** a system dynamics model, discovered from those measurements.
-- **Ask for changes:** tell the Supervisor what you want. Agents plan it, build it and review it, and your tests gate every change.
+- **Ask for changes:** tell the Supervisor what you want. Work moves through a workflow (write,
+  review), done by AI agents.
+
+You start on the core and the Workflows plugin, with its first example, the **task loop**
+(write → review → gate). You write no configuration: `orchestra init` writes a starter file, and
+from then on the Supervisor writes every setting from what you tell it in the chat.
 
 You need:
 
@@ -15,71 +20,96 @@ You need:
 ## 1. Install
 
 ```bash
-uv tool install 'orchestra[sd,tasking,agents,bridges,desk,outbox,workflows] @ git+https://github.com/danroblewis/orchestra@main'
+uv tool install 'orchestra[sd,agents,workflows] @ git+https://github.com/danroblewis/orchestra@main'
 uv tool update-shell
 ```
 
-Open a new terminal. `orchestra --help` should list `tasks`, `agents`, `bridges`, `desk`, `outbox` and `workflows`.
+Open a new terminal. `orchestra --help` should list `agents` and `workflows`.
 
-`sd` is the model and its discovery. Each other name is a plugin. This installs every plugin. Bridges, desk, outbox and workflows stay off until you ask the Supervisor to set them up (see **Plugins** below).
+`sd` is the model and its discovery; `agents` is the Supervisor and the agents that do the work;
+`workflows` moves the work. Add `bridges` and `outbox` to the brackets when you want them (see
+**Plugins** below).
 
-## 2. Configure
+## 2. Watch the task loop run
 
-Save this as `orchestra.toml` at the root of your repository. Change the lines marked `←`.
+The Workflows plugin's first example runs on scripted machines: no model, no cost, nothing outside
+a temporary folder.
+
+```bash
+git clone https://github.com/danroblewis/orchestra-workflows
+orchestra-workflows/examples/task_loop/demo.sh
+```
+
+It prints a link. Open it: the **Machines** page shows the coordinator, two workers, a reviewer and
+the merge gate handing ten pieces of work to each other; **Items** shows each one's step; after a
+few minutes **Dynamics** shows the model discovered from it. Ctrl-C stops it. This is what your
+own project will do in step 5, with AI agents in place of the scripts.
+
+## 3. Start Orchestra on your repository
+
+```bash
+cd <your repository>
+orchestra init     # registers it and writes a starter orchestra.toml: nothing in it to change
+orchestra run      # terminal 1: measures, models, runs the agents
+orchestra web      # terminal 2: the web UI; click the "log in" link it prints
+```
+
+Lost the link? Run `orchestra web token`. With no `[agents]` settings, the agents run on Claude
+Code with Haiku (cheap); ask the Supervisor for `sonnet` or `opus` for harder work.
+
+## 4. Tell the Supervisor what to measure
+
+Open the **Agents** page and type, with your own test command:
+
+> Measure my tests every 5 minutes. The command is `uv run pytest -q`.
+
+The Supervisor tries the command once, then writes this to `orchestra.toml` and commits it, with
+its reason (`set_collector`):
 
 ```toml
-# Measure: your test results, every 5 minutes.
 [[collect]]
 name = "tests"
-command = "python -m orchestra.instruments.test_reports --run 'uv run pytest -q'"   # ← your test command
+command = "python -m orchestra.instruments.test_reports --run 'uv run pytest -q'"
 every = "5m"
 timeout = "4m"
-
-# Changes: each ticket on its own branch. It lands on base_branch only if the tests pass.
-[project]
-base_branch = "main"     # ← your main branch
-ticket_prefix = "APP"    # ← tickets are named APP-1, APP-2, …
-work = "code"
-push = false             # nothing leaves your machine
-
-[[gate.unit]]
-name = "unit"
-command = "uv run pytest -q"   # ← your test command
-
-# The agents: a Supervisor you talk to, and a Coordinator, workers and reviewers.
-[agents]
-harness = "claude_code"
-model = "haiku"          # cheap; "sonnet" or "opus" for harder work
-serves = ["worker", "reviewer"]
 ```
 
-Then:
+The **Instruments** page shows it within a round. Anything else you want measured, ask the same
+way ("measure the number of open TODOs every minute").
 
-```bash
-orchestra init
-git add orchestra.toml && git commit -m "Orchestra"
-```
+## 5. Tell the Supervisor how work moves
 
-## 3. Start
+Type:
 
-Two terminals, both in your repository:
+> Set up the task loop on this repository: a worker writes each change in its own worktree, and a
+> reviewer reviews it; a rejection goes back to the worker, at most three rounds.
 
-```bash
-orchestra run    # terminal 1: measures, models, runs the agents
-orchestra web    # terminal 2: the web UI
-```
+The Supervisor writes the workflow (`declare_workflow`) to
+`~/.orchestrator/<key>/workflows/task_loop/workflow.json`: a `write` step for the role `worker`
+needing a `worktree`, then a `review` step for the role `reviewer` (`approved` ends it, `rejected`
+goes back to `write`, `rounds` 3). The built-in worker and reviewer agents take those roles, and
+the worktrees are built in (each made from `origin/main`, fetched: your repository needs an
+`origin` with a `main` branch; nothing is pushed to it). The **Workflows** page draws it; **Items** shows each piece of work.
 
-## 4. Log in
+**Known gaps today** (the Supervisor cannot do these from the chat yet):
 
-Click the **log in** link that `orchestra web` prints. Lost it? Run `orchestra web token`.
+- **Asking for a piece of work.** The Supervisor has no tool that starts an item on a workflow, so
+  you start one with a line of Orchestra's Python, in your repository:
 
-## 5. Ask for something
+  ```bash
+  "$(uv tool dir)/orchestra/bin/python" -c 'from orchestra.config import load_project
+  from orchestra.events import Events
+  Events.for_project(load_project(), source="owner").publish("item.requested",
+      {"workflow": "task_loop", "brief": "Add a /version endpoint that returns the app version, with a test"},
+      subject="version-1")'
+  ```
 
-Open the **Agents** page and tell the Supervisor what you want, for example:
-
-> Add a `/version` endpoint that returns the app's version, with a test.
-
-The Coordinator turns your request into tickets, workers build them and reviewers check them. Follow the progress on the **Tickets** page. A finished change is a commit on `main`.
+  The approved change is a commit on the item's branch in its worktree; you merge it.
+- **The gate.** The example's third step, `gate` (merge into `main` when the tests pass), is a
+  program, and a program is code: the Supervisor hands code to the Coordinator, which today plans
+  it as tickets only with the tasking plugin, which this quickstart leaves out. The example's gate
+  (`examples/task_loop/target/.orchestra/machines/merge_gate/`) pushes to `origin`, so do not copy
+  it into a repository whose `origin` you do not want pushed to.
 
 ---
 
@@ -90,7 +120,8 @@ The Coordinator turns your request into tickets, workers build them and reviewer
 | Page | What it shows |
 |---|---|
 | Agents | The Supervisor's chat, every agent, and what each one is doing |
-| Tickets | The plan: milestones and tickets, open, in progress, in review, done |
+| Workflows | Each workflow, drawn: its steps, who does each, and where a result goes |
+| Items | Each piece of work: its step, who holds it, and why it waits |
 | Machines | Who does the work (agents, programs, people), and who hands work to whom |
 | Instruments | Each measurement: when it last ran, and what it wrote |
 | Dynamics | The model: stocks, flows, and how well they fit. The first model appears after about an hour of data. |
@@ -98,40 +129,44 @@ The Coordinator turns your request into tickets, workers build them and reviewer
 
 ## Hook in your project
 
-| You want | Add to `orchestra.toml` |
+Ask the Supervisor; it writes the entry and tells you why. What it writes, so you can read
+`orchestra.toml`:
+
+| You ask | It writes |
 |---|---|
-| Any number your scripts can print | `[[collect]]` with `name`, `command` and `every`. The command prints `name value` lines (Prometheus text). |
-| Your app's `/metrics` | `[[scrape]]` with `name`, `url = "http://127.0.0.1:8080/metrics"` and `every = "15s"` |
-| Unit and e2e tests on different schedules | Two `[[collect]]` entries, each with its own `--run` command |
-| A program kept running | `[[machines]]` with `name` and `command` |
-| More checks before a change lands | One `[[gate.unit]]` per command |
+| "Measure any number my script prints" | `[[collect]]` with `name`, `command` and `every`. The command prints `name value` lines (Prometheus text). |
+| "Read my app's `/metrics`" | `[[scrape]]` with `name`, `url = "http://127.0.0.1:8080/metrics"` and `every = "15s"` |
+| "Run unit and e2e tests on different schedules" | Two `[[collect]]` entries, each with its own `--run` command |
+| "Keep this program running" | `[[machines]]` with `name` and `command` |
 
 Inside these commands, `python` is Orchestra's own Python. For your project's Python, use `uv run python`.
 
-Or ask the Supervisor: "measure the number of open todos every minute". It changes `orchestra.toml` and tells you why.
-
 ## Safety
 
-- Agents work on local branches. Nothing is pushed while `push = false`.
+- Agents work in local worktrees, on local branches. Nothing is pushed unless a program you add pushes.
 - The web UI listens on localhost only, and needs the login token.
 - Agents run as you, with your Claude Code login.
 
 ## Plugins
 
-All six are installed by step 1. Tasking and agents run from the start. The others do nothing until you ask the Supervisor to set them up: it reads each plugin's guide and writes the configuration.
-
 | Plugin | What it adds | Ask the Supervisor, for example |
 |---|---|---|
-| tasking | Tickets, milestones and the merge gate | (on from the start) |
 | agents | The Supervisor, Coordinator, workers and reviewers | (on from the start) |
-| bridges | GitHub, Jira and Slack activity on the bus | "Bring in the pull requests from my GitHub repository" |
-| desk | Standing conditions, such as "tests pass on main", and a ledger of what you asked for | "Keep the tests passing on main" |
+| workflows | How work moves: workflows of steps, items, offers to machines | "Set up the task loop on this repository" |
+| bridges | A library for collectors of Jira, Slack, PagerDuty and GitHub activity: each one a script in your repository | "Connect our Jira so I can see issue transitions and open counts" |
 | outbox | Messages and actions on your behalf, each one approved by you | "Open GitHub issues for problems you find, after I approve them" |
-| workflows | Your team's own workflows (review, release candidates, rollouts) as items, piles and offers to machines; being built | "Track our pull request reviews as a workflow" |
+| desk | Standing conditions, such as "tests pass on main", and a ledger of what you asked for | "Keep the tests passing on main" |
 
-GitHub uses your `gh` login. Jira and Slack need a token you create; the Supervisor tells you which file to save it in. Tokens never go in `orchestra.toml`. Outbox drafts wait on the **Outbox** page until you approve them.
+Install one by adding its name to the brackets in step 1 and running the install again; it does
+nothing until you ask the Supervisor to set it up. To connect Jira, Slack, PagerDuty or a
+Prometheus store, ask the Supervisor: it scaffolds the collector into your repository
+(`.orchestra/machines/<name>/`), asks for your yes and for where the token is (a variable's name or
+a file's path, never the token), and writes the rest. Or follow
+[docs/INTEGRATING.md](docs/INTEGRATING.md) with your own coding tool. Tokens never go in
+`orchestra.toml`. Outbox drafts wait on the **Outbox** page until you approve them.
 
-To connect Jira, Slack, PagerDuty or a Prometheus store, ask the Supervisor, or follow [docs/INTEGRATING.md](docs/INTEGRATING.md) with your own coding tool.
+The tasking plugin (`orchestra[tasking]`: tickets, milestones, a merge gate) is the older, naive
+implementation of the same loop; this quickstart leaves it out.
 
 To leave a plugin out, drop its name from the brackets and run the install again: a plugin left out is uninstalled.
 
@@ -149,9 +184,9 @@ To leave a plugin out, drop its name from the brackets and run the install again
 | You see | Do |
 |---|---|
 | `orchestra: command not found` | Run `uv tool update-shell`, then open a new terminal. |
-| `orchestra --help` has no `tasks` | The install line was missing `tasking`. Run it again, complete. |
+| `orchestra --help` has no `workflows` | The install line was missing `workflows`. Run it again, complete. |
 | The Supervisor doesn't answer | Core page: is `agents.host` running? Log: `~/.orchestrator/<key>/logs/machines/agents.host.log`. Check `claude --version`. |
-| A ticket is BLOCKED | Open it on the Tickets page for the reason. Ask the Supervisor what to do. |
+| An item is waiting | Open it on the Items page for the reason. Ask the Supervisor what to do. |
 | An instrument writes nothing | Instruments page: its last error. Try its command by hand in the repository. |
 | No model on Dynamics | Wait about an hour. The page lists why each series was left out. |
 | Want to try without a model | `harness = "dummy"`: scripted agents, free. They don't understand requests. |
