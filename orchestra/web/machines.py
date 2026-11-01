@@ -84,6 +84,7 @@ from ..cadence import BEATS, BURST_S, DAY, active_within, gaps
 from ..events import HOST, announcement, event_time, for_an_instrument, machine_and_instance
 
 ANNOUNCE = "orchestra.machine.started"
+PAGE = 10_000                     # events folded per read
 log = logging.getLogger(__name__)
 # records about a declaration (the intended model), not work on their subject: never a hand-off
 NOT_WORK = ("orchestra.intent.changed", "orchestra.intent.requested")
@@ -127,14 +128,13 @@ class MachineIndex:
     def update(self) -> None:
         """Fold in whatever is new on the bus since the last call."""
         with self._lock:
-            end = self.events.end()
-            if end <= self.offset:
-                return
-            # read(since, limit) returns the last `limit` events after `since`: ask for all of them
-            evs, end = self.events.read(self.offset, limit=end - self.offset)
-            for ev in evs:
-                self._fold_one(ev)
-            self.offset = end
+            while self.events.end() > self.offset:
+                evs, nxt = self.events.page(self.offset, PAGE)        # forward, bounded: nothing pushed out
+                for ev in evs:
+                    self._fold_one(ev)
+                if nxt <= self.offset:
+                    break
+                self.offset = nxt
 
     def _fold_one(self, ev: dict) -> None:
         """Fold one event; one that cannot be read (a malformed line written past the endpoint's
