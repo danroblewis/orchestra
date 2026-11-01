@@ -396,7 +396,8 @@ The program (`pagerduty_alerts.py`) lists the open incidents each poll and reads
 that was open last poll and is not now. For each, it emits `pagerduty.incident.<status>` with the
 incident id as subject, `actor_source("pagerduty", <user id>)` as source and
 `last_status_change_at` as the stamp. `measure` prints `pagerduty_incidents_open{service, urgency}`
-and `pagerduty_incidents_open_total`. Edit `[settings]` in `machine.toml` (`every`, `per_minute`,
+(no total beside it: a gauge is never named `_total`, which discovery reads as a counter, and a sum of
+its own parts is the same level measured twice). Edit `[settings]` in `machine.toml` (`every`, `per_minute`,
 `ttl`, `open_statuses`), never `clearance`.
 
 ### 5.2 Without the kit: `pagerduty_alerts.py`, beside `minikit.py`
@@ -459,7 +460,6 @@ def measure(api):
         n[(i["service"], i["urgency"])] = n.get((i["service"], i["urgency"]), 0) + 1
     for (service, urgency), count in sorted(n.items()):
         print(f'pagerduty_incidents_open{{service="{service}",urgency="{urgency}"}} {count}')
-    print(f"pagerduty_incidents_open_total {sum(n.values())}")
 
 if __name__ == "__main__":
     if sys.argv[1:2] == ["measure"]:
@@ -567,8 +567,7 @@ orchestra web --port 8077                                 # then look, §9
 
 The trial should publish `pagerduty.incident.triggered` on `PINC001` as `bot.pagerduty`, and
 `pagerduty.incident.acknowledged` on `PINC002` as `person.pagerduty.puser01`. Each actor is
-announced once. The instrument stores three points: two of `pagerduty_incidents_open` and
-`pagerduty_incidents_open_total 2`. A token in the environment is fine for the fake's token only.
+announced once. The instrument stores two points of `pagerduty_incidents_open`. A token in the environment is fine for the fake's token only.
 
 ### 5.5 Or as a scheduled item, when the Workflows plugin is installed
 
@@ -610,7 +609,7 @@ curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/intended" -H "Authorization: Bearer
 ```
 
 `PagerDuty` then shows as proposed, and the owner confirms it on the page. Once discovery finds
-`pagerduty_incidents_open_total` as a stock, the Supervisor `link`s `open_incidents` to it, and the
+`pagerduty_incidents_open` as a stock, the Supervisor `link`s `open_incidents` to it, and the
 prediction can be published.
 
 ## 6. Jira (Data Center)
@@ -723,7 +722,7 @@ checks do its job:
 | `orchestra sources check` / `infer` | the source `ok`, its definitions kept (strategy (a)) |
 | **Instruments page** (`/instruments`) | the `[[collect]]` entry: its target, interval, last write, no failures, its log |
 | **Machines page** (`/machines`) | `bot.pagerduty` and `person.pagerduty.<id>` (people, with the `package` you gave), edges by event type, and hand-offs on incident ids that two actors touched; the declared `PagerDuty` dashed until confirmed. **No node named after your poller** |
-| **Dynamics page** (`/dynamics`) | after discovery (every 5 min, over an hour of data), `pagerduty_incidents_open_total` as a stock or series, its flows' hypotheses naming `bot.pagerduty` and the people |
+| **Dynamics page** (`/dynamics`) | after discovery (every 5 min, over an hour of data), `pagerduty_incidents_open` as a stock or series, its flows' hypotheses naming `bot.pagerduty` and the people |
 
 **Hand-offs need two actors on one subject.** A hand-off is drawn only when one actor acts on a
 subject and then a different actor acts on the same subject (`bot.pagerduty` triggers `PINC001`,
