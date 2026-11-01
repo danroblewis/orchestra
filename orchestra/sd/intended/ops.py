@@ -158,7 +158,14 @@ def confirm(layer: dict, op: dict, ctx: dict, accept: bool) -> tuple[str, str]:
         el.update(state="declared", guessed=[], confirmed={"by": ctx["provenance"].get("author"), "change": ctx["change"]})
     else:
         del layer[GROUP[part]][eid]
+        _orphans(layer, part, eid)
     return part, eid
+
+
+def _orphans(layer: dict, part: str, eid: str) -> None:
+    """A machine discarded or retracted takes its attachments with it."""
+    if part == "machine":
+        layer["attachments"] = {k: a for k, a in layer["attachments"].items() if a["machine"] != eid}
 
 
 def retract(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
@@ -166,8 +173,7 @@ def retract(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
     part, eid = op.get("part"), op.get("id")
     element(layer, part, eid)
     del layer[GROUP[part]][eid]
-    if part == "machine":
-        layer["attachments"] = {k: a for k, a in layer["attachments"].items() if a["machine"] != eid}
+    _orphans(layer, part, eid)
     return part, eid
 
 

@@ -30,8 +30,12 @@ LOCK = "intended"
 
 
 class IntendedStore:
-    def __init__(self, models):
+    def __init__(self, models, project=None):
+        """``project``: the project whose instruments an attachment is checked against
+        (``attach``, ``instruments.py``) and whose metrics ``design()`` reads; without one
+        (a store made from the state directory alone) attachments are stored unchecked."""
         self.models = models
+        self.project = project
         self.dir = Path(models.dir) / "intended"
 
     # ---- reading ----
@@ -102,6 +106,11 @@ class IntendedStore:
         if not isinstance(ops, list) or not ops:
             raise IntentError("ops is a non-empty list", status=400)
         prov = checked_provenance(provenance, via)
+        instruments = None
+        if self.project is not None and any(isinstance(o, dict) and o.get("op") in ("propose_attachment", "revise_attachment")
+                                            for o in ops):
+            from .instruments import Instruments
+            instruments = Instruments(self.project)
         with self.models.locked(LOCK):
             cur = self.read()
             layer = copy.deepcopy(cur["layer"])
@@ -110,7 +119,7 @@ class IntendedStore:
             for i, op in enumerate(ops):
                 cid = f"c{seq}.{i}"
                 try:
-                    part, eid = apply_op(layer, op, {"provenance": prov, "change": cid})
+                    part, eid = apply_op(layer, op, {"provenance": prov, "change": cid, "instruments": instruments})
                 except IntentError as e:
                     raise IntentError(str(e), index=i, status=e.status) from None
                 changes.append({"op": op.get("op"), "part": part, "id": eid, "change": cid})

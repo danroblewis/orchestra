@@ -91,3 +91,23 @@ def test_a_point_stamped_in_the_future_is_refused_and_logged(store, caplog):
     pts = store.raw("caiso_demand_mw", {"project": store.project, "machine": "telemetry"})
     assert [v for _, v in pts] == [1, 2]
     assert "refused 1 point(s)" in caplog.text and "caiso_demand_mw" in caplog.text
+
+
+def test_recent_reads_only_series_with_a_point_since_and_their_last_points(store):
+    """``recent`` (docs/proposals/instruments-on-machines.md §2.2): bounded by ``since``, the last
+    ``keep`` points in order, ``=`` and ``=~`` matchers, the name by prefix."""
+    store.write([P(store, "pg_up", v, 1000 + 60 * i, server="db-1", job="postgres") for i, v in enumerate([1, 1, 0, 1, 1])]
+                + [P(store, "pg_up", 1, 1000, server="db-2", job="postgres")]                  # nothing since 1100
+                + [P(store, "pg_connections", 7, 1200, server="db-3", job="postgres")]
+                + [P(store, "build_seconds", 30, 1200, job="deploy-web"), P(store, "build_seconds", 40, 1210, job="deploy-api"),
+                   P(store, "build_seconds", 50, 1220, job="redeploy-web")])
+    mine = [("project", "=", store.project)]
+    got = store.recent("pg_", mine, since=1100, keep=3)
+    assert [(n, lab["server"], pts) for n, lab, pts in got] == [
+        ("pg_connections", "db-3", [(1200, 7)]), ("pg_up", "db-1", [(1120, 0), (1180, 1), (1240, 1)])]
+    assert store.recent("pg_up", {"project": store.project, "server": "db-1"}, since=0, keep=1) == [
+        ("pg_up", {"project": store.project, "server": "db-1", "job": "postgres"}, [(1240, 1)])]
+    deploys = store.recent("build_", [*mine, ("job", "=~", "deploy-.*")], since=0, keep=5)
+    assert sorted(lab["job"] for _, lab, _ in deploys) == ["deploy-api", "deploy-web"], "=~ matches the whole value"
+    assert store.recent("pg_", [*mine, ("job", "=", "postgres")], since=1300) == []
+    assert [n for n, _, _ in store.recent("", mine, since=1215)] == ["build_seconds", "pg_up"]

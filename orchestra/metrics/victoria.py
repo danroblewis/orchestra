@@ -9,15 +9,23 @@ what was written can be read at once; at Orchestra's volumes that costs nothing 
 from __future__ import annotations
 
 import json
+import re
 import urllib.parse
 import urllib.request
 
-from . import MetricsError, Point, refuse_future, step_sample
+from . import MetricsError, Point, matchers_of, refuse_future, step_sample
 
 
 def _selector(series: str, labels: dict[str, str] | None, prefix: bool = False) -> str:
     parts = [f'__name__=~"{series}.*"'] if prefix else [f'__name__="{series}"']
     parts += [f'{k}="{v}"' for k, v in sorted((labels or {}).items())]
+    return "{" + ",".join(parts) + "}"
+
+
+def _matcher_selector(prefix: str, matchers) -> str:
+    """A selector for ``recent``: the name by prefix, each label matcher quoted as a string literal."""
+    parts = [f'__name__=~{json.dumps(re.escape(prefix) + ".*")}'] if prefix else ['__name__=~".+"']
+    parts += [f"{k}{op}{json.dumps(v)}" for k, op, v in matchers_of(matchers)]
     return "{" + ",".join(parts) + "}"
 
 
@@ -92,6 +100,17 @@ class VictoriaMetrics:
             lab = {k: v for k, v in r["metric"].items() if k != "__name__"}
             pts = sorted(zip([t / 1000 for t in r["timestamps"]], r["values"]), key=lambda p: p[0])
             out.append((r["metric"]["__name__"], lab, pts))
+        return sorted(out, key=lambda g: (g[0], sorted(g[1].items())))
+
+    def recent(self, prefix, matchers=None, since=0.0, keep=1):
+        keep = max(1, int(keep))
+        out = []
+        for r in self._export(_matcher_selector(prefix, matchers), since):    # start=since: nothing older is read
+            lab = {k: v for k, v in r["metric"].items() if k != "__name__"}
+            pts = sorted(((t / 1000, v) for t, v in zip(r["timestamps"], r["values"])), key=lambda p: p[0])
+            pts = [p for p in pts if p[0] >= since]
+            if pts:
+                out.append((r["metric"]["__name__"], lab, pts[-keep:]))
         return sorted(out, key=lambda g: (g[0], sorted(g[1].items())))
 
     def delete(self, series_prefix, labels=None):

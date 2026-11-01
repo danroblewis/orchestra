@@ -1,9 +1,12 @@
 """``design()`` (§6.3, P4.10): the declared layer in brief for the plugin that keeps it: its version,
 each element with its state, presence, link and guessed fields, the open items (unconfirmed
 proposals, pending changes, unanswered requests, unsettled suggestions, absent expected parts,
-unpublishable drafts) and the last 20 changes. Small: under 20 KB for 100 elements."""
+unpublishable drafts, and P5's "attached, nothing measured" and "declared, neither heard nor
+measured") and the last 20 changes. Small: under 20 KB for 100 elements."""
 
 from __future__ import annotations
+
+import time
 
 from .requests import unanswered
 
@@ -52,6 +55,45 @@ def design(intended, block: dict | None = None) -> dict:
             d = layer["stocks"].get(sid) if sid else None
             if d is not None and not d.get("found_as"):
                 open_items.append({"what": "unpublishable draft", "part": "machine", "id": mid, "stock": sid})
+    open_items += _measured_items(intended, layer)
     last = [c for e in intended.journal()[-LAST:] for c in e.get("changes", [])][-LAST:]
     return {"version": cur["version"], "elements": elements, "open": open_items, "last_changes": last,
             "stabilised": (block or {}).get("stabilised")}
+
+
+def _measured_items(intended, layer: dict) -> list[dict]:
+    """The comparison's entries on attachments (P5 §3), for a store made with its project: each
+    declared attachment that selects nothing measured, and each declared machine neither heard
+    (its source in ``orchestra_events_total``, Orchestra's count of the bus) nor measured. Read
+    from the own store under a time limit; a source's attachments are read by the web server
+    only, so here they are unknown and listed as neither."""
+    project = getattr(intended, "project", None)
+    if project is None or not layer["machines"]:
+        return []
+    from ...collectors import EVENTS
+    from ...metrics import for_project
+    from . import measured as m
+    from .facts import LIMIT_S, _within
+    from .instruments import Instruments
+
+    def read():
+        store = for_project(project)
+        kinds = Instruments(project).kinds()
+        heard = {lab.get("source", "").split("/", 1)[0] for _, lab in store.series(EVENTS, {"project": project.key})}
+        views = {}
+        for a in layer["attachments"].values():
+            own = kinds.get(a["instrument"]) not in ("source", None)
+            views[a["id"]] = m.attachment_view(a, m.read_own(store, project.key, a) if own else None, time.time())
+        return heard, views
+    got, ok = _within(read, LIMIT_S)
+    if not ok:
+        return [{"what": "measured unknown", "why": "the metrics store did not answer in time"}]
+    heard, views = got
+    out = [{"what": m.NOTHING, "part": "attachment", "id": aid, "machine": v["machine"]}
+           for aid, v in views.items() if v.get("comparison") == m.NOTHING]
+    for mid, mach in layer["machines"].items():
+        names = {mid, *(mach.get("aliases") or [])}
+        mine = m.machine_measured([v for v in views.values() if v["machine"] == mid])
+        if not names & heard and not mine["measured"]:
+            out.append({"what": m.NEITHER, "part": "machine", "id": mid})
+    return out

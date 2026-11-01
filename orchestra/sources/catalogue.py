@@ -271,6 +271,20 @@ class Catalogue:
                     out.append({"source": spec.name, "name": name, "labels": labels, "points": pts, "kind": d.kind, **counted})
         return out, failed
 
+    def selected(self, name: str, keep, start: float, end: float, step: float) -> tuple[list[dict], str | None]:
+        """The series of one source's cached definitions that ``keep(definition)`` accepts, over
+        [start, end] (``counted``'s read, for any definitions: what an attachment selects,
+        ``web/measured.py``): name, labels (canonical), points; and why, when some could not be read."""
+        spec = self.spec(name)
+        until = time.monotonic() + spec.deadline
+        try:
+            defs = [d for d in self.inference(spec.name, start, end, until=until).kept if keep(d)]
+        except Exception as e:  # noqa: BLE001 - that source is missing, with why
+            return [], why(e)
+        results, errors = self._read_all(spec, defs, start, end, step, until) if defs else ({}, {})
+        out = [{"name": n, "labels": labels, "points": pts} for d in defs for n, labels, pts, _ in results.get(d.id, [])]
+        return out, (_failures(errors, {d.id: d.name for d in defs}, len(defs), spec.deadline) if errors else None)
+
     def read(self, start: float, end: float, step: float, *, keep: bool = True) -> Reading:
         """Every series for the window (see the module's docstring). ``keep``: the reads are kept
         for the next discovery and the project's other readers (``readcache.py``); False for a
