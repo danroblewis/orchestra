@@ -92,14 +92,15 @@ def select(dump: list, others: dict, allowed) -> tuple[list, dict[str, str]]:
     return kept, left
 
 
-def discovered(project, reading, *, collectors: list | None = None, **kw):
+def discovered(project, reading, *, collectors: list | None = None, allowed=None, **kw):
     """The model ``sd.strategies.discover_with`` finds in a catalogue reading, the draft and
     expired simulated series left out (in ``left_out``), the simulated parts marked.
     ``collectors``: the plugins' collectors the caller runs (or has loaded); None loads them,
-    only if a simulated series is there."""
+    only if a simulated series is there. ``allowed``: a callable giving the simulated instruments'
+    names instead (a replay, ``sd.snapshot``, which has no project)."""
     from .strategies import discover_with
 
-    dump, left = select(reading.dump, reading.provenance, lambda: configured(project, collectors))
+    dump, left = select(reading.dump, reading.provenance, allowed or (lambda: configured(project, collectors)))
     m = discover_with(dump, kinds=reading.kinds, **kw)
     mark(m, reading.provenance)
     if left:

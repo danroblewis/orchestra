@@ -44,6 +44,7 @@ from ..metrics import MetricsStore
 from ..sources.catalogue import Catalogue
 from . import eras as era_record
 from . import persistence, simulated
+from . import snapshot as snap
 from .compare import compare
 from .discover import structure
 from .model import Model
@@ -106,9 +107,12 @@ def era_window(start: float, end: float, step: float, era_start: float | None) -
 def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, options: dict | None = None,
                window_s: float | None = None, step_s: float | None = None,
                note: str = "discovered: the structure changed", skip_if_busy: bool = False,
-               events=None, now: float | None = None, collectors: list | None = None) -> Result:
+               events=None, now: float | None = None, collectors: list | None = None,
+               snapshot: Path | str | None = None) -> Result:
     """``collectors``: the plugins' collectors the caller runs or has loaded, which say which
-    instruments are simulated (``sd.simulated``); None loads the plugins when needed (the CLI)."""
+    instruments are simulated (``sd.simulated``); None loads the plugins when needed (the CLI).
+    ``snapshot``: a directory to write what this discovery read to (``sd.snapshot``), so it can be
+    replayed; nothing is written when the era is too young to read."""
     cfg = project.config
     strategy = strategy or configured_strategy(project)
     options = cfg.discovery_options if options is None else options
@@ -126,8 +130,15 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
         start = era_window(start, end, step_s, era.start if era else None)
         if era is None or end - start >= 2 * step_s:
             reading = Catalogue(project, metrics).read(start, end, step_s)
+            allowed = None
+            if snapshot is not None:
+                sim = snap.simulated_allowed(project, reading, collectors)
+                snap.write(snapshot, reading, start=start, end=end, step=step_s, strategy=strategy, options=options,
+                           deadline=DEADLINE_SHARE * cfg.discovery_every, window_s=window_s, project=project, simulated=sim)
+                allowed = lambda: set(sim or [])  # the same set the snapshot records
             m = simulated.discovered(project, reading, collectors=collectors, start=start, end=end, step=step_s, strategy=strategy,
-                                     options=options, deadline=DEADLINE_SHARE * cfg.discovery_every, provenance=reading.provenance)
+                                     options=options, deadline=DEADLINE_SHARE * cfg.discovery_every, provenance=reading.provenance,
+                                     allowed=allowed)
             annotate(m, reading.provenance)
         else:                                   # the era is too young to read: its prior, carried whole
             reading = None
@@ -165,3 +176,22 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
         changed = m.stocks and (cur is None or structure(cur) != structure(m) or cur.era != m.era)
         version = store.save(m, note=f"{note} ({strategy})") if changed and not reading.missing else None
         return Result(m, now, version, strategy)
+
+
+def snapshot(project, metrics: MetricsStore, directory: Path | str, *, strategy: str | None = None,
+             window_s: float | None = None, step_s: float | None = None, now: float | None = None,
+             collectors: list | None = None) -> Path:
+    """Write what a discovery now would read (the window ``rediscover`` would take, within the era
+    the host recorded) to ``directory`` (``sd.snapshot``), without discovering or saving anything
+    to the model store; the reads are not kept for the next discovery."""
+    cfg = project.config
+    window_s = window_s or cfg.discovery_window
+    step_s = step_s or cfg.discovery_step
+    now = time.time() if now is None else now
+    era = era_record.current(era_record.recorded(ModelStore.for_state(project.state_dir)), now)
+    start, end = aligned(now - window_s, now, step_s)
+    start = era_window(start, end, step_s, era.start if era else None)
+    reading = Catalogue(project, metrics).read(start, end, step_s, keep=False)
+    return snap.write(directory, reading, start=start, end=end, step=step_s, strategy=strategy or configured_strategy(project),
+                      options=cfg.discovery_options, deadline=DEADLINE_SHARE * cfg.discovery_every, window_s=window_s,
+                      project=project, simulated=snap.simulated_allowed(project, reading, collectors))

@@ -1690,6 +1690,9 @@ as a new version, `model/vNNNN.json`. The highest is current; past versions stay
 
 ```bash
 orchestra sd discover [--minutes 60] [--step-s 30] [--strategy conservation]   # discover now, print the result
+orchestra sd discover --snapshot DIR                                           # ... and write every series it read to DIR
+orchestra sd snapshot DIR [--minutes 60] [--step-s 30]                         # write what a discovery now would read, only
+orchestra sd discover --from DIR [--strategy S] [--json]                       # replay discovery from DIR; saves nothing
 orchestra sd show [--version N]                                                # stocks, flows, machines
 orchestra sd versions                                                          # every saved version
 orchestra sd fit [--step 1]                                                    # refit the current model's flows
@@ -1706,6 +1709,15 @@ which that matters.
 `orchestra sd discover` is an observation: it reads the metrics and may save a version, and
 changes nothing else. One discovery runs at a time per project; the host skips its turn while
 the CLI or the page is discovering.
+
+A **snapshot** (`orchestra/sd/snapshot.py`) is what one discovery read, kept so it can be
+discovered again after a change to discovery: `DIR/manifest.json` names the window (start, end),
+the step, the method (strategy, options, deadline), the project and the commits of the project and
+of Orchestra, each source's status and the series files in order; `DIR/series/NNNNN.json` holds
+one series each (name, labels, declared kind, provenance, every point read). `--from DIR` discovers
+from it with the window, step and method it records and gives the model the live run found, apart
+from what depends on the model store then (an era's prior, each stock's persistence); it writes to
+no store.
 
 **The Dynamics page** (`/dynamics`) shows the model as a stock-and-flow diagram: each stock with
 its level, a tank fill and a sparkline; a valve on each flow with its equation; in the flows
@@ -2083,7 +2095,9 @@ printed it; `cat ~/.orchestrator/projects.json` lists every project's key.
 | `orchestra events copy --to URL [--force]` | Copy the event log to another bus backend. |
 | `orchestra metrics series` | Every series of the project, with its labels. |
 | `orchestra metrics backfill [--append]` | Replay the event log into `orchestra_events_total`. |
-| `orchestra sd discover [--minutes N] [--step-s S] [--strategy S]` | Discover the model now. |
+| `orchestra sd discover [--minutes N] [--step-s S] [--strategy S] [--snapshot DIR]` | Discover the model now; with `--snapshot`, also record what it read. |
+| `orchestra sd discover --from DIR [--strategy S] [--json]` | Replay discovery from a snapshot; saves nothing. |
+| `orchestra sd snapshot DIR [--minutes N] [--step-s S]` | Record what a discovery now would read, without discovering. |
 | `orchestra sd show [--version N]` | The model: stocks with their latest level, flows, machines. |
 | `orchestra sd versions` | The saved versions. |
 | `orchestra sd fit [--version N] [--step H]` | Refit the flows over H-hour steps and save a version. |

@@ -497,7 +497,12 @@ A case needs: a start command, a stop, a duration, the repository that writes it
 the expectations in the four lists above; an example workflow (UC-7 onward) also names its
 domain series, the test that runs its three checks, and what it needs beyond the vocabulary
 already built. Expectations are structure, not numbers: a case that
-only passes with a tuned rate is reported as a gap, not fixed to pass.
+only passes with a tuned rate is reported as a gap, not fixed to pass. Every run records what
+discovery read: `orchestra sd discover --snapshot <out>/<case>/snapshot` writes each series it read
+(one JSON file per series, with its labels, kind and points) and a `manifest.json` naming the window,
+the step, the method and the commits, beside the case's `model.json`. A fix to discovery is then
+checked against recorded runs with `orchestra sd discover --from <dir>` (`sd.snapshot.replay`),
+which gives the same model from the same data and writes to no store.
 
 Two lessons from the 2026-11-01 re-scores. Run a case from a detached clone, never a linked
 worktree: `find_repo_root` resolves a linked worktree to the main checkout, so the case shares the
