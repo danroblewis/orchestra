@@ -157,7 +157,7 @@ function renderCore() {
   $("met-card").innerHTML = card("Metrics store", m, metHtml);
 }
 async function refreshCore() {
-  try { CORE = await (await fetch("/api/core")).json(); $("conn").textContent = "live"; renderCore(); } catch (e) { $("conn").textContent = "disconnected"; }
+  try { CORE = await (await fetch("/api/core")).json(); $("conn").textContent = `page updated ${new Date().toTimeString().slice(0, 8)}`; renderCore(); } catch (e) { $("conn").textContent = "disconnected"; }
 }
 async function probeBus() {
   try { PROBE = await (await fetch("/api/core/probe", { method: "POST" })).json(); } catch (e) { PROBE = { ok: false, error: String(e) }; }

@@ -56,9 +56,15 @@ test("a card's seen row says the state in words, with the rule it was judged by;
   const rows = Orchestra.machineCards.rows({ ...m, instances: [{ ...m.instances[0], cadence_s: 12 }] });
   assert.match(rows, /in rhythm<\/span> <span class="muted">· usual gap 12s · last event 5s ago/);
   assert.match(Orchestra.machineCards.rows({ ...m, active: false, instances: [] }), /quiet since \d\d:\d\d/);
-  assert.match(Orchestra.machineCards.rows({ ...m }), /no cadence yet: judged by the 2-minute floor/);
+  assert.match(Orchestra.machineCards.rows({ ...m, first_seen: now - 20 }), /no cadence yet: judged by the 2-minute floor/);
+  // heard for longer than a burst and still no cadence: its events never stop, it publishes continuously
+  const busy = Orchestra.liveness({ ...m, first_seen: now - 3600, last_seen: now - 3 });
+  assert.equal(busy.word, "active");
+  assert.match(busy.detail, /^publishes continuously · last event 3s ago$/);
+  assert.doesNotMatch(busy.word + busy.detail, /rhythm|no cadence/);
   const host = Orchestra.liveness({ id: "orchestra-host", bootstrap: true, active: true, active_by: "runtime", last_seen: now - 600 });
-  assert.equal(host.word, "running (runtime record)");
+  assert.equal(host.word, "running");
+  assert.match(host.title, /runtime record/);
   assert.doesNotMatch(host.word + host.detail, /rhythm/);
 });
 

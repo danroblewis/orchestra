@@ -20,12 +20,18 @@ window.Orchestra = window.Orchestra || {};
 // the map's tooltip, the dialog), with the rule the judgement used: heard within 2.5× its usual gap,
 // at least 2 minutes; with no cadence yet, the 2-minute floor alone. The host's flag is the runtime
 // record's (``active_by: "runtime"``): it publishes only when it starts and stops, so it has no
-// rhythm to be in. {word, cls ("live" or "quiet"), detail, title}
+// rhythm to be in. A machine whose events never stop long enough to make a beat (orchestra/cadence.py:
+// none more than BURST_S apart) has no cadence however long it is heard: it publishes continuously.
+// {word, cls ("live" or "quiet"), detail, title}
+Orchestra.BURST_S = 48;            // cadence.BURST_S: an event this soon after the last is the same burst
+Orchestra.continuous = (x) => !x.cadence_s && x.first_seen != null && x.last_seen != null && x.last_seen - x.first_seen > Orchestra.BURST_S;
 Orchestra.liveness = (m, now = Date.now() / 1000) => {
-  if (m.active_by === "runtime") return { word: m.active ? "running (runtime record)" : "not running (runtime record)", cls: m.active ? "live" : "quiet", detail: "",
-    title: "the host process is in the runtime record; it publishes only when it starts and stops" };
+  if (m.active_by === "runtime") return { word: m.active ? "running" : "not running", cls: m.active ? "live" : "quiet", detail: "",
+    title: "by the runtime record: the host process is in it; it publishes only when it starts and stops" };
   if (!m.last_seen) return { word: "never heard", cls: "quiet", detail: "", title: m.intent ? "declared: nothing on the bus under it" : "nothing on the bus under it yet" };
   const cads = [m.cadence_s, ...(m.instances || []).map((i) => i.cadence_s)].filter((g) => g), g = cads.length ? Math.min(...cads) : null;
+  if (m.active && !g && Orchestra.continuous(m)) return { word: "active", cls: "live", detail: `publishes continuously · last event ${ago(now - m.last_seen)} ago`,
+    title: "heard within the last 2 minutes; its events come too close together to make a cadence of beats" };
   const rule = g ? `usual gap ${ago(g)}` : "no cadence yet: judged by the 2-minute floor";
   if (m.active) return { word: "in rhythm", cls: "live", detail: `${rule} · last event ${ago(now - m.last_seen)} ago`,
     title: `heard within 2.5× its usual gap (at least 2 min): ${rule}` };
@@ -254,7 +260,7 @@ Orchestra.conn = (() => {
     const el = $("conn");
     if (ok) last = Date.now();
     if (el) {
-      el.textContent = ok ? "live" : `disconnected${last ? ` · as of ${hm(last, opts.seconds)}` : ""}`;
+      el.textContent = ok ? `page updated ${hm(last, true)}` : `disconnected${last ? ` · as of ${hm(last, opts.seconds)}` : ""}`;
       el.classList.toggle("stale", !ok);
       el.title = ok ? "the page is reading the server" : "the server did not answer: what the page shows is from the time given";
     }
