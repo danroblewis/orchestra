@@ -37,10 +37,12 @@ def looked_at(discovery: dict) -> int:
     return int(discovery.get("series") or 0) + early
 
 
-def no_model_reason(d: dict) -> str:
+def no_model_reason(d: dict, where: str = "below") -> str:
     """Why a discovery found no stocks, from what it left out: a missing source; none of the
     series could be judged (every one left out before it was considered: the commonest reason,
-    'newer than one step' when that is it); or some were judged and nothing balances yet."""
+    'newer than one step' when that is it); or some were judged and nothing balances yet.
+    ``where`` says where the rest of the reasons are: "below" on the page, a pointer elsewhere
+    from the CLI."""
     if d.get("not_saved"):
         return f"a source was missing ({d['not_saved']})"
     left = d.get("left_out") or {}
@@ -50,8 +52,8 @@ def no_model_reason(d: dict) -> str:
         kind, k = kinds.most_common(1)[0]
         if kind == "too new":
             return (f"none could be judged yet: all {n} series are newer than one step" if k == n
-                    else f"none could be judged yet: {k} of the {n} series are newer than one step, the rest left out below")
-        return f"none could be judged yet: {k} of the {n} series were left out as {kind}" + ("" if k == n else ", the rest below")
+                    else f"none could be judged yet: {k} of the {n} series are newer than one step, the rest left out {where}")
+        return f"none could be judged yet: {k} of the {n} series were left out as {kind}" + ("" if k == n else f", the rest {where}")
     return "nothing balances yet"
 
 

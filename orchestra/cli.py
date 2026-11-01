@@ -29,7 +29,11 @@ def _when(t: float | None) -> str:
 
 
 def cmd_init(args) -> int:
-    p = init_project(Path(args.repo or os.getcwd()))
+    try:
+        p = init_project(Path(args.repo or os.getcwd()))
+    except ConfigError as e:
+        print(f"orchestra: {e}" + ("; run git init first" if "git repository" in str(e) else ""), file=sys.stderr)
+        return 1
     print(f"initialized {p.key}\n  repo:   {p.repo_root}\n  state:  {p.state_dir}\n  config: {p.config_file}\n  private overlay (if any): {p.overlay_file}")
     return 0
 
@@ -123,13 +127,19 @@ def _predictions(models, args) -> int:
     return 0
 
 
+ELSEWHERE = "(the Dynamics page lists why each was left out, or `orchestra sd discover` prints it)"
+PER_SERIES = "why each series was not a stock: the Dynamics page lists it, or `orchestra sd discover` prints it"
+
+
 def _why_no_model(project, models) -> str:
     """Why there is no saved model, as the Dynamics page says it (``web.dynamics``): from the
     latest discovery's left-out list, or that none has run; and whether one will run by itself."""
     from .web.dynamics import host_running, no_model_reason
 
     cached = models.latest_discovery()
-    why = no_model_reason(cached[1].discovery) if cached else "no discovery has run yet"
+    why = no_model_reason(cached[1].discovery, where=ELSEWHERE) if cached else "no discovery has run yet"
+    if why == "nothing balances yet":
+        why += f" ({PER_SERIES})"
     if not host_running(project):
         why += "; no orchestra run is running, so discovery will not run until it starts (orchestra sd discover looks once)"
     return why

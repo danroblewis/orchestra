@@ -63,3 +63,24 @@ def test_a_port_in_use_is_said_before_any_link_or_record(project, monkeypatch, c
     assert out.err.strip() == f"orchestra: port {port} is in use; serve on another: orchestra web --port {port + 10}"
     assert "token" not in out.out and "log in" not in out.out
     assert "web" not in runtime.read(project)
+
+
+def test_the_cli_never_points_to_a_list_below_it_does_not_print(project, capsys):
+    new = "too new to measure: its first point is after the window's last step, so the next discovery considers it"
+    ModelStore.for_state(project.state_dir).write_discovery(
+        Model("m", "nothing yet", discovery={"left_out": {"a": new, "b": new, "c": "Orchestra's own: not a measure of the system"},
+                                             "sampled": 3, "series": 0}))
+    assert main(["--repo", str(project.repo_root), "sd", "versions"]) == 0
+    out = capsys.readouterr().out
+    assert "below" not in out and "the Dynamics page lists why each was left out" in out
+    ModelStore.for_state(project.state_dir).write_discovery(Model("m", "nothing", discovery={"left_out": {}, "sampled": 2, "series": 2}))
+    assert main(["--repo", str(project.repo_root), "sd", "versions"]) == 0
+    assert "nothing balances yet (why each series was not a stock: the Dynamics page lists it" in capsys.readouterr().out
+
+
+def test_init_outside_a_git_repository_says_so_in_one_line(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("ORCHESTRATOR_HOME", str(tmp_path / "home"))
+    (tmp_path / "plain").mkdir()
+    assert main(["--repo", str(tmp_path / "plain"), "init"]) == 1
+    err = capsys.readouterr().err
+    assert err.strip() == f"orchestra: {tmp_path / 'plain'} is not inside a git repository; run git init first"
