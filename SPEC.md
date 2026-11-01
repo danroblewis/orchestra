@@ -371,7 +371,12 @@ Conservation (`sd/discover.py`):
    computer asleep writes nothing, and its machines' silence then is not theirs) is gone, or
    replaced, and is left out; one silent for less may be restarting, and keeps its stocks.
    Orchestra's own series but its event counters are left out too
-   (`orchestra_core_*`, `orchestra_host_up`: plumbing, not a measure of the system). Counters
+   (`orchestra_core_*`, `orchestra_host_up`: plumbing, not a measure of the system), and so are
+   the event counts of Orchestra's own events: a type in its namespace (`orchestra.*`: a machine
+   started or quiet, the model changed or stalled), whoever published it, or anything the host
+   (`orchestra-host`) published. They say what Orchestra did, not the system's work, and the host
+   is never a machine (AGENTS.md rule 2), so none is a flow. Told by the namespace and the
+   source, never by a list of names (`sd/series.py`, `orchestra_events`). Counters
    that move together in all but 3% of steps are one when one is Orchestra's count of the
    other's events, or both are one machine's: the machine's own, then the shorter name, is kept;
    two machines' counts of the same events both stay (each machine's stocks take their own) and
@@ -405,7 +410,16 @@ Conservation (`sd/discover.py`):
    completed before the best is chosen, so an exact balance that needs a rare counter beats a
    stand-in's near miss (another instrument's count of both ways out of a state, one a step late). A small set of chosen
    counters that cancels to nothing is dropped, and one that equals an unchosen counter is
-   replaced by it (`sd/collinear.py`). The level's own machine's counters are searched first
+   replaced by it (`sd/collinear.py`). A balance has no more counters than the level's changes
+   can test: fewer than half the units it changed in, and always two (an inflow and an outflow),
+   so each half of the window, where the choice is tested again, holds more changes than
+   counters. Beyond that, each counter must be pinned by a unit of its own: one the balance fits
+   in which it moved and no other counter of the balance moved the level the same way (the only
+   inflow that came, or the only outflow); the others, told apart only by how they add up with
+   the rest, are taken out, the least counted first (a repository's 24 commits in ten changes
+   are not landings + review turns + supervisor turns). On a level that changes in most steps
+   the limit is never reached and nothing needs a unit of its own (`sd/balance.py`,
+   `supported`). The level's own machine's counters are searched first
    (its record of its transitions, with Orchestra's counts of its events): when they balance it
    within the tolerance, that is its balance, and another machine's counter never replaces one
    of them (an oven's own counters come before the board's, however exactly they

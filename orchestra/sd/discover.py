@@ -128,9 +128,11 @@ from .restate import (
 from .series import (
     EVENT_COUNTER,
     NOT_NAMED,
+    ORCHESTRA_EVENTS_REASON,
     PLUMBING,
     Series,
     not_current_reason,
+    orchestra_events,
     plumbing_reason,
     sample,
     sum_instances,
@@ -773,7 +775,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     sampled = len(series)          # every series looked at (a machine's instances summed into one)
     left_out: dict[str, str] = {}
     end = start + n * step
-    # Orchestra's own series are plumbing, not a measure of the system; and a series whose machine
+    # Orchestra's own series are plumbing, not a measure of the system, and so are its own events
+    # (an orchestra.* type, or anything the host published: orchestra_events); and a series whose machine
     # has been silent at the end of the window for longer than a restart takes (gone, or replaced)
     # is not measured now: left out (sd.live.gone)
     awake = observed(series, start, end)
@@ -782,6 +785,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         ivs = ser.intervals if ser.intervals is not None else [(start, end)]
         if PLUMBING.match(ser.name):
             left_out[ser.key] = plumbing_reason(ser.name)
+        elif orchestra_events(ser):
+            left_out[ser.key] = ORCHESTRA_EVENTS_REASON
         elif ivs and not gone(ivs[-1][1], end, awake):
             current.append(ser)
         else:

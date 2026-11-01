@@ -23,6 +23,17 @@ starting it from many places and keeping the best, which a search from one start
 of a balance alone often makes the fit worse (inflow without its outflows), and which local
 optimum a single start reaches depends on noise.
 
+A balance with more counters than the level's changes can test keeps only those that explain a
+change on their own (``supported``). The changes can test fewer than half as many counters as
+the units the level changed in, and always two, an inflow and an outflow (``allowed``): each half
+of the window, where a balance's choice is tested again (``sd.identify``), then holds more changes
+than counters. Beyond that, a counter that never moved alone where the level changed is told
+apart from the others only by how it adds to them, and among the many subsets the search tries
+one adds up by chance: a repository's commits, 24 in ten changes of two-minute stretches, as
+landings + review turns + supervisor turns. A counter that did move alone is evidence of its own,
+however few the changes; and on a level that changes in most steps (a shelf that sells, bakes and
+discards every minute) no counter ever moves alone, and none needs to.
+
 A counter far larger than the level (``resolvable``) is not searched: its squares' rounding is
 more than the level's variance.
 
@@ -143,6 +154,41 @@ def completed(g: list[list[float]], b: list[float], coef: dict[int, int], sse: f
         for k in pool:
             xr[k] -= sign * g[k][j]
     return (trial, max(0.0, e)) if e < EXACT_SSE else (coef, sse)
+
+
+def allowed(y: list[float]) -> int:
+    """How many counters the changes ``y`` of a level can test: fewer than half the units it changed
+    in, so that each half of the window holds more changes than counters, and never fewer than two
+    (an inflow and an outflow). Ten changes test four."""
+    return max(2, (sum(1 for v in y if abs(v) >= 0.5) - 1) // 2)
+
+
+def alone(j: int, coef: dict[int, int], y: list[float], xs: list[list[float]]) -> bool:
+    """Whether counter ``j`` of the balance ``coef`` is pinned by a unit of its own: one the balance
+    fits, in which ``j`` moved and no other counter of the balance moved the level the same way
+    (``j`` the only inflow that came, or the only outflow). There its coefficient is the unit's
+    change less the other way's, not a share of a sum it makes with others: a rejection the only
+    outflow beside an inflow, the level holding, pins the rejections as surely as a change would."""
+    for u, v in enumerate(y):
+        mine = coef[j] * xs[j][u]
+        if not mine or any(coef[k] * xs[k][u] * mine > 0 for k in coef if k != j):
+            continue
+        if abs(v - sum(sign * xs[k][u] for k, sign in coef.items())) <= 0.5:
+            return True
+    return False
+
+
+def supported(coef: dict[int, int], y: list[float], xs: list[list[float]]) -> dict[int, int]:
+    """``coef``, when it has more counters than the level's changes can test (``allowed``), without
+    those no unit pins on their own (``alone``): taken out one at a time, the one that
+    counted least first, since taking one out may leave another alone in a unit. Counters that
+    each have a unit of their own all stay, however many; within the limit, all do."""
+    coef = dict(coef)
+    if len(coef) <= allowed(y):
+        return coef
+    while bare := [j for j in coef if not alone(j, coef, y, xs)]:
+        coef.pop(min(bare, key=lambda j: (sum(abs(v) for v in xs[j]), j)))
+    return coef
 
 
 def penalty(sst: float) -> float:
@@ -276,6 +322,10 @@ def balance_of(y: list[float], xs: list[list[float]], counters: list, ls: LeastS
         # completes earns its bonus only completed, and short of it may score worse than nothing,
         # or than a stand-in's near miss, which no rare counter makes exact
         coef, sse = completed(ls.g, b, coef, sse, rare)
+        if (kept := supported(coef, y, xs)) != coef:
+            coef = kept
+            sse = max(0.0, yy - 2 * sum(s * b[j] for j, s in coef.items())
+                      + sum(s * t * ls.g[j][k] for j, s in coef.items() for k, t in coef.items()))
         key = (objective(sse, sum(cost[j] for j in coef)), len(coef), sorted(coef.items()))
         if best is None or key < best[0]:
             best = (key, coef, sse)
@@ -289,6 +339,10 @@ def balance_of(y: list[float], xs: list[list[float]], counters: list, ls: LeastS
         if (len(coef), sorted(coef.items())) == before:
             break
     coef, resid, sse = complete(coef, resid, sse, xs, rare)
+    if (kept := supported(coef, y, xs)) != coef:
+        coef = kept
+        resid = [v - sum(sign * xs[j][i] for j, sign in coef.items()) for i, v in enumerate(y)]
+        sse = sum(r * r for r in resid)
     if not any(j in live for j in coef) and not (sse < EXACT_SSE and sum(sum(abs(v) for v in xs[j]) for j in coef) >= MIN_EVENTS):
         coef, resid, sse = {}, list(y), yy            # rare counters alone: a balance only when exact on enough events between them
     chosen = [(counters[j], sign) for j, sign in sorted(coef.items())]
