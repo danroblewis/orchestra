@@ -71,6 +71,7 @@ from .quiet import QUIET, QuietWatch
 
 HOST_LOG_MAX = 5_000_000
 ERAS_EVERY_S = 5.0              # how often the collector looks for events that begin an era
+PENDING_MAX = 100_000           # counter points kept for the next write while the metrics store fails
 REPLAY_PAUSE_MAX = 60.0         # the longest pause between two tries of the collector's replay at start
 LEAST_PAUSE = 0.2               # of [discovery] every: the least pause between one discovery's end and the next's start
 
@@ -113,6 +114,7 @@ class Host:
         self._loaded_for: tuple | None = None            # the configuration's stamp they were loaded for
         self._stop = threading.Event()
         self._said_state: str | None = None              # the collector's state as last recorded
+        self.skipped = 0                                 # events the quiet watch could not read
 
     def log(self, msg: str) -> None:
         line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {msg}"
@@ -165,10 +167,22 @@ class Host:
         col = EventCollector(self.project.key)
         for ev in evs:
             col.observe(ev)
-            quiet.observe(ev)
+            self._watch(quiet, ev)
         quiet.settle()
         self.log(f"collector: replayed {rep.events} events into {rep.points} points; following the bus")
         return col, quiet, offset
+
+    def _watch(self, quiet: QuietWatch, ev: dict) -> None:
+        """Show one event to the quiet watch; one it cannot read (a malformed announcement written
+        past the endpoint's checks) is skipped and counted, never fatal, so neither the replay nor
+        the follow loop sticks on it."""
+        try:
+            quiet.observe(ev)
+        except Exception as e:  # noqa: BLE001 - one bad event must not stop the collector
+            self.skipped += 1
+            if self.skipped == 1:
+                self.log(f"collector: skipped an event it could not read ({type(e).__name__}: {e}); "
+                         "later ones are only counted")
 
     def _look(self, quiet: QuietWatch) -> None:
         """What the host looks for every ``ERAS_EVERY_S``, whether or not the replay has landed."""
@@ -182,6 +196,7 @@ class Host:
         intended model's announcements are still looked at (quiet with an empty watch until the
         replay lands)."""
         col, quiet, offset = None, QuietWatch(), None
+        pending: list[Point] = []                     # counted but not yet written: retried, never counted twice
         eras_at = retry_at = 0.0
         pause = self.collect_every
         while not self._stop.is_set():
@@ -201,13 +216,16 @@ class Host:
                         pause = min(pause * 2, REPLAY_PAUSE_MAX)
             else:
                 try:
-                    new, offset = self.events.after(offset)
+                    new, nxt = self.events.after(offset)
                     for ev in new:
-                        quiet.observe(ev)
-                    if col is not None:
-                        pts = collapse([p for ev in new for p in col.observe(ev)])
-                        if pts:
-                            metrics_for(self.project).write(pts)
+                        self._watch(quiet, ev)
+                        if col is not None:
+                            pending += col.observe(ev)
+                    offset = nxt                          # every event of the batch observed and counted
+                    if pending:
+                        pending = collapse(pending)[-PENDING_MAX:]
+                        metrics_for(self.project).write(pending)
+                        pending = []
                     self._collector_state("following")
                 except Exception as e:  # noqa: BLE001 - keep following; the next read retries
                     self.log(f"collector: {type(e).__name__}: {e}")

@@ -49,7 +49,7 @@ class EventCollector:
 
     def observe(self, ev: dict) -> list[Point]:
         ts = event_time(ev)
-        if ts is None or "type" not in ev:
+        if ts is None or not isinstance(ev.get("type"), str):
             return []
         key = (ev["type"], str(ev.get("source") or "unknown"))
         self.counts[key] += 1

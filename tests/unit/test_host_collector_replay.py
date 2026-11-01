@@ -67,7 +67,7 @@ def test_a_replay_that_fails_is_retried_and_the_looks_run_meanwhile(bare, monkey
         assert _until(lambda: _total(bare) == 1.0)
         assert "eras" in looks and "intent" in looks
         assert t.is_alive()
-        assert runtime.read(bare)["hosts"][str(os.getpid())]["collector"]["state"] == "following"
+        assert _until(lambda: runtime.read(bare)["hosts"][str(os.getpid())]["collector"]["state"] == "following")
     finally:
         h.stop()
         t.join(5)
@@ -124,3 +124,38 @@ def test_a_second_host_deletes_nothing_and_writes_no_counters(bare):
     finally:
         h.stop()
         t.join(5)
+
+
+def _bad_announcements(project):
+    Events.for_project(project, source="bad/1").publish("orchestra.machine.started", [1, 2])
+    Events.for_project(project, source="bad/2").publish("orchestra.machine.started", {"listens_for": "a.b", "mode": 3})
+
+
+def test_a_malformed_announcement_is_read_past_by_the_replay_and_the_follow_loop(bare, monkeypatch):
+    _bad_announcements(bare)
+    Events.for_project(bare, source="m").publish("x.happened", {})
+    h = Host(bare, collect_every=0.02)
+    _, quiet, offset = h._replay(True)
+    assert offset == 3 and _total(bare) == 1.0
+    assert ("m", "") in quiet.seen and ("bad", "1") in quiet.seen
+
+    real = host_mod.QuietWatch.observe
+
+    def chokes(self, ev, now=None):              # a reader that cannot read one event
+        if ev.get("source") == "bad/1":
+            raise TypeError("cannot read it")
+        return real(self, ev, now)
+    monkeypatch.setattr(host_mod.QuietWatch, "observe", chokes)
+    _, quiet, offset = h._replay(True)          # the same event every start: never 'failing: replay'
+    assert offset == 3 and h.skipped == 1 and ("m", "") in quiet.seen
+    t = _run(h)
+    try:
+        assert _until(lambda: _total(bare) == 1.0)
+        Events.for_project(bare, source="bad/1").publish("x.happened", {})
+        Events.for_project(bare, source="m").publish("x.happened", {})
+        assert _until(lambda: _total(bare) == 2.0)               # the event after the bad one is counted
+        assert _total(bare, source="bad/1") == 1.0
+    finally:
+        h.stop()
+        t.join(5)
+    assert "skipped an event it could not read" in (bare.logs_dir / "orchestra-host.log").read_text()

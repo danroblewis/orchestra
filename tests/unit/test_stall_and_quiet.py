@@ -116,3 +116,14 @@ def test_ad_hoc_machines_the_host_and_machines_quiet_before_the_start_are_not_an
         w.observe(ev("old", T - 90_000 + 600 * k), now=T)
     w.settle(now=T + 2400)
     assert w.check(now=T + 100_000) == []
+
+
+def test_a_malformed_announcement_is_read_as_empty_and_the_events_after_it_count():
+    w = QuietWatch()
+    w.observe({"type": "orchestra.machine.started", "source": "a/1", "time": ev("a/1", T)["time"], "data": [1, 2]}, now=T)
+    w.observe({"type": "orchestra.machine.started", "source": "b/1", "time": ev("b/1", T)["time"],
+               "data": {"listens_for": "a.b", "mode": 3}}, now=T)
+    for k in range(1, 5):
+        w.observe(ev("a/1", T + 600 * k), now=T + 600 * k)
+    assert w.seen[("a", "1")]["mode"] is None and w.seen[("b", "1")]["mode"] is None
+    assert len(w.seen[("a", "1")]["beats"]) == 5

@@ -70,10 +70,26 @@ def for_an_instrument(ev: dict) -> bool:
     return ev.get("type") == "orchestra.machine.started" and isinstance(ev.get("data"), dict) and "collector" in ev["data"]
 
 
+ANNOUNCEMENT = "orchestra.machine.started"
+ANNOUNCED_TEXT = ("mode", "kind", "log", "package", "name", "group", "team")   # each a string when present
+
+
+def announcement(ev: dict) -> dict:
+    """The data of an ``orchestra.machine.started`` as Orchestra reads it (AGENTS.md rules 2 and
+    3): an object, anything else read as empty, and its ``listens_for`` only the strings of a list.
+    The endpoint refuses other shapes (``endpoint.validate``); this keeps a bad one already on the
+    bus, or written through the library, from breaking a reader."""
+    d = ev.get("data")
+    d = dict(d) if isinstance(d, dict) else {}
+    subs = d.get("listens_for")
+    d["listens_for"] = [t for t in subs if isinstance(t, str)] if isinstance(subs, list) else []
+    return d
+
+
 def machine_and_instance(source: str | None) -> tuple[str | None, str | None]:
     """A source names a machine, or one instance of it as ``<machine>/<instance>`` (``baker/2``:
     the second of several bakers, all one machine)."""
-    if not source:
+    if not isinstance(source, str) or not source:
         return None, None
     machine, _, instance = source.partition("/")
     return machine, instance or None

@@ -19,10 +19,17 @@ import time
 from collections import deque
 
 from .cadence import BEATS, BURST_S, active_within, gaps
-from .events import HOST, event_time, for_an_instrument, machine_and_instance
+from .events import (
+    ANNOUNCEMENT,
+    HOST,
+    announcement,
+    event_time,
+    for_an_instrument,
+    machine_and_instance,
+)
 
 QUIET = "orchestra.machine.quiet"
-ANNOUNCE = "orchestra.machine.started"
+ANNOUNCE = ANNOUNCEMENT
 MIN_BEATS = 3                     # two gaps: a cadence of its own, not one interval
 AD_HOC = ("ad hoc",)
 
@@ -47,7 +54,7 @@ class QuietWatch:
                 rec["beats"].append(seen)
             rec["last"] = max(rec["last"], seen)
         if ev.get("type") == ANNOUNCE:
-            mode = (ev.get("data") or {}).get("mode")
+            mode = announcement(ev).get("mode")
             if isinstance(mode, str) and mode:
                 rec["mode"] = mode
         self.quiet.discard(key)

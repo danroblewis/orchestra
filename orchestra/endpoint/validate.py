@@ -9,7 +9,10 @@ refused by name, so a misspelt field is not silently lost.
 Orchestra's own types (``orchestra.*``) are the host's to publish, except the announcements a
 machine makes of itself (``orchestra.machine.started``) and the predictions a machine makes of its changes
 (``orchestra.prediction.made``, ``sd.predictions``). The source ``orchestra-host`` is the host's own. ``data`` is
-never read (AGENTS.md rule 3): only its size counts, through the body's."""
+never read (AGENTS.md rule 3): only its size counts, through the body's; except an announcement's,
+which Orchestra defines (rule 2), so its shape is checked: an object, ``listens_for`` a list of
+event types, and ``mode``, ``kind``, ``log``, ``package``, ``name``, ``group`` and ``team`` strings
+(each when present; null reads as absent). The rest is passed on unread."""
 
 from __future__ import annotations
 
@@ -18,7 +21,7 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from ..events import HOST
+from ..events import ANNOUNCED_TEXT, HOST
 
 MAX_BODY = 1_000_000            # bytes of one request's body
 MAX_TYPE = 256
@@ -84,6 +87,19 @@ def _time(raw: str) -> str:
     return t.astimezone(UTC).isoformat(timespec="milliseconds")
 
 
+def _announcement(data: Any) -> None:
+    """Refuse an ``orchestra.machine.started`` whose data the readers could not use."""
+    if not isinstance(data, dict):
+        raise Invalid("data of orchestra.machine.started must be an object, such as "
+                      "{\"mode\": \"continuous\", \"listens_for\": [\"order.placed\"]}")
+    subs = data.get("listens_for")
+    if subs is not None and not (isinstance(subs, list) and all(isinstance(t, str) and TYPE.match(t) for t in subs)):
+        raise Invalid("data.listens_for must be a list of event types, such as [\"order.placed\"]")
+    for name in ANNOUNCED_TEXT:
+        if data.get(name) is not None and not isinstance(data[name], str):
+            raise Invalid(f"data.{name} must be a string")
+
+
 def check(obj: dict) -> dict[str, Any]:
     """The keyword arguments of ``Events.publish`` for one event, or ``Invalid``."""
     unknown = sorted(set(obj) - ACCEPTED)
@@ -107,6 +123,8 @@ def check(obj: dict) -> dict[str, Any]:
     if source.partition("/")[0] == HOST:
         raise Invalid(f"{HOST} is Orchestra's own source", 403)
     out: dict[str, Any] = {"type": type_, "source": source, "data": obj.get("data")}
+    if type_ in ANNOUNCEMENTS:
+        _announcement(out["data"])
     for name in OPTIONAL_TEXT:
         if (v := _text(obj, name, MAX_TEXT)) is not None:
             out[name] = v

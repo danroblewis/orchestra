@@ -75,14 +75,16 @@ costs one small read however long the log is. Events from before the envelope ha
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from collections import Counter, OrderedDict, defaultdict, deque
 
 from ..cadence import BEATS, BURST_S, DAY, active_within, gaps
-from ..events import HOST, event_time, for_an_instrument, machine_and_instance
+from ..events import HOST, announcement, event_time, for_an_instrument, machine_and_instance
 
 ANNOUNCE = "orchestra.machine.started"
+log = logging.getLogger(__name__)
 # records about a declaration (the intended model), not work on their subject: never a hand-off
 NOT_WORK = ("orchestra.intent.changed", "orchestra.intent.requested")
 # Orchestra's own event type for a request from the pages (sd/intended/requests.py): a source that
@@ -116,6 +118,7 @@ class MachineIndex:
         self.logs: dict[str, dict[str, str]] = defaultdict(dict)        # machine -> instance -> announced log path
         self.latest: dict[str, deque] = defaultdict(lambda: deque(maxlen=RECENT))  # machine -> its last events' envelopes
         self.unattributed = 0
+        self.skipped = 0                                                  # events that could not be read
         self.last_on: OrderedDict[str, tuple[str, list[str]]] = OrderedDict()  # subject -> (machine, its last event types) that last acted on it
         self.handoffs: Counter = Counter()                               # (from machine, its event type or None, to machine) -> count
         self.recent_handoffs: dict[tuple[str, str, str], deque] = defaultdict(deque)
@@ -130,8 +133,19 @@ class MachineIndex:
             # read(since, limit) returns the last `limit` events after `since`: ask for all of them
             evs, end = self.events.read(self.offset, limit=end - self.offset)
             for ev in evs:
-                self._fold(ev)
+                self._fold_one(ev)
             self.offset = end
+
+    def _fold_one(self, ev: dict) -> None:
+        """Fold one event; one that cannot be read (a malformed line written past the endpoint's
+        checks) is skipped and counted, never fatal, so the index never sticks at its offset."""
+        try:
+            self._fold(ev)
+        except Exception as e:  # noqa: BLE001 - one bad event must not stop the index
+            self.skipped += 1
+            if self.skipped == 1:
+                log.warning("machines: skipped an event that could not be read (%s: %s); later ones are counted in skipped",
+                            type(e).__name__, e)
 
     def _fold(self, ev: dict) -> None:
         if self.since is not None or self.until is not None:
@@ -188,8 +202,8 @@ class MachineIndex:
         and its card (package, name, group, details), kept per instance so one that says less
         erases nothing another said; and its log."""
         key = instance or ""
-        d = ev.get("data") or {}
-        self.subs[machine].update(d.get("listens_for") or [])
+        d = announcement(ev)
+        self.subs[machine].update(d["listens_for"])
         for field, into in (("mode", self.mode), ("kind", self.kind)):
             if isinstance(d.get(field), str) and d[field]:
                 into[machine][key] = d[field]

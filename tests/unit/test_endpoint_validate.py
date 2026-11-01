@@ -98,3 +98,28 @@ def test_listen_address():
     for bad in ("8075", "host:", "h:99999", 8075):
         with pytest.raises(ConfigError):
             listen_address(bad)
+
+
+@pytest.mark.parametrize("data,says", [
+    ([1, 2], "must be an object"),
+    ("continuous", "must be an object"),
+    (None, "must be an object"),
+    ({"listens_for": "a.b"}, "data.listens_for"),
+    ({"listens_for": [{"type": "a.b"}]}, "data.listens_for"),
+    ({"listens_for": ["a b"]}, "data.listens_for"),
+    ({"mode": 3}, "data.mode"),
+    ({"kind": ["agent"]}, "data.kind"),
+    ({"log": {"path": "x"}}, "data.log"),
+    ({"package": 1}, "data.package"),
+    ({"name": True}, "data.name"),
+    ({"group": 1}, "data.group"),
+    ({"team": []}, "data.team"),
+])
+def test_an_announcement_the_readers_could_not_use_is_refused_by_field(data, says):
+    refused({"type": "orchestra.machine.started", "source": "m/1", "data": data}, 400, says)
+
+
+def test_an_announcement_of_the_right_shape_passes_its_other_fields_unread():
+    d = {"mode": "continuous", "listens_for": ["a.b"], "kind": "agent", "log": "logs/m.log", "package": "p",
+         "name": "M", "group": None, "anything": {"nested": [1]}}
+    assert check({"type": "orchestra.machine.started", "source": "m/1", "data": d})["data"] == d
