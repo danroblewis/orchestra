@@ -1,0 +1,9 @@
+{
+ "ok": true,
+ "message": null,
+ "working": false,
+ "count": 0,
+ "host": {
+  "alive": true
+ }
+}

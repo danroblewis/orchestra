@@ -1,0 +1,125 @@
+{
+ "key": "orchestra-agents-demo-mock-f5e88e91",
+ "repo": "/Users/daniellewis/orchestra-agents-demo-mock",
+ "config": {
+  "files": [
+   {
+    "role": "repo",
+    "path": "/Users/daniellewis/orchestra-agents-demo-mock/orchestra.toml",
+    "exists": true
+   },
+   {
+    "role": "overlay",
+    "path": "/Users/daniellewis/.orchestrator/orchestra-agents-demo-mock-f5e88e91/orchestra.local.toml",
+    "exists": false,
+    "named_by": "state directory"
+   }
+  ],
+  "keys": [
+   {
+    "key": "events.url",
+    "from": "repo",
+    "value": "file"
+   },
+   {
+    "key": "metrics.url",
+    "from": "repo",
+    "value": "file"
+   },
+   {
+    "key": "discovery.window",
+    "from": "repo",
+    "value": "60m"
+   },
+   {
+    "key": "discovery.step",
+    "from": "repo",
+    "value": "5s"
+   },
+   {
+    "key": "discovery.every",
+    "from": "repo",
+    "value": "5m"
+   },
+   {
+    "key": "machines[shell_worker]",
+    "from": "repo",
+    "value": {
+     "name": "shell_worker",
+     "command": "python -m tasking.machines.shell_worker shell --only-commands"
+    }
+   },
+   {
+    "key": "project.base_branch",
+    "from": "repo",
+    "value": "main"
+   },
+   {
+    "key": "project.ticket_prefix",
+    "from": "repo",
+    "value": "DEMO"
+   },
+   {
+    "key": "project.work",
+    "from": "repo",
+    "value": "code"
+   },
+   {
+    "key": "tasks.workers",
+    "from": "repo",
+    "value": 2
+   },
+   {
+    "key": "tasks.reviewers",
+    "from": "repo",
+    "value": 1
+   },
+   {
+    "key": "tasks.tick",
+    "from": "repo",
+    "value": "1s"
+   },
+   {
+    "key": "gate.timeout",
+    "from": "repo",
+    "value": "300s"
+   },
+   {
+    "key": "gate.unit[unit]",
+    "from": "repo",
+    "value": {
+     "name": "unit",
+     "command": "python -m compileall -q . && if [ -d tests ]; then python -m pytest -q tests; fi"
+    }
+   },
+   {
+    "key": "agents.harness",
+    "from": "repo",
+    "value": "dummy"
+   },
+   {
+    "key": "agents.dummy_script",
+    "from": "repo",
+    "value": "dummy.toml"
+   },
+   {
+    "key": "agents.serves",
+    "from": "repo",
+    "value": [
+     "worker",
+     "reviewer"
+    ]
+   },
+   {
+    "key": "collect[repo_stats]",
+    "from": "repo",
+    "value": {
+     "name": "repo_stats",
+     "command": "machines/repo_stats.sh",
+     "every": "30s"
+    }
+   }
+  ],
+  "removed": []
+ }
+}

@@ -1,0 +1,143 @@
+/* The proposed additions' look, in the pages' own tokens (style.css :root). Four marks, the same
+   on both pages:
+     ghost        expected but absent from the inferred model: the shape at reduced opacity,
+                  dashed, its label kept readable
+     new          added by inference since the previous version: an accent ring and a "new" tag
+     unconfirmed  made by a person or the Supervisor and not yet confirmed: dashed, "unconfirmed"
+     removed      gone since the previous version: a faint dashed line, its label struck through
+   and "expected" (a person said to always show it): a small pin. */
+:root { --mk-new:#6ea8fe; --mk-user:#c4b5fd; --mk-add:#86efac; --mk-gone:#fca5a5; --mk-ghost:#8b95a7 }
+
+/* ---- tags (HTML) ---- */
+.mk-tag { display:inline-block; font-size:9.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; border:1px solid var(--border2); border-radius:4px; padding:0 5px; line-height:15px; vertical-align:1px; white-space:nowrap; font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif }
+.mk-t-new { color:#bfdbfe; border-color:#1d4ed8; background:#0f1d3a }
+.mk-t-user, .mk-t-unconf { color:#ddd6fe; border-color:#5b21b6; border-style:dashed; background:#1b1430 }
+.mk-t-ghost { color:var(--text2); border-color:var(--border2); border-style:dashed }
+.mk-t-gone { color:var(--mk-gone); border-color:#7f1d1d }
+.mk-t-add { color:var(--mk-add); border-color:#166534; background:#0f2a1a }
+.mk-t-chosen { color:#bbf7d0; border-color:#166534 }
+.mk-t-exp { color:#fde68a; border-color:#92400e }
+.mk-t-chg { color:#fcd34d; border-color:#92400e }
+
+/* ---- tags, rings and pins (SVG, on the graphs) ---- */
+.mk-svgtag rect { fill:var(--panel2); stroke:var(--border2); stroke-width:1 }
+.mk-svgtag text { font-size:9px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; fill:var(--text2) }
+.mk-svgtag.mk-t-new rect { fill:#0f1d3a; stroke:#3b82f6 } .mk-svgtag.mk-t-new text { fill:#bfdbfe }
+.mk-svgtag.mk-t-user rect, .mk-svgtag.mk-t-unconf rect { fill:#1b1430; stroke:#7c3aed; stroke-dasharray:3 2 } .mk-svgtag.mk-t-user text, .mk-svgtag.mk-t-unconf text { fill:#ddd6fe }
+.mk-svgtag.mk-t-ghost rect { stroke-dasharray:3 2 }
+.mk-svgtag.mk-t-add rect { fill:#0f2a1a; stroke:#166534 } .mk-svgtag.mk-t-add text { fill:var(--mk-add) }
+.mk-svgtag.mk-t-gone rect { fill:#2a0f0f; stroke:#7f1d1d } .mk-svgtag.mk-t-gone text { fill:var(--mk-gone) }
+.mk-svgtag.mk-t-chg rect { fill:#2a2208; stroke:#92400e } .mk-svgtag.mk-t-chg text { fill:#fcd34d }
+.mk-ring { fill:none; stroke:var(--mk-new); stroke-width:2.2; filter:drop-shadow(0 0 6px #3b82f6aa) }
+.mk-pin path, .mk-pin circle { fill:#fcd34d } .mk-pin line { stroke:#fcd34d; stroke-width:1.6 } .mk-pin text { fill:#fde68a; font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase }
+
+/* ---- ghosts ---- */
+.ng-node.mk-ghost .ng-box { opacity:.55; fill:transparent !important; stroke-width:1.6 }
+.ng-node.mk-ghost .ng-boxtext { fill:var(--text2) !important } .ng-node.mk-ghost .ng-caption { fill:var(--muted) }
+.ng-node.mk-ghost.mk-user .ng-box { stroke:#a78bfa; opacity:.75 }
+.ng-node.mk-ghost .ng-sub { fill:var(--muted) }
+
+/* ---- edges: new and removed ---- */
+.ng-edge.mk-new-edge .ng-line { opacity:1; filter:drop-shadow(0 0 4px #3b82f6) }
+.ng-edge.mk-removed .ng-line { opacity:.55 }
+.ng-label[data-id$=":gone"] .ng-elabel { fill:var(--muted); text-decoration:line-through }
+.ng-edge.mk-gone-edge .ng-line { opacity:.35 !important }
+.ng-edge.mk-add-edge .ng-line { opacity:1; filter:drop-shadow(0 0 4px #22c55e) }
+
+/* ---- the legend ---- */
+.legend .mk-lg i { height:12px !important; width:18px !important; border-radius:3px !important; background:none !important }
+.legend .mk-lg i.mk-sw-present { border:1.5px solid var(--text2); position:relative } .legend .mk-lg i.mk-sw-present::after { content:""; position:absolute; left:2px; top:2px; width:4px; height:4px; border-radius:50%; background:#fcd34d }
+.legend .mk-lg i.mk-sw-ghost { border:1.5px dashed var(--mk-ghost); opacity:.7 }
+.legend .mk-lg i.mk-sw-new { border:1.5px solid var(--text2); box-shadow:0 0 0 2px var(--panel2), 0 0 0 3.5px var(--mk-new) }
+.legend .mk-lg i.mk-sw-gone { height:0 !important; border-top:2px dashed #5b6272; border-radius:0 !important; position:relative; top:0 }
+
+/* ---- a switch ---- */
+.mk-toggle { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--text2); background:var(--panel2); border:1px solid var(--border2); border-radius:999px; padding:1px 10px 1px 4px; cursor:pointer; margin-left:6px; user-select:none }
+.mk-toggle .mk-sw { width:24px; height:14px; border-radius:7px; background:var(--panel3); border:1px solid var(--border2); position:relative; flex:none }
+.mk-toggle .mk-sw::after { content:""; position:absolute; top:1px; left:1px; width:10px; height:10px; border-radius:50%; background:var(--muted); transition:left .15s }
+.mk-toggle.on { color:var(--text); border-color:var(--accent) } .mk-toggle.on .mk-sw { background:#1e3a5f; border-color:var(--accent) } .mk-toggle.on .mk-sw::after { left:11px; background:var(--accent) }
+
+/* ---- the Stocks table's groups ---- */
+table.dt tr.mk-group td { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:600; padding-top:8px; background:none !important }
+table.dt tr.mk-group .count { font-family:var(--mono); color:var(--text2); margin-left:4px }
+table.dt tr.mk-exprow td { background:#141821 }
+.mk-ghostdot { display:inline-block; width:12px; height:9px; border:1.4px dashed var(--mk-ghost); border-radius:2px; margin-right:6px; vertical-align:-1px }
+.mk-pinchip { color:#fcd34d; margin-right:5px; font-weight:800 }
+table.dt tr.mk-gone td { color:var(--muted) } table.dt tr.mk-gone s { color:var(--text2) }
+
+/* ---- D2: changes since the last version, beside the loops ---- */
+.mk-loopsrow { display:grid; grid-template-columns:minmax(0,1fr) 470px; gap:12px; align-items:start; margin:0 0 10px }
+.mk-loopsrow > #loops { margin:0 !important }
+.mk-changes { margin:0; font-size:12px; border-color:#1d4ed8 }
+.mk-chg { display:grid; grid-template-columns:16px 1fr auto; gap:6px; padding:6px 0; border-top:1px solid var(--border); align-items:start }
+.mk-chg .mk-sign { font-weight:800; font-family:var(--mono); text-align:center } .mk-chg.new .mk-sign { color:var(--mk-new) } .mk-chg.gone .mk-sign { color:var(--mk-gone) } .mk-chg.ghost .mk-sign { color:var(--mk-ghost) }
+.mk-chg .muted { font-size:11.5px } .mk-chg s { color:var(--text2) }
+.mk-acts { display:flex; gap:4px } .mk-acts .ctl { margin:0 }
+button.ctl.mk-primary { color:var(--text); border-color:var(--accent); background:#13233f }
+
+/* ---- D1: the Features drawer ---- */
+.mk-opts { display:flex; flex-direction:column; gap:6px }
+.mk-opt { display:grid; grid-template-columns:18px 1fr auto; gap:8px; align-items:start; padding:7px 10px; border:1px solid var(--border); border-radius:8px; background:var(--panel); font-size:12.5px }
+.mk-opt.on { border-color:#166534; background:#0f1a14 } .mk-opt .muted { font-size:11.5px; margin-top:2px }
+.mk-radio { width:13px; height:13px; border-radius:50%; border:1.5px solid var(--border2); margin-top:2px } .mk-opt.on .mk-radio { border-color:#22c55e; box-shadow:inset 0 0 0 3px #0f1a14; background:#22c55e }
+.mk-kind { white-space:nowrap; align-self:center }
+.mk-rec { margin:-2px 0 4px 28px; padding:8px 10px; border-left:2px solid #166534; font-size:12px }
+.mk-recline { display:flex; align-items:center; gap:7px } .mk-live { width:8px; height:8px; border-radius:50%; background:#22c55e; box-shadow:0 0 6px #22c55e }
+svg.mk-spark { width:240px; height:34px; display:block; margin:6px 0 4px } svg.mk-spark .l { fill:none; stroke:#2dd4bf; stroke-width:1.6 } svg.mk-spark .a { fill:#2dd4bf22 } svg.mk-spark circle { fill:#2dd4bf }
+.mk-script summary { font-size:12px } .mk-script pre { margin:4px 0; max-height:none; font-size:11.5px }
+.drawer code, .mk-side code { font-family:var(--mono); font-size:11.5px; background:var(--panel3); border:1px solid var(--border); border-radius:4px; padding:0 4px }
+
+/* ---- D3: the expected switch at the top of a stock's drawer ---- */
+.mk-expect { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 10px; margin:0 0 10px; border:1px solid #92400e; border-radius:8px; background:#1a160a; font-size:12px }
+.mk-expect .mk-toggle { margin:0; background:transparent } .mk-expect .mk-toggle.on { border-color:#92400e } .mk-expect .mk-toggle.on .mk-sw { background:#3b2f0b; border-color:#fcd34d } .mk-expect .mk-toggle.on .mk-sw::after { background:#fcd34d }
+.mk-sep { margin:0 4px }
+.mk-script { margin-top:2px } .mk-peek { display:grid; grid-template-columns:1.25fr 1fr; gap:8px; position:relative }
+.mk-peek pre { margin:2px 0 0; max-height:none; font-size:11px; color:var(--text2) }
+.mk-peek pre:first-child { -webkit-mask-image:linear-gradient(#000 70%, transparent) }
+
+/* ======== /machines ======== */
+.mk-evrow { display:grid; grid-template-columns:minmax(0,1fr) 380px; gap:12px; align-items:start }
+.mk-evrow > #evmap-host { min-width:0 }
+.mk-side { margin:0; font-size:12.5px; border-color:#5b21b6; border-style:dashed }
+.mk-side h4 { margin:14px 0 6px; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); display:flex; gap:8px; align-items:center }
+.mk-side .mk-h4note { text-transform:none; letter-spacing:0; font-weight:400 }
+.mk-head { display:flex; align-items:center; gap:8px; font-size:14px }
+.mk-dashdot { width:12px; height:12px; background:none !important; border:2px dashed var(--rc) }
+.mk-status { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:8px 0 4px; padding:6px 8px; border-radius:8px; background:#1b1430; border:1px dashed #5b21b6; color:#ddd6fe; font-size:12px }
+.mk-why { font-size:11.5px; margin:4px 0 8px }
+.mk-kindrow { display:flex; align-items:center; gap:10px; margin:10px 0 8px; font-size:11.5px }
+.mk-seg { display:inline-flex } .mk-seg button { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); font:inherit; font-size:11.5px; padding:2px 10px; cursor:pointer; margin-left:-1px }
+.mk-seg button:first-child { border-radius:6px 0 0 6px; margin-left:0 } .mk-seg button:last-child { border-radius:0 6px 6px 0 }
+.mk-seg button.on { color:var(--text); background:var(--panel2); border-color:var(--accent); position:relative; z-index:1 }
+.mk-seg.big button { font-size:12.5px; padding:3px 14px; font-weight:600 }
+.mk-seg.tabs button { padding:3px 12px }
+.mk-f { display:grid; grid-template-columns:84px 1fr; gap:8px; margin:6px 0; align-items:baseline }
+.mk-fl { color:var(--muted); font-size:12px } .mk-fv { min-width:0 } .mk-fv .ty { margin:0 4px 3px 0; display:inline-block }
+.mk-input { background:var(--panel3); border:1px solid var(--border2); border-radius:6px; padding:3px 8px; color:var(--text); font-size:12.5px }
+.mk-input.mono { font-family:var(--mono); font-size:11.5px } .mk-input.inline { display:inline-block; padding:0 6px; margin:0 3px }
+.mk-was { font-size:11px; margin-top:3px }
+.mk-list { margin:0; padding-left:20px; color:var(--text) } .mk-list li { margin:3px 0; line-height:1.45 } .mk-list .ty { font-size:10.5px }
+.mk-chips { display:flex; flex-wrap:wrap; gap:4px 5px; align-items:center } .mk-chips .muted { font-size:11.5px; margin-right:4px }
+.ty.mk-chip-add { border-color:#166534; color:var(--mk-add) } .ty.mk-chip-gone { text-decoration:line-through; color:var(--muted); border-style:dashed }
+.ty.mk-metric { font-family:inherit; border-color:#0e7490; color:#67e8f9 }
+.mk-preds { display:flex; flex-direction:column; gap:4px }
+.mk-pred { display:flex; align-items:baseline; gap:6px; padding:4px 8px; border:1px solid var(--border); border-left:3px solid var(--border2); border-radius:6px; background:var(--panel); color:var(--text); text-decoration:none; font-size:12px }
+.mk-pred:hover { border-color:var(--accent) } .mk-pred .up { color:#86efac; font-weight:800 } .mk-pred .down { color:#fca5a5; font-weight:800 } .mk-pred .muted { margin-left:auto; font-size:11px; color:var(--accent) }
+.mk-foot { font-size:11px; margin-top:12px; border-top:1px solid var(--border); padding-top:8px }
+.mk-tabnote { font-size:11.5px; margin:2px 0 6px }
+.mk-tabbody { border:1px solid var(--border); border-radius:8px; padding:8px 10px; background:var(--panel); margin-top:2px }
+.mk-tabbody h4 { margin-top:8px }
+table.dt.mk-args { width:100%; border-collapse:collapse; font-size:11.5px } table.dt.mk-args td { padding:2px 4px; border-bottom:1px solid var(--border) } table.dt.mk-args td.num { font-family:var(--mono); white-space:nowrap; color:#e5e7eb }
+button.ctl.mk-add { margin:4px 0 0; font-size:10.5px }
+pre.mk-eg { margin:4px 0 0; font-size:10.5px; padding:5px 7px }
+/* the map */
+.ng-node.mk-proposed > circle:not(.ng-halo):not(.mk-ring) { stroke:#c4b5fd !important; stroke-width:2.2 !important; stroke-dasharray:5 3; fill-opacity:.55 }
+.ng-node.mk-proposed .ng-sub { fill:#c4b5fd }
+.ng-node.mk-dim2, .ng-edge.mk-dim2 { opacity:.45 }
+.ng-node.mk-focus .ng-name { font-size:12.5px }
+.mk-ring.mk-ring-add { stroke:#22c55e; filter:drop-shadow(0 0 5px #22c55eaa) }
+.ng-edge.mk-guess-edge .ng-line { stroke-dasharray:5 4 }
+.cards .panel.mk-card { border:1px dashed #5b21b6; background:linear-gradient(#1b143055, transparent 60%) , var(--panel2) }
+.cards .panel.mk-card h3 { flex-wrap:wrap }
+.mk-side { min-width:0; overflow:hidden } .mk-fv { overflow-wrap:anywhere }
+table.dt.mk-args { table-layout:fixed } table.dt.mk-args td.num { white-space:normal; overflow-wrap:anywhere; width:48% }

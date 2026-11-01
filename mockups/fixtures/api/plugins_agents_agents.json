@@ -1,0 +1,237 @@
+{
+ "ok": true,
+ "host": {
+  "port": 57618,
+  "pid": 93370,
+  "alive": true
+ },
+ "agents": [
+  {
+   "id": "supervisor",
+   "name": "supervisor",
+   "kind": "agent",
+   "description": "Talks to the human; sets the project up; translates requests into requirements and hands them to the Coordinator; keeps the project's setup able to do them.",
+   "team": null,
+   "session_id": "supervisor",
+   "resident": true,
+   "paused": false,
+   "last_woken": null,
+   "next_scheduled_at": null
+  },
+  {
+   "id": "coordinator",
+   "name": "coordinator",
+   "kind": "agent",
+   "description": "Plans what the Supervisor hands it into milestones and tickets, and keeps the plan executable: clarity, size, order, dependencies. Never changes intent.",
+   "team": "engineering",
+   "session_id": "coordinator",
+   "resident": true,
+   "paused": false,
+   "last_woken": null,
+   "next_scheduled_at": null
+  },
+  {
+   "id": "worker",
+   "name": "worker",
+   "kind": "agent",
+   "description": "Does one ticket in the workspace it is handed and asks the reviewers, or reports BLOCKED.",
+   "team": "engineering",
+   "session_id": "worker",
+   "resident": false,
+   "paused": false,
+   "last_woken": null,
+   "next_scheduled_at": null
+  },
+  {
+   "id": "reviewer",
+   "name": "reviewer",
+   "kind": "agent",
+   "description": "Reviews one ticket's result (a diff, or RESULT.md): approves it for the gate, or sends it back to its worker.",
+   "team": "engineering",
+   "session_id": "reviewer",
+   "resident": false,
+   "paused": false,
+   "last_woken": null,
+   "next_scheduled_at": null
+  }
+ ],
+ "sessions": [
+  {
+   "id": "supervisor",
+   "status": "idle",
+   "kind": "supervisor",
+   "pid": null,
+   "session_file": "/Users/daniellewis/.orchestrator/orchestra-agents-demo-mock-f5e88e91/agents/sessions/dummy/supervisor.jsonl",
+   "harness": "dummy",
+   "updated_at": "2026-11-01T03:48:14+00:00",
+   "session": "supervisor",
+   "instance": "supervisor",
+   "role": "supervisor",
+   "alive": true,
+   "tool": null,
+   "last_text": "",
+   "ticket": null
+  },
+  {
+   "id": "coordinator",
+   "status": "idle",
+   "kind": "coordinator",
+   "pid": null,
+   "session_file": "/Users/daniellewis/.orchestrator/orchestra-agents-demo-mock-f5e88e91/agents/sessions/dummy/coordinator.jsonl",
+   "harness": "dummy",
+   "updated_at": "2026-11-01T03:48:14+00:00",
+   "session": "coordinator",
+   "instance": "coordinator",
+   "role": "coordinator",
+   "alive": true,
+   "tool": null,
+   "last_text": "",
+   "ticket": null
+  }
+ ],
+ "recent": [
+  {
+   "session": "reviewer-DEMO-34",
+   "role": "reviewer",
+   "instance": "reviewer/1",
+   "ticket": "DEMO-34",
+   "title": "Record note 30",
+   "settled_at": 1793505322.27421,
+   "last_text": "Approved."
+  },
+  {
+   "session": "reviewer-DEMO-33",
+   "role": "reviewer",
+   "instance": "reviewer/1",
+   "ticket": "DEMO-33",
+   "title": "Record note 29",
+   "settled_at": 1793505308.726835,
+   "last_text": "Approved."
+  },
+  {
+   "session": "reviewer-DEMO-32",
+   "role": "reviewer",
+   "instance": "reviewer/1",
+   "ticket": "DEMO-32",
+   "title": "Record note 28",
+   "settled_at": 1793505286.19251,
+   "last_text": "Approved."
+  },
+  {
+   "session": "worker-DEMO-32",
+   "role": "worker",
+   "instance": "worker/1",
+   "ticket": "DEMO-32",
+   "title": "Record note 28",
+   "settled_at": 1793505284.903465,
+   "last_text": "Done; reported ready for review."
+  },
+  {
+   "session": "reviewer-DEMO-31",
+   "role": "reviewer",
+   "instance": "reviewer/1",
+   "ticket": "DEMO-31",
+   "title": "Record note 27",
+   "settled_at": 1793505273.213212,
+   "last_text": "Approved."
+  },
+  {
+   "session": "worker-DEMO-31",
+   "role": "worker",
+   "instance": "worker/1",
+   "ticket": "DEMO-31",
+   "title": "Record note 27",
+   "settled_at": 1793505271.743469,
+   "last_text": "Done; reported ready for review."
+  },
+  {
+   "session": "reviewer-DEMO-30",
+   "role": "reviewer",
+   "instance": "reviewer/1",
+   "ticket": "DEMO-30",
+   "title": "Record note 26",
+   "settled_at": 1793505270.277879,
+   "last_text": "Approved."
+  },
+  {
+   "session": "reviewer-DEMO-29",
+   "role": "reviewer",
+   "instance": "reviewer/1",
+   "ticket": "DEMO-29",
+   "title": "Record note 25",
+   "settled_at": 1793505257.289578,
+   "last_text": "Approved."
+  },
+  {
+   "session": "reviewer-DEMO-28",
+   "role": "reviewer",
+   "instance": "reviewer/1",
+   "ticket": "DEMO-28",
+   "title": "Record note 24",
+   "settled_at": 1793505244.227155,
+   "last_text": "Approved."
+  },
+  {
+   "session": "reviewer-DEMO-27",
+   "role": "reviewer",
+   "instance": "reviewer/1",
+   "ticket": "DEMO-27",
+   "title": "Record note 23",
+   "settled_at": 1793505231.1824498,
+   "last_text": "Approved."
+  },
+  {
+   "session": "worker-DEMO-24",
+   "role": "worker",
+   "instance": "worker/1",
+   "ticket": "DEMO-24",
+   "title": "Record note 20",
+   "settled_at": 1793505181.733827,
+   "last_text": "Done; reported ready for review."
+  },
+  {
+   "session": "worker-DEMO-14",
+   "role": "worker",
+   "instance": "worker/1",
+   "ticket": "DEMO-14",
+   "title": "Record note 10",
+   "settled_at": 1793505051.6618009,
+   "last_text": "Done; reported ready for review."
+  },
+  {
+   "session": "worker-DEMO-10",
+   "role": "worker",
+   "instance": "worker/1",
+   "ticket": "DEMO-10",
+   "title": "Record note 6",
+   "settled_at": 1793505000.991474,
+   "last_text": "Done; reported ready for review."
+  },
+  {
+   "session": "worker-DEMO-3",
+   "role": "worker",
+   "instance": "worker/1",
+   "ticket": "DEMO-3",
+   "title": "Count the lines of the Python files",
+   "settled_at": 1793504914.137481,
+   "last_text": "{\n \"ok\": true,\n \"message\": \"Report recorded. You may stop now.\"\n}"
+  },
+  {
+   "session": "worker-DEMO-4",
+   "role": "worker",
+   "instance": "worker/2",
+   "ticket": "DEMO-4",
+   "title": "Measure the repository",
+   "settled_at": 1793504908.501278,
+   "last_text": "{\n \"ok\": true,\n \"message\": \"Report recorded. You may stop now.\"\n}"
+  }
+ ],
+ "now": 1793505539.50511,
+ "harness": "dummy",
+ "model": null,
+ "harness_note": null,
+ "serves": [
+  "worker",
+  "reviewer"
+ ]
+}
