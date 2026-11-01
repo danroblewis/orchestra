@@ -92,6 +92,25 @@ def test_a_change_predicted_to_double_a_rate_that_does_is_passed(tmp_path):
     assert ext == {"subject": "pred", "causationid": "pred", "correlationid": "cause"}
 
 
+@needs_sd
+def test_an_equation_replaced_is_judged_by_its_law_and_the_simulated_run_reads_it(tmp_path):
+    # the prediction's expected edit as a whole equation (sd.equations.predicted.draft runs it)
+    [v], _, _ = judged(tmp_path, [{"flow": "jobs_arrived_total", "equation": "2 * c", "params": {"c": 1.85}}], arrive=step(2.0, 4.0))
+    assert v["verdict"] == "passed", v
+    [s] = v["expectations"]
+    assert s["status"] == "met" and abs(s["law"]["z"]) < 2 and abs(s["old_law"]["z"]) >= 2
+    assert v["stocks"]["from"] == "simulated"
+
+
+@needs_sd
+def test_an_equation_that_misses_the_change_is_a_side_effect(tmp_path):
+    # predicted: the arrivals follow the waiting queue; they doubled instead
+    [v], _, _ = judged(tmp_path, [{"flow": "jobs_arrived_total", "equation": "k * jobs_waiting", "params": {"k": 0.05}}],
+                       arrive=step(2.0, 4.0))
+    [s] = v["expectations"]
+    assert s["status"] == "different" and abs(s["law"]["z"]) >= 2 and v["verdict"] == "side effect", v
+
+
 def test_predicted_to_double_but_nothing_changes_is_no_effect(tmp_path):
     [v], _, _ = judged(tmp_path, DOUBLE_ARRIVALS)
     assert v["verdict"] == "no effect", v

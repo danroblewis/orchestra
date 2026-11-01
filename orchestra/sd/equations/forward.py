@@ -1,26 +1,26 @@
-"""The forward run: the base model and the experiment from the measured levels now, ``horizon_s``
-ahead, with a band, the limits they hit, and where not to trust them (goal G5;
-docs/proposals/control-theory.md §7). It took the place of the scale-and-add "what if" on
-2026-10-27, and keeps its band and its trust flags.
+"""The forward run: a base model and a draft of it (the base with a prediction's expected edits,
+``predicted.draft``; or the base itself) from the measured levels now, ``horizon_s`` ahead, with a
+band, the limits they hit, and where not to trust them (goal G5; docs/proposals/control-theory.md
+§7). Prediction judging runs it for a prediction without its own trajectories (``sd.judge``), and
+the divergence check for the model's own projection (``sd.diverge``).
 
 **The runs.** Both start from each stock's measured level now (a hidden stock from its initial
-level; the scenario's ``levels`` override the experiment's) and run the engine (``engine``) for
-``horizon_s``. The base reads its measured inputs held at their last value; the experiment reads
-its scenario (``scenario``). A flow written ``observed()`` (one with no equation) is held at its
-measured mean over the last ten minutes, in both.
+level) and run the engine (``engine``) for ``horizon_s``, reading their measured inputs held at
+their last value. A flow written ``observed()`` (one with no equation) is held at its measured
+mean over the last ten minutes, in both.
 
 **The band.** ``members`` runs of each, with every flow's rate multiplied by ``exp(z · rel)``: z
-standard normal per member and flow (by id, so the base and the experiment share it, and the band
+standard normal per member and flow (by id, so the base and the draft share it, and the band
 of their difference is the difference's), ``rel`` the flow's relative error as its fit records it
-in each model (``sd.trust.spread``; an equation an experiment wrote is declared, so ±50% until it
+in each model (``sd.trust.spread``; an equation a prediction wrote is declared, so ±50% until it
 is fitted).
 Each trajectory is the central run (the numbers as written) and the 10th and 90th percentiles of
 the members. Measured levels are taken as exact. The members carry the parameters' uncertainty
 only, which for a model whose structure is wrong is far too narrow (the metrics lab found the truth
 inside it a quarter of the time where it claims 80%). So each stock's band (the base's and the
-experiment's; not their difference, whose structural error mostly cancels) is widened, in
+draft's; not their difference, whose structural error mostly cancels) is widened, in
 quadrature, by ``z × growth × h`` at horizon ``h``: how far the model's runs from part-way
-through its own window missed the measured level (``sd.experiments.heldout``), as discovery saved
+through its own window missed the measured level (``sd.equations.heldout``), as discovery saved
 it in the stock's trust (``trust["behaviour"]``), or measured on the history for a model saved
 without it. A level never below zero gets no band below zero. "Not trusted" is still reported
 beside it: a missing flow is not in any replay.
@@ -47,8 +47,16 @@ from ..model import Model
 from ..trust import era_errors, spread, weak_flow
 from . import engine
 from .heldout import measure, widen
-from .history import hidden, holds, initial, levels_at, step_for, unit_s
-from .scenario import inputs as scenario_inputs
+from .history import (
+    hidden,
+    holds,
+    initial,
+    inputs_until,
+    levels_at,
+    measured_rates,
+    step_for,
+    unit_s,
+)
 
 MEMBERS = 24
 POINTS = 61
@@ -62,6 +70,20 @@ def keep_index(steps: int, points: int) -> list[int]:
     return sorted({round(i * steps / max(1, points - 1)) for i in range(points)}) if points and steps + 1 > points else list(range(steps + 1))
 
 
+def central(model: Model, history: dict, start: float, end: float, *, step_s: float | None = None, flows=None, columns: int = 1,
+            params=None, factors=None, levels=None) -> engine.Run:
+    """One replay of ``model`` over [start, end] (columns: candidates, ``params`` and ``factors``
+    per column)."""
+    step_s = step_for(end - start, step_s)
+    steps = max(1, math.ceil((end - start) / step_s))
+    flows = flows if flows is not None else engine.compiled(model)
+    lv = levels if levels is not None else levels_at(model, history, start)[0]
+    return engine.run(model, t0=start, steps=steps, step_s=step_s, unit_s=unit_s(model), levels=lv,
+                      inputs={k: list(v) for k, v in (history.get("inputs") or {}).items()},
+                      observed=measured_rates(history, [f.id for f in flows if f.observed]), columns=columns,
+                      factors=factors, params=params, flows=flows)
+
+
 def band(X, keep: list[int]) -> dict:
     """Central (the first row), and the members' 10th and 90th percentiles, at ``keep``."""
     central = X[0]
@@ -71,7 +93,7 @@ def band(X, keep: list[int]) -> dict:
 
 
 def draws(flow_ids: list[str], members: int, seed: int) -> dict[str, np.ndarray]:
-    """Each flow's z per member, by id, so the base and the experiment share them."""
+    """Each flow's z per member, by id, so the base and the draft share them."""
     rng = np.random.default_rng(seed)
     z = rng.standard_normal((max(0, members), len(flow_ids)))
     return {fid: z[:, j] for j, fid in enumerate(flow_ids)}
@@ -84,8 +106,6 @@ def factors(z: dict[str, np.ndarray], rel: dict[str, float]) -> dict[str, np.nda
 
 def era_error(model: Model, history: dict, now: float) -> dict[str, float]:
     """Each measured stock's error in the model's own replay since the era began (``sd.trust``)."""
-    from .replay import central
-
     start = max(float(history.get("start") if history.get("start") is not None else now), float((model.discovery or {}).get("fit_start") or 0.0))
     if now <= start or not history.get("stocks"):
         return {}
@@ -111,15 +131,15 @@ def behaviour_of(model: Model, history: dict, now: float) -> dict[str, dict]:
     return out
 
 
-def forward(base: Model, draft: Model, history: dict, scenario: dict | None = None, *, horizon_s: float = 3600.0,
+def forward(base: Model, draft: Model, history: dict, *, horizon_s: float = 3600.0,
             step_s: float | None = None, members: int = MEMBERS, seed: int = 0, bounds: dict | None = None,
             now: float | None = None, points: int = POINTS, stocks: list[str] | None = None, changed: list[str] | None = None) -> dict:
     """Both runs over ``horizon_s`` from ``now`` (default: the history's ``at``), for ``stocks``
     (default: all), with their band, limits and what is not trusted; ``changed``: the flows the
-    experiment changed or added (default: from ``views.diff``), whose rates are reported and judged."""
+    draft changed or added (default: from ``views.diff``), whose rates are reported and judged."""
     if changed is None:
         from .views import diff
-        d = diff(base, draft, scenario)
+        d = diff(base, draft)
         changed = [r["id"] for r in d["flows"]["changed"] + d["flows"]["added"]]
     if not (horizon_s > 0) or horizon_s > 366 * 86400:
         raise ValueError("the horizon must be above 0 and at most a year")
@@ -127,14 +147,13 @@ def forward(base: Model, draft: Model, history: dict, scenario: dict | None = No
     step_s = step_for(horizon_s, step_s)
     steps = max(1, math.ceil(horizon_s / step_s))
     unit = unit_s(base)
-    scen = scenario or {}
     ids_b, ids_d = [s.id for s in base.stocks], [s.id for s in draft.stocks]
     every = list(dict.fromkeys([*ids_b, *ids_d]))
     want = list(stocks or every)
     if unknown := [s for s in want if s not in every]:
-        raise ValueError(f"no stock {', '.join(unknown)} in the base or the experiment; its stocks: {', '.join(every)}")
+        raise ValueError(f"no stock {', '.join(unknown)} in the base or the draft; its stocks: {', '.join(every)}")
     flows_b = engine.compiled(base)
-    flows_d = engine.compiled(draft, list(scen.get("inputs") or {}))
+    flows_d = engine.compiled(draft)
     fids = list(dict.fromkeys([f.id for f in flows_b] + [f.id for f in flows_d]))
     observed = holds(history, [f.id for f in flows_b + flows_d if f.observed], now)
     recent = {fid: [v for t, v in (history.get("flows") or {}).get(fid) or [] if now - 600 <= t <= now] for fid in fids}
@@ -147,9 +166,9 @@ def forward(base: Model, draft: Model, history: dict, scenario: dict | None = No
     k_d = factors(z, {fid: s[0] for fid, s in spreads.items()})
     M = max(0, members) + 1
     lv_b, missing = levels_at(base, history, now)
-    lv_d, _ = levels_at(draft, history, now, scen.get("levels"))
-    in_b = scenario_inputs(history, now, None, horizon_s, step_s)
-    in_d = scenario_inputs(history, now, scen, horizon_s, step_s)
+    lv_d, _ = levels_at(draft, history, now)
+    in_b = inputs_until(history, now)
+    in_d = {k: list(v) for k, v in in_b.items()}
     common = {"t0": now, "steps": steps, "step_s": step_s, "unit_s": unit, "columns": M}
     A = engine.run(base, levels=lv_b, inputs=in_b, observed=observed, factors=k_b, flows=flows_b, **common)
     B = engine.run(draft, levels=lv_d, inputs=in_d, observed=observed, factors=k_d, flows=flows_d, **common)
@@ -195,7 +214,7 @@ def forward(base: Model, draft: Model, history: dict, scenario: dict | None = No
 
     # limits: the floor at 0, and the caller's bounds
     limits = []
-    for name, R, ids in (("base", A, ids_b), ("experiment", B, ids_d)):
+    for name, R, ids in (("base", A, ids_b), ("draft", B, ids_d)):
         for kk, sid in enumerate(ids):
             lo, hi = (bounds or {}).get(sid, (None, None))
             X = R.levels[:, kk]
@@ -215,7 +234,7 @@ def forward(base: Model, draft: Model, history: dict, scenario: dict | None = No
                                    **({"bound": lo if kind == "below bound" else hi} if kind != "floor" else {})})
     in_base = {(x["stock"], x["kind"]) for x in limits if x["run"] == "base" and x["at_s"] is not None}
     for x in limits:
-        if x["run"] == "experiment":
+        if x["run"] == "draft":
             x["new"] = x["at_s"] is not None and (x["stock"], x["kind"]) not in in_base
 
     # the changed flows' rates now, against what was seen
@@ -225,7 +244,7 @@ def forward(base: Model, draft: Model, history: dict, scenario: dict | None = No
         seen = [v for _, v in (history.get("flows") or {}).get(fid) or []]
         r0 = float(A.rates[0, A.flows.index(fid), 0]) if fid in A.flows else None
         r1 = float(B.rates[0, B.flows.index(fid), 0]) if fid in B.flows else None
-        rates_now[fid] = {"base": None if r0 is None else round(r0, 6), "experiment": None if r1 is None else round(r1, 6),
+        rates_now[fid] = {"base": None if r0 is None else round(r0, 6), "draft": None if r1 is None else round(r1, 6),
                           "observed": [min(seen), max(seen)] if seen else None}
         if seen and r1 is not None and (r1 > RATE_OUTSIDE * max(seen) + 1e-9 or r1 < min(seen) / RATE_OUTSIDE - 1e-9):
             note = f"extrapolation: flow {fid} at {r1:.4g} per {base.time_unit}, outside the {min(seen):.4g}–{max(seen):.4g} seen"
@@ -234,9 +253,9 @@ def forward(base: Model, draft: Model, history: dict, scenario: dict | None = No
                 if end in stock_why:
                     stock_why[end].append(note)
 
-    # the structure's uncertainty: each stock's held-out replay error (sd.experiments.heldout), saved
+    # the structure's uncertainty: each stock's held-out replay error (sd.equations.heldout), saved
     # at discovery or measured on this history; the difference's band is left alone (base and
-    # experiment share the structure, and its error mostly cancels)
+    # draft share the structure, and its error mostly cancels)
     beh = behaviour_of(base, history, now)
     t_keep = [offsets[i] for i in keep]
 
@@ -246,9 +265,9 @@ def forward(base: Model, draft: Model, history: dict, scenario: dict | None = No
 
     def stock_row(sid: str) -> dict:
         st = next((s for s in draft.stocks if s.id == sid), None) or next(s for s in base.stocks if s.id == sid)
-        row = {"name": st.name, "unit": st.unit, "start": {"base": lv_b.get(sid), "experiment": lv_d.get(sid)},
+        row = {"name": st.name, "unit": st.unit, "start": {"base": lv_b.get(sid), "draft": lv_d.get(sid)},
                "base": widened(band(A.levels[:, ids_b.index(sid)], keep), sid, lv_b.get(sid)) if sid in ids_b else None,
-               "experiment": widened(band(B.levels[:, ids_d.index(sid)], keep), sid, lv_d.get(sid)) if sid in ids_d else None,
+               "draft": widened(band(B.levels[:, ids_d.index(sid)], keep), sid, lv_d.get(sid)) if sid in ids_d else None,
                "difference": band(B.levels[:, ids_d.index(sid)] - A.levels[:, ids_b.index(sid)], keep) if sid in ids_b and sid in ids_d else None,
                "trusted": not stock_why[sid], "why": stock_why[sid]}
         if rec := beh.get(sid):
@@ -257,7 +276,7 @@ def forward(base: Model, draft: Model, history: dict, scenario: dict | None = No
 
     rkeep = [min(i, steps - 1) for i in keep]
     flows_out = {fid: {"base": band(A.rates[:, A.flows.index(fid)], rkeep) if fid in A.flows else None,
-                       "experiment": band(B.rates[:, B.flows.index(fid)], rkeep) if fid in B.flows else None}
+                       "draft": band(B.rates[:, B.flows.index(fid)], rkeep) if fid in B.flows else None}
                  for fid in fids}
     near = {fid for fid in fids if fid in touched or {by_id[fid].src, by_id[fid].dst} & set(want)}
     not_trusted = [{"kind": "flow", "id": fid, "why": why} for fid, why in weak.items() if fid in near]
@@ -266,7 +285,7 @@ def forward(base: Model, draft: Model, history: dict, scenario: dict | None = No
             "t": [offsets[i] for i in keep], "stocks": {sid: stock_row(sid) for sid in want}, "flows": flows_out,
             "rates_now": rates_now, "changed": touched, "limits": [x for x in limits if x["stock"] in want or x.get("new")],
             "replayed": replayed, "not_trusted": not_trusted, "trusted": not any(stock_why[s] for s in want),
-            "nonfinite": {"base": A.nonfinite, "experiment": B.nonfinite},
+            "nonfinite": {"base": A.nonfinite, "draft": B.nonfinite},
             "band": {"members": max(0, members), "quantiles": list(QUANTILES), "seed": seed,
                      "spread": {fid: {"rel": round(r, 4), "how": how, **({"base": {"rel": round(spreads_b[fid][0], 4), "how": spreads_b[fid][1]}}
                                                                           if fid in spreads_b and spreads_b[fid] != (r, how) else {})}
@@ -274,12 +293,12 @@ def forward(base: Model, draft: Model, history: dict, scenario: dict | None = No
                      "structural": {sid: {"growth": round(r["growth"], 6), "z": r["z"], "from": r.get("from", "discovery")}
                                     for sid, r in beh.items() if sid in want},
                      "how": "each flow's rate times exp(z·rel), z standard normal per member and flow, shared by the base and the "
-                            "experiment; rel is the relative error its fit records (sd.trust), the experiment's (and the base's where it "
+                            "draft; rel is the relative error its fit records (sd.trust), the draft's (and the base's where it "
                             "differs) given; levels now are taken as exact. Each stock's band is then widened, in quadrature, by "
-                            "z × growth × the horizon: how far its held-out replays missed (sd.experiments.heldout, 'structural')"}}
+                            "z × growth × the horizon: how far its held-out replays missed (sd.equations.heldout, 'structural')"}}
 
 
 def trajectories(result: dict) -> dict:
-    """A prediction's ``trajectories`` (``sd.predictions``) from a forward run: the experiment's
+    """A prediction's ``trajectories`` (``sd.predictions``) from a forward run: the draft's
     stocks from the time the change is made."""
-    return {"t": list(result["t"]), "stocks": {sid: dict(s["experiment"]) for sid, s in result["stocks"].items() if s.get("experiment")}}
+    return {"t": list(result["t"]), "stocks": {sid: dict(s["draft"]) for sid, s in result["stocks"].items() if s.get("draft")}}

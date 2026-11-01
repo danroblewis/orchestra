@@ -95,8 +95,8 @@ def law(before, src: str | None, after, measured: dict[str, list], span_s: float
     if n is None:
         return None
     if before.form not in ("constant", "proportional", "linear"):
-        from .experiments.forms import Names, text_of
-        from .experiments.language import EquationError
+        from .equations.forms import Names, text_of
+        from .equations.language import EquationError
 
         try:
             text, params = text_of(before, src, Names([k for k in measured if not k.startswith("input:")],
@@ -124,7 +124,7 @@ def _held(mean: float, q: dict, span_s: float, unit_s: float, rel: float) -> dic
 
 
 def text_law(text: str, params: dict, after, measured: dict[str, list], span_s: float, unit_s: float, rel: float) -> dict | None:
-    """``law`` for an equation written in the equation language (``sd.experiments.language``):
+    """``law`` for an equation written in the equation language (``sd.equations.language``):
     its rate evaluated at every reading of what it reads (``measured``: stocks by id, inputs as
     ``input:<name>``), each held until the next. None when it reads something not measured, a
     flow's own measured rate, or a delay or smooth (they need the run before the era)."""
@@ -132,8 +132,8 @@ def text_law(text: str, params: dict, after, measured: dict[str, list], span_s: 
 
     import numpy as np
 
-    from .experiments.compile import Frame, compile_rate
-    from .experiments.language import STATEFUL, EquationError, parse
+    from .equations.compile import Frame, compile_rate
+    from .equations.language import STATEFUL, EquationError, parse
 
     q = (after.quality or {}) if after is not None else {}
     if q.get("events") is None:

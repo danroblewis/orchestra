@@ -320,7 +320,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     @app.get("/api/dynamics/eras")
     def dynamics_eras() -> dict:
         """The eras, each era's versions, and what changed at the last boundary (sd/compare.py)."""
-        from ..sd.experiments.reads import eras
+        from ..sd.reads import eras
         return eras(bg.models)
 
     @app.get("/api/machines")

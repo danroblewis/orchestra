@@ -1,5 +1,5 @@
-"""The commands experiments replaced (2026-10-27) are gone, and the docs say so: the owner does not
-use command lines; machines use the APIs (SPEC §3.1, §4.5) and people the web UI."""
+"""The commands removed on 2026-10-27 (whatif, predict, eras, observability) are gone, and the
+docs say so: the owner does not use command lines; machines use the APIs (SPEC §3.1, §4.5) and people the web UI."""
 
 from pathlib import Path
 

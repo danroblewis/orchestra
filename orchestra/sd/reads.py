@@ -1,6 +1,8 @@
-"""What a machine reads before it experiments, in shapes an LLM can use: the model (equations in
-the language), its versions, the eras and what changed at the last boundary, the observability
-report, the predictions, and series, summarised or raw, with a cap and paging.
+"""The model as a machine reads it, in shapes an LLM can use: the model (equations in the
+language), its versions, the eras and what changed at the last boundary, the observability
+report, the predictions, and series, summarised or raw, with a cap and paging. ``ModelReads`` is
+the Python API (the agents' model tools) and what the events endpoint's HTTP API (``endpoint.api``)
+calls, so both answer alike.
 
 Every answer is JSON. A series answer holds at most ``MAX_POINTS`` points in all and
 ``limit`` per series (default ``LIMIT``); a series cut short says where to continue (``next``:
@@ -11,11 +13,9 @@ from __future__ import annotations
 import math
 import time
 
-from .. import eras as era_record
-from .. import predictions as prediction_record
-from ..store import ModelStore
-from .history import unit_s
-from .views import model_view
+from . import eras as era_record
+from . import predictions as prediction_record
+from .store import ModelStore
 
 LIMIT = 500
 LIMIT_MAX = 5000
@@ -67,6 +67,8 @@ def levels_now(model, metrics) -> dict:
 
 
 def model(store: ModelStore, metrics=None, version: int | None = None, raw: bool = False) -> dict:
+    from .equations.views import model_view
+
     m, label = base_model(store, version)
     return {"ok": True, "model": model_view(m, label, levels_now(m, metrics), raw=raw)}
 
@@ -99,7 +101,7 @@ def predictions(store: ModelStore, pid: str | None = None) -> dict:
 
 def observability(store: ModelStore, history, version: int | None = None) -> dict:
     """Which stocks what is measured determines (``sd.observability``), at the last hour's means."""
-    from ..observability import operating_point, report
+    from .observability import operating_point, report
 
     m, label = base_model(store, version)
     now = time.time()
@@ -127,6 +129,8 @@ def series(store: ModelStore, history, ids, *, start: float | None = None, end: 
     """The named series of the model (stock ids: levels; flow ids: rates per the model's time unit;
     measured inputs' names: values) over a window (default: the last hour), each summarised, with
     its points when ``points``."""
+    from .equations.history import unit_s
+
     m, label = base_model(store, version)
     if isinstance(ids, str):
         ids = [x for x in ids.split(",") if x]
@@ -160,3 +164,75 @@ def series(store: ModelStore, history, ids, *, start: float | None = None, end: 
         out[x] = row
     return {"ok": True, "label": label, "start": start, "end": end, "time_unit": m.time_unit, "unit_s": unit_s(m),
             "step": {"stock": h.get("stock_step"), "flow": h.get("flow_step")}, "series": out}
+
+
+class ModelReads:
+    """The reads above for one project: ``metrics`` its store (default: opened when first
+    needed); ``history``: ``(model, start, end) -> history`` in place of reading the metrics
+    (tests). Nothing here changes the model, a machine or a metric."""
+
+    def __init__(self, project, *, metrics=None, history=None):
+        self.project = project
+        self._metrics = metrics
+        self._history = history
+        self.models = ModelStore.for_state(project.state_dir)
+
+    @property
+    def metrics(self):
+        if self._metrics is None:
+            from ..metrics import for_project
+            self._metrics = for_project(self.project)
+        return self._metrics
+
+    def _metrics_or_none(self):
+        try:
+            return self.metrics
+        except Exception:  # noqa: BLE001 - the model is read without levels
+            return None
+
+    def history(self, model, start: float, end: float) -> dict:
+        """The model's series over [start, end]: levels at the discovery step (coarser for long
+        windows), flow rates every 30 s (coarser for long windows)."""
+        if self._history is not None:
+            return self._history(model, start, end)
+        from ..web.background import stock_step
+        from .equations.history import read_window
+        from .judge import reader
+
+        span = end - start
+        step = max(stock_step(self.project.config.discovery_step), span / 2000.0)
+        return read_window(model, reader(self.project, self.metrics), start, end, step, max(30.0, span / 500.0))
+
+    def language(self) -> dict:
+        from .equations.language import reference
+        return {"ok": True, "language": reference()}
+
+    def model(self, version: int | None = None, raw: bool = False) -> dict:
+        return model(self.models, self._metrics_or_none(), version, raw)
+
+    def versions(self) -> dict:
+        return versions(self.models)
+
+    def eras(self) -> dict:
+        return eras(self.models)
+
+    def observability(self, version: int | None = None) -> dict:
+        return observability(self.models, self.history, version)
+
+    def series(self, ids, **kw) -> dict:
+        return series(self.models, self.history, ids, **kw)
+
+    def predictions(self, pid: str | None = None) -> dict:
+        return predictions(self.models, pid)
+
+    def check_equation(self, equation, params=None, version: int | None = None) -> dict:
+        """Whether an equation parses against the model, and what it reads."""
+        from .equations.forms import Names
+        from .equations.language import EquationError, parse
+
+        n = Names.of(base_model(self.models, version)[0])
+        try:
+            p = parse(equation, stocks=n.stocks, inputs=n.inputs, params=params)
+        except EquationError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, **p.describe()}

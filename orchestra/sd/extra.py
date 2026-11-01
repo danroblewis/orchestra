@@ -2,7 +2,7 @@
 
 Without it Orchestra still runs: the host, the Core page, and conservation discovery need none of
 it (AGENTS.md rule 8). What steps the simulator (behaviour trust, simulation, divergence,
-observability, experiments, SD Lab's strategies) is skipped or answered with ``message``. Nothing
+observability, prediction judging's forward run, SD Lab's strategies) is skipped or answered with ``message``. Nothing
 on the always-imported path imports these modules at module level."""
 
 from __future__ import annotations

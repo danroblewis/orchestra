@@ -1,7 +1,7 @@
 """A model as a machine reads it: each flow's equation in the language, what it reads, its origin
 and whether to trust it; and a draft's difference from its base.
 
-``model_view`` is what ``GET /model`` and an experiment's ``draft`` answer: compact enough for an
+``model_view`` is what ``GET /model`` answers: compact enough for an
 LLM's context (no series bindings, no discovery record unless asked), complete enough to write any
 edit from."""
 
@@ -33,11 +33,10 @@ def flow_view(f, names: Names, *, trust: bool = True) -> dict:
     return out
 
 
-def model_view(model: Model, label: dict | None = None, levels: dict | None = None, *, raw: bool = False,
-               extra_inputs=()) -> dict:
+def model_view(model: Model, label: dict | None = None, levels: dict | None = None, *, raw: bool = False) -> dict:
     """The model with its equations in the language. ``levels``: each stock's level now
     (``{id: {"t", "v"}}`` or a number); ``raw``: with the model as Orchestra stores it."""
-    names = Names.of(model, extra_inputs)
+    names = Names.of(model)
     stocks = []
     for s in model.stocks:
         row = {"id": s.id, "name": s.name, "unit": s.unit, "hidden": hidden(s)}
@@ -67,10 +66,10 @@ def _flow_row(f, names: Names) -> dict:
             "method": e.method if e else None}
 
 
-def diff(base: Model, draft: Model, scenario: dict | None = None) -> dict:
+def diff(base: Model, draft: Model) -> dict:
     """What the draft changed of its base: stocks added and removed, flows added, removed and
-    changed (ends, equation or parameters), and the scenario."""
-    bn, dn = Names.of(base), Names.of(draft, list((scenario or {}).get("inputs") or {}))
+    changed (ends, equation or parameters)."""
+    bn, dn = Names.of(base), Names.of(draft)
     bs, ds = {s.id: s for s in base.stocks}, {s.id: s for s in draft.stocks}
     bf, df = {f.id: f for f in base.flows}, {f.id: f for f in draft.flows}
     changed = []
@@ -85,7 +84,6 @@ def diff(base: Model, draft: Model, scenario: dict | None = None) -> dict:
                       "removed": [s for s in bs if s not in ds]},
            "flows": {"added": [{"id": f.id, **_flow_row(f, dn)} for f in draft.flows if f.id not in bf],
                      "removed": [{"id": f.id, **_flow_row(f, bn)} for f in base.flows if f.id not in df],
-                     "changed": changed},
-           "scenario": scenario or {"inputs": {}, "levels": {}}}
+                     "changed": changed}}
     out["edits"] = len(out["stocks"]["added"]) + len(out["stocks"]["removed"]) + sum(len(v) for v in out["flows"].values())
     return out

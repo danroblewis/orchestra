@@ -300,7 +300,7 @@ else on the panels is rendered read-only with "ask the Supervisor" (§7).
 ### 6.3 Declaring: the plugin's API
 
 `project.intended.apply(ops, provenance) -> {"version", "changes"}` in process; over HTTP, `POST
-/intended` on the host's events endpoint (its token, as the experiments API, SPEC §3.1), body
+/intended` on the host's events endpoint (its token, as the model API, SPEC §3.1), body
 `{source, author, turn, message, quote, request?, ops}`, answered `{"ok": true, "version",
 "changes"}` or 422 `{"ok": false, "error", "index"}`. All ops of a call apply or none. Any op may
 name `guessed` fields. The ops:

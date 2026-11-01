@@ -1,8 +1,8 @@
 """What a run reads of the measured history: the web server's ``history`` shape
 (``web.background.history``: ``stocks`` levels, ``flows`` rates per the model's time unit, measured
 ``inputs``, each ``[[t, v]]``, with ``at`` and ``start``), for any window, and the pieces each run
-takes from it: levels at a time, inputs up to a time (and a forward run's scenario after it), the
-flows' measured rates."""
+takes from it: levels at a time, inputs up to a time, the flows'
+measured rates."""
 
 from __future__ import annotations
 

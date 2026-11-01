@@ -14,9 +14,8 @@ project's token in ``ORCHESTRA_EVENTS_TOKEN``. A machine the host did not launch
 - ``GET /events?after=<offset>&types=a,b&wait=<s>&limit=<n>``: the events after an offset, and the
   offset to read from next, waiting up to ``wait`` seconds for one to arrive;
 - ``GET /health``: whether it is up, without the token;
-- beside them, the model and experiments (``api.py``): ``GET /model``, ``/eras``, ``/series``,
-  ``/experiments``… and ``POST /experiments``…, what ``sd.experiments.api.Experiments`` does from
-  Python (SPEC §3.1, §4.5).
+- beside them, the model (``api.py``): ``GET /model``, ``/eras``, ``/series``, ``/predictions``…,
+  what ``sd.reads.ModelReads`` does from Python (SPEC §3.1, §4.5).
 
 Every request but ``/health`` carries ``Authorization: Bearer <token>``. The token is the
 project's, kept in ``<state>/events.token`` (readable by its owner only), so another local user's

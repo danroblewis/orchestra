@@ -1,5 +1,5 @@
 """The events endpoint's HTTP server, run by the host that launches (``orchestra.host``): the
-events, and beside them the model and experiments (``api.py``), behind one token.
+events, and beside them the model (``api.py``), behind one token.
 
 A stdlib ``ThreadingHTTPServer``, one thread per request, so a long poll never holds up a publish.
 Everything goes through the ``Events`` it is given: it never touches a bus backend itself
@@ -170,7 +170,7 @@ def _handler(ep: EventsEndpoint) -> type[BaseHTTPRequestHandler]:
                 return path
             if path != "/events" and not api.known(path):
                 self._send(404, {"ok": False, "error": f"no {path} here: POST /events, GET /events, GET /health, and the model "
-                                                       "and experiments (GET /model, /experiments, ...: USING_ORCHESTRA.md §5.9)"})
+                                                       "(GET /model, /eras, /series, ...: USING_ORCHESTRA.md §5.9)"})
                 return None
             if not ep.authorized(self.headers.get("Authorization")):
                 self._send(401, {"ok": False, "error": "needs Authorization: Bearer <token> (ORCHESTRA_EVENTS_TOKEN, "

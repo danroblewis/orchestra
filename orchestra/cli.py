@@ -300,8 +300,8 @@ def build_parser(plugin_help: dict[str, str] | None = None) -> argparse.Argument
     s.set_defaults(fn=cmd_metrics)
 
     s = sub.add_parser("sd", help="the system dynamics model: discover it from the metrics, show it, fit it, list its versions, "
-                       "and list the predictions and their verdicts (predictions). Machines ask the model what a change would do "
-                       "through experiments (the events endpoint's HTTP API, or sd.experiments.api.Experiments; USING_ORCHESTRA.md §5.9)")
+                       "and list the predictions and their verdicts (predictions). Machines read the model through the events "
+                       "endpoint's HTTP API, or sd.reads.ModelReads (USING_ORCHESTRA.md §5.9)")
     s.add_argument("action", choices=["show", "fit", "versions", "discover", "predictions"])
     s.add_argument("--minutes", type=float, help="for discover: the window, in minutes back from now (default: [discovery] window)")
     s.add_argument("--step-s", dest="step_s", type=float, help="for discover: seconds per step (default: [discovery] step)")

@@ -1,5 +1,6 @@
-"""The model and experiments over HTTP, served by the events endpoint (``server.py``) with the same
-token: what ``sd.experiments.api.Experiments`` does from Python, for a machine in any language.
+"""The model over HTTP, served by the events endpoint (``server.py``) with the same token: what
+``sd.reads.ModelReads`` does from Python, for a machine in any language. (The ``/experiments``
+routes were removed on 2026-11-01 with the experiments, the owner.)
 
 Reads (``GET``):
 
@@ -12,27 +13,17 @@ Reads (``GET``):
 | ``/observability?version=`` | which stocks what is measured determines |
 | ``/series?ids=a,b&start=&end=&span_s=&points=&limit=&after=`` | series summarised, and their points on request (paged) |
 | ``/predictions``, ``/predictions/<id>`` | predictions and their verdicts |
-| ``/experiments?owner=&status=&era=`` | the experiments, each with its latest run and its verdict |
-| ``/experiments/<id>?base=`` | one: its draft (equations in the language), scenario, log, runs, prediction |
-| ``/experiments/<id>/diff`` | what its draft changed of its base |
-| ``/experiments/<id>/runs``, ``/experiments/<id>/runs/<run>`` | its runs, and one in full |
-| ``/experiments/<id>/prediction`` | the prediction it became, and its verdict |
 | ``/intended?version=``, ``/intended/design`` | the intended model's declared layer, and its summary (``sd.intended``) |
 
-Writes (``POST``, a JSON object with ``source``, the machine's CloudEvents source):
+Writes (``POST``, a JSON object):
 
 | path | body |
 |---|---|
-| ``/equations/check`` | ``equation``, ``params``, ``experiment`` or ``version``: does it parse, what it reads (no source needed) |
-| ``/experiments`` | ``title``, ``purpose``, ``version``: a new draft |
-| ``/experiments/<id>/edits`` | ``edits``: a batch, applied whole or refused (422, with ``index``) |
-| ``/experiments/<id>/runs`` | ``mode`` (forward, replay, inverse) and its options |
-| ``/experiments/<id>/commit`` | ``horizon``, ``change``, ``subject``: the prediction |
-| ``/experiments/<id>/discard`` | nothing more |
+| ``/equations/check`` | ``equation``, ``params``, ``version``: does it parse, what it reads |
 | ``/intended`` | ``source``, ``author``, ``turn``, ``message``, ``quote``, ``reason``, ``request``, ``ops``: one call to the declared layer, applied whole or refused (422, with ``index``) |
 
 Every answer is ``{"ok": true, ...}`` or ``{"ok": false, "error": ...}`` with a status: 400 a bad
-request, 403 not the owner, 404 not found, 409 not a draft, 422 an edit or equation refused."""
+request, 404 not found, 422 an edit refused."""
 
 from __future__ import annotations
 
@@ -40,20 +31,11 @@ import json
 import re
 from urllib.parse import parse_qs
 
-EXP = r"(x-[0-9a-f]{12})"
-RUN = r"(r-[0-9a-f]{12})"
 ROUTES = [
     ("GET", r"/language", "language"), ("GET", r"/model", "model"), ("GET", r"/model/versions", "versions"),
     ("GET", r"/eras", "eras"), ("GET", r"/observability", "observability"), ("GET", r"/series", "series"),
     ("GET", r"/predictions", "predictions"), ("GET", r"/predictions/([^/]+)", "prediction_one"),
     ("POST", r"/equations/check", "check"),
-    ("GET", r"/experiments", "list"), ("POST", r"/experiments", "create"),
-    ("GET", rf"/experiments/{EXP}", "get"), ("GET", rf"/experiments/{EXP}/diff", "diff"),
-    ("POST", rf"/experiments/{EXP}/edits", "edit"),
-    ("GET", rf"/experiments/{EXP}/runs", "runs"), ("POST", rf"/experiments/{EXP}/runs", "run"),
-    ("GET", rf"/experiments/{EXP}/runs/{RUN}", "run_result"),
-    ("POST", rf"/experiments/{EXP}/commit", "commit"), ("POST", rf"/experiments/{EXP}/discard", "discard"),
-    ("GET", rf"/experiments/{EXP}/prediction", "prediction"),
     ("GET", r"/intended", "intended"), ("POST", r"/intended", "declare"), ("GET", r"/intended/design", "design"),
 ]
 INTENDED = ("intended", "declare", "design")
@@ -82,8 +64,7 @@ class _Bad(ValueError):
 
 def handle(project, method: str, path: str, query: str, body: bytes, metrics=None) -> tuple[int, dict]:
     """One request: its status and its JSON answer."""
-    from ..sd.experiments.api import ExperimentError, Experiments
-    from ..sd.experiments.reads import ReadError
+    from ..sd.reads import ModelReads, ReadError
 
     route = next(((name, rx.match(path)) for m, rx, name in COMPILED if m == method and rx.match(path)), None)
     if route is None:
@@ -102,10 +83,9 @@ def handle(project, method: str, path: str, query: str, body: bytes, metrics=Non
     if name in INTENDED:
         return _intended(project, name, q, data)
     try:
-        x = Experiments(project, data.get("source") if name not in ("check",) else None, metrics=metrics)
-        return 200 if name not in ("create",) else 201, _call(x, name, match.groups(), q, data)
-    except (ExperimentError, ReadError) as e:
-        return e.status, {"ok": False, "error": str(e), **getattr(e, "extra", {})}
+        return 200, _call(ModelReads(project, metrics=metrics), name, match.groups(), q, data)
+    except ReadError as e:
+        return e.status, {"ok": False, "error": str(e)}
     except _Bad as e:
         return 400, {"ok": False, "error": str(e)}
 
@@ -147,28 +127,4 @@ def _call(x, name: str, ids: tuple, q: dict, d: dict) -> dict:
         return x.predictions()
     if name == "prediction_one":
         return x.predictions(ids[0])
-    if name == "check":
-        return x.check_equation(d.get("equation"), d.get("params"), d.get("experiment"), d.get("version"))
-    if name == "list":
-        return x.list(_q(q, "owner"), _q(q, "status"), _q(q, "era"))
-    if name == "create":
-        return x.create(d.get("title"), d.get("purpose") or "", d.get("version"))
-    eid = ids[0]
-    if name == "get":
-        return x.get(eid, _q(q, "base", bool, False))
-    if name == "diff":
-        return x.diff(eid)
-    if name == "edit":
-        return x.edit(eid, d.get("edits"))
-    if name == "runs":
-        return x.runs(eid)
-    if name == "run":
-        opts = {k: v for k, v in d.items() if k not in ("source", "mode")}
-        return x.run(eid, d.get("mode"), **opts)
-    if name == "run_result":
-        return x.run_result(eid, ids[1])
-    if name == "commit":
-        return x.commit(eid, d.get("horizon", d.get("horizon_s")), d.get("change"), d.get("subject"))
-    if name == "discard":
-        return x.discard(eid)
-    return x.prediction(eid)
+    return x.check_equation(d.get("equation"), d.get("params"), d.get("version"))

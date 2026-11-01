@@ -7,8 +7,8 @@ publishes ``orchestra.prediction.made`` before the change. It is Orchestra's own
 rule 3 forbids reading the data of other machines' event types; this one is Orchestra's
 contract, published by the machine that predicts, so its ``source`` says who). It goes on the bus
 rather than into a file so that one path serves every machine (in process through ``Predictions``,
-from any language through the events endpoint, and by committing an experiment,
-``sd.experiments``) and the event log itself shows the prediction came before the change.
+from any language through the events endpoint, and by the Supervisor's ``confirm`` of a declared
+expected effect) and the event log itself shows the prediction came before the change.
 ``data``:
 
 - ``change``: the id of the event that makes the change. The machine may choose it before the
@@ -19,7 +19,7 @@ from any language through the events endpoint, and by committing an experiment,
   ``{"flow": F, "factor": r}`` (the rate times r; ``"param": p`` for one of its numbers; a factor
   of 0 is the flow disappearing), ``{"flow": F, "unchanged": true}``,
   ``{"flow": F, "equation": text, "params": {...}}`` (the flow's whole rate becomes this
-  equation, in the equation language: ``sd.experiments.language``),
+  equation, in the equation language: ``sd.equations.language``),
   ``{"flow" | "stock" | "loop": id, "appears" | "disappears": true}``,
   ``{"from": A, "to": B, "appears": true}`` (a new flow between two stocks, ``null`` for outside,
   when its id is not known yet; with ``equation`` and ``params``, the rate it will have), and
@@ -30,9 +30,9 @@ from any language through the events endpoint, and by committing an experiment,
   list is the **null test**: the change should change nothing;
 - ``horizon_s``: how long after the change to judge it (``horizon``, a duration such as ``"30m"``,
   is accepted too);
-- optionally ``trajectories``: what the predictor's own forward run (G5, ``sd.experiments``) said
+- optionally ``trajectories``: what the predictor's own forward run (G5, ``sd.equations.forward``) said
   the stocks would do, as ``{"t": [seconds after the change], "stocks": {id: {"central", "lo",
-  "hi"}}}`` (``sd.experiments.forward.trajectories`` makes it from a forward run). Without them
+  "hi"}}}`` (``sd.equations.forward.trajectories`` makes it from a forward run). Without them
   Orchestra runs the previous era's model with the predicted edits forward when it judges.
 
 **The record.** ``sync`` follows the bus from where it last stopped and records each prediction
@@ -86,7 +86,7 @@ def _end(v, name: str) -> str | None:
 def _equation(e: dict) -> dict:
     """An expectation's equation and parameters, checked for syntax (its names are checked
     against the model when it is judged)."""
-    from .experiments.language import EquationError, syntax
+    from .equations.language import EquationError, syntax
 
     try:
         p = syntax(e.get("equation"), e.get("params"))

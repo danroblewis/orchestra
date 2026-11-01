@@ -1,23 +1,48 @@
-"""Data a model would have made: a stochastic run of its equations, as the metrics store would
-have held it. The inverse solver's uniqueness check makes the counterfactual window's data this
-way and discovers a model from it (the owner's fabricate-and-rediscover idea, used as a check);
-tests make synthetic systems with known equations the same way.
+"""Synthetic systems with known equations, for the forward run's tests (not collected itself).
 
-Each step every flow moves a Poisson count with its rate's mean (``rate × step``), its stock's
-outflows cut together, item by item, to what the stock holds, so levels and counters stay whole
-numbers and every stock balances exactly, as a real system's would. Measured inputs and
-``observed()`` flows are read from the history as the replay reads them."""
+``chain``: work arrives at a queue (``arrive``: c a minute), moves on to a ready stock
+(``move``: k per queued item a minute), is joined there by a side supply (``side``: c a minute)
+and drained (``drain``: k per ready item a minute). At c = 3, 0.5, 3 and 0.3 the queue settles at
+6 and the ready stock at 20; doubling the arrivals settles them at 12 and 30, the ready stock
+×1.5.
 
-from __future__ import annotations
+``fabricate`` makes the data a model would have made: each step every flow moves a Poisson count
+with its rate's mean, its stock's outflows cut together, item by item, to what the stock holds, so
+levels and counters stay whole numbers and every stock balances exactly."""
 
 import math
 
 import numpy as np
 
-from ..model import Model
-from . import engine
-from .compile import Frame
-from .history import levels_at, measured_rates, unit_s
+from orchestra.sd.equations import engine
+from orchestra.sd.equations.compile import Frame
+from orchestra.sd.equations.history import levels_at, measured_rates, unit_s
+from orchestra.sd.model import Equation, Flow, Model, SeriesRef, Stock
+
+T0 = 1_800_000_000.0
+
+
+def eq(form, inputs=(), **params):
+    return Equation(form, dict(params), "fitted", "poisson-mle", None, None, {"events": 500.0, "dispersion": 1.0, "live_minutes": 120.0},
+                    list(inputs))
+
+
+def chain(arrive=3.0, move=0.5, side=3.0, drain=0.3) -> Model:
+    m = Model("system", "chain", time_unit="minute",
+              stocks=[Stock("queue", "queue", series=SeriesRef("queue")), Stock("ready", "ready", series=SeriesRef("ready"))],
+              flows=[Flow("arrive", "arrive", None, "queue", SeriesRef("arrive_total"), [eq("constant", c=arrive)]),
+                     Flow("move", "move", "queue", "ready", SeriesRef("move_total"), [eq("proportional", ["queue"], k=move)]),
+                     Flow("side", "side", None, "ready", SeriesRef("side_total"), [eq("constant", c=side)]),
+                     Flow("drain", "drain", "ready", None, SeriesRef("drain_total"), [eq("proportional", ["ready"], k=drain)])])
+    m.discovery = {"fit_start": T0, "inputs": {}}
+    return m
+
+
+def history_of(model: Model, *, minutes: int = 120, start_levels=None, seed: int = 1, step_s: float = 5.0) -> dict:
+    """The window's data, made by ``model`` itself, from ``start_levels`` (default: its steady state)."""
+    lv = start_levels or {"queue": 6.0, "ready": 20.0}
+    run = fabricate(model, {"inputs": {}}, start=T0, end=T0 + minutes * 60, step_s=step_s, seed=seed, levels=lv)
+    return as_history(model, run)
 
 
 def fabricate(model: Model, history: dict, *, start: float, end: float, step_s: float, seed: int = 0,
@@ -79,33 +104,6 @@ def fabricate(model: Model, history: dict, *, start: float, end: float, step_s: 
     return {"t": times, "levels": out_l, "counts": counts, "step_s": step_s}
 
 
-def counter_name(f) -> str:
-    """The name a flow's counter is written under: its own, ending ``_total`` as a counter's
-    name does (discovery tells a counter by it)."""
-    name = f.counter.name if f.counter else (f.measured_by[0].name if f.measured_by else f.id)
-    return name if name.endswith("_total") else f"{name}_total"
-
-
-def dump(model: Model, run: dict, labels: dict | None = None) -> list[tuple[str, dict, list]]:
-    """The run as the metrics store's dump: each measured stock's level (under its series' name)
-    and each measured flow's counter (its counter's name; two flows of one counter, the second
-    under its own id). Hidden stocks and flows no counter measures are not in it."""
-    lab = dict(labels or {"machine": "fabricated"})
-    out, taken = [], set()
-    for s in model.stocks:
-        if s.series is not None:
-            out.append((s.series.name, lab, list(zip(run["t"], run["levels"][s.id]))))
-    for f in model.flows:
-        if not (f.counter or f.measured_by):
-            continue                                    # no counter measures it: not in the data
-        name = counter_name(f)
-        if name in taken:
-            name = f"{f.id}_total".replace("@", "_").replace(">", "_").replace(":", "_")
-        taken.add(name)
-        out.append((name, lab, list(zip(run["t"], run["counts"][f.id]))))
-    return out
-
-
 def as_history(model: Model, run: dict, *, flow_step: float = 30.0, inputs: dict | None = None) -> dict:
     """The run as the web server's history (``web.background.history``): levels at every step,
     each flow's rate per time unit over each ``flow_step``, and the inputs given."""
@@ -119,26 +117,3 @@ def as_history(model: Model, run: dict, *, flow_step: float = 30.0, inputs: dict
     return {"at": t[-1], "start": t[0], "stock_step": run["step_s"], "flow_step": every * run["step_s"], "time_unit": model.time_unit,
             "stocks": {s.id: [[tt, v] for tt, v in zip(t, run["levels"][s.id])] for s in model.stocks if s.series is not None},
             "flows": flows, "inputs": dict(inputs or {})}
-
-
-def history_of_dump(model: Model, data: list, step_s: float, flow_step: float = 30.0) -> dict:
-    """A dump (``dump``) as the history of ``model``, a model discovered from such data: its
-    stocks' levels and its flows' rates, by their series' names."""
-    by = {name: pts for name, _, pts in data}
-    unit = unit_s(model)
-    t0 = min((p[0][0] for p in by.values() if p), default=0.0)
-    out = {"stocks": {}, "flows": {}, "inputs": {}, "stock_step": step_s, "flow_step": flow_step, "time_unit": model.time_unit}
-    for s in model.stocks:
-        if s.series is not None and s.series.name in by:
-            out["stocks"][s.id] = [[t, v] for t, v in by[s.series.name]]
-    every = max(1, round(flow_step / step_s))
-    for f in model.flows:
-        refs = [r.name for r in ([f.counter] if f.counter else []) + list(f.measured_by)]
-        pts = [by[n] for n in refs if n in by]
-        if not pts:
-            continue
-        total = [sum(p[i][1] for p in pts) for i in range(len(pts[0]))]
-        ts = [t for t, _ in pts[0]]
-        out["flows"][f.id] = [[ts[i], (total[i] - total[i - every]) * unit / (ts[i] - ts[i - every])] for i in range(every, len(ts), every)]
-    out["start"], out["at"] = t0, max((p[-1][0] for p in by.values() if p), default=t0)
-    return out
