@@ -7,7 +7,7 @@ import time
 from fastapi.testclient import TestClient
 from intended_seed import fixture, project_at, record_points, seed
 
-EXPECTED_STOCK = {"part", "id", "key", "name", "declared", "present", "measured", "near", "note", "provenance", "target",
+EXPECTED_STOCK = {"part", "id", "key", "name", "description", "declared", "present", "measured", "near", "note", "provenance", "target",
                   "candidates", "measure"}
 INTENDED = {"version", "since", "since_saved_at", "expected", "marks", "removed", "changes", "came_and_went", "ignored", "settled"}
 INTENT = {"state", "author", "kind", "heard", "title", "description", "tags", "managed", "engagement", "receives", "emits",

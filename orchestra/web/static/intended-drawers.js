@@ -1,7 +1,8 @@
 // The intended model's drawers on the Dynamics page (docs/proposals/intended-model.md §7):
-//   - an expected stock or effect that is not found (frame D1): who declared it and their words,
+//   - an expected stock or effect that is not found (frame D1): its description, who declared it and their words,
 //     its status, and "How to measure it": the options the Supervisor recorded (how collected,
-//     instrument kind, cost, caveat, clearance, provenance), the chosen one's recording line and
+//     instrument kind, cost, caveat, the system and series it reads, the variable its token is in,
+//     clearance, provenance), the chosen one's recording line and
 //     sparkline, its script and [[collect]] entry (/api/intended/script); the radios are read
 //     only: switching is the Supervisor's, so the drawer says to tell it;
 //   - a declared flow that is not found;
@@ -20,7 +21,8 @@ const IntendedDrawers = (() => {
   }
   function option(o, chosen) {
     const on = o.key === chosen;
-    const facts = [o.cost && `cost: ${o.cost}`, o.caveat && `caveat: ${o.caveat}`, o.clearance && `clearance: ${o.clearance}`, o.provenance && `${o.provenance}`,
+    const facts = [o.cost && `cost: ${o.cost}`, o.caveat && `caveat: ${o.caveat}`, o.system && `reads ${o.system}`, o.series && `series ${o.series}`,
+      o.bearer_env && `token from $${o.bearer_env}`, o.clearance && `clearance: ${o.clearance}`, o.provenance && `${o.provenance}`,
       o.commit && `commit ${o.commit}`, !on && (o.first_points || []).length && `first points: ${o.first_points.map((p) => p[1]).join(", ")}`].filter(Boolean);
     return `<div class="im-opt ${on ? "on" : ""}" data-option="${esc(o.key)}"><span class="im-radio" role="radio" aria-checked="${on}" aria-disabled="true" title="read only: tell the Supervisor to switch"></span>
       <div><div><b>${esc(o.key)}</b> ${esc(o.title || "")}${on ? " " + I().tag("chosen", "im-t-chosen") : ""}</div>${o.how ? `<div class="muted">${esc(o.how)}</div>` : ""}
@@ -66,7 +68,7 @@ const IntendedDrawers = (() => {
     const status = !x.measured ? "not measured: nothing records it yet" : I().recording(x) ? 'no series yet → <span class="im-recword">recording</span> <span class="muted">(the option chosen below)</span>'
       : "no series of its own yet";
     openDrawer(`<h3>${esc(x.name || x.id)} <span class="tag">${esc(x.part)}</span> ${I().tag(t.text, t.cls)} ${I().tag(x.measured ? "no series yet" : "not measured", "im-t-ghost")}${x.simulated ? " " + I().tag("simulated", "im-t-sim") : ""}</h3>
-      ${proposed}${pending}
+      ${proposed}${pending}${x.description ? `<div class="im-desc">${esc(x.description)}</div>` : ""}
       <div class="muted im-said">${said}${quote} It is expected, not found: drawn as a ghost until a series measures it and a discovery finds it. Nothing about the model changes until then.</div>
       <div class="def"><div>now</div><div class="num">—</div>
       <div>status</div><div>${status}</div>
