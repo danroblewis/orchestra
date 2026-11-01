@@ -18,7 +18,10 @@ from orchestra.sd import predictions as P
 from orchestra.sd.judge import judge_due
 from orchestra.sd.rediscover import rediscover
 from orchestra.sd.store import ModelStore
+from orchestra.sd.strategies import sd_installed
 from orchestra.sd.verdict import edit, law_holds, level, outcome, stock_rows, unpredicted
+
+needs_sd = pytest.mark.skipif(not sd_installed(), reason="the simulated run needs orchestra[sd]")
 
 HORIZON = 2400.0
 
@@ -75,6 +78,7 @@ DOUBLE_ARRIVALS = [{"flow": "jobs_arrived_total", "factor": 2}]
 
 # --- acceptance: the outcomes of lifted-models §3.1 on a system with known rates
 
+@needs_sd
 def test_a_change_predicted_to_double_a_rate_that_does_is_passed(tmp_path):
     [v], said, _ = judged(tmp_path, DOUBLE_ARRIVALS, arrive=step(2.0, 4.0))
     assert v["verdict"] == "passed", v
@@ -102,6 +106,7 @@ def test_predicted_to_change_x_but_y_changes_is_a_side_effect_naming_y(tmp_path)
     assert y["part"] == "flow" and y["id"] == "jobs_done_total" and y["status"] == "changed" and y["z"] <= -2
 
 
+@needs_sd
 def test_the_edit_appears_but_a_downstream_stock_does_not_move_as_simulated_is_model_wrong_elsewhere(tmp_path):
     # the reviewer stops at the change: the era has not found the review flow since, so it is
     # carried from the prior (not yet a change the comparison can see), but review piles up
@@ -319,6 +324,7 @@ def test_levels_stocks_and_the_verdict_table():
 
 # --- the command line, the host and the Dynamics page
 
+@needs_sd
 def test_a_prediction_judged_by_the_host_shown_by_the_cli_and_the_dynamics_api(tmp_path, monkeypatch, capsys):
     import json
     import subprocess
