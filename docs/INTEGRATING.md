@@ -1,9 +1,6 @@
 # Integrating an outside system
 
-Status: draft for the stranger test, 2026-11-01
-
-This page is for a coding tool working alone, with no other context, and for the Supervisor (task
-I3 of `docs/roadmap/GOAL-2026-11-01-workflows.md` turns it into a flow). It shows how to bring Jira,
+This page is for a coding tool working alone, with no other context, and for the Supervisor. It shows how to bring Jira,
 Slack, PagerDuty and Chronosphere (or any similar system) into Orchestra. The owner put it this way:
 "it's integration as in we give the Supervisor the knowledge and abilities to easily make its own
 solutions." Every command and file here can be run as written. Replace `<…>` with your own values.
@@ -114,8 +111,10 @@ they would publish the same changes twice.
    duplicates and never skips.
 6. **The envelope** (SPEC §2). `type` starts with the system's name and then says what happened:
    `jira.issue.transitioned`, `slack.message.posted`, `pagerduty.incident.acknowledged`. `source` is
-   **who acted**: `actor_source(system, account, bot=False)` gives `person.<system>.<account>`,
-   `bot.<system>.<account>`, or `bot.<system>` for the system's own act. `subject` is the item: the
+   **who acted**: `actor_source(system, account=None, *, bot=False)` gives `person.<system>.<account>`,
+   `bot.<system>.<account>`, or `bot.<system>` for the system's own act. **The identity map wins**:
+   an account the project's `[bridges] people` map lists on that system is published as
+   `person.<key>`, as the bridges' own readers publish it, so one person is one machine. `subject` is the item: the
    Jira key (`ABC-12`), the PagerDuty incident id (`PINC001`), the Slack `<channel>/<thread ts>`.
    The Machines page infers hand-offs from subjects. `time` is the system's own, in RFC 3339 with a
    zone, and `data` is metadata only. **Never stamp an event in the future.** An event whose `time`
@@ -127,7 +126,8 @@ they would publish the same changes twice.
    machine"). The program is a relay. It never publishes under its own name, never announces
    itself and never writes a metric. `Poller.emit` refuses any source but `person.…` or `bot.…`.
    The machines are the actors, and the poller announces each one once (`orchestra.machine.started`
-   from their source, `mode: "ad hoc"`, `kind: "person"` or `"program"`, `package: <name>`).
+   from their source, `mode: "ad hoc"`, `kind: "person"` or `"program"`, `package: "bridges"`, and
+   a mapped person's name and team).
    Under the Workflows plugin the program's *runs* claim turns as `<id>/<n>`, which is that
    plugin's business.
 8. **Declare it on the Machines page with its expected effect** (§5.6). A declaration is a
@@ -161,14 +161,17 @@ uses.
 
 | Name | What it does |
 |---|---|
-| `CachedClient(base_url, token_env=None, token_file=None, per_minute=60, cache_dir=None, ttl_s=300, *, auth_format="Bearer {token}", headers, keep, dry_run, retries=3, backoff_s, max_wait_s)` | `.get(path, params, *, keep, ttl_s, cache)` and `.post(path, json_body, *, form, keep, …)` return parsed JSON. It refuses another origin, never logs a token, and `dry_run` answers from the cache only. `CachedClient.for_project(project, base_url, system=…)` takes `[bridges.kits]` (cache dir, TTL, per-host rate, token name) |
-| `Poller(name, every_s=300, state_dir=None, *, events, project, package)` | `.cursor` (any JSON, saved after each good poll), `.emit(type, subject, data, source, *, key, stamp, time)`, `.announce(source)`, `.gauge`/`.counter`, and `.run(poll, once=False, rounds=None)`, where `poll(p)` is called every `every_s` until SIGTERM. A failed poll is logged and retried |
-| `actor_source(system, account=None, bot=False)` (`kits.poller`) | the source of whoever acted |
+| `api.get(path, params, keep=…)`, `api.post(path, form={…}, keep=…)` | the `CachedClient` a program is handed (`runner.main` builds it): parsed JSON; reads only (a POST is a form that asks a question), one origin, the token never logged; `--dry-run` answers from the cache only |
+| `p.emit(type, subject, data, source=actor, stamp=…)`, `p.cursor`, `p.counter(name, by, labels)` | the `Poller` a `poll(p)` is handed: idempotent emission as whoever acted (the identity map first), the cursor and counters saved after each good poll |
+| `actor_source(system, account=None, *, bot=False)` (`kits.poller`) | the source of whoever acted |
+| `p.announce(source, time=None, **about)` | an actor announced ahead of their first event (`emit` does it for you) |
 | `Prometheus(client, aliases, max_series=500)` (`kits.promql`) | `.instant(q)`, `.range(q, start, end, step)` and `.series(match)`, which return `Series(name, labels, points)`. It refuses an answer with more than `max_series` series |
 | `kits.fakes`: `FakeJira`, `FakeSlack`, `FakePagerDuty`, `FakePrometheus`, `CANARY` | `with FakePagerDuty(token="t") as f: f.url`. Use `f.set_status(...)` and `f.add_incident(...)` to change the world between polls, `f.fail_next(429)`, and `f.requests` to see what arrived |
 | `kits.fakes.FakeServer` | the base of every fake, for a system no kit knows: subclass it and implement `route(method, path, query, body)` (below) |
 | `orchestra bridges scaffold <jira\|slack\|pagerduty\|promql\|http> <name> [--root state\|overlay\|repo]` | writes `<root>/machines/<name>/` (`machine.toml`, `<name>.py`, `test_<name>.py`, `AGENTS.md`) and prints the `[[machines]]` and `[[collect]]` entries. `promql` only measures (no poller); `http` is any JSON API no kit knows |
-| `orchestra bridges integrations [--json]` | read-only: the kits, and each machine scaffolded under the three roots with its kit, clearance, data class, the token's variable NAME (never a value), whether its `[[machines]]` and `[[collect]]` entries are configured, and how many `# guess` marks are left |
+| `orchestra bridges integrations [--json]` | read-only: the kits, and each poller scaffolded under the three roots with its kit, clearance, data class, the token's variable NAME (never a value), what schedules it (`[[machines]]`, `every` for the Workflows route, or `no`), whether its `[[collect]]` entry is configured, and how many `# guess` marks are left |
+
+The kits' reference, with every signature, is the bridges' SPEC §7.
 
 A scaffolded program runs as `python <name>.py [--once | --rounds N] [--every S] [--base-url URL]
 [--state-dir DIR] [--events-file FILE] [--ttl S] [--dry-run] [--set KEY=VALUE ...]`. `python
@@ -196,7 +199,8 @@ it still passes after the owner's values are filled in.
   help=…)` (and `series.counter`).
 - `main()` calls `runner.main(HERE, make_poll, argv, measure=measure, auth_format=…, headers=…)`,
   which reads `machine.toml`, checks the clearance, builds the client and the `Poller`, and parses
-  the command line above.
+  the command line above. A measurement only (`promql`) passes `None` for `make_poll`, and refuses
+  a poll (exit 2). Exit codes: 0 done, 1 a measurement that failed, 2 refused before any read.
 
 To change what it reads, edit `keep_*`/`meta` and `poll`. To change how it runs, edit
 `machine.toml`. Leave `runner.main` alone.
@@ -559,7 +563,9 @@ works this way: it writes `[[machines]]` and `[[collect]]` at `approve_integrati
 coding tool following this document does the same. An entry added early does no harm to the
 poller (it waits, above), but its `[[collect]]` measurement fails every round until approval.
 
-The scaffold prints the two entries. Add them with Orchestra's Python, from the repository:
+The scaffold prints the entries under "run it for good: add these entries through config_edit"
+(the `[[machines]]` entry only for a kit with a poller). Add them with Orchestra's Python, from the
+repository:
 
 ```python
 import sys
@@ -600,7 +606,7 @@ Put `machine.json` beside the scaffolded files, in `<state>/machines/pagerduty_a
 ```json
 {"id": "pagerduty_alerts", "kind": "programmatic", "managed": "orchestra", "engagement": {"mode": "ad hoc"},
  "spec": {"command": "python /Users/<you>/.orchestrator/<key>/machines/pagerduty_alerts/pagerduty_alerts.py --once",
-          "role": "pagerduty_alerts", "exit": {"0": "landed", "1": "error"}}}
+          "role": "pagerduty_alerts", "exit": {"0": "landed", "1": "error", "2": "blocked"}}}
 ```
 
 Then `p.config_edit.set("workflows.every.pagerduty_poll", {"every": "5m", "role": "pagerduty_alerts",
@@ -609,14 +615,10 @@ Then `p.config_edit.set("workflows.every.pagerduty_poll", {"every": "5m", "role"
 
 ### 5.6 The declaration on the Machines page
 
-**The path is to ask the Supervisor.** Tell it, in your report or in its chat, the machine, what
-it emits, its source and its expected effect. It declares them with `declare_machine` and
+**The path is to ask the Supervisor first.** Tell it, in your report or in its chat, the machine,
+what it emits, its source and its expected effect. It declares them with `declare_machine` and
 `declare_expected_effect` (`docs/proposals/machine-design.md` §2.3), and the owner confirms them on
-the page. The direct API exists only in a core that has the intended-model layer (task C1:
-`python -c "import orchestra.sd.intended"` succeeds, and `curl -sf -H "Authorization: Bearer
-$ORCHESTRA_EVENTS_TOKEN" "$ORCHESTRA_EVENTS_ENDPOINT/intended/design"` answers 200). Without that
-layer, the call below answers 404, so do not retry it: hand the declaration to the Supervisor.
-With the layer and no Supervisor, post one call (`eval "$(orchestra events endpoint --env)"` sets
+the page. With no Supervisor, post one call (`eval "$(orchestra events endpoint --env)"` sets
 both variables):
 
 ```bash
@@ -739,7 +741,7 @@ There is no single `orchestra check` command for an integration. These checks do
 | Check | What you should see |
 |---|---|
 | the program's test | passes, against the fake, with the canary check |
-| `orchestra bridges integrations` | the machine, `approved`, its token's variable name, both entries `yes`, no guesses left |
+| `orchestra bridges integrations` | the poller, `approved`, its token's variable name, scheduled (`[[machines]]` or `every`), `[[collect]]` `yes`, no guesses left |
 | `<state>/logs/machines/<name>.log` | `poll N: K events`; no `poll failed` |
 | `<state>/logs/instruments/<name>.log` | `wrote N points` |
 | `orchestra metrics series \| grep pagerduty` | `pagerduty_incidents_open instrument=pagerduty_alerts service=PSVC001 urgency=high` (the name, then labels separated by spaces) |
@@ -782,10 +784,11 @@ Run it at the end. Every line must be true.
 - [ ] No event's `time` is more than 60 s in the future (check `orchestra run`'s output).
 - [ ] A ratio is printed only as a gauge beside its counts, and the outcomes are event types.
 - [ ] The machine is declared, or the declaration is handed to the Supervisor, with an expected effect.
-- [ ] The `[[machines]]` and `[[collect]]` entries were added after the approval, not before (§5.3).
-- [ ] `orchestra bridges integrations` lists the machine with `clearance` `approved`, the token as
-      `$<THE_VARIABLE>`, `[[machines]]` and `[[collect]]` `yes` (`-` for a measurement only) and
-      `guesses` `0`.
+- [ ] The entries (`[[machines]]`, or the `workflows.every` item of §5.5, and `[[collect]]`) were
+      added after the approval, not before (§5.3).
+- [ ] `orchestra bridges integrations` lists the poller with `clearance` `approved`, the token as
+      `$<THE_VARIABLE>`, `scheduled` `[[machines]]` or `every` (`-` for a measurement only),
+      `[[collect]]` `yes` and `guesses` `0`.
 
 ## 11. Troubleshooting
 
