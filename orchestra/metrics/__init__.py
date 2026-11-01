@@ -2,8 +2,9 @@
 
 A series is a name plus labels, like Prometheus. Every series carries a ``project`` label, so
 projects never collide in a shared store, and readers select a project's series by it.
-Orchestra's own series start with ``orchestra_``; a project's programs name theirs for what they
-measure and write them through ``for_repo`` (docs/machines.md), which adds the label. Collectors
+Orchestra's own series start with ``orchestra_``. Instruments write series, never machines
+(AGENTS.md rules 2 and 7): an instrument written in Python names its series for what they measure
+and writes them through ``for_repo`` (docs/machines.md), which adds the label. Collectors
 (``orchestra.collectors``) write points; models and fitting read ranges.
 
 Backends, chosen by ``[metrics] url`` in ``orchestra.toml`` or ``ORCHESTRA_METRICS_URL``:
@@ -135,8 +136,8 @@ def refuse_future(points: list[Point], store: str, skew: float | None, now: floa
 
 def open_metrics(url: str | None, *, file_path: Path) -> MetricsStore:
     """The store at ``url``. It refuses points stamped more than ``FUTURE_SKEW_S`` in the future,
-    whoever writes them (a collector, a scrape, a machine through ``for_repo``, the host): a point
-    is a measurement, and one stamped ahead would make its series, and the machine it is labelled
+    whoever writes them (a collector, a scrape, an instrument through ``for_repo``, the host): a
+    point is a measurement, and one stamped ahead would make its series, and what it is labelled
     with, look alive until a time not yet come."""
     if not url or url == "file":
         from .file import FileMetrics
