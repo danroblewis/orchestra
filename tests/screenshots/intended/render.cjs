@@ -1,7 +1,9 @@
 // Render the Machines page's frames E1–E4 from the real web app, check each frame's DOM, and write
 // tests/screenshots/intended/<frame>.png (full page) and <frame>-1440x900.png (the first screen).
 //   node tests/screenshots/intended/render.cjs [frame ...]       (from the repository root)
-// Each frame: serve_frame.py serves a seeded project (intended_frames.py) on its own port; headless
+// It is run by hand, and by no test (the unit tests check the same frames' API answers,
+// tests/unit/test_intended_frames.py).
+// Each frame: serve_frame.py serves a seeded project (tests/unit/machine_frames.py) on its own port; headless
 // Chrome for Testing logs in with the project's token, opens /machines#<machine> (the panel open on
 // it), with the map pinned where the mockups pinned it (mockups/fixtures/layouts.json and the
 // places in mockups/additions.js), waits for it to settle, checks the frame's structure and that
