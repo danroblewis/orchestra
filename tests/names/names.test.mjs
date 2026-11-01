@@ -185,3 +185,13 @@ test("a hidden stock a strategy found is named by its neighbours; two named seri
   const twin = { ...pile("age", "write", "held"), series: { name: "workflow_pile_oldest_seconds", labels: {} } };
   assert.equal(SDGraph.stockName({ stocks: [pile("wh", "write", "held"), twin], flows: [] }, "age"), "write (held) · delivery_sail · workflow pile oldest seconds");
 });
+
+test("a flow drawn between other ends than its counter names says why, in words", () => {
+  const wh = { ...pile("wh", "write", "waiting") };
+  const f = { ...move("a", null, "wh", "triage.held", "write.waiting"), name: "triage (held) → write (waiting) · delivery_sail", evidence: { named: "places" } };
+  const m = { stocks: [wh], flows: [f] };
+  assert.equal(SDGraph.drawnApart(m, f), "counted as triage.held → write.waiting, drawn from outside");
+  const start = { ...move("s", null, "wh", "<start>", "write.waiting") };
+  assert.equal(SDGraph.drawnApart({ stocks: [wh], flows: [start] }, start), "");
+  assert.equal(SDGraph.drawnApart(model, model.flows[0]), "");          // OPEN → IN_PROGRESS drawn between them
+});

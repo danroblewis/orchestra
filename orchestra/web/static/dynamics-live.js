@@ -261,8 +261,7 @@ const Live = (() => {
     const price = drv.price != null ? `<div class="muted" style="font-size:11.5px">a driver must beat the constant by ${rateFmt(drv.price)} AIC, the price for trying ${drv.tried ?? "its"} forms</div>` : "";
     // the counter's own ends, when they are not the ends drawn (a co-flow drawn through a stock it passes)
     const cl = (f.counter && f.counter.labels) || {}, endName = (id) => (id ? stockName(id) : "outside");
-    const counts = cl.from && cl.to ? `counts ${cl.from} → ${cl.to}` : "";
-    const differs = counts && ((f.from && !stockName(f.from).toUpperCase().includes(String(cl.from).replace(/_/g, " ").toUpperCase())) || (f.to && !stockName(f.to).toUpperCase().includes(String(cl.to).replace(/_/g, " ").toUpperCase())) || !f.from || !f.to);
+    const apart = SDGraph.drawnApart(MODEL, f);
     const through = (ev.through || []).map((id) => stockName(id)).join(", ");
     // a counter labelled with who moved it (by=, machine=) names an instrument's label, not evidence
     const byLabel = cl.by || cl.machine ? `<div class="muted" style="font-size:11.5px">its counter is labelled ${cl.by ? `by=${esc(cl.by)}` : `machine=${esc(cl.machine)}`}: the instrument's label, not evidence of who moved it</div>` : "";
@@ -276,7 +275,7 @@ const Live = (() => {
       <div>fit</div><div class="num">${Evidence.tooFew(f) ? `<b>${esc(Evidence.tooFewText(f))}</b>: ` : ""}${esc(e.origin || "")} by ${esc(e.method || "")} · ${esc(e.form || "")} · ${q.events ?? 0} events${q.live_minutes ? ` over ${q.live_minutes} min` : ""}${q.dispersion != null ? ` · dispersion ${rateFmt(q.dispersion)}` : ""}${zeroEv ? `<div class="muted" style="font-family:inherit">${esc(zeroEv.slice(3))}</div>` : ""}</div>
       ${(f.measured_by || []).length > 1 ? `<div>measured by</div><div class="num">${f.measured_by.map((c) => esc(c.name)).join(" + ")}</div>` : ""}
       ${SDGraph.sameAs(MODEL, f).length ? `<div>same events</div><div>as ${SDGraph.sameAs(MODEL, f).map(esc).join(", ")} <span class="muted">(another counter counts each of its events: one move, two names)</span></div>` : ""}
-      <div>counter</div><div class="num">${esc(f.counter ? keyOf(f.counter) : "—")}${differs ? `<div class="muted" style="font-family:inherit">${esc(counts)}; drawn ${esc(endName(f.from))} → ${esc(endName(f.to))}${through ? ` because it passes through ${esc(through)}` : ""}</div>` : ""}</div>
+      <div>counter</div><div class="num">${esc(f.counter ? keyOf(f.counter) : "—")}${apart ? `<div class="muted" style="font-family:inherit">${esc(apart)}${through ? `, because it passes through ${esc(through)}` : ""}</div>` : ""}</div>
       ${ev.co_flow_of ? `<div>co-flow</div><div>${esc(ev.note || "")} (see ${flowLink(ev.co_flow_of)})</div>` : ""}
       ${ev.copy_of ? `<div>copy</div><div>every event of ${esc(flowName(MODEL.flows.find((x) => x.id === ev.copy_of)) || ev.copy_of)} also fills ${esc(f.to ? stockName(f.to) : "this stock")}: one count filling several stocks, not a split</div>` : ""}
       ${(ev.copies || []).length ? `<div>copies</div><div>every event also fills ${ev.copies.map((id) => { const c = MODEL.flows.find((x) => x.id === id); return esc(c && c.to ? stockName(c.to) : id); }).join(", ")}</div>` : ""}

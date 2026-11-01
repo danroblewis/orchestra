@@ -155,6 +155,23 @@
     const cut = (n) => (tail ? n.slice(0, n.length - tail.length - 3) : n);
     return `between ${a.map(cut).join(" or ")} and ${b.map(cut).join(" or ")}${tail ? " · " + tail : ""}`;
   }
+  // when the ends a flow's counter names are not the ends it is drawn between (a co-flow drawn
+  // through a stock it passes, a move whose place is no stock), why, in words: "counted as
+  // triage.held → write.waiting, drawn from outside"; "" when they agree or it names none. A value in
+  // angle brackets (<start>, <end>) is outside; a stock agrees with a value its series carries or
+  // its name says.
+  function drawnApart(m, f) {
+    const l = (f && f.counter && f.counter.labels) || {};
+    if (l.from == null || l.to == null) return "";
+    const outside = (v) => /^<.*>$/.test(String(v));
+    const fold = (t) => String(t).toLowerCase().replace(/[\W_]+/g, " ").trim();
+    const agrees = (id, v) => { if (!id) return outside(v); if (outside(v)) return false;
+      const s = (m.stocks || []).find((x) => x.id === id), ser = s && seriesOf(s);
+      return (ser && Object.values(ser.labels || {}).includes(v)) || fold(stockName(m, id)).includes(fold(v)); };
+    const end = (id) => (id ? stockName(m, id) : "outside");
+    const apart = [!agrees(f.from, l.from) ? `from ${end(f.from)}` : "", !agrees(f.to, l.to) ? `into ${end(f.to)}` : ""].filter(Boolean);
+    return apart.length ? `counted as ${l.from} → ${l.to}, drawn ${apart.join(" and ")}` : "";
+  }
   // the other counters that count a flow's events (evidence.same_as), named as flows are: "same events as …"
   function sameAs(m, f) {
     const same = (f && f.evidence && f.evidence.same_as) || [];
@@ -306,5 +323,5 @@
     return { nodes, edges, causal, flowEdge, flows, acc };
   }
 
-  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, seriesName, sameAs, nice, num, correlational, machineLabel, UNTESTED };
+  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, seriesName, sameAs, drawnApart, nice, num, correlational, machineLabel, UNTESTED };
 });
