@@ -138,6 +138,20 @@ def test_a_young_machines_rate_is_over_its_life_not_ten_minutes():
     old = [{"type": "order.baked", "source": "baker", "time": iso(T0 + 60 * k)} for k in range(30)]
     m = next(x for x in machines_view(old, now=T0 + 60 * 29 + 1)["machines"] if x["id"] == "baker")
     assert m["publishes"][0]["per_min_10m"] == 1.0           # an older machine: the last ten minutes, as before
+    # the rate says what it is of: the count in its window, and the window
+    assert (m["publishes"][0]["n_10m"], m["publishes"][0]["window_s"]) == (10, 600)
+
+
+def test_a_kind_some_instances_never_announced_is_counted_so_the_phrase_adds_up():
+    from collections import Counter
+
+    from orchestra.web.machines import of_instances
+    assert of_instances(Counter({"agent": 2, "program": 1}), 4) == "agent ×2, program ×1, 1 unannounced"
+    assert of_instances(Counter({"agent": 2}), 3) == "agent ×2, 1 unannounced"
+    assert of_instances(Counter({"agent": 2}), 2) == "agent" and of_instances(Counter(), 3) is None
+    evs = [announce("worker/1", T0, kind="agent"), {"type": "job.done", "source": "worker/2", "time": iso(T0 + 1)}]
+    w = next(x for x in machines_view(evs, now=T0 + 10)["machines"] if x["id"] == "worker")
+    assert w["kind"] == "agent ×1, 1 unannounced"
 
 
 def test_the_asker_on_the_pages_is_a_person_whose_card_says_what_it_sends():

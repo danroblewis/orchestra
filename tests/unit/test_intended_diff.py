@@ -301,3 +301,21 @@ def test_one_discoverys_live_diffs_stay_cached_side_by_side(tmp_path):
     dynamics_block(ms.intended(), hold=3)
     assert sorted(p.name for p in folder.glob("d*-vlive-*.json")) == ["d0-vlive-v2-none-h3.json"]
     assert json.loads((folder / "d0-vlive-v2-none-h3.json").read_text())["stamp"] == 200.0
+
+
+def test_a_removed_part_says_its_origin_name_and_counter_from_the_base_version(tmp_path):
+    """The Changes panel's − rows (web/intended.py removed_facts): how the part got into the base
+    version, and its name and series, never a hard-coded "fitted" or an id."""
+    from orchestra.sd.model import Equation
+    from orchestra.web.intended import removed_facts
+    gone = fl("f", "a", "b", "moved_total")
+    gone.equations = [Equation("constant", {"c": 0.4}, "discovered", quality={"events": 4.0})]
+    a, b, c = st("a"), st("b"), st("c")
+    c.evidence = {"balance": []}
+    ms = saved(tmp_path, model([a, b, c], [gone]), model([a, b]))
+    out = block(ms)
+    removed_facts(out, ms)
+    f = out["removed"]["flows"][0]
+    assert (f["origin"], f["name"], f["counter"]["name"], f["from_name"], f["to_name"]) == ("discovered", "f", "moved_total", "a", "b")
+    s = out["removed"]["stocks"][0]
+    assert (s["id"], s["origin"], s["series"]["name"]) == ("c", "discovered", "c")

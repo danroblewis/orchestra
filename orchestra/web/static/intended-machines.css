@@ -63,8 +63,13 @@
 .im-seg { display:inline-flex } .im-seg button { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); font:inherit; font-size:12.5px; font-weight:600; padding:3px 14px; cursor:pointer; margin-left:-1px }
 .im-seg button:first-child { border-radius:6px 0 0 6px; margin-left:0 } .im-seg button:last-child { border-radius:0 6px 6px 0 }
 .im-seg button.on { color:var(--text); background:var(--panel2); border-color:var(--accent); position:relative; z-index:1; cursor:default }
-.im-ask { display:inline-block; font-size:10.5px; color:var(--im-user); border:1px dashed #5b21b6; border-radius:4px; padding:0 6px; margin-top:3px; cursor:default }
-.im-ask::before { content:"✎ " }
+/* what only the Supervisor can do: said in words, never drawn as a control (the page cannot open its chat) */
+.im-ask { font-size:11px; color:var(--muted); font-style:italic; margin-left:4px }
+.im-chipgrp { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; max-width:100% } .im-chipgrp .ty { white-space:normal }
+.ty.im-down-chip { border-color:#92400e; color:#fcd34d } .ty.im-down-chip .im-live { width:7px; height:7px }
+a.im-inst { color:inherit; text-decoration:none; border-bottom:1px dotted var(--border2) } a.im-inst:hover { color:var(--accent) }
+.im-downline { font-size:11.5px; color:#fcd34d } .im-downline a { color:var(--accent) }
+.cards .row > .rv, .im-obs .row > .rv { flex:1 1 0; min-width:0; overflow-wrap:anywhere }
 .im-was { font-size:11px; margin-top:3px }
 .im-decl-word { font-size:10.5px; font-style:italic } .im-pending-ask { justify-content:flex-start }
 .im-list { margin:0; padding-left:20px; color:var(--text) } .im-list li { margin:3px 0; line-height:1.45 }

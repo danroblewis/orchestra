@@ -96,7 +96,7 @@ const IntendedDrawers = (() => {
     const pending = (x.pending || []).map((c) => `<div class="im-status">a change waiting for you: ${esc(c.summary || c.change || c.id || JSON.stringify(c))}</div>`).join("");
     const status = !x.measured ? "not measured: nothing records it yet" : I().recording(x) ? 'no series yet → <span class="im-recword">recording</span> <span class="muted">(the option chosen below)</span>'
       : "no series of its own yet";
-    openDrawer(`<h3>${esc(x.name || x.id)} <span class="tag">${esc(x.part)}</span> ${I().tag(t.text, t.cls)} ${I().tag(x.measured ? "no series yet" : "not measured", "im-t-ghost")}${x.simulated ? " " + I().tag("simulated", "im-t-sim") : ""}</h3>
+    openDrawer(`<h3 data-drawer-key="x:${esc(id)}">${esc(x.name || x.id)} <span class="tag">${esc(x.part)}</span> ${I().tag(t.text, t.cls)} ${I().tag(x.measured ? "no series yet" : "not measured", "im-t-ghost")}${x.simulated ? " " + I().tag("simulated", "im-t-sim") : ""}</h3>
       ${proposed}${pending}${x.description ? `<div class="im-desc">${esc(x.description)}</div>` : ""}
       <div class="muted im-said">${said}${quote} It is expected, not found: drawn as a ghost until a series measures it and a discovery finds it. Nothing about the model changes until then.</div>
       <div class="def"><div>now</div><div class="num">—</div>
@@ -108,9 +108,9 @@ const IntendedDrawers = (() => {
       <div>machines</div><div><span class="muted">no flow hypotheses: an expected ${esc(x.part)} has no flows until discovery finds one</span></div></div>
       <h4>How to measure it${m && (m.options || []).length ? ` <span class="muted im-h4note">${m.chosen ? `· the Supervisor's options, in its order; it chose <b>${esc(m.chosen)}</b> with you · tell the Supervisor to switch` : "· the Supervisor's options; none chosen yet: tell the Supervisor which one in its chat"}</span>` : ""}</h4>
       ${m && (m.options || []).length ? `<div class="im-opts">${m.options.map((o) => option(o, m.chosen) + (o.key === m.chosen ? recordingBlock(m) : "")).join("")}</div>
-        <div class="muted im-facts" style="margin-top:6px">The choice is read only here: to switch to another option, tell the Supervisor in its chat.</div>`
+        <div class="muted im-facts" style="margin-top:6px">The choice is read only here: ${m.chosen ? "to switch to another option, tell the Supervisor in its chat" : "to choose one, tell the Supervisor in its chat"}.</div>`
         : '<div class="muted">No way to measure it is recorded yet: ask the Supervisor to measure it.</div>'}
-      <h4>Level</h4><div class="muted" style="font-size:12px">No series is bound to it yet: nothing to draw. Once a discovery finds a stock in what ${m && m.recording && m.recording.instrument ? esc(m.recording.instrument) : "its instrument"} records, it is shown here, and you can tell the Supervisor whether that is this ${esc(x.part)}.</div>`);
+      <h4>Level</h4><div class="muted" style="font-size:12px">No series is bound to it yet: nothing to draw. Once a discovery finds a stock in what ${m && m.recording && m.recording.instrument ? esc(m.recording.instrument) : "its instrument"} records, it is shown here, and you can tell the Supervisor whether that is this ${esc(x.part)}.</div>`, { key: "x:" + id });
     const opt = m && (m.options || []).find((o) => o.key === m.chosen);
     if (opt && opt.instrument) script(opt.instrument);
   }
@@ -119,11 +119,11 @@ const IntendedDrawers = (() => {
     const x = I().it(), e = x && x.expected.find((y) => y.part === "flow" && y.id === id);
     if (!e) return;
     const p = e.provenance || {};
-    openDrawer(`<h3>${esc(e.name)} <span class="tag">flow</span> ${I().tag(e.why || "expected", "im-t-ghost")}</h3>
+    openDrawer(`<h3 data-drawer-key="xf:${esc(id)}">${esc(e.name)} <span class="tag">flow</span> ${I().tag(e.why || "expected", "im-t-ghost")}</h3>
       <div class="def"><div>moves</div><div>${esc(I().nameOf(e.from))} → ${esc(I().nameOf(e.to))}</div>
       <div>declared</div><div>by ${esc(I().who(p))}${p.at ? " · " + I().agoText(p.at) : ""}${p.quote ? `: <i>"${esc(p.quote)}"</i>` : ""}</div>
       <div>found</div><div>${e.present ? `as <b>${esc(e.found_id)}</b>` : (e.candidates || []).length ? `may be: ${e.candidates.map((c) => `<span class="ty">${esc(c.id || c.key)}</span>`).join(" ")} <span class="muted">(${esc(e.candidates[0].why)}; ask the Supervisor to link)</span>` : '<span class="muted">no flow between its ends yet</span>'}</div>
-      ${targetLine(e.target)}</div>`);
+      ${targetLine(e.target)}</div>`, { key: "xf:" + id });
   }
   // the switch at the top of a discovered stock's or flow's drawer (frame D3)
   function expectSwitch(part, id) {

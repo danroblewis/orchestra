@@ -239,8 +239,10 @@ class MachineIndex:
                 minutes = max(1.0, min(RATE_S, now - first) / 60) if first is not None else RATE_S / 60
                 for ty, n in self.total[m].most_common():
                     q = self.recent.get((m, ty), ())
-                    pubs.append({"type": ty, "count": n, "day": len(q),
-                                 "per_min_10m": round(sum(1 for t in q if t >= now - RATE_S) / minutes, 2)})
+                    n_10m = sum(1 for t in q if t >= now - RATE_S)
+                    # ``n_10m``: the count the rate is of, over ``window_s`` (ten minutes, or since first seen)
+                    pubs.append({"type": ty, "count": n, "day": len(q), "n_10m": n_10m, "window_s": round(minutes * 60),
+                                 "per_min_10m": round(n_10m / minutes, 2)})
                 insts, alive = [], False
                 for i, v in sorted(self.instances[m].items()):
                     cadence = gaps(self.beats[m].get(i, ()))
@@ -250,12 +252,13 @@ class MachineIndex:
                                   "cadence_s": cadence, "kind": self.kind[m].get(i), "mode": self.mode[m].get(i)})
                 last = max((v["last"] for v in self.instances[m].values()), default=None)
                 kinds = Counter(self.kind[m].values())
+                n_inst = len(self.instances[m])
                 asker = bool(self.total[m]) and set(self.total[m]) == {REQUESTED} and not kinds
                 cards = list(self.cards[m].values()) if m in self.cards else []
                 said = {f: next((c[f] for c in reversed(cards) if c.get(f)), None) for f in ("package", "name", "group")}
                 about = {k: v for c in cards for k, v in c.get("about", {}).items()}
                 machines.append({"id": m, "bootstrap": m == HOST, "mode": of_instances(Counter(self.mode[m].values())),
-                                 "kind": of_instances(kinds) or ("program" if m == HOST else "person" if asker else None), "kinds": dict(kinds),
+                                 "kind": of_instances(kinds, n_inst) or ("program" if m == HOST else "person" if asker else None), "kinds": dict(kinds),
                                  **({"note": ASKER_NOTE} if asker else {}),
                                  **said, "about": about, "publishes": pubs,
                                  "subscribes": sorted(self.subs.get(m, ())), "flows": flows.get(m, []),
@@ -271,12 +274,32 @@ class MachineIndex:
             return {"machines": machines, "types": types, "edges": edges, "handoffs": handoffs, "unattributed_events": self.unattributed}
 
 
-def of_instances(counts: Counter) -> str | None:
+def of_instances(counts: Counter, instances: int | None = None) -> str | None:
     """What instances announced (their kind, or how they are engaged), in one phrase: the one
-    value when they agree, else each with how many say it (``agent ×2, program ×1``)."""
-    if len(counts) <= 1:
-        return next(iter(counts), None)
-    return ", ".join(f"{v} ×{n}" for v, n in sorted(counts.items(), key=lambda x: (-x[1], x[0])))
+    value when they agree, else each with how many say it (``agent ×2, program ×1``). With
+    ``instances`` (how many there are), the ones that announced nothing are counted too, so the
+    phrase adds up: ``agent ×2, program ×1, 1 unannounced``."""
+    quiet = max(0, (instances or 0) - sum(counts.values()))
+    if not counts:
+        return None
+    if len(counts) == 1 and not quiet:
+        return next(iter(counts))
+    said = ", ".join(f"{v} ×{n}" for v, n in sorted(counts.items(), key=lambda x: (-x[1], x[0])))
+    return said + (f", {quiet} unannounced" if quiet else "")
+
+
+def model_parts(model) -> dict:
+    """The latest model's stocks and flows as the pages name them (sd-graph.js names): ids, ends,
+    and the series and counters their names come from. Nothing else of the model."""
+    if model is None:
+        return {"stocks": [], "flows": []}
+
+    def ref(r):
+        return {"name": r.name, "labels": dict(r.labels)} if r is not None else None
+    return {"stocks": [{"id": s.id, "name": s.name, "series": ref(s.series)} for s in model.stocks],
+            "flows": [{"id": f.id, "name": f.name, "from": f.src, "to": f.dst, "counter": ref(f.counter),
+                       "measured_by": [ref(c) for c in f.measured_by], "evidence": {k: v for k, v in (f.evidence or {}).items() if k == "same_as"}}
+                      for f in model.flows]}
 
 
 def flow_hypotheses(model) -> dict[str, list[dict]]:
@@ -288,7 +311,7 @@ def flow_hypotheses(model) -> dict[str, list[dict]]:
     for f in (model.flows if model is not None else []):
         for h in ((f.evidence or {}).get("machines") or {}).get("hypotheses") or []:
             if h.get("machine"):
-                out[h["machine"]].append({"flow": f.id, "name": f.name, "confidence": h.get("confidence"), "by": h.get("by"),
+                out[h["machine"]].append({"flow": f.id, "name": f.name, "from": f.src, "to": f.dst, "confidence": h.get("confidence"), "by": h.get("by"),
                                           "events": h.get("events"), "why": h.get("why"), "hypothesis": True})
     return {m: sorted(hs, key=lambda h: (-(h["confidence"] or 0), h["flow"])) for m, hs in out.items()}
 

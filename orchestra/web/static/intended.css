@@ -64,6 +64,10 @@ table.dt tr.im-gone td { color:var(--muted) } table.dt tr.im-gone s { color:var(
 .im-loopsrow.solo { grid-template-columns:minmax(0,1fr) } .im-loopsrow > #loops { margin:0 !important }
 @media (max-width:900px) { .im-loopsrow { grid-template-columns:minmax(0,1fr) } }
 .im-changes { margin:0; font-size:12px; border-color:#1d4ed8 } .im-changes .im-foot { border-top:0; padding-top:0 }
+/* no taller than the diagram: the rows scroll under a header that stays (the count, and what it is against) */
+#im-changes { max-height:620px; overflow-y:auto; padding-top:0 }
+.im-chead { position:sticky; top:0; z-index:1; background:var(--panel2); padding:10px 0 6px; margin-bottom:2px } .im-chead h2 { display:flex; gap:8px; align-items:center; flex-wrap:wrap } .im-against { font-size:11px }
+.im-chg.moved .im-sign { color:var(--im-new) }
 .im-chg { display:grid; grid-template-columns:16px minmax(0,1fr) auto; gap:6px; padding:6px 0; border-top:1px solid var(--border); align-items:start }
 .im-chg .im-sign { font-weight:800; font-family:var(--mono); text-align:center } .im-chg.new .im-sign { color:var(--im-new) } .im-chg.gone .im-sign { color:var(--im-gone) } .im-chg.ghost .im-sign { color:var(--im-ghost) }
 .im-chg .muted { font-size:11.5px } .im-chg s { color:var(--text2) } .im-chg .ty, .im-chg .num { overflow-wrap:anywhere }

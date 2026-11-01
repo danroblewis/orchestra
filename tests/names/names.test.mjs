@@ -33,7 +33,7 @@ test("a flow is named by its counter: who moved what from where to where, other 
   const f = (id) => SDGraph.flowName(model, model.flows.find((x) => x.id === id));
   assert.equal(f("op"), "beads issue transitions · open → in progress");
   assert.equal(f("px"), "beads issue transitions · in progress → dropped");
-  assert.equal(f("ne"), "beads issues created");
+  assert.equal(f("ne"), "beads issues created · type cake");          // a family of one counter says its other labels
   assert.equal(f("u"), "unmeasured inflow");
   const by = { stocks: [], flows: [flow("a", null, null, "t_total", { by: "worker", from: "REJECTED" }), flow("b", null, null, "t_total", { by: "planner", status: "landed" }),
                                    flow("c", null, null, "t_total", { by: "planner", status: "failed" })] };
@@ -103,4 +103,30 @@ test("a label that names the stocks of two services' series says the service too
   assert.equal(n("s"), "rig:app latency pods");
   const tickets = { stocks: [stock("o", "tickets", { state: "open" }), stock("c", "tickets", { state: "closed" })], flows: [] };
   assert.equal(SDGraph.stockName(tickets, "o"), "open");          // one series' label: no machine needed
+});
+
+test("one series of a family several machines write keeps the qualifier that narrows it", () => {
+  const m = { stocks: [{ id: "aw", name: "agents working (reviewer)", series: { name: "agents_working", labels: { machine: "reviewer", role: "reviewer", instrument: "agents.turns" } } },
+                       stock("o", "tasks_tickets", { state: "OPEN" }), stock("p", "tasks_tickets", { state: "IN_PROGRESS" })], flows: [] };
+  assert.equal(SDGraph.stockName(m, "aw"), "agents working (reviewer)");
+  assert.equal(SDGraph.stockName(m, "o"), "OPEN");
+});
+
+test("a flow alone in its family says the labels that narrow its counter, and a shared counter says so after them", () => {
+  const gate = { ...flow("g", null, "x", "tasks_gate_runs_total", { status: "landed", kind: "gate" }) };
+  const twin = (id, a, b) => flow(id, a, b, "tasks_ticket_transitions_total", { by: "merge_gate", from: "APPROVED", to: "MERGING", state: "read" });
+  const m = { stocks: [], flows: [gate, twin("t1", null, "m"), twin("t2", "r", null)] };
+  assert.equal(SDGraph.flowName(m, gate), "tasks gate runs · kind gate, status landed");
+  assert.equal(SDGraph.flowName(m, m.flows[1]), "tasks ticket transitions · merge gate: APPROVED → MERGING, state read (one counter, 2 flows)");
+});
+
+test("an expected flow is drawn with no events, and its stock that only fills with it", () => {
+  const acc = (id) => ({ ...stock(id, "bakery_orders", { state: id }), evidence: { accumulator: true } });
+  const quiet = { ...flow("in", null, "fill", "fills_total", {}), current: { form: "constant", params: { c: 1 }, quality: { events: 0 } } };
+  const m = { stocks: [acc("fill")], flows: [quiet], machines: [] };
+  const plain = SDGraph.build(m);
+  assert.deepEqual([plain.flows.length, plain.nodes.some((n) => n.sid === "fill")], [0, false]);
+  const kept = SDGraph.build(m, { keep: new Set(["fill"]), keepFlows: new Set(["in"]) });
+  assert.deepEqual(kept.flows.map((f) => f.id), ["in"]);
+  assert.ok(kept.nodes.some((n) => n.sid === "fill") && !kept.acc.has("fill"));
 });

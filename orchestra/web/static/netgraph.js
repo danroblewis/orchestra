@@ -185,14 +185,22 @@ const NetGraph = (() => {
   // the Dynamics page); used for the first layout, tidy and reset instead of the forces.
   // ``polish``: an optional async function (nodes, edges, at) -> {id: [x, y]} run after it (in a
   // worker), whose result the nodes glide to unless the viewer has moved something meanwhile.
-  // ``narrow``: below this width (a phone) the graph is fitted at no less than MIN_K, so its labels stay
-  // readable, and the drawing's height follows the fitted content instead of a tall empty canvas
-  const NARROW = 600, MIN_K = 0.55;
-  function create(container, { key, height = 600, isolateHops = 1, onClick, tip, boundary, layout, polish } = {}) {
+  // ``narrow``: below this width (a phone) the automatic fit is at no less than MIN_K, so its labels stay
+  // readable, and the drawing's height follows the fitted content instead of a tall empty canvas; on
+  // a wider screen at no less than DESK_K, centred on the largest connected part. What that leaves out
+  // of view is said at the right edge ("N more → · fit to see all"); the fit button fits everything,
+  // at any scale.
+  // ``isolatedRow``: nodes linked to nothing are set in a row under the rest after the first layout,
+  // rather than wherever the forces threw them.
+  const NARROW = 600, MIN_K = 0.55, DESK_K = 0.85;
+  function create(container, { key, height = 600, isolateHops = 1, onClick, tip, boundary, layout, polish, isolatedRow = false } = {}) {
     container.innerHTML = "";
     const svgEl = document.createElementNS(NS, "svg");
     svgEl.setAttribute("class", "netgraph");
     container.appendChild(svgEl);
+    // with a layout engine, the drawing is shown once it is laid out and fitted, never cut off first
+    if (layout) { svgEl.style.visibility = "hidden"; setTimeout(() => { svgEl.style.visibility = ""; }, 10000); }   // never hidden for good
+    const reveal = () => { svgEl.style.visibility = ""; };
     let H = height, Wd = container.clientWidth || 1000;
     const W = () => Wd;
     const svg = d3.select(svgEl).attr("viewBox", `0 0 ${W()} ${H}`).style("height", H + "px");
@@ -240,50 +248,103 @@ const NetGraph = (() => {
     }
     let userZoomed = false;
     const zoom = d3.zoom().scaleExtent([0.2, 4]).filter((ev) => ev.type === "wheel" || !ev.target.closest(".ng-node"))
-      .on("zoom", (ev) => { root.attr("transform", ev.transform); if (ev.sourceEvent) userZoomed = true; });
+      .on("zoom", (ev) => { root.attr("transform", ev.transform); if (ev.sourceEvent) { userZoomed = true; hint(null); } });
     svg.call(zoom).on("dblclick.zoom", null);
-    // fit everything in view: after a new layout settles (unless the viewer has zoomed), and on demand.
+    // what an automatic fit leaves out of view, said at the right edge: a press fits everything
+    const hintEl = document.createElement("button");
+    hintEl.className = "ctl ng-more"; hintEl.type = "button"; hintEl.style.display = "none";
+    hintEl.onclick = () => { userZoomed = false; around = null; fit(true, null, 0, null, { all: true }); };
+    // ``out``: the nodes left outside, each with where ("r", "b", or elsewhere); the arrow says which way they are
+    function hint(out) {
+      const n = out ? out.length : 0;
+      hintEl.style.display = n ? "" : "none";
+      if (!n) return;
+      const arrow = out.every((o) => o.side === "r") ? " →" : out.every((o) => o.side === "b") ? " ↓" : "";
+      hintEl.textContent = `${n} more${arrow} · fit to see all`; hintEl.title = `${n} node${n === 1 ? "" : "s"} outside the view at this scale`;
+    }
+    // the nodes a transform leaves outside the view, and on which side
+    const outside = (k, tx, ty) => NODES.filter((n) => n.x !== undefined && n.kind !== "cloud").map((n) => { const x = n.x * k + tx, y = n.y * k + ty;
+      return { n, side: x > W() ? "r" : y > H ? "b" : x < 0 || y < 0 ? "o" : null }; }).filter((o) => o.side);
+    // the connected parts, largest first (by node count), over the drawn edges
+    function largestPart() {
+      const adj = new Map(NODES.map((n) => [n.id, []]));
+      for (const e of EDGES) { if (adj.has(e.source.id) && adj.has(e.target.id)) { adj.get(e.source.id).push(e.target.id); adj.get(e.target.id).push(e.source.id); } }
+      const seen = new Set(); let best = [];
+      for (const n of NODES) { if (seen.has(n.id)) continue; const part = [], q = [n.id]; seen.add(n.id);
+        while (q.length) { const a = q.pop(); part.push(a); for (const b of adj.get(a)) if (!seen.has(b)) { seen.add(b); q.push(b); } }
+        if (part.length > best.length) best = part; }
+      return new Set(best);
+    }
+    const bounds = (ns) => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const n of ns) { const s = size(n), hw = (s.r || s.w / 2) + 40, hh = (s.r || s.h / 2) + 40; x0 = Math.min(x0, n.x - hw); x1 = Math.max(x1, n.x + hw); y0 = Math.min(y0, n.y - hh); y1 = Math.max(y1, n.y + hh); }
+      return [x0, y0, x1, y1]; };
+    // fit in view: after a new layout settles (unless the viewer has zoomed), and on demand.
     // ``only``: node ids to fit instead of all (a machine and its neighbours), at no less than ``minK``
-    function fit(animate = true, only = null, minK = 0, center = null) {
+    // and no more than 1; ``all``: everything, at whatever scale it takes (the fit button)
+    function fit(animate = true, only = null, minK = 0, center = null, { all = false } = {}) {
       const ns = only ? NODES.filter((n) => only.has(n.id)) : NODES;
       if (!ns.length || ns.some((n) => n.x === undefined)) return;
-      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-      for (const n of ns) { const s = size(n), hw = (s.r || s.w / 2) + 40, hh = (s.r || s.h / 2) + 40; x0 = Math.min(x0, n.x - hw); x1 = Math.max(x1, n.x + hw); y0 = Math.min(y0, n.y - hh); y1 = Math.max(y1, n.y + hh); }
+      let [x0, y0, x1, y1] = bounds(ns);
       const fb = only ? null : frameBox();
       if (fb) { x0 = Math.min(x0, fb.x0 - 16); x1 = Math.max(x1, fb.x1 + 16); y0 = Math.min(y0, fb.y0 - 16); y1 = Math.max(y1, fb.y1 + 16); }
       const w = W(), narrow = w < NARROW;
+      const apply = (k, tx, ty) => { (animate ? svg.transition().duration(400) : svg).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k)); hint(only ? null : outside(k, tx, ty)); };
       if (narrow && !only) {                 // a phone: readable labels, and a canvas as tall as the drawing
-        const k = Math.max(MIN_K, Math.min(w / (x1 - x0), 1.4));
+        let k = Math.min(w / (x1 - x0), 1.4);
+        if (all) k = Math.min(k, height / (y1 - y0)); else k = Math.max(MIN_K, k);
         const h = Math.round(Math.min(Math.max(280, (y1 - y0) * k), height));
         if (h !== H) { H = h; svg.attr("viewBox", `0 0 ${w} ${H}`).style("height", H + "px"); }
         const tx = (x1 - x0) * k <= w ? w / 2 - k * (x0 + x1) / 2 : -k * x0, ty = (y1 - y0) * k <= H ? H / 2 - k * (y0 + y1) / 2 : -k * y0;
-        (animate ? svg.transition().duration(400) : svg).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
+        apply(k, tx, ty);
         return;
       }
-      const kFit = Math.min(w / (x1 - x0), H / (y1 - y0), 1.4), k = Math.max(minK, kFit);
+      const kFit = Math.min(w / (x1 - x0), H / (y1 - y0), 1.4);
+      if (all || (!only && kFit >= DESK_K)) { apply(kFit, w / 2 - kFit * (x0 + x1) / 2, H / 2 - kFit * (y0 + y1) / 2); return; }
+      if (!only) {                           // too spread to read whole: the largest connected part, centred, the rest said
+        const part = NODES.filter((n) => largestPart().has(n.id)), [a0, b0, a1, b1] = bounds(part.length ? part : NODES);
+        const k = Math.max(DESK_K, Math.min(w / (a1 - a0), H / (b1 - b0), 1.4)) || DESK_K;
+        apply(k, w / 2 - k * (a0 + a1) / 2, H / 2 - k * (b0 + b1) / 2);
+        return;
+      }
+      const k = Math.min(1, Math.max(minK, kFit));
       // too spread to fit at a readable size: the view centres on the ``center`` node, its neighbours around it
       const c = kFit < minK && center ? NODES.find((n) => n.id === center) : null;
       const [cx, cy] = c && c.x !== undefined ? [c.x, c.y] : [(x0 + x1) / 2, (y0 + y1) / 2];
-      const t = d3.zoomIdentity.translate(w / 2 - k * cx, H / 2 - k * cy).scale(k);
-      (animate ? svg.transition().duration(400) : svg).call(zoom.transform, t);
+      apply(k, w / 2 - k * cx, H / 2 - k * cy);
     }
-    // fit a node and the nodes one link away (a machine opened in a panel), labels kept readable;
-    // kept as the view's fit until fitAround(null), so a layout settling refits to it, not to all
+    // the nodes a hover lights: ``isolateHops`` links out, through nodes marked ``hop`` (event types)
+    function neighbourhood(id) {
+      const keep = new Set([id]), lit = new Set();
+      let frontier = [id];
+      for (let h = 0; h < isolateHops; h++) {
+        const next = [];
+        ALLEDGES.forEach((e) => {
+          const ends = e.toEdge ? [e.source.id, e.toEdge.source.id, e.toEdge.target.id] : [e.source.id, e.target.id];
+          if (!ends.some((x) => frontier.includes(x))) return;
+          lit.add(e.id); if (e.toEdge) lit.add(e.toEdge.id);
+          for (const b of ends) if (!keep.has(b)) { keep.add(b); next.push(b); }
+        });
+        frontier = next.filter((x) => (NODES.find((n) => n.id === x) || {}).hop);
+      }
+      return { keep, lit };
+    }
+    // fit a node and its neighbourhood as the hover lights it (a machine opened in a panel: its event
+    // types and the machines on them), at no more than 1 so none is cut; kept as the view's fit until
+    // fitAround(null), so a layout settling refits to it, not to all
     let around = null;
-    function fitAround(id, minK = 0.9, animate = true) {
+    function fitAround(id, minK = 0.6, animate = true) {
       around = id ? { id, minK } : null;
       if (userZoomed) return;
       if (!id) { fit(animate); return; }
-      const near = new Set([id]);
-      for (const e of EDGES) { if (e.source.id === id) near.add(e.target.id); if (e.target.id === id) near.add(e.source.id); }
-      if (near.size < 2) { fit(animate); return; }          // linked to nothing: the whole map is its context
+      const near = neighbourhood(id).keep;
+      if (near.size < 2) { fit(animate, null, 0, null, { all: true }); return; }   // linked to nothing: the whole map, all of it in view, is its context
       fit(animate, near, minK, id);
     }
     const refit = (animate = true) => (around ? fitAround(around.id, around.minK, animate) : fit(animate));
     const fitBtn = document.createElement("button");
-    fitBtn.className = "ctl ng-fit"; fitBtn.textContent = "fit"; fitBtn.title = "fit the whole graph in view";
-    fitBtn.onclick = () => { userZoomed = false; around = null; fit(); };
-    container.style.position = "relative"; container.appendChild(fitBtn);
+    fitBtn.className = "ctl ng-fit"; fitBtn.textContent = "fit"; fitBtn.title = "fit the whole graph in view, at whatever scale it takes";
+    fitBtn.onclick = () => { userZoomed = false; around = null; fit(true, null, 0, null, { all: true }); };
+    container.style.position = "relative"; container.appendChild(fitBtn); container.appendChild(hintEl);
     const ctl = (text, title, right, fn) => { const b = document.createElement("button"); b.className = "ctl ng-fit"; b.textContent = text; b.title = title; b.style.right = right + "px"; b.onclick = fn; container.appendChild(b); };
     ctl("tidy", "lay the graph out again around the nodes you placed", 52, () => tidy(false));
     ctl("reset", "forget every position, including the ones you placed, and lay it out from scratch", 104, () => tidy(true));
@@ -359,6 +420,12 @@ const NetGraph = (() => {
         if (n.sub) g.append("text").attr("class", "ng-sub").attr("text-anchor", "middle").attr("y", top + lines.length * 14).text(n.sub);
       }
       if (n.tags) drawTags(g, n, s);
+      // keyboard focus: a white ring outside a dark gap, shown only while focused (style.css)
+      if (n.kind !== "cloud") {
+        if (s.r) { g.append("circle").attr("class", "ng-focusring gap").attr("r", s.r + 5); g.append("circle").attr("class", "ng-focusring ring").attr("r", s.r + 7); }
+        else { g.append("rect").attr("class", "ng-focusring gap").attr("x", -s.w / 2 - 5).attr("y", -s.h / 2 - 5).attr("width", s.w + 10).attr("height", s.h + 10).attr("rx", 8);
+               g.append("rect").attr("class", "ng-focusring ring").attr("x", -s.w / 2 - 7).attr("y", -s.h / 2 - 7).attr("width", s.w + 14).attr("height", s.h + 14).attr("rx", 9); }
+      }
     }
     // ``tags``: small labelled boxes stacked above a node (or below, ``below: true``), each
     // {text, cls}: what the page wants said of it on the map ("unconfirmed", "+ new link")
@@ -410,24 +477,27 @@ const NetGraph = (() => {
           .on("click", (ev) => { hideTip(); onClick && onClick(e, "edge"); });
       });
       // a label is part of its edge: hovering it shows the edge's tip, clicking it does what clicking the edge does
-      const labelSel = gLabels.selectAll("g.ng-label").data(ALL.filter((e) => e.label || e.sign), (e) => e.id).join("g").attr("class", onClick ? "ng-label ng-clickable" : "ng-label").attr("data-id", (e) => e.id)
+      const labelSel = gLabels.selectAll("g.ng-label").data(ALL.filter((e) => e.label || e.sign), (e) => e.id).join("g").attr("class", (e) => `${onClick ? "ng-label ng-clickable" : "ng-label"}${e.quiet ? " ng-quiet" : ""}`).attr("data-id", (e) => e.id)
         .on("mouseenter", (ev, e) => showTip(tip && tip(e, "edge"), ev)).on("mousemove", moveTip).on("mouseleave", hideTip)
         .on("click", (ev, e) => { hideTip(); onClick && onClick(e, "edge"); });
-      labelSel.each(function (e) {
-        const g = d3.select(this); g.selectAll("*").remove();
-        if (e.sign) g.append("text").attr("class", "ng-sign").attr("text-anchor", "middle").attr("fill", e.color || "var(--muted)").text(e.sign);
-        // ``labelMuted``: the lines after the first are a quiet aside (a hypothesis), not the edge's colour
-        if (e.label) { const t = g.append("text").attr("class", "ng-elabel").attr("text-anchor", "middle"); (Array.isArray(e.label) ? e.label : [e.label]).forEach((l, i) => t.append("tspan").attr("x", 0).attr("dy", i ? 12 : 0).attr("class", i && e.labelMuted ? "ng-muted" : null).attr("fill", i && !e.labelMuted ? (e.color || "var(--muted)") : null).text(l)); }
-      });
+      // a flow's label is reachable from the keyboard: Enter or Space opens it as a click does
+      if (onClick) labelSel.attr("tabindex", (e) => (e.label && e.fid ? 0 : null)).attr("role", (e) => (e.label && e.fid ? "button" : null))
+        .attr("aria-label", (e) => (e.label ? (Array.isArray(e.label) ? e.label : [e.label]).filter(Boolean).join(", ") : null))
+        .on("keydown", (ev, e) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onClick(e, "edge"); } })
+        .on("focus", (ev, e) => { const m = e._mid; if (m) panTo(m.x, m.y); });
+      labelSel.each(function (e) { drawLabel(d3.select(this), e); });
       const nodeSel = gNodes.selectAll("g.ng-node").data(NODES, (n) => n.id).join("g").attr("class", (n) => `ng-node ng-${n.kind} ${n.cls || ""}`).attr("data-id", (n) => n.id);
-      // reachable from the keyboard: Tab to a node, Enter or Space opens it as a click does
+      // reachable from the keyboard: Tab to a node, Enter or Space opens it as a click does; a node
+      // focused outside the view is brought into it
       if (onClick) nodeSel.attr("tabindex", (n) => (n.kind === "cloud" ? null : 0)).attr("role", (n) => (n.kind === "cloud" ? null : "button"))
         .attr("aria-label", (n) => [(n.lines || [n.label]).join(" "), n.caption, typeof n.sub === "string" ? n.sub.trim() : ""].filter(Boolean).join(", "))
         .on("keydown", (ev, n) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onClick(n, "node"); } })
-        .on("focus", (ev, n) => isolate(n.id)).on("blur", () => isolate(null));
-      nodeSel.each(function (n) { drawNode(d3.select(this), n); });
-      nodeSel.on("mouseenter", (ev, n) => { isolate(n.id); showTip(tip && tip(n, "node"), ev); }).on("mousemove", moveTip)
-        .on("mouseleave", () => { isolate(null); hideTip(); }).on("click", (ev, n) => { hideTip(); onClick && onClick(n, "node"); })
+        .on("focus", (ev, n) => { isolate(n.id); panTo(n.x, n.y); }).on("blur", () => isolate(null));
+      // a node is drawn again only when what it shows changed (or it draws live data), so a refresh
+      // every few seconds keeps what the viewer is pointing at
+      nodeSel.each(function (n) { const sig = n.decorate ? null : drawSig(n); if (sig === null || this.__ngsig !== sig) { this.__ngsig = sig; drawNode(d3.select(this), n); } });
+      nodeSel.on("mouseenter", (ev, n) => { HOVER = n.id; isolate(n.id); showTip(tip && tip(n, "node"), ev); }).on("mousemove", moveTip)
+        .on("mouseleave", () => { HOVER = null; isolate(null); hideTip(); }).on("click", (ev, n) => { hideTip(); onClick && onClick(n, "node"); })
         // dragging moves this node alone (nothing else is pushed around), and it stays where it is dropped
         .call(d3.drag().on("start", () => { if (sim) sim.stop(); if (settling) { settling = null; for (const n of NODES) { n.fx = n.fy = null; n._new = false; } } })
           .on("start.place", () => { placing++; })                 // a layout in progress gives way to the viewer
@@ -453,9 +523,27 @@ const NetGraph = (() => {
       else if (fresh.length) settle(new Set(fresh.map((n) => n.id)), 0.5, true);
       else { tick(); relabel(); }                                // nothing new: nothing moves
       // the first drawing fits the view (a layout still settling fits when it is done)
-      if (!drawnOnce) { drawnOnce = true; if (!settling) requestAnimationFrame(() => refit(false)); }
+      // (a whole new layout is shown when it is done: glide reveals it)
+      if (!drawnOnce) { drawnOnce = true; const whole = layout && fresh.length === NODES.length;
+        if (!settling) requestAnimationFrame(() => { refit(false); if (!whole) reveal(); }); else if (!whole) reveal(); }
       if (pinned) highlight(pinned.nodes, pinned.edges);
       else if (focused) applyFocus();
+      else if (HOVER && byId.has(HOVER)) isolate(HOVER);           // the pointer is still on a node: keep its neighbourhood lit
+    }
+    let HOVER = null;
+    // what a node draws, as a string: unchanged, it is not drawn again
+    const drawSig = (n) => JSON.stringify([n.kind, n.label, n.lines, n.sub, n.caption, n.color, n.stroke, n.strokeWidth, n.halo, n.tags, n.w, n.h, n.dashed, n.fill, n.textColor, n.rx]);
+    // a label's text: the lines of its edge, the first in full, the rest a quiet aside when ``labelMuted``
+    function drawLabel(g, e) {
+      g.selectAll("*").remove();
+      if (e.sign) g.append("text").attr("class", "ng-sign").attr("text-anchor", "middle").attr("fill", e.color || "var(--muted)").text(e.sign);
+      if (e.label) { const t = g.append("text").attr("class", "ng-elabel").attr("text-anchor", "middle"); (Array.isArray(e.label) ? e.label : [e.label]).forEach((l, i) => t.append("tspan").attr("x", 0).attr("dy", i ? 12 : 0).attr("class", i && e.labelMuted ? "ng-muted" : null).attr("fill", i && !e.labelMuted ? (e.color || "var(--muted)") : null).text(l)); }
+    }
+    // bring a point (a focused node) into view when it is outside it
+    function panTo(x, y) {
+      if (x === undefined) return;
+      const t = d3.zoomTransform(svgEl), sx = t.applyX(x), sy = t.applyY(y), m = 40;
+      if (sx < m || sx > W() - m || sy < m || sy > H - m) svg.transition().duration(300).call(zoom.translateTo, x, y);
     }
     // a new node starts by the nodes it is linked to (or at its anchor, or the middle)
     function placeNew(edges, byId) {
@@ -483,7 +571,7 @@ const NetGraph = (() => {
       const first = NODES.every((n) => n._new);
       let at = Object.fromEntries(NODES.filter((n) => n.x !== undefined).map((n) => [n.id, [n.x, n.y]]));
       if (!fromHere) {
-        try { at = await layout(NODES, RAW_EDGES); } catch (e) { console.error("layout failed; using the forces", e); settle(new Set(NODES.map((n) => n.id)), 1, true); return; }
+        try { at = await layout(NODES, RAW_EDGES); } catch (e) { console.error("layout failed; using the forces", e); reveal(); settle(new Set(NODES.map((n) => n.id)), 1, true); return; }
         if (gen !== placing) return;                             // a newer layout was asked for
       }
       if (polish) {
@@ -506,7 +594,7 @@ const NetGraph = (() => {
           for (const m of moving) { m.n.x = m.x0 + (m.x1 - m.x0) * e; m.n.y = m.y0 + (m.y1 - m.y0) * e; }
           tick();
           if (k < 1) return requestAnimationFrame(frame);
-          save(); relabel(); if (!userZoomed) refit(); resolve();
+          save(); relabel(); if (!userZoomed) refit(ms > 0); reveal(); resolve();
         };
         ms ? requestAnimationFrame(frame) : frame(t0 + 1);
       });
@@ -532,7 +620,19 @@ const NetGraph = (() => {
         .force("boundary", boundary ? keepOutside : null)
         .force("edge", boundary ? towardEdge : null)
         .alpha(alpha);
-      sim.on("tick", tick).on("end", () => { settling = null; for (const n of NODES) { n.fx = n.fy = null; n._new = false; } save(); relabel(); if (again && !userZoomed) refit(); });
+      const whole = movable.size === NODES.length;
+      sim.on("tick", tick).on("end", () => { settling = null; for (const n of NODES) { n.fx = n.fy = null; n._new = false; }
+        if (isolatedRow && whole) rowIsolated();
+        save(); relabel(); if (again && !userZoomed) refit(); });
+      tick();
+    }
+    // the nodes linked to nothing (not placed by the viewer): in a row just under the rest
+    function rowIsolated() {
+      const linked = new Set(EDGES.flatMap((e) => [e.source.id, e.target.id]));
+      const lone = NODES.filter((n) => !linked.has(n.id) && !n.pin && !n.tether), rest = NODES.filter((n) => linked.has(n.id));
+      if (!lone.length || !rest.length) return;
+      const [x0, , x1, y1] = bounds(rest), gap = 130, cx = (x0 + x1) / 2;
+      lone.sort((a, b) => String(a.label).localeCompare(String(b.label))).forEach((n, i) => { n.x = cx + (i - (lone.length - 1) / 2) * gap; n.y = y1 + 30; });
       tick();
     }
     // lay it out again: around the viewer's placements, or (``reset``) from nothing
@@ -587,18 +687,7 @@ const NetGraph = (() => {
         d3.select(this).select(".ng-line").attr("stroke", col).attr("marker-end", e.arrow === false ? null : marker(col)).attr("marker-start", e.both ? marker(col, true) : null).classed("ng-hover", !!(lit && lit.has(e.id)));
       });
       if (!id) { ns.classed("ng-dim", false); es.classed("ng-dim", false); ls.classed("ng-dim", false); paint(null); return; }
-      const keep = new Set([id]), lit = new Set();
-      let frontier = [id];
-      for (let h = 0; h < isolateHops; h++) {
-        const next = [];
-        ALLEDGES.forEach((e) => {
-          const ends = e.toEdge ? [e.source.id, e.toEdge.source.id, e.toEdge.target.id] : [e.source.id, e.target.id];
-          if (!ends.some((x) => frontier.includes(x))) return;
-          lit.add(e.id); if (e.toEdge) lit.add(e.toEdge.id);
-          for (const b of ends) if (!keep.has(b)) { keep.add(b); next.push(b); }
-        });
-        frontier = next.filter((x) => (NODES.find((n) => n.id === x) || {}).hop);
-      }
+      const { keep, lit } = neighbourhood(id);
       ns.classed("ng-dim", (n) => !keep.has(n.id)); es.classed("ng-dim", (e) => !lit.has(e.id)); ls.classed("ng-dim", (e) => !lit.has(e.id));
       paint(lit);
     }
@@ -638,13 +727,23 @@ const NetGraph = (() => {
     function refreshNodes(update) {
       gNodes.selectAll("g.ng-node").each(function (n) { const u = update(n); if (u) { Object.assign(n, u); drawNode(d3.select(this), n); } });
     }
+    // change edges' labels without a new layout: ``labelOf(e)`` -> {label, quiet} or null to leave one
+    function setLabels(labelOf) {
+      let changed = false;
+      for (const e of ALLEDGES) { const u = labelOf(e); if (!u) continue;
+        if (JSON.stringify(u.label) !== JSON.stringify(e.label) || !!u.quiet !== !!e.quiet) { e.label = u.label; e.quiet = !!u.quiet; changed = true; } }
+      if (!changed) return;
+      gLabels.selectAll("g.ng-label").each(function (e) { drawLabel(d3.select(this), e); d3.select(this).classed("ng-quiet", !!e.quiet); });
+      gEdges.selectAll("g.ng-edge").classed("ng-quiet", (e) => !!e.quiet);
+      relabel();
+    }
     function setRates(rateOf) {
       gEdges.selectAll("g.ng-edge").each(function (e) {
         const r = rateOf(e), g = d3.select(this); g.selectAll(".ng-flowdash").remove();
         if (r && r > 0.01) g.append("path").attr("class", "ng-flowdash").attr("d", g.select(".ng-line").attr("d")).style("animation-duration", `${Math.max(0.25, Math.min(6, 8 / Math.sqrt(r))).toFixed(2)}s`);
       });
     }
-    return { render, highlight, focus, refreshNodes, setRates, fit, fitAround, tidy, zoomed: () => userZoomed, edgesBetween: (ids) => EDGES.filter((e) => ids.includes(e.source.id) && ids.includes(e.target.id)) };
+    return { render, highlight, focus, refreshNodes, setRates, setLabels, fit, fitAround, tidy, zoomed: () => userZoomed, edgesBetween: (ids) => EDGES.filter((e) => ids.includes(e.source.id) && ids.includes(e.target.id)) };
   }
 
   // a clickable list of loops under a graph: clicking one highlights it; clicking it again clears

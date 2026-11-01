@@ -7,8 +7,50 @@ const color = (s) => `var(--${s})`;
 const seenText = (m, now = Date.now() / 1000) => (m.first_seen ? `first ${ago(now - m.first_seen)} ago, last ${ago(now - m.last_seen)} ago`
   : m.counted_only ? (m.last_seen ? `known by counts only; last counted ${ago(now - m.last_seen)} ago` : "known by counts only")
   : "no events yet");
+// one colour per machine, the same every time for the same id, on every page (the Machines page,
+// the Dashboard, Dynamics); no machine, or "none": grey
+const MPAL = ["#60a5fa", "#f59e0b", "#e879f9", "#22c55e", "#f87171", "#38bdf8", "#facc15", "#a78bfa", "#fb923c", "#2dd4bf"];
+const mcolor = (id) => { if (!id || id === "none") return "#94a3b8"; let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return MPAL[h % MPAL.length]; };
+const hhmm = (t) => new Date(t * 1000).toTimeString().slice(0, 5);
 const ago = (sec) => (sec < 60 ? `${Math.round(sec)}s` : sec < 3600 ? `${Math.round(sec / 60)}m` : `${(sec / 3600).toFixed(1)}h`);
 const fmtBytes = (b) => (b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)} GB` : `${Math.round(b / (1 << 20))} MB`);
+
+window.Orchestra = window.Orchestra || {};
+// Whether a machine is active, said the same way everywhere (the Dashboard's row, a card's seen row,
+// the map's tooltip, the dialog), with the rule the judgement used: heard within 2.5× its usual gap,
+// at least 2 minutes; with no cadence yet, the 2-minute floor alone. The host's flag is the runtime
+// record's (``active_by: "runtime"``): it publishes only when it starts and stops, so it has no
+// rhythm to be in. {word, cls ("live" or "quiet"), detail, title}
+Orchestra.liveness = (m, now = Date.now() / 1000) => {
+  if (m.active_by === "runtime") return { word: m.active ? "running (runtime record)" : "not running (runtime record)", cls: m.active ? "live" : "quiet", detail: "",
+    title: "the host process is in the runtime record; it publishes only when it starts and stops" };
+  if (!m.last_seen) return { word: "never heard", cls: "quiet", detail: "", title: m.intent ? "declared: nothing on the bus under it" : "nothing on the bus under it yet" };
+  const cads = [m.cadence_s, ...(m.instances || []).map((i) => i.cadence_s)].filter((g) => g), g = cads.length ? Math.min(...cads) : null;
+  const rule = g ? `usual gap ${ago(g)}` : "no cadence yet: judged by the 2-minute floor";
+  if (m.active) return { word: "in rhythm", cls: "live", detail: `${rule} · last event ${ago(now - m.last_seen)} ago`,
+    title: `heard within 2.5× its usual gap (at least 2 min): ${rule}` };
+  return { word: `quiet since ${hhmm(m.last_seen)}`, cls: "quiet", detail: g ? `usual gap ${ago(g)}` : "", title: `nothing heard within 2.5× its usual gap (at least 2 min)${g ? `: usual gap ${ago(g)}` : ""}` };
+};
+// The instances a declared machine's instruments measure that report themselves down: points
+// arrive, and their own "up" series (named up, or ending _up) reads 0. A report, never a verdict.
+// [{instance, series, instrument}]
+Orchestra.downOf = (m) => {
+  const atts = (m && m.measured && !m.measured.unknown && m.measured.attachments) || [];
+  const isUp = (n) => n === "up" || /_up$/.test(n);
+  return atts.flatMap((a) => ((a.instances || {}).list || []).filter((i) => i.measured).map((i) => {
+    const s = (a.series || []).find((x) => isUp(x.name) && (x.labels || {})[a.instance_label] === i.value && +x.value === 0);
+    return s ? { instance: i.value, series: s.name, instrument: a.instrument } : null; }).filter(Boolean));
+};
+// The Dashboard's Machines panel: every machine on the Machines page is a row or in a note, so the
+// rows and notes add up to the count in its header. Rows: the continuous machines and any other
+// while it is active; notes: the declared ones not heard (and the proposed, unconfirmed ones) and
+// the quiet ones that are not continuous.
+Orchestra.dashboardGroups = (ms) => {
+  const rows = ms.filter((m) => !m.unseen && (m.mode === "continuous" || m.active)), rest = ms.filter((m) => !rows.includes(m));
+  const unheard = rest.filter((m) => m.intent && !m.intent.heard);
+  return { rows, proposed: unheard.filter((m) => m.intent.state === "proposed"), declared: unheard.filter((m) => m.intent.state !== "proposed"),
+           quiet: rest.filter((m) => !unheard.includes(m)) };
+};
 
 // Machine cards a package draws for its own machines (orchestra/plugins.py). A machine belongs to
 // a package when its announcement says so, or the package declares it (``m.package``). The
@@ -21,7 +63,6 @@ const fmtBytes = (b) => (b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)} GB` : `${
 // it, and what Orchestra observed of the machine (``rows``) is drawn under it on every card.
 // ``changed()`` asks the pages to draw the cards again (its data arrived). Any machine no package
 // claims gets Orchestra's card and dialog.
-window.Orchestra = window.Orchestra || {};
 Orchestra.machineCards = (() => {
   const by = new Map();
   const changed = () => document.dispatchEvent(new Event("orchestra:machinecards"));
@@ -42,18 +83,24 @@ Orchestra.machineCards = (() => {
     // every card shows the same rows.
     rows(m) {
       const now = Date.now() / 1000;
-      const chip = (p) => `<span class="ty" title="${p.count} events, ${p.day} in 24 h, ${p.per_min_10m}/min in the last 10 min">${esc(p.type)} · ${p.count}${p.per_min_10m ? ` · ${p.per_min_10m}/min` : ""}</span>`;
+      // a rate only while the machine is active and the type was seen more than once: a quiet
+      // machine's chip is its count alone
+      const chip = (p) => { const win = Orchestra.rateWindow(p), rated = m.active && p.count > 1 && p.per_min_10m;
+        const why = p.count <= 1 ? "seen once: no rate" : !m.active ? "quiet: no rate" : `none in ${win}`;
+        const title = rated ? `${p.count} events, ${p.day} in 24 h, ${p.n_10m != null ? `${p.n_10m} in ${win}` : `over ${win}`}: ${p.per_min_10m}/min` : `${p.count} events, ${p.day} in 24 h · ${why}`;
+        return `<span class="ty" title="${title}">${esc(p.type)} · ${p.count}${rated ? ` · ${p.per_min_10m}/min` : ""}</span>`; };
+      const lv = Orchestra.liveness(m, now);
       return `<div class="row"><span class="muted">engaged</span><span>${m.mode ? `<span class="tag k-${esc(m.mode.replace(/ /g, "_"))}">${esc(m.mode.replace("_", " "))}</span>` : '<span class="muted">not announced</span>'}</span><span class="muted">kind</span><span>${m.kind ? `<span class="tag">${esc(kindWord(m.kind))}</span>` : '<span class="muted">not announced</span>'}</span></div>
     <div class="row"><span class="muted">package</span><span>${m.package ? esc(m.package) : '<span class="muted">no package</span>'}</span>${m.group ? `<span class="muted">group</span><span><span class="tag" title="the group it announced (a team): a label, not a separate system">${esc(m.group)}</span></span>` : ""}</div>
     ${m.instances && m.instances.length ? `<div class="row"><span class="muted">instances</span>${m.instances.map((i) => `<span class="ty" title="${i.kind ? `${esc(i.kind)}, ` : ""}last seen ${ago(now - i.last_seen)} ago"><span class="dot ${i.active ? "" : "off"}" style="--rc:${i.active ? "#22c55e" : "#64748b"};width:7px;height:7px"></span> ${esc(i.id)}</span>`).join("")}</div>` : ""}
     ${m.note ? `<div class="row"><span class="muted">what</span><span>${esc(m.note)}</span></div>` : ""}
-    <div class="row"><span class="muted">seen</span><span>${seenText(m, now)}</span></div>
+    <div class="row"><span class="muted">seen</span><span class="rv">${seenText(m, now)}${m.first_seen || m.active_by ? ` · <span class="${lv.cls === "live" ? "lv-live" : "lv-quiet"}" title="${esc(lv.title)}">${esc(lv.word)}</span>${lv.detail ? ` <span class="muted">· ${esc(lv.detail)}</span>` : ""}` : ""}</span></div>
     <div class="row"><span class="muted">publishes</span>${(m.publishes || []).map(chip).join("") || '<span class="muted">nothing</span>'}</div>
     <div class="row"><span class="muted">listens for</span>${(m.subscribes || []).map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">nothing</span>'}</div>
     ${(m.counted || []).length ? `<div class="row"><span class="muted">counted</span>${m.counted.map((t) => t.direction === "backlog"
       ? `<span class="ty" title="what waits for it in ${esc(t.channel)}">${esc(t.channel)} · ${Math.round(t.backlog ?? 0).toLocaleString()} waiting</span>`
       : `<span class="ty" title="${Math.round(t.window).toLocaleString()} in the last hour, counted on another system's bus">${t.direction === "out" ? "→" : "←"} ${esc(t.channel)} · ${t.per_min}/min</span>`).join("")}</div>` : ""}
-    <div class="row"><span class="muted" title="flows of the model its events match in time: hypotheses, not causes">flows (hypotheses)</span>${(m.flows || []).map((f) => `<span class="ty" title="${esc(f.why || "")}">${esc(f.name || f.flow)}${f.confidence != null ? ` · ${Math.round(100 * f.confidence)}%` : ""}</span>`).join("") || '<span class="muted">none hypothesised yet</span>'}</div>`;
+    <div class="row"><span class="muted" title="flows of the model its events match in time: hypotheses, not causes">flows (hypotheses)</span>${(m.flows || []).map((f) => `<a class="ty fl" href="/dynamics#f:${encodeURIComponent(f.flow)}" onclick="event.stopPropagation()" title="${esc(f.why || "")} · open it on Dynamics">${esc(Orchestra.flowLabel(f))}${f.confidence != null ? ` · ${Math.round(100 * f.confidence)}%` : ""}</a>`).join("") || '<span class="muted">none hypothesised yet</span>'}</div>`;
     },
     rank(m) { if (m.bootstrap) return 0; const s = this.of(m); try { return s && s.rank ? s.rank(m) : 50; } catch (e) { return 50; } },
     sort(ms) { return [...ms].sort((a, b) => this.rank(a) - this.rank(b) || a.id.localeCompare(b.id)); },
@@ -65,6 +112,20 @@ Orchestra.machineCards = (() => {
     changed,
   };
 })();
+
+// the window a publishes rate is over: the last ten minutes, or since the machine was first seen
+Orchestra.rateWindow = (p) => (p.window_s && p.window_s < 600 ? `${(p.window_s / 60).toFixed(1).replace(/\.0$/, "")} min (since first seen)` : "the last 10 min");
+// A hypothesised flow as Dynamics names it: its ends, then the counter's move, so two flows of one
+// counter (twins) read apart. The names are SDGraph's (sd-graph.js), over the model's parts the
+// page was given (/api/machines ``model_parts``); without them, the flow's own name.
+Orchestra.modelParts = null;
+Orchestra.flowLabel = (f) => {
+  const mp = Orchestra.modelParts, G = window.SDGraph;
+  if (!mp || !G) return f.name || f.flow;
+  const end = (id) => (id ? G.stockName(mp, id) : "outside"), rec = mp.flows.find((x) => x.id === f.flow);
+  const move = rec ? G.flowName(mp, rec) : f.name || f.flow;
+  return `${end(f.from)} → ${end(f.to)} · ${move}`;
+};
 
 // Dashboard panels (static/dashboard.js): Orchestra's own and any a package registers from its
 // every-page script. A panel is {id, title, mount(body, {setSub})}: mount draws into its body once
@@ -136,24 +197,48 @@ fetch("/api/plugins").then((r) => r.json()).then((d) => {
 
 // The drawer: every one opens with a close bar (×) that stays at its top while it scrolls, closes
 // on Escape, and on a phone, where it fills the screen, on Back (a history entry while it is open).
+// It is a modal dialog: the page behind it is inert while it is open, the close button takes the
+// focus, and closing gives the focus back to what opened it. ``key`` names what it shows: the same
+// key again is a refresh (its scroll and focus kept), another opens at its top.
 let DRAWER_BACK = false;           // a close's history.back() not yet arrived: its popstate is not a Back to act on
-function openDrawer(html) {
-  const ov = $("overlay"), was = ov.classList.contains("open");
-  $("drawer").innerHTML = '<div class="drawer-bar"><button class="ctl drawer-close" type="button" aria-label="close" title="close (Esc)" onclick="closeDrawer()">×</button></div>' + html;
+let DRAWER_FROM = null, DRAWER_FROM_ID = null;
+function openDrawer(html, opts = {}) {
+  const ov = $("overlay"), dr = $("drawer"), was = ov.classList.contains("open");
+  // the key: given, or said by the html itself (data-drawer-key), so a page script that wraps
+  // openDrawer(html) and passes the html alone keeps it
+  const key = opts.key != null ? String(opts.key) : ((/data-drawer-key="([^"]*)"/.exec(html) || [])[1] || ""), same = was && key !== "" && dr.dataset.key === key, top = dr.scrollTop;
+  if (!was) { DRAWER_FROM = document.activeElement; const own = DRAWER_FROM && DRAWER_FROM.closest ? DRAWER_FROM.closest("[data-id]") : null; DRAWER_FROM_ID = own ? own.dataset.id : null; }
+  dr.innerHTML = '<div class="drawer-bar"><button class="ctl drawer-close" type="button" aria-label="close" title="close (Esc)" onclick="closeDrawer()">×</button></div>' + html;
+  dr.dataset.key = key;
+  dr.setAttribute("role", "dialog"); dr.setAttribute("aria-modal", "true");
+  const h = dr.querySelector("h3");
+  if (h) { h.id = h.id || "drawer-title"; dr.setAttribute("aria-labelledby", h.id); } else dr.removeAttribute("aria-labelledby");
   ov.classList.add("open");
+  dr.scrollTop = same ? top : 0;
+  for (const el of document.body.children) if (el !== ov && el.tagName !== "SCRIPT") el.inert = true;
+  if (!same) { const c = dr.querySelector(".drawer-close"); if (c) try { c.focus({ preventScroll: true }); } catch (e) {} }
   if (!was && !DRAWER_BACK) { try { history.pushState({ ...(history.state || {}), drawer: true }, ""); } catch (e) {} }
+}
+// the page behind comes back, and the focus to what opened the drawer (or what replaced it)
+function drawerClosed() {
+  for (const el of document.body.children) el.inert = false;
+  document.dispatchEvent(new Event("orchestra:drawerclosed"));
+  let back = DRAWER_FROM && DRAWER_FROM.isConnected && DRAWER_FROM !== document.body ? DRAWER_FROM : null;
+  if (!back && DRAWER_FROM_ID) back = document.querySelector(`[data-id="${CSS.escape(DRAWER_FROM_ID)}"]`);
+  DRAWER_FROM = DRAWER_FROM_ID = null;
+  if (back && back.focus) try { back.focus({ preventScroll: true }); } catch (e) {}
 }
 function closeDrawer() {
   const ov = $("overlay");
   if (!ov || !ov.classList.contains("open")) return;
   ov.classList.remove("open");
-  document.dispatchEvent(new Event("orchestra:drawerclosed"));
+  drawerClosed();
   if (history.state && history.state.drawer) { try { DRAWER_BACK = true; history.back(); } catch (e) { DRAWER_BACK = false; } }
 }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("overlay") && $("overlay").classList.contains("open")) closeDrawer(); });
 if (typeof window.addEventListener === "function") window.addEventListener("popstate", () => { const ov = $("overlay");
   // the close's own back arrived: a drawer opened meanwhile gets its history entry now
-  if (DRAWER_BACK) { DRAWER_BACK = false; if (ov && ov.classList.contains("open")) { try { history.pushState({ ...(history.state || {}), drawer: true }, ""); } catch (e) {} } return; } if (ov && ov.classList.contains("open")) { ov.classList.remove("open"); document.dispatchEvent(new Event("orchestra:drawerclosed")); } });
+  if (DRAWER_BACK) { DRAWER_BACK = false; if (ov && ov.classList.contains("open")) { try { history.pushState({ ...(history.state || {}), drawer: true }, ""); } catch (e) {} } return; } if (ov && ov.classList.contains("open")) { ov.classList.remove("open"); drawerClosed(); } });
 
 // A link printed by `orchestra web` carries the token after '#': never leave it in the address bar.
 if (/^#token=/.test(location.hash)) { try { history.replaceState(history.state, "", location.pathname + location.search); } catch (e) {} }

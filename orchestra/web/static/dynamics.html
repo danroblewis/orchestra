@@ -23,7 +23,11 @@
   .legend .lg { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text2); background:var(--panel2); border:1px solid var(--border); border-radius:999px; padding:2px 9px; cursor:pointer }
   .legend .lg i { width:14px; height:3px; border-radius:2px; background:var(--c) } .legend .lg.prog i { height:3px; outline:1px dashed var(--c) }
   .tables { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(460px, 100%), 1fr)); gap:12px; margin-top:14px }
-  .tables > div { min-width:0 } .tables .panel { overflow-x:auto } #flows td.num, #stocks td.num { white-space:normal; overflow-wrap:break-word }
+  .tables > div { min-width:0 } .tables .panel { overflow-x:auto } #flows td.num, #stocks td.num { white-space:normal; overflow-wrap:anywhere }
+  #stocks td.bound, #found td { overflow-wrap:anywhere } #flows td.eq { min-width:12ch } #flows td.mcell { min-width:14ch }
+  #flows tr[data-fid]:focus-visible td, #stocks tr[data-sid]:focus-visible td { background:var(--panel3); outline:none } #flows tr[data-fid]:focus-visible, #stocks tr[data-sid]:focus-visible { outline:2px solid var(--accent); outline-offset:-2px }
+  .drawer .tr.flowlink { cursor:pointer; border-radius:4px } .drawer .tr.flowlink:hover, .drawer .tr.flowlink:focus-visible { background:var(--panel3); outline:none }
+  .chart text.cnote { fill:var(--text2) }
   #found .ty { overflow-wrap:anywhere } #found table.dt { table-layout:fixed } #found td.num { white-space:normal; overflow-wrap:anywhere; width:55% }
   table.dt { width:100%; border-collapse:collapse; font-size:12px } table.dt th { text-align:left; color:var(--muted); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; padding:4px 6px; border-bottom:1px solid var(--border) }
   table.dt td { padding:4px 6px; border-bottom:1px solid var(--border); vertical-align:top } table.dt td.num { font-family:var(--mono); white-space:nowrap }
@@ -92,7 +96,7 @@
     </div>
     <div>
       <div class="panel"><h2 style="margin-top:0"><span>Stocks</span><span class="count" id="nstocks"></span></h2><table class="dt" id="stocks"></table></div>
-      <div class="panel"><h2 style="margin-top:0"><span>Machines</span><span class="count" id="nmachines"></span></h2><table class="dt" id="machines"></table></div>
+      <div class="panel"><h2 style="margin-top:0"><span>Machines with flow hypotheses</span><span class="count" id="nmachines"></span></h2><table class="dt" id="machines"></table></div>
     </div>
   </div>
 </div>
@@ -110,9 +114,7 @@
 <script src="/static/intended-panel.js?v={{v}}"></script>
 <script src="/static/intended-drawers.js?v={{v}}"></script>
 <script>
-// one colour per machine, the same every time for the same id
-const MPAL = ["#60a5fa", "#f59e0b", "#e879f9", "#22c55e", "#f87171", "#38bdf8", "#facc15", "#a78bfa", "#fb923c"];
-const mcolor = (id) => { if (!id || id === "none") return "#94a3b8"; let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return MPAL[h % MPAL.length]; };
+// (a machine's colour, mcolor, is app.js's: the same on every page)
 let MODEL = null, VERSION = null;   // null: follow the current version
 let ERA = new URLSearchParams(location.search).get("era");   // null: the current era; else a past era's id ("none": before any era); /dynamics?era= links here
 const nice = (s) => (s || "outside").toLowerCase().replace(/_/g, " ");
@@ -129,7 +131,10 @@ let GRAPH = null, GSIG = null, FLOWEDGE = {};
 // One colour per stock, used everywhere it appears: its box, its sparkline, its line on the chart
 // and in its drawer. Flows keep their machine's colour; a stock's box carries a dot for each
 // machine whose flows change it (any number), and its tooltip says which machine measures it.
-const stockColor = (id) => { const i = MODEL ? MODEL.stocks.findIndex((s) => s.id === id) : -1; return i < 0 ? "#cbd5e1" : Charts.PAL[i % Charts.PAL.length]; };
+// The colour follows the stock's series (its key, else its id), never its place in the list, so a
+// stock keeps its colour from one version to the next.
+const stockColor = (id) => { const s = MODEL && MODEL.stocks.find((x) => x.id === id); if (!s) return "#cbd5e1";
+  let h = 0; for (const ch of String(Intended.stockKey(s) || id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return Charts.PAL[h % (Charts.PAL.length - 1)]; };
 // The model as a network: stocks as boxes, each flow as one arrow from its source to its
 // destination (a cloud when either is outside), influences as dashed links from a stock to the
 // middle of the flow whose rate they drive. Feedback loops are cycles of the causal graph: a flow adds to its destination
@@ -153,8 +158,12 @@ const stockColor = (id) => { const i = MODEL ? MODEL.stocks.findIndex((s) => s.i
 function draw() {
   const m = MODEL, byMachine = Object.fromEntries(m.machines.map((x) => [x.id, x]));
   // the intended model (intended-dynamics.js) adds its ghosts and marks to what discovery found
-  const g = Intended.extend(SDGraph.build(m, { showAll: window.SHOW_ALL, showAcc: window.SHOW_ACC, keep: Intended.nearIds(), mcolor, stockColor }));
+  // what is expected stays on the diagram: its stocks, its flows and their ends, whatever a filter would hide
+  const ex = Intended.expectedIds();
+  const g = Intended.extend(SDGraph.build(m, { showAll: window.SHOW_ALL, showAcc: window.SHOW_ACC, keep: new Set([...Intended.nearIds(), ...ex.stocks]), keepFlows: ex.flows, mcolor, stockColor }));
   const { nodes, edges, causal, flows, acc } = g;
+  // a flow's label: the equation, or the observed rate first where it parts from it (dynamics-live.js)
+  for (const e of edges) if (e.flowPart && e.fid && Array.isArray(e.label)) { e.eqLabel = e.label[0]; const u = Live.edgeLabel(e); if (u) { e.label = u.label; e.quiet = u.quiet; } }
   window.ACC_HIDDEN = window.SHOW_ACC ? 0 : acc.size;
   FLOWEDGE = g.flowEdge;
   for (const n of nodes) n.decorate = Intended.decorator(n, n.sid ? Live.decorateStock : n.input ? Live.decorateInput : undefined);
@@ -192,6 +201,7 @@ function draw() {
     return `<span class="lg prog" style="--c:${mcolor(id)}" title="a flow is drawn in the colour of its most likely machine"><i></i>${esc(mc.name)} <span class="muted">${esc(kindWord(id, mc.kind))}</span></span>`; }).join("")
     + (flows.some((f) => !(f.machines || []).length) ? `<span class="lg prog" style="--c:${mcolor("")}"><i></i>no machine associated yet</span>` : "")
     + `<label class="lg" style="cursor:pointer"><input type="checkbox" ${window.SHOW_ALL ? "checked" : ""} onchange="window.SHOW_ALL=this.checked;draw()" style="margin:0"> flows with no events</label>`
+    + (m.stocks.some((s) => s.evidence && s.evidence.hidden) ? `<span class="lg" title="a stock no series measures: its level is what its counters imply"><i style="height:9px;width:14px;background:none;border:1.5px dashed var(--muted);border-radius:2px"></i>hidden: found from the levels, not measured</span>` : "")
     + (acc.size || window.SHOW_ACC ? `<label class="lg" style="cursor:pointer" title="stocks that only fill and that no flow shown feeds, such as the event bus's length"><input type="checkbox" ${window.SHOW_ACC ? "checked" : ""} onchange="showAcc(this.checked)" style="margin:0"> stocks that only fill, fed by nothing shown${acc.size ? ` (${acc.size})` : ""}</label>` : "")
     + Intended.legend()
     + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it, through rediscoveries; double-click to release) · tidy lays out the rest · reset starts over · scroll to zoom · hover or click a stock or a flow</span>`;
@@ -249,10 +259,8 @@ function lookedAt(d) {
 function keptNote(d, lo) {
   const n = d.looked_at ?? d.series, left = Object.keys(lo || {}).length, kept = d.kept || [], rest = n - left;
   if (n == null || rest <= 0) return "";
-  const summed = Object.entries(d.summed || {});
-  const said = kept.length ? `${rest} of ${n} not left out: ${kept.map((k) => `<span class="ty">${esc(k)}</span>`).join(" ")} (considered; no stock balances on ${kept.length === 1 ? "it" : "them"} yet)`
-    : `${rest} of ${n} not listed above: this discovery's record does not name ${rest === 1 ? "it" : "them"}`
-      + (summed.length ? `; it summed some series over their instances (${summed.map(([k, v]) => `<span class="ty">${esc(k)}</span> ${esc(v)}`).join(", ")}), so its counts of series differ` : "");
+  if (!kept.length) return "";
+  const said = `${kept.length} of ${n} not left out: ${kept.map((k) => `<span class="ty">${esc(k)}</span>`).join(" ")} (considered; no stock balances on ${kept.length === 1 ? "it" : "them"} yet)`;
   return `<div class="muted" style="font-size:12px;margin:6px 0">${said}</div>`;
 }
 // the window and the step, said plainly: what they are and what they decide
@@ -267,8 +275,9 @@ function plainWindow(windowS, stepS) {
 // a series' resolution and how discovery read it between its points (sd.resolution)
 function resText(r) {
   if (!r) return "";
-  const every = r.resolution_s ? `every ${r.resolution_s < 90 ? Math.round(r.resolution_s) + " s" : ago(r.resolution_s)}` : "as things happen";
-  return `${every} · ${r.read === "linear" ? "linear between points" : "last value held"}`;
+  const gap = r.resolution_s ? (r.resolution_s < 90 ? Math.round(r.resolution_s) + " s" : ago(r.resolution_s)) : null;
+  if (r.read === "linear") return gap ? `a point about every ${gap}; discovery reads it as a line between them` : "points as things happen; read as a line between them";
+  return gap ? `changes about every ${gap}; discovery reads it at its changes` : "changes as things happen; discovery reads it at its changes";
 }
 const resOf = (d, key) => resText(((d || {}).resolution || {})[key]);
 const keyOf = (ref) => ref.name + (Object.keys(ref.labels || {}).filter((k) => k !== "project").length
@@ -282,6 +291,20 @@ function sourcesNote(d) {
     return `<div class="bal"><b>${esc(k)}</b> ${s.ok ? `<span class="muted">${esc(s.where || "")} · ${s.series ?? 0} series, ${s.points ?? 0} points in ${s.seconds ?? "?"} s${(s.gaps || []).length ? ` · nothing returned in ${s.gaps.length} stretch${s.gaps.length === 1 ? "" : "es"} of the window` : ""}</span>` : `<span class="stale">missing: ${esc(s.error || "")}</span>`}</div>`; };
   return `<h3>Sources</h3>` + names.map(line).join("") + (d.not_saved ? `<div class="stale" style="font-size:12px">Not saved as a version: ${esc(d.not_saved)}</div>` : "")
     + (d.since_last_s ? `<div class="muted" style="font-size:12px">The discovery before this one was ${ago(d.since_last_s)} earlier; this one read its whole window again.</div>` : "");
+}
+// "Left out": its true count ("all 35" when nothing was kept), and the buckets add up to it: the
+// series the record names, by why, then the rest it does not name (left out at once, or folded into
+// a sum over instances), last
+function leftOutHead(d, lo) {
+  const n = d.looked_at ?? d.series, kept = (d.kept || []).length, left = n != null ? n - kept : Object.keys(lo).length;
+  return `<h3>Left out <span class="count">${n != null && kept === 0 ? `all ${n}` : `${left} of ${n ?? "?"}`}</span></h3>`;
+}
+function unnamedBucket(d, lo) {
+  const n = d.looked_at ?? d.series; if (n == null) return "";
+  const rest = n - (d.kept || []).length - Object.keys(lo).length; if (rest <= 0) return "";
+  const summed = Object.entries(d.summed || {});
+  return `<details><summary>not named in this discovery's record <span class="count">${rest}</span> <span class="muted">· left out at once (Orchestra's own, or not being written)${summed.length ? ", or folded into a sum over instances" : ""}</span></summary>`
+    + (summed.length ? `<div class="muted" style="font-size:12px;margin:4px 0">${summed.length} summed over their instances:</div><table class="dt">${summed.map(([k, v]) => `<tr><td class="num">${esc(k)}</td><td class="muted">${esc(v)}</td></tr>`).join("")}</table>` : "") + `</details>`;
 }
 // series left out, grouped by why: the ones that changed but didn't balance are worth reading;
 // the ones that didn't move in the window are collapsed
@@ -319,19 +342,34 @@ function netFlowLine(s, ev) {
   return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">no counters; its net flow fitted as</span> <span class="ty">${esc(nf.form)}</span> <span class="muted">${fit}${trustText(ev)}</span>${driver}
     ${ev.sdlab_rejected ? `<div class="muted">SD Lab's flows not used: ${esc(ev.sdlab_rejected)}</div>` : ""}</div>`;
 }
+// a level as a count of items: whole numbers whole, with the unit singular for one ("1 item")
+const levelText = (v, unit) => { const u = unit || ""; const one = v === 1 && /s$/.test(u) ? u.slice(0, -1) : u;
+  return `${Number.isInteger(v) ? v.toLocaleString() : (+v).toFixed(2)} ${esc(one)}`.trim(); };
+// a row that opens a drawer, from the pointer or the keyboard
+const opens = (fn) => `tabindex="0" role="button" style="cursor:pointer" onclick="${fn}" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();${fn}}"`;
+let TABLES_SIG = null;
 function tables() {
   const m = MODEL, byMachine = Object.fromEntries(m.machines.map((x) => [x.id, x]));
-  $("nflows").textContent = m.flows.length; $("nstocks").textContent = m.stocks.length; $("nmachines").textContent = m.machines.length;
-  $("flows").innerHTML = `<tr><th>flow</th><th>equation</th><th>fit</th><th title="machines whose events match the flow's counter: hypotheses, with their confidence. Two similar flows between the same stocks may not be told apart, so a hypothesis may belong to a flow's twin.">machines (hypotheses)</th></tr>` + m.flows.map((f) => { const e = f.current, q = (e && e.quality) || {};
+  const flowsHtml = `<tr><th>flow</th><th>equation</th><th>fit</th><th title="machines whose events match the flow's counter: hypotheses, with their confidence. Two similar flows between the same stocks may not be told apart, so a hypothesis may belong to a flow's twin.">machines (hypotheses)</th></tr>` + m.flows.map((f) => { const e = f.current, q = (e && e.quality) || {};
     const end = (id) => (id ? stockName(id) : "outside");
     const same = SDGraph.sameAs(m, f);
-    return `<tr data-fid="${esc(f.id)}"><td>${esc(flowName(f))}<div class="muted" style="font-size:11px">${esc(end(f.from))} → ${esc(end(f.to))}${same.length ? ` · same events as ${same.map(esc).join(", ")}` : ""}</div></td><td class="num">${esc(eqText(f))}${e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}${SDGraph.correlational(m, f) ? `<div class="muted" style="font-family:inherit;font-size:11px">${esc(SDGraph.UNTESTED)}</div>` : ""}</td>
-      <td>${e ? `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span> <span class="muted num">${esc(e.form)} · ${q.events ?? 0} ev · disp ${q.events && q.dispersion != null ? q.dispersion.toFixed(1) : "—"}</span>${e.prior && e.prior.weight != null && e.origin !== "prior" ? `<div class="muted" style="font-size:11px">${Math.round(100 * e.prior.weight)}% from the prior (era ${esc(e.prior.era || "before")})</div>` : ""}${eraNote(f)}` : '<span class="muted">—</span>'}</td>
-      <td>${(f.machines || []).length ? f.machines.map((h) => `<div title="${esc(h.why || h.origin || "")}"><span class="mdot" style="--c:${mcolor(h.machine)}"></span>${esc((byMachine[h.machine] || {}).name || h.machine)}${h.confidence != null ? ` <span class="muted num">${Math.round(100 * h.confidence)}%</span>` : ""}</div>`).join("") : `<span class="muted" title="${esc(f.association || "")}">no machine associated yet</span>`}</td></tr>`; }).join("");
-  $("stocks").innerHTML = `<tr><th>stock</th><th>now</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr data-sid="${esc(s.id)}"><td>${stockHead(s.id)}</td><td class="num">${m.levels[s.id] ? m.levels[s.id].v + " " + esc(s.unit) : "—"}</td>
-      <td class="num muted">${s.series ? esc(keyOf(s.series)) + `<div style="font-family:inherit">${esc(resOf(m.discovery, keyOf(s.series)))}</div>` : "not measured"}</td></tr>`).join("");
-  $("machines").innerHTML = `<tr><th>machine</th><th>kind</th><th>flows (hypotheses)</th></tr>` + m.machines.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span>${esc(x.name)}${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
+    const zero = e && (q.events ?? 0) === 0 && (Object.values(e.params || {}).some((x) => x) || (e.spec && e.spec.value));
+    return `<tr data-fid="${esc(f.id)}" ${opens(`Live.openFlow('${esc(f.id)}')`)}><td>${esc(flowName(f))}<div class="muted" style="font-size:11px">${esc(end(f.from))} → ${esc(end(f.to))}${same.length ? ` · same events as ${same.map(esc).join(", ")}` : ""}</div></td><td class="num eq">${esc(eqText(f))}${e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}${SDGraph.correlational(m, f) ? `<div class="muted" style="font-family:inherit;font-size:11px">${esc(SDGraph.UNTESTED)}</div>` : ""}</td>
+      <td>${e ? `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span> <span class="muted num" ${zero ? 'title="0 increments seen in the window; the counter first appeared already above 0"' : ""}>${esc(e.form)} · ${q.events ?? 0} ev${zero ? "*" : ""} · disp ${q.events && q.dispersion != null ? q.dispersion.toFixed(1) : "—"}</span>${e.prior && e.prior.weight != null && e.origin !== "prior" ? `<div class="muted" style="font-size:11px">${Math.round(100 * e.prior.weight)}% from the prior (era ${esc(e.prior.era || "before")})</div>` : ""}${eraNote(f)}` : '<span class="muted">—</span>'}</td>
+      <td class="mcell">${(f.machines || []).length ? f.machines.map((h) => `<div title="${esc(h.why || h.origin || "")}"><span class="mdot" style="--c:${mcolor(h.machine)}"></span><a href="/machines#${encodeURIComponent(h.machine)}" onclick="event.stopPropagation()">${esc((byMachine[h.machine] || {}).name || h.machine)}</a>${h.confidence != null ? ` <span class="muted num">${Math.round(100 * h.confidence)}%</span>` : ""}</div>`).join("") : `<span class="muted" title="${esc(f.association || "")}">no machine associated yet</span>`}</td></tr>`; }).join("");
+  // how far to trust each stock, as its drawer says it
+  const trustCell = (s) => { const t = (s.evidence || {}).trust; return t ? `<span class="num">${t.score.toFixed(2)}</span> <span class="muted">${esc(t.level)}</span>` : '<span class="muted">—</span>'; };
+  const stocksHtml = `<tr><th>stock</th><th>now</th><th>trust</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr data-sid="${esc(s.id)}" ${opens(`Live.openStock('${esc(s.id)}')`)}><td>${stockHead(s.id)}</td><td class="num">${m.levels[s.id] ? levelText(m.levels[s.id].v, s.unit) : "—"}</td><td>${trustCell(s)}</td>
+      <td class="num muted bound">${s.series ? esc(keyOf(s.series)) + `<div style="font-family:inherit">${esc(resOf(m.discovery, keyOf(s.series)))}</div>` : "not measured"}</td></tr>`).join("");
+  const hypm = m.machines.filter((x) => x.attributed.length), total = (window.MLIST || []).length;
+  const machinesHtml = `<tr><th>machine</th><th>kind</th><th>flows (hypotheses)</th></tr>` + hypm.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span><a href="/machines#${encodeURIComponent(x.id)}">${esc(x.name)}</a>${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
       <td>${kindWord(x.id, x.kind)}</td><td class="num">${x.attributed.length}</td></tr>`).join("");
+  // a poll that changes nothing redraws nothing: focus, a selection and the declared layer's marks stay
+  const sig = JSON.stringify([flowsHtml, stocksHtml, machinesHtml, m.discovery, m.intended, window.ACC_HIDDEN, total, m.stored, m.levels_error]);
+  if (sig === TABLES_SIG) return;
+  TABLES_SIG = sig;
+  $("nflows").textContent = m.flows.length; $("nstocks").textContent = m.stocks.length; $("nmachines").textContent = `${hypm.length} of ${total || m.machines.length}`;
+  $("flows").innerHTML = flowsHtml; $("stocks").innerHTML = stocksHtml; $("machines").innerHTML = machinesHtml;
   const fitted = m.flows.filter((f) => f.current && f.current.origin === "fitted").length;
   const d = m.discovery || {};
   $("found").innerHTML = d.left_out ? `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d))} A level is a stock when counters balance it (R² ≥ ${d.min_r2}), or, with no counters, when the other series explain how it changes better than a steady drift does; a passage (a state each item leaves within a step) is judged on its raw points, its rises and falls matched to its counters, not on R².</div>`
@@ -341,10 +379,10 @@ function tables() {
       if (ev.balance) return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">changes by</span> ${ev.balance.map((b) => `<span class="ty">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join(" ")} <span class="muted">${passage ? "a passage: judged on its raw points; R² not used" : ev.balance_r2 == null ? (ev.by_construction ? "by construction: a count and its own turnover, no evidence" : "measured by no series") : `R² ${ev.balance_r2.toFixed(3)} · exact in ${Math.round(100 * ev.exact_steps)}% of steps`}${trustText(ev)}</span></div>`;
       if (ev.net_flow) return netFlowLine(s, ev);
       return ""; }).join("")
-    + `<h3>Left out <span class="count">${Object.keys(d.left_out).length} of ${d.looked_at ?? "?"}</span></h3>` + leftOut(d.left_out) : '<div class="muted">This version was declared, not discovered.</div>';
+    + leftOutHead(d, d.left_out) + keptNote(d, d.left_out) + leftOut(d.left_out) + unnamedBucket(d, d.left_out) : '<div class="muted">This version was declared, not discovered.</div>';
   Intended.tables();
   // what is counted is said: stocks hidden from the diagram, machines with flow hypotheses out of all machines
-  const hid = window.ACC_HIDDEN || 0, total = (window.MLIST || []).length;
+  const hid = window.ACC_HIDDEN || 0;
   const hyp = new Set(m.flows.flatMap((f) => (f.machines || []).map((h) => h.machine))).size;
   $("sum").innerHTML = `${m.stocks.length} stocks${hid ? ` (${hid} hidden: only fill · <a href="#" onclick="showAcc(true);return false">show</a>)` : ""} · ${m.flows.length} flows (${fitted} fitted) · ${hyp} machine${hyp === 1 ? "" : "s"} with flow hypotheses${total ? ` (of ${total})` : ""}${m.stored ? "" : ' · <span class="stale">not stored yet: <code>orchestra sd declare</code></span>'}${m.levels_error ? ` · <span class="stale">levels: ${esc(m.levels_error)}</span>` : ""}`;
 }
@@ -424,26 +462,32 @@ function eraNote(f) {
 function versionBar() {
   const m = MODEL, vs = m.versions || [], i = vs.findIndex((v) => v.version === m.version);
   $("mname").textContent = m.name;
-  if (!vs.length) { $("ver").innerHTML = ""; return; }
-  if (m.live && VERSION === null) {
-    $("ver").innerHTML = `<button ${!vs.length ? "disabled" : ""} onclick="step(-1)" title="saved versions">‹</button>
+  let html = "";
+  if (!vs.length) html = "";
+  else if (m.live && VERSION === null) {
+    const same = Intended.it() && Intended.it().shown != null;     // the latest discovery has the newest version's structure
+    html = `<button onclick="step(-1)" title="${same ? `the version before: v${esc((vs[vs.length - 2] || vs[vs.length - 1]).version)}` : "saved versions"}">‹</button>
       <span><b>latest discovery</b> · ${m.as_of ? ago(Date.now() / 1000 - m.as_of) + " ago" : ""}</span>
-      <span class="muted">rediscovered by the host every few minutes; saved as a version when its structure changes (now version ${m.current ?? "—"})${m.discovery && m.discovery.live_minutes != null ? ` · fitted over ${m.discovery.live_minutes} min when every series involved was being written` : ""}</span>`;
-    Intended.versionBar();
-    return;
-  }
-  const v = vs[i] || {}, past = m.version !== m.current;
-  const when = v.saved_at ? new Date(v.saved_at * 1000).toLocaleString() : "";
-  $("ver").innerHTML = `<button ${i <= 0 ? "disabled" : ""} onclick="step(-1)" title="older version">‹</button>
+      <span class="muted">${same ? `same structure as v${esc(m.current ?? "—")}, refitted` : `a new structure, not saved yet (the newest saved is v${esc(m.current ?? "—")})`} · rediscovered by the host every few minutes; saved as a version when its structure changes${m.discovery && m.discovery.live_minutes != null ? ` · fitted over ${m.discovery.live_minutes} min when every series involved was being written` : ""}</span>`;
+  } else {
+    const v = vs[i] || {}, past = m.version !== m.current;
+    const when = v.saved_at ? new Date(v.saved_at * 1000).toLocaleString() : "";
+    html = `<button ${i <= 0 ? "disabled" : ""} onclick="step(-1)" title="older version">‹</button>
     <span>version <b>${m.version}</b> of ${vs.length}${past ? ' <span class="past">· a past version</span>' : " · current"}</span>
     <button onclick="step(1)" title="${i >= vs.length - 1 ? "the latest discovery" : "newer version"}">›</button>
     <span class="muted" title="${esc(when)}">${esc(v.note || "")}${when ? " · " + esc(ago(Date.now() / 1000 - v.saved_at)) + " ago" : ""}</span>`;
-  Intended.versionBar();
+  }
+  html += vs.length ? Intended.versionBar() : "";
+  const ver = $("ver"), asof = $("ver-asof");
+  if (ver.dataset.html !== html) { const had = document.activeElement && ver.contains(document.activeElement) ? document.activeElement.id : null;
+    ver.dataset.html = html; ver.innerHTML = html; if (asof) ver.appendChild(asof); if (had && $(had)) $(had).focus({ preventScroll: true }); }
 }
 function step(d) {
   ERA = null;
   const vs = MODEL.versions;
-  if (MODEL.live && VERSION === null) { if (d < 0 && vs.length) { VERSION = vs[vs.length - 1].version; load(); } return; }
+  // from the latest discovery, ‹ goes to the version before the one it equals (the same structure, refitted)
+  if (MODEL.live && VERSION === null) { if (d < 0 && vs.length) { const same = Intended.it() && Intended.it().shown != null && vs.length > 1;
+    VERSION = vs[vs.length - (same ? 2 : 1)].version; load(); } return; }
   const i = vs.findIndex((v) => v.version === MODEL.version), n = vs[i + d];
   if (!n && d > 0) { VERSION = null; load(); return; }          // past the newest version: back to the latest discovery
   if (!n) return;
@@ -492,7 +536,7 @@ async function rediscover() {
 // rather than empty
 function showModelParts(on) {
   for (const id of ["legend", "loops", "histp", "tables"]) $(id).style.display = on ? "" : "none";   // not hidden: their classes set display
-  if (!on) { $("sum").innerHTML = ""; $("ver").innerHTML = ""; }
+  if (!on) { $("sum").innerHTML = ""; $("ver").innerHTML = ""; delete $("ver").dataset.html; TABLES_SIG = null; }
 }
 // the model's address: a past version or era, and the base its changes are marked against ("since")
 function modelUrl(follow) {
@@ -518,7 +562,7 @@ async function expectedWaiting() {
   IntendedDrawers.waiting(parts);
   return `<div class="panel" style="margin-top:10px"><h3 style="margin-top:0">Expected, waiting for a model <span class="count">${parts.length}</span></h3>
     <div class="muted" style="font-size:12px;margin-bottom:6px">Declared in the Supervisor's chat; drawn as ghosts once there is a model to draw them beside.</div>
-    ${parts.map((x) => `<div class="bal" style="cursor:pointer" onclick="IntendedDrawers.openExpected('${esc(x.id)}')"><span class="im-ghostdot"></span><b>${esc(x.name || x.id)}</b> <span class="muted">${esc(x.part || "stock")} · ${x.state === "proposed" ? "unconfirmed" : "expected"}${(x.measure || {}).chosen ? "" : " · not measured"} · open for how to measure it</span></div>`).join("")}</div>`;
+    ${parts.map((x) => `<div class="bal" ${opens(`IntendedDrawers.openExpected('${esc(x.id)}')`)}><span class="im-ghostdot"></span><b>${esc(x.name || x.id)}</b> <span class="muted">${esc(x.part || "stock")} · ${x.state === "proposed" ? "unconfirmed" : "expected"}${(x.measure || {}).chosen ? "" : " · not measured"} · open for how to measure it</span></div>`).join("")}</div>`;
 }
 // how much there is to discover from: the window read, and how long the bus has been heard
 function windowNote(d, busSince) {
@@ -541,8 +585,8 @@ async function load() {
       $("diagram").innerHTML = `<div class="empty">${esc(d.error)}${windowNote(d, d.bus_since)}</div>` + waiting
         + (src ? `<div class="panel" style="margin-top:10px">${src}</div>` : "")
         + (lo && Object.keys(lo).length
-        ? `<div class="panel" style="margin-top:10px"><h3 style="margin-top:0">Left out <span class="count">${Object.keys(lo).length} of ${d.discovery.looked_at ?? "?"}</span></h3>`
-          + `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d.discovery))} A level is a stock when counters balance it.</div>${keptNote(d.discovery, lo)}${leftOut(lo)}</div>` : "");
+        ? `<div class="panel" style="margin-top:10px">${leftOutHead(d.discovery, lo).replace("<h3>", '<h3 style="margin-top:0">')}`
+          + `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d.discovery))} A level is a stock when counters balance it.</div>${keptNote(d.discovery, lo)}${leftOut(lo)}${unnamedBucket(d.discovery, lo)}</div>` : "");
       return;
     }
     MODEL = d.model; versionBar(); erasBar(); draw(); tables();

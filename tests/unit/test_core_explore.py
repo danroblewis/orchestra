@@ -71,3 +71,14 @@ def test_emitters_leave_out_instruments_the_host_announced_as_the_machines_page_
     assert started["in_range"] == 2 and [m for m, _ in started["machines"]] == ["baker/1"]
     on_page = {m["id"] for m in machines_view([{**e, "time": ts} for e in evs])["machines"]}
     assert "weather" not in on_page and "baker" in on_page
+
+
+def test_the_events_chart_ends_at_now_and_draws_no_bucket_in_the_future(tmp_path):
+    core = _core(tmp_path)
+    now = datetime.now(UTC).timestamp()
+    for k in range(5):
+        core.events.bus.append({"type": "order.baked", "source": "baker/1", "ts": datetime.fromtimestamp(now - 240 + 60 * k, UTC).isoformat()})
+    d = Explorer(core).events(1)
+    pts = d["volume"][0]["points"]
+    assert len(pts) <= 5 and pts[-1][0] <= time.time()
+    assert sum(v for _, v in pts) == 5
