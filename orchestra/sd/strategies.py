@@ -284,7 +284,7 @@ def _discover_with(dump, *, start: float, end: float, step: float, strategy: str
         parts.append((ids, req, run_g, known_g, inputs_g))
     try:
         answers = run_jobs(jobs, deadline)
-    except Late as e:
+    except Late as e:                          # a Stopped is no failure of the strategy: it propagates
         base.discovery.update(strategy=strategy, sdlab=f"{e}: conservation's fits are kept", handed=[st.id for st in given])
         return base
     sd_flows, residual_of, chosen, methods, unexplained, across = [], {}, [], [], {}, []

@@ -5,6 +5,7 @@ closed list of page controls, web/intended.py). Every route, a plugin's too, is 
 
 from __future__ import annotations
 
+import contextlib
 import os
 import threading
 import time
@@ -34,10 +35,19 @@ from .system import install as install_system
 from .traffic import merge as merge_counted
 
 
+@contextlib.asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """At shutdown, kill a rediscovery's strategy child (``sd.bounded``): it runs in a session of
+    its own, so stopping the server would otherwise leave it running."""
+    yield
+    from ..sd.bounded import kill_running
+    kill_running()
+
+
 def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     """The app, as served on ``host``: whether it asks for the token follows ``[web] auth`` and
     whether ``host`` is a loopback address (web/auth.py)."""
-    app = FastAPI(title="Orchestra")
+    app = FastAPI(title="Orchestra", lifespan=_lifespan)
     auth_on = enabled(project, host)
     events = Events.for_project(project)
     core = CoreProbe(project, events)

@@ -317,6 +317,7 @@ class Host:
         """Rediscover the model every interval (``orchestra.sd.rediscover``), then announce what is
         due about it."""
         from .sd import extra
+        from .sd.bounded import Stopped
         from .sd.rediscover import Busy, rediscover
 
         if not extra.installed():
@@ -332,6 +333,8 @@ class Host:
                 took = time.monotonic() - began
                 wait = pace(every, took)
                 self.log(discovery_line(r, took, every))
+                if self._stop.is_set():               # stopping: announce, declare and judge nothing more
+                    return
                 try:
                     self._announce(r)
                 except Exception as e:  # noqa: BLE001 - the next discovery tries again
@@ -341,6 +344,9 @@ class Host:
                     self._judge(r.at)
                 except Exception as e:  # noqa: BLE001 - the next discovery tries again
                     self.log(f"predictions: {type(e).__name__}: {e}")
+            except Stopped:                           # the host stopped mid-discovery: nothing was saved
+                self.log("discovery: stopped mid-run; nothing saved")
+                return
             except Busy:                              # the CLI or the web page is discovering: theirs will do
                 self.log("discovery: skipped, another process is discovering this project")
             except ImportError as e:
@@ -482,9 +488,9 @@ class Host:
             pass
         finally:
             self._stop.set()
-            from .sd.bounded import kill_running
-            kill_running()                            # a strategy mid-discovery runs in a session of its own
             if discovering is not None:
+                from .sd.bounded import kill_running
+                kill_running()                        # a strategy mid-discovery runs in a session of its own
                 discovering.join(timeout=5)
             if launching is not None:
                 launching.join()
