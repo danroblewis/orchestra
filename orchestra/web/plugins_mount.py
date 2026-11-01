@@ -14,6 +14,16 @@ from ..config import Project
 from .pages import render
 
 
+def _part(errors: list[dict], plugin: str, what: str, add) -> bool:
+    """Add one part of a plugin; on failure report it and leave only that part out."""
+    try:
+        add()
+        return True
+    except Exception as e:  # noqa: BLE001 - a broken plugin is reported, never fatal (rule 8)
+        errors.append({"plugin": plugin, "error": f"{what} left out: {type(e).__name__}: {e}"})
+        return False
+
+
 def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
     """Pages, static files and API routes of the installed plugins (orchestra/plugins.py).
     Adds their every-page stylesheets to ``stylesheets``; returns what adds their declared
@@ -30,20 +40,27 @@ def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
                     into.append(f"/plugins/{p.name}/static/{f}")
                 else:
                     errors.append({"plugin": p.name, "error": f"{what} {f} is not a file in its static directory; left out"})
+        # each part on its own: a broken one is left out and reported, never fatal (plugins.py),
+        # so the core's pages are served whatever a plugin declares
         if p.static:
-            app.mount(f"/plugins/{p.name}/static", StaticFiles(directory=str(p.static)), name=f"plugin-{p.name}")
+            if Path(p.static).is_dir():
+                _part(errors, p.name, "static files", lambda p=p: app.mount(
+                    f"/plugins/{p.name}/static", StaticFiles(directory=str(p.static)), name=f"plugin-{p.name}"))
+            else:
+                errors.append({"plugin": p.name, "error": f"static directory {p.static} is not a directory; left out"})
         if p.router is not None:
-            app.include_router(p.router, prefix=f"/api/plugins/{p.name}")
+            _part(errors, p.name, "router", lambda p=p: app.include_router(p.router, prefix=f"/api/plugins/{p.name}"))
         for pg in p.pages:
             if pg.path in taken:
                 errors.append({"plugin": p.name, "error": f"page {pg.path} is already served"})
                 continue
-            taken.add(pg.path)
-            pages.append({"plugin": p.name, "path": pg.path, "title": pg.title})
 
             def serve(f=pg.file) -> str:
                 return render(Path(f), stylesheets)
-            app.add_api_route(pg.path, serve, methods=["GET"], response_class=HTMLResponse, include_in_schema=False)
+            if _part(errors, p.name, f"page {pg.path}", lambda pg=pg, serve=serve: app.add_api_route(
+                    pg.path, serve, methods=["GET"], response_class=HTMLResponse, include_in_schema=False)):
+                taken.add(pg.path)
+                pages.append({"plugin": p.name, "path": pg.path, "title": pg.title})
 
     @app.get("/api/plugins")
     def plugin_list() -> dict:

@@ -115,3 +115,17 @@ def test_a_declared_kind_of_none_is_unknown(project, monkeypatch):
     assert by["baker"]["kind"] == "program" and by["baker"]["package"] == "workflows"        # a later one fills the empty kind
     declare(fresh := [])
     assert {m["id"]: m["kind"] for m in fresh} == {"reviewer": None, "baker": "program"}
+
+
+def test_a_plugin_with_no_static_directory_and_a_router_that_is_not_one_leaves_the_core_served(project, tmp_path, monkeypatch):
+    def careless(project):
+        return plugins.Plugin("careless", static=tmp_path / "nowhere", router=object(), scripts=["x.js"])
+    monkeypatch.setattr(plugins, "entry_points", lambda group: [EntryPoint("careless", careless)])
+    from orchestra.web.app import create_app
+    from orchestra.web.auth import bearer
+    c = TestClient(create_app(project), headers=bearer(project))
+    assert c.get("/api/core").status_code == 200
+    errors = [e["error"] for e in c.get("/api/plugins").json()["errors"] if e["plugin"] == "careless"]
+    assert any("static directory" in e and "not a directory" in e for e in errors), errors
+    assert any(e.startswith("router left out") for e in errors), errors
+    assert any("x.js" in e for e in errors), errors
