@@ -95,7 +95,7 @@ Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 
 } });
 
 // ---- Host: the Core services in a line, and the machine Orchestra runs on
-Orchestra.panels.register({ id: "host", title: "Host", size: { w: 7, h: 9 }, mount(body, ui) {
+Orchestra.panels.register({ id: "host", title: "Host", size: { w: 7, h: 9 }, phone: "last", mount(body, ui) {
   body.innerHTML = `<a class="panel corestrip" id="corestrip" href="/core" title="Orchestra's fundamental services: the Core page">Core …</a>
     <div class="panel" style="margin-bottom:0">
       <div class="lbl-row"><span>GPU <select id="gpu-range" class="range"><option value="60">1m</option><option value="240" selected>4m</option><option value="900">15m</option><option value="3600">1h</option></select></span><span id="gpu-lbl" class="num">—</span></div>
@@ -164,6 +164,7 @@ function renderGpu(d) {
 
 </script>
 <script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
+<script src="/static/panel-order.js?v={{v}}"></script>
 <script src="/static/dashboard.js?v={{v}}"></script>
 </body>
 </html>
