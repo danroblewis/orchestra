@@ -106,9 +106,19 @@ function seriesTable(d, now, name) {
   if (!d.series.length) return `<div class="muted">no series written in the last ${Math.round(d.window_s / 60)} minutes</div>`;
   const refs = d.series.map((r) => ({ name: r.name, labels: r.labels, title: r.title }));
   const key = (r) => `${r.name}{${Object.entries(r.labels).map(([k, v]) => `${k}="${v}"`).join(",")}}`;
-  const rows = d.series.map((r, i) => { const n = SDGraph.seriesName(refs[i], views, name);
+  const row = (r, i) => { const n = SDGraph.seriesName(refs[i], views, name);
     return `<tr title="${esc(key(r))}"><td><b>${esc(n.name)}</b>${n.family ? ` <span class="muted">${esc(n.family)}</span>` : ""}${n.about ? `<div class="muted about">${esc(n.about)}</div>` : ""}</td>
-      <td class="num" style="text-align:right">${esc(String(+r.value.toFixed(3)))}</td><td class="muted" style="white-space:nowrap">${ago(now - r.at)} ago</td></tr>`; }).join("");
+      <td class="num" style="text-align:right">${esc(String(+r.value.toFixed(3)))}</td><td class="muted" style="white-space:nowrap">${ago(now - r.at)} ago</td></tr>`; };
+  // the series of one name that read 0 (the empty piles), when there are FOLD of them or more: one line,
+  // opened on a click: "12 × workflow pile items at 0"
+  const FOLD = 3, zeros = {};
+  d.series.forEach((r, i) => { if (+r.value === 0) (zeros[r.name] = zeros[r.name] || []).push(i); });
+  const folded = new Set(Object.values(zeros).filter((is) => is.length >= FOLD).flat());
+  const rows = d.series.map((r, i) => {
+    if (!folded.has(i)) return row(r, i);
+    const is = zeros[r.name]; if (is[0] !== i) return "";
+    return `<tr><td colspan="3"><details class="zeros"><summary class="muted">${is.length} × ${esc(r.name.replace(/_/g, " "))} at 0</summary><table class="itable">${is.map((j) => row(d.series[j], j)).join("")}</table></details></td></tr>`;
+  }).join("");
   return `<table class="itable series"><tr><th>series</th><th style="text-align:right">now</th><th>written</th></tr>${rows}</table>`
     + (d.more ? `<div class="muted">and ${d.more} more</div>` : "");
 }
