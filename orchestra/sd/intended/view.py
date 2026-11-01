@@ -141,4 +141,6 @@ def dynamics_block(intended, model=None, since=None, *, version: int | None = No
             "expected": entries, "marks": marks, "removed": removed, "changes": changes, "came_and_went": went,
             "ignored": ign, "settled": sum(1 for p in ("stock", "flow") for k, s in status[p].items()
                                            if s["status"] == "settled" and k in shown.of(p)),
-            "unsettled": len(unsettled), "stabilised": not unsettled, "targets": targets, "missing": facts.missing}
+            "unsettled": len(unsettled), "stabilised": not unsettled, "targets": targets,
+            "predicted": [{**p, "id": shown.flows.get(p["key"]) if p["key"] else None} for p in diffs.predicted(layer, shown)],
+            "missing": facts.missing}

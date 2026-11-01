@@ -7,6 +7,8 @@ that must not be broken without updating the spec and saying so in the commit.
 
 These replaced the old task system's invariants on 2026-10-25, when the ticket
 tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
+Rules 2, 3, 4, 5, 6, 7 and 9 were amended on 2026-11-01 for the intended model
+(`docs/proposals/intended-model.md` §8).
 
 1. **Orchestra knows no tickets and no tasks, and runs no AI.** It has an
    event bus, a metrics store, a system dynamics model, a bootstrap host (with
@@ -18,7 +20,9 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    a domain concept (ticket, task, build, agent) to the core.
 2. **Machines are outside Orchestra, and known by their events.** A machine
    does actual work: a program, an AI agent (a universal machine), a person.
-   System dynamics has no machines, and a machine's relationship to the
+   The discovered model has no machines;
+   the declared layer stored beside it (the intended model) names machines, never in a stock, flow
+   or equation. A machine's relationship to the
    model's flows is not known: it may influence no flow, one or several, and
    several machines may contribute to one flow. Relating actual work to the
    model, by inference, is what Orchestra is for. Orchestra knows a machine
@@ -36,7 +40,12 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    package it belongs to (the rest of the announcement is passed on to that
    package's card, unread), and the machines a plugin declares
    (`Plugin.machines`): placeholders that only fill in machines not seen yet,
-   never override what is observed, and say nothing about flows. A log is
+   never override what is observed, and say nothing about flows. The owner may declare machines
+   (the intended model, `orchestra/sd/intended/`), through a plugin or by confirming a proposal.
+   A declaration persists until retracted. A declared machine is shown as declared, and as heard
+   only once its `source` is on the bus; its declared envelope and `spec` are shown as the
+   declaration, apart from what is observed, and never override what is observed, never make a
+   machine exist in the observed layer, and say nothing about flows. A log is
    read only within the project's repository or state directory
    (`web/machine_logs.py`). The launcher (`orchestra/launcher.py`) starts the
    commands a project (`[[machines]]` in `orchestra.toml`) or a plugin
@@ -54,20 +63,27 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    writes it; Orchestra reads the envelope and never the `data` payload, which
    belongs to the machines that use it. The exceptions are Orchestra's own
    event types that machines publish to it: `orchestra.machine.started` (rule
-   2's announcement) and `orchestra.prediction.made` (a machine's prediction of
+   2's announcement), `orchestra.prediction.made` (a machine's prediction of
    a change's effect, which Orchestra records and judges; the owner,
-   2026-10-27). Counted traffic is never turned into events: no envelope is made
+   2026-10-27) and `orchestra.intent.requested` (the owner's request from a
+   page, published as `owner`, rule 9). Counted traffic is never turned into events: no envelope is made
    from a count.
 4. **There is one system and one model.** Never split topics, models or views
    per package or per domain. Packages and metadata label; they never
    separate. The model changes by new versions; past versions stay readable.
+   The model's versions are of two kinds: discovered (`vN`: stocks, flows,
+   equations) and declared (`dN`: the intended model); a change to one never
+   makes a version of the other, and a comparison names one of each.
 5. **State lives in `~/.orchestrator/<key>/`, except the event log and the
    metrics, which live in the configured bus and metrics store, and what every
    project on the machine shares about another store it reads (its request
    rate and daily count, `~/.orchestrator/stores/<store>/`, `sources/limits.py`).** Events go
    through `orchestra.events.Events` over an `orchestra.bus.EventBus`; metrics
    through `orchestra.metrics.MetricsStore`; the model through
-   `orchestra.sd.store.ModelStore`; process records through
+   `orchestra.sd.store.ModelStore`; the intended model through
+   `ModelStore.intended()` (`project.intended`), in `<state>/model/intended/`,
+   written only by the host and the web server; nothing else opens anything
+   under it; process records through
    `orchestra.runtime`. Nothing else touches a backend or those files
    directly. Orchestra's streams are named `orchestra.<key>.events` and never
    share a topic with anyone else's. Other stores (`[[sources]]`) are read
@@ -80,8 +96,15 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    the flow's counter); several machines may be hypotheses for one flow.
    Nothing declares the association, not configuration and not a plugin, and
    it never changes a flow's equation or the model's stocks and flows.
+   A machine's draft expected effect is an unpublished prediction, not an
+   association; the expected flows drawn from it carry no machine.
 7. **Stocks are discovered, not configured; measurements are not machines.**
-   Metrics are objective measurements of the running system, kept apart from
+   A stock, effect or flow may be declared, and a discovered one marked
+   expected (the intended model): an expectation drawn beside the discovered
+   model, never a part of it. A declaration binds no series, is not (yet)
+   handed to discovery, changes no equation, and is matched to what discovery
+   finds only by the `link` op; marks derived from labels (candidates) are
+   display only. Metrics are objective measurements of the running system, kept apart from
    the machines whose work we hope influences them, so they can test what we
    believe. Instruments (`[[collect]]`, `[[scrape]]`, `[[sources]]`, a
    plugin's `Plugin.collectors`: collectors, scrapes, sources, detectors)
@@ -104,7 +127,13 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
 9. **Humans talk only to the Supervisor.** The web UI and CLI are read-only
    for humans, except for observations: rediscovering the model (the Dynamics
    page's button, `orchestra sd discover`) re-reads the metrics and may save a
-   model version, and changes no machine. Any human path that changes the
+   model version, and changes no machine; and a closed list of intended-model
+   page controls that carry no values: `expect`, `unexpect`, `ignore`, and
+   `confirm` and `discard` on a stock, effect or flow. Each records a
+   declaration with its provenance and changes no machine, no configuration
+   and no discovered version. A machine's `confirm`, `discard` and kind switch
+   are requests: published as `orchestra.intent.requested` from `owner`,
+   changing nothing until the Supervisor acts. Any human path that changes the
    system belongs to a plugin (the Supervisor in `~/orchestra-agents`; the
    task plugin's operator controls, `docs/roadmap/decisions.md` D1), never to
    this repository.

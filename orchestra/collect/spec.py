@@ -9,6 +9,9 @@ URL), and those the plugins declare (``Plugin.collectors``).
                                      # (a first word python or python3 is the Python Orchestra runs in)
     every = "60s"                    # how often (default 60 s)
     timeout = "20s"                  # how long one round may take (default 10 s, never more than every)
+    simulated = true                 # a placeholder: every point labelled simulated="true" (sd.simulated)
+    draft = true                     # an option being tried: points labelled draft="true", never read by discovery
+    expires = "2026-11-08T00:00:00Z" # ... and no round after this time (RFC 3339, or unix seconds)
 
     [[scrape]]
     name = "app"
@@ -43,6 +46,12 @@ class Collector:
     every_s: float = EVERY_S
     timeout_s: float = TIMEOUT_S
     owner: str = "project"     # "project", or the plugin that declared it
+    simulated: bool = False    # a placeholder's: its points are labelled simulated="true" (sd.simulated)
+    draft: bool = False        # an option being tried: its points are labelled draft="true" (sd.simulated)
+    expires: float | None = None   # a draft's: no round after this time (unix seconds)
+
+    def expired(self, now: float) -> bool:
+        return self.draft and self.expires is not None and now >= self.expires
 
     def __post_init__(self) -> None:
         if isinstance(self.target, list):      # a TOML array: kept as a tuple, so the collector stays hashable
@@ -121,8 +130,36 @@ def _one(kind: str, entry: object) -> Collector:
         raise ConfigError("is not a table")
     every = parse_duration(entry.get("every"), EVERY_S)
     timeout = parse_duration(entry.get("timeout"), TIMEOUT_S)
+    sim = entry.get("simulated", False)
+    if not isinstance(sim, bool):
+        raise ConfigError(f"simulated must be true or false, not {sim!r}")
+    draft = entry.get("draft", False)
+    if not isinstance(draft, bool):
+        raise ConfigError(f"draft must be true or false, not {draft!r}")
+    expires = _expires(entry.get("expires"))
+    if expires is not None and not draft:
+        raise ConfigError("expires goes with draft = true")
     return Collector(entry.get("name"), kind, entry.get("command" if kind == "collect" else "url"), every,
-                     min(timeout, every) if timeout > 0 else timeout)
+                     min(timeout, every) if timeout > 0 else timeout, simulated=sim, draft=draft, expires=expires)
+
+
+def _expires(v) -> float | None:
+    """A draft's expiry: unix seconds, an RFC 3339 time (a TOML datetime too), or none."""
+    from datetime import UTC, datetime
+
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        raise ConfigError(f"expires must be a time, not {v!r}")
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, datetime):
+        return (v if v.tzinfo else v.replace(tzinfo=UTC)).timestamp()
+    try:
+        d = datetime.fromisoformat(str(v))
+    except ValueError:
+        raise ConfigError(f"expires must be an RFC 3339 time or unix seconds, not {v!r}") from None
+    return (d if d.tzinfo else d.replace(tzinfo=UTC)).timestamp()
 
 
 def from_toml(raw: dict, plugins: Iterable[Collector] = ()) -> tuple[list[Collector], list[str]]:

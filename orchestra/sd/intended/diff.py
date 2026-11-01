@@ -46,6 +46,23 @@ def flow_matches(el: dict, layer: dict, keys: Keys) -> tuple[str | None, list[st
     return found[0], []
 
 
+def predicted(layer: dict, keys: Keys) -> list[dict]:
+    """The flows the declared machines' expected effects predict to appear (``{"from", "to",
+    "appears": true}``), drawn as expected ghost flows: each with its ends, whether a flow between
+    them is in the model, and no machine (a draft prediction is not an association, rule 6 as
+    amended). The same ends predicted twice are one entry."""
+    out: dict[tuple, dict] = {}
+    for m in layer["machines"].values():
+        for e in (m.get("expected_effect") or {}).get("edits") or []:
+            if not e.get("appears") or ("from" not in e and "to" not in e):
+                continue
+            row = {"from": e.get("from"), "to": e.get("to")}
+            key, cands = flow_matches(row, layer, keys)
+            out.setdefault((row["from"], row["to"]), {**row, "key": key, "present": key is not None, "candidates": cands,
+                                                     "state": "predicted"})
+    return list(out.values())
+
+
 def input_keys(model) -> set[str]:
     """The series an equation reads as measured inputs: an effect may be found only as one."""
     out = set()

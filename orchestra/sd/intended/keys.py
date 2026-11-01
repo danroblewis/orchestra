@@ -16,7 +16,7 @@ from ..discover import NOT_IDENTITY
 from ..prior import rests_on_prior
 from ..series import series_key
 
-LEFT_OUT = NOT_IDENTITY | {"simulated"}
+LEFT_OUT = NOT_IDENTITY | {"simulated", "draft"}
 OUTSIDE = "outside"
 
 

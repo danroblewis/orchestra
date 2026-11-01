@@ -9,7 +9,7 @@ Machines pages read of the declared layer, and the closed list of page controls.
 | ``GET /api/intended/diff?d=&v=&since=`` | the comparison of ``dN`` with ``vM`` against ``vK`` (the Dynamics block) |
 | ``GET /api/intended/design`` | the plugin's summary (``design()``) |
 | ``GET /api/intended/script?instrument=`` | an option's script and its ``[[collect]]`` entry, read only inside the repository or the state directory |
-| ``POST /api/intended/control`` | an observation: ``expect``, ``unexpect``, ``ignore``, ``unignore``, and ``confirm`` / ``discard`` on a stock, effect or flow |
+| ``POST /api/intended/control`` | an observation: ``expect``, ``unexpect``, ``ignore``, and ``confirm`` / ``discard`` on a stock, effect or flow |
 | ``POST /api/intended/request`` | a request: ``confirm``, ``discard``, ``switch_kind`` on a machine or an attachment, published as ``orchestra.intent.requested`` from ``owner`` |
 
 An observation records a declaration with ``via: page`` provenance and changes no machine, no
@@ -30,9 +30,8 @@ from ..sd.intended.view import dynamics_block
 from ..sd.model import Model
 from ..sd.store import ModelStore
 
-OBSERVATIONS = {"expect": "expect", "unexpect": "unexpect", "ignore": "ignore", "unignore": "unignore",
-                "confirm": "confirm", "discard": "discard"}
-MARKS = ("expect", "unexpect", "ignore", "unignore")
+OBSERVATIONS = ("expect", "unexpect", "ignore", "confirm", "discard")      # rule 9 as amended: the closed list
+MARKS = ("expect", "unexpect", "ignore")
 LEVELS = ("stock", "effect", "flow")
 BODY = {"control", "part", "id", "key", "change", "from", "page"}
 

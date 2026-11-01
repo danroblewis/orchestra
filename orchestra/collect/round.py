@@ -34,14 +34,17 @@ class Round:
     error: str | None = None                                      # why the round wrote nothing
 
 
-OWN = ("project", "instrument")     # the labels Orchestra sets on every collected point
+OWN = ("project", "instrument", "simulated", "draft")     # the labels Orchestra sets on collected points
 
 
-def labelled(labels: dict[str, str], project: str, instrument: str) -> dict[str, str]:
-    """The text's labels, with the project and the instrument added; a label of the text that
-    either would replace is kept as ``exported_<name>``."""
+def labelled(labels: dict[str, str], project: str, instrument: str, simulated: bool = False,
+             draft: bool = False) -> dict[str, str]:
+    """The text's labels, with the project and the instrument added, and ``simulated="true"`` for
+    a placeholder's and ``draft="true"`` for an option being tried (``sd.simulated``); a label of the text that these would replace is kept as
+    ``exported_<name>``."""
     out = {(f"exported_{k}" if k in OWN else k): v for k, v in labels.items()}
-    return {**out, "project": project, "instrument": instrument}
+    return {**out, "project": project, "instrument": instrument, **({"simulated": "true"} if simulated else {}),
+            **({"draft": "true"} if draft else {})}
 
 
 def points_of(c: Collector, text: str, project: str, now: float) -> Round:
@@ -54,7 +57,7 @@ def points_of(c: Collector, text: str, project: str, now: float) -> Round:
                 out.refused.append(s.name)
             continue
         ts = s.ts_ms / 1000 if s.ts_ms is not None else now
-        points.append(Point(s.name, s.value, ts, labelled(s.labels, project, c.name)))
+        points.append(Point(s.name, s.value, ts, labelled(s.labels, project, c.name, c.simulated, c.draft)))
     out.points = collapse(points)
     return out
 

@@ -20,6 +20,9 @@ In an empty Orchestra it does little, on purpose:
   the strategy was stopped at its deadline (``discovery_line``). After each discovery it announces what is due about the model (``orchestra.sd.announce``:
   ``orchestra.model.changed``, ``orchestra.model.diverged``, ``orchestra.model.returned``,
   ``orchestra.model.stalled``, ``orchestra.model.resumed``);
+- it announces each accepted call to the intended model's declared layer once
+  (``orchestra.intent.changed``, ``orchestra.sd.intended``), following its journal, and after each
+  discovery writes the current comparison's structural diff to the cache;
 - it records the predictions machines make of their changes as it follows the bus
   (``orchestra.prediction.made``, ``orchestra.sd.predictions``), and after each discovery judges
   those that are due and publishes each verdict (``orchestra.prediction.judged``,
@@ -144,6 +147,7 @@ class Host:
                 eras_at = time.time()
                 self._eras()
                 self._quiet(quiet)
+                self._intent()
             self._stop.wait(self.collect_every)
             try:
                 new, offset = self.events.read(offset, limit=100_000)
@@ -183,6 +187,21 @@ class Host:
                          + (f" ({p['why']})" if p.get("why") else ""))
         except Exception as e:  # noqa: BLE001 - the next look retries
             self.log(f"predictions: {type(e).__name__}: {e}")
+
+    def _intent(self, after_discovery: bool = False) -> None:
+        """Announce each accepted call to the declared layer once (``orchestra.intent.changed``,
+        ``sd.intended.announce``), also those the web server wrote while the host was down; after
+        a discovery, write the current structural diff to the cache (``sd.intended.diff``)."""
+        from .sd.intended.announce import announce
+        from .sd.store import ModelStore
+        intended = ModelStore.for_state(self.project.state_dir).intended()
+        try:
+            for seq in announce(intended, self.events.publish):
+                self.log(f"intended model: d{seq} announced")
+            if after_discovery and intended.current_version():
+                intended.diff(limit_s=0.0, hold=self.project.config.announce_hold)
+        except Exception as e:  # noqa: BLE001 - the next look retries
+            self.log(f"intended model: {type(e).__name__}: {e}")
 
     def _judge(self, at: float) -> None:
         """Judge the predictions that are due (``orchestra.sd.judge``) and publish the verdicts."""
@@ -241,6 +260,7 @@ class Host:
                     self._announce(r)
                 except Exception as e:  # noqa: BLE001 - the next discovery tries again
                     self.log(f"announce: {type(e).__name__}: {e}")
+                self._intent(after_discovery=True)
                 try:
                     self._judge(r.at)
                 except Exception as e:  # noqa: BLE001 - the next discovery tries again

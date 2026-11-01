@@ -1,5 +1,6 @@
 """The web UI: Dashboard, Machines, Instruments, Dynamics, Experiments and Core. Read-only for humans: nothing here
-changes the system (AGENTS.md rule 9). Every route, a plugin's too, is behind the project's web token
+changes the system (AGENTS.md rule 9) beyond observations (rediscovering, and the intended model's
+closed list of page controls, web/intended.py). Every route, a plugin's too, is behind the project's web token
 (web/auth.py), which the app's outermost middleware checks."""
 
 from __future__ import annotations
