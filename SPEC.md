@@ -475,7 +475,14 @@ Conservation (`sd/discover.py`):
    prefix aside, and the same labels): two warehouses drained in proportion to one order stream
    change in step and are two stocks (`levels_match`): the machine whose counters make the balance keeps it, the other is recorded as its
    twin (never two backlogs a source declared: two queues one consumer acknowledges at once change
-   alike and are still two). A level that only fills is a stock when its balance is exact, whatever feeds it (a
+   alike and are still two). A flag balanced exactly whose items are another stock's is that
+   stock's capacity of one, not a second stock (`sd/capacity.py`: the head chef busy, inspections
+   started less inspections done, inside the orders inspecting): it never holds more than the
+   stock (97% of steps), its outflows count the same events as some of the stock's, and what fills
+   it is no stock's flow but the stock's own inflow. It is left out, with why, and shown in the
+   stock's drawer (capacity 1, the share of time busy, its counters); a flag fed by another
+   stock's flow (a shelf of 0 and 1 the inspections passed fill, the state after a stock) stays a
+   stock. A level that only fills is a stock when its balance is exact, whatever feeds it (a
    terminal state, where other stocks' outflows end); one the system's flows explain only
    roughly is a tally of activity unless counters no ordinary stock uses balance it.
 

@@ -118,6 +118,11 @@ const Live = (() => {
     if ((ev.twins || []).length) {
       rows.push(`<div>why one stock</div><div>one stock, measured ${ev.twins.length + 1} ways: ${esc(s.series ? keyOf(s.series) : s.id)} (kept)${ev.twins.map((t) => `, ${esc(t.series)} <span class="muted">(changes equal in ${Math.round(100 * (t.equal_steps || 0))}% of steps${t.change_correlation != null ? `, correlate by ${(+t.change_correlation).toFixed(2)}` : ""})</span>`).join("")}</div>`);
     }
+    // a flag whose items are this stock's (sd/capacity.py): a capacity of one inside it, not a second stock
+    for (const v of ev.views || []) {
+      const u = v.utilisation != null ? `, busy ${Math.round(100 * v.utilisation)}% of the time` : "";
+      rows.push(`<div>capacity one</div><div>${esc(v.series)}: the same events as ${esc(stockName(s.id))}, a capacity-of-one view${u}. It is 1 while one of these items is in it (started by ${esc((v.starts || []).join(", "))}), never holds more than this stock <span class="muted">(${Math.round(100 * (v.contained_steps || 0))}% of steps)</span>, and its items leave as this stock's do (${esc((v.ends_as || []).join(", "))}): counted once, here, not as a second stock.</div>`);
+    }
     return rows.join("");
   }
   // the instruments that wrote a hidden stock's balance counters: what its level is implied from

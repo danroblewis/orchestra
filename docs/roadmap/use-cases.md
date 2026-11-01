@@ -93,8 +93,10 @@ Run: clear the bakery's runtime state (`run/board.json`, `run/yelp.json`, `run/s
 stock; a run with `TAKERS=1` is a separate case for the line.)
 
 Expected stocks: orders waiting, baking, inspecting, on the shelf, accepting; customers waiting.
-Expected inputs: the Yelp rating, read by the arrivals flow (it is a mean of recent reviews, not
-a conserved quantity, so it is an input until the model has auxiliaries).
+Expected inputs: the Yelp rating, read by the arrivals flow directly or through
+`customer_demand_per_min` (it is a mean of recent reviews, not a conserved quantity, so it is an
+input until the model has auxiliaries; the bakery publishes its own demand formula, the rating
+squared, as that gauge (D15), and discovery rightly reads the nearer input: U1, 2026-11-01).
 Expected flows: placed, assigned, baked (baking → inspecting), inspection passed (inspecting →
 on shelf) and failed, picked up, accepted, rejected (accepting → waiting, the board's own
 counter), refunded, lease expired, cancelled by state, once each has at least five events in the
@@ -106,6 +108,14 @@ an SD Lab strategy's job, not conservation's).
 Forbidden: the weather series; `*_busy` flags as inputs or drivers; takers or bakers free as a
 stock in the orders network; one flow per instance; an unmeasured flow on an exactly balanced
 stock; duplicate flow ids; the same level as two stocks.
+The busy flags are never stocks either: the head chef's `bakery_chef_busy` is balanced exactly by
+inspections started less inspections done when the head chef's writes line up with the board's
+(97.5% of steps on 2026-11-01 09:11, 100% in U1's run, under 97% in rerun 2: the flag check's
+threshold, at its edge), but its items are the orders inspecting. A flag that never holds more
+than another stock, whose items leave by that stock's outflows and which no stock's flow fills is
+that stock's capacity of one (`sd/capacity.py`): left out, and shown in the orders inspecting's
+drawer as capacity 1 with the share of time the chef is busy. The single server is a parameter of
+the one stock, not a second stock (U5).
 
 Not expected after the 2026-10-26 runs (judged "expectation wrong" or "the bakery's own"):
 the expo's bake and pass queues (the board's states seen again from the dispatcher, with no
