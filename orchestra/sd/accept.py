@@ -95,7 +95,7 @@ def accepted(found: list, counters: list, barred: dict, masks: dict, provenance:
     out, identified, built, refused = [], {}, set(), {}
     for s, terms, r2, exact in found:
         if constructed(s, terms, provenance):
-            if label := no_place(s):
+            if label := no_place(s, provenance):
                 left_out[s.key] = (f"a count of reporters split by {label}, balanced by its own turnover: exact by construction, so "
                                    f"no evidence, and {label} is what happened to what they reported, not a place they are held")
                 continue

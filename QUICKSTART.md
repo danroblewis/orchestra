@@ -15,13 +15,13 @@ You need:
 ## 1. Install
 
 ```bash
-uv tool install 'orchestra[sd,tasking,agents,bridges,desk,outbox] @ git+https://github.com/danroblewis/orchestra@main'
+uv tool install 'orchestra[sd,tasking,agents,bridges,desk,outbox,workflows] @ git+https://github.com/danroblewis/orchestra@main'
 uv tool update-shell
 ```
 
-Open a new terminal. `orchestra --help` should list `tasks`, `agents`, `bridges`, `desk` and `outbox`.
+Open a new terminal. `orchestra --help` should list `tasks`, `agents`, `bridges`, `desk`, `outbox` and `workflows`.
 
-`sd` is the model and its discovery. Each other name is a plugin. This installs every plugin. Bridges, desk and outbox stay off until you ask the Supervisor to set them up (see **Plugins** below).
+`sd` is the model and its discovery. Each other name is a plugin. This installs every plugin. Bridges, desk, outbox and workflows stay off until you ask the Supervisor to set them up (see **Plugins** below).
 
 ## 2. Configure
 
@@ -118,7 +118,7 @@ Or ask the Supervisor: "measure the number of open todos every minute". It chang
 
 ## Plugins
 
-All five are installed by step 1. Tasking and agents run from the start. The others do nothing until you ask the Supervisor to set them up: it reads each plugin's guide and writes the configuration.
+All six are installed by step 1. Tasking and agents run from the start. The others do nothing until you ask the Supervisor to set them up: it reads each plugin's guide and writes the configuration.
 
 | Plugin | What it adds | Ask the Supervisor, for example |
 |---|---|---|
@@ -127,6 +127,7 @@ All five are installed by step 1. Tasking and agents run from the start. The oth
 | bridges | GitHub, Jira and Slack activity on the bus | "Bring in the pull requests from my GitHub repository" |
 | desk | Standing conditions, such as "tests pass on main", and a ledger of what you asked for | "Keep the tests passing on main" |
 | outbox | Messages and actions on your behalf, each one approved by you | "Open GitHub issues for problems you find, after I approve them" |
+| workflows | Your team's own workflows (review, release candidates, rollouts) as items, piles and offers to machines; being built | "Track our pull request reviews as a workflow" |
 
 GitHub uses your `gh` login. Jira and Slack need a token you create; the Supervisor tells you which file to save it in. Tokens never go in `orchestra.toml`. Outbox drafts wait on the **Outbox** page until you approve them.
 

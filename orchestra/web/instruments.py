@@ -3,8 +3,10 @@
 An instrument (``[[collect]]``, ``[[scrape]]`` or ``[[sources]]``) measures the running system and
 never acts on it, so it is not a machine (AGENTS.md rule 7). For each one: its name, what kind it
 is (a script, a URL, a source), its target, how often it is read, when it last wrote and how many
-points, its failures and last error, and its log. All of it is read from files, never by running
-or querying an instrument:
+points, its failures and last error, its log, and its flags: ``simulated`` (a placeholder's
+numbers), ``draft`` (an option being tried, left out of discovery) and ``expires`` (unix seconds,
+when its plugin removes it; null). All of it is read from files, never by running or querying an
+instrument:
 
 - a script or a URL: the runtime record's ``instruments`` (written by the host that launches,
   ``orchestra.collect.runner``), or, while no host runs, the entries ``orchestra.toml`` declares
@@ -30,7 +32,8 @@ def _declared(project) -> tuple[list[dict], list[str]]:
     except (OSError, ValueError, ConfigError) as e:
         return [], [f"cannot read the configuration: {e}"]
     found, errors = from_toml(raw)
-    return [{"name": c.name, "kind": c.what, "target": c.shown, "every_s": c.every_s, "owner": c.owner} for c in found], errors
+    return [{"name": c.name, "kind": c.what, "target": c.shown, "every_s": c.every_s, "owner": c.owner, **c.flags()}
+            for c in found], errors
 
 
 def _sources(project, discovery: dict | None) -> tuple[list[dict], list[str]]:
@@ -56,7 +59,8 @@ def instruments_view(project, discovery: dict | None = None) -> dict:
     recorded = record.get("instruments") or {}
     declared, errors = _declared(project)
     if running and recorded:
-        collectors = [{"name": n, **r, "running": True} for n, r in recorded.items()]
+        unflagged = {"simulated": False, "draft": False, "expires": None}      # a record written before the flags
+        collectors = [{"name": n, **unflagged, **r, "running": True} for n, r in recorded.items()]
     else:
         last = {n: r for n, r in recorded.items()}
         collectors = [{**last.get(d["name"], {}), **d, "running": False} for d in declared]

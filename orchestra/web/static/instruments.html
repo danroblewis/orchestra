@@ -13,6 +13,8 @@
   .itable .num { font-family:var(--mono); font-size:11.5px } .bad { color:#f87171 } .scroll-x { overflow-x:auto }
   @media (max-width: 700px) { .itable td { overflow-wrap:normal; white-space:nowrap } .itable td.err { white-space:normal; min-width:180px } }   /* on a phone the table scrolls sideways instead of breaking words */
   .logs { font-family:var(--mono); font-size:11.5px; white-space:pre-wrap; max-height:60vh; overflow:auto }
+  .ipill { display:inline-block; font-size:10.5px; border:1px dashed var(--border); border-radius:9px; padding:0 6px; margin-left:6px; color:var(--text2); white-space:nowrap }
+  .ipill.bad { color:#f87171; border-color:#f87171 }
 </style>
 </head>
 <body>
@@ -26,6 +28,10 @@
 <div id="overlay" class="overlay" onclick="if(event.target===this)this.classList.remove('open')"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
 <script>
+const draftPill = (x, now = Date.now() / 1000) => (x.expires && x.expires < now
+  ? `<span class="ipill bad">draft · expired ${esc(ago(now - x.expires))} ago, still recording · left out of discovery</span>`
+  : `<span class="ipill">draft${x.expires ? ` until ${esc(new Date(x.expires * 1000).toLocaleString())}` : ""} · left out of discovery</span>`);
+const pills = (x) => (x.simulated ? '<span class="ipill">simulated: placeholder numbers</span>' : "") + (x.draft ? draftPill(x) : "");
 const every = (s) => (s == null ? "at each discovery" : s >= 60 ? `${+(s / 60).toFixed(1)} min` : `${s} s`);
 // the declared machines an instrument's attachments name, each with its match and what it selects
 function hungOn(list) {
@@ -45,7 +51,7 @@ async function load() {
   $("state").textContent = d.host_running ? `${d.instruments.length} instruments` : `${d.instruments.length} instruments · no orchestra run is running, so the scripts and URLs are not being read`;
   $("list").innerHTML = `<tr><th>instrument</th><th>kind</th><th>target</th><th>every</th><th>last write</th><th>hung on</th><th>failures</th><th>last error</th></tr>`
     + d.instruments.map((x) => `<tr class="${x.kind === "source" ? "" : "click"}" data-name="${esc(x.name)}">
-      <td><b>${esc(x.name)}</b>${x.owner && x.owner !== "project" ? ` <span class="muted">(${esc(x.owner)})</span>` : ""}</td><td>${esc(x.kind)}</td>
+      <td><b>${esc(x.name)}</b>${x.owner && x.owner !== "project" ? ` <span class="muted">(${esc(x.owner)})</span>` : ""}${pills(x)}</td><td>${esc(x.kind)}</td>
       <td class="num">${esc(x.target)}</td><td>${esc(every(x.every_s))}</td>
       <td>${x.last_write ? `${ago(now - x.last_write)} ago · ${x.points} point${x.points === 1 ? "" : "s"}` : x.kind === "source" ? (x.status ? (x.status.ok === false ? "" : "read at the last discovery") : "not read yet") : '<span class="muted">none yet</span>'}</td>
       <td>${hungOn(x.hung_on)}</td>

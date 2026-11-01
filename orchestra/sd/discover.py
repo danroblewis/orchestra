@@ -26,7 +26,9 @@ equation of each flow, and the machine behind each flow:
    evidence that holds (``sd.accept``, ``sd.identify``): its counters chosen again on each half of
    the window, and, short of exact, its choice on one half predicting the other, its running residual
    reproducing the level, and a shift null of the same search priced against it. A count of reporters
-   balanced by its own turnover is a balance by construction (``sd.construction``). Every stock records
+   balanced by its own turnover is a balance by construction (``sd.construction``), and so is a pile
+   balanced by its own moves, as its instrument declared them (``collect.views``): taken as declared,
+   never searched for. Every stock records
    how far to trust it (``sd.stocktrust``); everything else is left out, with the reason. With every balance
    known, a counter that stands in for others gives way to them (``sd.restate``: Orchestra's
    event counter to the machine counters it sums, another machine's copy to the machine's own,
@@ -80,6 +82,7 @@ import re
 from collections import defaultdict
 from itertools import accumulate, pairwise
 
+from . import construction
 from .accept import accepted, stock_trust
 from .attribute import associate, candidates
 from .balance import MIN_EVENTS, MIN_GAIN, LeastSquares, balance, columns, fit_of
@@ -117,6 +120,7 @@ from .resolution import LINEAR, intervals_with, real_points, steps_of
 from .restate import split_event_counters, split_foreign_counters, unify_same_flows
 from .series import (
     EVENT_COUNTER,
+    NOT_NAMED,
     PLUMBING,
     Series,
     not_current_reason,
@@ -149,7 +153,7 @@ def _said(s: Series) -> list[str]:
     with nothing to say (RabbitMQ's vhost ``/``, which would end an id in ``__``), and not one
     another value already says (a queue ``analytics.clicks`` says its consumer ``analytics`` and its
     exchange ``clicks``: the id is ``…_analytics_clicks``, not ``…_analytics_clicks_analytics_clicks``)."""
-    vals = [v for k, v in sorted(s.labels.items()) if k not in ("project", "machine", "instrument", "simulated") and re.sub(r"\W+", "", v)]
+    vals = [v for k, v in sorted(s.labels.items()) if k not in NOT_NAMED and re.sub(r"\W+", "", v)]
     words = [set(filter(None, re.split(r"\W+", v))) for v in vals]
     return [v for i, v in enumerate(vals)
             if not any(j != i and (words[i] < words[j] or (words[i] == words[j] and j < i)) for j in range(len(vals)))]
@@ -797,6 +801,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     named = named_apart([s for s in series if not s.counter])
     for c in counters:
         twin = next((k for k in kept_counters if same_flow(c, k, n) and not counts_apart(c, k, named)
+                     and not construction.apart(c, k, provenance)
                      and (EVENT_COUNTER in (c.name, k.name) or writer_of(c) == writer_of(k))), None)
         if twin is None:
             kept_counters.append(c)
@@ -826,6 +831,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
 
     # the stocks the operator declared ([[series]] stock and role): tried first, judged like any (sd.pins)
     pins, pin_problems = declared_stocks(series, provenance)
+    # a pile and its own moves, as their instrument declared them: one construction, recorded (sd.construction)
+    built = {s.key: t for s in series if not s.counter and s.key not in pins and (t := construction.terms(s, counters, provenance))}
     pinned: list = []                             # declared balances that fit: kept out of the restatements below
     pin_tried: dict[str, str] = {}                # a declared balance that did not fit, and how well it did
 
@@ -841,6 +848,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         return good and (exact >= FLAG_EXACT or len({v for _, v in s.points}) > 2)
     for s in series:
         if s.counter:
+            continue
+        if why := construction.no_level(provenance, s.key):
+            left_out[s.key] = why
             continue
         if statistic(s.name, s.summary):
             # a maximum over partitions jumps from one to another with no flow: never conserved (sd.properties)
@@ -866,19 +876,20 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                                "too few to tell a balance from coincidence")
             continue
         masks[s.key] = steps
-        if pin := pins.get(s.key):
-            # the declared counters, on the slowest one's writes when it is slower than the level,
-            # where all of them have data
-            view = on_writes(s, blocks) if s.blocks is None and (blocks := slowest(pin.terms)) else s
-            mine_steps = arrived(steps, [s, *(c for c, _ in pin.terms)], start, step)
-            r2, exact = fit_of(view, pin.terms, mine_steps)
-            if fits(view, r2, exact, pin.terms, mine_steps):
+        if given := (pins[s.key].terms if s.key in pins else built.get(s.key)):
+            # the declared counters (or the pile's own moves), on the slowest one's writes when it
+            # is slower than the level, where all of them have data
+            view = on_writes(s, blocks) if s.blocks is None and (blocks := slowest(given)) else s
+            mine_steps = arrived(steps, [s, *(c for c, _ in given)], start, step)
+            r2, exact = fit_of(view, given, mine_steps)
+            if fits(view, r2, exact, given, mine_steps):
                 s.blocks = view.blocks
                 masks[s.key] = mine_steps
-                pinned.append((s, list(pin.terms), r2, exact))
+                pinned.append((s, list(given), r2, exact))
                 continue
-            shown = " ".join(f"{'+' if sg > 0 else '−'}{c.key}" for c, sg in pin.terms)
-            pin_tried[s.key] = f"the balance declared for stock {pin.name} ({shown}) fits at R² {r2:.2f}"
+            shown = " ".join(f"{'+' if sg > 0 else '−'}{c.key}" for c, sg in given)
+            pin_tried[s.key] = (f"the balance declared for stock {pins[s.key].name} ({shown}) fits at R² {r2:.2f}" if s.key in pins
+                                else f"its construction by its instrument ({shown}) fits at R² {r2:.2f}: the moves miss some of its changes")
         mine = [c for c in counters if c.key not in barred.get(s.key, ())]
         terms, r2, exact = channel_balance(s, mine, steps, fits)
         backlog = terms is not None                # a declared backlog its own traffic balances: never a flag
@@ -964,14 +975,14 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             kept.append((s, terms2, r2b, exact2))
         else:
             left_out[s.key] = f"only an accumulator of other stocks' flows (R² {r2b:.2f} with counters of its own)"
-    declared_keys = {s.key for s, _, _, _ in pinned}
+    declared_keys = {s.key for s, _, _, _ in pinned if s.key in pins}
     # a balance is identified only by evidence that holds out of sample and beats chance (sd.identify);
     # a count of reporters and its own turnover is a balance by construction, no evidence at all
     found, identified, constructed_, refused = accepted(pinned + kept, counters, barred, masks, provenance, left_out,
                                                          lambda a, b: same_flow(a, b, n) or lagged_flow(a, b), declared_keys)
     # twins are joined among the identified only: a copy that loses to a level identification then
     # refuses would leave neither (the order backlog and a per-partition maximum)
-    found, twins = twin_levels(found, left_out, lambda a, b: same_flow(a, b, n), declared_keys, unit)
+    found, twins = twin_levels(found, left_out, lambda a, b: same_flow(a, b, n), declared_keys | constructed_, unit)
     # a state each item leaves within a step is empty at almost every step of the grid, so the
     # chain through it runs past it (sd.hops) or ends at outside and begins again there
     # (sd.passing); joined through it
@@ -1009,7 +1020,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                             {"balance_r2": None if unfit else round(r2, 4), "exact_steps": None if unfit else round(exact, 4),
                              "steps": n, "balance_steps": len(masks[s.key]),
                              **({"by_construction": True} if by_cons else {}),
-                             **({"measured": False} if p and not p.measured else {}),
+                             **({"measured": False, "level": {"name": s.name, "labels": dict(s.labels)}}   # the level the counters imply: its name holds
+                                if p and not p.measured else {}),
                              **({"identification": identified[s.key].record()} if s.key in identified else {}),
                              "trust": stock_trust(s, exact, identified, by_cons, p),
                              "written_by": writer_of(s), "accumulator": all(sign > 0 for _, sign in terms),
@@ -1026,8 +1038,12 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     fid_of = {c.key: unique_id(_slug(c), writer_of(c), ids) for c in counters}
     by_counter = claims(found, sid_of, writer_of)
     flow_moves = moves(counters, by_counter, fid_of, writer_of)
+    # a move between piles is a flow by construction: its ends are its instrument's; its rate is still fitted
+    built_moves = {c.key for s, terms, _, _ in found if s.key in constructed_ for c, _ in terms}
     through = {sid_of[k]: p for k, p in passed.items()}
     for mv in flow_moves:
+        if mv.counter.key in built_moves:
+            mv.evidence["by_construction"] = True
         if mv.src in through or mv.dst in through:
             mv.evidence["through"] = [x for x in (mv.src, mv.dst) if x in through]
     for c in counters:
@@ -1170,14 +1186,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                                         **({"problems": pin_problems} if pin_problems else {})}}
                           if pins or pin_problems else {}),
                        "left_out": dict(sorted(left_out.items()))}
-    mark_simulated(model)
     return model
-
-
-def mark_simulated(model: Model) -> None:
-    """The parts fitted from a series labelled ``simulated="true"``, marked so (``sd.simulated``)."""
-    from .simulated import mark
-    mark(model)
 
 
 def structure(model: Model) -> list:

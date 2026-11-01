@@ -160,11 +160,13 @@ def simulated(prior, raw, expect: list[dict], start: float, horizon_s: float, st
     return trajectories(r), None
 
 
-def false_change(project, metrics, prev_start: float | None, start: float, comparison: dict) -> dict:
-    """The false-change rate, as far as it can be measured (see above)."""
+def false_change(project, metrics, prev_start: float | None, start: float, comparison: dict,
+                 collectors: list | None = None) -> dict:
+    """The false-change rate, as far as it can be measured (see above). ``collectors``: the
+    plugins' collectors the caller runs (``sd.simulated``; None loads them when needed)."""
     from ..sources.catalogue import Catalogue
     from .rediscover import configured_strategy
-    from .strategies import discover_with
+    from .simulated import discovered
 
     cfg = project.config
     out = {"z": Z, "nominal": NOMINAL}
@@ -179,8 +181,9 @@ def false_change(project, metrics, prev_start: float | None, start: float, compa
         halves = []
         for s, e in ((a, mid), (mid, b)):
             reading = Catalogue(project, metrics, infer=False).read(s, e, step, keep=False)
-            halves.append(discover_with(reading.dump, start=s, end=e, step=step, strategy=configured_strategy(project),
-                                        options=cfg.discovery_options, deadline=0.4 * cfg.discovery_every, kinds=reading.kinds))
+            halves.append(discovered(project, reading, collectors=collectors, start=s, end=e, step=step,
+                                     strategy=configured_strategy(project), options=cfg.discovery_options,
+                                     deadline=0.4 * cfg.discovery_every))
     except Exception:  # noqa: BLE001 - the rate is reported unmeasured
         return {**out, "measured": None, "reason": "discovery_failed"}
     c = compare(*halves)
@@ -195,7 +198,8 @@ def false_change(project, metrics, prev_start: float | None, start: float, compa
             "expected": round(rate * here, 2), "window": [a, mid, b]}
 
 
-def judge_one(project, metrics, store: ModelStore, p: dict, eras: list, now: float, *, measure_false: bool = True) -> dict | None:
+def judge_one(project, metrics, store: ModelStore, p: dict, eras: list, now: float, *, measure_false: bool = True,
+              collectors: list | None = None) -> dict | None:
     """The verdict on one waiting prediction, or None while it waits."""
     era = next((e for e in eras if e.cause and e.cause == p.get("change")), None)
     if era is None:
@@ -255,13 +259,14 @@ def judge_one(project, metrics, store: ModelStore, p: dict, eras: list, now: flo
                         "flows": sum(f["status"] in ("changed", "unchanged") for f in comparison.get("flows") or [])}}
     if measure_false:
         prev = era_record.previous(eras, era)
-        out["false_change"] = false_change(project, metrics, prev.start if prev else None, era.start, comparison)
+        out["false_change"] = false_change(project, metrics, prev.start if prev else None, era.start, comparison, collectors)
     if interrupted:
         out["partial"], out["verdict"] = verdict, "interrupted"
     return out
 
 
-def judge_due(project, metrics, now: float, publish=None, *, events=None, measure_false: bool = True) -> list[dict]:
+def judge_due(project, metrics, now: float, publish=None, *, events=None, measure_false: bool = True,
+              collectors: list | None = None) -> list[dict]:
     """Judge every prediction that is due; record each verdict and publish it
     (``orchestra.prediction.judged``) when ``publish(type, data, **ext)`` is given. ``events``: sync
     the record from the bus first. Returns the verdicts made now."""
@@ -276,7 +281,7 @@ def judge_due(project, metrics, now: float, publish=None, *, events=None, measur
         era = next((e for e in eras if e.cause and e.cause == p.get("change")), None)
         if era is not None and p.get("era") != era.id:
             record.update(store, p["id"], lambda x, e=era: x.__setitem__("era", e.id))
-        v = judge_one(project, metrics, store, p, eras, now, measure_false=measure_false)
+        v = judge_one(project, metrics, store, p, eras, now, measure_false=measure_false, collectors=collectors)
         if v is None:
             continue
 
