@@ -938,10 +938,12 @@ These follow from AGENTS.md. The plugins' own `AGENTS.md` files repeat them.
 - **keep state anywhere but its own place**: `~/.orchestrator/<key>/<plugin>/`
   (`project.state_dir / "tasks"`, `.../"agents"`), or the bus and the store themselves. Records
   that belong in the repository go in a directory of your own (the agents use `.orchestra/`). One
-  directory is shared, and each file in it has one owner: `<state>/machines/<id>/` holds a
-  machine's own files, where `machine.toml` with a top-level `kit` key is the bridges' scaffolded
-  poller, `machine.toml` without it is the agents' machine spec, and `machine.json` is the
-  Workflows program host's. Read and write only your own; skip the others;
+  directory name is shared, and each file in it has one owner: `machines/<id>/`, in the
+  repository's `.orchestra/` and in the state directory (`<state>/machines/`), holds a machine's
+  own files, where `machine.toml` with a top-level `kit` key is the bridges' scaffolded poller,
+  `machine.toml` without it is the agents' machine spec (the agents keep the state directory's
+  under their own `<state>/agents/machines/`), and `machine.json` is the Workflows program
+  host's. Read and write only your own; skip the others;
 - **split the system** (rule 4): no topic, model or view per package. A plugin's events go on the
   project's one bus;
 - import Orchestra's web app, host or model from runtime code. The bridges state it as their rule

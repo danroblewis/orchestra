@@ -1,7 +1,12 @@
 # Machine design: the Supervisor declares, measures and drafts
 
 Status: reviewed, 2026-11-01 (panel round 1, judge's verdict round 2); aligned to
-intended-model.md round 2; coverage pass 2026-11-01. Nothing built. Proposal 4 of
+intended-model.md round 2; coverage pass 2026-11-01. Built in `~/orchestra-agents` (milestone M3):
+the design tools A1 (merge b7eb05c), the prompts and guide A2 (27bd062), the push guard A5
+(a1e4177), the floor's offers answered A6 (0bde3c8), the live scenario A3/A3b (30a84fe), and, on
+its gate branch (2026-11-01), `propose_attachment`, `revise_attachment`, `unexpect`, `unignore`
+and `alias`. Not built: `find_machine_series` (the attachment takes its match explicitly).
+Proposal 4 of
 `design-backwards.md` §7, for the agents plugin (`~/orchestra-agents`). Written from
 `design-backwards-notes.md` §9 and §13, the approved mockups (`mockups/README.md`, D1–D3,
 E1–E3), D20 and D21. The core's side (the declared layer, its API, the pages) is proposal 2,
