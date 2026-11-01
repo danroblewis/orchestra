@@ -130,7 +130,8 @@ bus, an expected stock present in the version). Proposed and declared are exclus
   4. A suggestion that has held through `[discovery] announce_hold` discoveries (the host has
      announced it in `orchestra.model.changed`) is marked **held**; one that has not is
      **tentative**. The list orders held before tentative, so churn sinks.
-  5. A plugin's proposal (a machine, a field) stays until confirmed or discarded; it never expires.
+  5. A plugin's proposal (a machine, a field) stays until confirmed or discarded; it never expires
+     (each element's rule: §9, P5.e).
   The model has **stabilised** when no suggestion is tentative; the list then shows only what
   needs a human answer.
 
@@ -180,9 +181,10 @@ experience", D21):
   (`sd.compare`'s structure diff: appeared and disappeared, loops excluded); the suggestions (§3)
   with held / tentative / came-and-went, from the versions between the first appearance and the
   shown one; each declared machine heard or unheard, each declared edge observed or not, each
-  observed machine and edge undeclared (`unexpected`, kept in the data; §10, question 2); each
+  observed machine and edge undeclared (`unexpected`, kept in the data; §11, question 2); each
   target met, missed or unknown.
-  Its inputs are immutable, so it is cached by key, `compare/d{N}-v{M}-v{K}.json` (`live` for the
+  Everything observed (present, heard, recording, met, candidates) is derived here, on read, and
+  never stored in the declared layer. Its inputs are immutable, so it is cached by key, `compare/d{N}-v{M}-v{K}.json` (`live` for the
   latest discovery, of which only the newest file is kept). The host computes the current one
   after each discovery and each declaration; the web server reads it, or computes and writes it
   on a miss for a past pair (milliseconds: the layer is tens of elements, a version hundreds of
@@ -286,12 +288,12 @@ In process, `ModelStore.for_state(dir).intended().apply(ops, provenance) -> {"ve
 over HTTP, on the host's events endpoint (its token, like the experiments API, SPEC §3.1):
 `POST /intended` with `{"source", "turn", "message", "quote", "author", "ops": [...]}`, answered
 `{"ok": true, "version", "ids"}` or `{"ok": false, "error", "index"}` (422, the op refused). All
-ops of a call apply or none. The ops:
+ops of a call apply or none; any op may name `guessed` fields (§9). The ops:
 
 ```
 declare_stock {id?, name, unit?, near?, note?}      declare_effect {same}
 declare_flow {from, to, name?}                      set_target {part, id, op, value, hi?, over_s}
-expect {part, id} · unexpect · ignore · unignore    link {id, found_as}
+expect {part, id} · unexpect · ignore · unignore    link {id, found_as} · alias {machine, observed}
 propose_machine {id, kind, …fields of §2}           revise_machine {id, set: {field: value}, add: {…}, remove: {…}}
 declare_event {type, description}                   set_expected_effect {machine, expect, horizon_s}
 record_prediction {machine, prediction}             record_measurement {part, id, options, chosen?}
@@ -356,7 +358,7 @@ Why: the map must show machines that do not exist yet (E1) and machines that wil
 
 Why: Features must be on the page before anything measures it (D1), and discovery must stay the
 only source of the model's stocks. Whether declarations later become discovery's priors (D4) is
-an open question (§10).
+an open question (§11).
 
 **Rule 9** (humans talk only to the Supervisor). The default, as the goal's decision 1: replace
 "except for observations: rediscovering the model …" with
@@ -376,11 +378,40 @@ message ("confirm feature-count-improver"), and the Supervisor makes the declara
 stands unchanged; the price is a chat round-trip per click and the Supervisor having to be up.
 Both produce the same records except `via`.
 
-Rules 3, 5 and 6 need no change: the host's announcement is its own type; the layer lives under
-`ModelStore`; expected effects are predictions, and a machine's association with a flow stays
-inferred.
+**Rule 5** (state). The declared layer is new state. Add after "the model through
+`orchestra.sd.store.ModelStore`":
 
-## 9. Acceptance tests
+> ; the intended model through `ModelStore.intended()` (`project.intended`), in
+> `<state>/model/intended/`, whose journal and versions nothing else opens.
+
+**Rule 4** (one model, by versions). Add: "The model's versions are of two kinds: discovered
+(`vN`: stocks, flows, equations) and declared (`dN`: the intended model, §5); a change to one
+never makes a version of the other, and a comparison always names one of each."
+
+Rules 3 and 6 need no change: the host's announcement is its own type; expected effects are
+predictions, and a machine's association with a flow stays inferred.
+
+## 9. What P4 and P5 need
+
+| # | need | answer |
+|---|---|---|
+| P4.1 | Python API with provenance | `project.intended` (an `IntendedStore`, the same object as `ModelStore.intended()`): `apply(ops, provenance) -> {"version", "ids"}`, `read(version=None)`, `design()`, `compare(model=None, since=None)`. Provenance as §4 (`author`, `via`, `source`, `turn`, `message`, `quote`). A field the plugin guessed is named in the op's `guessed: [field, …]` (E1's "a guess"); it stays guessed until an op sets it without `guessed`, or the element is confirmed. |
+| P4.2 | each change timed | every journal entry and every element's latest provenance has `at`; `intent.latest.at` drives "just now" (ten minutes). |
+| P4.3 | machine field names | §2's table, exact. `kind` ∈ `universal`, `programmatic-adhoc`, `programmatic-continuous`, `external`; `engagement.mode` ∈ `ad hoc`, `continuous`, `scheduled`: any for `universal`, `ad hoc` or `scheduled` for `programmatic-adhoc`, `continuous` for the other two. Any other key is refused. |
+| P4.4 | measurement options | on the declared stock or effect, `measure.options` and `measure.chosen`, in the declared layer (`record_measurement`). |
+| P4.5 | declared ↔ discovered stock | never automatic. On read, the comparison lists `candidates`: discovered stocks whose series carries `instrument=<the chosen option's instrument>`. The drawer shows them as "may be this stock" (a proposal). Only `link {id, found_as}` (the plugin, on the owner's word) sets it. Features stays a ghost in D2 because no link was made. |
+| P4.6 | simulated series | an option with `simulated: true`; every stock or flow whose series carries that option's `instrument` label is marked simulated on read (§6.3). |
+| P4.7 | stable ids across versions | discovered ids are not promised stable. A mark stores the id and a **key**: a stock's is its series key (name and labels without `project`, `sd.series.series_key`); a flow's is its ends' keys. A mark matches by id, else by key. |
+| P4.8 | events on page clicks | one type, `orchestra.intent.changed`, from `orchestra-host`, `subject` `<part>:<id>` (a listener filters `orchestra.intent.changed:machine:feature-count-improver`), `data` `{version, via, ops: [{op, part, id}]}`. `op` is `confirm`, `discard`, `expect`, `unexpect` or `ignore` for page controls (the D3 switch is `expect`/`unexpect`). The rule-9 amendment is in §8. |
+| P4.9 | predictions for parts with no series | "a flow appears": `{"from", "to", "appears": true}` (existing). "A stock goes up": a new edit kind, `{"stock", "rises" \| "falls": true}`, judged like `above` / `below` with x the level at the change (a SPEC §4.3 change in `sd/predictions.py`, built in C1). An edit naming a declared stock with no `found_as` keeps the draft unpublishable: the panel says "waits for a series", and the plugin publishes once it is linked, with the discovered id. |
+| P4.10 | a summary read | `project.intended.design()`, and `GET /intended/design` on the endpoint: the layer's version; each stock, effect, flow and target with state, present, linked; each machine with state, kind, engagement, heard, receives, emits, guessed fields; declared event types; the open items (proposals unconfirmed, suggestions unanswered, expected parts absent). Under 20 KB for a layer of 100 elements. |
+| P5.a | rule 5 | amended, §8. |
+| P5.b | aliases | a declared machine id is the `source` expected on the bus. When it is known under another name (an observed source, or a traffic source's `<prefix>.<name>`), `alias {machine, observed: [names]}` joins them: a declaration, never inferred. The comparison lists name matches after removing a prefix as `alias_candidates` (a proposal). Joined, the observed entry carries the `intent` and no separate unseen entry is added. |
+| P5.c | the map versioned apart from equations | one `dN` numbering covers the whole declared layer: stocks, effects, flows, targets, machines, events and P5's attachments. Equations are only in `vN`. Neither makes the other's versions (rule 4 as amended). |
+| P5.d | observed facts derived on read | `present`, `heard`, `recording`, `measured`, `instances`, `met`, `candidates`, `alias_candidates`, `unexpected` are computed by the comparison and only ever cached in `compare/`. They are never written to a `dN` or the journal; an op carrying one is refused. |
+| P5.e | how long proposed things persist | by element: inference suggestion, until `expect` or `ignore` (§3); a plugin's proposed machine, stock, effect, flow or attachment, until `confirm` or `discard`; a guessed field, until set or confirmed; a declared element, until `retract`; an expected mark, until `unexpect`; an ignore, until `unignore`. Nothing expires by time. |
+
+## 10. Acceptance tests
 
 Each is a program: a unit test on the store and comparison, an API test against the web app on a
 temporary state directory, or a page test rendering the real page with the fixtures and comparing
@@ -438,7 +469,16 @@ with `mockups/out/` (C2, C3).
 26. On E1, node opacity is 1 for the machine, its event types and the machines on them, .45 for
     the second ring, .1 for the rest; edges take the lesser of their ends.
 27. The Core page answers with the intended store missing, corrupt or locked (rule 8).
-28. From notes §13.4, the core's part: a related series enters the model with no declaration
+28. `link` alone sets `found_as`; a stock recorded by the chosen instrument appears only in
+    `candidates`. A mark survives a flow's id changing when its ends' keys hold. An `alias` joins a
+    declared machine with an observed or counted one, which then carries the `intent`.
+29. No `dN` or journal line contains a derived field; an op carrying one is refused (422).
+30. `{"stock", "rises": true}` is judged met when the mean level over the horizon's second half is
+    above the level at the change by 2 standard errors; a draft naming an unlinked declared stock
+    is reported unpublishable by `design()`.
+31. `design()` lists every unconfirmed proposal, unanswered suggestion and absent expected part,
+    and each guessed field.
+32. From notes §13.4, the core's part: a related series enters the model with no declaration
     (6); the expected stock is still drawn and listed when a later
     inference lacks it (7); a new part stays listed until confirmed (10); a placeholder series is
     marked (17); a new machine adds a node and opens its panel with the draft (18, 25); the
@@ -446,7 +486,7 @@ with `mockups/out/` (C2, C3).
     no model or prompt (4); predicted flows shown and judged (22, 23); no page control changes the
     system (13).
 
-## 10. Out of scope and open questions
+## 11. Out of scope and open questions
 
 Out of scope: attaching instruments to declared machines and instances from labels (P5); how the
 Supervisor finds measurement options, writes instruments, drafts and refines machines, runs the
