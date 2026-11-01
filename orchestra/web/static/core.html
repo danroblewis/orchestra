@@ -42,8 +42,12 @@
   table.ct { width:100%; border-collapse:collapse; font-size:12px } table.ct th { text-align:left; color:var(--muted); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; padding:4px 6px; border-bottom:1px solid var(--border) }
   table.ct td { padding:4px 6px; border-bottom:1px solid var(--border); vertical-align:top } table.ct td.num { font-family:var(--mono); white-space:nowrap; text-align:right }
   table.ct tr.pick { cursor:pointer } table.ct tr.pick:hover td { background:var(--panel3) }
-  /* a phone: a wide table scrolls inside its own box, never the page */
-  @media (max-width:600px) { table.ct { display:block; overflow-x:auto; max-width:100% } }
+  /* a phone: a wide table scrolls inside its own box, never the page; the host's process rows wrap;
+     a long value (a path, an event type) breaks anywhere rather than running out of its panel */
+  @media (max-width:600px) { table.ct { display:block; overflow-x:auto; max-width:100% }
+    #host-card table.ct, #host-card table.ct tbody, #host-card table.ct tr { display:block } #host-card table.ct tr { padding:4px 0; border-bottom:1px solid var(--border) }
+    #host-card table.ct td { display:inline-block; border:0; padding:1px 8px 1px 0; white-space:normal } }
+  .corewrap .kv > div, .corewrap .ty, .corewrap .mono { overflow-wrap:anywhere; min-width:0 }
   .lk { display:inline-block; font-family:var(--mono); font-size:11px; color:var(--text2); margin-right:8px } .lk b { color:var(--text) }
   svg.chart { width:100%; height:auto; min-height:0; display:block } .chart .ax { stroke:var(--border2); stroke-width:1 } .chart text { fill:var(--muted); font-size:10px; font-family:var(--mono) }
   .chart path { fill:none; stroke-width:1.6 } .ckeys { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:11px; color:var(--text2); margin-top:4px }

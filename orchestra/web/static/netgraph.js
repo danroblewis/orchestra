@@ -172,7 +172,9 @@ const NetGraph = (() => {
   // at any scale.
   // ``isolatedRow``: nodes linked to nothing are set in a row under the rest after the first layout,
   // rather than wherever the forces threw them.
-  const NARROW = 600, MIN_K = 0.55, DESK_K = 0.85;
+  // ``TOP``: the band at the top of the drawing the controls (reset, tidy, fit) sit in: a fit keeps
+  // every node below it
+  const NARROW = 600, MIN_K = 0.55, DESK_K = 0.85, TOP = 40;
   function create(container, { key, height = 600, isolateHops = 1, onClick, tip, boundary, layout, polish, isolatedRow = false } = {}) {
     container.innerHTML = "";
     const svgEl = document.createElementNS(NS, "svg");
@@ -271,26 +273,28 @@ const NetGraph = (() => {
       const apply = (k, tx, ty) => { (animate ? svg.transition().duration(400) : svg).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k)); hint(only ? null : outside(k, tx, ty)); };
       if (narrow && !only) {                 // a phone: readable labels, and a canvas as tall as the drawing
         let k = Math.min(w / (x1 - x0), 1.4);
-        if (all) k = Math.min(k, height / (y1 - y0)); else k = Math.max(MIN_K, k);
-        const h = Math.round(Math.min(Math.max(280, (y1 - y0) * k), height));
+        if (all) k = Math.min(k, (height - TOP) / (y1 - y0)); else k = Math.max(MIN_K, k);
+        const h = Math.round(Math.min(Math.max(280, (y1 - y0) * k + TOP), height));
         if (h !== H) { H = h; svg.attr("viewBox", `0 0 ${w} ${H}`).style("height", H + "px"); }
-        const tx = (x1 - x0) * k <= w ? w / 2 - k * (x0 + x1) / 2 : -k * x0, ty = (y1 - y0) * k <= H ? H / 2 - k * (y0 + y1) / 2 : -k * y0;
+        const tx = (x1 - x0) * k <= w ? w / 2 - k * (x0 + x1) / 2 : -k * x0;
+        const ty = (y1 - y0) * k <= H - TOP ? TOP + (H - TOP) / 2 - k * (y0 + y1) / 2 : TOP - k * y0;
         apply(k, tx, ty);
         return;
       }
-      const kFit = Math.min(w / (x1 - x0), H / (y1 - y0), 1.4);
-      if (all || (!only && kFit >= DESK_K)) { apply(kFit, w / 2 - kFit * (x0 + x1) / 2, H / 2 - kFit * (y0 + y1) / 2); return; }
+      const room = H - TOP, mid = TOP + room / 2;       // the drawing's height below the controls, and its middle
+      const kFit = Math.min(w / (x1 - x0), room / (y1 - y0), 1.4);
+      if (all || (!only && kFit >= DESK_K)) { apply(kFit, w / 2 - kFit * (x0 + x1) / 2, mid - kFit * (y0 + y1) / 2); return; }
       if (!only) {                           // too spread to read whole: the largest connected part, centred, the rest said
         const part = NODES.filter((n) => largestPart().has(n.id)), [a0, b0, a1, b1] = bounds(part.length ? part : NODES);
-        const k = Math.max(DESK_K, Math.min(w / (a1 - a0), H / (b1 - b0), 1.4)) || DESK_K;
-        apply(k, w / 2 - k * (a0 + a1) / 2, H / 2 - k * (b0 + b1) / 2);
+        const k = Math.max(DESK_K, Math.min(w / (a1 - a0), room / (b1 - b0), 1.4)) || DESK_K;
+        apply(k, w / 2 - k * (a0 + a1) / 2, mid - k * (b0 + b1) / 2);
         return;
       }
       const k = Math.min(1, Math.max(minK, kFit));
       // too spread to fit at a readable size: the view centres on the ``center`` node, its neighbours around it
       const c = kFit < minK && center ? NODES.find((n) => n.id === center) : null;
       const [cx, cy] = c && c.x !== undefined ? [c.x, c.y] : [(x0 + x1) / 2, (y0 + y1) / 2];
-      apply(k, w / 2 - k * cx, H / 2 - k * cy);
+      apply(k, w / 2 - k * cx, mid - k * cy);
     }
     // the nodes a hover lights: ``isolateHops`` links out, through nodes marked ``hop`` (event types)
     function neighbourhood(id) {
