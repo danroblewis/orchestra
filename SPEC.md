@@ -265,7 +265,8 @@ A project's own instruments, a command run on an interval (`[[collect]]`) or a U
 (`[[scrape]]`), and a plugin's (`Plugin.collectors`), are in §5.2; another store read at each
 discovery (`[[sources]]`) is in §4.4. The web UI lists them on the Instruments page
 (`web/instruments.py`): what kind each is, its target, how often it is read, its last write, its
-failures and last error, and its log.
+failures and last error, its log, and whether it is `simulated` ("simulated: placeholder numbers")
+or a `draft` (with `expires`: "draft until … · left out of discovery"; §5.2).
 
 ### 4.3 The model
 
@@ -609,7 +610,9 @@ system, so a new **era** begins, and the era is the window the model is discover
   fewer than 20 events in another form, the prior's equation stands (origin `prior`). A stock or
   flow only the prior has is carried (origin `prior`, `evidence.prior`) while the era is younger
   than `[discovery] prior_for` (default: the window), then dropped. So early in an era the model
-  is mostly its prior, and the era's own evidence takes over as it accumulates.
+  is mostly its prior, and the era's own evidence takes over as it accumulates. A part of the prior
+  marked `simulated` (§5.2), and a flow reading one, is never carried or blended: a placeholder
+  never seeds the next era (dropped, with why `simulated`).
 - **The comparison** at the boundary (`sd/compare.py`, `discovery.era_comparison`): stocks,
   flows and loops that appeared or disappeared (and the ones still carried), each flow's form if
   it changed, and for each of a flow's numbers, before → after (the era's own number) with
@@ -1043,7 +1046,19 @@ it (rule 7).
   attachment, and by any other author, it is a pending change until `confirm` or `discard` names
   it. A proposal or pending change is confirmed or discarded by the owner (a page, or a plugin
   quoting the owner) or with `provenance.request` (answering the owner's request), never by its
-  author alone.
+  author alone. A plugin answers the owner's request (`provenance.request`) only with the op asked
+  for: the request must be one the web server noted, unanswered, about the same part and id, with
+  the same control and, when it names one, the same change (a made-up or mismatched request is a
+  422); a revision answering a `switch_kind` request (it sets `kind` and nothing else) applies at
+  once, even on a confirmed machine, recorded in `latest.request`. What the owner declared (an
+  element, mark or target whose provenance author is `owner`) is retracted, unmarked or
+  re-targeted only by the owner or in answer to the owner's request ("the owner declared this:
+  ask the owner"). A declared stock or effect named by a declared flow, a keyed target or a
+  machine's expected effect is not retracted or discarded until those change. Once a machine is
+  confirmed, a new expected effect waits as a pending change; new edits drop the linked
+  prediction. Where the owner's pending change and another's touch the same fields, the other
+  carries `overridden_by` (on read) and is confirmed only when the owner's request names it. A
+  call `via: page` is one control of rule 9's closed list (400 otherwise).
 - **Keys.** A discovered part is matched by key, never by id: a stock's series name and labels
   without instrument, machine, source, project, instance, simulated and draft; a flow's ends' keys
   and its counter's key. Parts carried from the prior are not the era's own.
@@ -1063,12 +1078,24 @@ it (rule 7).
   no suggestion is unsettled. A past `vN` is paired with the `dN` current when it was saved. The
   latest discovery is shown as the newest `vN` when its structure is that version's; otherwise it
   is compared with `vN` and labelled "the latest discovery". A declared flow's ends are declared
-  ids or discovered keys, never discovered ids. `intended.predicted` lists the flows the declared
+  ids or discovered keys, never discovered ids. Every unsettled suggestion is a `+` row until it
+  settles, is expected or is ignored (`status` `new` against the base, else `suggestion` with the
+  version its run began), ringed unless `since=off`; `suggestions` lists them. A removed part that
+  was simulated says so (`simulated: true`). `intended.predicted` lists the flows the declared
   machines' expected effects predict, one entry per machine and edit (`machine`, `edit`), as ghost
-  flows with no association (`machines: []`, rule 6).
+  flows with no association (`machines: []`, rule 6). A draft's names (`stock`, `from`, `to`)
+  are resolved one way everywhere (`intended/names.py`): a declared id through its `found_as`
+  ("waits for a series" without one), a discovered key, or, tolerated, a discovered id taken as
+  its key; otherwise "not in the model". A draft names keys; a plugin publishing a draft as
+  `orchestra.prediction.made` turns them into the era's ids. A target on an effect found only as
+  an input is judged on that input's series. A recording is read for the project's own points.
 - **The API.** `project.intended.apply(ops, provenance)` (all ops or none; `IntentError` with
   the op's `index`), `read`, `diff`, `design`; over HTTP `POST /intended`, `GET /intended` and
-  `GET /intended/design` on the events endpoint (§3.1). The ops: `declare_stock`,
+  `GET /intended/design` on the events endpoint (§3.1). `design()` reads presence by id for a
+  declaration and by key for a mark, lists a declared stock or effect with no `found_as` as absent
+  before any model exists, and says a machine is heard as the Machines page does (its id or an
+  alias among the observed machines: the web server gives the ids it has observed, counted
+  traffic's included; in process, Orchestra's count of the bus). The ops: `declare_stock`,
   `declare_effect`, `declare_flow`, `set_target` (its comparison is `target`, since `op` names the
   op), `expect`, `unexpect`, `ignore`, `unignore`, `link`, `alias`, `propose_machine`,
   `revise_machine`, `declare_event`, `set_expected_effect`, `record_prediction`,
@@ -1083,8 +1110,12 @@ it (rule 7).
   gains each machine's `intent` (a declared machine not heard is appended, `unseen`, with no
   observed values: no `subscribes`, `publishes` or `mode`) and `comparison` (`heard`, or
   "declared, neither heard nor measured"), and `intended_edges`, `intended_types`; `/api/intended`, `/versions`, `/journal`, `/diff`,
-  `/design`, `/script` (an option's script, read only inside the repository or the state
-  directory). The page controls (rule 9): `POST /api/intended/control` records an observation
+  `/design`, `/script` (an option's script: the first word of its command that is a file inside
+  the repository or the state directory, past an interpreter outside them; 404 no entry, 403 only
+  outside files). A refusal is `{ok: false, error}` with its status (a non-integer `version`, `d`
+  or `after` is a 400). Each attachment row under a machine's `intent` carries the owner's
+  unanswered request (`requested`), and each pending change `overridden_by` when the owner's
+  overrides it. The page controls (rule 9): `POST /api/intended/control` records an observation
   (`expect`, `unexpect`, `ignore`, `confirm` or `discard` on a stock, effect or flow; a mark is
   stored by `key`, or by the key of the part with that `id` in the latest model, and an `expect`
   or `ignore` of a key no latest model has is refused), and `POST /api/intended/request`
@@ -1206,8 +1237,10 @@ collector may be simulated too. A **draft** instrument's series are left out of 
 nothing more: `expires` is data for the plugin, which removes the entry then or clears the flag
 when the option is chosen; points written after that are ordinary and join the same stock (the key
 leaves `draft` out). Both flags are read only on Orchestra's own series: a `[[sources]]` series
-keeps its own labels. The judge's split-half discovery (§4.3) selects series the same way
-(`sd.simulated.discovered`).
+keeps its own labels, and is never marked simulated. The judge's split-half discovery (§4.3)
+selects series the same way (`sd.simulated.discovered`). Which plugin collectors are simulated
+is read from the collectors the caller runs (the host's, the web server's loaded plugins'); only
+a caller with none (the CLI) loads the plugins for it.
 
 Each is an **instrument**: it measures the running system and never acts on it, so it is not a
 machine (AGENTS.md rule 7). Nothing is announced on the bus for it and it is not on the Machines

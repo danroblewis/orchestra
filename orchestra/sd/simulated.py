@@ -40,7 +40,8 @@ def is_simulated(labels: dict | None) -> bool:
 
 
 def plugin_collectors(project) -> list:
-    """The plugins' collectors, each with its owner, as the host runs them."""
+    """The plugins' collectors, each with its owner, loaded now: only for a caller that runs none
+    (the CLI); the host and the web server pass theirs (``collectors``)."""
     from .. import plugins
 
     try:
@@ -87,29 +88,40 @@ def select(dump: list, others: dict, allowed) -> tuple[list, dict[str, str]]:
 
 def discovered(project, reading, *, collectors: list | None = None, **kw):
     """The model ``sd.strategies.discover_with`` finds in a catalogue reading, the draft and
-    expired simulated series left out (in ``left_out``), the simulated parts marked."""
+    expired simulated series left out (in ``left_out``), the simulated parts marked.
+    ``collectors``: the plugins' collectors the caller runs (or has loaded); None loads them,
+    only if a simulated series is there."""
     from .strategies import discover_with
 
     dump, left = select(reading.dump, reading.provenance, lambda: configured(project, collectors))
     m = discover_with(dump, kinds=reading.kinds, **kw)
-    mark(m)
+    mark(m, reading.provenance)
     if left:
         m.discovery["left_out"] = dict(sorted({**(m.discovery.get("left_out") or {}), **left}.items()))
     return m
 
 
-def mark(model) -> None:
-    """Mark the parts fitted from a simulated series, in place."""
-    sim_stocks = {s.id for s in model.stocks if s.series and is_simulated(s.series.labels)}
+def mark(model, others: dict | None = None) -> None:
+    """Mark the parts fitted from a simulated series, in place. ``others``: the keys of series
+    another store serves (the reading's provenance), whose labels are their own and never read
+    as the flag."""
+    from .series import series_key
+
+    others = others or {}
+
+    def sim(name: str, labels: dict | None) -> bool:
+        return is_simulated(labels) and series_key(name, labels or {}) not in others
+
+    sim_stocks = {s.id for s in model.stocks if s.series and sim(s.series.name, s.series.labels)}
     sim_inputs = {f"input:{n}" for n, ref in ((model.discovery or {}).get("inputs") or {}).items()
-                  if isinstance(ref, dict) and is_simulated(ref.get("labels"))}
+                  if isinstance(ref, dict) and sim(ref.get("name") or "", ref.get("labels"))}
     for s in model.stocks:
         if s.id in sim_stocks:
             s.evidence["simulated"] = True
     for f in model.flows:
         refs = [r for r in [f.counter, *(f.measured_by or [])] if r is not None]
         inputs = {i for e in f.equations for i in e.inputs}
-        if any(is_simulated(r.labels) for r in refs) or {f.src, f.dst} & sim_stocks or inputs & (sim_stocks | sim_inputs):
+        if any(sim(r.name, r.labels) for r in refs) or {f.src, f.dst} & sim_stocks or inputs & (sim_stocks | sim_inputs):
             f.evidence["simulated"] = True
             for h in ((f.evidence.get("machines") or {}).get("hypotheses") or []):
                 h["simulated"] = True

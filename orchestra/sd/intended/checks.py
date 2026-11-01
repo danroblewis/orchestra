@@ -150,8 +150,10 @@ def target(t: dict) -> dict:
 
 def provenance(p: dict | None, via: str = "plugin") -> dict:
     """A call's provenance, checked, with ``via`` filled in from the store's caller, never from
-    the dict (a caller cannot claim ``via: page``, which needs no quote). ``at`` is stamped by the
-    store when it writes (``IntendedStore.apply``), never given."""
+    the dict. In process ``via`` is the caller's argument, so a plugin's ``via: page`` is its
+    assertion, backed by nothing more than its quote is for ``author: owner``; what a page call
+    may do is rule 9's closed list all the same (``store.page_control``). ``at`` is stamped by
+    the store when it writes (``IntendedStore.apply``), never given."""
     p = dict(p or {})
     if "via" in p or "at" in p:
         raise IntentError("provenance: via and at are set by the store, never given", status=400)

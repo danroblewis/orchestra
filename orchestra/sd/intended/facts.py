@@ -49,8 +49,11 @@ def _within(fn, limit: float):
 
 
 class Facts:
-    def __init__(self, metrics, limit_s: float = LIMIT_S, now: float | None = None):
+    def __init__(self, metrics, limit_s: float = LIMIT_S, now: float | None = None, project: str | None = None):
+        """``project``: the project's key, so a store several projects share is read for this one's
+        points only (None for a store with no project)."""
         self.metrics = metrics
+        self.project = project
         self.deadline = time.monotonic() + limit_s
         self.now = now or time.time()
         self.missing: list[str] = []
@@ -73,7 +76,8 @@ class Facts:
         """What an instrument has written: its busiest series' points (the last ``SPARK``)."""
         def read():
             best: list = []
-            for name, labels in self.metrics.series("", {"instrument": instrument}):
+            match = {"instrument": instrument, **({"project": self.project} if self.project else {})}
+            for name, labels in self.metrics.series("", match):
                 pts = self.metrics.raw(name, labels, start=self.now - RECORDING_SPAN_S, end=self.now)
                 if len(pts) > len(best):
                     best = pts

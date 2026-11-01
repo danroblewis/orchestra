@@ -828,6 +828,13 @@ it never writes under `<state>/model/intended/` itself (AGENTS.md rule 5 as amen
 - A proposal (a machine always enters proposed) and a pending change are confirmed or discarded
   only by the owner (quoted) or in answer to a request; an owner's quoted revision of a proposed
   machine applies at once, and of a confirmed one waits as a pending change.
+- **Answering a request** takes the op it asked for: `provenance.request` must name an
+  unanswered request for the same part and id, with the same control (`confirm` for confirm,
+  `discard` for discard or a retract, and for `switch_kind` a `revise_machine` that sets `kind`
+  and nothing else, which then applies at once) and the same `change` when it names one; anything
+  else is a 422. What the owner declared is retracted, unmarked or re-targeted only by the owner
+  ("the owner declared this: ask the owner"), and a declared stock or effect that a flow, a
+  target or an expected effect names is retracted only after them.
 
 ### 6.7 The whole path, in order
 

@@ -161,3 +161,45 @@ def test_a_flow_reading_a_simulated_input_is_marked():
     simulated.mark(m)
     assert f.evidence["simulated"] and f.evidence["machines"]["hypotheses"][0]["simulated"]
     assert not m.stocks[0].evidence.get("simulated")
+
+
+def test_discovery_given_the_collectors_never_loads_the_plugins(tmp_path, monkeypatch):
+    from orchestra import plugins
+    from orchestra.sources.catalogue import Reading
+
+    project = project_at(tmp_path, monkeypatch)
+
+    def refuse(*a, **k):
+        raise AssertionError("the plugins were loaded again")
+    monkeypatch.setattr(plugins, "load", refuse)
+    reading = Reading()
+    reading.dump = [("q", {"instrument": "features.ramp", "simulated": "true"}, [(0.0, 1.0), (60.0, 2.0)])]
+    m = simulated.discovered(project, reading, collectors=[Collector("ramp", "collect", "true", owner="features", simulated=True)],
+                             start=0.0, end=60.0, step=60.0)
+    assert not any(v.startswith("simulated, expired") for v in (m.discovery.get("left_out") or {}).values())
+
+
+def test_the_simulated_label_on_another_stores_series_marks_nothing():
+    theirs = SeriesRef("jira_q", {"simulated": "true"})
+    f = Flow("in", "in", None, "q", SeriesRef("jira_q_in_total", {"simulated": "true"}))
+    m = Model("system", "s", stocks=[Stock("q", "q", series=theirs)], flows=[f])
+    others = {'jira_q{simulated="true"}': {"source": "jira"}, 'jira_q_in_total{simulated="true"}': {"source": "jira"}}
+    simulated.mark(m, others)
+    assert not m.stocks[0].evidence.get("simulated") and not f.evidence.get("simulated")
+    simulated.mark(m)
+    assert m.stocks[0].evidence["simulated"] and f.evidence["simulated"]
+
+
+def test_a_simulated_part_never_seeds_the_next_eras_prior():
+    from orchestra.sd.prior import merge
+
+    sim = Stock("ramp", "ramp", series=SeriesRef("ramp", {"simulated": "true"}), evidence={"simulated": True})
+    real = Stock("q", "q", series=SeriesRef("q", {}))
+    eq = Equation("constant", {"c": 0.4}, "fitted", quality={"events": 40.0})
+    prior = Model("system", "s", stocks=[sim, real], flows=[Flow("into_ramp", "into ramp", None, "ramp", equations=[eq]),
+                                                            Flow("into_q", "into q", None, "q", equations=[eq])], era="e0")
+    got = merge(Model("system", "s"), prior, age_s=10.0, keep_s=3600.0)
+    assert [s.id for s in got.stocks] == ["q"] and [f.id for f in got.flows] == ["into_q"]
+    report = got.discovery["prior"]
+    assert report["dropped"] == {"stocks": ["ramp"], "flows": ["into_ramp"]}
+    assert report["why"] == {"stocks": {"ramp": "simulated"}, "flows": {"into_ramp": "simulated"}}

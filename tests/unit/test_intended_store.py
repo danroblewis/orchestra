@@ -15,7 +15,23 @@ from orchestra.sd.store import ModelStore
 OWNER = {"author": "owner", "source": "supervisor", "turn": "sessions/supervisor/41", "message": "msg_0193",
          "quote": "I'm going to create a Features stock."}
 SUPERVISOR = {"author": "supervisor", "source": "supervisor", "reason": "a guess"}
-ANSWER = {**SUPERVISOR, "request": "ev-request-1"}          # the Supervisor answering the owner's request
+
+
+class Bus:
+    """Enough of ``Events`` for the web server's request route: each event gets its own id."""
+
+    def publish(self, type_, data, **kw):
+        import uuid
+        return {"id": f"ev-{uuid.uuid4().hex[:8]}"}
+
+
+def answer(s, control, part="machine", eid="feature_count_improver", change=None) -> dict:
+    """The owner's request from a page, noted as the web server notes it, and the Supervisor's
+    provenance answering it."""
+    from orchestra.sd.intended import requests
+
+    ev = requests.publish(s, Bus(), {"control": control, "part": part, "id": eid, "change": change})
+    return {**SUPERVISOR, "request": ev["id"]}
 
 
 def store(tmp_path) -> IntendedStore:
@@ -114,7 +130,7 @@ def test_25_an_owners_revision_of_a_proposed_machine_applies_at_once(tmp_path):
 def test_25_the_same_revision_on_a_confirmed_machine_waits_until_confirmed(tmp_path):
     s = store(tmp_path)
     s.apply([machine()], SUPERVISOR)
-    s.apply([{"op": "confirm", "part": "machine", "id": "feature_count_improver"}], ANSWER)
+    s.apply([{"op": "confirm", "part": "machine", "id": "feature_count_improver"}], answer(s, "confirm"))
     got = s.apply([revision()], {**OWNER, "quote": "…12am every day"})
     m = s.read()["layer"]["machines"]["feature_count_improver"]
     change = got["changes"][0]["change"]
@@ -133,7 +149,8 @@ def test_25_a_revision_by_another_author_waits_until_confirm_or_discard(tmp_path
     change = got["changes"][0]["change"]
     m = s.read()["layer"]["machines"]["feature_count_improver"]
     assert m["spec"]["steps"] == ["b", "a"] and [p["change"] for p in m["pending"]] == [change]
-    s.apply([{"op": "confirm", "part": "machine", "id": "feature_count_improver", "change": change}], ANSWER)
+    s.apply([{"op": "confirm", "part": "machine", "id": "feature_count_improver", "change": change}],
+            answer(s, "confirm", change=change))
     m = s.read()["layer"]["machines"]["feature_count_improver"]
     assert m["spec"] == {"steps": ["c"], "invariants": ["x"]} and m["pending"] == [] and m["latest"]["before"]["steps"] == ["b", "a"]
     got = s.apply([{"op": "revise_machine", "id": "feature_count_improver", "set": {"title": "FCI"}}], SUPERVISOR)
@@ -158,13 +175,13 @@ def test_confirm_and_discard_and_guesses(tmp_path):
     s.apply([{"op": "declare_stock", "name": "Bugs"}, machine(guessed=["receives[0]"])], SUPERVISOR)
     layer = s.read()["layer"]
     assert layer["stocks"]["bugs"]["state"] == "proposed"
-    s.apply([{"op": "confirm", "part": "machine", "id": "feature_count_improver"},
-             {"op": "discard", "part": "stock", "id": "bugs"}], ANSWER)
+    s.apply([{"op": "confirm", "part": "machine", "id": "feature_count_improver"}], answer(s, "confirm"))
+    s.apply([{"op": "discard", "part": "stock", "id": "bugs"}], {"author": "owner", "control": "discard"}, via="page")
     layer = s.read()["layer"]
     assert layer["machines"]["feature_count_improver"]["state"] == "declared"
     assert layer["machines"]["feature_count_improver"]["guessed"] == [] and "bugs" not in layer["stocks"]
     with pytest.raises(IntentError):
-        s.apply([{"op": "discard", "part": "machine", "id": "feature_count_improver"}], ANSWER)
+        s.apply([{"op": "discard", "part": "machine", "id": "feature_count_improver"}], answer(s, "discard"))
 
 
 def test_a_proposal_is_not_confirmed_by_its_author_alone(tmp_path):
@@ -188,7 +205,7 @@ def test_discarding_a_proposed_machine_takes_its_attachments(tmp_path):
     s.apply([machine(), {"op": "propose_attachment", "machine": "feature_count_improver", "instrument": "pg"},
              {"op": "propose_machine", "id": "other"}, {"op": "propose_attachment", "machine": "other", "instrument": "pg"}],
             SUPERVISOR)
-    s.apply([{"op": "discard", "part": "machine", "id": "feature_count_improver"}], ANSWER)
+    s.apply([{"op": "discard", "part": "machine", "id": "feature_count_improver"}], answer(s, "discard"))
     assert [a["machine"] for a in s.read()["layer"]["attachments"].values()] == ["other"]
 
 

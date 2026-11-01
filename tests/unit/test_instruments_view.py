@@ -43,3 +43,21 @@ def test_an_instrument_the_host_once_announced_is_no_machine():
            {"type": "orchestra.machine.started", "source": "worker/1", "time": "2026-10-26T00:00:00Z", "data": {"listens_for": []}}]
     ids = {m["id"] for m in machines_view(evs)["machines"]}
     assert ids == {"orchestra-host", "worker"}
+
+
+def test_each_instrument_says_whether_it_is_simulated_or_a_draft(project):
+    from orchestra.collect.runner import Collecting
+    from orchestra.collect.spec import Collector
+
+    (project.repo_root / "orchestra.toml").write_text(
+        '[[collect]]\nname = "ramp"\ncommand = "x"\nsimulated = true\n'
+        '\n[[collect]]\nname = "try"\ncommand = "x"\ndraft = true\nexpires = "2026-11-08T00:00:00Z"\n'
+        '\n[[collect]]\nname = "plain"\ncommand = "x"\n')
+    project.reload_config()
+    by = {i["name"]: i for i in instruments_view(project)["instruments"]}
+    assert (by["ramp"]["simulated"], by["ramp"]["draft"], by["ramp"]["expires"]) == (True, False, None)
+    assert (by["try"]["simulated"], by["try"]["draft"], by["try"]["expires"]) == (False, True, 1794096000.0)
+    assert (by["plain"]["simulated"], by["plain"]["draft"], by["plain"]["expires"]) == (False, False, None)
+    c = Collecting(project, lambda *_: None, plugin_collectors=[Collector("ramp", "collect", "x", owner="features", simulated=True)])
+    c.wanted = {"features.ramp": Collector("features.ramp", "collect", "x", owner="features", simulated=True)}
+    assert c.snapshot()["features.ramp"]["simulated"] is True

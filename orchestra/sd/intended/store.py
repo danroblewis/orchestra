@@ -10,7 +10,10 @@
 
 One call is one journal line and one version ``dN``: all of its ops apply or none, under
 ``ModelStore.locked("intended")``. A call's seq is its version's number, and its ops' change ids
-are ``c<seq>.<i>``. The store, never the caller, sets a call's ``via`` and its time ``at``.
+are ``c<seq>.<i>``. The store, never the caller, sets a call's ``via`` and its time ``at``; a
+call ``via: page`` is one control of rule 9's closed list (``page_control``). The ops are given
+the owner's open requests (``requests.open_requests``), so one that answers a request
+(``provenance.request``) is checked against what the owner asked (``consent.py``).
 ``dN`` and ``vN`` are separate numberings: neither makes the other's versions (rule 4 as
 amended). Only the host and the web server write here (rule 5 as amended); everything derived
 (present, heard, recording, met, …) is computed on read and never stored.
@@ -32,9 +35,25 @@ from pathlib import Path
 from .checks import IntentError
 from .checks import provenance as checked_provenance
 from .ops import apply_op, empty
+from .requests import open_requests
 
 NAME = re.compile(r"^d(\d{4,})\.json$")
 LOCK = "intended"
+
+
+PAGE_MARKS = ("expect", "unexpect", "ignore")
+PAGE_SETTLES = ("confirm", "discard")
+PAGE_PARTS = ("stock", "effect", "flow")
+
+
+def page_control(ops: list) -> None:
+    """A page's call is one control from rule 9's closed list (as amended): ``expect``,
+    ``unexpect``, ``ignore``, or ``confirm`` / ``discard`` on a stock, effect or flow."""
+    op = ops[0] if len(ops) == 1 and isinstance(ops[0], dict) else None
+    name = (op or {}).get("op")
+    if op is None or not (name in PAGE_MARKS or (name in PAGE_SETTLES and op.get("part") in PAGE_PARTS)):
+        raise IntentError("a page records one observation: expect, unexpect, ignore, or confirm or discard on a stock, "
+                          "effect or flow; anything else is the Supervisor's", status=400)
 
 
 class IntendedStore:
@@ -50,7 +69,6 @@ class IntendedStore:
     def hold(self) -> int | None:
         return self.project.config.announce_hold if self.project is not None else None
 
-    # ---- reading ----
     def _numbers(self) -> list[int]:
         try:
             return sorted(int(m.group(1)) for p in self.dir.iterdir() if (m := NAME.match(p.name)))
@@ -131,15 +149,17 @@ class IntendedStore:
                 out[n] = {"version": n, "at": at, "author": None, "via": None, "changes": []}
         return [out[n] for n in sorted(out)]
 
-    # ---- writing ----
     def apply(self, ops, provenance: dict | None, via: str = "plugin") -> dict:
         """Apply one call: every op or none. Returns ``{"version", "changes"}``; raises
         ``IntentError`` with the refused op's ``index``."""
         if not isinstance(ops, list) or not ops:
             raise IntentError("ops is a non-empty list", status=400)
         prov = checked_provenance(provenance, via)
+        if via == "page":
+            page_control(ops)
         with self.models.locked(LOCK):
             cur = self.read()
+            asked = open_requests(self) if prov.get("request") else {}
             prov["at"] = time.time()
             layer = copy.deepcopy(cur["layer"])
             seq = (self.current_version() or 0) + 1
@@ -147,7 +167,7 @@ class IntendedStore:
             for i, op in enumerate(ops):
                 cid = f"c{seq}.{i}"
                 try:
-                    part, eid = apply_op(layer, op, {"provenance": prov, "change": cid})
+                    part, eid = apply_op(layer, op, {"provenance": prov, "change": cid, "requests": asked})
                 except IntentError as e:
                     raise IntentError(str(e), index=i, status=e.status) from None
                 changes.append({"op": op.get("op"), "part": part, "id": eid, "change": cid})
@@ -161,7 +181,6 @@ class IntendedStore:
                 fh.write(json.dumps({"seq": seq, "at": prov["at"], "provenance": prov, "ops": stamped, "changes": changes}) + "\n")
         return {"version": seq, "changes": changes}
 
-    # ---- the comparison and the summary ----
     def _hold(self, hold: int | None) -> int:
         hold = hold if hold is not None else self.hold
         if hold is None:
@@ -174,6 +193,8 @@ class IntendedStore:
         from .view import dynamics_block
         return dynamics_block(self, model=model, since=since, hold=self._hold(hold), **kw)
 
-    def design(self, hold: int | None = None) -> dict:
+    def design(self, hold: int | None = None, observed: set[str] | None = None) -> dict:
+        """The plugin's summary (``design.design``); ``observed``: the machine ids the Machines
+        page has observed, when the caller has them."""
         from .design import design
-        return design(self, self._hold(hold))
+        return design(self, self._hold(hold), observed=observed)

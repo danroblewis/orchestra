@@ -77,9 +77,20 @@ def noted(intended) -> list[dict]:
     return out
 
 
+def _answered(intended) -> set:
+    return {(e.get("provenance") or {}).get("request") for e in intended.journal()}
+
+
+def open_requests(intended) -> dict[str, dict]:
+    """Every noted request no accepted call has answered yet, by its event id: what a call's
+    ``provenance.request`` may cite (``consent.verified``)."""
+    answered = _answered(intended)
+    return {r["event"]: r for r in noted(intended) if isinstance(r, dict) and r.get("event") and r["event"] not in answered}
+
+
 def unanswered(intended) -> dict[tuple[str, str], dict]:
     """The latest request per (part, id) that no later op answers."""
-    answered = {(e.get("provenance") or {}).get("request") for e in intended.journal()}
+    answered = _answered(intended)
     latest: dict[tuple[str, str], dict] = {}
     for r in noted(intended):
         latest[(r["part"], r["id"])] = r

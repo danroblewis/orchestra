@@ -19,7 +19,10 @@ on. ``merge`` combines what it found in the era with the model of the era before
   while the era is younger than ``keep_s`` (``[discovery] prior_for``, by default the discovery
   window): long enough that discovery would have found it again were it still there. After that
   it is dropped, and the comparison reports it disappeared at the boundary (``sd.compare``);
-- **a flow or stock only the era has**: kept as it is (it appeared).
+- **a flow or stock only the era has**: kept as it is (it appeared);
+- **a simulated part of the prior** (``evidence["simulated"]``: a placeholder's, ``sd.simulated``),
+  and a flow reading one: never carried or blended, so a placeholder never seeds the next era
+  (docs/proposals/intended-model.md §11, question 5's default); dropped, with why ``simulated``.
 
 Machines are the era's (its own events); a machine of the prior is kept only for the prior's
 flows that are carried. Nothing is fitted here: the numbers come from the two models."""
@@ -33,6 +36,7 @@ from .model import Equation, Machine, Model
 
 PRIOR_EVENTS = 20.0
 PRIOR = "prior"
+SIMULATED = "simulated"
 
 
 def _events(e: Equation | None) -> float:
@@ -54,20 +58,33 @@ def _carried(e: Equation, era: str | None, why: str) -> Equation:
     return out
 
 
+def _simulated(prior: Model) -> tuple[set[str], set[str]]:
+    """The prior's simulated stocks, and its flows that are simulated or read one."""
+    stocks = {s.id for s in prior.stocks if (s.evidence or {}).get("simulated")}
+    flows = {f.id for f in prior.flows
+             if (f.evidence or {}).get("simulated") or {f.src, f.dst} & stocks or {i for e in f.equations for i in e.inputs} & stocks}
+    return stocks, flows
+
+
 def merge(model: Model, prior: Model | None, *, age_s: float, keep_s: float) -> Model:
     """The era's discovered ``model`` with the previous era's model ``prior`` (see above); what
-    was carried, blended and dropped is in ``model.discovery["prior"]``."""
+    was carried, blended and dropped (with why, for a simulated part) is in
+    ``model.discovery["prior"]``."""
     if prior is None:
         return model
     era = prior.era
     keep = age_s < keep_s
+    sim_stocks, sim_flows = _simulated(prior)
     report = {"era": era, "keep_s": keep_s, "age_s": round(age_s, 1), "carried": {"stocks": [], "flows": []},
-              "blended": [], "dropped": {"stocks": [], "flows": []}}
+              "blended": [], "dropped": {"stocks": [], "flows": []}, "why": {"stocks": {}, "flows": {}}}
     stocks = {s.id for s in model.stocks}
     for s in prior.stocks:
         if s.id in stocks:
             continue
-        if keep:
+        if s.id in sim_stocks:
+            report["dropped"]["stocks"].append(s.id)
+            report["why"]["stocks"][s.id] = SIMULATED
+        elif keep:
             c = copy.deepcopy(s)
             c.evidence = {**c.evidence, "prior": {"era": era, "why": "not yet found in this era"}}
             model.stocks.append(c)
@@ -75,7 +92,7 @@ def merge(model: Model, prior: Model | None, *, age_s: float, keep_s: float) -> 
             report["carried"]["stocks"].append(s.id)
         else:
             report["dropped"]["stocks"].append(s.id)
-    before = {f.id: f for f in prior.flows}
+    before = {f.id: f for f in prior.flows if f.id not in sim_flows}
     for f in model.flows:
         p = before.get(f.id)
         e, pe = f.current(), p.current() if p else None
@@ -94,6 +111,10 @@ def merge(model: Model, prior: Model | None, *, age_s: float, keep_s: float) -> 
     flows = {f.id for f in model.flows}
     for p in prior.flows:
         if p.id in flows:
+            continue
+        if p.id in sim_flows:
+            report["dropped"]["flows"].append(p.id)
+            report["why"]["flows"][p.id] = SIMULATED
             continue
         ends_ok = all(x is None or x in stocks for x in (p.src, p.dst))
         if keep and ends_ok:

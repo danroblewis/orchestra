@@ -72,6 +72,11 @@ class Collector:
         """The command or URL as one line, for logs and pages."""
         return shlex.join(self.target) if isinstance(self.target, tuple) else str(self.target)
 
+    def flags(self) -> dict:
+        """What the Instruments page says of it: a placeholder's, an option being tried (and when
+        its plugin removes it)."""
+        return {"simulated": self.simulated, "draft": self.draft, "expires": self.expires}
+
     def argv(self) -> list[str]:
         """The command's words: a string is split like a shell would (not run by one), a list is
         taken as it is; a first word of ``python`` or ``python3`` is Orchestra's own Python

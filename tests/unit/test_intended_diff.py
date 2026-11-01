@@ -97,7 +97,9 @@ def test_new_by_default_and_since_and_off(tmp_path):
     assert block(ms)["marks"]["stocks"] == {"b": ["new"]}
     assert block(ms, since="1")["marks"]["stocks"] == {"b": ["new"]} and block(ms, since="1")["since"] == 1
     off = block(ms, since="off")
-    assert off["marks"]["stocks"] == {} and off["since"] is None and not [c for c in off["changes"] if c["sign"] in "+-"]
+    assert off["marks"]["stocks"] == {} and off["since"] is None and not [c for c in off["changes"] if c["sign"] == "-"]
+    # with no base the unsettled suggestion is still listed, with no ring
+    assert [(c["key"], c["status"], c["since"]) for c in off["changes"] if c["sign"] == "+"] == [("b", "suggestion", 2)]
 
 
 def test_a_removed_flow_comes_with_its_rate_and_machines(tmp_path):

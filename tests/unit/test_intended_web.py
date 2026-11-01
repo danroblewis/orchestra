@@ -72,7 +72,8 @@ def test_a_page_mark_is_stored_by_key_and_an_unknown_target_is_refused(tmp_path,
                 {"control": "unexpect", "part": "flow", "id": "no_such_flow"},
                 {"control": "expect", "part": "stock"}):
         r = c.post("/api/intended/control", json=bad)
-        assert r.status_code == 400 and "latest model" in r.json()["error"] or "names its part" in r.json()["error"], bad
+        err = r.json()["error"]
+        assert r.status_code == 400 and ("latest model" in err or "names its part" in err), bad
     assert project.intended.current_version() == n
     assert c.post("/api/intended/control", json={"control": "unexpect", "part": "flow", "key": flow_key}).json()["ok"]
 
@@ -245,9 +246,44 @@ command = "sh {outside}"
     c = client(project)
     got = c.get("/api/intended/script?instrument=features.acceptance").json()
     assert got["ok"] and got["script"]["text"].startswith("pytest") and got["entry"]["every"] == "15m"
-    bad = c.get("/api/intended/script?instrument=features.outside").json()
-    assert not bad["ok"] and "outside the project" in bad["error"]
-    assert not c.get("/api/intended/script?instrument=nothing").json()["ok"]
+    bad = c.get("/api/intended/script?instrument=features.outside")
+    assert bad.status_code == 403 and bad.json() == {"ok": False, "error": bad.json()["error"]} and "outside the project" in bad.json()["error"]
+    none = c.get("/api/intended/script?instrument=nothing")
+    assert none.status_code == 404 and not none.json()["ok"]
+
+
+def test_the_script_is_found_past_an_interpreter_outside_the_project(tmp_path, monkeypatch):
+    import sys
+
+    project = project_at(tmp_path, monkeypatch)
+    (project.repo_root / "tools").mkdir()
+    (project.repo_root / "tools" / "acc.sh").write_text("pytest tests/acceptance\n")
+    (project.repo_root / "scripts").mkdir()
+    (project.repo_root / "scripts" / "x.py").write_text("print(41)\n")
+    project.config_file.write_text(project.config_file.read_text() + f'''
+[[collect]]
+name = "by.sh"
+command = "/bin/sh tools/acc.sh"
+
+[[collect]]
+name = "by.python"
+command = ["{sys.executable}", "scripts/x.py"]
+''')
+    project.reload_config()
+    c = client(project)
+    assert c.get("/api/intended/script?instrument=by.sh").json()["script"]["text"].startswith("pytest")
+    assert c.get("/api/intended/script?instrument=by.python").json()["script"]["text"] == "print(41)\n"
+
+
+def test_a_non_integer_parameter_is_a_400_with_the_usual_body(tmp_path, monkeypatch):
+    project = project_at(tmp_path, monkeypatch)
+    seed(project)
+    c = client(project)
+    for path in ("/api/intended?version=abc", "/api/intended/journal?after=x", "/api/intended/diff?d=1.5"):
+        r = c.get(path)
+        assert r.status_code == 400 and r.json() == {"ok": False, "error": r.json()["error"]}, path
+    assert [e["seq"] for e in c.get("/api/intended/journal?after=1").json()["journal"]] == [2]
+    assert c.get("/api/intended/diff?d=9").status_code == 404
 
 
 def test_34_the_core_page_answers_with_the_intended_directory_corrupt_or_locked(tmp_path, monkeypatch):
@@ -352,6 +388,43 @@ def test_33_design_lists_a_declared_machine_neither_heard_nor_measured(tmp_path,
     got = machines(c, lambda g: any(x["id"] == "feature_count_improver" and not x.get("unseen") for x in g["machines"]))
     assert next(m for m in got["machines"] if m["id"] == "feature_count_improver")["comparison"] == "heard"
     assert all(m["comparison"] is None for m in got["machines"] if not m.get("intent"))
+
+
+def test_design_and_the_machines_page_agree_on_a_machine_heard_by_counted_traffic(tmp_path, monkeypatch):
+    import orchestra.web.app as app_module
+
+    def counted(view, summary, now):
+        view["machines"].append({"id": "jira.bot", "bootstrap": False, "mode": None, "kind": None, "package": None, "about": {},
+                                 "publishes": [], "subscribes": [], "flows": [], "logs": [], "instances": [], "first_seen": None,
+                                 "last_seen": None, "active": False, "counted_only": True})
+    monkeypatch.setattr(app_module, "merge_counted", counted)
+    project = project_at(tmp_path, monkeypatch)
+    seed(project)
+    project.intended.apply([{"op": "confirm", "part": "machine", "id": "feature_count_improver"},
+                            {"op": "alias", "machine": "feature_count_improver", "observed": "jira.bot"}],
+                           {"author": "owner", "source": "supervisor", "quote": "yes, the bot"})
+    c = client(project)
+    m = next(x for x in machines(c)["machines"] if x["id"] == "jira.bot")
+    assert m["intent"]["heard"] and m["comparison"] == "heard"
+    d = c.get("/api/intended/design").json()
+    assert d["ok"] and not [o for o in d["open"] if o["what"] == "declared, neither heard nor measured"]
+    neither = [o["id"] for o in project.intended.design()["open"] if o["what"] == "declared, neither heard nor measured"]
+    assert neither == ["feature_count_improver"]          # in process, with only the bus count: counted traffic is the web server's
+
+
+def test_an_owners_request_on_an_attachment_shows_under_its_row(tmp_path, monkeypatch):
+    project = project_at(tmp_path, monkeypatch)
+    seed(project)
+    project.intended.apply([{"op": "propose_attachment", "machine": "feature_count_improver", "instrument": "pg"}],
+                           {"author": "supervisor"})
+    c = client(project)
+    got = c.post("/api/intended/request", json={"control": "confirm", "part": "attachment", "id": "feature_count_improver_pg"}).json()
+    row = next(x for x in machines(c)["machines"] if x["id"] == "feature_count_improver")["intent"]["attachments"][0]
+    assert row["requested"]["event"] == got["event"] and row["requested"]["control"] == "confirm"
+    project.intended.apply([{"op": "confirm", "part": "attachment", "id": "feature_count_improver_pg"}],
+                           {"author": "supervisor", "request": got["event"]})
+    row = next(x for x in machines(c)["machines"] if x["id"] == "feature_count_improver")["intent"]["attachments"][0]
+    assert row["requested"] is None and row["state"] == "declared"
 
 
 def test_one_rule_says_whether_a_draft_is_publishable(tmp_path, monkeypatch):

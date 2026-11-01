@@ -3,16 +3,22 @@ layer in place. A machine's and an attachment's are ``machine_ops``. Each op ret
 id it changed; the store gives it its change id and provenance.
 
 What the owner asks for (``author: owner``) is declared at once, a re-declaration of a proposed
-stock or effect included; what another author proposes enters ``proposed`` (§3). A proposal or a
-pending change is confirmed or discarded by the owner, or by the plugin answering the owner's
-request (``provenance.request``, §6.2), never by its author alone. Nothing here reads a discovered model: a declaration binds no series and
-is matched to one only by ``link`` (rule 7 as amended)."""
+stock, effect or flow included; what another author proposes enters ``proposed`` (§3). A proposal
+or a pending change is confirmed or discarded by the owner, or by the plugin answering the owner's
+request to do just that (``provenance.request``, §6.2, checked in ``consent.py``), never by its
+author alone. What the owner declared (an element, mark or target) is retracted, unmarked or
+re-targeted only by the owner, or in answer to the owner's request. A declared stock or effect
+that a declared flow, a keyed target or a machine's expected effect names is not retracted or
+discarded until they are changed, so no flow is left to resolve its end some other way. Nothing
+here reads a discovered model: a declaration binds no series and is matched to one only by
+``link`` (rule 7 as amended)."""
 
 from __future__ import annotations
 
 from . import machine_ops
 from .checks import IntentError, make_slug, no_derived, only, slug, strings, target, text
-from .revise import owner_asks, revise, settle_pending
+from .consent import guard_owners, may_settle, owner_asks
+from .revise import revise, settle_pending
 
 GROUP = {"stock": "stocks", "effect": "effects", "flow": "flows", "machine": "machines", "attachment": "attachments",
          "event": "events"}
@@ -74,7 +80,14 @@ def declare_flow(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
         raise IntentError("a flow has at least one end in a stock (null is outside)")
     eid = slug(op.get("id") or make_slug(f"{a or 'outside'}_to_{b or 'outside'}"))
     if eid in layer["flows"]:
-        raise IntentError(f"flow {eid} is already declared")
+        el = layer["flows"][eid]
+        if el.get("state") != "proposed" or not owner_asks(ctx["provenance"]):
+            raise IntentError(f"flow {eid} is already declared")
+        changed = {k: v for k, v in (("from", a), ("to", b), ("name", text(op.get("name"), "name", limit=200)),
+                                     ("note", text(op.get("note"), "note"))) if op.get(k) is not None}
+        revise(el, changed, {}, {}, strings(op.get("guessed"), "guessed"), ctx)
+        el.update(state="declared", confirmed={"by": "owner", "change": ctx["change"]})
+        return "flow", eid
     name = text(op.get("name"), "name", limit=200) or f"{a or 'outside'} → {b or 'outside'}"
     layer["flows"][eid] = _new(ctx, id=eid, part="flow", name=name, note=text(op.get("note"), "note"), **{"from": a, "to": b},
                                target=None)
@@ -88,9 +101,12 @@ def set_target(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
         raise IntentError(f"a target is on a stock, an effect or a flow, not {part!r}")
     t = target({"op": op.get("target"), **{k: op[k] for k in ("value", "hi", "over_s") if k in op}})
     if op.get("id") is not None:
-        element(layer, part, op["id"])["target"] = t
+        el = element(layer, part, op["id"])
+        guard_owners(el.get("provenance"), ctx, part, op["id"])
+        el["target"] = t
         return part, op["id"]
     key = text(op.get("key"), "key", required=True, limit=1000)
+    guard_owners((layer["targets"].get(key) or {}).get("provenance"), ctx, part, key)
     layer["targets"][key] = {"part": part, "key": key, "target": t, "provenance": ctx["provenance"], "change": ctx["change"]}
     return part, key
 
@@ -104,8 +120,11 @@ def mark(layer: dict, op: dict, ctx: dict, which: str, on: bool) -> tuple[str, s
     marks = layer["marks"][which]
     if on:
         marks[key] = {"part": part, "key": key, "provenance": ctx["provenance"], "change": ctx["change"]}
-    elif marks.pop(key, None) is None:
+        return part, key
+    if key not in marks:
         raise IntentError(f"{key} is not {which}")
+    guard_owners(marks[key].get("provenance"), ctx, part, key)
+    del marks[key]
     return part, key
 
 
@@ -156,33 +175,44 @@ def record_measurement(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
     return part, eid
 
 
-def _may_settle(prov: dict) -> None:
-    """A proposal or pending change is settled by the owner (a page, or a plugin quoting the
-    owner, which ``checks.provenance`` requires) or in answer to the owner's request."""
-    if prov.get("author") != "owner" and not prov.get("request"):
-        raise IntentError("a proposal is confirmed by the owner: give the owner's quote or the request's event id")
-
-
 def confirm(layer: dict, op: dict, ctx: dict, accept: bool) -> tuple[str, str]:
     only(op, ("part", "id", "change"), op["op"])
     part, eid = op.get("part"), op.get("id")
     el = element(layer, part, eid)
-    _may_settle(ctx["provenance"])
+    may_settle(ctx, part, eid, op["op"], op.get("change") or None)
     if op.get("change"):
-        settle_pending(el, op["change"], accept, ctx)
+        settle_pending(el, op["change"], accept, ctx, part)
+        if accept and part == "machine":
+            machine_ops.implicit_events(layer, el, ctx)
         return part, eid
     if el.get("state") != "proposed":
         raise IntentError(f"{part} {eid} is {el.get('state')}, not proposed" + ("" if accept else ": retract it"))
     if accept:
         el.update(state="declared", guessed=[], confirmed={"by": ctx["provenance"].get("author"), "change": ctx["change"]})
     else:
-        del layer[GROUP[part]][eid]
-        _orphans(layer, part, eid)
+        _remove(layer, part, eid)
     return part, eid
 
 
-def _orphans(layer: dict, part: str, eid: str) -> None:
-    """A machine discarded or retracted takes its attachments with it."""
+def _named_by(layer: dict, eid: str) -> list[str]:
+    """What names a declared stock or effect: declared flows (an end), a keyed target, and the
+    machines' expected-effect edits."""
+    out = [f"flow {fid}" for fid, f in layer["flows"].items() if eid in (f.get("from"), f.get("to"))]
+    if eid in layer["targets"]:
+        out.append(f"the target on {eid}")
+    for mid, m in layer["machines"].items():
+        edits = (m.get("expected_effect") or {}).get("edits") or []
+        if any(eid in (e.get("stock"), e.get("from"), e.get("to")) for e in edits):
+            out.append(f"machine {mid}'s expected effect")
+    return out
+
+
+def _remove(layer: dict, part: str, eid: str) -> None:
+    """Remove an element: a stock or effect only once nothing declared names it; a machine takes
+    its attachments with it."""
+    if part in ("stock", "effect") and (by := _named_by(layer, eid)):
+        raise IntentError(f"{part} {eid} is named by {', '.join(by)}: retract or change {'it' if len(by) == 1 else 'them'} first")
+    del layer[GROUP[part]][eid]
     if part == "machine":
         layer["attachments"] = {k: a for k, a in layer["attachments"].items() if a["machine"] != eid}
 
@@ -190,9 +220,8 @@ def _orphans(layer: dict, part: str, eid: str) -> None:
 def retract(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
     only(op, ("part", "id"), "retract")
     part, eid = op.get("part"), op.get("id")
-    element(layer, part, eid)
-    del layer[GROUP[part]][eid]
-    _orphans(layer, part, eid)
+    guard_owners(element(layer, part, eid).get("provenance"), ctx, part, eid)
+    _remove(layer, part, eid)
     return part, eid
 
 

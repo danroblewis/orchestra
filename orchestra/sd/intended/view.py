@@ -49,6 +49,14 @@ def _saved_structure(models, n: int):
     return _structures[ck]
 
 
+def unsettled_of(status: dict, shown: Keys, ignored: dict, expected: set) -> list[dict]:
+    """The unsettled suggestions (§3.3): a key whose history makes it a suggestion, in the shown
+    model, neither ignored nor expected; each with its id and the version its run began."""
+    return [{"part": p, "key": k, "id": shown.of(p).get(k), "since": s.get("since")}
+            for p in ("stock", "flow") for k, s in sorted(status[p].items())
+            if s["status"] == "suggestion" and k in shown.of(p) and k not in ignored and k not in expected]
+
+
 def resolve(models, nums: list[int], version: int | None, live: bool, since, model=None) -> tuple[int | None, int | None, str]:
     """(the shown version's number, or None for an unsaved discovery; the base's number, or None
     for no marks; the shown model's label). ``nums``: the saved versions' numbers."""
@@ -99,7 +107,7 @@ def dynamics_block(intended, model=None, since=None, *, hold: int, version: int 
     v = "live" if shown_n is None else shown_n
     st = diffs.cached(intended, d, v, base_n if base is not None else None, model.era if model else None, shown, base, layer,
                       hold, models, stamp, nums)
-    facts = Facts(metrics, limit_s, now)
+    facts = Facts(metrics, limit_s, now, project=getattr(getattr(intended, "project", None), "key", None))
     status = st["status"]
     ignored = layer["marks"]["ignored"]
     expected_keys = set(layer["marks"]["expected"])
@@ -128,27 +136,39 @@ def dynamics_block(intended, model=None, since=None, *, hold: int, version: int 
             if row["present"]:
                 put("stock", shown.stocks.get(row["key"]), "expected")
     changes = []
+    suggestions = unsettled_of(status, shown, ignored, expected_keys)
     for part in ("stock", "flow"):
+        rowed = set()
         for key in st["new"][part]:
             s = status[part].get(key) or {}
             if s.get("status") == "settled" or key in ignored:
                 continue
             pid = shown.of(part).get(key)
             put(part, pid, "new")
+            rowed.add(key)
             changes.append({"sign": "+", "part": part, "key": key, "id": pid, "status": "new", "since": shown_n,
                             "why": f"new in {label}", "controls": ["unexpect", "ignore"] if key in expected_keys else ["expect", "ignore"]})
+        for sg in suggestions:                   # unsettled, though not new against this base: listed until answered
+            if sg["part"] != part or sg["key"] in rowed:
+                continue
+            if base is not None:
+                put(part, sg["id"], "new")
+            changes.append({"sign": "+", "part": part, "key": sg["key"], "id": sg["id"], "status": "suggestion", "since": sg["since"],
+                            "why": f"new in v{sg['since']}" if sg["since"] else f"new in {LATEST}", "controls": ["expect", "ignore"]})
     removed = {"stocks": [], "flows": []}
     for key in st["removed"]["stock"]:
         sid = base.stocks.get(key)
         s = next((x for x in base_model.stocks if x.id == sid), None)
-        removed["stocks"].append({"key": key, "id": sid, "name": s.name if s else sid, "in": base_n})
-        changes.append({"sign": "-", "part": "stock", "key": key, "id": sid, "in": base_n})
+        sim = {"simulated": True} if s is not None and (s.evidence or {}).get("simulated") else {}
+        removed["stocks"].append({"key": key, "id": sid, "name": s.name if s else sid, "in": base_n, **sim})
+        changes.append({"sign": "-", "part": "stock", "key": key, "id": sid, "in": base_n, **sim})
     for key in st["removed"]["flow"]:
         fid = base.flows.get(key)
         f = next((x for x in base_model.flows if x.id == fid), None)
+        sim = {"simulated": True} if f is not None and (f.evidence or {}).get("simulated") else {}
         removed["flows"].append({"key": key, "id": fid, "from": f.src if f else None, "to": f.dst if f else None,
-                                 "rate": _rate(f), "machines": _machines(f) if f else [], "in": base_n})
-        changes.append({"sign": "-", "part": "flow", "key": key, "id": fid, "in": base_n})
+                                 "rate": _rate(f), "machines": _machines(f) if f else [], "in": base_n, **sim})
+        changes.append({"sign": "-", "part": "flow", "key": key, "id": fid, "in": base_n, **sim})
     for e in entries:
         if not e["present"]:
             changes.append({"sign": "o", "part": e["part"], "id": e.get("id"), "key": e.get("key"), "why": e.get("why"),
@@ -162,8 +182,6 @@ def dynamics_block(intended, model=None, since=None, *, hold: int, version: int 
             for p in ("stock", "flow") for k, s in sorted(status[p].items()) if s["status"] == "came_and_went" and k not in ignored]
     ign = [{"part": mk["part"], "key": k, "id": shown.of(mk["part"]).get(k), "present": k in shown.of(mk["part"]),
             "provenance": mk["provenance"]} for k, mk in sorted(ignored.items())]
-    unsettled = [k for p in ("stock", "flow") for k, s in status[p].items()
-                 if s["status"] == "suggestion" and k not in ignored and k not in expected_keys]
     targets = [{"part": t["part"], "key": k, "id": shown.of("flow" if t["part"] == "flow" else "stock").get(k),
                 "target": next((e["target"] for e in entries if e.get("key") == k and e.get("target")), None)
                 or target_of(t["target"], t["part"], k, shown, facts)}
@@ -173,6 +191,6 @@ def dynamics_block(intended, model=None, since=None, *, hold: int, version: int 
             "expected": entries, "marks": marks, "removed": removed, "changes": changes, "came_and_went": went,
             "ignored": ign, "settled": sum(1 for p in ("stock", "flow") for k, s in status[p].items()
                                            if s["status"] == "settled" and k in shown.of(p)),
-            "unsettled": len(unsettled), "stabilised": not unsettled, "targets": targets,
+            "unsettled": len(suggestions), "stabilised": not suggestions, "suggestions": suggestions, "targets": targets,
             "predicted": [{**p, "id": shown.flows.get(p["key"]) if p["key"] else None} for p in diffs.predicted(layer, shown)],
             "missing": facts.missing}

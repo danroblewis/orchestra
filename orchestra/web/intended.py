@@ -8,13 +8,15 @@ Machines pages read of the declared layer, and the closed list of page controls.
 | ``GET /api/intended/journal?after=`` | the accepted calls after a seq |
 | ``GET /api/intended/diff?d=&v=&since=`` | the comparison of ``dN`` with ``vM`` against ``vK`` (the Dynamics block) |
 | ``GET /api/intended/design`` | the plugin's summary (``design()``) |
-| ``GET /api/intended/script?instrument=`` | an option's script and its ``[[collect]]`` entry, read only inside the repository or the state directory |
+| ``GET /api/intended/script?instrument=`` | an option's script and its ``[[collect]]`` entry, read only inside the repository or the state directory (404 no such entry, 403 a script outside) |
 | ``POST /api/intended/control`` | an observation: ``expect``, ``unexpect``, ``ignore``, and ``confirm`` / ``discard`` on a stock, effect or flow |
 | ``POST /api/intended/request`` | a request: ``confirm``, ``discard``, ``switch_kind`` on a machine or an attachment, published as ``orchestra.intent.requested`` from ``owner`` |
 
 An observation records a declaration with ``via: page`` provenance and changes no machine, no
 configuration and no discovered version; a request changes nothing until the Supervisor applies
-it (AGENTS.md rule 9 as amended). No control carries a value."""
+it (AGENTS.md rule 9 as amended). No control carries a value. A refusal is ``{ok: false, error}``
+with its status: 400 a bad parameter or body, 403 a path outside the project, 404 not found,
+422 an op refused, 500 a version that cannot be read."""
 
 from __future__ import annotations
 
@@ -27,7 +29,7 @@ from fastapi.responses import JSONResponse
 from ..sd.intended import IntentError
 from ..sd.intended import requests as owner_requests
 from ..sd.intended.keys import mark_key
-from ..sd.intended.params import saved_version
+from ..sd.intended.params import integer, saved_version
 from ..sd.intended.view import dynamics_block
 from ..sd.model import Model
 from ..sd.store import ModelStore
@@ -79,26 +81,33 @@ def observation(body, models) -> tuple[dict, dict]:
 
 def script_of(project, instrument: str) -> dict:
     """An instrument's ``[[collect]]`` entry (through ``project.config``) and the script its command
-    names, read only when it lies inside the repository or the state directory."""
+    names: the first word that is a file inside the repository or the state directory. A word
+    outside them (an interpreter such as ``/bin/sh``, ``/usr/bin/env`` or a virtualenv's Python)
+    is passed over; only when no word is inside and some word was a file outside is the call
+    refused (403). No such entry is a 404."""
     from .machine_logs import readable
 
     entry = next((e for e in project.config.raw.get("collect") or [] if isinstance(e, dict) and e.get("name") == instrument), None)
     if entry is None:
-        return {"ok": False, "error": f"there is no [[collect]] entry named {instrument}"}
+        raise IntentError(f"there is no [[collect]] entry named {instrument}", status=404)
     cmd = entry.get("command")
     words = list(cmd) if isinstance(cmd, list) else shlex.split(str(cmd or ""))
     roots = [project.repo_root, project.state_dir]
     out = {"ok": True, "instrument": instrument, "entry": entry, "script": None}
+    outside = None
     for w in words:
-        p = Path(w).expanduser()
+        p = Path(str(w)).expanduser()
         p = p if p.is_absolute() else project.repo_root / p
-        if not p.exists() or not p.is_file():
+        if not p.is_file():
             continue
         path, why = readable(str(p), roots)
         if path is None:
-            return {**out, "ok": False, "error": why}
+            outside = outside or why
+            continue
         out["script"] = {"path": str(path), "text": path.read_text(encoding="utf-8", errors="replace")[:200_000]}
-        break
+        return out
+    if outside is not None:
+        raise IntentError(outside, status=403)
     return out
 
 
@@ -129,8 +138,9 @@ def attach_machines(project, out: dict, model) -> None:
         out["intended_error"] = f"{type(e).__name__}: {e}"
 
 
-def install(app: FastAPI, project, events, metrics) -> None:
-    """The routes of the table above."""
+def install(app: FastAPI, project, events, metrics, observed=None) -> None:
+    """The routes of the table above. ``observed``: what gives the machine ids the Machines page
+    has observed (None while it cannot say), so ``design()`` says heard as that page does."""
     def intended():
         return project.intended
 
@@ -141,38 +151,39 @@ def install(app: FastAPI, project, events, metrics) -> None:
             return _refused(e)
 
     @app.get("/api/intended")
-    def intended_read(version: int | None = None):
-        return answer(lambda: {"ok": True, **intended().read(version)})
+    def intended_read(version: str | None = None):
+        return answer(lambda: {"ok": True, **intended().read(integer(version, "version"))})
 
     @app.get("/api/intended/versions")
     def intended_versions():
         return {"ok": True, "versions": intended().versions()}
 
     @app.get("/api/intended/journal")
-    def intended_journal(after: int = 0):
-        return {"ok": True, "journal": intended().journal(after)}
+    def intended_journal(after: str | None = None):
+        return answer(lambda: {"ok": True, "journal": intended().journal(integer(after, "after") or 0)})
 
     @app.get("/api/intended/diff")
-    def intended_diff(d: int | None = None, v: str | None = None, since: str | None = None):
+    def intended_diff(d: str | None = None, v: str | None = None, since: str | None = None):
         def go():
             store = intended()
+            d_ = integer(d, "d")
             if v in (None, "", "live"):
-                return {"ok": True, **store.diff(None, since, d=d, metrics=metrics, hold=project.config.announce_hold)}
+                return {"ok": True, **store.diff(None, since, d=d_, metrics=metrics, hold=project.config.announce_hold)}
             n = saved_version(v, [x["version"] for x in store.models.versions()], "v")
             model = store.models.load(n)
             if model is None:
                 raise IntentError(f"v{n} cannot be read", status=500)
-            return {"ok": True, **dynamics_block(store, model, since, version=n, live=False, metrics=metrics, d=d,
+            return {"ok": True, **dynamics_block(store, model, since, version=n, live=False, metrics=metrics, d=d_,
                                                  hold=project.config.announce_hold)}
         return answer(go)
 
     @app.get("/api/intended/design")
     def intended_design():
-        return answer(lambda: {"ok": True, **intended().design()})
+        return answer(lambda: {"ok": True, **intended().design(observed=observed() if observed else None)})
 
     @app.get("/api/intended/script")
     def intended_script(instrument: str):
-        return script_of(project, instrument)
+        return answer(lambda: script_of(project, instrument))
 
     @app.post("/api/intended/control")
     async def intended_control(request: Request):

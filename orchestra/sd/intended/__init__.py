@@ -10,13 +10,15 @@ series, a declared flow changes no equation. Discovery never reads it (rule 7 as
 |---|---|
 | ``store`` | ``IntendedStore``: the journal and the versions ``dN``, ``apply``, ``read`` (``ModelStore.intended()``) |
 | ``checks`` | ids, the machine envelope, provenance, derived fields refused |
-| ``ops``, ``machine_ops``, ``revise`` | the ops of §6.3; revisions applied at once or kept pending |
+| ``ops``, ``machine_ops``, ``revise`` | the ops of §6.3; revisions applied at once or kept pending, the owner's precedence |
+| ``consent`` | whether an op has the owner's consent: the owner asks, or a plugin answers the owner's request |
 | ``keys`` | a discovered part's key (§3.1) |
 | ``history`` | suggestions, settling, came and went (§3.3) |
 | ``diff`` | the structural diff of ``dN``, ``vM``, ``vK``, cached |
 | ``facts``, ``expected``, ``view`` | the Dynamics page's block, with facts read under a time limit |
 | ``params`` | the comparison's ``since`` and ``v``, parsed in one place |
 | ``machines_view`` | the Machines page's ``intent``, ``comparison``, edges and types |
+| ``names`` | the names in a machine's draft expected effect, resolved one way |
 | ``drafts`` | whether an edit of a machine's draft expected effect can be published yet |
 | ``requests`` | the owner's requests from the pages (``orchestra.intent.requested``) |
 | ``announce`` | the host's ``orchestra.intent.changed`` |

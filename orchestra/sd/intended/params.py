@@ -1,7 +1,8 @@
-"""The comparison's version parameters, parsed in one place (§3.2, §6.1): ``since`` (the base)
-and ``v`` (the shown version). Not given (or empty) is the default; ``since`` also takes ``off``
-or ``none`` (no marks); anything else names a saved version: a non-integer is refused (400), an
-integer no saved version has is not found (404)."""
+"""The version parameters, parsed in one place (§3.2, §6.1): the comparison's ``since`` (the base)
+and ``v`` (the shown version), and the routes' plain numbers (``version``, ``d``, ``after``). Not
+given (or empty) is the default; ``since`` also takes ``off`` or ``none`` (no marks); anything
+else is a number: a non-integer is refused (400), and for ``since`` and ``v`` an integer no saved
+version has is not found (404)."""
 
 from __future__ import annotations
 
@@ -11,13 +12,20 @@ OFF = "off"
 OFFS = ("off", "none")
 
 
-def saved_version(value, nums: list[int], name: str) -> int | None:
-    """``value`` as a saved version's number; None when not given."""
+def integer(value, name: str) -> int | None:
+    """``value`` as a version's (or a seq's) number; None when not given."""
     if value is None or value == "":
         return None
     if isinstance(value, bool) or not (isinstance(value, int) or (isinstance(value, str) and value.strip().isdigit())):
         raise IntentError(f"{name} is a version's number, not {value!r}", status=400)
-    n = int(value)
+    return int(value)
+
+
+def saved_version(value, nums: list[int], name: str) -> int | None:
+    """``value`` as a saved version's number; None when not given."""
+    n = integer(value, name)
+    if n is None:
+        return None
     if n not in nums:
         raise IntentError(f"there is no version v{n}", status=404)
     return n
