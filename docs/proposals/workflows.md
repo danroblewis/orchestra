@@ -1,6 +1,7 @@
 # Workflows: a plugin for any company's workflows
 
-Status: draft for review, round 2, 2026-11-01. Nothing built. Proposal 3 of `design-backwards.md`
+Status: reviewed, 2026-11-01 (panel round 1; judge's verdict round 2); aligned to intended-model.md
+and machine-design.md as merged. Nothing built. Proposal 3 of `design-backwards.md`
 §7, from `design-backwards-notes.md` §1–§8, §10, §12; the owner's decisions are D21. It builds a
 new private repository, `~/orchestra-workflows` (plugin `workflows`). Nothing is copied from
 `~/orchestra-tasking`, whose SPEC was read as a list of capabilities only. The owner: "Do not let
@@ -158,10 +159,12 @@ by a trimming test added to `tests/bus`.
 
 *Settings and check:* `rotate_mb` (unset: no rotation, today's behaviour), `keep_mb`, `keep_days`
 (unset: keep all). Refused: a non-positive value, `keep_mb` below `rotate_mb`, any of them with a
-server bus URL. *Older writers:* a process appending without the lock could write into a sealed
-segment, so rotation is refused (logged once) while the runtime record lists a running process
-started by an Orchestra without the locked bus; within one version, rotation waits one second after
-the rename, under the lock, before counting the sealed lines.
+server bus URL. *Sealing, and writers without the lock:* `FileBus` opens the file for each append,
+so a writer without the lock can reach a sealed segment only with a write already in flight at the
+rename. Rotation renames the live segment under the exclusive lock, waits one second, counts its
+lines and writes `events.d/<base>.lines`; readers trust that count. A sealed segment found longer
+than its count (at the next rotation, or on start) is logged as a bus fault, and its extra lines are
+re-appended to the live segment, where readers that already hold them skip them by id.
 
 *Readers to change with it*, each reading from 0 and assuming the bus holds everything:
 `orchestra/host.py` `_collect` (about l.132: `read(0)` then `backfill(replace=True)` rebuilds
@@ -306,12 +309,12 @@ its instance in the data). There is no `dispatch` or `schedule` machine of its o
 
 ### 5.3 The program host
 
-The other half for programs, behind the boundary: for each program machine in `.orchestra/machines/`
-it announces the instances (`<name>/<n>`, kind program, ad hoc, `listens_for: [offer.made,
-offer.withdrawn]`), claims offers for its role, runs the command in the repository root with the
+The other half for programs, behind the boundary: for each machine in `.orchestra/machines/` with
+`kind: programmatic` and `managed: orchestra` (proposal 2's envelope) it announces the instances (`<name>/<n>`, kind program, ad hoc, `listens_for: [offer.made,
+offer.withdrawn]`), claims offers for the role in `spec.role`, runs the command in the repository root with the
 brief on stdin and `ORCHESTRA_OFFER`, `ORCHESTRA_ITEM`, `ORCHESTRA_REPO` and one
 `ORCHESTRA_RESOURCE_<KIND>` per held unit, sends `offer.alive`, and finishes with the outcome its
-exit code maps to (`0 → landed, 1 → rejected, 2 → conflict`, else `error`) and its output's tail as
+exit code maps to in `spec.exit` (`0 → landed, 1 → rejected, 2 → conflict`, else `error`) and its output's tail as
 summary. Nothing more in this run (§12.1). It publishes only as the program's instances.
 
 ### 5.4 The machine contract
@@ -422,7 +425,7 @@ bus event (source `metric:<series>`, the reading, the window, the time); the pos
 and the item's page names it. Reading a series never makes a machine of it (rule 7). **Relations.**
 A machine fans out with `item.requested` per child, `parent` set (one port per release branch). A
 link made after the fact is `item.related {kind: parent}` from a machine the workflow names
-(`pr-linker` below hears `github.pr.opened` and links the PR to its ticket). A bridge's events stay
+(`pr_linker` below hears `github.pr.opened` and links the PR to its ticket). A bridge's events stay
 facts of their own subjects; a parent reads them only through `of children`.
 
 **The SAIL delivery example** (set aside, notes §11, kept because it uses every word). Item: a Jira
@@ -438,7 +441,7 @@ is a separate workflow, `jira-hygiene`, on the same item. Working hours for `wit
 | nudge | role `nudger` drafts, the outbox sends | | `outbox.sent` | → review |
 | sail | outbox: the SAIL label, after approval | | `github.pr.labeled` | |
 | sail-check | outside: SAIL's action | | its check result | success → end; failure → triage-failure |
-| triage-failure | program `sail-triage` | | `offer.finished` | company-wide → sail-check (rounds 3); else → write |
+| triage-failure | program `sail_triage` | | `offer.finished` | company-wide → sail-check (rounds 3); else → write |
 
 **Persistence, not interface.** "If TOML is the interface for setting this up, it will be a
 miserable experience. If you insist on using TOML, it can be as a persistence format." Definitions
@@ -463,8 +466,11 @@ state directory. The Supervisor chooses, by whether the repository can be pushed
 ```
 .orchestra/
   workflows/<name>/workflow.json   definitions
-  machines/<name>/machine.json     every machine, a `kind` key, one schema per kind (D20); each plugin
-                                   reads only its kind (this one: command, exit-code outcomes, role)
+  machines/<id>/machine.json       proposal 2's envelope (id `^[a-z][a-z0-9_]{1,40}$`, `kind`,
+                                   `managed`, `engagement.mode`, `spec`), one schema per kind (D20);
+                                   each plugin reads only its own: this one `kind: programmatic`,
+                                   `managed: orchestra`, `engagement.mode: ad hoc`, `spec` {command,
+                                   role, exit: {code: outcome}}
   resources/<kind>/kind.json       capacity; make, reset, release (scripts beside it)
   instruments/                     collect scripts (as today)
   plugins/, overrides/             the core's, unchanged
@@ -498,8 +504,10 @@ M5's, numbered X1–X7 there; they are the suite and the documentation at once):
 2. **the model** (`model-acceptance`): step piles recorded `by_construction` (until the core's inputs
    exist, levels with an exact balance); the **expected loops** found (rework back to write; capacity
    limiting a held pile); the **forbidden list** held (no stock from `workflow_pile_oldest_seconds`,
-   holds by role or capacity; no flow per instance); **one domain series** (an outside count of the
-   same quantity) agreeing with its pile;
+   holds by role or capacity; no flow per instance; the domain series as a tally of events); and
+   **a domain series**, a quantity the workflow changes rather than a count of its own piles (for
+   example 1, the commits landed on the example repository's `main`, from a `[[collect]]`), whose
+   inflow is the move that fills it (the gate's `landed` move);
 3. **the event map** shows the declared machines and hand-offs, and no node, edge or source names the
    recorder, the floor or the program host.
 
@@ -516,7 +524,7 @@ M5's, numbered X1–X7 there; they are the suite and the documentation at once):
 
 **The task loop, example 1.** write (role `worker`, needs a worktree; `ready` → review, `blocked` →
 attention to `coordinator`); review (role `reviewer`, passed on by the worker; `approved` → gate,
-`rejected` → write as rework; rounds 3 → attention); gate (program `merge-gate` in the example's
+`rejected` → write as rework; rounds 3 → attention); gate (program `merge_gate` in the example's
 `.orchestra/machines/`, the repository's checks on a merge: 0 landed → end, 1 rejected and 2
 conflict → write as rework, else attention). Starts: a request or `every`. One command runs it, for
 the tests and W7's UX review: `uv run python -m orchestra_workflows demo task-loop`.
@@ -534,7 +542,7 @@ hole; open attention by planner with its age; the floor's offers, holders, lease
 button changes anything. The Supervisor's tools live in orchestra-agents. W7 adds
 `declare_workflow`, importing the plugin's validated writer
 (`orchestra_workflows.define.write(project, definition)`: the loader's checks, then an atomic write)
-as an optional dependency; the rest (`start_item`, `set_capacity`, ...) are P4's.
+as an optional dependency; the rest (`start_item`, `set_capacity`, ...) come later (§12.1).
 
 ## 11. Packaging
 
@@ -580,7 +588,9 @@ overriding what is observed, saying nothing about flows (rule 2). **Pages, route
   owner's listed worktrees, never the root, adopted only if a reset loses nothing, else refused and
   said once; marked with the project's key in their git directory).
 - **The program host beyond a command** (argument, environment and stdin interfaces; continuous
-  programs, notes §13.2), and **the other words**: `any`, `count ≥ n`, field equalities, person offers.
+  programs, notes §13.2), and **the other words**: `any`, `count ≥ n`, field equalities, person offers
+  (shown to the owner by orchestra-desk). The Supervisor's other workflow tools (`start_item`,
+  `set_capacity`, ...), beyond W7's `declare_workflow`.
 
 ### 12.2 Acceptance tests, each a program's check
 
@@ -631,8 +641,8 @@ overriding what is observed, saying nothing about flows (rule 2). **Pages, route
 21. W5: a done-when from a source without access is recorded, not counted, and listed as not counted;
     the drift test (§8) passes.
 22. W6: ten items through the task loop on the reference machines, one rejection and one gate
-    conflict; §9's three checks pass; the Machines page shows worker, reviewer, merge-gate and
-    coordinator with the hand-offs worker → reviewer → merge-gate.
+    conflict; §9's three checks pass; the Machines page shows worker, reviewer, merge_gate and
+    coordinator with the hand-offs worker → reviewer → merge_gate.
 23. W7: every `POST`, `PUT` and `DELETE` under `/api/plugins/workflows` answers 405 (UX is W7's gate).
 
 ## 13. Open questions
@@ -644,7 +654,7 @@ the ledger's "what happened"? (2) **the measuring interval**: does the Piles pag
 15 s? (3) **the program host's home**: here, or a plugin beside the agents' host? (4) **the file
 bus's retention defaults**, once rotation exists.
 
-Left to others: the declared layer (proposal 2); the Supervisor's duties, the other workflow tools,
-the `kind` key's other schemas, the agents' host answering `offer.made`, the desk showing person
-offers (proposal 4); plugin collectors' provenance and `pile` as a place (the core, with proposal 5);
+Left to others: the declared layer and the machine envelope (proposal 2); the Supervisor's duties,
+the `kind` key's other schemas, the agents' host answering `offer.made` (proposal 4); the desk
+showing person offers (orchestra-desk, later); plugin collectors' provenance and `pile` as a place (the core, with proposal 5);
 notes §12's other open items (M0).
