@@ -16,7 +16,7 @@ This version is an **empty Orchestra**: the bus, the metrics store, the model wi
 layer beside it (what the owner expects, the intended model, §4.6), the bootstrap host and the
 web UI, with no machines of its own beyond the host, and no AI: an AI agent is a machine like any
 other, run by whatever runs it. The machines' work and how it is organised live in plugins, each
-in its own repository, which add their pages here (§10.1). How the task system left is in
+in its own repository, which add their pages here (§10.1). How the core was emptied is in
 `docs/proposals/empty-orchestra.md`.
 
 This document is the design of what exists. `AGENTS.md` lists the rules that must not be broken;
