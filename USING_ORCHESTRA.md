@@ -1839,6 +1839,40 @@ The other pages: **Machines** (section 5.6, with the event map and each machine'
 PromQL editor, an events explorer, and every log), and the **Dashboard** (what runs now and the
 host's resources). The UI is read-only: nothing on it changes your machines.
 
+### What you expect (the intended model)
+
+Beside the discovered model Orchestra keeps a **declared layer**: what you expect the system to
+be, and the comparison of the two (SPEC §4.6). It runs nothing: a declared machine is not
+started, a declared stock binds no series, a declared flow changes no equation, and discovery
+never reads it.
+
+**Who declares.** A plugin, or any machine through `POST /intended` on the events endpoint
+(section 5.2; read it back with `GET /intended` and `GET /intended/design`). Each call is applied
+whole or refused, and every element it touches records its provenance: who (`source`,
+`author`), how (`via`: a plugin, the endpoint or a page) and when. [docs/INTEGRATING.md](docs/INTEGRATING.md)
+shows a call.
+
+**Three states.** An element is **proposed** (by inference, a part new in a discovered version,
+or by a plugin or machine), **declared** (by you: through a plugin quoting your words, or by
+confirming a proposal), and, independently, **observed** (a machine heard on the bus, a stock or
+flow discovery found). A machine always enters proposed. A declared stock, effect or flow is
+expected; one that discovery has not found is drawn as a **ghost** on the Dynamics page: the same
+shape, darker and dashed, "expected · not in vN", and a declared stock no series measures is
+tagged "not measured". Discovery is not told about a declaration: a declared stock appears in the
+model once discovery finds a matching level and it is linked (`link`).
+
+**Changes since vN.** The Dynamics page marks what changed since the previous saved version by
+default: new parts are ringed "new in vM", removed ones struck through "gone in vM". The switch
+turns the marks off, and any version can be the base. A new part is a suggestion until it has
+been in `[discovery] announce_hold` saved versions in a row; then it is settled.
+
+**What the pages let you do** (AGENTS.md rule 9, a closed list, none carrying a value):
+`expect`, `unexpect` and `ignore` on a discovered part, and `confirm` and `discard` on a proposed
+stock, effect or flow. Each records a declaration with its provenance, and changes no machine, no
+configuration and no discovered version. A machine's `confirm`, `discard` and kind switch are
+**requests**: the page publishes `orchestra.intent.requested` from `owner`, and nothing changes
+until a machine that listens for it acts. The pages name that machine, or say that none listens.
+
 ---
 
 ## 7. A worked example: a queue

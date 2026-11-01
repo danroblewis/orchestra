@@ -74,7 +74,9 @@ them locally. Series that live in another store (Prometheus, VictoriaMetrics, Mi
 are read in place by naming it under `[[sources]]` (SPEC §4.4); `orchestra sources infer` shows
 what Orchestra will read from it.
 To connect Jira, Slack, PagerDuty or a Prometheus store, ask the Supervisor, or follow
-[docs/INTEGRATING.md](docs/INTEGRATING.md) with your own coding tool.
+[docs/INTEGRATING.md](docs/INTEGRATING.md) with your own coding tool. What you expect the system to
+be (the intended model, shown beside the discovered one) is described in
+[USING_ORCHESTRA.md](USING_ORCHESTRA.md#what-you-expect-the-intended-model).
 
 Machines are your programs, and none needs to import Orchestra. Measurements come from
 instruments, which are not machines: a script that prints measurements in the Prometheus text

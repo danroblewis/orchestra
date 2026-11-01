@@ -559,6 +559,16 @@ to run from how the app is served: a `Procfile`, `docker-compose.yml` services, 
 scripts in `package.json`, `[project.scripts]` in `pyproject.toml`, a `Makefile` `run` target,
 the README. A container needs its runtime; prefer the command the developers use locally.
 
+## Connecting another system, and declaring what is expected
+
+To connect another system's store or events (an issue tracker, a chat, an alerting service, a
+Prometheus store), follow `docs/INTEGRATING.md` in Orchestra's repository: which route fits, the
+kits, and how to test against a fake before anything is scheduled. To declare what the owner
+expects (a stock, an effect, a flow, a machine), call `POST /intended` on the events endpoint
+(`ORCHESTRA_EVENTS_ENDPOINT`, with `ORCHESTRA_EVENTS_TOKEN`), with the owner's words quoted in the
+provenance; read the layer with `GET /intended` and `GET /intended/design`. A declaration runs
+nothing and binds no series (USING_ORCHESTRA.md, "What you expect").
+
 ## Patching an installed plugin: `.orchestra/overrides/` and `.orchestra/plugins/`
 
 Orchestra's environment is not an editable install. To fix a bug in an installed plugin now, write

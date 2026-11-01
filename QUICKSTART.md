@@ -58,8 +58,10 @@ Click the **log in** link that `orchestra web` prints. Lost it? Run `orchestra w
 
 ## 5. Look
 
-Open the **Instruments** page: the `tests` instrument's last run and what it wrote. After about an
-hour of data, the **Dynamics** page shows the first model.
+Open the **Instruments** page: the `tests` instrument's last run and what it wrote. The
+**Dynamics** page shows the first model once something measured moves (counters that fill or
+drain a level, or a level that changes enough to fit); until then it lists why each series was
+left out.
 
 ---
 
@@ -69,10 +71,10 @@ hour of data, the **Dynamics** page shows the first model.
 
 | Page | What it shows |
 |---|---|
-| Dashboard | The system at a glance: the machines, the instruments and the model's state |
+| Dashboard | Two panels: the machines running now, and the host (whether the host, bus and metrics store are up, and the computer's CPU, memory, disk and GPU). The instruments are on the Instruments page and the model on Dynamics. |
 | Machines | Who does the work (programs, people, services), and who hands work to whom |
 | Instruments | Each measurement: when it last ran, and what it wrote |
-| Dynamics | The model: stocks, flows, and how well they fit. The first model appears after about an hour of data. |
+| Dynamics | The model: stocks, flows, and how well they fit, and what you expect beside it ([the intended model](USING_ORCHESTRA.md#what-you-expect-the-intended-model)). The first model appears once something measured moves. |
 | Experiments | Edits to the model's equations, run forward and compared with what was measured |
 | Core | The bus, the metrics store, and the processes. Up even when everything else is broken. |
 
@@ -90,7 +92,11 @@ Inside these commands, `python` is Orchestra's own Python. For your project's Py
 ## Safety
 
 - The web UI listens on localhost only, and needs the login token.
-- Orchestra runs no AI and changes nothing in your repository; the pages are read-only.
+- Orchestra runs no AI. The pages change nothing but observations: rediscovering the model, and
+  marking what you expect or confirm, each recorded with who and when; a machine's confirm is a
+  request to the machine that listens for it.
+- In your repository Orchestra writes only `orchestra.toml`: on `orchestra init`, and when a
+  plugin changes the configuration through Orchestra (`project.config_edit`).
 
 ## Plugins
 
@@ -127,7 +133,7 @@ To leave a plugin out, drop its name from the brackets and run the install again
 |---|---|
 | `orchestra: command not found` | Run `uv tool update-shell`, then open a new terminal. |
 | An instrument writes nothing | Instruments page: its last error. Try its command by hand in the repository. |
-| No model on Dynamics | Wait about an hour. The page lists why each series was left out. |
+| No model on Dynamics | Read why each series was left out on the Dynamics page; a level that never changes is never a stock. |
 | A plugin's command is missing from `orchestra --help` | The install line was missing its name. Run it again, complete. |
 
 More: [USING_ORCHESTRA.md](USING_ORCHESTRA.md) (the full guide), [PLUGINS.md](PLUGINS.md) (writing plugins), [ARCHITECTURE.md](ARCHITECTURE.md).
