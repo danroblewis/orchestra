@@ -65,3 +65,48 @@ def test_no_model_yet_says_which_source_was_missing(tmp_path, monkeypatch):
     assert not out["ok"] and "a source was missing" in out["error"] and "nothing balances yet" not in out["error"]
     assert out["discovery"]["sources"] == sources and out["discovery"]["since_last_s"] == 7200
     assert out["discovery"]["not_saved"].startswith("missing rig")
+
+
+def _project(tmp_path, monkeypatch):
+    monkeypatch.setenv("ORCHESTRATOR_HOME", str(tmp_path / "home"))
+    (tmp_path / "repo").mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path / "repo", check=True)
+    return init_project(tmp_path / "repo")
+
+
+def test_no_model_says_none_could_be_judged_when_every_series_is_too_new(tmp_path, monkeypatch):
+    project = _project(tmp_path, monkeypatch)
+    new = "too new to measure: its first point is after the window's last step, so the next discovery considers it"
+    found = Model("m", "nothing yet", discovery={"left_out": {"a": new, "b": new, "c": new}, "sampled": 3, "series": 0,
+                                                 "step": 5.0, "start": 100.0, "end": 3700.0, "min_r2": 0.9})
+    ModelStore.for_state(project.state_dir).write_discovery(found)
+    err = model_view(project)["error"]
+    assert "none could be judged yet: all 3 series are newer than one step" in err and "nothing balances" not in err
+    # no orchestra run: no promise that it looks again by itself
+    assert "No orchestra run is running, so discovery will not run again until it starts" in err
+    assert "looks again every few minutes" not in err
+
+
+def test_no_model_says_it_looks_again_only_while_a_host_runs(tmp_path, monkeypatch):
+    from orchestra import runtime
+    from orchestra.web import dynamics
+
+    project = _project(tmp_path, monkeypatch)
+    found = Model("m", "nothing yet", discovery={"left_out": {"disk": "no counters balance it"}, "sampled": 1, "series": 1,
+                                                 "step": 5.0, "start": 100.0, "end": 3700.0, "min_r2": 0.9})
+    ModelStore.for_state(project.state_dir).write_discovery(found)
+    monkeypatch.setattr(dynamics, "host_running", lambda p: True)
+    err = model_view(project)["error"]
+    assert "(nothing balances yet)" in err and "It looks again every few minutes" in err
+    monkeypatch.setattr(dynamics, "host_running", lambda p: False)
+    assert "No orchestra run is running" in model_view(project)["error"]
+    # nothing discovered at all: the second message says the same
+    ModelStore.for_state(project.state_dir).dir.joinpath("discovered.json").unlink()
+    assert model_view(project)["error"].startswith("There is no model yet. No orchestra run is running")
+    monkeypatch.setattr(dynamics, "host_running", lambda p: True)
+    assert "discovers it from the metrics store every few minutes" in model_view(project)["error"]
+    # the runtime record decides it for real: this process registered as a host
+    monkeypatch.undo()
+    monkeypatch.setenv("ORCHESTRATOR_HOME", str(tmp_path / "home"))
+    runtime.update(project, lambda d: d.setdefault("hosts", {}).update({"1": runtime.me()}))
+    assert dynamics.host_running(project)
