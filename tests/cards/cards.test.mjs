@@ -4,6 +4,7 @@ import test from "node:test"; import assert from "node:assert/strict"; import pa
 
 // app.js and machine-dialog.js are page scripts: give them the little of the browser they touch at load
 globalThis.window = globalThis;
+globalThis.addEventListener = () => {};
 globalThis.document = { dispatchEvent() {}, addEventListener() {}, getElementById: () => null, createElement: () => ({}), scripts: [] };
 globalThis.location = { pathname: "/machines" };
 globalThis.fetch = () => new Promise(() => {});

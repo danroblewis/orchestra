@@ -29,12 +29,31 @@ test("a series alone is named by itself; an unmeasured stock by its own name", (
   assert.equal(n.h.name, "h");
 });
 
-test("a flow is named by its series, without what its ends already say", () => {
+test("a flow is named by its counter: who moved what from where to where, other labels with their key", () => {
   const f = (id) => SDGraph.flowName(model, model.flows.find((x) => x.id === id));
-  assert.equal(f("op"), "beads issue transitions");
-  assert.equal(f("px"), "beads issue transitions · dropped");
+  assert.equal(f("op"), "beads issue transitions · open → in progress");
+  assert.equal(f("px"), "beads issue transitions · in progress → dropped");
   assert.equal(f("ne"), "beads issues created");
   assert.equal(f("u"), "unmeasured inflow");
+  const by = { stocks: [], flows: [flow("a", null, null, "t_total", { by: "worker", from: "REJECTED" }), flow("b", null, null, "t_total", { by: "planner", status: "landed" }),
+                                   flow("c", null, null, "t_total", { by: "planner", status: "failed" })] };
+  assert.deepEqual(by.flows.map((x) => SDGraph.flowName(by, x)), ["t · worker: from REJECTED", "t · planner, status landed", "t · planner, status failed"]);
+});
+
+test("a counter several flows share says so; two flows between the same ends are told apart", () => {
+  const twin = (id, from, to) => flow(id, from, to, "t_total", { by: "w", from: "A", to: "B" });
+  const m = { stocks: [], flows: [twin("x", "o", null), twin("y", null, "p"), flow("z", "o", null, "t_total", { by: "w", from: "A", to: "C" })] };
+  const n = m.flows.map((x) => SDGraph.flowName(m, x));
+  assert.deepEqual(n, ["t · w: A → B (one counter, 2 flows)", "t · w: A → B (one counter, 2 flows)", "t · w: A → C"]);
+});
+
+test("a flow's label names its machines as hypotheses: the leader with its confidence, a tie by names, none without one", () => {
+  const f = (hs) => SDGraph.machineLabel({ machines: hs });
+  assert.equal(f([{ machine: "planner", confidence: 0.94 }, { machine: "worker", confidence: 0.38 }]), "planner 94%?");
+  assert.equal(f([{ machine: "reviewer", confidence: 1 }, { machine: "merge_gate", confidence: 0.99 }, { machine: "worker", confidence: 0.4 }]), "reviewer / merge_gate?");
+  assert.equal(f([{ machine: "a", confidence: 0.9 }, { machine: "b", confidence: 0.9 }, { machine: "c", confidence: 0.89 }]), "3 machines?");
+  assert.equal(f([{ machine: "a", confidence: null }]), "");
+  assert.equal(f([]), "");
 });
 
 test("a namespace shared by several lone series becomes their family", () => {
@@ -49,11 +68,19 @@ test("names stay unique when the usual value is left out", () => {
   assert.equal(new Set(names).size, names.length, names.join(" | "));
 });
 
-test("a flow measured by two counters of the same events is named by both label sets", () => {
+test("a flow measured by two counters of the same events is named by its own, and says the other's beside it", () => {
   const f = { ...flow("rd", "r", "d", "bakery_order_transitions_total", { from: "BOXED", to: "DELIVERED" }),
               evidence: { same_as: [{ name: "bakery_order_transitions_total", labels: { project: "p", machine: "w", from: "BAKING", to: "BOXED" } }] } };
   const m = { stocks: [stock("r", "bakery_orders", { state: "BAKING" }), stock("d", "bakery_orders", { state: "DELIVERED" })], flows: [f] };
-  assert.equal(SDGraph.flowName(m, f), "bakery order transitions · BAKING, BOXED = BOXED, DELIVERED");
+  assert.equal(SDGraph.flowName(m, f), "bakery order transitions · BOXED → DELIVERED");
+  assert.deepEqual(SDGraph.sameAs(m, f), ["bakery order transitions · BAKING → BOXED"]);
+});
+
+test("a stock a declared part sits beside is never hidden as one that only fills", () => {
+  const acc = (id) => ({ ...stock(id, "bakery_orders", { state: id }), evidence: { accumulator: true } });
+  const m = { stocks: [acc("done")], flows: [], machines: [] };
+  assert.deepEqual([...SDGraph.build(m).acc], ["done"]);
+  assert.deepEqual([...SDGraph.build(m, { keep: new Set(["done"]) }).acc], []);
 });
 
 test("a stock that only fills is drawn when a flow shown drains a stock into it", () => {

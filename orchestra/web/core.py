@@ -166,7 +166,11 @@ class CoreProbe:
         out["events"] = end
         stamps = [t for t in (_ts(e) for e in recent) if t]
         now = time.time()
-        out["per_min_10m"] = round(sum(1 for t in stamps if t >= now - 600) / 10, 2)
+        # over the last ten minutes, or over what the sample spans when that is shorter (a minute at
+        # least): a young bus, or one whose last 200 events took under ten minutes, is not divided by ten
+        recent_stamps = [t for t in stamps if t >= now - 600]
+        minutes = max(1.0, min(600.0, now - min(stamps)) / 60) if stamps else 10.0
+        out["per_min_10m"] = round(len(recent_stamps) / minutes, 2)
         out["last_event"] = ({"type": recent[-1].get("type"), "age_s": round(now - stamps[-1], 1)} if recent and stamps else None)
         types: dict[str, int] = {}
         for e in recent[-50:]:

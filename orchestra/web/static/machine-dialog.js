@@ -16,7 +16,8 @@ const kindWord = (kind) => kind || "machine";
 // (refreshed while open)
 let OPEN = null, OPEN_TIMER = null, LOG_INST = null;
 function closeMachine() { OPEN = null; clearInterval(OPEN_TIMER); $("drawer").classList.remove("mdlg"); closeDrawer(); }
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && OPEN) closeMachine(); });
+// closed by the drawer's own × (app.js), Escape or Back: stop refreshing it
+document.addEventListener("orchestra:drawerclosed", () => { if (OPEN) { OPEN = null; clearInterval(OPEN_TIMER); $("drawer").classList.remove("mdlg"); } });
 // A page with a details panel (the Machines page: Orchestra.machinePanel) opens a machine there;
 // ``{dialog: true}`` asks for this dialog itself (the panel's "details and log").
 function openMachine(id, { dialog = false } = {}) {
@@ -27,8 +28,7 @@ function openMachine(id, { dialog = false } = {}) {
   OPEN = id; LOG_INST = (m.logs || [])[0] || null;
   $("drawer").classList.add("mdlg");
   const insts = m.instances && m.instances.length ? m.instances : [];
-  openDrawer(`<h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.id)} <span class="tag">${esc(kindWord(m.kind))}</span>${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}${m.mode ? ` <span class="tag k-${esc(m.mode.replace(/ /g, "_"))}">${esc(m.mode.replace("_", " "))}</span>` : ""}${m.package ? ` <span class="tag">package: ${esc(m.package)}</span>` : ""}
-      <button class="ctl" style="margin-left:auto" onclick="closeMachine()">close</button></h3>
+  openDrawer(`<h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.id)} <span class="tag">${esc(kindWord(m.kind))}</span>${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}${m.mode ? ` <span class="tag k-${esc(m.mode.replace(/ /g, "_"))}">${esc(m.mode.replace("_", " "))}</span>` : ""}${m.package ? ` <span class="tag">package: ${esc(m.package)}</span>` : ""}</h3>
     <div class="row"><span class="muted">seen</span><span>${seenText(m)} · ${m.active ? "active" : "quiet"}</span></div>
     ${insts.length ? `<h4>Instances</h4><table class="dt"><tr><th>instance</th><th>kind</th><th>state</th><th>first seen</th><th>last seen</th><th>log</th></tr>${insts.map((i) => `<tr><td class="num">${esc(i.id)}</td><td>${i.kind ? esc(i.kind) : '<span class="muted">—</span>'}${i.mode ? ` <span class="muted">· ${esc(i.mode)}</span>` : ""}</td><td title="${i.cadence_s ? `seen on the bus about every ${ago(i.cadence_s)}` : "no cadence observed yet"}">${i.active ? '<span style="color:#22c55e">active</span>' : '<span class="muted">quiet</span>'}</td><td>${ago(Date.now() / 1000 - i.first_seen)} ago</td><td>${ago(Date.now() / 1000 - i.last_seen)} ago</td><td>${(m.logs || []).includes(i.id) ? "announced" : '<span class="muted">—</span>'}</td></tr>`).join("")}</table>` : ""}
     <h4>Log</h4><div class="seg" id="m-loginst"></div><div class="muted" id="m-lognote" style="font-size:11.5px"></div><div class="term" id="m-log"></div>

@@ -35,14 +35,17 @@ const Intended = (() => {
   }
   const stockOfKey = (key) => (key ? MODEL.stocks.find((s) => stockKey(s) === key || s.id === key) : null);
   const marksOf = (part, id) => { const x = it(); return (x && ((x.marks || {})[part === "stock" ? "stocks" : "flows"] || {})[id]) || []; };
-  const hasEarlier = () => { const x = it(), vs = MODEL.versions || []; return !!x && vs.findIndex((v) => v.version === x.shown) > 0; };
+  const hasEarlier = () => { const x = it(), vs = (MODEL && MODEL.versions) || []; return !!x && vs.findIndex((v) => v.version === x.shown) > 0; };
   const nameOf = (id) => (id && MODEL.stocks.some((s) => s.id === id) ? stockName(id) : nice(id));
   const who = (p) => (!p ? "" : p.author === "owner" ? "you" : p.author === "supervisor" || p.source === "supervisor" ? "the Supervisor" : p.author || p.source || "");
-  // what a declared element's tag says: who put it there; once there is an earlier version, why it is a ghost
+  // what a declared element's tag says: who put it there; "not in vN" only for a part an earlier
+  // version had (a mark tracked by inference since a version), never for one never measured or
+  // never found (mockups/README.md: a declared stock with no series is "not measured")
+  const wasPresent = (x) => !!(x.was_present || (!x.declared && x.since_version != null));
   const declTag = (x) => {
-    if (x.state === "proposed") return { text: `unconfirmed · proposed by ${who(x.provenance)}`, cls: "im-t-user" };
+    if (x.state === "proposed") return { text: `unconfirmed · proposed by ${who(x.provenance)}`, cls: "im-t-unconf" };
     if (x.present) return { text: "expected", cls: "im-t-exp" };
-    if (hasEarlier()) return { text: `expected · not in ${vlabel()}`, cls: "im-t-ghost" };
+    if (hasEarlier() && wasPresent(x) && x.measured !== false) return { text: `expected · not in ${vlabel()}`, cls: "im-t-ghost" };
     const p = x.provenance || {};
     return { text: `expected · declared by ${who(p)}${p.at ? " · " + agoText(p.at) : ""}`, cls: p.author === "owner" ? "im-t-user" : "im-t-ghost" };
   };
@@ -50,10 +53,13 @@ const Intended = (() => {
   const subline = (x) => (!x.measured ? "not measured" : recording(x) ? "no series yet · recording" : "no series of its own");
 
   // ---- SVG marks: a pill tag, a ring, a pin, a hatch ----
-  function svgTag(g, x, y, text, cls = "") {
+  // ``max``: the widest it may be (a ghost's tags stay within its box); longer text is cut, in full on hover
+  function svgTag(g, x, y, text, cls = "", max = Infinity) {
+    const fit = Math.max(4, Math.floor((max - 14) / 5.6)), shown = text.length > fit ? text.slice(0, fit - 1) + "…" : text;
     const t = g.append("g").attr("class", "im-svgtag " + cls).attr("transform", `translate(${x},${y})`);
-    t.append("rect").attr("x", 0).attr("y", -9).attr("width", text.length * 5.6 + 14).attr("height", 16).attr("rx", 8);
-    t.append("text").attr("x", 7).attr("y", 3).text(text);
+    if (shown !== text) t.append("title").text(text);
+    t.append("rect").attr("x", 0).attr("y", -9).attr("width", shown.length * 5.6 + 14).attr("height", 16).attr("rx", 8);
+    t.append("text").attr("x", 7).attr("y", 3).text(shown);
   }
   function svgRing(g, s) {
     g.insert("rect", ":first-child").attr("class", "im-ring").attr("x", -s.w / 2 - 6).attr("y", -s.h / 2 - 6).attr("width", s.w + 12).attr("height", s.h + 12).attr("rx", 10);
@@ -154,10 +160,12 @@ const Intended = (() => {
     };
   }
   function ghost(g, x, s) {
+    // a larger target than its box, for a finger on a phone
+    g.insert("rect", ":first-child").attr("class", "ng-grab").attr("x", -s.w / 2 - 14).attr("y", -s.h / 2 - 22).attr("width", s.w + 28).attr("height", s.h + 44).attr("rx", 10);
     if (x.simulated) hatch(g, s);
     g.append("text").attr("class", "ng-sub").attr("text-anchor", "middle").attr("y", -s.h / 2 + 48).text(subline(x));
     const t = declTag(x);
-    svgTag(g, -s.w / 2, -s.h / 2 - 14, t.text, t.cls);
+    svgTag(g, -s.w / 2, -s.h / 2 - 14, t.text, t.cls, s.w);
     const below = [];
     if (!x.measured) below.push(["not measured", "im-t-ghost"]);
     if (x.simulated) below.push(["simulated", "im-t-sim"]);
@@ -184,8 +192,8 @@ const Intended = (() => {
     const x = it(), vs = MODEL.versions || [];
     if (!x || !hasEarlier()) return;
     const i = vs.findIndex((v) => v.version === x.shown), base = x.since ?? (vs[i - 1] || {}).version;
-    $("ver").insertAdjacentHTML("beforeend", `<label class="im-toggle ${ON ? "on" : ""}" id="im-since" role="switch" aria-checked="${ON}" onclick="Intended.toggleSince()"
-      title="draw what changed since the version before: new stocks and flows ringed, removed ones as ghosts"><span class="im-sw"></span>changes since v${esc(base)}</label>`);
+    $("ver").insertAdjacentHTML("beforeend", `<button type="button" class="im-toggle ${ON ? "on" : ""}" id="im-since" role="switch" aria-checked="${ON}" onclick="Intended.toggleSince()"
+      title="draw what changed since the version before: new stocks and flows ringed, removed ones as ghosts"><span class="im-sw"></span>changes since v${esc(base)}</button>`);
   }
   function toggleSince() { ON = !ON; load(); }
   const param = () => (ON ? "" : "since=off");
@@ -197,8 +205,8 @@ const Intended = (() => {
     const sim = Object.values(x.marks || {}).some((m) => Object.values(m).some((v) => v.includes("simulated"))) || x.expected.some((e) => e.simulated);
     return `<span class="lg im-lg" title="a stock you said to expect, which this version has"><i class="im-sw-present"></i>expected, present</span>
       <span class="lg im-lg" title="a stock you said to expect, which this version does not have: drawn as a ghost"><i class="im-sw-ghost"></i>expected, missing (ghost)</span>
-      <span class="lg im-lg" title="found by this discovery, not in the version it is compared with"><i class="im-sw-new"></i>new in this version</span>
-      <span class="lg im-lg" title="in the version it is compared with, not in this one"><i class="im-sw-gone"></i>removed since last version</span>`
+      ${hasEarlier() && ON && x.since != null ? `<span class="lg im-lg" title="found by this discovery, not in the version it is compared with"><i class="im-sw-new"></i>new in this version</span>
+      <span class="lg im-lg" title="in the version it is compared with, not in this one"><i class="im-sw-gone"></i>removed since last version</span>` : ""}`
       + (sim ? `<span class="lg im-lg" title="fitted from a placeholder series, labelled simulated"><i class="im-sw-sim"></i>simulated</span>` : "")
       + ((x.predicted || []).some((p) => !p.present) ? `<span class="lg im-lg"><i class="im-sw-pred"></i>predicted by a machine's expected effect</span>` : "");
   }
@@ -224,7 +232,7 @@ const Intended = (() => {
       if (row) { row.classList.add("im-exprow"); row.cells[0].insertAdjacentHTML("afterbegin", '<span class="im-pinchip" title="expected: always shown">⌖</span>'); rows.push(row.outerHTML); row.remove(); continue; }
       const t = declTag(e);
       rows.push(`<tr class="im-exprow" data-x="${esc(e.id)}" onclick="IntendedDrawers.openExpected('${esc(e.id)}')" style="cursor:pointer"><td><span class="im-ghostdot"></span><b>${esc(e.name || nameOf(e.id))}</b>
-        ${e.part === "effect" ? tag("effect", "im-t-ghost") : ""} ${tag(t.text.replace(/^expected · /, ""), t.cls)}${e.simulated ? " " + tag("simulated", "im-t-sim") : ""}</td><td class="num">—</td><td class="muted">${statusText(e)}</td></tr>`);
+        ${e.part === "effect" ? tag("effect", "im-t-ghost") : ""} ${tag(t.text.replace(/^expected · /, ""), t.cls)}${e.measured ? "" : " " + tag("not measured", "im-t-ghost")}${e.simulated ? " " + tag("simulated", "im-t-sim") : ""}</td><td class="num">—</td><td class="muted">${statusText(e)}</td></tr>`);
     }
     const found = st.querySelectorAll("tr[data-sid]").length;
     if (rows.length) head.insertAdjacentHTML("afterend", `<tr class="im-group"><td colspan="3">Expected <span class="count">${rows.length}</span> <span class="muted">· always shown, found or not</span></td></tr>${rows.join("")}
@@ -262,6 +270,11 @@ const Intended = (() => {
         body: JSON.stringify({ control: ctl, part, key, from, page: "dynamics" }) })).json();
     } catch (e) { d = { ok: false, error: String(e) }; }
     if (!d.ok) { IntendedPanel.note(`${ctl} was not recorded: ${d.error || "no answer"}`); return d; }
+    const name = part === "stock" ? nameOf((stockOfKey(key) || {}).id || key) : (() => { const f = MODEL.flows.find((y) => flowKey(y) === key); return f ? `${nameOf(f.from)} → ${nameOf(f.to)}` : key; })();
+    const said = { expect: `${name} is expected: it stays on the diagram (unexpect in its drawer)`, unexpect: `${name} is no longer expected: a later discovery may drop it`,
+      ignore: `${name} is ignored: it leaves this list (to list it again, ask the Supervisor)`, confirm: `${name} is confirmed`, discard: `${name} is discarded` }[ctl];
+    if (said) IntendedPanel.note(said, true);
+    if (from && String(from).startsWith("changes since")) IntendedPanel.settled(ctl, part, key, name);
     await load();
     if (after) after();
     return d;
@@ -269,6 +282,11 @@ const Intended = (() => {
   // what the poll compares, so a mark set elsewhere redraws the diagram
   const sig = (m) => JSON.stringify(m && m.intended ? [m.intended.version, m.intended.since, m.intended.marks, (m.intended.expected || []).map((e) => [e.id, e.present])] : null);
 
+  // the stocks a declared part is placed near: never hidden, so a ghost sits where it was meant to
+  function nearIds() {
+    const x = it(); if (!x) return new Set();
+    return new Set(x.expected.filter((e) => e.near).map((e) => stockOfKey(e.near)).filter(Boolean).map((s) => s.id));
+  }
   return { extend, decorator, tip, click, versionBar, toggleSince, param, legend, tables, control, sig, it, marksOf, stockKey, flowKey,
-    declTag, statusText, recording, nameOf, who, agoText, hhmm, vlabel, tag, isOn: () => ON };
+    declTag, statusText, recording, nameOf, who, agoText, hhmm, vlabel, tag, nearIds, hasEarlier, isOn: () => ON };
 })();

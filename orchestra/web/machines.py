@@ -86,6 +86,12 @@ from ..events import HOST, event_time, for_an_instrument, machine_and_instance
 ANNOUNCE = ("orchestra.machine.started", "orchestra.machine.subscribed")
 # records about a declaration (the intended model), not work on their subject: never a hand-off
 NOT_WORK = ("orchestra.intent.changed", "orchestra.intent.requested")
+# Orchestra's own event type for a request from the pages (sd/intended/requests.py): a source that
+# publishes nothing else is the person pressing the pages' controls. It stays a machine (rule 2); its
+# card says what it is, since Orchestra knows what its own event type means.
+REQUESTED = "orchestra.intent.requested"
+ASKER_NOTE = "requests sent from the pages' controls (confirm, discard, kind switch)"
+RATE_S = 600         # a publication rate is over the last ten minutes, or over the machine's life when shorter
 # the cadence rule (beats, bursts, how long an instance stays active) is orchestra/cadence.py's,
 # shared with the host's quiet watch (orchestra/quiet.py)
 RECENT = 60
@@ -227,10 +233,14 @@ class MachineIndex:
             machines = []
             for m in ids:
                 pubs = []
+                first = min((v["first"] for v in self.instances[m].values()), default=None)
+                # over the last ten minutes, or the time since the machine was first seen when that is
+                # shorter (a minute at least): a machine 50 s old publishing 10 events is 10 a minute, not 1
+                minutes = max(1.0, min(RATE_S, now - first) / 60) if first is not None else RATE_S / 60
                 for ty, n in self.total[m].most_common():
                     q = self.recent.get((m, ty), ())
                     pubs.append({"type": ty, "count": n, "day": len(q),
-                                 "per_min_10m": round(sum(1 for t in q if t >= now - 600) / 10, 2)})
+                                 "per_min_10m": round(sum(1 for t in q if t >= now - RATE_S) / minutes, 2)})
                 insts, alive = [], False
                 for i, v in sorted(self.instances[m].items()):
                     cadence = gaps(self.beats[m].get(i, ()))
@@ -239,13 +249,14 @@ class MachineIndex:
                     insts.append({"id": i or m, "first_seen": v["first"], "last_seen": v["last"], "active": active,
                                   "cadence_s": cadence, "kind": self.kind[m].get(i), "mode": self.mode[m].get(i)})
                 last = max((v["last"] for v in self.instances[m].values()), default=None)
-                first = min((v["first"] for v in self.instances[m].values()), default=None)
                 kinds = Counter(self.kind[m].values())
+                asker = bool(self.total[m]) and set(self.total[m]) == {REQUESTED} and not kinds
                 cards = list(self.cards[m].values()) if m in self.cards else []
                 said = {f: next((c[f] for c in reversed(cards) if c.get(f)), None) for f in ("package", "name", "group")}
                 about = {k: v for c in cards for k, v in c.get("about", {}).items()}
                 machines.append({"id": m, "bootstrap": m == HOST, "mode": of_instances(Counter(self.mode[m].values())),
-                                 "kind": of_instances(kinds) or ("program" if m == HOST else None), "kinds": dict(kinds),
+                                 "kind": of_instances(kinds) or ("program" if m == HOST else "person" if asker else None), "kinds": dict(kinds),
+                                 **({"note": ASKER_NOTE} if asker else {}),
                                  **said, "about": about, "publishes": pubs,
                                  "subscribes": sorted(self.subs.get(m, ())), "flows": flows.get(m, []),
                                  "logs": sorted(i or m for i in self.logs.get(m, {})),

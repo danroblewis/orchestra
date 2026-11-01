@@ -47,7 +47,11 @@ h2 .hctl { display:flex; gap:8px; align-items:center; text-transform:none; lette
 /* ---- drawers ---- */
 .overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:9 }
 .overlay.open { display:flex } .drawer { width:min(940px,94vw); max-height:88vh; overflow:auto; background:var(--panel2); border:1px solid var(--border2); border-radius:12px; padding:18px 20px }
-.drawer h3 { margin:0 0 10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap }
+.drawer h3 { margin:0 0 10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-right:34px }
+/* every drawer's close bar: a zero-height strip that sticks to the drawer's top, its × at the right */
+.drawer-bar { position:sticky; top:-18px; height:0; z-index:5; display:flex; justify-content:flex-end; margin:0 -8px 0 0 }
+.drawer-bar .drawer-close { margin:-6px 0 0; width:30px; height:30px; padding:0; font-size:18px; line-height:1; border-radius:8px; background:var(--panel3) }
+.stale { color:#fcd34d } nav #conn.stale { color:#fcd34d }
 pre { background:#07090d; border:1px solid var(--border); border-radius:8px; padding:8px 10px; white-space:pre-wrap; font-size:12px; max-height:50vh; overflow:auto }
 .note { border-top:1px solid var(--border); padding:8px 0; font-size:12px } .note b { color:var(--muted) }
 
@@ -58,6 +62,7 @@ pre { background:#07090d; border:1px solid var(--border); border-radius:8px; pad
   .col { display:none; border-right:0; padding:12px; height:auto; overflow:visible } .col.on { display:block }
   .page { padding:6px; height:auto }
   .overlay { align-items:stretch } .drawer { width:100vw; max-height:100vh; height:100vh; border-radius:0; padding:14px }
+  .drawer-bar { top:-14px } .drawer-bar .drawer-close { width:40px; height:40px; font-size:22px }
   .kv { grid-template-columns:auto 1fr }
 }
 nav #proj { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
@@ -87,6 +92,7 @@ svg.spark.blue .l { stroke:#6ea8fe } svg.spark.blue .a { fill:#6ea8fe22 } svg.sp
 /* ---- network graphs (netgraph.js): the event map and the stock-and-flow model ---- */
 svg.netgraph { display:block; width:100%; min-height:0; font-size:11px; cursor:grab; background:var(--panel2); border-radius:10px }
 .ng-node { cursor:pointer } .ng-node text { pointer-events:none }
+g.ng-node:focus { outline:none } g.ng-node:focus-visible > circle:not(.ng-halo):not(.ng-grab), g.ng-node:focus-visible > rect.ng-box { stroke:#fcd34d !important; stroke-width:3 !important }
 .ng-initial { fill:#0b0d12; font-weight:800; font-size:15px }
 .ng-name { fill:var(--text); font-weight:600; font-size:11.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
 .ng-sub { fill:var(--muted); font-size:9.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
@@ -99,6 +105,8 @@ svg.netgraph { display:block; width:100%; min-height:0; font-size:11px; cursor:g
 .ng-flowdash { fill:none; stroke:#fff; stroke-width:2.2; stroke-dasharray:2 14; opacity:.7; pointer-events:none; animation:ng-flow linear infinite }
 @keyframes ng-flow { to { stroke-dashoffset:-32 } }
 .ng-elabel { fill:var(--text); font-size:10.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px; pointer-events:none } .ng-elabel tspan + tspan { font-weight:600 }
+.ng-elabel tspan.ng-muted { fill:var(--muted); font-weight:400; font-style:italic }
+.ng-label.ng-clickable { cursor:pointer } .ng-label.ng-clickable .ng-elabel { pointer-events:all }
 .ng-sign { font-size:15px; font-weight:800; paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
 .ng-dim { opacity:.1; transition:opacity .15s } .ng-hl .ng-line { stroke:#fcd34d !important; stroke-width:2.6 } .ng-node.ng-hl .ng-box, .ng-node.ng-hl > circle:not(.ng-halo) { stroke:#fcd34d; stroke-width:3 }
 .ng-tip { display:none; position:fixed; z-index:60; pointer-events:none; background:var(--panel2); border:1px solid var(--border2); border-radius:8px; padding:7px 10px; font-size:12px; box-shadow:0 8px 24px #0008; max-width:440px }

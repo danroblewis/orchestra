@@ -31,7 +31,7 @@ Orchestra.machineCards = (() => {
     card(m, opts = {}) { const s = this.of(m); try { return s && s.card ? s.card(m, opts) : null; } catch (e) { return null; } },
     summary(m) { const s = this.of(m); try { return s && s.summary ? s.summary(m) : null; } catch (e) { return null; } },
     wrap(m, html, extra = "") {
-      return `<div class="panel ${extra} ${m.unseen ? "unseen" : ""}" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)">${html}</div>`;
+      return `<div class="panel ${extra} ${m.unseen ? "unseen" : ""}" data-id="${esc(m.id)}" tabindex="0" role="button" aria-label="${esc(m.name || m.id)}: open its details" onclick="openMachine(this.dataset.id)" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openMachine(this.dataset.id)}">${html}</div>`;
     },
     // What Orchestra observed of a machine, as the rows of its card, drawn under whatever its
     // package put there: how it is engaged and what kind of thing it is (announced), its package,
@@ -46,6 +46,7 @@ Orchestra.machineCards = (() => {
       return `<div class="row"><span class="muted">engaged</span><span>${m.mode ? `<span class="tag k-${esc(m.mode.replace(/ /g, "_"))}">${esc(m.mode.replace("_", " "))}</span>` : '<span class="muted">not announced</span>'}</span><span class="muted">kind</span><span>${m.kind ? `<span class="tag">${esc(kindWord(m.kind))}</span>` : '<span class="muted">not announced</span>'}</span></div>
     <div class="row"><span class="muted">package</span><span>${m.package ? esc(m.package) : '<span class="muted">no package</span>'}</span>${m.group ? `<span class="muted">group</span><span><span class="tag" title="the group it announced (a team): a label, not a separate system">${esc(m.group)}</span></span>` : ""}</div>
     ${m.instances && m.instances.length ? `<div class="row"><span class="muted">instances</span>${m.instances.map((i) => `<span class="ty" title="${i.kind ? `${esc(i.kind)}, ` : ""}last seen ${ago(now - i.last_seen)} ago"><span class="dot ${i.active ? "" : "off"}" style="--rc:${i.active ? "#22c55e" : "#64748b"};width:7px;height:7px"></span> ${esc(i.id)}</span>`).join("")}</div>` : ""}
+    ${m.note ? `<div class="row"><span class="muted">what</span><span>${esc(m.note)}</span></div>` : ""}
     <div class="row"><span class="muted">seen</span><span>${seenText(m, now)}</span></div>
     <div class="row"><span class="muted">publishes</span>${(m.publishes || []).map(chip).join("") || '<span class="muted">nothing</span>'}</div>
     <div class="row"><span class="muted">listens for</span>${(m.subscribes || []).map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">nothing</span>'}</div>
@@ -133,8 +134,48 @@ fetch("/api/plugins").then((r) => r.json()).then((d) => {
   }
 }).catch(() => {});
 
-function openDrawer(html) { $("drawer").innerHTML = html; $("overlay").classList.add("open"); }
-function closeDrawer() { $("overlay").classList.remove("open"); }
+// The drawer: every one opens with a close bar (×) that stays at its top while it scrolls, closes
+// on Escape, and on a phone, where it fills the screen, on Back (a history entry while it is open).
+let DRAWER_BACK = false;           // a close's history.back() not yet arrived: its popstate is not a Back to act on
+function openDrawer(html) {
+  const ov = $("overlay"), was = ov.classList.contains("open");
+  $("drawer").innerHTML = '<div class="drawer-bar"><button class="ctl drawer-close" type="button" aria-label="close" title="close (Esc)" onclick="closeDrawer()">×</button></div>' + html;
+  ov.classList.add("open");
+  if (!was && !DRAWER_BACK) { try { history.pushState({ ...(history.state || {}), drawer: true }, ""); } catch (e) {} }
+}
+function closeDrawer() {
+  const ov = $("overlay");
+  if (!ov || !ov.classList.contains("open")) return;
+  ov.classList.remove("open");
+  document.dispatchEvent(new Event("orchestra:drawerclosed"));
+  if (history.state && history.state.drawer) { try { DRAWER_BACK = true; history.back(); } catch (e) { DRAWER_BACK = false; } }
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("overlay") && $("overlay").classList.contains("open")) closeDrawer(); });
+if (typeof window.addEventListener === "function") window.addEventListener("popstate", () => { const ov = $("overlay");
+  // the close's own back arrived: a drawer opened meanwhile gets its history entry now
+  if (DRAWER_BACK) { DRAWER_BACK = false; if (ov && ov.classList.contains("open")) { try { history.pushState({ ...(history.state || {}), drawer: true }, ""); } catch (e) {} } return; } if (ov && ov.classList.contains("open")) { ov.classList.remove("open"); document.dispatchEvent(new Event("orchestra:drawerclosed")); } });
+
+// A link printed by `orchestra web` carries the token after '#': never leave it in the address bar.
+if (/^#token=/.test(location.hash)) { try { history.replaceState(history.state, "", location.pathname + location.search); } catch (e) {} }
+
+// Whether the page's data is live: one word in the nav for every page's pollers. ``ok`` false
+// keeps the time of the last answer, so a page that stopped hearing from the server says so.
+// ``Orchestra.asOf(seconds)`` is that time as HH:MM (or HH:MM:SS), or "" before any answer.
+Orchestra.conn = (() => {
+  let last = null;
+  const hm = (t, s) => new Date(t).toTimeString().slice(0, s ? 8 : 5);
+  Orchestra.asOf = (s) => (last ? hm(last, s) : "");
+  return (ok, opts = {}) => {
+    const el = $("conn");
+    if (ok) last = Date.now();
+    if (el) {
+      el.textContent = ok ? "live" : `disconnected${last ? ` · as of ${hm(last, opts.seconds)}` : ""}`;
+      el.classList.toggle("stale", !ok);
+      el.title = ok ? "the page is reading the server" : "the server did not answer: what the page shows is from the time given";
+    }
+    return last;
+  };
+})();
 
 
 // ---- log highlighting -------------------------------------------------------

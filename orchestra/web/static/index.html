@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Orchestra</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="/static/style.css?v={{v}}">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css">
 <style>
@@ -27,6 +28,9 @@
   .mline .d { width:8px; height:8px; border-radius:50% } .mline b { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
   .mline > span:nth-child(3) { display:flex; gap:4px; flex-wrap:nowrap } .mline .k { font-size:10px; padding:0 6px; border-radius:999px; border:1px solid var(--border2); color:var(--text2); white-space:nowrap }
   .mline .r { text-align:right; color:var(--muted); font-size:11.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .mline .r .live { color:#86efac } .mline .r .quiet { color:var(--text2) } .mnote { font-size:11.5px; color:var(--muted); padding:4px 8px 6px }
+  /* a phone: a row wraps, its words under its name */
+  @media (max-width:600px) { .mline { display:flex; flex-wrap:wrap; gap:4px 8px } .mline > span:nth-child(3) { flex-wrap:wrap } .mline .r { flex-basis:100%; text-align:left; white-space:normal } }
 </style>
 </head>
 <body>
@@ -42,26 +46,34 @@
 let MACHINES = null;
 Orchestra.machineList = () => (MACHINES && MACHINES.machines) || [];
 
-// ---- Machines: a short list of what runs now (continuous machines, and any other while it is
-// active); a click opens the machine's dialog. Every machine is on the Machines page.
+// ---- Machines: a short list of the continuous machines and any other while it is active; a click
+// opens the machine's dialog. Every machine is on the Machines page. Whether a machine is active is
+// the bus's (its events within its own rhythm), the one predicate the headline and the rows share:
+// a continuous machine is one that said so when it started, never "running" on that word alone.
 Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 9 }, mount(body, ui) {
   async function refresh() {
     try {
       MACHINES = await (await fetch("/api/machines?era=all")).json();
-      $("conn").textContent = "live";
+      Orchestra.conn(true);
       if (!MACHINES.ok) { body.innerHTML = `<div class="empty">${esc(MACHINES.error)}</div>`; return; }
       const run = MACHINES.machines.filter((m) => !m.unseen && (m.mode === "continuous" || m.active));
-      ui.setSub(`${run.length} running · ${run.filter((m) => m.active).length} active now · ${MACHINES.machines.length} on the Machines page`);
-      body.innerHTML = run.length ? Orchestra.machineCards.sort(run).map((m) => {
+      const cont = run.filter((m) => m.mode === "continuous").length, act = MACHINES.machines.filter((m) => m.active).length;
+      const unheard = MACHINES.machines.filter((m) => m.intent && !m.intent.heard);
+      ui.setSub(`${cont} continuous · ${act} active now · ${MACHINES.machines.length} on the Machines page`);
+      const hm = (t) => new Date(t * 1000).toTimeString().slice(0, 5);
+      // the bus's word for it, always shown, even beside a package's own summary
+      const live = (m) => (m.active ? `<span class="live" title="heard within its own rhythm">in rhythm</span>` : m.last_seen ? `<span class="quiet">quiet since ${hm(m.last_seen)}</span>` : `<span class="quiet">never heard</span>`);
+      const omitted = unheard.length ? `<div class="mnote">· ${unheard.length} declared, not heard: ${unheard.map((m) => `<a href="/machines#${encodeURIComponent(m.id)}">${esc(m.id)}</a>`).join(", ")}</div>` : "";
+      body.innerHTML = (run.length ? Orchestra.machineCards.sort(run).map((m) => {
         const kind = m.kind || "";
         const own = Orchestra.machineCards.summary(m);
-        const right = own != null ? own : m.last_seen ? `${m.active ? "active" : "quiet"} · last event ${ago(Date.now() / 1000 - m.last_seen)} ago` : "";
+        const right = `${live(m)}${own != null ? ` · ${own}` : m.active && m.last_seen ? ` · last event ${ago(Date.now() / 1000 - m.last_seen)} ago` : ""}`;
         return `<div class="mline" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)" title="click for its details">
           <span class="d" style="background:${m.active ? "#22c55e" : "#64748b"}"></span><b>${esc(m.id)}</b>
           <span>${kind ? `<span class="k">${esc(kind)}</span> ` : ""}${m.mode ? `<span class="k">${esc(m.mode)}</span>` : ""}${m.package ? `<span class="k" title="the package this machine belongs to">${esc(m.package)}</span>` : ""}</span>
           <span class="r">${right}</span></div>`;
-      }).join("") : `<div class="empty">Nothing is running: no continuous machine, and nothing has published in the last two minutes.</div>`;
-    } catch (e) { $("conn").textContent = "disconnected"; }
+      }).join("") : `<div class="empty">Nothing is active: no machine has been heard within its own rhythm, and none said it runs continuously.</div>`) + omitted;
+    } catch (e) { Orchestra.conn(false); }
   }
   refresh(); setInterval(refresh, 5000);
   document.addEventListener("orchestra:machinecards", refresh);
