@@ -1,6 +1,6 @@
 # Instruments on machines: the integration step
 
-Status: draft for review, round 2, 2026-11-01. Nothing built. Proposal 5 of `design-backwards.md`
+Status: reviewed, 2026-11-01 (panel round 1, judge's verdict round 2); aligned to intended-model.md as of its round-1 revision. Nothing built. Proposal 5 of `design-backwards.md`
 §7, written from that file's §5 and `design-backwards-notes.md` §9 (items 7 and 12, and "the
 invariants this touches") and §13.1. It builds on proposal 2 (`intended-model.md`, draft
 `f1fed34e`), which defines declared machines and the declared layer; §8 lists what is taken from
@@ -135,8 +135,9 @@ measured"; a declared machine with neither events nor a measured attachment as "
 heard nor measured".
 
 **Confirming and discarding are the Supervisor's**, in the plugin. P2's page controls (§6.2,
-`POST /api/intended/control`) do not take `part: "attachment"`; any button for it belongs to the
-plugin's UI, never to a core route.
+`POST /api/intended/control`) write no attachment. The page's confirm and discard buttons, for
+attachments as for declared machines, publish the person's request as an event that the
+Supervisor acts on; no core route writes, confirms or discards one.
 
 **The Machines page.** The surface is today's machine dialog (`static/machine-dialog.js`), or P2's
 details panel where P2 replaces it. A declared machine is drawn as P2 draws one (frame
@@ -245,7 +246,8 @@ Unit (core):
     "attached, nothing measured"; the flag is never in a `dN` or the journal.
 13. With the metrics store unreachable, `/api/instruments` and `/api/machines` answer within their
     time limits, attachments listed, "series unknown".
-14. `POST /api/intended/control` with `part: "attachment"` is refused; no core route creates,
+14. `POST /api/intended/control` with `part: "attachment"` writes nothing to the declared layer:
+    the button publishes a request event and changes nothing itself; no core route creates,
     confirms or discards one.
 
 End to end, on the agents' demo with a declared `external` machine `postgres` and a `[[collect]]`
@@ -279,9 +281,8 @@ From P2 `f1fed34e`; if P2 changes, this follows.
   nor measured".
 - **The details panel** (§7): where P2 replaces the dialog, Measured by goes after Instances.
 - **Rule 5** (§8): P2's amendment covers attachments.
-- **One difference to settle:** P2 §6.2 lets the page confirm and discard proposals; for
-  attachments this proposal keeps that in the plugin (§3). P2 should say its controls exclude
-  `attachment`, or the panel should decide otherwise.
+- **Page controls:** P2 §6.2's controls send requests to the Supervisor for machines and
+  attachments alike (the coordinator's rule); P2 states it.
 
 ## 9. Open questions
 
