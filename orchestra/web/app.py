@@ -18,11 +18,14 @@ from fastapi.staticfiles import StaticFiles
 from .. import runtime
 from ..config import Project
 from ..events import Events
+from ..sd.extra import message as needs_sd
 from .auth import AuthMiddleware, enabled
 from .background import Refresher
 from .core import CoreProbe
 from .core_explore import Explorer
 from .dynamics import era_eras, model_view, predictions_view
+from .sd_extra import install as install_sd_extra
+from .sd_extra import unavailable
 from .traffic import merge as merge_counted
 
 STATIC = Path(__file__).parent / "static"
@@ -49,6 +52,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     explore = Explorer(core)
     bg = Refresher(project, events, core.metrics)
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
+    install_sd_extra(app)
 
     @app.middleware("http")
     async def no_cache(request, call_next):
@@ -164,8 +168,12 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
 
     @app.get("/api/dynamics/model")
     def dynamics_model(version: int | None = None, era: str | None = None) -> dict:
+        from ..sd.strategies import sd_installed
         bg.want("remote")                           # a page shows the levels: read remote ones while it does
-        return model_view(project, version, bg.levels, bg.levels_error, era=era)
+        out = model_view(project, version, bg.levels, bg.levels_error, era=era)
+        if not sd_installed():                      # conservation only: say what is missing, and how to have it
+            out["sd_missing"] = needs_sd("behaviour trust, simulation, experiments and SD Lab's strategies")
+        return out
 
     @app.get("/api/dynamics/predictions")
     def dynamics_predictions(era: str | None = None) -> dict:
@@ -235,7 +243,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         ``horizon_min`` ahead (sd/simulate.py). Cheap: a few hundred steps over the cached history."""
         from ..sd.strategies import sd_installed
         if not sd_installed():
-            return {"ok": False, "error": "simulating needs orchestra[sd] installed"}
+            return unavailable("simulating")
         bg.want("remote")
         if not bg.ready("history") or not bg.history:
             return {"ok": False, "error": "reading the history for the first time…"}
@@ -253,7 +261,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         (sd/observability.py), at the mean levels of the cached history. Read-only."""
         from ..sd.strategies import sd_installed
         if not sd_installed():
-            return {"ok": False, "error": "the observability report needs orchestra[sd] installed"}
+            return unavailable("the observability report")
         model = bg.model()
         if model is None or not model.stocks:
             return {"ok": False, "error": "there is no model yet"}

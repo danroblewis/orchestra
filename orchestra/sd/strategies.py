@@ -52,7 +52,7 @@ import re
 import time
 from pathlib import Path
 
-from . import behaviour
+from . import extra
 from .attribute import UNSET
 from .bounded import Late, run_jobs
 from .discover import FLAG_EXACT, MIN_EVENTS, UNITS, discover
@@ -69,12 +69,7 @@ README = Path(__file__).resolve().parent.parent / "sdlab" / "discovery" / "strat
 
 
 def sd_installed() -> bool:
-    try:
-        import numpy  # noqa: F401
-        import scipy  # noqa: F401
-        return True
-    except ImportError:
-        return False
+    return extra.installed()
 
 
 def available() -> dict:
@@ -229,8 +224,11 @@ def discover_with(dump, *, start: float, end: float, step: float, strategy: str 
     the model found (``sd.behaviour``)."""
     model = _discover_with(dump, start=start, end=end, step=step, strategy=strategy, options=options, time_unit=time_unit,
                            deadline=deadline, kinds=kinds, provenance=provenance)
-    if model.stocks:
+    if model.stocks and sd_installed():            # replays step the simulator: orchestra[sd]
+        from . import behaviour
         behaviour.attach(model, dump, start, end, step)
+    elif model.stocks:
+        model.discovery["behaviour"] = {"error": extra.message("behaviour trust")}
     return model
 
 

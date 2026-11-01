@@ -222,8 +222,12 @@ class Host:
     def _discover(self) -> None:
         """Rediscover the model every interval (``orchestra.sd.rediscover``), then announce what is
         due about it."""
+        from .sd import extra
         from .sd.rediscover import Busy, rediscover
 
+        if not extra.installed():
+            self.log("discovery: " + extra.message("behaviour trust, divergence and SD Lab's strategies")
+                     + "; discovering by conservation only")
         wait = 5.0                                    # soon after starting, then every interval (pace)
         while not self._stop.wait(wait):
             every = self.project.config.discovery_every
@@ -243,6 +247,11 @@ class Host:
                     self.log(f"predictions: {type(e).__name__}: {e}")
             except Busy:                              # the CLI or the web page is discovering: theirs will do
                 self.log("discovery: skipped, another process is discovering this project")
+            except ImportError as e:
+                if not extra.missing(e):
+                    raise
+                self.log("discovery: skipped from now on, " + extra.message("it") + f" ({e.name})")
+                return
             except Exception as e:  # noqa: BLE001 - try again next interval
                 self.log(f"discovery: {type(e).__name__}: {e}")
 

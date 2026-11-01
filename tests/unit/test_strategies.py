@@ -12,6 +12,8 @@ from orchestra.sd.rates import reads as _reads
 from orchestra.sd.rates import scale as _scale
 from orchestra.sd.strategies import CONSERVATION, available, discover_with, sd_installed
 
+needs_sd = pytest.mark.skipif(not sd_installed(), reason="SD Lab's strategies and behaviour trust need orchestra[sd]")
+
 
 def test_rates_per_step_become_rates_per_time_unit():
     f = 2.0                                     # 30 s steps, per minute
@@ -102,6 +104,7 @@ def test_sdlab_is_given_no_stock_its_counters_balance_exactly(tmp_path, monkeypa
     assert not [f for f in m.flows if f.id.startswith("unmeasured:")]
 
 
+@needs_sd
 def test_sdlab_is_given_the_stocks_no_counters_balance(tmp_path, monkeypatch):
     # a kiln beside the bakery cools toward the room: a stock of its own by its fitted net flow.
     # SD Lab is given that stock alone, and its flows take the place of conservation's
@@ -120,6 +123,7 @@ def test_sdlab_is_given_the_stocks_no_counters_balance(tmp_path, monkeypatch):
     assert m.flow("bakery_loaves_baked_total").current().method == "poisson-mle"
 
 
+@needs_sd
 def test_sdlab_flows_that_predict_a_net_flow_stock_worse_are_dropped(tmp_path, monkeypatch):
     # an SD Lab answer of a steady inflow into the cooling kiln predicts its held-out half worse
     # than the fitted net flow: the net flow's flows stay, and the stock says why
@@ -146,6 +150,7 @@ def _kiln_flows(tmp_path, monkeypatch, flows):
     return m, m.stock("kiln_temperature_celsius"), [f for f in m.flows if "kiln_temperature_celsius" in (f.src, f.dst)]
 
 
+@needs_sd
 def test_sdlab_flows_are_published_at_the_scale_they_were_judged_at(tmp_path, monkeypatch):
     # SD Lab found the kiln's law at half its strength: it is judged with a scale fitted to the
     # level (about 2), and what is published is that judged flow, not SD Lab's half-strength one
@@ -157,6 +162,7 @@ def test_sdlab_flows_are_published_at_the_scale_they_were_judged_at(tmp_path, mo
     assert abs(e.params["k"] - 0.02 * 2) < 0.008, e.params          # 0.02 a step of 30 s is 0.04 a minute
 
 
+@needs_sd
 def test_an_sdlab_flow_whose_judged_scale_turns_it_around_is_not_published(tmp_path, monkeypatch):
     # SD Lab wrote the kiln's law as an inflow: the kiln would heat the hotter it is. Fitted to the
     # level, its scale is below zero (the kiln cools), so the flow that would be published (an
@@ -169,6 +175,7 @@ def test_an_sdlab_flow_whose_judged_scale_turns_it_around_is_not_published(tmp_p
     assert nf["b"] < 0 and [f.id for f in mine if f.src == "kiln_temperature_celsius"], "it loses heat in proportion to itself"
 
 
+@needs_sd
 def test_an_sdlab_flow_that_moves_nothing_is_not_published(tmp_path, monkeypatch):
     # beside the kiln's law, SD Lab answered a second outflow of 1e-23 times the temperature: it
     # moves nothing, and a scale fitted to it would invent a flow; it is dropped and recorded
@@ -180,6 +187,7 @@ def test_an_sdlab_flow_that_moves_nothing_is_not_published(tmp_path, monkeypatch
     assert any("less than the 1% a flow must" in d["why"] for d in m.discovery["dropped"]), m.discovery["dropped"]
 
 
+@needs_sd
 def test_the_measured_moves_are_known_to_sdlab_and_its_invented_flows_are_dropped_where_nothing_remains(tmp_path, monkeypatch):
     # handed the bakery's two stocks, which are balanced exactly by their counters, an SD Lab
     # strategy's flows that no counter measures are dropped there; its flows on the counters are
@@ -212,6 +220,7 @@ def test_the_measured_moves_are_known_to_sdlab_and_its_invented_flows_are_droppe
     assert baked.spec["combined"] == 2 and baked.params["c"] == 2.0 and baked.params["k1"] == 0.2, "per step → per minute"
 
 
+@needs_sd
 def test_a_strategy_that_explains_the_residual_adds_flows_beside_the_counters(tmp_path, monkeypatch):
     # when the strategy read the known changes, its flows are what the counters leave: one between
     # two ends a counter already joins is another flow, not that counter's equation; and where
@@ -227,6 +236,7 @@ def test_a_strategy_that_explains_the_residual_adds_flows_beside_the_counters(tm
     assert not [f for f in m.flows if f.id.startswith("unmeasured:")] and len(m.discovery["dropped"]) == 1
 
 
+@needs_sd
 def test_inputs_offered_to_sdlab_leave_out_flags_and_sum_a_machines_instances(tmp_path, monkeypatch):
     store, start, end = _bakery_with_gauges(tmp_path)
     _every_measured_stock(monkeypatch)
@@ -290,6 +300,7 @@ def test_an_sdlab_strategy_adds_nothing_where_the_counters_balance_exactly(tmp_p
     assert all(f.current() and f.current().origin in ("fitted", "discovered") for f in m.flows)
 
 
+@needs_sd
 def test_an_unmeasured_flow_is_kept_where_a_stock_is_not_balanced_exactly(tmp_path, monkeypatch):
     # b's gauge reads one high now and then (scraped a moment off its counters): its balance is not
     # exact, so a residual flow into it is kept, as unmeasured, with its origin and SD Lab's rate per
@@ -388,6 +399,7 @@ def test_past_its_deadline_a_strategy_process_is_stopped_with_every_process_it_s
         raise AssertionError(f"the strategy's worker {pid} outlived the deadline")
 
 
+@needs_sd
 def test_each_stock_gets_a_behaviour_trust_beside_its_identity_trust(tmp_path):
     # the bakery's stocks are found by their balances (identity trust); run forward from part-way
     # through the window, the model is judged against the measured levels, and that is kept beside

@@ -7,10 +7,13 @@ flows' measured rates."""
 from __future__ import annotations
 
 from bisect import bisect_right
+from typing import TYPE_CHECKING
 
 from ..discover import UNITS
 from ..model import Model
-from .engine import Rate
+
+if TYPE_CHECKING:                   # the engine steps numpy (orchestra[sd]); reading a window does not
+    from .engine import Rate
 
 HOLD_S = 600.0           # a forward run holds a measured flow at its mean over this long before now
 STEPS_MAX = 1000         # a run takes at most this many steps; a longer window takes longer steps
@@ -65,6 +68,7 @@ def held(history: dict, fid: str, now: float) -> list[float]:
 
 def holds(history: dict, fids, now: float) -> dict[str, Rate]:
     """A forward run's measured rates: each flow's mean over the last HOLD_S, from now."""
+    from .engine import Rate
     out = {}
     for fid in fids:
         xs = held(history, fid, now)
@@ -74,6 +78,7 @@ def holds(history: dict, fids, now: float) -> dict[str, Rate]:
 
 def measured_rates(history: dict, fids) -> dict[str, Rate]:
     """A replay's measured rates: each flow's as counted, over the stretch that contains a time."""
+    from .engine import Rate
     return {fid: Rate((history.get("flows") or {}).get(fid) or []) for fid in fids}
 
 
