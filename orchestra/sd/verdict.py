@@ -29,7 +29,12 @@ but not the one predicted) or ``waiting`` (the era has no evidence of its own on
   new flow named by its ends matches any appeared flow between them; a flow still ``carried``
   (not found in the era since it began) counts as gone;
 - a stock's level **below** / **above** x: the mean of its measured level over the horizon's
-  second half.
+  second half;
+- a stock that **rises** / **falls** (a declared machine's expected effect, ``sd.intended``): its
+  slope after the change (least squares over the horizon) against its slope before (over as long
+  before the change), judged as a factor is: met when ``z``, the difference over its standard
+  error, is at least ``Z`` in that direction; ``different`` when it moved the other way;
+  ``absent`` when the slope held, though the level rose (a cumulative stock rises by itself).
 
 **Unpredicted changes** are every other flow that changed, changed form (unless its old law still
 holds, or cannot be run: then it counts), appeared or disappeared,
@@ -287,6 +292,34 @@ def edit(e: dict, comparison: dict, model=None, taken: set[str] | None = None, l
     return {"status": "absent"}
 
 
+def _slope(pts: list) -> tuple[float, float] | None:
+    """A least-squares slope and its standard error, or None with fewer than three points."""
+    n = len(pts)
+    if n < 3:
+        return None
+    mt, mv = sum(t for t, _ in pts) / n, sum(v for _, v in pts) / n
+    sxx = sum((t - mt) ** 2 for t, _ in pts)
+    if sxx <= 0:
+        return None
+    b = sum((t - mt) * (v - mv) for t, v in pts) / sxx
+    res = sum((v - mv - b * (t - mt)) ** 2 for t, v in pts)
+    return b, math.sqrt(res / (n - 2) / sxx)
+
+
+def slope(e: dict, before: dict[str, list] | None, after: dict[str, list] | None) -> dict:
+    """A ``rises`` / ``falls`` expectation: the stock's slope after the change against before."""
+    a, b = _slope((after or {}).get(e["stock"]) or []), _slope((before or {}).get(e["stock"]) or [])
+    if a is None or b is None:
+        return {"status": "waiting", "reason": "no_levels"}
+    se = math.hypot(a[1], b[1])
+    z = (a[0] - b[0]) / se if se > 0 else (0.0 if a[0] == b[0] else math.copysign(math.inf, a[0] - b[0]))
+    sign = 1 if e["direction"] == "rises" else -1
+    row = {"slope_before": _r(b[0], 6), "slope_after": _r(a[0], 6), "z": _r(z, 2) if math.isfinite(z) else None}
+    if sign * z >= Z:
+        return {"status": "met", **row}
+    return {"status": "different" if -sign * z >= Z else "absent", **row}
+
+
 def level(e: dict, measured: dict[str, list] | None, horizon_s: float) -> dict:
     """A level expectation against the stock's measured levels (``[[seconds after the change,
     level], …]``) over the horizon's second half."""
@@ -298,14 +331,22 @@ def level(e: dict, measured: dict[str, list] | None, horizon_s: float) -> dict:
     return {"status": "met" if ok else "missed", "level": _r(mean), "readings": len(pts)}
 
 
+def simulated_ids(*models) -> set[str]:
+    """The stocks and flows discovery marked fitted from a simulated series (``sd.simulated``)."""
+    return {p.id for m in models if m is not None for p in [*m.stocks, *m.flows] if (p.evidence or {}).get("simulated")}
+
+
 def unpredicted(expect: list[dict], comparison: dict, statuses: list[dict], model=None,
-                loop_stocks: dict[str, list[str]] | None = None, laws: dict | None = None) -> list[dict]:
+                loop_stocks: dict[str, list[str]] | None = None, laws: dict | None = None,
+                simulated: set[str] | None = None) -> list[dict]:
     """The changes at the boundary that no expectation named (``loop_stocks``: each loop's stocks,
-    from either model)."""
+    from either model). A simulated part (``simulated``: their ids; by default the model's) is
+    never an unpredicted change."""
+    simulated = simulated_ids(model) if simulated is None else simulated
     named = {e["flow"] for e in expect if "flow" in e}
     named |= {e["id"] for e in expect if e["kind"] in ("appears", "disappears") and e["part"] == "flow" and e.get("id")}
     named |= {s["flow"] for s in statuses if s.get("flow")}       # new flows matched by their ends
-    stocks = {e["id"] for e in expect if e.get("part") == "stock"} | {e["stock"] for e in expect if e["kind"] == "level"}
+    stocks = {e["id"] for e in expect if e.get("part") == "stock"} | {e["stock"] for e in expect if e["kind"] in ("level", "slope")}
     moved = [e for e in expect if e["kind"] in ("appears", "disappears") and e["part"] == "flow"]
     for e in moved:
         stocks |= {x for x in (e.get("from"), e.get("to")) if x}
@@ -317,7 +358,7 @@ def unpredicted(expect: list[dict], comparison: dict, statuses: list[dict], mode
     loops = {e["id"] for e in expect if e.get("part") == "loop"}
     out = []
     for f in comparison.get("flows") or []:
-        if f["status"] in CHANGES and f["id"] not in named:
+        if f["status"] in CHANGES and f["id"] not in named and f["id"] not in simulated:
             held = (laws or {}).get(f["id"])
             if f["status"] == "form changed" and law_holds(held):
                 continue                                # discovery chose another form; the old law still holds
@@ -329,7 +370,8 @@ def unpredicted(expect: list[dict], comparison: dict, statuses: list[dict], mode
                 row.update(param=n["param"], before=n["before"], after=n["after"], ratio=n["ratio"], z=n["z"])
             out.append(row)
     for kind in ("appeared", "disappeared"):
-        out += [{"part": "stock", "id": s, "status": kind} for s in (comparison.get("stocks") or {}).get(kind, []) if s not in stocks]
+        out += [{"part": "stock", "id": s, "status": kind} for s in (comparison.get("stocks") or {}).get(kind, [])
+                if s not in stocks and s not in simulated]
     for kind in ("appeared", "disappeared"):
         out += [{"part": "loop", "id": x, "status": kind} for x in (comparison.get("loops") or {}).get(kind, [])
                 if x not in loops and not set((loop_stocks or {}).get(x) or []) & stocks]

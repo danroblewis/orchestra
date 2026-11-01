@@ -126,7 +126,7 @@ class Collecting:
         """The instruments as the runtime record holds them."""
         with self._lock:
             return {n: {"kind": c.what, "target": c.shown, "every_s": c.every_s, "timeout_s": c.timeout_s, "owner": c.owner,
-                        "log": str(self._log_of(c)), "failures": self.failures[n], **self.health.get(n, {})}
+                        **c.flags(), "log": str(self._log_of(c)), "failures": self.failures[n], **self.health.get(n, {})}
                     for n, c in sorted(self.wanted.items())}
 
     def _record_health(self, now: float) -> None:

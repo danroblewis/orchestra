@@ -186,6 +186,7 @@ class Project:
     key: str
     repo_root: Path
     config: Config
+    _stamp: tuple | None = field(default=None, repr=False, compare=False)   # config_stamp() when config was last read
 
     @property
     def state_dir(self) -> Path:
@@ -206,6 +207,12 @@ class Project:
     @property
     def logs_dir(self) -> Path:
         return self.state_dir / "logs"
+
+    @property
+    def intended(self):
+        """The intended model (``orchestra.sd.intended``): ``apply``, ``read``, ``diff``, ``design``."""
+        from .sd.store import ModelStore
+        return ModelStore.for_state(self.state_dir).intended(self)
 
     def ensure_dirs(self) -> None:
         for d in (self.state_dir, self.logs_dir):
@@ -257,7 +264,9 @@ class Project:
         return Config.from_raw(merged, layers)
 
     def reload_config(self) -> None:
+        stamp = self.config_stamp()
         self.config = self.read_config()
+        self._stamp = stamp
 
     @property
     def config_edit(self):
@@ -265,6 +274,20 @@ class Project:
         (``orchestra.config_edit.ConfigEdit``): the only way, for Orchestra and every plugin."""
         from .config_edit import ConfigEdit
         return ConfigEdit(self)
+
+
+def fresh_config(project) -> None:
+    """Read ``project``'s configuration again when ``orchestra.toml`` or the private overlay
+    changed since it was last read (``config_stamp``), through the project's own objects: for a
+    long-running reader that is not the host (the web server), which never reloads otherwise. A
+    file that does not parse keeps what was last read, and is tried again on the next call."""
+    stamp_of = getattr(project, "config_stamp", None)
+    if stamp_of is None or stamp_of() == getattr(project, "_stamp", None):
+        return
+    try:
+        project.reload_config()
+    except (ConfigError, OSError, ValueError):
+        pass
 
 
 def find_repo_root(start: Path) -> Path:

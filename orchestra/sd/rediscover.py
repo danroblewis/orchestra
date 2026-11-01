@@ -43,14 +43,14 @@ from pathlib import Path
 from ..metrics import MetricsStore
 from ..sources.catalogue import Catalogue
 from . import eras as era_record
-from . import persistence
+from . import persistence, simulated
 from .compare import compare
 from .discover import structure
 from .model import Model
 from .prior import merge
 from .provenance import annotate
 from .store import ModelStore
-from .strategies import CONSERVATION, DEFAULT, discover_with, sd_installed
+from .strategies import CONSERVATION, DEFAULT, sd_installed
 
 _lock = threading.Lock()       # one rediscovery at a time per process
 DEADLINE_SHARE = 0.8           # of [discovery] every: what an SD Lab strategy may take
@@ -106,7 +106,9 @@ def era_window(start: float, end: float, step: float, era_start: float | None) -
 def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, options: dict | None = None,
                window_s: float | None = None, step_s: float | None = None,
                note: str = "discovered: the structure changed", skip_if_busy: bool = False,
-               events=None, now: float | None = None) -> Result:
+               events=None, now: float | None = None, collectors: list | None = None) -> Result:
+    """``collectors``: the plugins' collectors the caller runs or has loaded, which say which
+    instruments are simulated (``sd.simulated``); None loads the plugins when needed (the CLI)."""
     cfg = project.config
     strategy = strategy or configured_strategy(project)
     options = cfg.discovery_options if options is None else options
@@ -124,8 +126,8 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
         start = era_window(start, end, step_s, era.start if era else None)
         if era is None or end - start >= 2 * step_s:
             reading = Catalogue(project, metrics).read(start, end, step_s)
-            m = discover_with(reading.dump, start=start, end=end, step=step_s, strategy=strategy, options=options,
-                              deadline=DEADLINE_SHARE * cfg.discovery_every, kinds=reading.kinds, provenance=reading.provenance)
+            m = simulated.discovered(project, reading, collectors=collectors, start=start, end=end, step=step_s, strategy=strategy,
+                                     options=options, deadline=DEADLINE_SHARE * cfg.discovery_every, provenance=reading.provenance)
             annotate(m, reading.provenance)
         else:                                   # the era is too young to read: its prior, carried whole
             reading = None

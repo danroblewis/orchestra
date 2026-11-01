@@ -20,6 +20,10 @@ In an empty Orchestra it does little, on purpose:
   the strategy was stopped at its deadline (``discovery_line``). After each discovery it announces what is due about the model (``orchestra.sd.announce``:
   ``orchestra.model.changed``, ``orchestra.model.diverged``, ``orchestra.model.returned``,
   ``orchestra.model.stalled``, ``orchestra.model.resumed``);
+- it announces each accepted call to the intended model's declared layer once
+  (``orchestra.intent.changed``, one event per element the call touched, ``orchestra.sd.intended``),
+  following its journal, and after each discovery and declaration writes the current comparison's
+  structural diff to the cache;
 - it records the predictions machines make of their changes as it follows the bus
   (``orchestra.prediction.made``, ``orchestra.sd.predictions``), and after each discovery judges
   those that are due and publishes each verdict (``orchestra.prediction.judged``,
@@ -144,6 +148,7 @@ class Host:
                 eras_at = time.time()
                 self._eras()
                 self._quiet(quiet)
+                self._intent()
             self._stop.wait(self.collect_every)
             try:
                 new, offset = self.events.read(offset, limit=100_000)
@@ -184,10 +189,27 @@ class Host:
         except Exception as e:  # noqa: BLE001 - the next look retries
             self.log(f"predictions: {type(e).__name__}: {e}")
 
+    def _intent(self, after_discovery: bool = False) -> None:
+        """Announce each accepted call to the declared layer once (``orchestra.intent.changed``,
+        ``sd.intended.announce``), also those the web server wrote while the host was down; after
+        a discovery or a declaration, write the current structural diff to the cache
+        (``sd.intended.diff``)."""
+        from .sd.intended.announce import announce
+        intended = self.project.intended
+        try:
+            announced = announce(intended, self.events.publish)
+            for seq in announced:
+                self.log(f"intended model: d{seq} announced")
+            if (after_discovery or announced) and intended.current_version():
+                intended.diff(limit_s=0.0)
+        except Exception as e:  # noqa: BLE001 - the next look retries
+            self.log(f"intended model: {type(e).__name__}: {e}")
+
     def _judge(self, at: float) -> None:
         """Judge the predictions that are due (``orchestra.sd.judge``) and publish the verdicts."""
         from .sd.judge import judge_due
-        for v in judge_due(self.project, metrics_for(self.project), at, self.events.publish, events=self.events):
+        for v in judge_due(self.project, metrics_for(self.project), at, self.events.publish, events=self.events,
+                           collectors=self._collectors_run()):
             self.log(f"prediction {v['prediction']} judged: {v['verdict']} (era {v['era']})")
 
     def _announce(self, r) -> None:
@@ -233,7 +255,8 @@ class Host:
             every = self.project.config.discovery_every
             wait, began = every, time.monotonic()
             try:
-                r = rediscover(self.project, metrics_for(self.project), skip_if_busy=True, events=self.events)
+                r = rediscover(self.project, metrics_for(self.project), skip_if_busy=True, events=self.events,
+                               collectors=self._collectors_run())
                 took = time.monotonic() - began
                 wait = pace(every, took)
                 self.log(discovery_line(r, took, every))
@@ -241,6 +264,7 @@ class Host:
                     self._announce(r)
                 except Exception as e:  # noqa: BLE001 - the next discovery tries again
                     self.log(f"announce: {type(e).__name__}: {e}")
+                self._intent(after_discovery=True)
                 try:
                     self._judge(r.at)
                 except Exception as e:  # noqa: BLE001 - the next discovery tries again
@@ -277,6 +301,13 @@ class Host:
             now = {**self._declared, **now}
         self._declared, self._loaded_for = now, mtime
         return now
+
+    def _collectors_run(self) -> list[Collector] | None:
+        """The plugins' collectors as last loaded for the launcher (discovery reads which are
+        simulated from them, never loading the plugins again); None before the first load."""
+        if self._loaded_for is None:
+            return None
+        return [c for _, cs in self._declared.values() for c in cs]
 
     def _plugin_processes(self) -> list[Process]:
         return [p for procs, _ in self._from_plugins().values() for p in procs]

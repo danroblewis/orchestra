@@ -24,7 +24,10 @@ from any language through the events endpoint, and by committing an experiment,
   ``{"from": A, "to": B, "appears": true}`` (a new flow between two stocks, ``null`` for outside,
   when its id is not known yet; with ``equation`` and ``params``, the rate it will have), and
   ``{"stock": S, "below": x}`` / ``{"stock": S, "above": x}`` (its level over the horizon's
-  second half). An empty list is the **null test**: the change should change nothing;
+  second half), and ``{"stock": S, "rises": true}`` / ``{"stock": S, "falls": true}`` (its slope
+  after the change against its slope before, judged as a factor is: met when it moved by
+  ``|z| ≥ Z`` in that direction; a declared machine's expected effect, ``sd.intended``). An empty
+  list is the **null test**: the change should change nothing;
 - ``horizon_s``: how long after the change to judge it (``horizon``, a duration such as ``"30m"``,
   is accepted too);
 - optionally ``trajectories``: what the predictor's own forward run (G5, ``sd.experiments``) said
@@ -108,6 +111,8 @@ def plain(e: dict) -> dict:
         return {e.get("part") or "flow": e.get("id"), k: True}
     if k == "level":
         return {"stock": e.get("stock"), **{w: e[w] for w in ("below", "above") if w in e}}
+    if k == "slope":
+        return {"stock": e.get("stock"), e.get("direction"): True}
     raise PredictionError(f"unknown kind {k!r} in {e!r}")
 
 
@@ -121,7 +126,7 @@ def expectation(e) -> dict:
             raise PredictionError(f"unknown part {e.get('part')!r} in {e!r}")
         return expectation(plain(e))
     known = {"flow", "stock", "loop", "param", "factor", "unchanged", "appears", "disappears", "from", "to", "below", "above",
-             "equation", "params"}
+             "equation", "params", "rises", "falls"}
     if extra := sorted(set(e) - known):
         raise PredictionError(f"unknown field{'s' if len(extra) > 1 else ''} {', '.join(extra)} in {e!r}")
     named = [p for p in PARTS if p in e]
@@ -159,6 +164,10 @@ def expectation(e) -> dict:
             if "equation" in e:
                 raise PredictionError(f"an appearing flow's equation goes with its ends (from, to): {e!r}")
             raise PredictionError(f"{kind} names one flow, stock or loop{' (or a new flow from and to stocks)' if kind == 'appears' else ''}: {e!r}")
+    if e.get("rises") is True or e.get("falls") is True:
+        if named != ["stock"] or set(e) - {"stock", "rises", "falls"} or (e.get("rises") and e.get("falls")):
+            raise PredictionError(f"rises and falls are said of one stock's slope: {{\"stock\": S, \"rises\": true}}, not {e!r}")
+        return {"kind": "slope", "stock": _id(e["stock"], "stock"), "direction": "rises" if e.get("rises") else "falls"}
     if "below" in e or "above" in e:
         if named != ["stock"]:
             raise PredictionError(f"below and above are said of a stock's level: {e!r}")
@@ -167,7 +176,7 @@ def expectation(e) -> dict:
             if k in e:
                 out[k] = _number(e[k], k)
         return out
-    raise PredictionError(f"say what is expected of it (factor, unchanged, equation, appears, disappears, below or above): {e!r}")
+    raise PredictionError(f"say what is expected of it (factor, unchanged, equation, appears, disappears, below, above, rises or falls): {e!r}")
 
 
 def _trajectories(t) -> dict:
