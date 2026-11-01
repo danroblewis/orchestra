@@ -214,8 +214,8 @@ def judged_experiment(tmp_path, monkeypatch, edits):
     pipeline(store, 120, step(2.0, 4.0), step(0.5, 0.5), step(0.4, 0.4), key=p.key)
     events = Events(tmp_path / "events.jsonl")
     rediscover(p, store, now=CHANGE - 1)
+    from orchestra.sd.history import history
     from orchestra.sd.judge import reader
-    from orchestra.web.background import history
     x = Experiments(p, "ops", metrics=store, events=events,
                     history=lambda model, start, end: history(model, reader(p, store), CHANGE - 30, 15.0))
     e = x.create("double the arrivals")["experiment"]

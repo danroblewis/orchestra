@@ -373,7 +373,7 @@ def report(model: Model, levels: dict[str, float] | None = None, inputs: dict[st
 
 
 def operating_point(history: dict | None) -> tuple[dict[str, float], dict[str, float], str]:
-    """The mean of each stock's level and each input over a history (``web.background.history``)."""
+    """The mean of each stock's level and each input over a history (``sd.history.history``)."""
     if not history:
         return {}, {}, "no history: every stock at 0"
     mean = lambda pts: sum(v for _, v in pts) / len(pts)

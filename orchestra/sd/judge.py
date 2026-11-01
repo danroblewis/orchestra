@@ -13,7 +13,7 @@ saved model and the levels until the next change; what the rules would say from 
 **From what.** The era comparison the discovery made (``discovery["era_comparison"]``,
 ``sd.compare``: the previous era's model against this era's own evidence). The stocks' measured
 levels from the change to the horizon, read as the Dynamics page reads them
-(``web.background.history``). Their predicted runs: the prediction's own ``trajectories`` when it
+(``sd.history.history``). Their predicted runs: the prediction's own ``trajectories`` when it
 carries them, else the previous era's model run forward from the change with the predicted edits
 (``sd.experiments.forward`` on ``sd.experiments.expect.draft``, which needs ``orchestra[sd]``;
 without it the stocks are judged by the level expectations alone, ``stocks.reason`` says why). An
@@ -82,7 +82,7 @@ def _era_model(store: ModelStore, era, end: float, interrupted: bool):
 def measured_levels(models: list, raw, start: float, until: float, step: float) -> dict[str, list]:
     """Each measured stock of ``models`` (and, as ``input:<name>``, each measured input): its level
     from ``start`` to ``until``, as ``[seconds after start, level]``."""
-    from ..web.background import history
+    from .history import history
 
     out: dict[str, list] = {}
     for m in models:
@@ -147,9 +147,9 @@ def simulated(prior, raw, expect: list[dict], start: float, horizon_s: float, st
         return None, "no_prior_model"
     if not sd_installed():
         return None, "no_simulator"
-    from ..web.background import history
     from .experiments.expect import draft
     from .experiments.forward import forward, trajectories
+    from .history import history
 
     try:
         h = history(prior, raw, start, step)

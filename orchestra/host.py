@@ -269,10 +269,10 @@ class Host:
     def _announce(self, r) -> None:
         """What is due about the model after a discovery (``orchestra.sd.announce``)."""
         from .sd.announce import announce
+        from .sd.history import history, remote_refs, stock_step
         from .sd.store import ModelStore
         from .sd.strategies import sd_installed
         from .sources.catalogue import Catalogue
-        from .web.background import history, remote_refs, stock_step
 
         cfg = self.project.config
         hist = None

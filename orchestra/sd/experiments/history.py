@@ -1,5 +1,5 @@
 """What a run reads of the measured history: the web server's ``history`` shape
-(``web.background.history``: ``stocks`` levels, ``flows`` rates per the model's time unit, measured
+(``sd.history.history``: ``stocks`` levels, ``flows`` rates per the model's time unit, measured
 ``inputs``, each ``[[t, v]]``, with ``at`` and ``start``), for any window, and the pieces each run
 takes from it: levels at a time, inputs up to a time (and a forward run's scenario after it), the
 flows' measured rates."""
@@ -89,6 +89,6 @@ def step_for(span_s: float, step_s: float | None, least: float = 15.0) -> float:
 def read_window(model: Model, raw, start: float, end: float, stock_step: float, flow_step: float | None = None) -> dict:
     """The history of ``model``'s series over [start, end], read through ``raw(ref, start, end)``
     (``sd.judge.reader``)."""
-    from ...web.background import history
+    from ..history import history
 
     return history(model, raw, end, stock_step, span_s=end - start, flow_step=flow_step)

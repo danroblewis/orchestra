@@ -100,7 +100,7 @@ class Experiments:
         windows), flow rates every 30 s (coarser for long windows)."""
         if self._history is not None:
             return self._history(model, start, end)
-        from ...web.background import stock_step
+        from ..history import stock_step
         from ..judge import reader
         from .history import read_window
 

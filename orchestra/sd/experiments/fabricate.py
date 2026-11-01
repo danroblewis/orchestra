@@ -107,7 +107,7 @@ def dump(model: Model, run: dict, labels: dict | None = None) -> list[tuple[str,
 
 
 def as_history(model: Model, run: dict, *, flow_step: float = 30.0, inputs: dict | None = None) -> dict:
-    """The run as the web server's history (``web.background.history``): levels at every step,
+    """The run as the web server's history (``sd.history.history``): levels at every step,
     each flow's rate per time unit over each ``flow_step``, and the inputs given."""
     unit = unit_s(model)
     t = run["t"]

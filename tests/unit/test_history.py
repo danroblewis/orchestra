@@ -3,8 +3,8 @@ own, so the chart shows the levels discovery saw."""
 
 from orchestra.metrics import Point
 from orchestra.metrics.file import FileMetrics
+from orchestra.sd.history import STOCK_STEP_S, history, stock_step
 from orchestra.sd.model import Model, SeriesRef, Stock
-from orchestra.web.background import STOCK_STEP_S, history, stock_step
 
 T0 = 1_800_000_000.0
 
