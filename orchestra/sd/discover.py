@@ -140,6 +140,7 @@ from .series import (
     sum_instances,
     writer_of,
 )
+from .titles import Places
 from .units import unit_of
 
 MIN_R2 = 0.9            # how well a balance must fit for a level to count as a stock
@@ -174,44 +175,49 @@ def _slug(s: Series) -> str:
     return "_".join([s.name, *[re.sub(r"\W+", "_", v) for v in _said(s)]])
 
 
-def _title(s: Series, provenance: dict | None = None) -> str:
-    """What the model calls a part: its series' name and the label values that say which one;
-    a series that names a ``step`` (and its ``place`` there) is named by them first, with the
-    values left over that they do not spell ("write (held) · delivery_sail": the pile
-    ``write.held`` is said by the step and the place); a series its instrument made with the ``age``
-    view (``provenance``, by series key) is "age of" that place, never the place's own name. The
-    Dynamics page names parts the same way (sd-graph.js)."""
-    if step := s.labels.get("step"):
-        place = s.labels.get("place")
-        age = "age of " if ((provenance or {}).get(s.key) or {}).get("view") == "age" else ""
-        spelled = set(_words(step)) | set(_words(place or ""))
-        rest = [v for k, v in sorted(s.labels.items())
-                if k not in ("step", "place") and v in _said(s) and not set(_words(v)) <= spelled]
-        return f"{age}{step}" + (f" ({place})" if place else "") + (f" · {', '.join(rest)}" if rest else "")
+def _title(s: Series, places: Places | None = None) -> str:
+    """What the model calls a part: a place its instrument's count spells, the age of one, or a
+    move between places, in words (``sd.titles``); otherwise its series' name and the label
+    values that say which one. The pages show this title (sd-graph.js)."""
+    if places is not None and (t := places.level(s.labels, s.key) if not s.counter else places.move(s.labels, s.key)):
+        return t
     base = re.sub(r"_total$", "", s.name).replace("_", " ")
     extra = _said(s)
     return base + (f" ({', '.join(extra)})" if extra else "")
+
+
+def _named(s: Series, places: Places | None) -> dict:
+    """The record that a part's title is its instrument's places' (the pages show it as it is)."""
+    if places is None:
+        return {}
+    return {"named": "places"} if (places.move(s.labels, s.key) if s.counter else places.level(s.labels, s.key)) else {}
 
 
 def _words(v: str) -> list[str]:
     return [w for w in re.split(r"[\W_]+", v.lower()) if w]
 
 
-def _between_titles(found: list, passed: dict) -> dict[str, str]:
-    """A state no series measures (an unmeasured passage, ``sd.passing``) is named by its
-    neighbours: "between <what its ins drain> and <what its outs fill>", never after the counter
-    that fills it (the owner, 2026-11-01: "after work item moves (write.held, open_pr.waiting,
-    delivery_sail)" read as three things in one stock). Its id keeps the level the counters imply."""
-    out = {}
+def _between_titles(found: list, passed: dict, places: Places | None = None) -> tuple[dict[str, str], set[str]]:
+    """A state no series measures (an unmeasured passage, ``sd.passing``) is named by the places
+    its moves name, when every one names one (``sd.titles``: "open_pr (waiting) … ci (waiting)");
+    otherwise by its neighbours: "between <what its ins drain> and <what its outs fill>", never
+    after the counter that fills it (the owner, 2026-11-01: "after work item moves (write.held,
+    open_pr.waiting, delivery_sail)" read as three things in one stock). Its id keeps the level
+    the counters imply. Returns the titles, and the keys of those named by places."""
+    out, named = {}, set()
     for key, p in passed.items():
         if p.measured:
             continue
+        if places is not None and (t := places.between(p.ins, p.outs)):
+            out[key] = t
+            named.add(key)
+            continue
         ins, outs = {c.key for c in p.ins}, {c.key for c in p.outs}
         side = lambda keys, sign, key=key: list(dict.fromkeys(
-            _title(s) for s, terms, _, _ in found if s.key != key and any(c.key in keys and g == sign for c, g in terms)))
+            _title(s, places) for s, terms, _, _ in found if s.key != key and any(c.key in keys and g == sign for c, g in terms)))
         src, dst = side(ins, -1) or ["outside"], side(outs, 1) or ["outside"]
         out[key] = f"between {' or '.join(src)} and {' or '.join(dst)}"
-    return out
+    return out, named
 
 
 def _same_total(a: Series, b: Series) -> bool:
@@ -865,6 +871,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # a balance adds counters with coefficients of ±1, so only counters in the level's own unit may
     # be its terms: seconds never balance a queue, nor bytes a count (sd.units)
     unit = {s.key: unit_of(s.name, s.labels, (provenance.get(s.key) or {}).get("unit")) for s in series}
+    places = Places([(s.name, s.labels, s.key) for s in series], provenance)   # what its instruments' places spell (sd.titles)
     for s in series:
         if not s.counter and (other := {c.key for c in counters if unit[c.key] != unit[s.key]}):
             barred[s.key] = barred.get(s.key, set()) | other
@@ -1076,7 +1083,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         same_as[keep.key] = [x for x in same_as[keep.key] if (x["name"], x["labels"]) != (drop.name, drop.labels)]
     stocks, sid_of, ids = [], {}, set()
     held: dict[str, dict] = {}       # the levels whose value was carried on their machine's word, and for how long
-    between = _between_titles(found, passed)
+    between, between_named = _between_titles(found, passed, places)
     for s, terms, r2, exact in found:
         sid = unique_id(_slug(s), writer_of(s), ids)
         sid_of[s.key] = sid
@@ -1086,8 +1093,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         p = passed.get(s.key)
         by_cons = s.key in constructed_
         unfit = by_cons or r2 is None           # no R² that is evidence: a balance by construction, or no series measures the level
-        stocks.append(Stock(sid, between.get(s.key) or _title(s, provenance), "items", ref(s) if not p or p.measured else None,
-                            {"balance_r2": None if unfit else round(r2, 4), "exact_steps": None if unfit else round(exact, 4),
+        stocks.append(Stock(sid, between.get(s.key) or _title(s, places), "items", ref(s) if not p or p.measured else None,
+                            {**({"named": "places"} if s.key in between_named else {} if s.key in between else _named(s, places)),
+                             "balance_r2": None if unfit else round(r2, 4), "exact_steps": None if unfit else round(exact, 4),
                              "steps": n, "balance_steps": len(masks[s.key]),
                              **({"by_construction": True} if by_cons else {}),
                              **({"measured": False, "level": {"name": s.name, "labels": dict(s.labels)}}   # the level the counters imply: its name holds
@@ -1137,7 +1145,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # a level no counters balance may still be a stock, its net flow fitted from the other series (sd.netflow)
     net_flows: list[Flow] = []
     for st, made, was_input, lv in net_flow_stocks(series, [s for s, _, _, _ in found], sid_of, inputs, input_refs, left_out, step,
-                                                   unit_s, (since, end), lambda x: (unique_id(_slug(x), writer_of(x), ids), _title(x, provenance)),
+                                                   unit_s, (since, end), lambda x: (unique_id(_slug(x), writer_of(x), ids), _title(x, places)),
                                                    ref, writer_of, measure=net_evidence, units=unit):
         stocks.append(st)
         net_flows += made
@@ -1210,7 +1218,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             if same_as.get(by.key):          # the counters of the same events this one stands for (one flow, measured twice)
                 mv.evidence["same_as"] = same_as[by.key]
             # a counter summed over instances is not a series in the store: the flow is measured by each of them
-            flows.append(Flow(mv.id, _title(c), mv.src, mv.dst, None if by.members else ref(by),
+            if named := _named(c, places):
+                mv.evidence.update(named)
+            flows.append(Flow(mv.id, _title(c, places), mv.src, mv.dst, None if by.members else ref(by),
                               [Equation(best["form"], {k: round(v, 6) for k, v in best["params"].items()}, "fitted", "poisson-mle",
                                         (live[0][0], end), None, dict(q), list(best["inputs"]))],
                               [ref(m) for m in by.members], mv.evidence))

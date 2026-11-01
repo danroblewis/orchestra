@@ -117,8 +117,13 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     def instrument_series_(name: str) -> dict:
         """The series an instrument wrote in the last hour, each with its latest value
         (web/instrument_series.py): read from the metrics store, never by running the instrument."""
+        from ..collect.views import declared
         from .instrument_series import instrument_series
-        return instrument_series(core.metrics, name, time.time())
+        try:
+            views = declared(project).get(name, ())
+        except Exception:  # noqa: BLE001 - the series are listed by their labels
+            views = ()
+        return instrument_series(core.metrics, name, time.time(), views=views)
 
     @app.get("/api/instruments/{name}/log")
     def instrument_log(name: str, lines: int = 200) -> dict:

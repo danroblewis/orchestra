@@ -299,6 +299,16 @@ point of that instrument the record `{source: "own", instrument, view, ...}` in 
 provenance, and discovery reads it as it reads a source's (§4.3). A view describes how a series
 was made, never a machine or a flow (rules 6 and 7): it changes no equation.
 
+A view also names the parts its series become, once, on the server (`sd/titles.py`), and every
+page shows that title (the Dynamics, Machines and Instruments pages, the diff between versions):
+where a count's other labels spell its place label's value part by part, they are the place in
+words, in the order they spell it (`pile="write.held"`, `step="write"`, `place="held"`: "write
+(held) · delivery_sail"); an `age` series of the same labels is "age of" it; a move between places
+is named by them, a stock or not ("write (held) → ci (waiting) · delivery_sail"); a hidden state
+between such moves by the places its moves enter and leave ("open_pr (waiting) … ci (waiting)").
+No label's name is known to the core (rule 1), and label values keep their spelling (`sail_check`).
+Such a part's evidence says `named: "places"`.
+
 ### 4.3 The model
 
 `orchestra/sd/`: stocks (each bound to a series), flows (each bound to a counter), equations

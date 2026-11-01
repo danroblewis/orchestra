@@ -119,7 +119,7 @@
 // (a machine's colour, mcolor, is app.js's: the same on every page)
 let MODEL = null, VERSION = null;   // null: follow the current version
 let ERA = new URLSearchParams(location.search).get("era");   // null: the current era; else a past era's id ("none": before any era); /dynamics?era= links here
-const nice = (s) => (s || "outside").toLowerCase().replace(/_/g, " ");
+const nice = (s) => s || "outside";
 // stocks and flows by what tells them apart (SDGraph.names); the model's ``name`` is the full record
 const stockName = (id) => SDGraph.stockName(MODEL, id), flowName = (f) => SDGraph.flowName(MODEL, f);
 const stockHead = (id) => { const n = SDGraph.names(MODEL).stocks[id]; return n ? esc(n.name) + (n.family ? ` <span class="muted">${esc(n.family)}</span>` : "") : esc(nice(id)); };

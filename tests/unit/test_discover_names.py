@@ -39,9 +39,17 @@ def test_a_queue_named_for_its_consumer_and_exchange_is_said_once():
     assert [(s.id, s.name) for s in m.stocks] == [("backlog_analytics_clicks", "backlog (analytics.clicks)")]
 
 
-def test_a_series_that_names_a_step_is_named_by_it_and_its_place():
-    """The owner (2026-11-01) read the pile ``write.held`` as a disk write: a series that names a
-    ``step`` and its ``place`` there is named by them, then by what they do not spell."""
+PILES = {"workflow_pile_items": {"view": "count", "place": "pile"},
+         "workflow_pile_moves_total": {"view": "moves", "starts": "to", "stops": "from"},
+         "workflow_pile_oldest_seconds": {"view": "age"}}
+
+
+def _prov(dump):
+    from orchestra.sd.series import series_key
+    return {series_key(n, lab): {"source": "own", "instrument": "piles", **PILES[n]} for n, lab, _ in dump if n in PILES}
+
+
+def _piles(views: bool = True):
     rng = random.Random(4)
     lab = {"instrument": "piles", "workflow": "delivery_sail", "pile": "write.held", "step": "write", "place": "held"}
     move = {"instrument": "piles", "workflow": "delivery_sail"}
@@ -52,19 +60,60 @@ def test_a_series_that_names_a_step_is_named_by_it_and_its_place():
         outs.append(outs[-1] + b)
         level.append(level[-1] + a - b)
     pts = lambda vs: [(T0 + 60 * i, float(v)) for i, v in enumerate(vs)]
-    dump = [("workflow_pile_items", lab, pts(level)),
-            ("workflow_pile_moves_total", {**move, "from": "write.waiting", "to": "write.held"}, pts(ins)),
-            ("workflow_pile_moves_total", {**move, "from": "write.held", "to": "open_pr.waiting"}, pts(outs))]
-    m = discover(dump, start=T0, end=T0 + 240 * 60, step=60.0)
-    assert [(s.id, s.name) for s in m.stocks] == [("workflow_pile_items_write_held_delivery_sail", "write (held) · delivery_sail")]
+    other = {**lab, "pile": "sail_check.waiting", "step": "sail_check", "place": "waiting"}
+    dump = [("workflow_pile_items", lab, pts(level)), ("workflow_pile_items", other, pts([0] * 241)),
+            ("workflow_pile_moves_total", {**move, "from": "<start>", "to": "write.held"}, pts(ins)),
+            ("workflow_pile_moves_total", {**move, "from": "write.held", "to": "sail_check.waiting"}, pts(outs))]
+    return discover(dump, start=T0, end=T0 + 240 * 60, step=60.0, provenance=_prov(dump) if views else None)
+
+
+def test_a_place_its_count_view_names_is_named_by_the_labels_that_spell_it():
+    """The owner (2026-11-01) read the pile ``write.held`` as a disk write: the instrument's count
+    view names the place label (``pile``), and the labels whose values spell its value name it, in
+    the order they spell it, then what they do not spell; no label's name is known to the core."""
+    m = _piles()
+    [st] = [s for s in m.stocks if s.series is not None]
+    assert (st.id, st.name, st.evidence.get("named")) == ("workflow_pile_items_write_held_delivery_sail", "write (held) · delivery_sail", "places")
+    # a move is named by the places it leaves and enters, a stock or not ("sail_check (waiting)", never
+    # sail_check.waiting nor "sail check"); a value no place spells is said as it is
+    names = {f.counter.labels["to"]: (f.name, f.evidence.get("named")) for f in m.flows if f.counter}
+    assert names["sail_check.waiting"] == ("write (held) → sail_check (waiting) · delivery_sail", "places")
+    assert names["write.held"] == ("<start> → write (held) · delivery_sail", "places")
+
+
+def test_without_its_instruments_views_a_pile_is_named_by_its_series():
+    m = _piles(views=False)
+    [st] = [s for s in m.stocks if s.series is not None]
+    assert st.name.startswith("workflow pile items (") and "named" not in st.evidence
+
+
+def test_hidden_state_between_moves_that_name_places_is_named_by_them():
+    from orchestra.sd.series import Series
+    from orchestra.sd.titles import Places
+
+    mv = lambda a, b: Series("workflow_pile_moves_total", {"instrument": "piles", "workflow": "delivery_sail", "from": a, "to": b}, [], [], True)
+    pile = lambda st, pl: ("workflow_pile_items", {"instrument": "piles", "workflow": "delivery_sail", "pile": f"{st}.{pl}", "step": st, "place": pl})
+    items = [pile("open_pr", "waiting"), pile("ci", "waiting"), pile("write", "held"), pile("review", "waiting")]
+    ins, outs = [mv("write.held", "open_pr.waiting")], [mv("ci.waiting", "review.waiting")]
+    same, nowhere = mv("open_pr.waiting", "review.waiting"), mv("<somewhere>", "review.waiting")
+    from orchestra.sd.series import series_key
+    prov = {series_key(n, lab): {"view": "count", "place": "pile"} for n, lab in items}
+    prov.update({c.key: {"view": "moves", "starts": "to", "stops": "from"} for c in ins + outs + [same, nowhere]})
+    places = Places([(n, lab, series_key(n, lab)) for n, lab in items], prov)
+    assert places.between(ins, outs) == "open_pr (waiting) … ci (waiting) · delivery_sail"
+    assert places.between(ins, [same]) == "open_pr (waiting) · delivery_sail"
+    assert places.between(ins, [nowhere]) is None      # by its neighbours, then
 
 
 def test_a_series_of_the_age_view_is_the_age_of_its_place_never_its_name():
     from orchestra.sd.discover import _title
     from orchestra.sd.series import Series
+    from orchestra.sd.titles import Places
 
     lab = {"workflow": "delivery_sail", "pile": "write.held", "step": "write", "place": "held"}
     pile, age = Series("workflow_pile_items", lab, [], [], False), Series("workflow_pile_oldest_seconds", lab, [], [], False)
-    prov = {age.key: {"source": "own", "instrument": "piles", "view": "age"}}
-    assert _title(pile, prov) == "write (held) · delivery_sail"
-    assert _title(age, prov) == "age of write (held) · delivery_sail"
+    prov = {pile.key: {"source": "own", "instrument": "piles", "view": "count", "place": "pile"},
+            age.key: {"source": "own", "instrument": "piles", "view": "age"}}
+    places = Places([(x.name, x.labels, x.key) for x in (pile, age)], prov)
+    assert _title(pile, places) == "write (held) · delivery_sail"
+    assert _title(age, places) == "age of write (held) · delivery_sail"
