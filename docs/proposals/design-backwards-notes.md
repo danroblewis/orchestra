@@ -28,6 +28,7 @@ Contents:
 10. [The examples and how they are tested](#10-the-examples-and-how-they-are-tested)
 11. [Decisions of the last messages](#11-decisions-of-the-last-messages)
 12. [Open items carried from before](#12-open-items-carried-from-before)
+13. [The owner's worked scenario for the two pages](#13-the-owners-worked-scenario-for-the-two-pages-2026-10-31)
 
 ---
 
@@ -369,6 +370,11 @@ first → observe → compare declared with observed; each difference is the nex
 correction to the declaration. The intended model is declared (origin: declared, rule 6's
 "assumption until fitted"), the observed one discovered (rule 7).
 
+**Superseded in part, later the same day (§13):** the measurement of a new stock happens on the
+Dynamics page, not on the event graph. The owner: "not in the event graph like we were talking
+about before, that changed just now." The event map is where machines are made, after the stock
+is measured.
+
 **Owner**, the map as they want to use it, in order (quoted or close to it):
 
 1. "A user would start by fabricating a system dynamics model, one that has no measurement for
@@ -482,6 +488,10 @@ The examples are the plugin's test suite and its documentation at once.
   in the core.
 - **Owner:** "There have been workflow design programs in the past, but they didn't have AI Agents
   that can do the work automatically, so this one might be more useful."
+- **Owner, later the same day:** no new page. "I want you to extend the Event Map page and the
+  System Dynamics page." Both gain tentative changes of two kinds (user-created, AI-inferred);
+  the Dynamics page is where a user starts (declare and measure a stock), the Event Map is where
+  machines are made. The worked scenario is §13.
 
 ## 12. Open items carried from before
 
@@ -504,3 +514,217 @@ Not part of this design; listed so they are not lost while the proposals are wri
   from the shell when the company's hook refuses MCP calls), the adopted worktrees and
   `worktree_setup`, the `PREPARING` state, the Core page's process logs. These belong to the
   prototype and are not carried into the new system by default.
+
+## 13. The owner's worked scenario for the two pages (2026-10-31)
+
+**Owner**, on the first mockups (a canvas of six screens: a new Design page with a step strip
+across the top and the Supervisor's chat docked beside the map, plus the Machines and Dynamics
+pages with a proposed/declared/observed layer toggle): "These are terrible. I don't want any of
+them. I want you to extend the Event Map page and the System Dynamics page." What was rejected,
+so it is not proposed again: a new page of any kind, a step strip or wizard, a chat docked on a
+page, layer toggles. The two existing pages are extended; nothing else is added.
+
+**Owner**, the gap: "Right now, both of those show only what truly exists. It doesn't have the
+concept of a tentative or proposed change. There are two types of tentative changes - user
+created and AI inferred. The user created one has precedence, but it's not real until the user
+confirms it."
+
+### 13.1 The Dynamics page: where the user starts
+
+**Owner** (quoted in full):
+
+"Let's start with the System Dynamics model, because that's where we would expect the user to
+start.
+
+The user would have an idea, like 'Ok I already have a task workflow that processes tickets and
+merges them to main, now I want a feedback loop where once per day an agent runs and tries to
+improve how many features get delivered per day. I think we need to start tracking features,
+then, because we currently aren't. I'm going to create a Features stock.' The user tells the
+Supervisor this, and tells the Supervisor to add a 'Features' stock. The Supervisor creates the
+stock and, based on the description of it, tries to find options for collecting the list of
+features. The Supervisor provides the user with a list of options for measuring the Feature
+count and how they are collected, and it starts recording the metrics immediately to our metrics
+database so the user can view it. If the metrics that were added are related, they will show up
+in the System Dynamics model on their own. In that case, we don't need to do anything, the
+sysdyn inference engine will associate them on its own. If this is a stock that doesn't exist
+yet, then the user needs to tell the Supervisor that and explain how we might instrument it,
+then the supervisor does its best and shows the results of the instrumentation scripts and the
+code.
+
+That's step 1. Woo.
+
+Then the user suggests some flows to and from the stock. This is where it gets different.
+Currently, we only show the most current system dynamics model, and we have the ability to show
+previous models. What we want is a way to choose things that we think should be there. In our
+tasking systems, we clearly saw the model of a task system, where tasks start in the Open state
+and transition to In Progress and transition to In Review, etc. If a stock shows up, we might
+want to select it and say 'yes I want to track the existence of this stock in the sysdyn
+inference'. It is a confirmed expected part of the sysdyn model. That doesn't mean it's implied
+or guaranteed. What it means is that we always show it, but if it's not part of the inferred
+system then we show it in a slightly darker color, as if it is a ghost or temporarily removed,
+or missing. If there are new nodes that were added, we must show it in the graph as having been
+added recently. These are sort of like 'suggested changes'. Some of these will be spurious and
+meaningless, some will be new things that are added. We won't dismiss them entirely, over time
+the system dynamics model will hopefully stabilize, and this 'diffing' view will be more
+meaningful.
+
+So the user has the new stock measured, measurement introduced in the System Dynamics page (not
+in the event graph like we were talking about before, that changed just now).
+
+The user doesn't specify a flow yet, they hope that a flow will happen. If the user can't
+measure those things yet, they might add placeholder metrics, or simulated metrics, to make sure
+the rest of it works correctly. In this case, the User probably adds something related to
+features, like the number of passing acceptance tests, or e2e tests, or some junit / xunit file
+ran periodically from the main branch."
+
+What this fixes (accepted reading, for proposal 2):
+
+- A stock is declared through the Supervisor and **measured at once**: the Supervisor finds the
+  ways to collect it, offers them, and starts recording to the metrics store the same turn, so
+  the series is on the Dynamics page before anything else happens.
+- Two cases, told apart by the user: a series discovery will associate on its own (nothing to
+  do), or a quantity nobody measures yet, which the user explains and the Supervisor instruments,
+  showing the scripts, the code and the first results.
+- **Expected**: a node (a discovered stock, a flow) the user has confirmed. Always drawn; drawn
+  darker (a ghost) when the current inferred model lacks it. Not a guarantee, a confirmation that
+  it belongs.
+- **Recently added**: a node the inference found that was not there before, drawn as a suggested
+  change. Never dismissed outright; the diff view is expected to get quieter as the model
+  stabilises.
+- The diff view replaces "versions only": the page shows the current inferred model against what
+  is expected, with additions and absences visible.
+- Placeholder or simulated metrics are allowed, so the rest of the loop can be exercised before
+  the real measurement exists.
+
+### 13.2 The Event Map page: where machines are made
+
+**Owner** (quoted in full):
+
+"Then the user goes to the Event Map page.
+
+The user is here to implement solutions for their ideas. They think this new stock, the one for
+Feature count, will be improved by a Universal Machine. So the user creates a new Machine, it
+shows up as a new node on the page and a side-panel box for the details. The details area has a
+switch to choose between Universal Machine, Programmatic Machine, Both machine types have common
+fields: title, description, tags, schedule, adhoc vs continuous. A Programmatic Machine has a
+command to run. If the Programmatic Machine is adhoc then this is an invocation program that has
+cli arguments and ENV variables and STDIN that determine its interface, and this config needs to
+specify it. If the Programmatic Machine is continuous, then the command is used as a daemon, and
+we need to specify a communication pattern for how to send events and receive events, like an
+HTTP API or GraphQL or gRPC or some other protocol, receiving events may be more complicated,
+they may need to be observed by processing RPC calls (like `getTasks()` maybe) or something
+else. There are also External Programmatic Machines, these do not have their processes managed
+by the `orchestra run` process, they are effectively continuous machines with no command. A
+Universal Machine is an AI agent machine, and you could make one with a Programmatic Machine but
+we provide it for convenience. A Universal Machine is not described in AI terms, it is described
+as an abstract machine with no clear implementation, just an interface for what it is able to
+use. A Universal Machine is defined with a title and description, it also has more
+'documentation' like fields, like a list of invariant rules about the work, maybe a step-by-step
+sequence of operations that the machine is supposed to perform, what events it receives (for
+coordinating the messages) and what events it will probably emit.
+
+So the user tells the Supervisor to create a new Universal Machine. They call it 'Feature Count
+Improver'. The measurement of features is not bound to this machine, it doesn't produce the
+metric itself, but it might know about it and it might read it to get ideas for how to improve
+it. The Supervisor might then create a Universal Machine for the 'Feature Count Improver' with
+some initial ideas. The User should see the new Machine show up in the diagram, and it might
+already have some Events connected to it. The Machine should be highlighted and the other
+shadowed out, showing the Machine and the Event nodes with good colors, and the
+second-connection Machines slightly less shadowed. The Details panel on the right should have
+whatever details the Supervisor came up with originally, and the user reviews it. The user may
+say things like, 'I think the Feature Count Improver would watch the ticket queue for DONE and
+REJECTED tickets, and the Merge Gate. It should try to figure out why the tickets got rejected
+or why the merge gate failed, and it should come up with ideas to remove those problems, then
+maybe communicate those ideas to the Coordinator to schedule work to improve our codebase
+problems. We could get in to Universal Machine prompt improvements or RAG improvements, but for
+now let's try this.' Then the Supervisor would modify the Machine definition in real-time, and
+the user would likely see the Feature Count Improver have events like 'tickets.rejected' and
+'tickets.done' and 'merge.gate.failed' added as subscriptions, and 'send_to_coordinator' added
+as a publishing event. The user might also see some events removed if they no longer make
+sense. If there are still events that were improperly added, the user can tell the Supervisor
+to remove those, or to review the events with the event graph and make them more reasonable.
+Then the user would want to refine the operation of the Feature Count Improver. The user would
+do this with a long conversation with the Supervisor, who will need to do a lot of work and
+research to come up with some good prompts and tools and resources for this agent to be
+effective. The user might then say 'I see this has a lot of high-throughput event triggers,
+maybe we should make this a scheduled task for 12am every day' and they would see the change.
+
+It's important to note that this is best-effort, we don't have a feedback loop here. The
+Supervisor can review the Event Graph and see feedback loops to know if their implementation
+looks correct, but we don't know if it works until we have a feedback loop."
+
+The machine kinds and their fields, as the owner listed them (for proposals 2 and 4):
+
+| Kind | Fields |
+|---|---|
+| Common to all | title, description, tags, schedule, ad hoc or continuous |
+| Programmatic, ad hoc | a command: an invocation program whose interface is its CLI arguments, environment variables and stdin; the configuration specifies that interface |
+| Programmatic, continuous | the command runs as a daemon; a communication pattern for sending and receiving events (HTTP API, GraphQL, gRPC, another protocol); receiving may mean observing it through RPC calls (`getTasks()`) or something else |
+| External Programmatic | not managed by `orchestra run`; continuous, with no command |
+| Universal | an abstract machine with no implementation named, only an interface for what it can use: title, description, documentation-like fields (invariant rules about the work, a step-by-step sequence of operations), the events it receives and the events it will probably emit. Not described in AI terms; an AI agent runs it, as a convenience over writing a Programmatic Machine |
+
+Page behaviour the scenario fixes:
+
+- A new machine appears as a node on the map with a details side panel; the details are whatever
+  the Supervisor drafted from the name and the conversation.
+- **Highlight rule:** the new machine and its event nodes in full colour; machines one hop away
+  slightly shadowed; everything else shadowed out.
+- The Supervisor edits the definition in real time while the user talks: subscriptions and
+  publications appear and disappear on the map as they are added and removed; a change of
+  engagement (event-triggered → scheduled at midnight) shows at once.
+- The user can ask for events to be removed or reviewed against the event graph.
+- Refining the machine's operation (prompts, tools, resources) is a long conversation and the
+  Supervisor's research; the page only shows the result.
+- The measurement of the stock is not bound to the machine: the machine does not produce the
+  metric, it may read it.
+
+### 13.3 Flows and predictions: the open question
+
+**Owner:** "We could associate a Machine to a Flow here if we wanted to, but it would be hard to
+do so, we would expect the Feature Count stock to go up, but how? If it runs enough times, the
+invocations of the Feature Count Improver might show up as a new Stock and be correlated with
+the Feature Count growth. We would expect that the number of DONE tickets has an effect on the
+Feature Count as well. I don't know if we would want to put the flows in there first and
+identify the Machine as being part of those now, or if we want to associate them later. If we do
+put the flows in there, they are going to be adjusted when we get real data, and we might be
+wrong. It is good to make predictions about what impact our Machines have, and if we can't point
+to any prediction then we probably don't want the Machine in there at all, so maybe we do want
+to specify what Flows we expect to see changes or added?"
+
+Note for the proposals: the core already records a machine's prediction of a change's effect and
+judges it later (`orchestra.prediction.made`, AGENTS.md rule 3). A machine's declaration can
+carry the flows it is expected to change or add, as predictions; when the inferred model later
+has those flows, the prediction is judged, and the association stays inferred (rule 6). The next
+mockups show a machine's declaration carrying predicted flows, drawn on the Dynamics page as
+expected changes.
+
+### 13.4 Acceptance tests the scenario implies
+
+For proposals 2, 4 and 5; one line each:
+
+- Declaring a stock through the Supervisor creates an instrument and a recording within one
+  turn, and the series is visible on the Dynamics page before the user says anything else.
+- The Supervisor's measurement options for a declared stock are listed with how each is
+  collected; choosing one changes nothing else.
+- A declared quantity nobody measures yet gets an instrument script the user can read, with its
+  first results shown.
+- A series discovery relates to the model appears in the inferred model without the user doing
+  anything.
+- Confirming a discovered stock as expected keeps it on the page; when a later inference lacks
+  it, it is still drawn, ghosted, and the absence is listed.
+- A stock or flow the inference finds that the previous model did not have is drawn as recently
+  added, and stays listed as a suggested change until confirmed; nothing is dismissed outright.
+- A placeholder or simulated series behaves like a real one on the page and is marked as such.
+- Creating a machine through the Supervisor adds a node to the Event Map and opens its details,
+  already filled with the Supervisor's draft.
+- The new machine and its events are highlighted, one-hop machines slightly shadowed, the rest
+  shadowed out.
+- While the user describes the machine, subscriptions and publications are added and removed on
+  the map and in the details without a reload.
+- Switching the machine's engagement from events to a schedule (midnight daily) shows on the
+  node at once.
+- Each machine kind's fields match the table in §13.2; a Universal Machine's definition names no
+  model or prompt in its interface.
+- A machine declared with predicted flows shows those flows on the Dynamics page as expected;
+  when the inferred model gains them, the prediction is judged.
+- Nothing on either page lets a human change the system except through the Supervisor (rule 9).
