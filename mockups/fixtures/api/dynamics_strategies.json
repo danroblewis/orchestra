@@ -1,0 +1,314 @@
+{
+ "ok": true,
+ "sd_installed": true,
+ "default": "kalman_lna",
+ "strategies": [
+  {
+   "name": "conservation",
+   "description": "Orchestra's own: stocks by conservation over counters, rates fitted by the exact point-process likelihood"
+  },
+  {
+   "name": "archetypes",
+   "description": ""
+  },
+  {
+   "name": "blockwise",
+   "description": ""
+  },
+  {
+   "name": "censored",
+   "description": ""
+  },
+  {
+   "name": "change_price",
+   "description": "an honest BIC price for changes in the outside inflow, with a gate"
+  },
+  {
+   "name": "coflow_hats",
+   "description": ""
+  },
+  {
+   "name": "combined",
+   "description": ""
+  },
+  {
+   "name": "combined2",
+   "description": ""
+  },
+  {
+   "name": "combined_lean",
+   "description": ""
+  },
+  {
+   "name": "combined_misfit",
+   "description": ""
+  },
+  {
+   "name": "combined_r2",
+   "description": ""
+  },
+  {
+   "name": "common_cause",
+   "description": ""
+  },
+  {
+   "name": "drifting_drain",
+   "description": ""
+  },
+  {
+   "name": "earned_pieces",
+   "description": ""
+  },
+  {
+   "name": "effect_hats",
+   "description": ""
+  },
+  {
+   "name": "engine_forms",
+   "description": ""
+  },
+  {
+   "name": "floors",
+   "description": "rates floored at zero and outflows capped by what a stock holds (hinge columns)"
+  },
+  {
+   "name": "gap_prior",
+   "description": ""
+  },
+  {
+   "name": "gated",
+   "description": "a behaviour-consistency gate before the judge"
+  },
+  {
+   "name": "gated_no_high",
+   "description": "`gated` without the runs from high states"
+  },
+  {
+   "name": "gradient",
+   "description": "numbers (and a generous structure) fitted through a differentiable simulator (research)"
+  },
+  {
+   "name": "held_out",
+   "description": "candidates chosen by blocked cross-validation"
+  },
+  {
+   "name": "held_out_blend",
+   "description": "the in-sample judge nudged by the held-out error"
+  },
+  {
+   "name": "hidden_delays",
+   "description": "unmeasured stocks as delayed copies of a level"
+  },
+  {
+   "name": "hidden_transit",
+   "description": ""
+  },
+  {
+   "name": "impulses",
+   "description": "one-step pulses and short bursts found jointly with each row"
+  },
+  {
+   "name": "inflow_attribution",
+   "description": "flagged rows refitted: drains within stretches, inflow with the drain held"
+  },
+  {
+   "name": "inflow_attribution_both",
+   "description": "repaired and unrepaired candidates side by side"
+  },
+  {
+   "name": "inflow_attribution_refine",
+   "description": "inflow attribution on the chosen model only"
+  },
+  {
+   "name": "inflow_effects",
+   "description": "effect_hats with outside inflows read as a schedule or a measured input times a table of a stock (gate.py)"
+  },
+  {
+   "name": "kalman_bayes",
+   "description": ""
+  },
+  {
+   "name": "kalman_lna",
+   "description": ""
+  },
+  {
+   "name": "latent_eras",
+   "description": "unannounced regimes found in the rows, then fitted as eras"
+  },
+  {
+   "name": "lna",
+   "description": ""
+  },
+  {
+   "name": "lna_levels",
+   "description": ""
+  },
+  {
+   "name": "lna_loops",
+   "description": ""
+  },
+  {
+   "name": "lna_products",
+   "description": ""
+  },
+  {
+   "name": "lna_pulses",
+   "description": ""
+  },
+  {
+   "name": "lna_stack",
+   "description": ""
+  },
+  {
+   "name": "loop_transit",
+   "description": "realistic_hats with hidden stages that close a loop: injections in the pair's rows, the return move refitted with shared noise"
+  },
+  {
+   "name": "mass_balance",
+   "description": "hidden stocks reconstructed from a unit's mass balance (Kalman filter)"
+  },
+  {
+   "name": "mass_balance_all",
+   "description": "`mass_balance` tried on every candidate"
+  },
+  {
+   "name": "master_eq",
+   "description": ""
+  },
+  {
+   "name": "matrix",
+   "description": "the main line: one-step regression per stock, candidates chosen by multi-step behaviour; outside flows only where the case declares its boundary, else priced as boundary claims (boundary.py)"
+  },
+  {
+   "name": "matrix_v2",
+   "description": ""
+  },
+  {
+   "name": "milp",
+   "description": ""
+  },
+  {
+   "name": "numopt_bo",
+   "description": "`numopt` with Bayesian optimisation"
+  },
+  {
+   "name": "numopt_cma",
+   "description": "`numopt` with CMA-ES (research)"
+  },
+  {
+   "name": "numopt_fd",
+   "description": "the matrix model's numbers (and optional terms) fitted by multi-step error, finite differences"
+  },
+  {
+   "name": "numopt_fd_coarse",
+   "description": "`numopt_fd` with coarse, learnable outside-inflow pieces"
+  },
+  {
+   "name": "numopt_fd_profile",
+   "description": "`numopt_fd` with outside inflows re-measured at every evaluation"
+  },
+  {
+   "name": "numopt_lbfgs",
+   "description": "`numopt` with L-BFGS-B"
+  },
+  {
+   "name": "numopt_nm",
+   "description": "`numopt` with Nelder-Mead"
+  },
+  {
+   "name": "numopt_powell",
+   "description": "`numopt` with Powell"
+  },
+  {
+   "name": "odefit",
+   "description": "per-step models fitted by output error (segment starts estimated), products where earned; the main line kept where it predicts better"
+  },
+  {
+   "name": "output_error",
+   "description": "the chosen model's rates refined by multi-step error"
+  },
+  {
+   "name": "own_tables",
+   "description": ""
+  },
+  {
+   "name": "paced_moves",
+   "description": "the matrix read as stoichiometry x rates: paced moves and (option `paced_readings`) gap inflows"
+  },
+  {
+   "name": "periodic_inflows",
+   "description": "outside inflows as a repeating profile"
+  },
+  {
+   "name": "piece_proof",
+   "description": "candidates judged with outside inflows they did not tailor"
+  },
+  {
+   "name": "pieces_gate",
+   "description": "the matrix with the pieces-gate fix (`pieces_gate = \"noise\"`)"
+  },
+  {
+   "name": "realistic_flows",
+   "description": ""
+  },
+  {
+   "name": "realistic_hats",
+   "description": ""
+  },
+  {
+   "name": "recession",
+   "description": "drains measured on quiet steps (no inflow), as extra candidates"
+  },
+  {
+   "name": "row_crossover",
+   "description": "the judge's pick with rows swapped in from other candidates where the model behaves better"
+  },
+  {
+   "name": "schedules",
+   "description": "censored's model searched again with every number refitted jointly: era-only flows dropped, constants on moves, periodic pulses and top-ups, co-flows"
+  },
+  {
+   "name": "shared_noise",
+   "description": "moves, links and co-flows told apart by shared draws in the residuals"
+  },
+  {
+   "name": "sindy",
+   "description": "PySINDy with SD-shaped libraries and conservation constraints (research)"
+  },
+  {
+   "name": "starved_coflows",
+   "description": "co-flows fitted on the steps where the used stock did not run dry"
+  },
+  {
+   "name": "structures",
+   "description": ""
+  },
+  {
+   "name": "symbolic",
+   "description": "effect curves found by a symbolic search, offered as candidates"
+  },
+  {
+   "name": "symbolic_anchor",
+   "description": "symbolic effects accepted only by an addition test inflow pieces cannot fake"
+  },
+  {
+   "name": "unified",
+   "description": "work in progress: one model class, one data model and one objective (J); only the objective and its test are built, identify() is the main line's"
+  },
+  {
+   "name": "z3exact",
+   "description": ""
+  },
+  {
+   "name": "z3robust",
+   "description": ""
+  }
+ ],
+ "configured": {
+  "strategy": "kalman_lna",
+  "window_s": 3600.0,
+  "step_s": 5.0,
+  "every_s": 300.0,
+  "options": {}
+ }
+}

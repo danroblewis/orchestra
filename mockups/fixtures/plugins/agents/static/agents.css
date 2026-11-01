@@ -1,0 +1,76 @@
+/* The agents' look: role colours, the agent rows and the ticket cards they work on (.awork: the task
+   system's cards are .work, with a lane of their own), session chips,
+   transcripts, the chat and rendered markdown. Loaded by the Agents page and the agents' scripts on Orchestra's
+   pages. The ticket-state colours are the task system's names, kept here so an agent's card is
+   coloured without the task system's stylesheet. */
+:root {
+  --OPEN:#6b7280; --BLOCKED:#f0883e; --IN_PROGRESS:#3b82f6; --READY_FOR_REVIEW:#7c3aed; --IN_REVIEW:#a855f7; --REJECTED:#ef4444;
+  --APPROVED:#d97706; --MERGING:#f59e0b; --DONE:#16a34a; --CANCELLED:#374151;
+  --r-supervisor:#c084fc; --r-coordinator:#38bdf8; --r-worker:#60a5fa; --r-reviewer:#e879f9;
+}
+.msg.inprogress { border:1px dashed #1d4ed8; opacity:.9 }
+.msg.marker { background:#1a1a22; border:1px dashed var(--border2); color:var(--text2); font-size:12px } .msg.marker.session_timed_out, .msg.marker.session_error { border-color:#92400e; color:#fcd34d } .msg.marker.session_interrupted, .msg.marker.agent_crashed, .msg.marker.agent_crash_loop { border-color:#7f1d1d; color:#fca5a5 }
+details.started { margin:10px 0 } details.started summary { cursor:pointer; font-size:12px; color:var(--text2) } details.started .prompt { border:1px solid var(--border); border-radius:8px; padding:10px 14px; background:#0b0e14; max-height:50vh; overflow:auto; margin-top:6px }
+/* ---- agents ---- */
+.agent { display:grid; grid-template-columns:22px auto 1fr auto; gap:8px; align-items:center; background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:5px 10px; margin-bottom:4px; cursor:pointer }
+.agent:hover { border-color:var(--border2); background:var(--panel3) }
+.agent .av { width:22px; height:22px; border-radius:6px; display:grid; place-items:center; font-weight:800; font-size:11px; color:#0b0d12; background:var(--rc) }
+.agent .name { font-weight:700; font-size:12.5px; white-space:nowrap }
+.agent .say { font-size:11.5px; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-style:italic }
+.chip { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; padding:3px 8px; border-radius:999px; background:var(--panel3); color:var(--text2); border:1px solid var(--border); white-space:nowrap }
+.chip .dot { width:7px; height:7px; border-radius:50%; background:#5b6473; margin:0 }
+.chip.working { color:#bfdbfe; border-color:#1d4ed8 } .chip.working .dot { background:#3b82f6; animation:pulse 1.4s infinite }
+.chip.resident { color:#bbf7d0; border-color:#166534 } .chip.resident .dot { background:#22c55e }
+.chip.down { color:#fecaca; border-color:#7f1d1d } .chip.down .dot { background:#ef4444 }
+@keyframes pulse { 50% { opacity:.3 } }
+.awork { background:var(--panel2); border:1px solid var(--border); border-left:4px solid var(--c); border-radius:10px; padding:10px 12px; margin-bottom:8px; cursor:pointer }
+.awork:hover { background:var(--panel3) } .awork .top { display:flex; justify-content:space-between; gap:8px; align-items:center; min-width:0 }
+.awork .top > span:first-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.awork .id { font-family:var(--mono); font-weight:700; color:var(--c); text-decoration:underline dotted; text-underline-offset:3px } .awork .title { font-weight:600 }
+.awork .right { display:flex; align-items:center; gap:8px; flex:none; white-space:nowrap }
+.awork .turns { font-family:var(--mono); font-size:11px; color:#fcd34d; background:#3a2e0a; border:1px solid #6b5313; border-radius:999px; padding:1px 7px; cursor:help; white-space:nowrap; flex:none }
+.awork .top > span:first-child { flex:1 1 auto }
+.awork .lane { display:grid; grid-template-columns:62px 1fr auto; gap:8px; align-items:center; margin-top:6px; font-size:12px; color:var(--text2) }
+.awork .lane .who { color:var(--muted); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em } .awork .lane .msg { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.awork .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:10.5px; font-weight:700; letter-spacing:.04em; color:#0b0d12; background:var(--c); white-space:nowrap }
+/* ---- transcripts and the chat ---- */
+.msg { border-left:3px solid var(--border); padding:4px 10px; margin:8px 0 } .msg.user { border-color:var(--accent) } .msg.assistant { border-color:#22c55e } .msg.toolResult { border-color:#4b5563; color:var(--text2) }
+.tc { margin:6px 0 } .tc .r { color:var(--muted); font-size:11px } .tc pre { margin:2px 0 } .msg.toolResult.err { border-color:#ef4444 } .msg pre.term { max-height:40vh; min-height:0 }
+.chat { position:sticky; bottom:-18px; background:var(--panel2); padding:10px 0 4px; margin-top:12px; border-top:1px solid var(--border); display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap }
+.chat textarea { flex:1; min-width:0; background:var(--bg); color:var(--text); border:1px solid var(--border2); border-radius:8px; padding:8px; font:13px/1.4 inherit; resize:vertical }
+.chat button { background:var(--accent); color:#000; border:0; border-radius:8px; padding:8px 14px; font-weight:700; cursor:pointer } .chat button:disabled,.chat textarea:disabled { opacity:.5 }
+.chat .empty { flex-basis:100% }
+.chat.top { position:static; border-top:0; border-bottom:1px solid var(--border); padding:4px 0 10px; margin:10px 0 }
+@media (max-width: 900px) { .chat { bottom:-14px } }   /* Orchestra's drawer has 14px of padding there, not 18px */
+.chip.waiting { color:#fde68a; border-color:#92400e } .chip.waiting .dot { background:#f59e0b; animation:pulse 2.4s infinite }
+.chip.archived { color:var(--muted) }
+.msg .r { font-size:11px; color:var(--muted) }
+.agent, .agent > *, .awork, .awork > *, .awork .lane > * { min-width:0 }
+/* ---- markdown (md() in agents.js) ---- */
+.md { font-size:13px; line-height:1.5 } .md p { margin:6px 0 } .md h1,.md h2,.md h3 { font-size:13px; text-transform:none; letter-spacing:0; color:var(--text); margin:10px 0 4px; display:block }
+.md ul,.md ol { padding-left:20px; margin:4px 0 } .md li { margin:2px 0 } .md code { background:#07090d; border:1px solid var(--border); border-radius:4px; padding:0 4px; font-size:12px }
+.md pre { padding:0; border:1px solid var(--border); background:#07090d } .md pre code { display:block; padding:8px; border:0; background:#0d1117; font-size:12px; overflow:auto }
+.md blockquote { border-left:3px solid var(--border); margin:6px 0; padding:2px 10px; color:var(--muted) } .md table { border-collapse:collapse } .md td,.md th { border:1px solid var(--border); padding:3px 8px }
+.md strong { color:#fff }
+/* ---- a wake-up in a transcript, and one turn read at a glance (renderTurn: the ticket drawer's agent sessions) ---- */
+details.msg.marker.wake > summary { cursor:pointer } details.msg.marker.wake .prompt { max-height:50vh; overflow:auto; margin-top:6px }
+.tt-prompt, .tt-tool { margin:4px 0; font-size:12px } .tt-prompt > summary, .tt-tool > summary { cursor:pointer; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.tt-prompt .prompt { border:1px solid var(--border); border-radius:8px; padding:8px 12px; background:#0b0e14; max-height:40vh; overflow:auto; margin-top:4px }
+.tt-tool { border-left:2px solid #4b5563; padding-left:8px } .tt-tool.err { border-left-color:#ef4444 } .tt-tool summary code { font-size:11px; color:var(--muted) }
+.tt-tool pre { max-height:30vh; min-height:0; overflow:auto; margin:4px 0; font-size:11.5px }
+.tt-say { border-left:3px solid #22c55e; padding:2px 10px; margin:6px 0 } .tt-say.last { background:rgba(34,197,94,.06) }
+/* the ticket drawer's agent sessions (ticket-sessions.js) */
+.tks { margin:10px 0 4px } .tks .tks-head { display:flex; align-items:baseline; gap:8px } .tks .tks-head .muted { font-size:11px }
+.tks-row { border:1px solid var(--border); border-left:4px solid var(--rc, #60a5fa); border-radius:8px; padding:6px 10px; margin:6px 0; background:var(--panel2) }
+.tks-row .tks-top { display:grid; grid-template-columns:auto auto 1fr auto auto; gap:8px; align-items:center; font-size:12px; min-width:0 }
+.tks-row .who { font-weight:700; white-space:nowrap } .tks-row .what { color:var(--muted); white-space:nowrap } .tks-row .when { color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 }
+.tks-row .out { font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; background:var(--oc, #374151); color:#0b0d12; white-space:nowrap }
+.tks-row .out.running { animation:pulse 1.4s infinite }
+.tks-row .say { font-size:12px; color:var(--text2); margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.tks-row .acts { display:flex; gap:6px } .tks-row .acts button { font-size:11px; padding:2px 8px; border-radius:6px; border:1px solid var(--border2); background:var(--panel3); color:var(--text); cursor:pointer }
+.tks-row .tks-turn { border-top:1px dashed var(--border); margin-top:6px; padding-top:4px }
+@media (max-width:640px) { .tks-row .tks-top { grid-template-columns:1fr auto; } .tks-row .what, .tks-row .when { grid-column:1 } }
+/* the machine cards' finished sessions (machine-cards.js) */
+.tkc-past { margin-top:6px } .tkc-past > summary { cursor:pointer; font-size:11px; color:var(--muted) }
+.tkc-past .row { display:grid; grid-template-columns:auto auto 1fr auto; gap:8px; font-size:11.5px; padding:3px 4px; cursor:pointer; border-radius:6px; align-items:center; min-width:0 }
+.tkc-past .row:hover { background:var(--panel3) } .tkc-past .row .id { font-family:var(--mono); font-weight:700 } .tkc-past .row > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }

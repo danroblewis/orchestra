@@ -1,0 +1,426 @@
+{
+ "ok": true,
+ "machine": "worker",
+ "events": [
+  {
+   "t": 1793505320.915,
+   "type": "review.requested",
+   "instance": "shell",
+   "subject": "DEMO-34",
+   "id": "2f17ee78a55243498651605f609891e5"
+  },
+  {
+   "t": 1793505311.19,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-34",
+   "id": "e3a5e3bd08e544f6980ecea9cdbb1842"
+  },
+  {
+   "t": 1793505310.447,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-34",
+   "id": "f3e5f0cd537e4dce8a031ac090ef4f85"
+  },
+  {
+   "t": 1793505307.258,
+   "type": "review.requested",
+   "instance": "shell",
+   "subject": "DEMO-33",
+   "id": "ae2b3222324142e8ad0a2216c87dd6db"
+  },
+  {
+   "t": 1793505297.827,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-33",
+   "id": "f192cb90c3ab450ebd21429d24bb7583"
+  },
+  {
+   "t": 1793505296.754,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-33",
+   "id": "2424cd259f1d4bc9ba41b7aa0ae76649"
+  },
+  {
+   "t": 1793505285.129,
+   "type": "review.requested",
+   "instance": "1",
+   "subject": "DEMO-32",
+   "id": "62c16ad4f7f3477d82050860c1a11666"
+  },
+  {
+   "t": 1793505284.904,
+   "type": "session.settled",
+   "instance": "1",
+   "subject": "worker-DEMO-32",
+   "id": "31b9ad303c7f4d7ba3022e5935681816"
+  },
+  {
+   "t": 1793505284.596,
+   "type": "session.started",
+   "instance": "1",
+   "subject": "DEMO-32",
+   "id": "ca13ed4b9d6142448ee515d4e84a908f"
+  },
+  {
+   "t": 1793505284.572,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-32",
+   "id": "a8792f1b4c4d47b38a88b60a6e6242e8"
+  },
+  {
+   "t": 1793505284.508,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-32",
+   "id": "f1b9e9f3e901412aad7441d673601bc6"
+  },
+  {
+   "t": 1793505271.981,
+   "type": "review.requested",
+   "instance": "1",
+   "subject": "DEMO-31",
+   "id": "dc69e7dc0c974009a12536d4a7b2d2ea"
+  },
+  {
+   "t": 1793505271.744,
+   "type": "session.settled",
+   "instance": "1",
+   "subject": "worker-DEMO-31",
+   "id": "113bb47aeea04f78b374dd1996162290"
+  },
+  {
+   "t": 1793505271.441,
+   "type": "session.started",
+   "instance": "1",
+   "subject": "DEMO-31",
+   "id": "a145aca03971443f9c86490084a580bd"
+  },
+  {
+   "t": 1793505271.367,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-31",
+   "id": "5b0b7304d98c43c7900f5f52d5824d50"
+  },
+  {
+   "t": 1793505271.337,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-31",
+   "id": "569eff86c6674e00891020c6903979e8"
+  },
+  {
+   "t": 1793505269.548,
+   "type": "review.requested",
+   "instance": "shell",
+   "subject": "DEMO-30",
+   "id": "d9c2b1c568604f3096b711d312f95708"
+  },
+  {
+   "t": 1793505259.734,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-30",
+   "id": "df7a6f786fb34245894a935c8a387478"
+  },
+  {
+   "t": 1793505259.206,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-30",
+   "id": "0fac5370d41e4defbc63bc51780cc1c0"
+  },
+  {
+   "t": 1793505255.838,
+   "type": "review.requested",
+   "instance": "shell",
+   "subject": "DEMO-29",
+   "id": "848e27fafe754fbf9512e06dc6747d8b"
+  },
+  {
+   "t": 1793505246.858,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-29",
+   "id": "5b8fbe8f30744b48904e09c32f368b5e"
+  },
+  {
+   "t": 1793505245.516,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-29",
+   "id": "a8ecdb9472f84d699df84a21da4438f5"
+  },
+  {
+   "t": 1793505242.634,
+   "type": "review.requested",
+   "instance": "shell",
+   "subject": "DEMO-28",
+   "id": "992e9aed6da146c9934c15c99f5d6714"
+  },
+  {
+   "t": 1793505233.679,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-28",
+   "id": "e53aa279798445478e6e5698dd48afd8"
+  },
+  {
+   "t": 1793505232.29,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-28",
+   "id": "34326c404baa4be788b637b5cf0e77f7"
+  },
+  {
+   "t": 1793505230.474,
+   "type": "review.requested",
+   "instance": "shell",
+   "subject": "DEMO-27",
+   "id": "a7df7dec95bd4123865a3eee93fbb940"
+  },
+  {
+   "t": 1793505220.624,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-27",
+   "id": "7572742de45b46d9acde1bcfad295369"
+  },
+  {
+   "t": 1793505220.109,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-27",
+   "id": "954f66981b54470eb934726ce6ea348a"
+  },
+  {
+   "t": 1793505217.297,
+   "type": "review.requested",
+   "instance": "shell",
+   "subject": "DEMO-26",
+   "id": "649b9a8157024db79ca5c63d39f51d64"
+  },
+  {
+   "t": 1793505207.51,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-26",
+   "id": "8f829493fe254b46a155edbeff29ff98"
+  },
+  {
+   "t": 1793505206.932,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-26",
+   "id": "43edb66c9942409580f5fd31fed6faa5"
+  },
+  {
+   "t": 1793505204.102,
+   "type": "review.requested",
+   "instance": "shell",
+   "subject": "DEMO-25",
+   "id": "b035ff64fd2549b88b8a1b4fb5c7b8d1"
+  },
+  {
+   "t": 1793505194.37,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-25",
+   "id": "2fea0b56315c41a78baaacac7b51f54d"
+  },
+  {
+   "t": 1793505193.735,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-25",
+   "id": "3dadeb783ceb446f855bf8d9403bf4ae"
+  },
+  {
+   "t": 1793505181.984,
+   "type": "review.requested",
+   "instance": "1",
+   "subject": "DEMO-24",
+   "id": "2d33ebdf98584dd99ec972f35dceb387"
+  },
+  {
+   "t": 1793505181.734,
+   "type": "session.settled",
+   "instance": "1",
+   "subject": "worker-DEMO-24",
+   "id": "7199dabce67b4c05a859e9773f748303"
+  },
+  {
+   "t": 1793505181.551,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-24",
+   "id": "a013ffc7d20943f280e39e2d6cd89806"
+  },
+  {
+   "t": 1793505181.419,
+   "type": "session.started",
+   "instance": "1",
+   "subject": "DEMO-24",
+   "id": "f508a438b5714431bb766626017f3231"
+  },
+  {
+   "t": 1793505181.311,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-24",
+   "id": "3a96afe0a32344d8ad768d198c1c8238"
+  },
+  {
+   "t": 1793505178.185,
+   "type": "review.requested",
+   "instance": "shell",
+   "subject": "DEMO-23",
+   "id": "7ad433c77d1a49dc8e02e6fb19c61bd5"
+  },
+  {
+   "t": 1793505168.213,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-23",
+   "id": "c9ed01ae37ce4576ba8f0d5d00bb8696"
+  },
+  {
+   "t": 1793505167.83,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-23",
+   "id": "7644c649082b456e98049c3e9e3500f4"
+  },
+  {
+   "t": 1793505166.046,
+   "type": "review.requested",
+   "instance": "shell",
+   "subject": "DEMO-22",
+   "id": "d221e3da76a2489f8a9c9ecd01ac6108"
+  },
+  {
+   "t": 1793505156.686,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-22",
+   "id": "8880d1299f5a4822b9cc2f5ca600c903"
+  },
+  {
+   "t": 1793505155.677,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-22",
+   "id": "fc828609022b403890b0ae6706b4354b"
+  },
+  {
+   "t": 1793505152.871,
+   "type": "review.requested",
+   "instance": "shell",
+   "subject": "DEMO-21",
+   "id": "0c9c2354504e4c6e95411e054ecaeddb"
+  },
+  {
+   "t": 1793505143.417,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-21",
+   "id": "4bb2574886e945c4943cfa0c87651d35"
+  },
+  {
+   "t": 1793505142.507,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-21",
+   "id": "48e1b379c731448c8c105694c5ac952c"
+  },
+  {
+   "t": 1793505139.662,
+   "type": "review.requested",
+   "instance": "shell",
+   "subject": "DEMO-20",
+   "id": "337b110b0c364e0bbbcb026005322579"
+  },
+  {
+   "t": 1793505130.06,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-20",
+   "id": "55cd89d7bfb24f83958cfcab23705bd2"
+  },
+  {
+   "t": 1793505129.324,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-20",
+   "id": "f053d9cfe70b4f168d076e85e5812ce5"
+  },
+  {
+   "t": 1793505125.986,
+   "type": "review.requested",
+   "instance": "shell",
+   "subject": "DEMO-19",
+   "id": "b8f1ddce24f2499fb4766b5da40f30e6"
+  },
+  {
+   "t": 1793505116.789,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-19",
+   "id": "4494dec0ca2240db8c2b3c2bec060932"
+  },
+  {
+   "t": 1793505115.641,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-19",
+   "id": "b8686c85c6dc48d6add6b7daa90de471"
+  },
+  {
+   "t": 1793505113.797,
+   "type": "review.requested",
+   "instance": "shell",
+   "subject": "DEMO-18",
+   "id": "7698c6f395e745c18ac58b961431e261"
+  },
+  {
+   "t": 1793505103.565,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-18",
+   "id": "ac6f1f2971be4c7bb44eae9aa0468f05"
+  },
+  {
+   "t": 1793505103.47,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-18",
+   "id": "4b3fc7f1aae5428f93144614e3d94af9"
+  },
+  {
+   "t": 1793505100.613,
+   "type": "review.requested",
+   "instance": "shell",
+   "subject": "DEMO-17",
+   "id": "4716e0c8f08f450d9389272f9068f091"
+  },
+  {
+   "t": 1793505090.337,
+   "type": "task.accepted",
+   "instance": "1",
+   "subject": "DEMO-17",
+   "id": "174d1235b3dd497f8e905cb0f05980c0"
+  },
+  {
+   "t": 1793505090.296,
+   "type": "task.accepted",
+   "instance": "shell",
+   "subject": "DEMO-17",
+   "id": "5274f79ae1ea428d9b55e73f17120de8"
+  }
+ ]
+}

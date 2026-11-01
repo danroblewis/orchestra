@@ -1,0 +1,26 @@
+/* The task system's look on every page: its ticket states, the ticket cards of the Tasks panel,
+   the ticket drawer and its markdown, the paused control. Loaded by the Tickets page (which adds
+   tickets.css for its graph) and by tasks.js on Orchestra's other pages (Orchestra's style.css
+   has the frame: panels, drawers, .kv, .note, .empty, button.ctl). */
+:root {
+  --OPEN:#6b7280; --PREPARING:#0d9488; --BLOCKED:#f0883e; --IN_PROGRESS:#3b82f6; --READY_FOR_REVIEW:#7c3aed; --IN_REVIEW:#a855f7; --REJECTED:#ef4444;
+  --APPROVED:#d97706; --IN_EXTERNAL_REVIEW:#0ea5e9; --MERGING:#f59e0b; --DONE:#16a34a; --CANCELLED:#374151;
+}
+.work { background:var(--panel2); border:1px solid var(--border); border-left:4px solid var(--c); border-radius:10px; padding:10px 12px; margin-bottom:8px; cursor:pointer }
+.work:hover { background:var(--panel3) } .work .top { display:flex; justify-content:space-between; gap:8px; align-items:center; min-width:0 }
+.work .top > span:first-child { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.work .id { font-family:var(--mono); font-weight:700; color:var(--c); text-decoration:underline dotted; text-underline-offset:3px } .work .title { font-weight:600 }
+.work .right { display:flex; align-items:center; gap:8px; flex:none; white-space:nowrap }
+.work .turns { font-family:var(--mono); font-size:11px; color:#fcd34d; background:#3a2e0a; border:1px solid #6b5313; border-radius:999px; padding:1px 7px; cursor:help; white-space:nowrap; flex:none }
+.work .lane { margin-top:6px; font-size:12px; color:var(--text2) } .work .lane .msg { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.work, .work > *, .work .lane > * { min-width:0 }
+.pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:10.5px; font-weight:700; letter-spacing:.04em; color:#0b0d12; background:var(--c); white-space:nowrap }
+.alert { border-radius:10px; padding:12px 14px; margin:0 0 14px; border:1px solid } .alert h4 { margin:0 0 6px; font-size:11px; text-transform:uppercase; letter-spacing:.08em }
+.alert.blocked { background:#2a1a0e; border-color:#c2410c; color:#fed7aa } .alert.rejected { background:#2a1215; border-color:#b91c1c; color:#fecaca }
+.alert.waiting { background:#141a26; border-color:#1e3a8a; color:#bfdbfe } .alert .md { color:inherit }
+.md { font-size:13px; line-height:1.5 } .md p { margin:6px 0 } .md h1,.md h2,.md h3 { font-size:13px; text-transform:none; letter-spacing:0; color:var(--text); margin:10px 0 4px; display:block }
+.md ul,.md ol { padding-left:20px; margin:4px 0 } .md li { margin:2px 0 } .md code { background:#07090d; border:1px solid var(--border); border-radius:4px; padding:0 4px; font-size:12px }
+.md pre { padding:0; border:1px solid var(--border); background:#07090d } .md pre code { display:block; padding:8px; border:0; background:#0d1117; font-size:12px; overflow:auto }
+.md blockquote { border-left:3px solid var(--border); margin:6px 0; padding:2px 10px; color:var(--muted) } .md table { border-collapse:collapse } .md td,.md th { border:1px solid var(--border); padding:3px 8px }
+.md strong { color:#fff }
+button.ctl.paused { color:#fde68a; border-color:#92400e; background:#2a1f0e }

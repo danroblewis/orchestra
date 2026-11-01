@@ -1,0 +1,994 @@
+{
+ "ok": true,
+ "machines": [
+  {
+   "id": "orchestra-host",
+   "bootstrap": true,
+   "mode": "continuous",
+   "kind": "program",
+   "kinds": {},
+   "package": null,
+   "name": null,
+   "group": null,
+   "about": {},
+   "publishes": [
+    {
+     "type": "orchestra.process.started",
+     "count": 3,
+     "day": 3,
+     "per_min_10m": 0.0
+    },
+    {
+     "type": "orchestra.host.started",
+     "count": 1,
+     "day": 1,
+     "per_min_10m": 0.0
+    }
+   ],
+   "subscribes": [],
+   "flows": [],
+   "logs": [],
+   "instances": [],
+   "first_seen": 1793504893.467,
+   "last_seen": 1793504893.682,
+   "active": true
+  },
+  {
+   "id": "coordinator",
+   "bootstrap": false,
+   "mode": "continuous",
+   "kind": "agent \u00d71, program \u00d71",
+   "kinds": {
+    "program": 1,
+    "agent": 1
+   },
+   "package": "agents",
+   "name": null,
+   "group": null,
+   "about": {
+    "role": "coordinator",
+    "harness": "dummy",
+    "model": null
+   },
+   "publishes": [
+    {
+     "type": "task.assigned",
+     "count": 34,
+     "day": 34,
+     "per_min_10m": 2.9
+    }
+   ],
+   "subscribes": [
+    "gate.conflict",
+    "gate.rejected",
+    "request.done",
+    "request.refused",
+    "task.attention_needed",
+    "task.released",
+    "ticket.created",
+    "work.requested"
+   ],
+   "flows": [],
+   "logs": [
+    "dispatch"
+   ],
+   "instances": [
+    {
+     "id": "dispatch",
+     "first_seen": 1793504893.83,
+     "last_seen": 1793505309.952,
+     "active": false,
+     "cadence_s": null,
+     "kind": "program",
+     "mode": "continuous"
+    }
+   ],
+   "first_seen": 1793504893.83,
+   "last_seen": 1793505309.952,
+   "active": false
+  },
+  {
+   "id": "merge_gate",
+   "bootstrap": false,
+   "mode": "continuous",
+   "kind": "program",
+   "kinds": {
+    "program": 1
+   },
+   "package": "tasks",
+   "name": null,
+   "group": null,
+   "about": {},
+   "publishes": [
+    {
+     "type": "gate.started",
+     "count": 34,
+     "day": 34,
+     "per_min_10m": 3.0
+    },
+    {
+     "type": "gate.landed",
+     "count": 34,
+     "day": 34,
+     "per_min_10m": 3.0
+    }
+   ],
+   "subscribes": [
+    "review.approved"
+   ],
+   "flows": [
+    {
+     "flow": "orchestra_events_total_merge_gate_gate_landed",
+     "name": "orchestra events (merge_gate, gate.landed)",
+     "confidence": 1.0,
+     "by": "its own events",
+     "events": {
+      "type": "gate.landed",
+      "source": "merge_gate"
+     },
+     "why": "its counter counts merge_gate's own events of type gate.landed",
+     "hypothesis": true
+    },
+    {
+     "flow": "tasks_gate_runs_total_landed",
+     "name": "tasks gate runs (landed)",
+     "confidence": 1.0,
+     "by": "events on the bus",
+     "events": {
+      "type": "gate.landed",
+      "source": "merge_gate"
+     },
+     "why": "merge_gate's gate.landed events match its increments event by event: 100% of its 24 increments pair with one of the 24 events within a step, 32% by chance",
+     "hypothesis": true
+    },
+    {
+     "flow": "tasks_gate_runs_total_landed@tasks.tests+tasks_ticket_transitions_total_reviewer_IN_REVIEW_REJECTED",
+     "name": "tasks gate runs (landed) + tasks ticket transitions (reviewer, IN_REVIEW, REJECTED)",
+     "confidence": 1.0,
+     "by": "events on the bus",
+     "events": {
+      "type": "gate.landed",
+      "source": "merge_gate"
+     },
+     "why": "merge_gate's gate.landed events match its increments event by event: 100% of its 24 increments pair with one of the 24 events within a step, 32% by chance",
+     "hypothesis": true
+    },
+    {
+     "flow": "tasks_ticket_transitions_total_merge_gate_APPROVED_MERGING",
+     "name": "tasks ticket transitions (merge_gate, APPROVED, MERGING)",
+     "confidence": 1.0,
+     "by": "events on the bus",
+     "events": {
+      "type": "gate.landed",
+      "source": "merge_gate"
+     },
+     "why": "merge_gate's gate.landed events match its increments event by event: 100% of its 24 increments pair with one of the 24 events within a step, 32% by chance",
+     "hypothesis": true
+    },
+    {
+     "flow": "tasks_ticket_transitions_total_reviewer_READY_FOR_REVIEW_IN_REVIEW",
+     "name": "tasks ticket transitions (reviewer, READY_FOR_REVIEW, IN_REVIEW)",
+     "confidence": 0.9419,
+     "by": "events on the bus",
+     "events": {
+      "type": "gate.landed",
+      "source": "merge_gate"
+     },
+     "why": "merge_gate's gate.landed events match its increments event by event: 96% of its 25 increments pair with one of the 24 events within a step, 31% by chance",
+     "hypothesis": true
+    },
+    {
+     "flow": "tasks_ticket_transitions_total_reviewer_READY_FOR_REVIEW_IN_REVIEW@tasks.tests",
+     "name": "tasks ticket transitions (reviewer, READY_FOR_REVIEW, IN_REVIEW)",
+     "confidence": 0.9419,
+     "by": "events on the bus",
+     "events": {
+      "type": "gate.landed",
+      "source": "merge_gate"
+     },
+     "why": "merge_gate's gate.landed events match its increments event by event: 96% of its 25 increments pair with one of the 24 events within a step, 31% by chance",
+     "hypothesis": true
+    },
+    {
+     "flow": "tasks_ticket_transitions_total_worker_IN_PROGRESS_READY_FOR_REVIEW",
+     "name": "tasks ticket transitions (worker, IN_PROGRESS, READY_FOR_REVIEW)",
+     "confidence": 0.9412,
+     "by": "events on the bus",
+     "events": {
+      "type": "gate.landed",
+      "source": "merge_gate"
+     },
+     "why": "merge_gate's gate.landed events match its increments event by event: 96% of its 25 increments pair with one of the 24 events within a step, 32% by chance",
+     "hypothesis": true
+    }
+   ],
+   "logs": [
+    "merge_gate"
+   ],
+   "instances": [],
+   "first_seen": 1793504893.83,
+   "last_seen": 1793505323.771,
+   "active": false
+  },
+  {
+   "id": "planner",
+   "bootstrap": false,
+   "mode": "ad hoc",
+   "kind": "program",
+   "kinds": {
+    "program": 1
+   },
+   "package": null,
+   "name": null,
+   "group": null,
+   "about": {},
+   "publishes": [
+    {
+     "type": "request.done",
+     "count": 65,
+     "day": 65,
+     "per_min_10m": 5.8
+    },
+    {
+     "type": "task.requested",
+     "count": 34,
+     "day": 34,
+     "per_min_10m": 2.9
+    },
+    {
+     "type": "ticket.created",
+     "count": 34,
+     "day": 34,
+     "per_min_10m": 2.9
+    },
+    {
+     "type": "milestone.requested",
+     "count": 31,
+     "day": 31,
+     "per_min_10m": 2.9
+    },
+    {
+     "type": "milestone.created",
+     "count": 31,
+     "day": 31,
+     "per_min_10m": 2.9
+    }
+   ],
+   "subscribes": [
+    "request.done",
+    "request.refused"
+   ],
+   "flows": [
+    {
+     "flow": "tasks_tickets_created_total_planner",
+     "name": "tasks tickets created (planner)",
+     "confidence": 0.9333,
+     "by": "events on the bus",
+     "events": {
+      "type": "task.requested",
+      "source": "planner"
+     },
+     "why": "planner's task.requested events match its increments event by event: 96% of its 24 increments pair with one of the 24 events within a step, 38% by chance",
+     "hypothesis": true
+    }
+   ],
+   "logs": [],
+   "instances": [],
+   "first_seen": 1793504894.052,
+   "last_seen": 1793505309.665,
+   "active": false
+  },
+  {
+   "id": "reviewer",
+   "bootstrap": false,
+   "mode": "ad hoc",
+   "kind": "agent",
+   "kinds": {
+    "agent": 2
+   },
+   "package": "agents",
+   "name": null,
+   "group": null,
+   "about": {
+    "role": "reviewer",
+    "harness": "dummy",
+    "model": null
+   },
+   "publishes": [
+    {
+     "type": "task.accepted",
+     "count": 35,
+     "day": 35,
+     "per_min_10m": 3.0
+    },
+    {
+     "type": "session.started",
+     "count": 35,
+     "day": 35,
+     "per_min_10m": 3.0
+    },
+    {
+     "type": "session.settled",
+     "count": 35,
+     "day": 35,
+     "per_min_10m": 3.0
+    },
+    {
+     "type": "review.approved",
+     "count": 34,
+     "day": 34,
+     "per_min_10m": 3.0
+    },
+    {
+     "type": "task.working",
+     "count": 1,
+     "day": 1,
+     "per_min_10m": 0.0
+    },
+    {
+     "type": "changes.requested",
+     "count": 1,
+     "day": 1,
+     "per_min_10m": 0.0
+    }
+   ],
+   "subscribes": [
+    "review.requested",
+    "task.assigned",
+    "task.released"
+   ],
+   "flows": [
+    {
+     "flow": "tasks_ticket_transitions_total_merge_gate_APPROVED_MERGING",
+     "name": "tasks ticket transitions (merge_gate, APPROVED, MERGING)",
+     "confidence": 1.0,
+     "by": "events on the bus",
+     "events": {
+      "type": "review.approved",
+      "source": "reviewer"
+     },
+     "why": "reviewer's review.approved events match its increments event by event: 100% of its 24 increments pair with one of the 24 events within a step, 32% by chance",
+     "hypothesis": true
+    },
+    {
+     "flow": "tasks_ticket_transitions_total_reviewer_READY_FOR_REVIEW_IN_REVIEW",
+     "name": "tasks ticket transitions (reviewer, READY_FOR_REVIEW, IN_REVIEW)",
+     "confidence": 1.0,
+     "by": "events on the bus",
+     "events": {
+      "type": "session.settled",
+      "source": "reviewer"
+     },
+     "why": "reviewer's session.settled events match its increments event by event: 100% of its 25 increments pair with one of the 25 events within a step, 32% by chance",
+     "hypothesis": true
+    },
+    {
+     "flow": "tasks_ticket_transitions_total_reviewer_READY_FOR_REVIEW_IN_REVIEW@tasks.tests",
+     "name": "tasks ticket transitions (reviewer, READY_FOR_REVIEW, IN_REVIEW)",
+     "confidence": 1.0,
+     "by": "events on the bus",
+     "events": {
+      "type": "session.settled",
+      "source": "reviewer"
+     },
+     "why": "reviewer's session.settled events match its increments event by event: 100% of its 25 increments pair with one of the 25 events within a step, 32% by chance",
+     "hypothesis": true
+    },
+    {
+     "flow": "tasks_ticket_transitions_total_worker_IN_PROGRESS_READY_FOR_REVIEW",
+     "name": "tasks ticket transitions (worker, IN_PROGRESS, READY_FOR_REVIEW)",
+     "confidence": 1.0,
+     "by": "events on the bus",
+     "events": {
+      "type": "session.settled",
+      "source": "reviewer"
+     },
+     "why": "reviewer's session.settled events match its increments event by event: 100% of its 25 increments pair with one of the 25 events within a step, 33% by chance",
+     "hypothesis": true
+    },
+    {
+     "flow": "tasks_gate_runs_total_landed",
+     "name": "tasks gate runs (landed)",
+     "confidence": 0.939,
+     "by": "events on the bus",
+     "events": {
+      "type": "review.approved",
+      "source": "reviewer"
+     },
+     "why": "reviewer's review.approved events match its increments event by event: 96% of its 24 increments pair with one of the 24 events within a step, 32% by chance",
+     "hypothesis": true
+    },
+    {
+     "flow": "tasks_gate_runs_total_landed@tasks.tests+tasks_ticket_transitions_total_reviewer_IN_REVIEW_REJECTED",
+     "name": "tasks gate runs (landed) + tasks ticket transitions (reviewer, IN_REVIEW, REJECTED)",
+     "confidence": 0.939,
+     "by": "events on the bus",
+     "events": {
+      "type": "review.approved",
+      "source": "reviewer"
+     },
+     "why": "reviewer's review.approved events match its increments event by event: 96% of its 24 increments pair with one of the 24 events within a step, 32% by chance",
+     "hypothesis": true
+    }
+   ],
+   "logs": [],
+   "instances": [
+    {
+     "id": "1",
+     "first_seen": 1793504906.482,
+     "last_seen": 1793505322.276,
+     "active": false,
+     "cadence_s": null,
+     "kind": "agent",
+     "mode": "ad hoc"
+    },
+    {
+     "id": "2",
+     "first_seen": 1793504906.483,
+     "last_seen": 1793504912.743,
+     "active": false,
+     "cadence_s": null,
+     "kind": "agent",
+     "mode": "ad hoc"
+    }
+   ],
+   "first_seen": 1793504906.482,
+   "last_seen": 1793505322.276,
+   "active": false
+  },
+  {
+   "id": "supervisor",
+   "bootstrap": false,
+   "mode": "continuous",
+   "kind": "agent",
+   "kinds": {
+    "agent": 1
+   },
+   "package": "agents",
+   "name": null,
+   "group": null,
+   "about": {
+    "role": "supervisor",
+    "harness": "dummy",
+    "model": "sonnet"
+   },
+   "publishes": [],
+   "subscribes": [
+    "gate.base_broken",
+    "gate.landed",
+    "orchestra.machine.quiet",
+    "orchestra.model.diverged",
+    "orchestra.model.stalled",
+    "orchestra.prediction.judged",
+    "orchestra.process.gave_up",
+    "outbox.rate_limit.unresolvable",
+    "pipeline.paused",
+    "request.done",
+    "request.refused",
+    "task.attention_needed",
+    "ticket.created",
+    "work.planned"
+   ],
+   "flows": [],
+   "logs": [],
+   "instances": [],
+   "first_seen": 1793504894.362,
+   "last_seen": 1793504894.362,
+   "active": false
+  },
+  {
+   "id": "worker",
+   "bootstrap": false,
+   "mode": "ad hoc \u00d72, continuous \u00d71",
+   "kind": "agent \u00d72, program \u00d71",
+   "kinds": {
+    "program": 1,
+    "agent": 2
+   },
+   "package": "agents",
+   "name": null,
+   "group": null,
+   "about": {
+    "role": "worker",
+    "harness": "dummy",
+    "model": null
+   },
+   "publishes": [
+    {
+     "type": "task.accepted",
+     "count": 67,
+     "day": 67,
+     "per_min_10m": 5.8
+    },
+    {
+     "type": "review.requested",
+     "count": 35,
+     "day": 35,
+     "per_min_10m": 3.0
+    },
+    {
+     "type": "session.started",
+     "count": 8,
+     "day": 8,
+     "per_min_10m": 0.5
+    },
+    {
+     "type": "session.settled",
+     "count": 8,
+     "day": 8,
+     "per_min_10m": 0.5
+    }
+   ],
+   "subscribes": [
+    "changes.requested",
+    "gate.landed",
+    "orchestra.prediction.judged",
+    "request.done",
+    "task.assigned",
+    "task.released"
+   ],
+   "flows": [
+    {
+     "flow": "tasks_ticket_transitions_total_worker_IN_PROGRESS_READY_FOR_REVIEW",
+     "name": "tasks ticket transitions (worker, IN_PROGRESS, READY_FOR_REVIEW)",
+     "confidence": 1.0,
+     "by": "events on the bus",
+     "events": {
+      "type": "review.requested",
+      "source": "worker"
+     },
+     "why": "worker's review.requested events match its increments event by event: 100% of its 25 increments pair with one of the 25 events within a step, 32% by chance",
+     "hypothesis": true
+    },
+    {
+     "flow": "tasks_ticket_transitions_total_reviewer_READY_FOR_REVIEW_IN_REVIEW",
+     "name": "tasks ticket transitions (reviewer, READY_FOR_REVIEW, IN_REVIEW)",
+     "confidence": 0.9412,
+     "by": "events on the bus",
+     "events": {
+      "type": "review.requested",
+      "source": "worker"
+     },
+     "why": "worker's review.requested events match its increments event by event: 96% of its 25 increments pair with one of the 25 events within a step, 32% by chance",
+     "hypothesis": true
+    },
+    {
+     "flow": "tasks_ticket_transitions_total_reviewer_READY_FOR_REVIEW_IN_REVIEW@tasks.tests",
+     "name": "tasks ticket transitions (reviewer, READY_FOR_REVIEW, IN_REVIEW)",
+     "confidence": 0.9412,
+     "by": "events on the bus",
+     "events": {
+      "type": "review.requested",
+      "source": "worker"
+     },
+     "why": "worker's review.requested events match its increments event by event: 96% of its 25 increments pair with one of the 25 events within a step, 32% by chance",
+     "hypothesis": true
+    }
+   ],
+   "logs": [
+    "shell"
+   ],
+   "instances": [
+    {
+     "id": "1",
+     "first_seen": 1793504896.419,
+     "last_seen": 1793505311.19,
+     "active": false,
+     "cadence_s": null,
+     "kind": "agent",
+     "mode": "ad hoc"
+    },
+    {
+     "id": "2",
+     "first_seen": 1793504896.419,
+     "last_seen": 1793504908.563,
+     "active": false,
+     "cadence_s": null,
+     "kind": "agent",
+     "mode": "ad hoc"
+    },
+    {
+     "id": "shell",
+     "first_seen": 1793504893.74,
+     "last_seen": 1793505320.915,
+     "active": false,
+     "cadence_s": null,
+     "kind": "program",
+     "mode": "continuous"
+    }
+   ],
+   "first_seen": 1793504893.74,
+   "last_seen": 1793505320.915,
+   "active": false
+  }
+ ],
+ "types": [
+  "changes.requested",
+  "gate.base_broken",
+  "gate.conflict",
+  "gate.landed",
+  "gate.rejected",
+  "gate.started",
+  "milestone.created",
+  "milestone.requested",
+  "orchestra.host.started",
+  "orchestra.machine.quiet",
+  "orchestra.model.diverged",
+  "orchestra.model.stalled",
+  "orchestra.prediction.judged",
+  "orchestra.process.gave_up",
+  "orchestra.process.started",
+  "outbox.rate_limit.unresolvable",
+  "pipeline.paused",
+  "request.done",
+  "request.refused",
+  "review.approved",
+  "review.requested",
+  "session.settled",
+  "session.started",
+  "task.accepted",
+  "task.assigned",
+  "task.attention_needed",
+  "task.released",
+  "task.requested",
+  "task.working",
+  "ticket.created",
+  "work.planned",
+  "work.requested"
+ ],
+ "edges": [
+  {
+   "from": "orchestra-host",
+   "to": "orchestra.process.started",
+   "kind": "publishes",
+   "count": 3,
+   "day": 3
+  },
+  {
+   "from": "orchestra-host",
+   "to": "orchestra.host.started",
+   "kind": "publishes",
+   "count": 1,
+   "day": 1
+  },
+  {
+   "from": "coordinator",
+   "to": "task.assigned",
+   "kind": "publishes",
+   "count": 34,
+   "day": 34
+  },
+  {
+   "from": "merge_gate",
+   "to": "gate.started",
+   "kind": "publishes",
+   "count": 34,
+   "day": 34
+  },
+  {
+   "from": "merge_gate",
+   "to": "gate.landed",
+   "kind": "publishes",
+   "count": 34,
+   "day": 34
+  },
+  {
+   "from": "planner",
+   "to": "request.done",
+   "kind": "publishes",
+   "count": 65,
+   "day": 65
+  },
+  {
+   "from": "planner",
+   "to": "task.requested",
+   "kind": "publishes",
+   "count": 34,
+   "day": 34
+  },
+  {
+   "from": "planner",
+   "to": "ticket.created",
+   "kind": "publishes",
+   "count": 34,
+   "day": 34
+  },
+  {
+   "from": "planner",
+   "to": "milestone.requested",
+   "kind": "publishes",
+   "count": 31,
+   "day": 31
+  },
+  {
+   "from": "planner",
+   "to": "milestone.created",
+   "kind": "publishes",
+   "count": 31,
+   "day": 31
+  },
+  {
+   "from": "reviewer",
+   "to": "task.accepted",
+   "kind": "publishes",
+   "count": 35,
+   "day": 35
+  },
+  {
+   "from": "reviewer",
+   "to": "session.started",
+   "kind": "publishes",
+   "count": 35,
+   "day": 35
+  },
+  {
+   "from": "reviewer",
+   "to": "session.settled",
+   "kind": "publishes",
+   "count": 35,
+   "day": 35
+  },
+  {
+   "from": "reviewer",
+   "to": "review.approved",
+   "kind": "publishes",
+   "count": 34,
+   "day": 34
+  },
+  {
+   "from": "reviewer",
+   "to": "task.working",
+   "kind": "publishes",
+   "count": 1,
+   "day": 1
+  },
+  {
+   "from": "reviewer",
+   "to": "changes.requested",
+   "kind": "publishes",
+   "count": 1,
+   "day": 1
+  },
+  {
+   "from": "worker",
+   "to": "task.accepted",
+   "kind": "publishes",
+   "count": 67,
+   "day": 67
+  },
+  {
+   "from": "worker",
+   "to": "review.requested",
+   "kind": "publishes",
+   "count": 35,
+   "day": 35
+  },
+  {
+   "from": "worker",
+   "to": "session.started",
+   "kind": "publishes",
+   "count": 8,
+   "day": 8
+  },
+  {
+   "from": "worker",
+   "to": "session.settled",
+   "kind": "publishes",
+   "count": 8,
+   "day": 8
+  },
+  {
+   "from": "gate.conflict",
+   "to": "coordinator",
+   "kind": "subscribes"
+  },
+  {
+   "from": "gate.rejected",
+   "to": "coordinator",
+   "kind": "subscribes"
+  },
+  {
+   "from": "request.done",
+   "to": "coordinator",
+   "kind": "subscribes"
+  },
+  {
+   "from": "request.refused",
+   "to": "coordinator",
+   "kind": "subscribes"
+  },
+  {
+   "from": "task.attention_needed",
+   "to": "coordinator",
+   "kind": "subscribes"
+  },
+  {
+   "from": "task.released",
+   "to": "coordinator",
+   "kind": "subscribes"
+  },
+  {
+   "from": "ticket.created",
+   "to": "coordinator",
+   "kind": "subscribes"
+  },
+  {
+   "from": "work.requested",
+   "to": "coordinator",
+   "kind": "subscribes"
+  },
+  {
+   "from": "review.approved",
+   "to": "merge_gate",
+   "kind": "subscribes"
+  },
+  {
+   "from": "request.done",
+   "to": "planner",
+   "kind": "subscribes"
+  },
+  {
+   "from": "request.refused",
+   "to": "planner",
+   "kind": "subscribes"
+  },
+  {
+   "from": "review.requested",
+   "to": "reviewer",
+   "kind": "subscribes"
+  },
+  {
+   "from": "task.assigned",
+   "to": "reviewer",
+   "kind": "subscribes"
+  },
+  {
+   "from": "task.released",
+   "to": "reviewer",
+   "kind": "subscribes"
+  },
+  {
+   "from": "gate.base_broken",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "gate.landed",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "orchestra.machine.quiet",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "orchestra.model.diverged",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "orchestra.model.stalled",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "orchestra.prediction.judged",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "orchestra.process.gave_up",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "outbox.rate_limit.unresolvable",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "pipeline.paused",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "request.done",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "request.refused",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "task.attention_needed",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "ticket.created",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "work.planned",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "changes.requested",
+   "to": "worker",
+   "kind": "subscribes"
+  },
+  {
+   "from": "gate.landed",
+   "to": "worker",
+   "kind": "subscribes"
+  },
+  {
+   "from": "orchestra.prediction.judged",
+   "to": "worker",
+   "kind": "subscribes"
+  },
+  {
+   "from": "request.done",
+   "to": "worker",
+   "kind": "subscribes"
+  },
+  {
+   "from": "task.assigned",
+   "to": "worker",
+   "kind": "subscribes"
+  },
+  {
+   "from": "task.released",
+   "to": "worker",
+   "kind": "subscribes"
+  }
+ ],
+ "handoffs": [
+  {
+   "from": "worker",
+   "via": "review.requested",
+   "to": "reviewer",
+   "count": 35,
+   "day": 35
+  },
+  {
+   "from": "planner",
+   "via": "ticket.created",
+   "to": "coordinator",
+   "count": 34,
+   "day": 34
+  },
+  {
+   "from": "coordinator",
+   "via": "task.assigned",
+   "to": "worker",
+   "count": 34,
+   "day": 34
+  },
+  {
+   "from": "reviewer",
+   "via": "review.approved",
+   "to": "merge_gate",
+   "count": 34,
+   "day": 34
+  },
+  {
+   "from": "reviewer",
+   "via": "changes.requested",
+   "to": "worker",
+   "count": 1,
+   "day": 1
+  }
+ ],
+ "unattributed_events": 0,
+ "era": null,
+ "current_era": null,
+ "eras": [],
+ "channels": [],
+ "counted": []
+}

@@ -1,0 +1,426 @@
+{
+ "ok": true,
+ "machine": "planner",
+ "events": [
+  {
+   "t": 1793505309.665,
+   "type": "request.done",
+   "instance": null,
+   "subject": "M31",
+   "id": "d47207d1f4d54241933c41ccdff8656c"
+  },
+  {
+   "t": 1793505309.665,
+   "type": "ticket.created",
+   "instance": null,
+   "subject": "DEMO-34",
+   "id": "29f33eb05b9d47fe975321a3eeb4c645"
+  },
+  {
+   "t": 1793505309.218,
+   "type": "task.requested",
+   "instance": null,
+   "subject": "M31",
+   "id": "77d925d394774174902fd82eb6696bbc"
+  },
+  {
+   "t": 1793505309.15,
+   "type": "request.done",
+   "instance": null,
+   "subject": null,
+   "id": "66f28368469347eda5546949693bbb95"
+  },
+  {
+   "t": 1793505309.15,
+   "type": "milestone.created",
+   "instance": null,
+   "subject": "M31",
+   "id": "157fe645025240e0a33c663bd822971f"
+  },
+  {
+   "t": 1793505308.712,
+   "type": "milestone.requested",
+   "instance": null,
+   "subject": null,
+   "id": "bcc3df4543e34c8e9ce6a3d85d7c4010"
+  },
+  {
+   "t": 1793505296.447,
+   "type": "request.done",
+   "instance": null,
+   "subject": "M30",
+   "id": "7d6156902f724096819a85cea8de72d4"
+  },
+  {
+   "t": 1793505296.447,
+   "type": "ticket.created",
+   "instance": null,
+   "subject": "DEMO-33",
+   "id": "3372de9cba9640208d7c223d483a6abc"
+  },
+  {
+   "t": 1793505296.162,
+   "type": "task.requested",
+   "instance": null,
+   "subject": "M30",
+   "id": "6660cf26cb604b9bb6a264cee36d6df9"
+  },
+  {
+   "t": 1793505295.939,
+   "type": "request.done",
+   "instance": null,
+   "subject": null,
+   "id": "d2b6b1edae294ebeb3a77ab3b8b3182c"
+  },
+  {
+   "t": 1793505295.938,
+   "type": "milestone.created",
+   "instance": null,
+   "subject": "M30",
+   "id": "475a654ee3174072bcb4eecd3aa03e12"
+  },
+  {
+   "t": 1793505295.909,
+   "type": "milestone.requested",
+   "instance": null,
+   "subject": null,
+   "id": "1589a14d2c464cf2b5902f3d4f08a20d"
+  },
+  {
+   "t": 1793505283.772,
+   "type": "request.done",
+   "instance": null,
+   "subject": "M29",
+   "id": "893a58150c254e749e02d40961d4b887"
+  },
+  {
+   "t": 1793505283.772,
+   "type": "ticket.created",
+   "instance": null,
+   "subject": "DEMO-32",
+   "id": "54a7f4d901f841a5a2f6880d9fb967fd"
+  },
+  {
+   "t": 1793505283.347,
+   "type": "task.requested",
+   "instance": null,
+   "subject": "M29",
+   "id": "b0b702c8735b4d8c8ad752f4e9266acc"
+  },
+  {
+   "t": 1793505283.267,
+   "type": "request.done",
+   "instance": null,
+   "subject": null,
+   "id": "ef05615008c140a9b14ceb5dac62c442"
+  },
+  {
+   "t": 1793505283.267,
+   "type": "milestone.created",
+   "instance": null,
+   "subject": "M29",
+   "id": "75fa30d9040b4de7af76df4dd2f4e5d5"
+  },
+  {
+   "t": 1793505282.835,
+   "type": "milestone.requested",
+   "instance": null,
+   "subject": null,
+   "id": "3fd3ac2b9a9543c68196d5bb77e49a75"
+  },
+  {
+   "t": 1793505270.583,
+   "type": "request.done",
+   "instance": null,
+   "subject": "M28",
+   "id": "4a09659ea13f476a88892ba9de8a15cc"
+  },
+  {
+   "t": 1793505270.582,
+   "type": "ticket.created",
+   "instance": null,
+   "subject": "DEMO-31",
+   "id": "4a08c238f5d3445f8a0746e9ae00e0f9"
+  },
+  {
+   "t": 1793505270.266,
+   "type": "task.requested",
+   "instance": null,
+   "subject": "M28",
+   "id": "db12efcb7f4a4ba1940d8ddf4633a9c5"
+  },
+  {
+   "t": 1793505270.065,
+   "type": "request.done",
+   "instance": null,
+   "subject": null,
+   "id": "c5d243daa6fa4b5f969080f515427901"
+  },
+  {
+   "t": 1793505270.065,
+   "type": "milestone.created",
+   "instance": null,
+   "subject": "M28",
+   "id": "3014a1ab2d584394b2887852a774289d"
+  },
+  {
+   "t": 1793505270.005,
+   "type": "milestone.requested",
+   "instance": null,
+   "subject": null,
+   "id": "24791273eb02409ea56af26f3f14ae66"
+  },
+  {
+   "t": 1793505257.916,
+   "type": "request.done",
+   "instance": null,
+   "subject": "M27",
+   "id": "4385f44dcec241b08da9723c8310038d"
+  },
+  {
+   "t": 1793505257.916,
+   "type": "ticket.created",
+   "instance": null,
+   "subject": "DEMO-30",
+   "id": "8b45631c57df49fc872a21d6cef9b7dc"
+  },
+  {
+   "t": 1793505257.459,
+   "type": "task.requested",
+   "instance": null,
+   "subject": "M27",
+   "id": "c841fdd38abd4aba881ceb3528a9521e"
+  },
+  {
+   "t": 1793505257.411,
+   "type": "request.done",
+   "instance": null,
+   "subject": null,
+   "id": "b7858b19c6b34f9f9efdb8135497faec"
+  },
+  {
+   "t": 1793505257.411,
+   "type": "milestone.created",
+   "instance": null,
+   "subject": "M27",
+   "id": "05ea798e9e13460f9ee4267077cc9c0c"
+  },
+  {
+   "t": 1793505256.952,
+   "type": "milestone.requested",
+   "instance": null,
+   "subject": null,
+   "id": "dcbbcbaacd514ecc886c2b9b54ac8bf8"
+  },
+  {
+   "t": 1793505244.714,
+   "type": "request.done",
+   "instance": null,
+   "subject": "M26",
+   "id": "22aaa06ddb964685afcca76976af0983"
+  },
+  {
+   "t": 1793505244.714,
+   "type": "ticket.created",
+   "instance": null,
+   "subject": "DEMO-29",
+   "id": "bc299b4f2473458cb2d0476e5e6bd549"
+  },
+  {
+   "t": 1793505244.409,
+   "type": "task.requested",
+   "instance": null,
+   "subject": "M26",
+   "id": "47cf1317a9a245c19fa3b3899e995ec8"
+  },
+  {
+   "t": 1793505244.201,
+   "type": "request.done",
+   "instance": null,
+   "subject": null,
+   "id": "caf7994c42ba4931b9ffeead18084be2"
+  },
+  {
+   "t": 1793505244.201,
+   "type": "milestone.created",
+   "instance": null,
+   "subject": "M26",
+   "id": "958a760db30c4e98b22b7f77986f220a"
+  },
+  {
+   "t": 1793505244.148,
+   "type": "milestone.requested",
+   "instance": null,
+   "subject": null,
+   "id": "cea8514b5632487085afc1783fb3ceb0"
+  },
+  {
+   "t": 1793505232.025,
+   "type": "request.done",
+   "instance": null,
+   "subject": "M25",
+   "id": "68f82fe143474cfda7fabb1843f06474"
+  },
+  {
+   "t": 1793505232.025,
+   "type": "ticket.created",
+   "instance": null,
+   "subject": "DEMO-28",
+   "id": "fa0d3f39292448139c57b7afd616d4e8"
+  },
+  {
+   "t": 1793505231.601,
+   "type": "task.requested",
+   "instance": null,
+   "subject": "M25",
+   "id": "074e1a876bfd4788b5f4098bd2e1dcbd"
+  },
+  {
+   "t": 1793505231.518,
+   "type": "request.done",
+   "instance": null,
+   "subject": null,
+   "id": "d294571eefa5423b9440e260eeb09148"
+  },
+  {
+   "t": 1793505231.517,
+   "type": "milestone.created",
+   "instance": null,
+   "subject": "M25",
+   "id": "9d239b1029a84732b672e9d3206d83f1"
+  },
+  {
+   "t": 1793505231.083,
+   "type": "milestone.requested",
+   "instance": null,
+   "subject": null,
+   "id": "5c0347fcab294046a57cae605349ce94"
+  },
+  {
+   "t": 1793505218.861,
+   "type": "request.done",
+   "instance": null,
+   "subject": "M24",
+   "id": "8a8d8ca6013f46f994ed61f88448858b"
+  },
+  {
+   "t": 1793505218.86,
+   "type": "ticket.created",
+   "instance": null,
+   "subject": "DEMO-27",
+   "id": "f6ec4bb1d11c403a9e69b4c346aee1ba"
+  },
+  {
+   "t": 1793505218.533,
+   "type": "task.requested",
+   "instance": null,
+   "subject": "M24",
+   "id": "5527b4bd6c3b4fa8bd83b45348614ec7"
+  },
+  {
+   "t": 1793505218.347,
+   "type": "request.done",
+   "instance": null,
+   "subject": null,
+   "id": "d04c652e09ba400cbcf6e0d82907e53d"
+  },
+  {
+   "t": 1793505218.347,
+   "type": "milestone.created",
+   "instance": null,
+   "subject": "M24",
+   "id": "354a66a21a4c4c0087ca1df8ccddd6cd"
+  },
+  {
+   "t": 1793505218.277,
+   "type": "milestone.requested",
+   "instance": null,
+   "subject": null,
+   "id": "3d4f0ab7d0b542d28255b94d935a01ae"
+  },
+  {
+   "t": 1793505206.183,
+   "type": "request.done",
+   "instance": null,
+   "subject": "M23",
+   "id": "402fe293778a4ee38e5c08baa74cc84b"
+  },
+  {
+   "t": 1793505206.183,
+   "type": "ticket.created",
+   "instance": null,
+   "subject": "DEMO-26",
+   "id": "4caecd99e5e944f895087aed550456f3"
+  },
+  {
+   "t": 1793505205.735,
+   "type": "task.requested",
+   "instance": null,
+   "subject": "M23",
+   "id": "c8aed935702f4e40a75e9cc01a75c025"
+  },
+  {
+   "t": 1793505205.67,
+   "type": "request.done",
+   "instance": null,
+   "subject": null,
+   "id": "99ae78dae3994efa81d5f1a2689d7815"
+  },
+  {
+   "t": 1793505205.67,
+   "type": "milestone.created",
+   "instance": null,
+   "subject": "M23",
+   "id": "5ca4408662db412b9b9fe59e31a63645"
+  },
+  {
+   "t": 1793505205.222,
+   "type": "milestone.requested",
+   "instance": null,
+   "subject": null,
+   "id": "561d9f9f217847728fbb29115056426e"
+  },
+  {
+   "t": 1793505192.992,
+   "type": "request.done",
+   "instance": null,
+   "subject": "M22",
+   "id": "5b7123a9022a4babb1a1505856b10f97"
+  },
+  {
+   "t": 1793505192.992,
+   "type": "ticket.created",
+   "instance": null,
+   "subject": "DEMO-25",
+   "id": "271c51633ea3410999275df12b4d0644"
+  },
+  {
+   "t": 1793505192.679,
+   "type": "task.requested",
+   "instance": null,
+   "subject": "M22",
+   "id": "55ad7b3652ac45f7a685c89975d8581a"
+  },
+  {
+   "t": 1793505192.465,
+   "type": "request.done",
+   "instance": null,
+   "subject": null,
+   "id": "ce0ecaec63de4ddca3828cffbc9e49ac"
+  },
+  {
+   "t": 1793505192.461,
+   "type": "milestone.created",
+   "instance": null,
+   "subject": "M22",
+   "id": "c486ecfaca74475ab750c5b5bd0fda02"
+  },
+  {
+   "t": 1793505192.421,
+   "type": "milestone.requested",
+   "instance": null,
+   "subject": null,
+   "id": "ecb3a477bbb941e38c7f5e2548cc79cf"
+  }
+ ]
+}

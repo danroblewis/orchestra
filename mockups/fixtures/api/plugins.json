@@ -1,0 +1,23 @@
+{
+ "ok": true,
+ "pages": [
+  {
+   "plugin": "tasks",
+   "path": "/tickets",
+   "title": "Tickets"
+  },
+  {
+   "plugin": "agents",
+   "path": "/agents",
+   "title": "Agents"
+  }
+ ],
+ "scripts": [
+  "/plugins/tasks/static/tasks-boot.js",
+  "/plugins/agents/static/attention.js",
+  "/plugins/agents/static/machine-cards.js",
+  "/plugins/agents/static/ticket-sessions.js"
+ ],
+ "errors": [],
+ "local": []
+}
