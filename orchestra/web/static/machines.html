@@ -13,20 +13,9 @@
   .mwrap h2 { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:18px 0 8px; display:flex; gap:8px; align-items:center }
   .evmap { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:6px }
   .evmap svg { display:block; width:100%; height:600px; font-size:11px }
-  .evmap .n circle.body { fill:var(--rc, #94a3b8); stroke:var(--border2); stroke-width:1.5 }
-  .evmap .n text.initial { fill:#0b0d12; font-weight:800; font-size:15px } .evmap .n.program text.initial { fill:var(--text2) }
-  .evmap .n text.name { fill:var(--text); font-weight:600; font-size:11.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
-  .evmap .n.program circle.body { fill:var(--panel3); stroke:#94a3b8; stroke-width:1.5 } .evmap .n.program.bootstrap circle.body { stroke:#fbbf24; stroke-width:2 }
-  .evmap .n .halo { fill:none; stroke:url(#halo); stroke-width:4; stroke-dasharray:14 10; stroke-linecap:round; filter:drop-shadow(0 0 5px #60a5fa); animation:halo 2.4s linear infinite; transform-box:fill-box; transform-origin:center }
-  @keyframes halo { to { transform:rotate(360deg) } }
-  .evmap .n.cyc circle, .evmap .n.cyc rect { stroke-width:3 } .evmap .n.event rect { fill:#0b0e14; stroke:#6b5313 } .evmap .n text.ev { fill:#fcd34d; font-family:var(--mono); font-size:10px; font-weight:600 }
-  .evmap .n text { fill:var(--text); font-weight:600; pointer-events:none } .evmap .n .sub { fill:var(--muted); font-weight:400; font-size:9.5px }
-  .evmap .e { fill:none; stroke:#4b5563; stroke-width:1.4; opacity:.85 } .evmap .e.seen { stroke:#22c55e } .evmap .e.cyc { stroke:#fcd34d }
-  .evmap .dim { opacity:.1 } .evmap .n { cursor:grab }
   .evmap .legend { color:var(--muted); font-size:10.5px; margin-top:6px; display:flex; gap:14px; flex-wrap:wrap } .evmap .legend i { display:inline-block; width:18px; border-top:2px solid; margin-right:5px; vertical-align:middle }
-  .evmap .loops { font-size:12px; color:var(--text2); margin-top:8px } .evmap .loops b { color:#fcd34d }
   .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(380px, 1fr)); gap:12px }
-  .cards .panel { margin:0; transition:box-shadow .3s } .cards .panel.flash { box-shadow:0 0 0 2px var(--accent) } .cards h3 { margin:0 0 6px; font-size:14px; display:flex; gap:8px; align-items:center }
+  .cards .panel { margin:0; transition:box-shadow .3s } .cards h3 { margin:0 0 6px; font-size:14px; display:flex; gap:8px; align-items:center }
   .row { font-size:12px; margin:4px 0; display:flex; gap:6px; flex-wrap:wrap; align-items:baseline } .row > .muted:first-child { width:84px; flex:none }
   .ty { background:var(--panel3); border:1px solid var(--border); border-radius:999px; padding:0 8px; font-size:11px; font-family:var(--mono); max-width:100%; overflow-wrap:anywhere }
   .cards .panel { min-width:0; overflow:hidden } .row > span:not(.muted:first-child) { min-width:0 }
