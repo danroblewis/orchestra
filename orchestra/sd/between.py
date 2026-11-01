@@ -4,7 +4,10 @@ The grid samples a level at whole steps, so a state each item leaves within a se
 at every step; its raw points do not. The level that rises at an instant one of the passage's
 ins counted (at it, or no later than the level's own write interval after it), and falls at an
 instant one of its outs counted, is that state: most of its rises and of its falls (``MATCHED``)
-must, and it must have risen at least once and no more often than the ins counted. A level that
+must, and it must have risen no more often than the ins counted. It must fill and drain in the
+window by a whole item (``fills_and_drains``): a level that only rises (a tally of reports read, 5
+to 10 and never less) is a count of something, and one that moves by fractions (a duration) holds
+no items; neither is the state items pass through, however well its moves match. A level that
 never reads above zero says nothing about which state it is, and is never chosen. Nor does a
 coincidence with counters that count at almost every instant: when the instants within the
 tolerance after the ins' (or the outs') events cover more than ``CHANCE`` of the window, a level
@@ -22,6 +25,16 @@ from .series import Series
 MATCHED = 0.8         # the share of a level's rises (and falls) that must come at the passage's events
 CHANCE = 0.5          # the share of the window the events' tolerance may cover, at most, for a match to mean anything
 SAME_TOTAL = 0.03
+
+
+def fills_and_drains(changes) -> bool:
+    """Whether a level both rose and fell by a whole item (``changes``: its moves): a buffer
+    between two counters fills and drains, so one that never falls (or never rises) is a
+    counter-like tally, and one whose moves are all fractions (a duration, a rating) holds no
+    items; neither is ever a buffer. The one test for a measured state between counters, here and
+    in ``sd.restate.measured_between``."""
+    changes = list(changes)
+    return any(d >= 1 - 1e-9 for d in changes) and any(d <= -1 + 1e-9 for d in changes)
 
 
 def events(c: Series, start: float, end: float) -> list[float]:
@@ -53,7 +66,7 @@ def at_events(level: Series, ins: list[Series], outs: list[Series], start: float
     pts = [(t, v) for t, v in level.points if start - step < t <= end]
     rises = [t for (_, a), (t, b) in pairwise(pts) if b > a and t > start]
     falls = [t for (_, a), (t, b) in pairwise(pts) if b < a and t > start]
-    if not rises:
+    if not fills_and_drains(b - a for (_, a), (t, b) in pairwise(pts) if t > start):
         return None
     tol = min(step, median([b - a for (a, _), (b, _) in pairwise(pts)] or [step])) + 1e-6
     into = sorted(t for c in ins for t in events(c, start - step, end))

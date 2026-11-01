@@ -427,12 +427,20 @@ Conservation (`sd/discover.py`):
    machine holds before another machine's copy, then the one stamped first), unless a measured
    level in their unit is the one less the other (either way round, within half a unit) in every
    step where it and both are live, and moved by a whole unit in a step where they differ,
-   however seldom it moves (a shelf left within seconds): that level is the buffer between them,
-   and they are its inflow and outflow. Right after the join, and again once every balance is final, a stock whose own
+   however seldom it moves (a shelf left within seconds), and both rose and fell by a whole unit
+   in those steps (a buffer fills and drains; a tally that never falls is a count, never a
+   buffer: the one test, `between.fills_and_drains`, the state of a passage below is put to):
+   that level is the buffer between them, and they are its inflow and outflow. Right after the join, and again once every balance is final, a stock whose own
    writer's count was joined to another writer's takes its own back, so it is identified on
    its own counters: no stock is balanced by another instrument's count of its events while its
    own exists. The two
-   stay one flow and its co-flow, with one rate, each measured by its own writer's series. Last, two or three
+   stay one flow and its co-flow, with one rate, each measured by its own writer's series. Once
+   every balance is final, Orchestra's event counter in a balance, where another writer's counter
+   that a balance holds counted the same moments (at least 5, the same steps or up to a step
+   apart either way: the bus hears a landing before the ticket instrument counts it), is filed
+   under that counter: the balance keeps it (its stamps may be the ones that fit a level read
+   just after), and it measures that flow's co-flow, never a flow of its own (rule 7: the bus
+   count is secondary). Last, two or three
    of a balance's counters whose signed sum one unused counter counts by itself (each a moment
    before or after the other: running totals never more than an event apart) give way to it
    (`sd/parsimony.py`: the customers' orders less the app's are the takers' own orders taken),
@@ -515,7 +523,9 @@ Conservation (`sd/discover.py`):
    all its evidence, so it does not come and go with the one event that takes the fill over the
    bar at the edge of a window), become a flow into the state and flows out of it. The state is the measured level whose raw points
    rise at the inflow's events and fall at the outflows' (`sd/between.py`: the grid misses it,
-   the raw points do not); with none (no level is written, or one never reads above zero), a
+   the raw points do not), and that both rose and fell by a whole item in the window (a level
+   that only rises, the test reports read, 5 to 10, is a tally; one that moves by fractions, a
+   duration, holds no items); with none (no level is written, or one never reads above zero), a
    stock measured by no series, drawn as hidden. The drain and the fill are each claimed by one
    stock alone, other members are the drain's or the fill's machine's, no in and out but those
    two count the same events, Orchestra's event counters take no part, and no stock is both

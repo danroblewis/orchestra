@@ -119,6 +119,7 @@ from .properties import statistic
 from .resolution import LINEAR, intervals_with, real_points, steps_of
 from .restate import (
     buffers,
+    bus_copies,
     own_counters_back,
     split_event_counters,
     split_foreign_counters,
@@ -204,6 +205,24 @@ def same_flow(a: Series, b: Series, n: int) -> bool:
         return True
     return (b.name == EVENT_COUNTER and a.name != EVENT_COUNTER and behind(da, db)) or \
         (a.name == EVENT_COUNTER and b.name != EVENT_COUNTER and behind(db, da))
+
+
+def bus_copy(a: Series, b: Series) -> bool:
+    """Orchestra's count of an event type and another writer's counter of the same moments (the
+    merge gate's ``gate.landed`` on the bus and the ticket instrument's landed runs): totals that
+    agree, at least ``MIN_EVENTS`` of them (a few rare events match anything as rare), counted in the
+    same steps or up to a step apart either way (the bus and the instrument stamp one moment
+    apart). The writers differ, so ``same_flow`` never compares them; but the event counter is
+    secondary (AGENTS.md rule 7), so where such a counter is a flow the event counter is never one
+    of its own (``restate.bus_copies``)."""
+    ev, other = (a, b) if a.name == EVENT_COUNTER else (b, a)
+    if ev.name != EVENT_COUNTER or other.name == EVENT_COUNTER:
+        return False
+    total, da, db = sum(ev.deltas), ev.deltas, other.deltas
+    if total < MIN_EVENTS or abs(total - sum(db)) > max(1.0, SAME_STEPS * total):
+        return False
+    moved = sum(1 for x, y in zip(da, db) if x or y)
+    return sum(1 for x, y in zip(da, db) if x != y) <= SAME_STEPS * moved or behind(da, db) or behind(db, da)
 
 
 def named_apart(levels: list[Series]) -> dict[str, set[str]]:
@@ -1021,6 +1040,11 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     found, late = own_counters_back(found, [(k, d) for k, d in joined if d.key not in {c.key for c in counters}],
                                     masks, writer_of, fits)
     own_back |= late
+    # Orchestra's count of an event type, where another writer's counter of the same moments is a
+    # flow is filed under it, never a flow of its own (AGENTS.md rule 7, sd.restate.bus_copies); under
+    # the counter that one is filed under, when it is itself another's record of the same events
+    for key, (k, c) in bus_copies(found, lambda a, b: bus_copy(a, b) and not counts_apart(a, b, named)).items():
+        own_back[key] = (own_back[k.key][0] if k.key in own_back else k, c)
     for keep, drop in own_back.values():
         left_out.pop(drop.key, None)
         same_as[keep.key] = [x for x in same_as[keep.key] if (x["name"], x["labels"]) != (drop.name, drop.labels)]

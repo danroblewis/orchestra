@@ -134,3 +134,39 @@ def test_a_measured_level_between_two_counters_keeps_them_apart_however_seldom_i
     assert not m.discovery["left_out"].get('inspections_passed_total{instrument="board"}', "").startswith("the same as")
     passed = m.flow("inspections_passed_total")
     assert passed.src == "orders_inspecting" and passed.dst != "orders_accepting", (passed.src, passed.dst)
+
+
+def test_orchestras_count_of_an_event_type_is_never_a_flow_beside_a_machines_counter_of_the_same_moments(tmp_path):
+    # UC-3 re-score: the bus heard each landing (orchestra_events_total{gate.landed}) 4.8 s before
+    # the ticket instrument counted it (gate_runs_total, which fills the done tickets); the
+    # repository, read every 30 s, gained a file with each, and where a landing came just before a
+    # read only the bus count fits it. The two writers differ, so the counts were never compared,
+    # and the repository's inflow was a flow of its own: two flows for one move. The bus count is
+    # secondary (AGENTS.md rule 7): it measures the landed flow's co-flow into the repository
+    import random
+    rng = random.Random(1)
+    tk, rp = {"project": "p", "instrument": "tickets"}, {"project": "p", "instrument": "repo"}
+    lands = [T0 + 30 * k + (27.5 if k % 3 == 0 else rng.uniform(5, 20)) for k in range(3, 57, 6)]
+    pts, n = [], {"bus": 0, "landed": 0, "files": 3}
+    pend = [(t, "bus") for t in lands] + [(t + 4.8, "landed") for t in lands]
+    for i in range(1800):
+        now = T0 + i
+        for due, what in sorted(p for p in pend if p[0] <= now):
+            pend.remove((due, what))
+            n[what] += 1
+            if what == "bus":
+                n["files"] += 1
+                pts.append(Point("orchestra_events_total", n["bus"], due, {"project": "p", "source": "gate", "type": "gate.landed"}))
+            else:
+                pts += [Point("gate_runs_total", n["landed"], due, tk), Point("tickets_done", n["landed"], due, tk)]
+        if i % 5 == 0:
+            pts += [Point("gate_runs_total", n["landed"], now, tk), Point("tickets_done", n["landed"], now, tk)]
+        if i % 30 == 0:
+            pts.append(Point("repo_files", n["files"], now, rp))
+    store = FileMetrics(tmp_path / "m.jsonl")
+    store.write(sorted(pts, key=lambda p: p.ts))
+    m = discover(store.dump("", {"project": "p"}), start=T0, end=T0 + 1800, step=5)
+    assert _balance(m, "repo_files") == {("orchestra_events_total", 1)}          # its stamps fit the reads
+    assert not [f.id for f in m.flows if f.id.startswith("orchestra_events_total")]
+    into = next(f for f in m.flows if f.dst == "repo_files")
+    assert into.evidence.get("co_flow_of") == "gate_runs_total" and into.counter.name == "orchestra_events_total"
