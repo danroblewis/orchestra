@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -39,7 +40,10 @@ def main(frame: str, port: int) -> None:
     if frame == "E4":
         app.middleware("http")(_with_measured(SAIL, measured_e4))
     print(json.dumps({"token": token(project), "url": f"http://127.0.0.1:{port}"}), flush=True)
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    try:
+        uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _with_measured(machine: str, block):
