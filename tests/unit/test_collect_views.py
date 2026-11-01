@@ -155,3 +155,18 @@ def test_the_runtime_record_carries_a_plugins_views_to_discovery(project):
     assert {r["view"] for r in recs.values()} == {"count", "moves", "age"}
     m = discover(reading.dump, start=T0, end=T0 + MINUTES * 60, step=STEP, provenance=reading.provenance)
     assert set(by_pile(m)) == set(PILES) and all(s.evidence["by_construction"] for s in by_pile(m).values())
+
+
+def test_a_view_may_say_what_its_series_measure_beside_them_never_as_a_label():
+    """``describes`` rides on the view (the instrument's own record), never on the series: editing
+    the sentence must not start a new series (the owner's piles, 2026-11-01)."""
+    vs = parse({"items": [{"view": "count", "place": "pile", "where": {"pile": "write.held"}, "describes": "held by role worker"},
+                          {"view": "count", "place": "pile"}]})
+    assert vs[0].table() == {"view": "count", "place": "pile", "where": {"pile": "write.held"}, "describes": "held by role worker"}
+    assert vs[1].table() == {"view": "count", "place": "pile"}
+    got = provenance([("items", {"instrument": "p", "pile": "write.held"}, []), ("items", {"instrument": "p", "pile": "a.waiting"}, [])],
+                     {"p": vs}, series_key)
+    assert got[series_key("items", {"instrument": "p", "pile": "write.held"})]["describes"] == "held by role worker"
+    assert "describes" not in got[series_key("items", {"instrument": "p", "pile": "a.waiting"})]
+    with pytest.raises(ConfigError):
+        parse({"items": {"view": "age", "describes": 3}})

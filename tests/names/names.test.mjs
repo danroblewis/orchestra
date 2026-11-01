@@ -130,3 +130,72 @@ test("an expected flow is drawn with no events, and its stock that only fills wi
   assert.deepEqual(kept.flows.map((f) => f.id), ["in"]);
   assert.ok(kept.nodes.some((n) => n.sid === "fill") && !kept.acc.has("fill"));
 });
+
+// the owner, 2026-11-01, on the delivery_sail example: "write.held" read as a disk write, and
+// "after work item moves (write.held, open_pr.waiting, delivery_sail)" as three things in one stock
+const pile = (id, step, place, extra = {}) => stock(id, "workflow_pile_items", { workflow: "delivery_sail", pile: `${step}.${place}`, step, place, instrument: "workflows.piles", ...extra });
+// what the instrument says of its series (collect/views.py), as the model carries it: never a label
+const VIEWS = { "workflows.piles": { workflow_pile_items: [{ view: "count", place: "pile", where: { workflow: "delivery_sail", pile: "write.held" }, describes: "held at write" }, { view: "count", place: "pile" }],
+                                     workflow_pile_oldest_seconds: [{ view: "age" }] } };
+const move = (id, from, to, a, b, extra = {}) => flow(id, from, to, "workflow_pile_moves_total", { workflow: "delivery_sail", from: a, to: b, instrument: "workflows.piles", ...extra });
+
+test("a series that names a step and a place is named by them and by what they do not spell, its sentence beside it", () => {
+  const m = { stocks: [pile("wh", "write", "held"), pile("ww", "write", "waiting"), pile("sc", "sail_check", "waiting")], flows: [], views: VIEWS };
+  const n = SDGraph.names(m).stocks;
+  assert.deepEqual([n.wh.name, n.ww.name, n.sc.name], ["write (held) · delivery sail", "write (waiting) · delivery sail", "sail check (waiting) · delivery sail"]);
+  assert.equal(n.wh.about, "held at write");                   // the view's sentence: never in the name
+  assert.equal(n.ww.about, "");                                // its view says nothing
+  assert.equal(n.wh.family, "");
+  assert.ok(!n.wh.name.includes("workflow pile items"));
+});
+
+test("two workflows' piles of one step are told apart by what the step does not spell", () => {
+  const m = { stocks: [pile("a", "write", "held"), pile("b", "write", "held", { workflow: "hotfix" })], flows: [] };
+  assert.deepEqual([SDGraph.stockName(m, "a"), SDGraph.stockName(m, "b")], ["write (held) · delivery sail", "write (held) · hotfix"]);
+});
+
+test("a stock no series measures is named by its neighbours, never after the counter that fills it", () => {
+  const hidden = { id: "after_moves", name: "after workflow pile moves (write.held, open_pr.waiting, delivery_sail)", series: null, evidence: { hidden: true, passing: { ins: [], outs: [] } } };
+  const m = { stocks: [pile("wh", "write", "held"), pile("ow", "open_pr", "waiting"), hidden],
+              flows: [move("in", "wh", "after_moves", "write.held", "open_pr.waiting"), move("out", "after_moves", "ow", "write.held", "open_pr.waiting", { machine: "x" })] };
+  assert.equal(SDGraph.stockName(m, "after_moves"), "between write (held) and open pr (waiting) · delivery sail");
+  const lone = { ...hidden, id: "h2" };
+  const m2 = { stocks: [pile("wh", "write", "held"), lone], flows: [move("in", "wh", "h2", "write.held", "<end>")] };
+  assert.equal(SDGraph.stockName(m2, "h2"), "between write (held) · delivery sail and outside");
+});
+
+test("a flow between stepped stocks is named from → to by them, never by the counter's name", () => {
+  const m = { stocks: [pile("wh", "write", "held"), pile("ow", "open_pr", "waiting"), pile("ww", "write", "waiting")],
+              flows: [move("a", "wh", "ow", "write.held", "open_pr.waiting"), move("s", null, "ww", "<start>", "write.waiting"), move("e", "ow", null, "open_pr.waiting", "<end>")] };
+  const f = (id) => SDGraph.flowName(m, m.flows.find((x) => x.id === id));
+  assert.equal(f("a"), "write (held) → open pr (waiting) · delivery sail");
+  assert.equal(f("s"), "<start> → write (waiting) · delivery sail");
+  assert.equal(f("e"), "open pr (waiting) → <end> · delivery sail");
+  // another workflow's pile of the same name is not this counter's end
+  const two = { stocks: [pile("x", "write", "held", { workflow: "hotfix" }), pile("wh", "write", "held")], flows: [move("a", "wh", null, "write.held", "<end>")] };
+  assert.equal(SDGraph.flowName(two, two.flows[0]), "write (held) → <end> · delivery sail");
+});
+
+test("an instrument's series are named as their stocks and flows would be, beside each other", () => {
+  const lab = (step, place) => ({ workflow: "delivery_sail", pile: `${step}.${place}`, step, place });
+  const peers = [{ name: "workflow_pile_items", labels: lab("write", "held") }, { name: "workflow_pile_items", labels: lab("open_pr", "waiting") }];
+  assert.deepEqual(SDGraph.seriesName(peers[0], peers, VIEWS, "workflows.piles"), { name: "write (held) · delivery sail", family: "workflow pile items", about: "held at write" });
+  assert.equal(SDGraph.seriesName({ name: "workflow_pile_oldest_seconds", labels: lab("write", "held") }, peers, VIEWS, "workflows.piles").name, "age of write (held) · delivery sail");
+  const mv = { name: "workflow_pile_moves_total", labels: { workflow: "delivery_sail", from: "write.held", to: "open_pr.waiting" } };
+  assert.equal(SDGraph.seriesName(mv, peers).name, "write (held) → open pr (waiting) · delivery sail");
+  assert.deepEqual(SDGraph.seriesName({ name: "floor_offers", labels: { role: "worker" } }), { name: "role worker", family: "floor offers", about: "" });
+  assert.deepEqual(SDGraph.seriesName({ name: "git_branch_commits", labels: {} }), { name: "git branch commits", family: "", about: "" });
+});
+
+test("a hidden stock a strategy found is named by its neighbours; an age series is the age of its place, never its name", () => {
+  const hid = { id: "x_hidden", name: "x hidden", series: null, evidence: { hidden: true, strategy: "kalman_lna" } };
+  const age = { ...pile("age", "write", "held"), series: { name: "workflow_pile_oldest_seconds", labels: pile("q", "write", "held").series.labels } };
+  const m = { stocks: [pile("wh", "write", "held"), age, hid], flows: [{ id: "u", name: "u", from: "x_hidden", to: "wh" }, { id: "v", name: "v", from: null, to: "x_hidden" }], views: VIEWS };
+  const n = SDGraph.names(m).stocks;
+  assert.equal(SDGraph.stockName(m, "wh"), "write (held) · delivery sail");
+  assert.equal(SDGraph.stockName(m, "age"), "age of write (held) · delivery sail");
+  assert.equal(n.x_hidden.name, "between outside and write (held) · delivery sail");
+  // without the views (an older answer), the two still never read alike: their families tell them apart
+  const bare = { ...m, views: undefined };
+  assert.equal(SDGraph.stockName(bare, "age"), "write (held) · delivery sail · workflow pile oldest seconds");
+});

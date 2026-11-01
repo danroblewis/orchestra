@@ -114,6 +114,13 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
             out["hung_on_error"] = f"{type(e).__name__}: {e}"
         return out
 
+    @app.get("/api/instruments/{name}/series")
+    def instrument_series_(name: str) -> dict:
+        """The series an instrument wrote in the last hour, each with its latest value
+        (web/instrument_series.py): read from the metrics store, never by running the instrument."""
+        from .instrument_series import instrument_series
+        return instrument_series(core.metrics, name, time.time())
+
     @app.get("/api/instruments/{name}/log")
     def instrument_log(name: str, lines: int = 200) -> dict:
         """The tail of an instrument's log; only a file within the project is read (machine_logs.py)."""

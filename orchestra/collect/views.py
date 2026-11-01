@@ -26,6 +26,10 @@ series name the instrument prints; its value is one view or a list of them (the 
 | ``age`` | | how long something has waited: never a stock |
 
 ``where`` (optional) is a table of labels and values a series must carry for the view to be its.
+``describes`` (optional, any view) is a sentence about what the matching series measure, kept
+beside them and never a label, so editing it never starts a new series: the Dynamics and
+Instruments pages show it under the part's name (an instrument may declare one view per series,
+each with its ``where`` and its sentence: ``workflows.piles`` says what each pile holds).
 A view is a statement about how the series was made, never about a machine or a flow (AGENTS.md
 rules 6 and 7): it changes no equation, and the moves' rates are still fitted. Discovery reads
 the views of the instruments the host runs (its runtime record, ``instruments``) and of
@@ -50,16 +54,19 @@ class View:
     view: str
     fields: tuple[tuple[str, str], ...] = ()    # place, or starts and stops
     where: tuple[tuple[str, str], ...] = ()
+    describes: str = ""
 
     def matches(self, name: str, labels: dict[str, str]) -> bool:
         return name == self.series and all(labels.get(k) == v for k, v in self.where)
 
     def record(self, instrument: str) -> dict:
-        return {"source": OWN, "instrument": instrument, "view": self.view, **dict(self.fields)}
+        return {"source": OWN, "instrument": instrument, "view": self.view, **dict(self.fields),
+                **({"describes": self.describes} if self.describes else {})}
 
     def table(self) -> dict:
         """As it is declared, for the runtime record."""
-        return {"view": self.view, **dict(self.fields), **({"where": dict(self.where)} if self.where else {})}
+        return {"view": self.view, **dict(self.fields), **({"where": dict(self.where)} if self.where else {}),
+                **({"describes": self.describes} if self.describes else {})}
 
 
 def _label(v, what: str) -> str:
@@ -76,14 +83,17 @@ def _one(series: str, t) -> View:
     view = t.get("view")
     if view not in FIELDS:
         raise ConfigError(f"views: {series}: view must be one of {', '.join(FIELDS)}, not {view!r}")
-    extra = set(t) - {"view", "where", *FIELDS[view]}
+    extra = set(t) - {"view", "where", "describes", *FIELDS[view]}
     if extra:
         raise ConfigError(f"views: {series}: {view} takes no {', '.join(sorted(extra))}")
     fields = tuple((f, _label(t.get(f), f"views: {series}: {f}")) for f in FIELDS[view])
     where = t.get("where") or {}
     if not isinstance(where, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in where.items()):
         raise ConfigError(f"views: {series}: where must be a table of labels and their values, not {where!r}")
-    return View(series, view, fields, tuple(sorted(where.items())))
+    describes = t.get("describes") or ""
+    if not isinstance(describes, str):
+        raise ConfigError(f"views: {series}: describes must be a sentence, not {describes!r}")
+    return View(series, view, fields, tuple(sorted(where.items())), describes)
 
 
 def parse(views) -> tuple[View, ...]:
