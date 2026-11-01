@@ -22,10 +22,11 @@
   // - a series alone in its family is named by the series;
   // - a series alone in its family whose first word other stocks' series share (a namespace, by
   //   Prometheus' convention: bakery_orders_baking, bakery_shelf_items) has that word as its family;
-  // - a flow is named by its series (it is a kind of event), with only what its two ends do not
-  //   already say: label values its stocks carry are left out;
-  // - a flow measured by two counters of the same events (evidence.same_as: two transitions
-  //   stamped at one instant) is named by both label sets in full, joined by "=";
+  // - a flow is named by its counter: its series' name, then who moved what from where to where
+  //   ("tasks ticket transitions · worker: OPEN → IN PROGRESS"), a lone end with its key ("from
+  //   REJECTED"), and any other label that tells the family's flows apart, with its key ("status
+  //   landed"). A counter several flows share says so ("one counter, 2 flows"); a flow whose events
+  //   another counter also counts (evidence.same_as) says so beside its name (sameAs), not in it;
   // - a stock named by a label that also names the stocks of another series (pods by region, for
   //   two services) says its machine too ("search · eu-west"), so two services' regions never
   //   look alike. A remote machine's source prefix is left out (rig.search: "search").
@@ -55,8 +56,11 @@
       let names = xs.map((x) => said(x, false).join(" · "));
       // leaving a usual value out must never make two names the same
       names = names.map((nm, i) => (names.filter((o) => o === nm).length > 1 ? said(xs[i], true).join(" · ") : nm));
+      // a series alone in its family keeps the qualifier the model's own name gives it, when that is
+      // all that narrows it ("agents working (reviewer)": the one series of a family several machines write)
+      const qualified = (x) => (!drop && typeof x.name === "string" && x.name.startsWith(fam + " (") && x.name.endsWith(")") ? x.name : fam);
       xs.forEach((x, i) => { out[x.id] = drop ? { name: fam + (names[i] ? " · " + names[i] : ""), family: "" }
-        : names[i] ? { name: names[i], family: fam } : { name: fam, family: "" };
+        : names[i] ? { name: names[i], family: fam } : { name: qualified(x), family: "" };
         if (names[i]) said_by[x.id] = { fam: fname, keys: keys.map((c) => c.k), machine: machineWord(seriesOf(x)) }; });
     }
     if (!drop) {                        // a label that names the stocks of several series: say whose
@@ -76,19 +80,44 @@
     }
     return out;
   }
+  const MOVE = new Set(["by", "from", "to"]);
+  const labelsOf = (r) => Object.fromEntries(Object.entries((r && r.labels) || {}).filter(([k]) => !IGNORE.has(k)));
+  // what a counter says of the move it counts: "worker: OPEN → IN PROGRESS", "from REJECTED", "planner"
+  function moveText(l) {
+    const move = l.from != null && l.to != null ? `${words(l.from)} → ${words(l.to)}` : l.from != null ? `from ${words(l.from)}` : l.to != null ? `to ${words(l.to)}` : "";
+    const by = l.by != null ? words(l.by) : "";
+    return by && move ? `${by}: ${move}` : by || move;
+  }
+  const refKey = (r) => r.name + JSON.stringify(Object.entries(labelsOf(r)).sort());
+  function flowNames(fs) {
+    const out = {}, fams = new Map(), byKey = new Map();
+    for (const f of fs) { const c = seriesOf(f); if (!c) continue; fams.set(c.name, [...(fams.get(c.name) || []), f]); byKey.set(refKey(c), [...(byKey.get(refKey(c)) || []), f.id]); }
+    for (const [fname, xs] of fams) {
+      // the other labels that tell this family's flows apart, said with their key
+      // (a family of one counter says every other label it has: "tasks gate runs · status landed")
+      const one = new Set(xs.map((f) => refKey(seriesOf(f)))).size === 1;
+      const differ = [...new Set(xs.flatMap((f) => Object.keys(labelsOf(seriesOf(f)))))].filter((k) => !MOVE.has(k) && (one || new Set(xs.map((f) => labelsOf(seriesOf(f))[k] ?? "")).size > 1)).sort();
+      for (const f of xs) {
+        const l = labelsOf(seriesOf(f)), parts = [moveText(l), ...differ.filter((k) => l[k] != null).map((k) => `${words(k)} ${words(l[k])}`)].filter(Boolean);
+        const shared = byKey.get(refKey(seriesOf(f))).length;
+        out[f.id] = { name: familyName(fname) + (parts.length ? " · " + parts.join(", ") : "") + (shared > 1 ? ` (one counter, ${shared} flows)` : ""), family: "" };
+      }
+    }
+    for (const f of fs) if (!out[f.id]) out[f.id] = { name: `unmeasured ${f.from && f.to ? "flow" : f.from ? "outflow" : "inflow"}`, family: "" };
+    return out;
+  }
+  // the other counters that count a flow's events (evidence.same_as), named as flows are: "same events as …"
+  function sameAs(m, f) {
+    const same = (f && f.evidence && f.evidence.same_as) || [];
+    return same.map((r) => { const g = (m.flows || []).find((x) => x !== f && seriesOf(x) && refKey(seriesOf(x)) === refKey(r));
+      return g ? flowName(m, g) : familyName(r.name) + (moveText(labelsOf(r)) ? " · " + moveText(labelsOf(r)) : ""); });
+  }
   const NAMES = new WeakMap();
   function names(m) {
     if (!m) return { stocks: {}, flows: {} };
     if (NAMES.has(m)) return NAMES.get(m);
     const stocks = nameFamily(m.stocks || []);
-    const valuesOf = (id) => { const s = (m.stocks || []).find((x) => x.id === id), r = s && seriesOf(s); return r ? Object.values(r.labels || {}) : []; };
-    const flows = nameFamily(m.flows || [], (f) => new Set([...valuesOf(f.from), ...valuesOf(f.to)]));
-    for (const f of m.flows || []) {
-      const same = f.evidence && f.evidence.same_as, c = seriesOf(f);
-      if (!same || !same.length || !c) continue;
-      const said = (r) => Object.entries(r.labels || {}).filter(([k]) => !IGNORE.has(k)).map(([, v]) => words(v)).join(", ");
-      flows[f.id] = { name: familyName(c.name) + " · " + [...same, c].map(said).join(" = "), family: "" };
-    }
+    const flows = flowNames(m.flows || []);
     for (const group of [stocks, flows]) {
       const seen = new Map(); for (const v of Object.values(group)) seen.set(v.name, (seen.get(v.name) || 0) + 1);
       for (const v of Object.values(group)) v.label = v.family && seen.get(v.name) > 1 ? `${v.name} · ${v.family}` : v.name;
@@ -150,20 +179,34 @@
   }
 
   const shorten = (t, n = 44) => (t.length > n ? t.slice(0, n - 2) + "…" : t);
+  // the machines a flow's label names: its hypotheses tied with the top confidence (within TIE), each
+  // with a question mark; one leader "planner 94%?", a tie "reviewer / merge_gate?", more than two
+  // "3 machines?"; none, or none with a confidence, no label. Never one name as a fact.
+  const TIE = 0.02;
+  function machineLabel(f, nameOf = (id) => id) {
+    const hs = (f.machines || []).filter((h) => h.machine && h.confidence != null);
+    if (!hs.length) return "";
+    const top = Math.max(...hs.map((h) => h.confidence)), lead = hs.filter((h) => top - h.confidence <= TIE);
+    if (lead.length === 1) return `${nameOf(lead[0].machine)} ${Math.round(100 * lead[0].confidence)}%?`;
+    return lead.length > 2 ? `${lead.length} machines?` : `${lead.map((h) => nameOf(h.machine)).join(" / ")}?`;
+  }
 
   // the graph: {nodes, edges, causal, flowEdge, flows, acc}. ``opts``: showAll (flows with no
-  // events), showAcc (stocks that only fill that nothing shown feeds), and the colours
+  // events), showAcc (stocks that only fill that nothing shown feeds), keep (stock ids never hidden),
+  // keepFlows (flow ids drawn with no events), and the colours
   // (mcolor(machine), stockColor(id)).
   function build(m, opts = {}) {
     const mcolor = opts.mcolor || (() => "#94a3b8"), stockColor = opts.stockColor || (() => "#cbd5e1");
     const byMachine = Object.fromEntries((m.machines || []).map((x) => [x.id, x]));
-    const shown = (f) => (f.current && f.current.quality && f.current.quality.events > 0) || opts.showAll;
+    // ``keepFlows``: flow ids drawn whatever their events (expected ones: an expectation stays on the diagram)
+    const shown = (f) => (f.current && f.current.quality && f.current.quality.events > 0) || opts.showAll || !!(opts.keepFlows && opts.keepFlows.has(f.id));
     // a stock that only fills is where another stock's material ends up (the orders delivered) when a
     // flow shown drains a stock into it: drawn. One that no such flow feeds (the event bus's
     // length, a tally) starts hidden, with its flows; ``acc`` is those.
     const filling = new Set(m.stocks.filter((s) => s.evidence && s.evidence.accumulator).map((s) => s.id));
     const fed = new Set(m.flows.filter((f) => shown(f) && f.from && filling.has(f.to) && !filling.has(f.from)).map((f) => f.to));
-    const acc = new Set([...filling].filter((id) => !fed.has(id)));
+    // ``keep``: stocks never hidden (one a declared part is placed beside)
+    const acc = new Set([...filling].filter((id) => !fed.has(id) && !(opts.keep && opts.keep.has(id))));
     const hiddenStock = (id) => !opts.showAcc && acc.has(id);
     const flows = m.flows.filter((f) => shown(f) && !hiddenStock(f.from) && !hiddenStock(f.to));
     const nodes = [], edges = [], causal = [], flowEdge = {};
@@ -185,8 +228,8 @@
       if (!f.to && f.from && !has(dst)) nodes.push({ id: dst, kind: "cloud", charge: -20, tether: "s:" + f.from });
       const fe = `${src}>${dst}:${f.id}`, outside = !f.from || !f.to;
       edges.push({ id: fe, source: src, target: dst, color: col, width: outside ? 2 : 3.4, distance: outside ? 60 : 230, strength: outside ? 0.05 : 0.6,
-        cls: outside ? "ng-outside" : "", fid: f.id, flowPart: true, bend: outside ? 10 : 18,
-        label: [shorten(eqText(m, f, true)), f.machine ? (byMachine[f.machine] || {}).name || f.machine : ""] });
+        cls: outside ? "ng-outside" : "", fid: f.id, flowPart: true, bend: outside ? 10 : 18, labelMuted: true,
+        label: [shorten(eqText(m, f, true)), machineLabel(f, (id) => (byMachine[id] || {}).name || id)] });
       flowEdge[v] = fe;
       if (f.to) causal.push({ source: v, target: "s:" + f.to, sign: 1 });
       if (f.from) causal.push({ source: v, target: "s:" + f.from, sign: -1 });
@@ -209,5 +252,5 @@
     return { nodes, edges, causal, flowEdge, flows, acc };
   }
 
-  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, nice, num, correlational, UNTESTED };
+  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, sameAs, nice, num, correlational, machineLabel, UNTESTED };
 });

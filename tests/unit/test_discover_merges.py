@@ -134,3 +134,107 @@ def test_a_measured_level_between_two_counters_keeps_them_apart_however_seldom_i
     assert not m.discovery["left_out"].get('inspections_passed_total{instrument="board"}', "").startswith("the same as")
     passed = m.flow("inspections_passed_total")
     assert passed.src == "orders_inspecting" and passed.dst != "orders_accepting", (passed.src, passed.dst)
+
+
+def test_orchestras_count_of_an_event_type_is_never_a_flow_beside_a_machines_counter_of_the_same_moments(tmp_path):
+    # UC-3 re-score: the bus heard each landing (orchestra_events_total{gate.landed}) 4.8 s before
+    # the ticket instrument counted it (gate_runs_total, which fills the done tickets); the
+    # repository, read every 30 s, gained a file with each, and where a landing came just before a
+    # read only the bus count fits it. The two writers differ, so the counts were never compared,
+    # and the repository's inflow was a flow of its own: two flows for one move. The bus count is
+    # secondary (AGENTS.md rule 7): it measures the landed flow's co-flow into the repository. The
+    # ticket instrument's counter names the gate (by="gate"), the bus count's source
+    import random
+    rng = random.Random(1)
+    tk, rp = {"project": "p", "instrument": "tickets", "by": "gate"}, {"project": "p", "instrument": "repo"}
+    lands = [T0 + 30 * k + (27.5 if k % 3 == 0 else rng.uniform(5, 20)) for k in range(3, 57, 6)]
+    pts, n = [], {"bus": 0, "landed": 0, "files": 3}
+    pend = [(t, "bus") for t in lands] + [(t + 4.8, "landed") for t in lands]
+    for i in range(1800):
+        now = T0 + i
+        for due, what in sorted(p for p in pend if p[0] <= now):
+            pend.remove((due, what))
+            n[what] += 1
+            if what == "bus":
+                n["files"] += 1
+                pts.append(Point("orchestra_events_total", n["bus"], due, {"project": "p", "source": "gate", "type": "gate.landed"}))
+            else:
+                pts += [Point("gate_runs_total", n["landed"], due, tk), Point("tickets_done", n["landed"], due, tk)]
+        if i % 5 == 0:
+            pts += [Point("gate_runs_total", n["landed"], now, tk), Point("tickets_done", n["landed"], now, tk)]
+        if i % 30 == 0:
+            pts.append(Point("repo_files", n["files"], now, rp))
+    store = FileMetrics(tmp_path / "m.jsonl")
+    store.write(sorted(pts, key=lambda p: p.ts))
+    m = discover(store.dump("", {"project": "p"}), start=T0, end=T0 + 1800, step=5)
+    assert _balance(m, "repo_files") == {("orchestra_events_total", 1)}          # its stamps fit the reads
+    assert not [f.id for f in m.flows if f.id.startswith("orchestra_events_total")]
+    into = next(f for f in m.flows if f.dst == "repo_files")
+    assert into.evidence.get("co_flow_of") == "gate_runs_total_gate" and into.counter.name == "orchestra_events_total"
+
+
+def _two_machines_on_one_period(tmp_path, step: float, phase: int, pile_c: bool):
+    """Machine A's events, heard on the bus (``a.done``), fill pile_a; machine B's own counter fills
+    pile_b (and, with ``pile_c``, drains pile_c, and pile_a is written by B's instrument): both
+    every minute, B ``phase`` seconds after A (the refuter's exp2 and exp2c)."""
+    import random
+    rng = random.Random(3)
+    B = {"project": "p", "instrument": "b"}
+    A = B if pile_c else {"project": "p", "instrument": "a"}
+    pts, n = [], {"a": 0, "b": 0, "pa": 2, "pb": 2, "pc": 200, "ua": 0, "ub": 0}
+    for i in range(3600):
+        t = T0 + i
+        if i % 60 == 0 and i:
+            n["a"] += 1; n["pa"] += 1
+            pts.append(Point("orchestra_events_total", n["a"], t, {"project": "p", "source": "a", "type": "a.done"}))
+        if i % 60 == phase and i > phase:
+            n["b"] += 1; n["pb"] += 1; n["pc"] -= 1 if pile_c else 0
+            pts.append(Point("b_made_total", n["b"], t, B))
+        if i % 97 == 0 and n["pa"] > 0 and rng.random() < .5:
+            n["pa"] -= 1; n["ua"] += 1
+            pts.append(Point("a_used_total", n["ua"], t, A))
+        if i % 89 == 0 and n["pb"] > 0 and rng.random() < .5:
+            n["pb"] -= 1; n["ub"] += 1
+            pts.append(Point("b_used_total", n["ub"], t, B))
+        if i % 10 == 0:
+            pts += [Point("pile_a", n["pa"], t, A), Point("pile_b", n["pb"], t, B), Point("b_made_total", n["b"], t, B),
+                    Point("a_used_total", n["ua"], t, A), Point("b_used_total", n["ub"], t, B)]
+            if pile_c:
+                pts.append(Point("pile_c", n["pc"], t, B))
+    store = FileMetrics(tmp_path / "m.jsonl")
+    store.write(sorted(pts, key=lambda p: p.ts))
+    m = discover(store.dump("", {"project": "p"}), start=T0, end=T0 + 3600, step=step)
+    return {(f.id, f.src, f.dst) for f in m.flows}
+
+
+def test_a_bus_count_and_another_machines_counter_on_one_period_stay_two_flows(tmp_path):
+    # two machines that each work once a minute count in the same steps every time: timing is no
+    # evidence of the same moments, and b_made_total names no machine a. A's bus count stays A's flow
+    for step, phase in ((30, 15), (5, 3)):
+        got = _two_machines_on_one_period(tmp_path / f"{step}", step, phase, pile_c=False)
+        assert ("orchestra_events_total_a_done", None, "pile_a") in got and ("b_made_total", None, "pile_b") in got
+        assert not [f for f, _, _ in got if ">" in f or "@" in f]
+
+
+def test_a_bus_count_never_takes_another_machines_move_between_its_stocks(tmp_path):
+    # the same, with B's counter a move from pile_c to pile_b and pile_a written by B's instrument:
+    # the move stays pile_c -> pile_b, never pile_c -> pile_a
+    got = _two_machines_on_one_period(tmp_path, 5, 3, pile_c=True)
+    assert ("b_made_total", "pile_c", "pile_b") in got and ("orchestra_events_total_a_done", None, "pile_a") in got
+
+
+def test_a_counter_filed_under_a_bus_count_moves_with_it():
+    # a stock's own counter handed back with the bus count as the flow's (never made today: own
+    # counters are never given back to an event counter) follows the bus count to the machine's
+    # counter, so it can never come back as a flow keyed by the bus count
+    from orchestra.sd.restate import bus_copies
+    from orchestra.sd.series import Series
+    vals = [0, 1, 1, 2, 3, 3, 4, 5, 5, 6, 7]
+    bus = Series("orchestra_events_total", {"source": "gate", "type": "gate.landed"}, [], [float(v) for v in vals], True)
+    runs = Series("gate_runs_total", {"instrument": "tickets", "by": "gate"}, [], [float(v) for v in vals], True)
+    own = Series("repo_landed_total", {"instrument": "repo"}, [], [float(v) for v in vals], True)
+    lv = Series("repo_files", {"instrument": "repo"}, [], [float(v) for v in vals], False)
+    done = Series("tickets_done", {"instrument": "tickets"}, [], [float(v) for v in vals], False)
+    found = [(lv, [(bus, 1)], 1.0, 1.0), (done, [(runs, 1)], 1.0, 1.0)]
+    out = bus_copies(found, {own.key: (bus, own)}, {}, lambda a, b: False)
+    assert out[bus.key] == (runs, bus) and out[own.key] == (runs, own)

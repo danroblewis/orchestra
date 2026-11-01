@@ -246,8 +246,8 @@ class AuthMiddleware:
         query = parse_qs(scope.get("query_string", b"").decode("latin-1"))
         nxt = safe_next((query.get("next") or ["/"])[-1])
         if method in ("GET", "HEAD"):
-            if self.secret.valid_session(cookie_parser(h.get("cookie") or "").get(self.cookie)):
-                return await RedirectResponse(nxt, 303)(scope, receive, send)
+            # always the page, even with a valid session: its script takes a link's #token out of the
+            # address bar before going on (a redirect would carry the fragment, and the secret, along)
             return await login_page(nxt, "", 200)(scope, receive, send)
         if method != "POST":
             return await refuse(scope, receive, send, 405, "GET or POST /login")

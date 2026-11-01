@@ -1,4 +1,4 @@
-"""The Node tests (tests/layout: the Dynamics layout; tests/loops: feedback loops; tests/names: what stocks and flows are called; tests/cards: the rows of a machine's card; tests/machine_graph: the Machines page's event map), run here so the suite covers them.
+"""The Node tests (tests/layout: the Dynamics layout; tests/loops: feedback loops; tests/names: what stocks and flows are called; tests/cards: the rows of a machine's card, and its details panel; tests/machine_graph: the Machines page's event map; tests/left_out: what a discovery left out), run here so the suite covers them.
 
 They need Node and elkjs (``npm ci`` in tests/layout); without them they are skipped, with how to
 get them."""
@@ -41,7 +41,21 @@ def test_the_rows_of_a_machines_card():
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="needs Node")
+def test_a_machines_panel_closed_and_reopened_is_drawn_again():
+    cards = LAYOUT.parent / "cards"
+    r = subprocess.run(["node", "--test", "intended-panel.test.mjs"], cwd=cards, capture_output=True, text=True, timeout=120, check=False)
+    assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs Node")
 def test_the_machines_event_map():
     graph = LAYOUT.parent / "machine_graph"
     r = subprocess.run(["node", "--test", "machine_graph.test.mjs"], cwd=graph, capture_output=True, text=True, timeout=120, check=False)
+    assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs Node")
+def test_what_a_discovery_left_out_adds_up():
+    here = LAYOUT.parent / "left_out"
+    r = subprocess.run(["node", "--test", "left_out.test.mjs"], cwd=here, capture_output=True, text=True, timeout=120, check=False)
     assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]

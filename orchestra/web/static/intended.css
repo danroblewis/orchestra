@@ -7,23 +7,13 @@
      removed      gone since the version compared with: a faint dashed line, its label struck through
      expected     a person said to always show it: a small gold pin
      simulated    fitted from a placeholder series: hatched, tagged "simulated" */
-:root { --im-new:#6ea8fe; --im-user:#c4b5fd; --im-gone:#fca5a5; --im-ghost:#8b95a7; --im-pin:#fcd34d; --im-sim:#94a3b8 }
-
-/* tags (HTML) */
-.im-tag { display:inline-block; font-size:9.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; border:1px solid var(--border2); border-radius:4px; padding:0 5px; line-height:15px; vertical-align:1px; white-space:nowrap; color:var(--text2) }
-.im-t-new { color:#bfdbfe; border-color:#1d4ed8; background:#0f1d3a }
-.im-t-user { color:#ddd6fe; border-color:#5b21b6; border-style:dashed; background:#1b1430 }
-.im-t-ghost { color:var(--text2); border-style:dashed }
-.im-t-gone { color:var(--im-gone); border-color:#7f1d1d }
-.im-t-chosen { color:#bbf7d0; border-color:#166534 }
-.im-t-exp { color:#fde68a; border-color:#92400e }
-.im-t-sim { color:#e2e8f0; border-color:#475569; background:repeating-linear-gradient(45deg, #1f2430, #1f2430 3px, #2a3140 3px, #2a3140 6px) }
+/* the tags, status lines, notes and live dot are intended-marks.css's, shared with the Machines page */
 
 /* tags, rings, pins and hatching (SVG, on the diagram) */
 .im-svgtag rect { fill:var(--panel2); stroke:var(--border2); stroke-width:1 }
 .im-svgtag text { font-size:9px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; fill:var(--text2) }
 .im-svgtag.im-t-new rect { fill:#0f1d3a; stroke:#3b82f6 } .im-svgtag.im-t-new text { fill:#bfdbfe }
-.im-svgtag.im-t-user rect { fill:#1b1430; stroke:#7c3aed; stroke-dasharray:3 2 } .im-svgtag.im-t-user text { fill:#ddd6fe }
+.im-svgtag.im-t-user rect, .im-svgtag.im-t-unconf rect { fill:#1b1430; stroke:#7c3aed; stroke-dasharray:3 2 } .im-svgtag.im-t-user text, .im-svgtag.im-t-unconf text { fill:#ddd6fe }
 .im-svgtag.im-t-ghost rect { stroke-dasharray:3 2 }
 .im-svgtag.im-t-gone rect { fill:#2a0f0f; stroke:#7f1d1d } .im-svgtag.im-t-gone text { fill:var(--im-gone) }
 .im-svgtag.im-t-sim rect { fill:#1f2430; stroke:#64748b } .im-svgtag.im-t-sim text { fill:#e2e8f0 }
@@ -73,19 +63,18 @@ table.dt tr.im-gone td { color:var(--muted) } table.dt tr.im-gone s { color:var(
 .im-loopsrow { display:grid; grid-template-columns:minmax(0,1fr) 470px; gap:12px; align-items:start; margin:0 0 10px }
 .im-loopsrow.solo { grid-template-columns:minmax(0,1fr) } .im-loopsrow > #loops { margin:0 !important }
 @media (max-width:900px) { .im-loopsrow { grid-template-columns:minmax(0,1fr) } }
-.im-changes { margin:0; font-size:12px; border-color:#1d4ed8 }
+.im-changes { margin:0; font-size:12px; border-color:#1d4ed8 } .im-changes .im-foot { border-top:0; padding-top:0 }
+/* no taller than the diagram: the rows scroll under a header that stays (the count, and what it is against) */
+#im-changes { max-height:620px; overflow-y:auto; padding-top:0 }
+.im-chead { position:sticky; top:0; z-index:1; background:var(--panel2); padding:10px 0 6px; margin-bottom:2px } .im-chead h2 { display:flex; gap:8px; align-items:center; flex-wrap:wrap } .im-against { font-size:11px }
+.im-chg.moved .im-sign { color:var(--im-new) }
 .im-chg { display:grid; grid-template-columns:16px minmax(0,1fr) auto; gap:6px; padding:6px 0; border-top:1px solid var(--border); align-items:start }
 .im-chg .im-sign { font-weight:800; font-family:var(--mono); text-align:center } .im-chg.new .im-sign { color:var(--im-new) } .im-chg.gone .im-sign { color:var(--im-gone) } .im-chg.ghost .im-sign { color:var(--im-ghost) }
-.im-chg .muted { font-size:11.5px } .im-chg s { color:var(--text2) } .im-chg .ty { overflow-wrap:anywhere }
-.im-acts { display:flex; gap:4px } .im-acts .ctl { margin:0 }
-button.ctl.im-primary { color:var(--text); border-color:var(--accent); background:#13233f }
+.im-chg .muted { font-size:11.5px } .im-chg s { color:var(--text2) } .im-chg .ty, .im-chg .num { overflow-wrap:anywhere }
 .im-fold { margin:6px 0 0 } .im-fold summary .count { font-family:var(--mono); margin-left:3px }
-.im-foot { font-size:11px; margin-top:8px } .im-note { font-size:11.5px; margin-top:6px }
 
 /* the expected stock's drawer: how to measure it */
 .im-said { font-size:12px; margin-bottom:8px }
-.im-h4note { text-transform:none; letter-spacing:0; font-weight:400 }
-.im-status { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 8px; padding:6px 8px; border-radius:8px; background:#1b1430; border:1px dashed #5b21b6; color:#ddd6fe; font-size:12px }
 .im-opts { display:flex; flex-direction:column; gap:6px }
 .im-opt { display:grid; grid-template-columns:18px minmax(0,1fr) auto; gap:8px; align-items:start; padding:7px 10px; border:1px solid var(--border); border-radius:8px; background:var(--panel); font-size:12.5px }
 .im-opt.on { border-color:#166534; background:#0f1a14 } .im-opt .muted { font-size:11.5px; margin-top:2px }
@@ -94,7 +83,6 @@ button.ctl.im-primary { color:var(--text); border-color:var(--accent); backgroun
 .im-kind { white-space:nowrap; align-self:center } .im-facts { font-size:11px }
 .im-rec { margin:-2px 0 4px 28px; padding:8px 10px; border-left:2px solid #166534; font-size:12px; color:inherit }
 .im-recline { display:flex; align-items:center; gap:7px; flex-wrap:wrap }
-.im-live, .im-idle { width:8px; height:8px; border-radius:50%; background:#22c55e; box-shadow:0 0 6px #22c55e; flex:none } .im-idle { background:var(--muted); box-shadow:none }
 svg.im-spark { width:240px; height:34px; display:block; margin:6px 0 4px } svg.im-spark .l { fill:none; stroke:#2dd4bf; stroke-width:1.6 } svg.im-spark .a { fill:#2dd4bf22 } svg.im-spark circle { fill:#2dd4bf }
 .im-script summary { font-size:12px } .im-script pre { margin:4px 0; max-height:none; font-size:11px; white-space:pre-wrap; overflow-wrap:anywhere }
 .im-peek { display:grid; grid-template-columns:1.25fr 1fr; gap:8px } .im-peek pre { color:var(--text2) }

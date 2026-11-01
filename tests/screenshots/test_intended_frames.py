@@ -57,7 +57,8 @@ def test_d1_closed_the_expected_group(frames):
     assert len(d["expectedGroup"]) == 1 and d["expectedGroup"][0].startswith("Features")
     assert d["nstocks"] == "7 found · 1 expected"
     assert d["groups"][0].startswith("Expected 1") and d["groups"][1].startswith("Found by discovery 7")
-    assert len(d["legend"]) == 4
+    # one version, nothing to compare with: no "new" or "removed" keys in the legend
+    assert d["legend"] == ["expected, present", "expected, missing (ghost)"]
 
 
 def test_d2_changes_since_the_previous_version(frames):
@@ -65,13 +66,16 @@ def test_d2_changes_since_the_previous_version(frames):
     assert d["switch"] == {"on": True, "text": "changes since v1"}
     assert d["acc"]["ring"] and d["acc"]["tags"] == ["new in v2"]
     assert d["newEdge"] and d["removedEdge"] and "gone in v2" in d["removedLabel"]
-    assert d["ghost"]["tags"][0] == "expected · not in v2"
+    # Features was never in a version: its tag says who declared it, never "not in v2" (mockups/README.md)
+    assert d["ghost"]["tags"][0].startswith("expected · declared by you")
+    assert d["legend"][2:] == ["new in this version", "removed since last version"]
     assert any(t.startswith("may be: acceptance tests passing") for t in d["ghost"]["tags"])
     rows = d["changes"]["rows"]
-    assert d["changes"]["head"] == "Changes since v1" and d["changes"]["count"] == "4"
+    assert d["changes"]["head"] == "Changes since v1" and d["changes"]["count"] == "3 changes · 1 expected"
     assert [r["sign"] for r in rows] == ["+", "+", "-", "o"]
     assert all(r["controls"] == ["expect", "ignore"] for r in rows if r["sign"] == "+")
-    assert "Against version 1" in d["changes"]["foot"]
+    # the base version is named in the panel's sticky head, beside the count (it stays in view as the rows scroll)
+    assert "Against version 1" in d["changes"]["against"] and "expect" in d["changes"]["foot"]
     assert d["tableMarks"]["stocks"] == 1 and d["tableMarks"]["flows"] == 1 and len(d["tableMarks"]["gone"]) == 1
 
 
@@ -83,13 +87,15 @@ def test_d3_the_expected_switch_and_the_pin(frames):
     assert 'from "changes since v1"' in d["drawer"]["expect"]["text"]
     c = frames["D3-closed"]
     assert c["acc"]["pin"] and not c["acc"]["ring"]
-    assert [r.lstrip("⌖") for r in c["expectedGroup"]] == ["Features not in v2", "acceptance tests passing"]
+    rows = [r.lstrip("⌖") for r in c["expectedGroup"]]
+    assert rows[0].startswith("Features declared by you") and rows[1] == "acceptance tests passing"
     assert c["nstocks"] == "8 found · 2 expected"
 
 
 def test_the_states_with_no_frame(frames):
     d = frames["D-extras"]
-    assert "not measured" in d["ghost"]["tags"] and d["ghost"]["sub"] == "not measured"
+    # one "not measured" per ghost, the box's own line, as frame D1-closed draws it: never a tag besides
+    assert d["ghost"]["sub"] == "not measured" and not any("not measured" in t for t in d["ghost"]["tags"])
     assert d["declaredFlow"].startswith("features delivered")
     assert "predicted" in d["predictedFlow"]
     assert d["simulated"] == {"hatch": True, "tags": ["simulated"]}

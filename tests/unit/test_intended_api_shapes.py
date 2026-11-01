@@ -53,6 +53,8 @@ def test_the_dynamics_answer_keeps_the_fixture_shape_and_adds_intended(tmp_path,
     assert it["since"] == 1 and it["marks"]["stocks"]["acceptance_tests_passing"] == ["new"]
     assert [r["id"] for r in it["removed"]["flows"]] == ["repo_files_to_commits"]
     assert it["removed"]["flows"][0]["machines"] == [{"machine": "merge_gate", "confidence": 0.71}]
+    gone = it["removed"]["flows"][0]       # named and placed from the base version's own record
+    assert gone["origin"] in ("fitted", "discovered", "declared") and gone["name"] and "counter" in gone
     signs = [(ch["sign"], ch["part"]) for ch in it["changes"]]
     assert ("+", "stock") in signs and ("+", "flow") in signs and ("-", "flow") in signs and ("o", "stock") in signs
     plus = next(ch for ch in it["changes"] if ch["sign"] == "+" and ch["part"] == "flow")
@@ -79,6 +81,11 @@ def test_the_machines_answer_keeps_the_fixture_shape_and_adds_intent(tmp_path, m
             "observed": False, "gone": False} in got["intended_edges"]
     assert {"type": "work.requested", "description": None, "implicit": True} in got["intended_types"]
     assert all(x["intent"] is None for x in got["machines"] if x["id"] != "feature_count_improver")
+    # the host's liveness is the runtime record's, never its rhythm on the bus; the cards' flow chips are named from the model
+    host = next(x for x in got["machines"] if x["bootstrap"])
+    assert host["active_by"] == "runtime"
+    assert all("active_by" not in x for x in got["machines"] if not x["bootstrap"])
+    assert set(got["model_parts"]) == {"stocks", "flows"}
 
 
 def test_the_intended_read_endpoints(tmp_path, monkeypatch):

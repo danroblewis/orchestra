@@ -4,14 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Orchestra · Instruments</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="/static/style.css?v={{v}}">
 <style>
   .iwrap { max-width:1400px; margin:0 auto; padding:16px 20px }
   .iwrap .intro { font-size:12.5px; color:var(--text2); margin-bottom:12px; max-width:1050px }
   .itable { width:100%; border-collapse:collapse; font-size:12.5px } .itable th { text-align:left; color:var(--muted); font-weight:600; padding:6px 8px; border-bottom:1px solid var(--border) }
-  .itable td { padding:6px 8px; border-bottom:1px solid var(--border); vertical-align:top; overflow-wrap:anywhere } .itable tr.click { cursor:pointer } .itable tr.click:hover td { background:var(--panel2) }
+  .itable td { padding:6px 8px; border-bottom:1px solid var(--border); vertical-align:top; overflow-wrap:anywhere } .itable tr.click { cursor:pointer } .itable tr.click:focus-visible { outline:2px solid var(--accent); outline-offset:-2px } .itable tr.click:hover td { background:var(--panel2) }
   .itable .num { font-family:var(--mono); font-size:11.5px } .bad { color:#f87171 } .scroll-x { overflow-x:auto }
-  @media (max-width: 700px) { .itable td { overflow-wrap:normal; white-space:nowrap } .itable td.err { white-space:normal; min-width:180px } }   /* on a phone the table scrolls sideways instead of breaking words */
+  .itable td.kind { white-space:nowrap } .itable td.target { max-width:320px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .itable .late { color:#fcd34d } #list.offline { opacity:.55; filter:grayscale(.6) }
+  /* on a phone each instrument is a card: its name, then each column as a labelled line */
+  @media (max-width: 600px) {
+    .itable, .itable tbody, .itable tr, .itable td { display:block; width:100% } .itable tr:first-child { display:none }
+    .itable tr { border:1px solid var(--border); border-radius:8px; padding:6px 8px; margin:0 0 8px; background:var(--panel2) }
+    .itable td { border:0; padding:2px 0 } .itable td[data-l]::before { content:attr(data-l) " · "; color:var(--muted) }
+    .itable td.target { max-width:none } .itable td:empty { display:none }
+  }
   .logs { font-family:var(--mono); font-size:11.5px; white-space:pre-wrap; max-height:60vh; overflow:auto }
   .ipill { display:inline-block; font-size:10.5px; border:1px dashed var(--border); border-radius:9px; padding:0 6px; margin-left:6px; color:var(--text2); white-space:nowrap }
   .ipill.bad { color:#f87171; border-color:#f87171 }
@@ -25,7 +34,7 @@
   <div class="scroll-x"><table class="itable" id="list"></table></div>
   <div id="errors" class="muted" style="font-size:12px;margin-top:10px"></div>
 </div>
-<div id="overlay" class="overlay" onclick="if(event.target===this)this.classList.remove('open')"><div id="drawer" class="drawer"></div></div>
+<div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
 <script>
 const draftPill = (x, now = Date.now() / 1000) => (x.expires && x.expires < now
@@ -44,26 +53,53 @@ function hungOn(list) {
       <span class="muted">· ${esc(what)}</span>${tags.map((t) => ` <span class="tag">${esc(t)}</span>`).join("")}</div>`;
   }).join("");
 }
+// late: nothing written for more than three of its own periods
+const late = (x, now) => x.every_s != null && x.last_write && now - x.last_write > 3 * x.every_s;
 async function load() {
   let d;
-  try { d = await (await fetch("/api/instruments")).json(); } catch (e) { $("state").textContent = "cannot reach the web server: " + e; return; }
+  try { d = await (await fetch("/api/instruments")).json(); Orchestra.conn(true); }
+  catch (e) {
+    Orchestra.conn(false, { seconds: true });
+    $("list").classList.add("offline");
+    $("state").innerHTML = `<span class="stale">cannot reach the web server: what is below is as of ${esc(Orchestra.asOf(true) || "the page's first load")}</span>`;
+    return;
+  }
+  $("list").classList.remove("offline");
   const now = Date.now() / 1000;
-  $("state").textContent = d.host_running ? `${d.instruments.length} instruments` : `${d.instruments.length} instruments · no orchestra run is running, so the scripts and URLs are not being read`;
-  $("list").innerHTML = `<tr><th>instrument</th><th>kind</th><th>target</th><th>every</th><th>last write</th><th>hung on</th><th>failures</th><th>last error</th></tr>`
-    + d.instruments.map((x) => `<tr class="${x.kind === "source" ? "" : "click"}" data-name="${esc(x.name)}">
-      <td><b>${esc(x.name)}</b>${x.owner && x.owner !== "project" ? ` <span class="muted">(${esc(x.owner)})</span>` : ""}${pills(x)}</td><td>${esc(x.kind)}</td>
-      <td class="num">${esc(x.target)}</td><td>${esc(every(x.every_s))}</td>
-      <td>${x.last_write ? `${ago(now - x.last_write)} ago · ${x.points} point${x.points === 1 ? "" : "s"}` : x.kind === "source" ? (x.status ? (x.status.ok === false ? "" : "read at the last discovery") : "not read yet") : '<span class="muted">none yet</span>'}</td>
-      <td>${hungOn(x.hung_on)}</td>
-      <td class="${x.failures ? "bad" : ""}">${x.failures ?? ""}</td><td class="bad err">${esc(x.last_error || "")}</td></tr>`).join("");
+  const nlate = d.instruments.filter((x) => late(x, now)).length;
+  $("state").textContent = (d.host_running ? `${d.instruments.length} instruments` : `${d.instruments.length} instruments · no orchestra run is running, so the scripts and URLs are not being read`)
+    + (nlate ? ` · ${nlate} late (nothing written for more than three of its periods)` : "") + ` · as of ${new Date().toTimeString().slice(0, 8)}`;
+  // what an operator reads first (is it writing? is it failing?) before what it reads
+  $("list").innerHTML = `<tr><th>instrument</th><th>kind</th><th>last write</th><th>failures</th><th>last error</th><th>hung on</th><th>target</th></tr>`
+    + d.instruments.map((x) => `<tr class="${x.kind === "source" ? "" : "click"}" data-name="${esc(x.name)}"${x.kind === "source" ? "" : ` tabindex="0" role="button" aria-label="${esc(x.name)}: open its log"`}>
+      <td><b>${esc(x.name)}</b>${x.owner && x.owner !== "project" ? ` <span class="muted">(${esc(x.owner)})</span>` : ""}${pills(x)}</td><td class="kind" data-l="kind">${esc(x.kind)}</td>
+      <td data-l="last write" class="${late(x, now) ? "late" : ""}">${x.last_write ? `${ago(now - x.last_write)} ago · ${x.points} point${x.points === 1 ? "" : "s"}${late(x, now) ? ` · <b>late</b>: every ${esc(every(x.every_s))}` : ` <span class="muted">· every ${esc(every(x.every_s))}</span>`}` : x.kind === "source" ? (x.status ? (x.status.ok === false ? "" : "read at the last discovery") : "not read yet") : `<span class="muted">none yet · every ${esc(every(x.every_s))}</span>`}</td>
+      <td data-l="failures" class="${x.failures ? "bad" : ""}">${x.failures || 0}</td>${x.last_error ? `<td class="bad err" data-l="last error">${esc(x.last_error)}</td>` : '<td class="muted" data-l="last error" title="no error since start">—</td>'}
+      <td data-l="hung on">${hungOn(x.hung_on)}</td>
+      <td class="num target" data-l="target" title="${esc(x.target)}">${esc(x.target)}</td></tr>`).join("");
   $("errors").innerHTML = (d.errors || []).map((e) => `<div>left out: ${esc(e)}</div>`).join("")
     + (d.hung_on_error ? `<div>attachments not shown: ${esc(d.hung_on_error)}</div>` : "");
-  document.querySelectorAll("#list tr.click").forEach((tr) => (tr.onclick = () => openLog(tr.dataset.name)));
+  document.querySelectorAll("#list tr.click").forEach((tr) => { tr.onclick = () => openLog(tr.dataset.name);
+    tr.onkeydown = (e) => { if (e.target === tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openLog(tr.dataset.name); } }; });
+  INSTRUMENTS = d.instruments;
+  if (!HASH_DONE) { HASH_DONE = true; fromHash(); }
 }
+// /instruments#<name> opens that instrument's drawer (the Machines and Dynamics pages link here)
+let INSTRUMENTS = [], HASH_DONE = false;
+function fromHash() {
+  const name = decodeURIComponent(location.hash.slice(1));
+  if (!name || /^token=/.test(name)) return;
+  const x = INSTRUMENTS.find((i) => i.name === name);
+  if (x && x.kind !== "source") return openLog(name);
+  openDrawer(`<h3>${esc(name)} <span class="tag">${x ? "source" : "not here"}</span></h3><div class="muted">${x ? "A source is another store, read at each discovery: it has no log of its own here. Its state is in its row." : `No instrument called <span class="num">${esc(name)}</span> is configured: the link may be from an older configuration.`}</div>`, { key: "i:" + name });
+}
+window.addEventListener("hashchange", fromHash);
 async function openLog(name) {
-  const d = await (await fetch(`/api/instruments/${encodeURIComponent(name)}/log`)).json();
-  $("drawer").innerHTML = `<h3>${esc(name)} <span class="tag">instrument</span></h3>` + (d.ok ? `<div class="muted" style="font-size:11.5px">${esc(d.path)}</div><div class="logs">${esc(d.lines.join("\n"))}</div>` : `<div class="muted">${esc(d.error)}</div>`);
-  $("overlay").classList.add("open");
+  let d;
+  try { d = await (await fetch(`/api/instruments/${encodeURIComponent(name)}/log`)).json(); } catch (e) { d = { ok: false, error: "the web server did not answer" }; }
+  openDrawer(`<h3 data-drawer-key="i:${esc(name)}">${esc(name)} <span class="tag">instrument</span></h3>` + (d.ok ? `<div class="muted" style="font-size:11.5px">${esc(d.path)}</div><div class="logs">${esc(d.lines.join("\n"))}</div>` : `<div class="muted">${esc(d.error)}</div>`), { key: "i:" + name });
+  // a log opens at its newest line
+  const box = document.querySelector("#drawer .logs"); if (box) box.scrollTop = box.scrollHeight;
 }
 load(); setInterval(load, 10000);
 </script>

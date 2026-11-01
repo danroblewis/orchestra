@@ -37,7 +37,7 @@ function inspect() {
     expectedGroup: qa("#stocks tr.im-exprow").map((r) => txt(r.cells[0])), nstocks: txt(q("#nstocks")),
     groups: qa("#stocks tr.im-group").map(txt),
     changes: q("#im-changes") ? { head: txt(q("#im-changes h2 span")), count: txt(q("#im-changes h2 .count")), rows: qa("#im-changes .im-chg[data-sign]").map((r) => ({ sign: r.dataset.sign, text: txt(r.children[1]), controls: [...r.querySelectorAll("button[data-control]")].map((b) => b.dataset.control) })),
-      foot: txt(q("#im-changes .im-foot")) } : null,
+      against: txt(q("#im-changes .im-against")), foot: txt(q("#im-changes .im-foot")) } : null,
     legend: qa("#legend .im-lg").map(txt),
     declaredFlow: txt(q('#diagram g.ng-label[data-id^="x:flow:"]')), predictedFlow: txt(q('#diagram g.ng-label[data-id^="x:pred:"]')),
     simulated: node("s:features_placeholder") ? { hatch: !!node("s:features_placeholder").querySelector(".im-hatch"), tags: tags("s:features_placeholder") } : null,

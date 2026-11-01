@@ -33,10 +33,12 @@ from __future__ import annotations
 
 from itertools import combinations
 
-from .balance import fit_of
+from .balance import MIN_EVENTS, fit_of
+from .between import fills_and_drains
 from .collinear import decompose
+from .drivers import behind
 from .live import balance_steps
-from .series import EVENT_COUNTER, Series, written_by
+from .series import EVENT_COUNTER, Series, writer_of, written_by
 
 
 def _replace(s: Series, terms: list, c: Series, parts: list, steps: list[int], fits) -> tuple[list, float, float] | None:
@@ -115,11 +117,15 @@ def measured_between(levels: list[Series], a: Series, b: Series) -> bool:
     by a whole unit with them. However seldom it moved (the shelf an order leaves within seconds,
     read as held in two steps of an hour, too few to be a stock), the grid tells the two apart in
     its steps: its inflow and its outflow, never one flow. A gauge whose moves are all fractions
-    (a rating, a mean age) explains no difference of counts, and is never a buffer."""
+    (a rating, a mean age) explains no difference of counts, and is never a buffer; nor is a level
+    that never falls (or never rises) by a whole unit in those steps: a buffer fills and drains
+    (``sd.between.fills_and_drains``, the test ``sd.between`` puts to a state's raw points)."""
     for lv in levels:
         if lv.counter:
             continue
         steps = balance_steps(lv, [a, b])
+        if not fills_and_drains(lv.deltas[i] for i in steps):
+            continue
         if not any(abs(lv.deltas[i]) >= 1 and a.deltas[i] != b.deltas[i] for i in steps):
             continue
         if any(fit_of(lv, [(a, sg), (b, -sg)], steps)[1] >= 1.0 - 1e-9 for sg in (1, -1)):
@@ -206,3 +212,58 @@ def own_counters_back(found: list, joined: list[tuple[Series, Series]], masks: d
                 back[drop.key] = (keep, drop)
         out.append((s, terms, r2, exact))
     return out, back
+
+
+SAME_STEPS = 0.03     # a bus count and a counter that differ in no more than this share of the steps they moved in count alike
+
+
+def bus_copy(ev: Series, other: Series) -> bool:
+    """Whether Orchestra's count of an event type (``ev``) and another counter count the same
+    moments: both name the event's machine (its ``source``; the other, or a counter it stands for,
+    carries that machine as a label value, ``by="merge_gate"``), and they count alike: at least
+    ``MIN_EVENTS``, totals that agree, in the same steps or up to a step apart either way (the bus
+    and an instrument stamp one moment apart). Timing alone is no evidence: two machines on one
+    period (a job each minute) count in the same steps every time."""
+    if ev.name != EVENT_COUNTER or other.name == EVENT_COUNTER:
+        return False
+    total, da, db = sum(ev.deltas), ev.deltas, other.deltas
+    if total < MIN_EVENTS or abs(total - sum(db)) > max(1.0, SAME_STEPS * total):
+        return False
+    moved = sum(1 for x, y in zip(da, db) if x or y)
+    return sum(1 for x, y in zip(da, db) if x != y) <= SAME_STEPS * moved or behind(da, db) or behind(db, da)
+
+
+def _names(c: Series, machine: str) -> bool:
+    return any(v.partition("/")[0] == machine for v in c.labels.values())
+
+
+def bus_copies(found: list, back: dict[str, tuple[Series, Series]], stands_for: dict[str, list[Series]], apart
+               ) -> dict[str, tuple[Series, Series]]:
+    """Orchestra's event counters in the final balances, each filed under a counter of the same
+    moments that a balance holds (``bus_copy``; the counter, or one of the counters it stands for,
+    ``stands_for``, names the event's machine; never two counters ``apart`` or one balance holds
+    together, which are its inflow and outflow): the bus count is secondary (AGENTS.md rule 7), so
+    where its machine's counter of the same moments is a flow, it is never a flow of its own. The
+    balance keeps it (its stamps may fit a level read just after, where the other's, a step later,
+    do not: a repository read when the bus heard the landing); ``sd.ends.claims`` files its claims
+    under the other, one flow and a co-flow, as for ``own_counters_back``. A bus count with no such
+    counter stays a flow. Returns ``back`` (per counter filed, by key: (the flow's counter, the
+    counter filed)) with the bus counts added, each under the counter that one is itself filed
+    under, if any, and anything filed under a bus count moved with it."""
+    held = {c.key: c for _, terms, _, _ in found for c, _ in terms}
+    out = dict(back)
+    for key, c in sorted(held.items()):
+        machine = writer_of(c)
+        if c.name != EVENT_COUNTER or machine is None:
+            continue
+        flows = [k for k in held.values() if bus_copy(c, k) and not apart(c, k) and not _held_together(found, c, k)
+                 and any(_names(x, machine) for x in [k, *stands_for.get(k.key, ())])]
+        if not flows:
+            continue
+        k = min(flows, key=lambda k: (sum(1 for x, y in zip(c.deltas, k.deltas) if x != y), k.key))
+        k = out[k.key][0] if k.key in out else k
+        out[key] = (k, c)
+        for x, (keep, drop) in list(out.items()):
+            if keep is c:
+                out[x] = (k, drop)
+    return out

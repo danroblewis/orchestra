@@ -97,6 +97,8 @@ def merge_machines(out: dict, project, layer: dict, cache: dict | None, now: flo
         mine = m.machine_measured([v for v in vs if v["machine"] == mach["id"]])
         mach["measured"] = mine
         mach["comparison"] = m.comparison(bool(intent.get("heard")), mine)
+    if cache and cache.get("at"):
+        out["measured_at"] = cache["at"]           # when the attachments were last read (every EVERY_S)
     if cache and cache.get("errors"):
         out["measured_errors"] = cache["errors"]
 

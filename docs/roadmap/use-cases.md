@@ -498,3 +498,10 @@ the expectations in the four lists above; an example workflow (UC-7 onward) also
 domain series, the test that runs its three checks, and what it needs beyond the vocabulary
 already built. Expectations are structure, not numbers: a case that
 only passes with a tuned rate is reported as a gap, not fixed to pass.
+
+Two lessons from the 2026-11-01 re-scores. Run a case from a detached clone, never a linked
+worktree: `find_repo_root` resolves a linked worktree to the main checkout, so the case shares the
+main checkout's project key and state. Sample as fast as the states move: UC-2's tickets leave
+OPEN in under a second, so a 5 s sample sees OPEN non-zero in one step of 421 and the stock is
+lost by chance; a case whose states last less than the sample interval states its interval (1 s
+for UC-2 and UC-3) or is scored as a sampling gap, not a discovery miss.

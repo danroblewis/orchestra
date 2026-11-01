@@ -29,12 +29,31 @@ test("a series alone is named by itself; an unmeasured stock by its own name", (
   assert.equal(n.h.name, "h");
 });
 
-test("a flow is named by its series, without what its ends already say", () => {
+test("a flow is named by its counter: who moved what from where to where, other labels with their key", () => {
   const f = (id) => SDGraph.flowName(model, model.flows.find((x) => x.id === id));
-  assert.equal(f("op"), "beads issue transitions");
-  assert.equal(f("px"), "beads issue transitions · dropped");
-  assert.equal(f("ne"), "beads issues created");
+  assert.equal(f("op"), "beads issue transitions · open → in progress");
+  assert.equal(f("px"), "beads issue transitions · in progress → dropped");
+  assert.equal(f("ne"), "beads issues created · type cake");          // a family of one counter says its other labels
   assert.equal(f("u"), "unmeasured inflow");
+  const by = { stocks: [], flows: [flow("a", null, null, "t_total", { by: "worker", from: "REJECTED" }), flow("b", null, null, "t_total", { by: "planner", status: "landed" }),
+                                   flow("c", null, null, "t_total", { by: "planner", status: "failed" })] };
+  assert.deepEqual(by.flows.map((x) => SDGraph.flowName(by, x)), ["t · worker: from REJECTED", "t · planner, status landed", "t · planner, status failed"]);
+});
+
+test("a counter several flows share says so; two flows between the same ends are told apart", () => {
+  const twin = (id, from, to) => flow(id, from, to, "t_total", { by: "w", from: "A", to: "B" });
+  const m = { stocks: [], flows: [twin("x", "o", null), twin("y", null, "p"), flow("z", "o", null, "t_total", { by: "w", from: "A", to: "C" })] };
+  const n = m.flows.map((x) => SDGraph.flowName(m, x));
+  assert.deepEqual(n, ["t · w: A → B (one counter, 2 flows)", "t · w: A → B (one counter, 2 flows)", "t · w: A → C"]);
+});
+
+test("a flow's label names its machines as hypotheses: the leader with its confidence, a tie by names, none without one", () => {
+  const f = (hs) => SDGraph.machineLabel({ machines: hs });
+  assert.equal(f([{ machine: "planner", confidence: 0.94 }, { machine: "worker", confidence: 0.38 }]), "planner 94%?");
+  assert.equal(f([{ machine: "reviewer", confidence: 1 }, { machine: "merge_gate", confidence: 0.99 }, { machine: "worker", confidence: 0.4 }]), "reviewer / merge_gate?");
+  assert.equal(f([{ machine: "a", confidence: 0.9 }, { machine: "b", confidence: 0.9 }, { machine: "c", confidence: 0.89 }]), "3 machines?");
+  assert.equal(f([{ machine: "a", confidence: null }]), "");
+  assert.equal(f([]), "");
 });
 
 test("a namespace shared by several lone series becomes their family", () => {
@@ -49,11 +68,19 @@ test("names stay unique when the usual value is left out", () => {
   assert.equal(new Set(names).size, names.length, names.join(" | "));
 });
 
-test("a flow measured by two counters of the same events is named by both label sets", () => {
+test("a flow measured by two counters of the same events is named by its own, and says the other's beside it", () => {
   const f = { ...flow("rd", "r", "d", "bakery_order_transitions_total", { from: "BOXED", to: "DELIVERED" }),
               evidence: { same_as: [{ name: "bakery_order_transitions_total", labels: { project: "p", machine: "w", from: "BAKING", to: "BOXED" } }] } };
   const m = { stocks: [stock("r", "bakery_orders", { state: "BAKING" }), stock("d", "bakery_orders", { state: "DELIVERED" })], flows: [f] };
-  assert.equal(SDGraph.flowName(m, f), "bakery order transitions · BAKING, BOXED = BOXED, DELIVERED");
+  assert.equal(SDGraph.flowName(m, f), "bakery order transitions · BOXED → DELIVERED");
+  assert.deepEqual(SDGraph.sameAs(m, f), ["bakery order transitions · BAKING → BOXED"]);
+});
+
+test("a stock a declared part sits beside is never hidden as one that only fills", () => {
+  const acc = (id) => ({ ...stock(id, "bakery_orders", { state: id }), evidence: { accumulator: true } });
+  const m = { stocks: [acc("done")], flows: [], machines: [] };
+  assert.deepEqual([...SDGraph.build(m).acc], ["done"]);
+  assert.deepEqual([...SDGraph.build(m, { keep: new Set(["done"]) }).acc], []);
 });
 
 test("a stock that only fills is drawn when a flow shown drains a stock into it", () => {
@@ -76,4 +103,30 @@ test("a label that names the stocks of two services' series says the service too
   assert.equal(n("s"), "rig:app latency pods");
   const tickets = { stocks: [stock("o", "tickets", { state: "open" }), stock("c", "tickets", { state: "closed" })], flows: [] };
   assert.equal(SDGraph.stockName(tickets, "o"), "open");          // one series' label: no machine needed
+});
+
+test("one series of a family several machines write keeps the qualifier that narrows it", () => {
+  const m = { stocks: [{ id: "aw", name: "agents working (reviewer)", series: { name: "agents_working", labels: { machine: "reviewer", role: "reviewer", instrument: "agents.turns" } } },
+                       stock("o", "tasks_tickets", { state: "OPEN" }), stock("p", "tasks_tickets", { state: "IN_PROGRESS" })], flows: [] };
+  assert.equal(SDGraph.stockName(m, "aw"), "agents working (reviewer)");
+  assert.equal(SDGraph.stockName(m, "o"), "OPEN");
+});
+
+test("a flow alone in its family says the labels that narrow its counter, and a shared counter says so after them", () => {
+  const gate = { ...flow("g", null, "x", "tasks_gate_runs_total", { status: "landed", kind: "gate" }) };
+  const twin = (id, a, b) => flow(id, a, b, "tasks_ticket_transitions_total", { by: "merge_gate", from: "APPROVED", to: "MERGING", state: "read" });
+  const m = { stocks: [], flows: [gate, twin("t1", null, "m"), twin("t2", "r", null)] };
+  assert.equal(SDGraph.flowName(m, gate), "tasks gate runs · kind gate, status landed");
+  assert.equal(SDGraph.flowName(m, m.flows[1]), "tasks ticket transitions · merge gate: APPROVED → MERGING, state read (one counter, 2 flows)");
+});
+
+test("an expected flow is drawn with no events, and its stock that only fills with it", () => {
+  const acc = (id) => ({ ...stock(id, "bakery_orders", { state: id }), evidence: { accumulator: true } });
+  const quiet = { ...flow("in", null, "fill", "fills_total", {}), current: { form: "constant", params: { c: 1 }, quality: { events: 0 } } };
+  const m = { stocks: [acc("fill")], flows: [quiet], machines: [] };
+  const plain = SDGraph.build(m);
+  assert.deepEqual([plain.flows.length, plain.nodes.some((n) => n.sid === "fill")], [0, false]);
+  const kept = SDGraph.build(m, { keep: new Set(["fill"]), keepFlows: new Set(["in"]) });
+  assert.deepEqual(kept.flows.map((f) => f.id), ["in"]);
+  assert.ok(kept.nodes.some((n) => n.sid === "fill") && !kept.acc.has("fill"));
 });

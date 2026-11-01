@@ -20,7 +20,9 @@ def test_no_model_yet_comes_with_the_left_out_list(tmp_path, monkeypatch):
     out = model_view(project)
     assert not out["ok"] and out["error"].startswith("There is no model yet")
     assert out["discovery"] == {"left_out": {"disk_free_bytes{machine=\"telemetry\"}": "no counters balance it"},
-                                "series": 1, "step": 5.0, "start": 100.0, "end": 3700.0, "min_r2": 0.9, "looked_at": 1}
+                                "series": 1, "step": 5.0, "start": 100.0, "end": 3700.0, "min_r2": 0.9, "looked_at": 1, "kept": []}
+    # the page points at its own button, not a command, and says when the host last looked
+    assert "rediscover now" in out["error"] and "orchestra sd discover" not in out["error"] and out["as_of"] is not None
 
 
 def test_the_counts_agree_with_each_other(tmp_path, monkeypatch):

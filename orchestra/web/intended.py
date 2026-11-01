@@ -122,10 +122,43 @@ def attach_dynamics(project, out: dict, since, metrics) -> None:
         out["model"]["intended"] = dynamics_block(project.intended, model, since,
                                                   version=None if live else m.get("version"), live=live, stamp=m.get("as_of"),
                                                   metrics=metrics, hold=project.config.announce_hold)
+        removed_facts(out["model"]["intended"], project.intended.models)
     except IntentError as e:
         out["model"]["intended"] = {"error": str(e)}
     except Exception as e:  # noqa: BLE001 - the model is shown without its declared layer
         out["model"]["intended"] = {"error": f"{type(e).__name__}: {e}"}
+
+
+def removed_facts(block: dict, models) -> None:
+    """What the Changes panel says of a part the base version had and the version shown does not,
+    from the base's own record: how it got there (``origin``: a flow's current equation's,
+    ``fitted``, ``discovered`` or ``declared``; a stock with evidence was discovered, one without
+    declared), its series or counter, and a flow's name, so a removed part is named as the shown
+    ones are, never by its id."""
+    removed = (block or {}).get("removed") or {}
+    if not (removed.get("stocks") or removed.get("flows")) or block.get("since") is None:
+        return
+    try:
+        base = models.load(block["since"])
+    except Exception:  # noqa: BLE001 - the rows keep what the comparison gave
+        return
+
+    def ref(r):
+        return {"name": r.name, "labels": dict(r.labels)} if r is not None else None
+    stocks, flows = {s.id: s for s in base.stocks}, {f.id: f for f in base.flows}
+    for r in removed.get("stocks") or []:
+        s = stocks.get(r.get("id"))
+        if s is not None:
+            r.update(origin="discovered" if s.evidence else "declared", series=ref(s.series), full_name=s.name)
+    for r in removed.get("flows") or []:
+        f = flows.get(r.get("id"))
+        if f is not None:
+            eq = f.current()
+            r.update(origin=eq.origin if eq is not None else "declared", name=f.name, counter=ref(f.counter),
+                     measured_by=[ref(c) for c in f.measured_by],
+                     from_name=stocks[f.src].name if f.src in stocks else None, to_name=stocks[f.dst].name if f.dst in stocks else None,
+                     from_series=ref(stocks[f.src].series) if f.src in stocks else None,
+                     to_series=ref(stocks[f.dst].series) if f.dst in stocks else None)
 
 
 def attach_machines(project, out: dict, model, measured: dict | None = None) -> None:

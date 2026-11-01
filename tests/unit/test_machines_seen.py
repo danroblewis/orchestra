@@ -128,3 +128,38 @@ def test_kind_and_mode_belong_to_instances_and_a_machine_whose_instances_differ_
     assert seen["worker"]["mode"] == "continuous"
     assert {i["id"]: i["kind"] for i in seen["worker"]["instances"]} == {"1": "agent", "2": "agent", "shell": "program"}
     assert (seen["baker"]["kind"], seen["baker"]["mode"]) == ("program", "ad hoc")
+
+
+def test_a_young_machines_rate_is_over_its_life_not_ten_minutes():
+    """A machine first seen 50 s ago that published 10 events publishes about 10 a minute, not 1."""
+    evs = [{"type": "order.baked", "source": "baker", "time": iso(T0 + 5 * k)} for k in range(10)]
+    m = next(x for x in machines_view(evs, now=T0 + 50)["machines"] if x["id"] == "baker")
+    assert m["publishes"][0]["per_min_10m"] == 10.0          # 10 events over its first minute (a minute at least)
+    old = [{"type": "order.baked", "source": "baker", "time": iso(T0 + 60 * k)} for k in range(30)]
+    m = next(x for x in machines_view(old, now=T0 + 60 * 29 + 1)["machines"] if x["id"] == "baker")
+    assert m["publishes"][0]["per_min_10m"] == 1.0           # an older machine: the last ten minutes, as before
+    # the rate says what it is of: the count in its window, and the window
+    assert (m["publishes"][0]["n_10m"], m["publishes"][0]["window_s"]) == (10, 600)
+
+
+def test_a_kind_some_instances_never_announced_is_counted_so_the_phrase_adds_up():
+    from collections import Counter
+
+    from orchestra.web.machines import of_instances
+    assert of_instances(Counter({"agent": 2, "program": 1}), 4) == "agent ×2, program ×1, 1 unannounced"
+    assert of_instances(Counter({"agent": 2}), 3) == "agent ×2, 1 unannounced"
+    assert of_instances(Counter({"agent": 2}), 2) == "agent" and of_instances(Counter(), 3) is None
+    evs = [announce("worker/1", T0, kind="agent"), {"type": "job.done", "source": "worker/2", "time": iso(T0 + 1)}]
+    w = next(x for x in machines_view(evs, now=T0 + 10)["machines"] if x["id"] == "worker")
+    assert w["kind"] == "agent ×1, 1 unannounced"
+
+
+def test_the_asker_on_the_pages_is_a_person_whose_card_says_what_it_sends():
+    """The source that publishes nothing but Orchestra's own request event (the pages' confirm,
+    discard and kind switch) stays a machine, as everything on the bus does, and says what it is."""
+    evs = [{"type": "orchestra.intent.requested", "source": "owner", "time": iso(T0 + k), "data": {"control": "confirm"}} for k in range(2)]
+    evs.append({"type": "orchestra.intent.requested", "source": "worker", "time": iso(T0)})
+    evs.append({"type": "task.accepted", "source": "worker", "time": iso(T0 + 1)})
+    ms = {m["id"]: m for m in machines_view(evs, now=T0 + 10)["machines"]}
+    assert ms["owner"]["kind"] == "person" and "the pages' controls" in ms["owner"]["note"]
+    assert ms["worker"]["kind"] is None and "note" not in ms["worker"]     # it publishes work too: nothing is said for it
