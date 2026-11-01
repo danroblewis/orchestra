@@ -91,8 +91,8 @@ they would publish the same changes twice.
    shared by every process on the machine (`per_minute`; `[bridges.kits] hosts` caps a host for the
    whole project). It retries 429 and 5xx with a doubling backoff and honours `Retry-After` up to
    `max_wait_s`. It caches on disk, for `ttl_s`, only what `keep` returns. Change reads that a stale
-   answer would hide use `ttl_s=0`. With a measurement every 60 s and a 240 s TTL, the API is called
-   about every 4 minutes. A `[[sources]]` store is limited by Orchestra itself (`rate`,
+   answer would hide use `ttl_s=0`. With a measurement every 5 minutes and a 240 s TTL, each
+   measurement makes one call. A `[[sources]]` store is limited by Orchestra itself (`rate`,
    `max_requests_per_day`). Never go over a store's documented budget. If you are unsure, poll less
    often.
 4. **Compliance comes before the first read** (`docs/work-charter.md` §8, a FedRAMP environment).
@@ -118,7 +118,11 @@ they would publish the same changes twice.
    `bot.<system>.<account>`, or `bot.<system>` for the system's own act. `subject` is the item: the
    Jira key (`ABC-12`), the PagerDuty incident id (`PINC001`), the Slack `<channel>/<thread ts>`.
    The Machines page infers hand-offs from subjects. `time` is the system's own, in RFC 3339 with a
-   zone, and `data` is metadata only.
+   zone, and `data` is metadata only. **Never stamp an event in the future.** An event whose `time`
+   is more than 60 s ahead of this machine's clock is published, but its point in
+   `orchestra_events_total` is refused, so the flow never sees it. The refusal shows only in
+   `orchestra run`'s own output, not in the poller's log. Take the system's time as it is, and never
+   compute one (a "due" time is data, not `time`).
 7. **Your poller is not a machine** (`AGENTS.md` rule 2, decision D19: "the provider is never the
    machine"). The program is a relay. It never publishes under its own name, never announces
    itself and never writes a metric. `Poller.emit` refuses any source but `person.…` or `bot.…`.
@@ -141,8 +145,19 @@ they would publish the same changes twice.
 
 ## 4. The kits (`orchestra_bridges.kits`, in the bridges plugin)
 
-To check they are installed, run `python -c "import orchestra_bridges.kits"` with Orchestra's
-Python (installed as `orchestra[bridges]`).
+**Installing.** The kits come with the bridges plugin, in Orchestra's own environment. Use one of:
+
+```bash
+uv tool install "orchestra[bridges,dev] @ git+https://github.com/danroblewis/orchestra"   # Orchestra with the plugin
+uv pip install --python <orchestra's venv>/bin/python -e ~/orchestra-bridges --no-deps     # an editable checkout of the plugin
+```
+
+The second form uses `--no-deps` because the plugin's pin on Orchestra's version can refuse an
+Orchestra already installed from source. `python -c "import orchestra_bridges.kits"` with
+Orchestra's Python says whether the kits are there. **pytest** comes with the `dev` extra. Without
+it, run `uv pip install --python <venv>/bin/python pytest`. Then always run tests as
+`<venv>/bin/python -m pytest …`, so they import the same Orchestra and kits that `orchestra run`
+uses.
 
 | Name | What it does |
 |---|---|
@@ -157,6 +172,78 @@ A scaffolded program runs as `python <name>.py [--once | --rounds N] [--every S]
 [--state-dir DIR] [--events-file FILE] [--ttl S] [--dry-run]`. `python <name>.py measure` is its
 `[[collect]]` command. Its `machine.toml` holds `[settings]` (`base_url`, `token_env`, `every`,
 `per_minute`, `ttl` and the kit's own keys), the clearance, and the `[[publishes]]` list.
+
+**The scaffold's shape.** A scaffolded `<name>.py` is three functions and a `main`:
+
+- `make_poll(api, settings)` returns `poll(p)`. `api` is the `CachedClient`; `settings` is the
+  parsed `machine.toml`, with `settings.extra` holding every `[settings]` key beyond the common ones
+  (`jql`, `channels`, `open_statuses`, `queries`). `poll` calls `p.emit(...)` and sets `p.cursor`.
+- `measure(api, settings, series)` prints series through `series.gauge(name, value, labels,
+  help=…)` (and `series.counter`).
+- `main()` calls `runner.main(HERE, make_poll, argv, measure=measure, auth_format=…, headers=…)`,
+  which reads `machine.toml`, checks the clearance, builds the client and the `Poller`, and parses
+  the command line above.
+
+To change what it reads, edit `keep_*`/`meta` and `poll`. To change how it runs, edit
+`machine.toml`. Leave `runner.main` alone.
+
+**Auth formats** (`auth_format`; the token is what the variable or file holds):
+
+| System | `auth_format` | The token |
+|---|---|---|
+| Jira DC, Slack, Chronosphere, most APIs | `"Bearer {token}"` (the default) | the token as issued |
+| PagerDuty | `"Token token={token}"` | a read-only REST API key |
+| Jenkins, Jira Cloud, anything with HTTP Basic | `"Basic {token}"` | `printf '%s' 'user:apitoken' \| base64` |
+
+**Which token name is used.** In a scaffolded program, `[settings] token_env` in `machine.toml` wins.
+If you remove that line, the name comes from `[bridges.kits] tokens.<kit>`, where `<kit>` is
+`machine.toml`'s `kit =` line (`kit = "pagerduty"` reads `tokens.pagerduty`). Use this to set the
+name once for the project. A test run with `--state-dir` takes only `token_env`.
+
+**A system with no kit** (Jenkins, Opsgenie, a home-grown API). Start from the generic `http`
+template once it is listed (`orchestra bridges scaffold --help`; task I4 adds it). Until then,
+scaffold the closest template, rename its types and rewrite `keep_*`, `poll` and `measure`:
+
+- `pagerduty` for a list of items that each carry a status and who last changed it (Jenkins builds,
+  alerts, deployments). This is the usual choice;
+- `jira` for a search of what was updated since a time, with a history per item;
+- `slack` for append-only streams read by timestamp (logs, chat, audit trails);
+- `promql` for numbers only.
+
+Then write a fake for it from the kits' `FakeServer`. Implement `route(method, path, query, body)`
+to return `(status, json)` in the real API's shape. Set `auth_format` to what the real server checks,
+seed it with a dict (its `self.data`), and put `CANARY` in every text field. The base records each
+request (`fake.requests`, with `.authorized`), refuses a wrong token with 401, and fails on demand
+(`fake.fail_next(429, {"Retry-After": "1"})`). A Jenkins fake and its first test:
+
+```python
+"""A fake of the one Jenkins endpoint the poller reads, in its real shape, with the canary in every text field."""
+import base64
+from orchestra_bridges.kits.fakes import CANARY, FakeServer
+
+TOKEN = base64.b64encode(b"robot:test-api-token").decode()    # Basic auth: base64 of user:apitoken
+
+class FakeJenkins(FakeServer):
+    auth_format = "Basic {token}"
+    def route(self, method, path, query, body):
+        if method == "GET" and path == "/job/deploy/api/json":
+            return 200, {"builds": [{**b, "description": CANARY, "fullDisplayName": CANARY} for b in self.data["builds"]]}
+        return 404, {"message": "Not Found"}
+
+def test_reads_builds_through_the_kit(tmp_path, monkeypatch):
+    from orchestra_bridges.kits import CachedClient
+    monkeypatch.setenv("ORCHESTRATOR_HOME", str(tmp_path))         # the rate bucket's file goes here
+    monkeypatch.setenv("JENKINS_TOKEN", TOKEN)
+    builds = [{"number": 41, "result": "SUCCESS", "timestamp": 1793500000000}]
+    with FakeJenkins({"builds": builds}, token=TOKEN) as fake:
+        api = CachedClient(fake.url, token_env="JENKINS_TOKEN", auth_format="Basic {token}", cache_dir=tmp_path / "c")
+        got = api.get("/job/deploy/api/json", {"tree": "builds[number,result,timestamp]"},
+                      keep=lambda b: [{k: x[k] for k in ("number", "result", "timestamp")} for x in b["builds"]])
+        assert got == builds and all(r.authorized for r in fake.requests)
+```
+
+Replace the scaffolded test's fake import with yours, and keep its checks: the events, a restart
+that publishes nothing twice, `measure`'s series, and no canary or token in any output or file.
 
 **Without the kits** (the bridges plugin is not installed), save this as `minikit.py` beside your
 program. It has the same names and arguments for what §5.2 uses, and needs only the standard library
@@ -280,6 +367,16 @@ class Poller:
         return 0 if ok else 1
 ```
 
+**Ratios and flows.** Discovery derives flows from counts. Each event type is already a counter
+(`orchestra_events_total{type}`), and so is any `_total` you print. A ratio you compute (a
+failure rate, a share answered in time) is a level. It is never a flow or a stock, and discovery
+cannot take it apart. So for "the build failure rate", publish one event per outcome
+(`jenkins.build.succeeded`, `jenkins.build.failed`; the outcome goes in the *type*, not only in
+`data`, because Orchestra counts by type). Then discovery sees the two flows. If the owner wants
+the rate on a page, also print `jenkins_build_failure_ratio` from `measure` as an effect: a
+gauge over a stated window (`{window="1h"}`), beside the counts it was made from
+(`jenkins_builds_total{result}`), never instead of them.
+
 ## 5. Worked example: PagerDuty
 
 The owner wants to be "aware of PagerDuty alerts" and "of every outage as it happens" (work charter
@@ -304,8 +401,11 @@ and `pagerduty_incidents_open_total`. Edit `[settings]` in `machine.toml` (`ever
 
 ### 5.2 Without the kit: `pagerduty_alerts.py`, beside `minikit.py`
 
-This is the same program by hand. It runs unchanged on the kit as well: the import falls back to
-`minikit` only when the kit is missing.
+This is the same program in a second style: one file with its own `__main__`, no `runner` and no
+`machine.toml`, so its settings and clearance are constants at the top. It runs unchanged on the
+kit as well, because the import falls back to `minikit` only when the kit is missing. The two
+styles are not mixed. A scaffolded program keeps the scaffold's shape (above), and this one is for
+a machine with no kit installed.
 
 ```python
 """PagerDuty -> pagerduty.incident.<status>, as who changed it (poll); open incidents as series (measure)."""
@@ -441,15 +541,17 @@ The scaffold prints the two entries. Add them with Orchestra's Python, from the 
 import sys
 from orchestra.config import load_project
 p = load_project(); d = p.state_dir / "machines" / "pagerduty_alerts"
-for array, entry in [("machines", {"name": "pagerduty_alerts", "command": f"{sys.executable} {d}/pagerduty_alerts.py"}),
+for array, entry in [("machines", {"name": "pagerduty_alerts", "command": f"{sys.executable} {d}/pagerduty_alerts.py",
+                                  "restart": "always"}),
                      ("collect", {"name": "pagerduty_alerts", "command": f"{sys.executable} {d}/pagerduty_alerts.py measure",
-                                  "every": "60s", "timeout": "30s"})]:
+                                  "every": "5m", "timeout": "60s"})]:
     print(p.config_edit.add_entry(array, entry, target="overlay").what)
 ```
 
-`orchestra run` picks both up within seconds. `[[machines]]` is the poll loop, every 5 minutes.
-`[[collect]]` is the instrument, named `pagerduty_alerts` on the Instruments page. Both share the
-name, but they are two different things.
+`orchestra run` picks both up within seconds. `[[machines]]` is the poll loop, every 5 minutes, and
+it is restarted whenever it exits (`restart = "always"`). `[[collect]]` measures on the same
+5-minute rhythm; between rounds the store carries the last value forward. It is the instrument,
+named `pagerduty_alerts` on the Instruments page. Both share the name, but they are two different things.
 
 ### 5.4 The trial, against the fake, on a scratch project
 
@@ -484,11 +586,15 @@ Then `p.config_edit.set("workflows.every.pagerduty_poll", {"every": "5m", "role"
 
 ### 5.6 The declaration on the Machines page
 
-The Supervisor does this with `declare_machine` and `declare_expected_effect`
-(`docs/proposals/machine-design.md` §2.3). Without the Supervisor, check that your Orchestra has the
-intended-model layer: `curl -sf -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN"
-"$ORCHESTRA_EVENTS_ENDPOINT/intended/design"` answers 200. If it does, post one call (`eval "$(orchestra
-events endpoint --env)"` sets both variables):
+**The path is to ask the Supervisor.** Tell it, in your report or in its chat, the machine, what
+it emits, its source and its expected effect. It declares them with `declare_machine` and
+`declare_expected_effect` (`docs/proposals/machine-design.md` §2.3), and the owner confirms them on
+the page. The direct API exists only in a core that has the intended-model layer (task C1:
+`python -c "import orchestra.sd.intended"` succeeds, and `curl -sf -H "Authorization: Bearer
+$ORCHESTRA_EVENTS_TOKEN" "$ORCHESTRA_EVENTS_ENDPOINT/intended/design"` answers 200). Without that
+layer, the call below answers 404, so do not retry it: hand the declaration to the Supervisor.
+With the layer and no Supervisor, post one call (`eval "$(orchestra events endpoint --env)"` sets
+both variables):
 
 ```bash
 curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/intended" -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN" \
@@ -505,8 +611,7 @@ curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/intended" -H "Authorization: Bearer
 
 `PagerDuty` then shows as proposed, and the owner confirms it on the page. Once discovery finds
 `pagerduty_incidents_open_total` as a stock, the Supervisor `link`s `open_incidents` to it, and the
-prediction can be published. If the call answers 404, the layer is not in your Orchestra yet: put
-the declaration in your report for the Supervisor.
+prediction can be published.
 
 ## 6. Jira (Data Center)
 
@@ -614,11 +719,17 @@ checks do its job:
 | the program's test | passes, against the fake, with the canary check |
 | `<state>/logs/machines/<name>.log` | `poll N: K events`; no `poll failed` |
 | `<state>/logs/instruments/<name>.log` | `wrote N points` |
-| `orchestra metrics series \| grep pagerduty` | `pagerduty_incidents_open{instrument="pagerduty_alerts",service=…,urgency=…}` |
+| `orchestra metrics series \| grep pagerduty` | `pagerduty_incidents_open instrument=pagerduty_alerts service=PSVC001 urgency=high` (the name, then labels separated by spaces) |
 | `orchestra sources check` / `infer` | the source `ok`, its definitions kept (strategy (a)) |
 | **Instruments page** (`/instruments`) | the `[[collect]]` entry: its target, interval, last write, no failures, its log |
-| **Machines page** (`/machines`) | `bot.pagerduty` and `person.pagerduty.<id>` (people, with the `package` you gave), edges by event type, hand-offs on the incident ids; the declared `PagerDuty` dashed until confirmed. **No node named after your poller** |
+| **Machines page** (`/machines`) | `bot.pagerduty` and `person.pagerduty.<id>` (people, with the `package` you gave), edges by event type, and hand-offs on incident ids that two actors touched; the declared `PagerDuty` dashed until confirmed. **No node named after your poller** |
 | **Dynamics page** (`/dynamics`) | after discovery (every 5 min, over an hour of data), `pagerduty_incidents_open_total` as a stock or series, its flows' hypotheses naming `bot.pagerduty` and the people |
+
+**Hand-offs need two actors on one subject.** A hand-off is drawn only when one actor acts on a
+subject and then a different actor acts on the same subject (`bot.pagerduty` triggers `PINC001`,
+then `person.pagerduty.puser02` resolves it). If every subject has a single actor (each build
+started and finished by the same bot), there are no hand-offs. That is correct, not a fault: the
+machines and their event types still show.
 
 For the API, send the web token: `curl -s -H "Authorization: Bearer $(orchestra web token)"
 localhost:8077/api/instruments` (and `/api/machines`).
@@ -630,8 +741,10 @@ Run it at the end. Every line must be true.
 - [ ] `machine.toml` says `clearance = "needs approval"` until the owner approved this system (in
       writing, naming its token's scope and "metadata only"). You did not change it yourself.
 - [ ] The token is only in the environment (by name in `token_env`) or in
-      `~/.config/orchestra-bridges/<name>-token` (`chmod 600`). `grep -ri token` over the overlay,
-      `machine.toml` and the repository finds no value.
+      `~/.config/orchestra-bridges/<name>-token` (`chmod 600`). Grep for the *value's shape*,
+      not the word (which matches `token_env` and `token_file`): `grep -rEn
+      '(xox[bpa]-|Bearer [A-Za-z0-9._-]{12,}|[A-Za-z0-9+/=_-]{32,})' <overlay> <state>/machines/<name>
+      <repository>` finds nothing but hashes you can explain.
 - [ ] Files are in `~/.orchestrator/<key>/machines/<name>/` and entries are in the overlay. Nothing
       was committed to the company repository (or there is an open pull request the owner asked for).
 - [ ] The test passes against the fake, with the canary and token check.
@@ -641,7 +754,10 @@ Run it at the end. Every line must be true.
 - [ ] A restart publishes nothing twice: the second `--once` emits only what changed.
 - [ ] `keep` keeps metadata only, and change reads use `ttl_s=0`. `per_minute` and `ttl` stay under
       the system's budget.
-- [ ] The scratch trial (§5.4) shows the instrument, the actors and the hand-offs on the pages.
+- [ ] The scratch trial (§5.4) shows the instrument and the actors on the pages, and hand-offs
+      wherever two actors acted on one subject (one actor per subject gives none, and that is correct).
+- [ ] No event's `time` is more than 60 s in the future (check `orchestra run`'s output).
+- [ ] A ratio is printed only as a gauge beside its counts, and the outcomes are event types.
 - [ ] The machine is declared, or the declaration is handed to the Supervisor, with an expected effect.
 
 ## 11. Troubleshooting
