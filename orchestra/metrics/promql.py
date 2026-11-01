@@ -254,8 +254,10 @@ def _eval(node, dump, steps) -> list[tuple[dict, list[float | None]]]:
                 for lab, vals in _eval(inner, dump, steps)]
     _, op, grp, inner = node
     groups: dict[tuple, tuple[dict, list[list[float]]]] = {}
+    keep_name = grp is not None and grp[0] == "by" and "__name__" in grp[1]     # `by (__name__)`: one group per metric
     for lab, vals in _eval(inner, dump, steps):
-        lab = {k: v for k, v in lab.items() if k != "__name__"}
+        if not keep_name:
+            lab = {k: v for k, v in lab.items() if k != "__name__"}
         if grp is None:
             key_lab = {}
         elif grp[0] == "by":

@@ -49,3 +49,9 @@ def test_over_time():
 def test_unsupported_or_broken_queries_explain_themselves(q):
     with pytest.raises(PromQLError):
         run(q)
+
+
+def test_sum_by_name_keeps_one_series_per_metric():
+    out = run('sum by (__name__) ({project="p"})', start=2400, end=2400)
+    assert out == {"__name__=orchestra_flow_total": [(2400, 10)], "__name__=orchestra_stock": [(2400, 7)]}
+    assert run('sum without (flow, stock) ({project="p"})', start=2400, end=2400) == {"project=p": [(2400, 17)]}

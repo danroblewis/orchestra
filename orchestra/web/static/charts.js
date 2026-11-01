@@ -6,6 +6,13 @@ const Charts = (() => {
   const REG = new Map();
   let seq = 0;
   const num = (v) => (v == null ? "—" : Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : Math.abs(v) >= 10 ? (+v).toFixed(1) : (+v).toPrecision(3).replace(/\.?0+$/, ""));
+  // an axis label short enough for the gutter: 193G, 4.5M, 12k, 0.25
+  const compact = (v) => {
+    const a = Math.abs(v);
+    if (a < 10000) return String(+v.toPrecision(6));
+    const [d, u] = [[1e15, "P"], [1e12, "T"], [1e9, "G"], [1e6, "M"], [1e3, "k"]].find(([d]) => a >= d);
+    return `${+(v / d).toPrecision(3)}${u}`;
+  };
   const tlabel = (t, span) => { const d = new Date(t * 1000); return span > 2 * 86400 ? `${d.getMonth() + 1}/${d.getDate()}` : d.toTimeString().slice(0, 5); };
   // a time after ``now`` (a projection) is said from now, "+30 min": never a clock time a DST change can run backwards
   const rel = (t, now) => { const m = Math.round((t - now) / 60); return m < 90 ? `+${m} min` : `+${(m / 60).toFixed(1)} h`; };
@@ -28,7 +35,8 @@ const Charts = (() => {
     if (!pts.length) return `<div class="empty">no points in this range</div>`;
     W = Math.max(320, Math.round(W));
     const L = 46, B = 18, T = 6, R = 8;
-    const t0 = Math.min(...pts.map((p) => p[0])), t1 = Math.max(...pts.map((p) => p[0])) || t0 + 1;
+    let t0 = Math.min(...pts.map((p) => p[0])), t1 = Math.max(...pts.map((p) => p[0])) || t0 + 1;
+    if (t1 <= t0) { t0 -= 60; t1 += 60; }             // one instant: the point in the middle of two minutes
     let hi = Math.max(...pts.map((p) => p[1])), lo = Math.min(...pts.map((p) => p[1]));
     if (yMax != null && hi > yMax) hi = yMax;
     if (tight) { const pad = (hi - lo) * 0.06 || Math.abs(hi) * 0.05 || 1; hi += pad; lo = lo >= 0 ? Math.max(0, lo - pad) : lo - pad; }   // never below zero for what never is else { hi = Math.max(0, hi); lo = Math.min(0, lo); }
@@ -39,15 +47,19 @@ const Charts = (() => {
     const x = (t) => L + (W - L - R) * (t - t0) / Math.max(1, t1 - t0), y = (v) => T + (H - T - B) * (1 - (v - lo) / span);
     const id = register({ lines, x, y, t0, t1, L, R, W, H, T, B, unit, dots: true });
     const yt = []; for (let v = lo; v <= hi + stepY * 1e-6; v += stepY) yt.push(+v.toPrecision(12));
-    const tnum = (v) => (Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : String(+v.toPrecision(6)));
+    const tnum = compact;
     const ticks = yt.map((v) => `<line class="ax" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke-dasharray="2 4"/><text x="${L - 4}" y="${y(v) + 3}" text-anchor="end">${tnum(v)}</text>`).join("");
     const xt = [0, 0.5, 1].map((f) => `<text x="${L + (W - L - R) * f}" y="${H - 4}" text-anchor="${f === 0 ? "start" : f === 1 ? "end" : "middle"}">${now != null && t0 + (t1 - t0) * f > now + 30 ? rel(t0 + (t1 - t0) * f, now) : tlabel(t0 + (t1 - t0) * f, t1 - t0)}</text>`).join("");
     const mk = marks.filter((m) => m.t >= t0 && m.t <= t1).map((m) => `<line class="ax" x1="${x(m.t)}" x2="${x(m.t)}" y1="${T}" y2="${H - B}" stroke-dasharray="3 3"/><text x="${x(m.t) + 3}" y="${T + 10}">${esc(m.label)}</text>`).join("");
     const bands = lines.map((l, i) => (l.band && l.band.length > 1 ? `<path class="band" data-i="${i}" style="fill:${colorOf(l, i)}" d="${l.band.map(([t, , b], j) => (j ? "L" : "M") + x(t).toFixed(1) + "," + y(b).toFixed(1)).join(" ")} ${l.band.slice().reverse().map(([t, a]) => "L" + x(t).toFixed(1) + "," + y(a).toFixed(1)).join(" ")} Z"/>` : "")).join("");
     const clip = `clip-${id}`;
     const said = notes.filter((n) => n.t >= t0 && n.t <= t1).map((n) => `<text class="cnote" x="${Math.min(W - R - 2, x(n.t))}" y="${Math.max(T + 10, y(Math.min(hi, n.v)) - 5)}" text-anchor="end">${esc(n.text)}${n.v > hi ? " ↑" : ""}</text>`).join("");
-    const paths = lines.map((l, i) => `<path data-i="${i}" style="stroke:${colorOf(l, i)}"${l.dash ? ` stroke-dasharray="${l.dash}"` : ""} d="${l.points.map(([t, v], j) => (j ? "L" : "M") + x(t).toFixed(1) + "," + y(v).toFixed(1)).join(" ")}"/>`).join("");
-    return `<svg class="chart" data-cid="${id}" viewBox="0 0 ${W} ${H}">${ticks}${xt}${mk}<clipPath id="${clip}"><rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}"/></clipPath><g class="bands" clip-path="url(#${clip})">${bands}</g><g class="lines" clip-path="url(#${clip})">${paths}</g>${said}<g class="hov"></g><rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/></svg>
+    // a line of one point is a dot, since a path through one point draws nothing
+    const paths = lines.map((l, i) => l.points.length === 1
+      ? `<circle data-i="${i}" cx="${x(l.points[0][0]).toFixed(1)}" cy="${y(l.points[0][1]).toFixed(1)}" r="3.5" style="fill:${colorOf(l, i)}"/>`
+      : `<path data-i="${i}" style="stroke:${colorOf(l, i)}"${l.dash ? ` stroke-dasharray="${l.dash}"` : ""} d="${l.points.map(([t, v], j) => (j ? "L" : "M") + x(t).toFixed(1) + "," + y(v).toFixed(1)).join(" ")}"/>`).join("");
+    const onePoint = lines.every((l) => l.points.length <= 1) ? `<text class="cnote" x="${(L + W - R) / 2}" y="${T + 12}" text-anchor="middle">one point so far</text>` : "";
+    return `<svg class="chart" data-cid="${id}" viewBox="0 0 ${W} ${H}">${ticks}${xt}${mk}<clipPath id="${clip}"><rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}"/></clipPath><g class="bands" clip-path="url(#${clip})">${bands}</g><g class="lines" clip-path="url(#${clip})">${paths}</g>${said}${onePoint}<g class="hov"></g><rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/></svg>
       <div class="ckeys" data-for="${id}">${lines.map((l, i) => `<span data-i="${i}"><i style="${l.dash ? `background:none;border-top:2px dashed ${colorOf(l, i)};height:0` : `background:${colorOf(l, i)}`}${l.band ? `;box-shadow:0 0 0 3px color-mix(in srgb, ${colorOf(l, i)} 25%, transparent)` : ""}"></i>${esc(l.label)}</span>`).join("")}${unit ? `<span class="muted">${esc(unit)}</span>` : ""}</div>`;
   }
 
