@@ -40,7 +40,6 @@ NAME = re.compile(r"^v(\d{4,})\.json$")
 class ModelStore:
     def __init__(self, directory: Path):
         self.dir = Path(directory)
-        self._import_legacy()
 
     @classmethod
     def for_state(cls, state_dir: Path) -> ModelStore:
@@ -163,15 +162,3 @@ class ModelStore:
             return d["at"], Model.from_json(d["model"])
         except (OSError, ValueError, KeyError):
             return None
-
-    def _import_legacy(self) -> None:
-        """Before 2026-10-25 models were stored by id under ``<state>/models/``; the one that existed
-        becomes version 1."""
-        legacy = self.dir.parent / "models" / "tickets.json"
-        if self._numbers() or not legacy.exists():
-            return
-        d = json.loads(legacy.read_text(encoding="utf-8"))
-        self.dir.mkdir(parents=True, exist_ok=True)
-        self._path(1).write_text(json.dumps({"version": 1, "saved_at": legacy.stat().st_mtime,
-                                             "note": "imported from models/tickets.json", "model": d}, indent=1) + "\n",
-                                 encoding="utf-8")
