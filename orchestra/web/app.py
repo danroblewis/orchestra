@@ -235,9 +235,14 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         stamp = project.config_stamp()
         if stamp != plugin_collectors["stamp"]:
             from ..config import fresh_config
+            from ..sd.simulated import PluginsUnknown
             from ..sd.simulated import plugin_collectors as load_collectors
             fresh_config(project)
-            plugin_collectors.update(stamp=stamp, list=load_collectors(project))
+            try:
+                loaded = load_collectors(project)
+            except PluginsUnknown as e:              # the failed plugins are on /api/plugins; the rest count
+                loaded = e.collectors
+            plugin_collectors.update(stamp=stamp, list=loaded)
         return plugin_collectors["list"]
 
     @app.get("/api/dynamics/strategies")

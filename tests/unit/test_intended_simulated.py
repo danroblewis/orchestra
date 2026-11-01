@@ -247,3 +247,25 @@ def test_a_simulated_part_never_seeds_the_next_eras_prior():
     report = got.discovery["prior"]
     assert report["dropped"] == {"stocks": ["ramp"], "flows": ["into_ramp"]}
     assert report["why"] == {"stocks": {"ramp": "simulated"}, "flows": {"into_ramp": "simulated"}}
+
+
+def test_plugins_that_fail_to_load_leave_their_simulated_series_unknown_not_expired(tmp_path, monkeypatch, capsys):
+    from orchestra import plugins
+    from orchestra.cli import main
+
+    project = project_at(tmp_path, monkeypatch)
+
+    def broken(project, found=None):
+        raise RuntimeError("no such module: features_plugin")
+    monkeypatch.setattr(plugins, "load", broken)
+    now = time.time()
+    write_queue(project, {"instrument": "features.ramp", "simulated": "true"}, now)
+    r = rediscover(project, metrics_for(project), now=now)
+    reasons = [v for k, v in r.model.discovery["left_out"].items() if "features" in k]
+    assert reasons and all(v == simulated.unknown("RuntimeError: no such module: features_plugin") for v in reasons)
+    assert not any(v.startswith("simulated, expired") for v in r.model.discovery["left_out"].values())
+    assert r.model.discovery["plugins_error"] == "RuntimeError: no such module: features_plugin" and r.version is None
+    assert main(["--repo", str(project.repo_root), "sd", "discover"]) == 0
+    out = capsys.readouterr().out
+    assert "plugins could not be loaded: RuntimeError: no such module: features_plugin; their simulated instruments are unknown" in out
+    assert ModelStore.for_state(project.state_dir).load() is None

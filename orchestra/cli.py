@@ -183,7 +183,10 @@ def cmd_sd(args) -> int:
             print(f"  {k}: {why}")
         if m.era:
             print(f"era {m.era} (from {_when(m.discovery.get('era_start'))}); the Dynamics page compares it with its prior")
-        print(f"saved as version {r.version}" if r.version else "structure unchanged: no new version")
+        if err := m.discovery.get("plugins_error"):
+            print(f"plugins could not be loaded: {err}; their simulated instruments are unknown, so no version is saved")
+        else:
+            print(f"saved as version {r.version}" if r.version else "structure unchanged: no new version")
         args.version = None
     if args.action == "predictions":
         return _predictions(models, args)

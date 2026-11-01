@@ -163,5 +163,8 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
         store.write_discovery(m, at=now)
         cur = store.load()
         changed = m.stocks and (cur is None or structure(cur) != structure(m) or cur.era != m.era)
-        version = store.save(m, note=f"{note} ({strategy})") if changed and not reading.missing else None
+        # nothing is saved from a reading with a source missing, or with simulated series whose
+        # instruments are unknown because the plugins failed to load: the structure is not known
+        version = (store.save(m, note=f"{note} ({strategy})")
+                   if changed and not reading.missing and not m.discovery.get("plugins_error") else None)
         return Result(m, now, version, strategy)
