@@ -211,8 +211,9 @@ The seven example workflows of `docs/proposals/workflows.md` §9 (from
 `design-backwards-notes.md` §10), written 2026-11-01 for milestone M5 of
 [GOAL-2026-11-01-workflows.md](GOAL-2026-11-01-workflows.md), where they are X1–X7 in this order.
 The owner: "We want some examples of how people would actually use this, and we want them
-tested." None is built yet; all seven are planned for M5 of this run, which is the first
-milestone sacrificed if the run is short, so each case below says what it waits on. The task loop
+tested." X1 and X2 are built (2026-11-01, `examples/delivery_sail`, `examples/team_review`; each
+case's status line says what discovery found); the rest are planned for M5 of this run, which is the
+first milestone sacrificed if the run is short, so each case below says what it waits on. The task loop
 (workflows.md §9 example 1, task W6, acceptance test 22) is the plugin's first example and the
 successor of UC-2 once the task system is not installed; it is not a case of its own here.
 
@@ -243,7 +244,7 @@ a `<step>.held` pile of a step nothing is offered for (an outside wait), which s
 for a stock; a machine node for a metric condition (`metric:<series>` is a recorder fact, never a
 source, rule 7).
 
-## UC-7: the owner's delivery through the company gate (M5's X1; `examples/delivery`, name proposed)
+## UC-7: the owner's delivery through the company gate (M5's X1; `examples/delivery_sail`)
 
 workflows.md §7's SAIL table, the one example that uses every word of the vocabulary. Set aside
 by the owner as the generic problem's first target ("we ignore SAIL for now", notes §11); it is
@@ -282,7 +283,30 @@ Needs beyond W5: person offers, `count ≥ n`, a field equality, the outbox as a
 The test: the example's one test runs the script and passes the three checks; the item's page
 names, for a ticket after rework, the CI failure fact that sent it back.
 
-## UC-8: team pull-request review (M5's X2; `examples/team-review`)
+**Status (2026-11-01, X1 built as `examples/delivery_sail`, orchestra-workflows branch X12).** Built
+on eight tickets in the e2e (one CI failure, not the two planned, its rework preceded by a stale check result for the old
+commit that does not count; one changes requested; one review past its `within`; one company-wide
+SAIL failure retried; one sent back to write) and judged in process on three simulated hours.
+Discovery found: the step piles of write and triage (waiting, held) and the waiting piles of
+open_pr, ci, review, sail and sail_check as stocks `by_construction`; the waits' held piles left out
+as never changing (no stock, as the shared forbidden list asks); all fourteen moves as fitted flows,
+the three rework moves back to write among them; the **SAIL retry (sail → sail_check → triage →
+sail) as a feedback loop the core's loop finder names**; the worker capacity as the claim's form
+reading `write.held` (on seed 1; on seed 7 it is fitted on `floor_offers`, an input); the domain
+series `git_branch_commits{branch="main"}` (SAIL's merges, from git) a stock whose one inflow is
+`sail_check → <end>`; nothing forbidden. Short of the bar: the rework cycles through write are
+cycles of flows, not loops of influence (a write turn's end is fitted on the oldest item's age, as
+in the task loop); the worktree pool is held during write only (the floor lets units go at a wait),
+so it never limits `write.held` below the role's capacity here. Left out: the nudge step (the
+review's `within` raises attention instead) and `jira-hygiene`; the PR events carry the ticket's
+key as subject (no `item.related` linking, so no `of: children`). Vocabulary findings: an outside
+step counted only its system's own machine, never a person's act (fixed: the actors relayed under
+the system's namespace, `person.github.<login>`, `bot.<system>`, count); a start cannot filter on a
+field ("assigned to the owner"); `count ≥ 2` counts events, not distinct reviewers; person and
+outbox steps accept any source (person offers later); "wait, then retry" has no word (triage
+sleeps); a step that two machines do (nudger drafts, outbox sends) is two steps.
+
+## UC-8: team pull-request review (M5's X2; `examples/team_review`)
 
 The owner: "check for pull requests from my team; read them, understand them, contextualize
 them, give feedback as comments; approve the pull requests if warranted; make sure the pull
@@ -314,6 +338,22 @@ stock; a flow between piles of different workflows.
 Needs beyond W5: person offers; the outbox as a `who`.
 The test: the three checks, and at a named moment one pull request is in both workflows with a
 position in each.
+
+**Status (2026-11-01, X2 built as `examples/team_review`, orchestra-workflows branch X12).** The
+second workflow is UC-8's own suggestion, `merge_watch` (one step, started by `github.pr.opened`,
+done at `github.pr.merged`); the remind step is the nudger alone (no company-wide check program);
+approve is the owner's wait. Built on eight pull requests in the e2e (one failing check reminded,
+one re-read after new commits, one moved to stale by the guard); at pr-101's approval it has a
+position in each workflow, and the record held items in both during the run. Discovery, in process
+on three simulated hours: each workflow's step piles as stocks of their own, never summed; the waits'
+held piles left out; the two `<start>` counters two flows, and no flow joins piles of different
+workflows; every move a fitted flow; **the reminder loop (merge → remind → merge) and the re-read
+after new commits (merge → read → comment → approve → merge) both named as feedback loops** by the
+core's loop finder; the domain series `github_review_comments` (read from the fake GitHub's log by a
+`[[collect]]`) a stock whose one inflow is the comment step's move; nothing forbidden. Limit: the
+re-read loop is named only when its move is seen often enough to be fitted on its source (on seed 1,
+four re-reads in three hours, it is fitted constant). Vocabulary finding: a start cannot filter on a
+field ("review requested **of me**").
 
 ## UC-9: on-call (M5's X3; `examples/on-call`)
 
