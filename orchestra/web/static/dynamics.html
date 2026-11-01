@@ -542,10 +542,10 @@ async function expectedWaiting() {
     <div class="muted" style="font-size:12px;margin-bottom:6px">Declared in the Supervisor's chat; drawn as ghosts once there is a model to draw them beside.</div>
     ${parts.map((x) => `<div class="bal" ${opens(`IntendedDrawers.openExpected('${esc(x.id)}')`)}><span class="im-ghostdot"></span><b>${esc(x.name || x.id)}</b> <span class="muted">${esc(x.part || "stock")} · ${x.state === "proposed" ? "unconfirmed" : "expected"}${(x.measure || {}).chosen ? "" : " · not measured"} · open for how to measure it</span></div>`).join("")}</div>`;
 }
-// how much there is to discover from: the window read, and how long the bus has been heard
+// how much there is to discover from: the window read, and the time stamped on the bus's first event
 function windowNote(d, busSince) {
   const dd = d.discovery || {}, w = dd.window_s || (dd.end && dd.start ? dd.end - dd.start : null), now = Date.now() / 1000;
-  const parts = [w ? `window ${ago(w)}` : "", busSince ? `this project's bus first heard ${ago(now - busSince)} ago, so at most that much data` : "",
+  const parts = [w ? `window ${ago(w)}` : "", busSince ? `the first event on this project's bus is stamped ${ago(now - busSince)} ago (by its source; the bus keeps no time of receipt), so at most that much data` : "",
     d.as_of ? `last discovery ${new Date(d.as_of * 1000).toTimeString().slice(0, 5)} (${ago(now - d.as_of)} ago)` : ""].filter(Boolean);
   return parts.length ? `<div class="muted" style="font-size:12px;margin-top:6px">${parts.join(" · ")}</div>` : "";
 }
