@@ -470,6 +470,23 @@ collectors=[Collector.scrape("slack", f"http://{slack.get('host', '127.0.0.1')}:
 An instrument says nothing about which machine does the work it measures. A machine is
 associated with a flow only by inference from its events (§4.5, §6.5).
 
+An instrument may say how it **made** its series (`views`, SPEC §4.2 and §5.2,
+`orchestra/collect/views.py`), so discovery does not take a balance that holds by construction
+for evidence. A pile's level and its moves from one record:
+
+```python
+Collector.collect("piles", ["python", "-m", "workflows.piles"], every_s=15, views={
+    "workflow_pile_items": {"view": "count", "place": "pile", "where": {"kind": "step"}},
+    "workflow_item_moves_total": {"view": "moves", "starts": "to", "stops": "from"},
+    "workflow_pile_oldest_seconds": {"view": "age"},
+})
+```
+
+The views are `count` (`place`), `moves` (`starts`, `stops`: the labels naming the place entered
+and the place left), `starts` / `stops` (`place`), `aggregate` and `age` (never a stock); a value
+may be a list of views told apart by `where`. A table that cannot be read raises `ConfigError` when
+the `Collector` is made. The host records them in the runtime record, where discovery reads them.
+
 ### 4.7.1 `guide`: how to configure the plugin
 
 `guide` is a markdown file shipped in the plugin's package (`Path(__file__).parent / "guide.md"`;
