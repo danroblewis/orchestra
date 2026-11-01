@@ -1,0 +1,108 @@
+/* The intended model's marks (docs/proposals/intended-model.md §3.2, mockups/README.md), in the
+   pages' tokens (style.css :root):
+     ghost        expected but absent from the version shown: the same shape, darker fill, dashed
+                  outline, its label readable, a tag saying why
+     new          found since the version compared with: an accent ring and a "new in vN" tag
+     unconfirmed  proposed and not yet confirmed: dashed violet
+     removed      gone since the version compared with: a faint dashed line, its label struck through
+     expected     a person said to always show it: a small gold pin
+     simulated    fitted from a placeholder series: hatched, tagged "simulated" */
+:root { --im-new:#6ea8fe; --im-user:#c4b5fd; --im-gone:#fca5a5; --im-ghost:#8b95a7; --im-pin:#fcd34d; --im-sim:#94a3b8 }
+
+/* tags (HTML) */
+.im-tag { display:inline-block; font-size:9.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; border:1px solid var(--border2); border-radius:4px; padding:0 5px; line-height:15px; vertical-align:1px; white-space:nowrap; color:var(--text2) }
+.im-t-new { color:#bfdbfe; border-color:#1d4ed8; background:#0f1d3a }
+.im-t-user { color:#ddd6fe; border-color:#5b21b6; border-style:dashed; background:#1b1430 }
+.im-t-ghost { color:var(--text2); border-style:dashed }
+.im-t-gone { color:var(--im-gone); border-color:#7f1d1d }
+.im-t-chosen { color:#bbf7d0; border-color:#166534 }
+.im-t-exp { color:#fde68a; border-color:#92400e }
+.im-t-sim { color:#e2e8f0; border-color:#475569; background:repeating-linear-gradient(45deg, #1f2430, #1f2430 3px, #2a3140 3px, #2a3140 6px) }
+
+/* tags, rings, pins and hatching (SVG, on the diagram) */
+.im-svgtag rect { fill:var(--panel2); stroke:var(--border2); stroke-width:1 }
+.im-svgtag text { font-size:9px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; fill:var(--text2) }
+.im-svgtag.im-t-new rect { fill:#0f1d3a; stroke:#3b82f6 } .im-svgtag.im-t-new text { fill:#bfdbfe }
+.im-svgtag.im-t-user rect { fill:#1b1430; stroke:#7c3aed; stroke-dasharray:3 2 } .im-svgtag.im-t-user text { fill:#ddd6fe }
+.im-svgtag.im-t-ghost rect { stroke-dasharray:3 2 }
+.im-svgtag.im-t-gone rect { fill:#2a0f0f; stroke:#7f1d1d } .im-svgtag.im-t-gone text { fill:var(--im-gone) }
+.im-svgtag.im-t-sim rect { fill:#1f2430; stroke:#64748b } .im-svgtag.im-t-sim text { fill:#e2e8f0 }
+.im-svgtag.im-t-exp rect { fill:#2a2208; stroke:#92400e } .im-svgtag.im-t-exp text { fill:#fde68a }
+.im-ring { fill:none; stroke:var(--im-new); stroke-width:2.2; filter:drop-shadow(0 0 6px #3b82f6aa) }
+.im-pin circle { fill:var(--im-pin) } .im-pin line { stroke:var(--im-pin); stroke-width:1.6 } .im-pin text { fill:#fde68a; font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase }
+.im-hatchline { stroke:var(--im-sim); stroke-width:1.2; opacity:.35 }
+
+/* ghosts */
+.ng-node.im-ghost .ng-box { fill:#07090d !important; stroke-width:1.6; opacity:.8 }
+.ng-node.im-ghost .ng-boxtext { fill:var(--text2) !important } .ng-node.im-ghost .ng-caption, .ng-node.im-ghost .ng-sub { fill:var(--muted) }
+.ng-node.im-ghost.im-user .ng-box { stroke:#a78bfa }
+.ng-node.im-gone .ng-boxtext { text-decoration:line-through } .ng-node.im-gone .ng-box { opacity:.5 }
+
+/* edges: new, removed, declared, predicted; the invisible pull of a ghost toward the stock it is near */
+.ng-edge.im-new-edge .ng-line { opacity:1; filter:drop-shadow(0 0 4px #3b82f6) }
+.ng-edge.im-removed .ng-line, .ng-edge.im-ghost-edge .ng-line { opacity:.6 }
+.ng-label[data-id^="gone:"] .ng-elabel { fill:var(--muted); text-decoration:line-through }
+.ng-label[data-id^="x:flow:"] .ng-elabel, .ng-label[data-id^="x:pred:"] .ng-elabel { fill:var(--text2) }
+.ng-edge.im-near, .ng-label[data-id$="~near"] { display:none; pointer-events:none }
+
+/* the legend */
+.legend .im-lg i { height:12px !important; width:18px !important; border-radius:3px !important; background:none !important }
+.legend .im-lg i.im-sw-present { border:1.5px solid var(--text2); position:relative } .legend .im-lg i.im-sw-present::after { content:""; position:absolute; left:2px; top:2px; width:4px; height:4px; border-radius:50%; background:var(--im-pin) }
+.legend .im-lg i.im-sw-ghost { border:1.5px dashed var(--im-ghost); opacity:.7 }
+.legend .im-lg i.im-sw-new { border:1.5px solid var(--text2); box-shadow:0 0 0 2px var(--panel2), 0 0 0 3.5px var(--im-new) }
+.legend .im-lg i.im-sw-gone { height:0 !important; border-top:2px dashed #5b6272; border-radius:0 !important }
+.legend .im-lg i.im-sw-sim { border:1.5px solid #64748b; background:repeating-linear-gradient(45deg, transparent, transparent 2px, #64748b 2px, #64748b 3px) !important }
+.legend .im-lg i.im-sw-pred { height:0 !important; border-top:2px dotted var(--im-user); border-radius:0 !important }
+
+/* a switch */
+.im-toggle { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--text2); background:var(--panel2); border:1px solid var(--border2); border-radius:999px; padding:1px 10px 1px 4px; cursor:pointer; margin-left:6px; user-select:none }
+.im-toggle .im-sw { width:24px; height:14px; border-radius:7px; background:var(--panel3); border:1px solid var(--border2); position:relative; flex:none }
+.im-toggle .im-sw::after { content:""; position:absolute; top:1px; left:1px; width:10px; height:10px; border-radius:50%; background:var(--muted); transition:left .15s }
+.im-toggle.on { color:var(--text); border-color:var(--accent) } .im-toggle.on .im-sw { background:#1e3a5f; border-color:var(--accent) } .im-toggle.on .im-sw::after { left:11px; background:var(--accent) }
+
+/* the Stocks table's groups and the tables' marks */
+table.dt tr.im-group td { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:600; padding-top:8px; background:none !important }
+table.dt tr.im-group .count { font-family:var(--mono); color:var(--text2); margin-left:4px }
+table.dt tr.im-exprow td { background:#141821 }
+.im-ghostdot { display:inline-block; width:12px; height:9px; border:1.4px dashed var(--im-ghost); border-radius:2px; margin-right:6px; vertical-align:-1px }
+.im-pinchip { color:var(--im-pin); margin-right:5px; font-weight:800 }
+table.dt tr.im-gone td { color:var(--muted) } table.dt tr.im-gone s { color:var(--text2) }
+.im-recword { color:#86efac }
+
+/* the Changes panel, beside the loops */
+.im-loopsrow { display:grid; grid-template-columns:minmax(0,1fr) 470px; gap:12px; align-items:start; margin:0 0 10px }
+.im-loopsrow.solo { grid-template-columns:minmax(0,1fr) } .im-loopsrow > #loops { margin:0 !important }
+@media (max-width:900px) { .im-loopsrow { grid-template-columns:minmax(0,1fr) } }
+.im-changes { margin:0; font-size:12px; border-color:#1d4ed8 }
+.im-chg { display:grid; grid-template-columns:16px minmax(0,1fr) auto; gap:6px; padding:6px 0; border-top:1px solid var(--border); align-items:start }
+.im-chg .im-sign { font-weight:800; font-family:var(--mono); text-align:center } .im-chg.new .im-sign { color:var(--im-new) } .im-chg.gone .im-sign { color:var(--im-gone) } .im-chg.ghost .im-sign { color:var(--im-ghost) }
+.im-chg .muted { font-size:11.5px } .im-chg s { color:var(--text2) } .im-chg .ty { overflow-wrap:anywhere }
+.im-acts { display:flex; gap:4px } .im-acts .ctl { margin:0 }
+button.ctl.im-primary { color:var(--text); border-color:var(--accent); background:#13233f }
+.im-fold { margin:6px 0 0 } .im-fold summary .count { font-family:var(--mono); margin-left:3px }
+.im-foot { font-size:11px; margin-top:8px } .im-note { font-size:11.5px; margin-top:6px }
+
+/* the expected stock's drawer: how to measure it */
+.im-said { font-size:12px; margin-bottom:8px }
+.im-h4note { text-transform:none; letter-spacing:0; font-weight:400 }
+.im-status { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 8px; padding:6px 8px; border-radius:8px; background:#1b1430; border:1px dashed #5b21b6; color:#ddd6fe; font-size:12px }
+.im-opts { display:flex; flex-direction:column; gap:6px }
+.im-opt { display:grid; grid-template-columns:18px minmax(0,1fr) auto; gap:8px; align-items:start; padding:7px 10px; border:1px solid var(--border); border-radius:8px; background:var(--panel); font-size:12.5px }
+.im-opt.on { border-color:#166534; background:#0f1a14 } .im-opt .muted { font-size:11.5px; margin-top:2px }
+.im-radio { width:13px; height:13px; border-radius:50%; border:1.5px solid var(--border2); margin-top:2px; cursor:not-allowed }
+.im-opt.on .im-radio { border-color:#22c55e; box-shadow:inset 0 0 0 3px #0f1a14; background:#22c55e }
+.im-kind { white-space:nowrap; align-self:center } .im-facts { font-size:11px }
+.im-rec { margin:-2px 0 4px 28px; padding:8px 10px; border-left:2px solid #166534; font-size:12px; color:inherit }
+.im-recline { display:flex; align-items:center; gap:7px; flex-wrap:wrap }
+.im-live, .im-idle { width:8px; height:8px; border-radius:50%; background:#22c55e; box-shadow:0 0 6px #22c55e; flex:none } .im-idle { background:var(--muted); box-shadow:none }
+svg.im-spark { width:240px; height:34px; display:block; margin:6px 0 4px } svg.im-spark .l { fill:none; stroke:#2dd4bf; stroke-width:1.6 } svg.im-spark .a { fill:#2dd4bf22 } svg.im-spark circle { fill:#2dd4bf }
+.im-script summary { font-size:12px } .im-script pre { margin:4px 0; max-height:none; font-size:11px; white-space:pre-wrap; overflow-wrap:anywhere }
+.im-peek { display:grid; grid-template-columns:1.25fr 1fr; gap:8px } .im-peek pre { color:var(--text2) }
+.im-peek pre:first-child:not(:last-child) { -webkit-mask-image:linear-gradient(#000 70%, transparent); mask-image:linear-gradient(#000 70%, transparent) }
+.im-script details[open] + .im-peek { display:none }
+
+/* a discovered part's drawer: the expected switch */
+.im-expect { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 10px; margin:0 0 10px; border:1px solid var(--border2); border-radius:8px; background:var(--panel); font-size:12px }
+.im-expect.on { border-color:#92400e; background:#1a160a }
+.im-expect .im-toggle { margin:0; background:transparent } .im-expect .im-toggle.on { border-color:#92400e } .im-expect .im-toggle.on .im-sw { background:#3b2f0b; border-color:var(--im-pin) } .im-expect .im-toggle.on .im-sw::after { background:var(--im-pin) }
+.im-sep { margin:0 4px }
