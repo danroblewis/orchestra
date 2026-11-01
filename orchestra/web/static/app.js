@@ -263,7 +263,8 @@ if (/^#token=/.test(location.hash)) { try { history.replaceState(history.state, 
 // ``Orchestra.asOf(seconds)`` is that time as HH:MM (or HH:MM:SS), or "" before any answer.
 Orchestra.conn = (() => {
   let last = null;
-  Orchestra.asOf = (s) => (last ? Orchestra.when(last / 1000, { seconds: !!s }) : "");
+  const hm = (t, s) => Orchestra.when(t / 1000, { seconds: !!s });
+  Orchestra.asOf = (s) => (last ? hm(last, s) : "");
   return (ok, opts = {}) => {
     const el = $("conn");
     if (ok) last = Date.now();
