@@ -99,5 +99,5 @@ const Charts = (() => {
     svg.classList.add("focus");
     svg.querySelector(`path[data-i="${k.dataset.i}"]`)?.classList.add("on");
   });
-  return { line, spark, PAL, num, colorOf };
+  return { line, spark, PAL, num };
 })();

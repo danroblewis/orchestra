@@ -52,5 +52,5 @@ const Predictions = (() => {
     const verdict = v.verdict === "interrupted" ? `interrupted by era ${esc(v.interrupted_by)} (so far: ${esc(v.partial || "nothing")})` : esc(v.verdict);
     return `<div class="pred ${CLASS[v.partial || v.verdict] || ""}">${head} · <b>${verdict}</b>${v.late ? ' <span class="muted">(made after the change)</span>' : ""}${evidence(v, names).map((x) => `<div class="ev">${x}</div>`).join("")}</div>`;
   }
-  return { one, evidence, expectText, badge, dur, CLASS };
+  return { one, evidence, expectText, badge, CLASS };
 })();

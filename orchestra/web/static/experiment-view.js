@@ -227,5 +227,5 @@ const ExperimentView = (() => {
     return head + meta + (ev.length ? `<h3>Evidence</h3><div class="pred ${Predictions.CLASS[v.partial || v.verdict] || ""}">${ev.map((x) => `<div class="ev">${x}</div>`).join("")}</div>` : "");
   }
 
-  return { namesOf, diff, log, forward, replay, inverse, prediction, when, dur, nice, vs, opText };
+  return { namesOf, diff, log, forward, replay, inverse, prediction, when, dur };
 })();

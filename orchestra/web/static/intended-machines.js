@@ -325,5 +325,5 @@ const IntendedMachines = (() => {
   }
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && OPEN && !$("overlay").classList.contains("open")) close(); });
   return { links, edgeStyle, decorate, focusSpec, sort, decorateCards, draw, open, close, request, opened: () => OPEN,
-           fresh, added, removed };
+           added };
 })();

@@ -262,5 +262,5 @@ const Intended = (() => {
   const sig = (m) => JSON.stringify(m && m.intended ? [m.intended.version, m.intended.since, m.intended.marks, (m.intended.expected || []).map((e) => [e.id, e.present])] : null);
 
   return { extend, decorator, tip, click, versionBar, toggleSince, param, legend, tables, control, sig, it, marksOf, stockKey, flowKey,
-    declTag, statusText, recording, nameOf, who, agoText, hhmm, vlabel, tag, isOn: () => ON };
+    declTag, recording, nameOf, who, agoText, hhmm, vlabel, tag };
 })();
