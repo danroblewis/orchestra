@@ -1,8 +1,9 @@
 """``design()`` (§6.3, P4.10): the declared layer in brief for the plugin that keeps it: its version,
 each element with its state, presence, link and guessed fields, the open items (unconfirmed
 proposals, pending changes, unanswered requests, unsettled suggestions, absent expected parts,
-unpublishable drafts with why, and confirmed machines not heard: their ``comparison``; a proposed
-one is already open as unconfirmed) and the last 20 changes. Small: under 20 KB for 100 elements,
+unpublishable drafts with why, P5's "attached, nothing measured" per declared attachment, and
+confirmed machines neither heard nor measured: their ``comparison``; a proposed one is already
+open as unconfirmed) and the last 20 changes. Small: under 20 KB for 100 elements,
 so a row leaves out a field it has no value for.
 
 Presence is read from the Dynamics comparison: a declared element's by its id, a mark's by its
@@ -19,10 +20,17 @@ and counted traffic), which the web server gives; without them they are read fro
 count of the bus (``orchestra_events_total``, by ``source``) under the time limit, for a store
 made with its project, so a machine known only by counted traffic is heard only where the web
 server's counted read is given. Unknown (past the limit, or neither), no comparison item is
-listed."""
+listed.
+
+Whether a machine is measured (P5 §3) is read from its attachments' series in the own store under
+the time limit, for a store made with its project; a source's attachments are read by the web
+server only, so here they measure nothing. Past the limit, "measured unknown" is open instead."""
 
 from __future__ import annotations
 
+import time
+
+from . import measured as meas
 from .checks import IntentError
 from .drafts import publishable
 from .expected import is_mark
@@ -114,11 +122,17 @@ def design(intended, hold: int, block: dict | None = None, observed: set[str] | 
                 open_items.append({"what": "unpublishable draft", "part": "machine", "id": mid, "edit": e, "why": why,
                                    **({"stock": e["stock"]} if e.get("stock") is not None else {})})
     heard = (observed if observed is not None else _heard(intended)) if layer["machines"] else None
-    if heard is not None:
-        # C4 (P5) refines this where it derives ``measured``: "attached, nothing measured"
+    views = _attachment_views(intended, layer)
+    if views is None:
+        open_items.append({"what": "measured unknown", "why": "the metrics store did not answer in time"})
+    else:
+        open_items += [{"what": meas.NOTHING, "part": "attachment", "id": aid, "machine": v["machine"]}
+                       for aid, v in views.items() if v.get("comparison") == meas.NOTHING]
+    if heard is not None and views is not None:
         open_items += [{"what": comparison(False), "part": "machine", "id": mid}
                        for mid, m in layer["machines"].items()
-                       if m.get("state") == "declared" and heard_as(mid, m, heard) is None]
+                       if m.get("state") == "declared" and heard_as(mid, m, heard) is None
+                       and not meas.machine_measured([v for v in views.values() if v["machine"] == mid])["measured"]]
     last = [c for e in intended.journal()[-LAST:] for c in e.get("changes", [])][-LAST:]
     out = {"version": cur["version"], "elements": _compact(elements), "open": _compact(open_items), "last_changes": last,
            "stabilised": (block or {}).get("stabilised")}
@@ -129,3 +143,24 @@ def design(intended, hold: int, block: dict | None = None, observed: set[str] | 
 
 def _compact(rows: list[dict]) -> list[dict]:
     return [{k: v for k, v in r.items() if v is not None} for r in rows]
+
+
+def _attachment_views(intended, layer: dict) -> dict[str, dict] | None:
+    """Each attachment's view (``measured.attachment_view``), its own instrument's series read from
+    the own store under the time limit; a source's are the web server's, so unknown here. ``{}``
+    without a project or attachments; None past the limit."""
+    project = getattr(intended, "project", None)
+    if project is None or not layer["attachments"]:
+        return {}
+    from ...metrics import for_project
+    from .instruments import Instruments
+
+    def read():
+        store = for_project(project)
+        kinds = Instruments(project).kinds()
+        now = time.time()
+        return {a["id"]: meas.attachment_view(a, meas.read_own(store, project.key, a, now)
+                                              if kinds.get(a["instrument"]) not in ("source", None) else None, now)
+                for a in layer["attachments"].values()}
+    got, ok = within(read, LIMIT_S)
+    return got if ok else None

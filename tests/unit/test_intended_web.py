@@ -417,7 +417,9 @@ def test_design_and_the_machines_page_agree_on_a_machine_heard_by_counted_traffi
 
 
 def test_an_owners_request_on_an_attachment_shows_under_its_row(tmp_path, monkeypatch):
-    project = project_at(tmp_path, monkeypatch)
+    from attach_seed import project_with_instruments
+
+    project = project_with_instruments(tmp_path, monkeypatch, sources=False)   # an attachment names an instrument there is
     seed(project)
     project.intended.apply([{"op": "propose_attachment", "machine": "feature_count_improver", "instrument": "pg"}],
                            {"author": "supervisor"})

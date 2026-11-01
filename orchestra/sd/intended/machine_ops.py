@@ -11,6 +11,7 @@ it is never inferred."""
 
 from __future__ import annotations
 
+from .attach import parse
 from .checks import (
     LISTS,
     IntentError,
@@ -128,30 +129,38 @@ def _attachment_fields(op: dict) -> dict:
     if "instrument" in op:
         out["instrument"] = text(op["instrument"], "instrument", required=True, limit=200)
     if "match" in op:
-        mt = op["match"]
-        if mt is not None and not (isinstance(mt, dict) and set(mt) <= {"prefix", "labels"}
-                                   and isinstance(mt.get("labels") or {}, dict)):
-            raise IntentError("match is {prefix?, labels?: {label: value, or =~regex}}")
-        out["match"] = mt
+        parse(op["match"])                              # refused here with the reason, never at read
+        out["match"] = op["match"]
     if "instance_label" in op:
         out["instance_label"] = text(op["instance_label"], "instance_label", limit=100)
     return out
 
 
+def _checked(att: dict, ctx: dict) -> None:
+    """The instrument exists, and a source's definitions keep the instance label (``instruments.py``);
+    unchecked for a store made without its project (a test's, a replay's)."""
+    if ctx.get("instruments") is not None:
+        ctx["instruments"].check(att)
+
+
 def propose_attachment(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
+    """An attachment: these series measure that declared machine (P5 §2). Only a declared machine
+    takes one; it is proposed, or declared when the owner asks for it (§3), and never makes a
+    machine, a flow or a binding."""
     only(op, ("machine", *ATTACH_FIELDS), "propose_attachment")
     m = _machine(layer, op.get("machine"))
     fields = _attachment_fields(op)
     if "instrument" not in fields:
         raise IntentError("an attachment names its instrument")
+    att = {"match": None, "instance_label": None, **fields}
+    _checked(att, ctx)
     base = make_slug(f"{m['id']}_{fields['instrument']}")
     aid, n = base, 1
     while aid in layer["attachments"]:
         n += 1
         aid = f"{base}_{n}"
-    layer["attachments"][aid] = {"id": aid, "machine": m["id"], "match": None, "instance_label": None, **fields,
-                                 "state": "proposed", "provenance": ctx["provenance"], "change": ctx["change"],
-                                 "guessed": strings(op.get("guessed"), "guessed"), "pending": []}
+    layer["attachments"][aid] = {"id": aid, "machine": m["id"], **att, "state": "proposed", "provenance": ctx["provenance"],
+                                 "change": ctx["change"], "guessed": strings(op.get("guessed"), "guessed"), "pending": []}
     return "attachment", aid
 
 
@@ -163,7 +172,9 @@ def revise_attachment(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
     set_ = op.get("set") or {}
     if not isinstance(set_, dict) or set(set_) - set(ATTACH_FIELDS):
         raise IntentError(f"set takes {', '.join(ATTACH_FIELDS)}")
-    revise(a, _attachment_fields(set_), {}, {}, strings(op.get("guessed"), "guessed"), ctx, waits_once_confirmed=True)
+    fields = _attachment_fields(set_)
+    _checked({**{k: a.get(k) for k in ATTACH_FIELDS}, **fields}, ctx)
+    revise(a, fields, {}, {}, strings(op.get("guessed"), "guessed"), ctx, waits_once_confirmed=True)
     return "attachment", a["id"]
 
 

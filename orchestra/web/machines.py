@@ -1,8 +1,9 @@
 """The Machines page's data: the machines seen on the event bus, their instances and how they are
 engaged, and the network of which machine publishes and which listens for which event types.
 
-A machine exists because it shows up on the bus (AGENTS.md rule 2): never because a series names
-it. An instrument (``[[collect]]``, ``[[scrape]]``, ``[[sources]]``) measures the system and is not
+A machine exists because it shows up on the bus or is counted (AGENTS.md rule 2), or because the
+owner declared it (the intended model; declared and measured-never-heard machines are placed by the
+declared layer, ``web/intended.py``, ``web/measured.py``): never because a series names it. An instrument (``[[collect]]``, ``[[scrape]]``, ``[[sources]]``) measures the system and is not
 a machine (rule 7): it is on the Instruments page, not here. Announcements the host made on an
 instrument's behalf before 2026-10-27 (``orchestra.machine.started`` with ``data.collector``) are
 left out, so a detector seen then is not a machine now.

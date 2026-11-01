@@ -48,8 +48,9 @@ LOCK = "intended"
 class IntendedStore:
     def __init__(self, models, project=None):
         """``project``: the project the store belongs to, whose ``[discovery] announce_hold``
-        the comparison settles suggestions by; a store made from the state directory alone is
-        given ``hold`` by its caller."""
+        the comparison settles suggestions by, whose instruments an attachment is checked against
+        (``attach``, ``instruments.py``) and whose metrics ``design()`` reads; a store made from the
+        state directory alone is given ``hold`` by its caller, and stores attachments unchecked."""
         self.models = models
         self.project = project
         self.dir = Path(models.dir) / "intended"
@@ -134,6 +135,11 @@ class IntendedStore:
         prov = checked_provenance(provenance, via)
         if via == "page":
             page_control(ops)
+        instruments = None
+        if self.project is not None and any(isinstance(o, dict) and o.get("op") in ("propose_attachment", "revise_attachment")
+                                            for o in ops):
+            from .instruments import Instruments
+            instruments = Instruments(self.project)
         with self.models.locked(LOCK):
             cur = self.read()
             asked = open_requests(self, cur["layer"]) if prov.get("request") else {}
@@ -147,7 +153,8 @@ class IntendedStore:
             for i, op in enumerate(ops):
                 cid = f"c{seq}.{i}"
                 try:
-                    part, eid = apply_op(layer, op, {"provenance": prov, "change": cid, "requests": asked, "answered": answered})
+                    part, eid = apply_op(layer, op, {"provenance": prov, "change": cid, "requests": asked, "answered": answered,
+                                                     "instruments": instruments})
                 except IntentError as e:
                     raise IntentError(str(e), index=i, status=e.status) from None
                 changes.append({"op": op.get("op"), "part": part, "id": eid, "change": cid})
