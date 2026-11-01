@@ -969,7 +969,6 @@ configuration, and every probe runs in a thread pool with a time limit.
 | `orchestra sd show [--version]` | Prints the model with current levels. | nothing |
 | `orchestra sd versions` | Lists the saved versions, with each one's era. | nothing |
 | `orchestra sd predictions [--json]` | The predictions recorded and their verdicts, by era (`sd/predictions_report.py`). | nothing |
-| `orchestra sd fit [--version --step]` | Refits every counted flow over the whole history and saves a version. | `model/` |
 | `orchestra sources check\|infer\|preview QUERY` | Probes the sources, runs an inference round, previews a query's fan-out. | `sources/` cache on infer |
 
 `sd whatif`, `sd predict`, `sd eras` and `sd observability` were removed on 2026-10-27: the owner
@@ -1028,10 +1027,8 @@ table above says. They are listed here so nobody relies on the rule being absolu
 
 - `web/core_explore.py:_vm` sends the PromQL editor's queries straight to VictoriaMetrics' HTTP
   API, not through `MetricsStore` (rule 5).
-- `sd/fit.py:running_intervals`, used only by `orchestra sd fit`, reads `loop_started` and
-  `loop_stopped` events, which come from the old task loop (rule 1).
-- Some CLI commands change stored data beyond rediscovery: `sd fit` saves a version,
-  `metrics backfill` replaces the event counters, and `events copy` writes to another bus. The
+- Some CLI commands change stored data beyond rediscovery: `metrics backfill` replaces the
+  event counters, and `events copy` writes to another bus. The
   Core page's probe also appends an `orchestra.core.bus_probe` event (rule 9).
 
 ## Not built yet

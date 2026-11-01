@@ -305,10 +305,11 @@ There is **one model** per project; every change is saved as a new version
 (`<state>/model/vNNNN.json`), the highest is current, and past versions stay readable. Each version
 is the model of one era (below).
 
-**Fitting** (`sd/fit.py`): each flow's count per step is Poisson with mean `c × time`
-(constant) or `k × the source stock's level × time` (proportional, the exact integral of the
-level), fitted by maximum likelihood; the form with the higher likelihood is kept, with its
-standard error and dispersion.
+**Fitting** is part of discovery (`sd/discover.py`, `fit_flow`): each counted flow's events in
+the window are fitted by Poisson maximum likelihood to a constant rate or a rate that reads the
+source stock's level (or another stock or input), the form with the better likelihood is kept,
+with its standard error and dispersion, and its equation records `origin: fitted`,
+`method: poisson-mle`.
 
 **Discovery** builds the model from the metrics store without being told what anything is. It
 runs with a **strategy** (`[discovery] strategy` in `orchestra.toml`, or chosen for one run on the
@@ -1571,7 +1572,7 @@ since, and `restore(change)` puts the file back. Orchestra commits nothing: comm
 | `orchestra web token [--rotate]` | Print the web token; `--rotate` replaces it and ends every session |
 | `orchestra events info\|endpoint [--env]\|copy --to URL` | The event log; where the events endpoint is, and its token (§3.1) |
 | `orchestra metrics backfill\|series` | Replay the log into event counters; list series |
-| `orchestra sd discover [--strategy S] [--minutes N] [--step-s S]\|show\|fit\|versions` | The model: discover it from the metrics, show, refit, list versions |
+| `orchestra sd discover [--strategy S] [--minutes N] [--step-s S]\|show\|versions` | The model: discover it from the metrics, show it, list versions |
 | `orchestra sd predictions [--json]` | The predictions recorded and their verdicts, by era; read only |
 | `orchestra sources check\|infer\|preview QUERY` | Other stores (§4.4): probe them, infer what to read, read a query's fan-out |
 

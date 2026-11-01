@@ -10,7 +10,7 @@ from orchestra.cli import main
 ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.mark.parametrize("command", ["whatif", "predict", "eras", "observability"])
+@pytest.mark.parametrize("command", ["whatif", "predict", "eras", "observability", "fit"])
 def test_the_command_is_gone(command, capsys):
     with pytest.raises(SystemExit) as e:
         main(["sd", command])
@@ -19,7 +19,7 @@ def test_the_command_is_gone(command, capsys):
 
 def test_the_modules_behind_them_are_gone():
     sd = ROOT / "orchestra" / "sd"
-    assert not (sd / "whatif.py").exists() and not (sd / "whatif_report.py").exists()
+    assert not (sd / "whatif.py").exists() and not (sd / "whatif_report.py").exists() and not (sd / "fit.py").exists()
 
 
 @pytest.mark.parametrize("doc", ["SPEC.md", "USING_ORCHESTRA.md", "ARCHITECTURE.md"])

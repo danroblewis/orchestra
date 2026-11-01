@@ -6,7 +6,7 @@ equation records, and nothing else:
 
 - a Poisson fit (``poisson-mle``) of N events with dispersion φ: ``sqrt(max(1, φ) / N)``, the
   standard error of a rate counted from N events, widened when they came in bursts; ``se`` over
-  the parameter when the fit recorded one (``sd.fit``);
+  the parameter when the fit recorded one (``sd.discover``'s ``fit_flow``);
 - a least-squares net flow at R² over n stretches: ``sqrt((1 − R²) / (R² (n − 2)))``, the relative
   standard error of a regression slope with that R² (1 / its t statistic);
 - an SD Lab rate (``sdlab:*``), fitted from the levels: ``1 / sqrt(N)`` of the events its counters

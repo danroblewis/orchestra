@@ -110,9 +110,8 @@ def _predictions(models, args) -> int:
 
 
 def cmd_sd(args) -> int:
-    """The system dynamics model: show it, fit its flows, list its versions."""
+    """The system dynamics model: discover it, show it, list its versions."""
     from .metrics import for_project as metrics_for
-    from .sd.fit import fit_model
     from .sd.store import ModelStore
 
     project = _project(args)
@@ -161,9 +160,6 @@ def cmd_sd(args) -> int:
     if m is None:
         print("no model yet")
         return 1
-    if args.action == "fit":
-        fit_model(m, metrics_for(project), project.key, step=args.step * 3600)
-        print(f"saved as version {models.save(m, note=f'fitted from the metrics store, {args.step:g} h steps')}")
     store = metrics_for(project)
     print(f"{m.name} (version {args.version or models.current_version()})")
     print("\nstocks (latest level):")
@@ -299,15 +295,14 @@ def build_parser(plugin_help: dict[str, str] | None = None) -> argparse.Argument
     s.add_argument("--append", action="store_true", help="for backfill: keep existing points instead of replacing them")
     s.set_defaults(fn=cmd_metrics)
 
-    s = sub.add_parser("sd", help="the system dynamics model: discover it from the metrics, show it, fit it, list its versions, "
+    s = sub.add_parser("sd", help="the system dynamics model: discover it from the metrics, show it, list its versions, "
                        "and list the predictions and their verdicts (predictions). Machines ask the model what a change would do "
                        "through experiments (the events endpoint's HTTP API, or sd.experiments.api.Experiments; USING_ORCHESTRA.md §5.9)")
-    s.add_argument("action", choices=["show", "fit", "versions", "discover", "predictions"])
+    s.add_argument("action", choices=["show", "versions", "discover", "predictions"])
     s.add_argument("--minutes", type=float, help="for discover: the window, in minutes back from now (default: [discovery] window)")
     s.add_argument("--step-s", dest="step_s", type=float, help="for discover: seconds per step (default: [discovery] step)")
     s.add_argument("--strategy", help="for discover: conservation or an SD Lab strategy (default: [discovery] strategy)")
-    s.add_argument("--version", type=int, help="for show and fit: this past version (default: the current one)")
-    s.add_argument("--step", type=float, default=1.0, help="for fit: hours per step (default 1)")
+    s.add_argument("--version", type=int, help="for show: this past version (default: the current one)")
     s.add_argument("--json", action="store_true", help="for predictions: the answer as JSON")
     s.set_defaults(fn=cmd_sd)
 

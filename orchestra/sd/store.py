@@ -58,23 +58,24 @@ class ModelStore:
         return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
     def save(self, model: Model, note: str = "") -> int:
-        """Save the model as the next version, and return its number. Saving a model identical to
-        the current one adds nothing and returns the current number."""
+        """Save the model as the next version, and return its number, under the store's
+        ``versions`` lock. Saving a model identical to the current one adds nothing and returns the
+        current number."""
         errs = model.check()
         if errs:
             raise ValueError("; ".join(errs))
-        nums = self._numbers()
         body = model.to_json()
-        if nums and (cur := self._read(nums[-1])) and cur["model"] == body:
-            return nums[-1]
-        n = (nums[-1] if nums else 0) + 1
-        self.dir.mkdir(parents=True, exist_ok=True)
-        p = self._path(n)
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"version": n, "saved_at": time.time(), "note": note, "model": body}, indent=1) + "\n",
-                       encoding="utf-8")
-        tmp.replace(p)
-        return n
+        with self.locked("versions"):            # two writers never pick the same number
+            nums = self._numbers()
+            if nums and (cur := self._read(nums[-1])) and cur["model"] == body:
+                return nums[-1]
+            n = (nums[-1] if nums else 0) + 1
+            p = self._path(n)
+            tmp = p.with_suffix(".tmp")
+            tmp.write_text(json.dumps({"version": n, "saved_at": time.time(), "note": note, "model": body}, indent=1) + "\n",
+                           encoding="utf-8")
+            tmp.replace(p)
+            return n
 
     def load(self, version: int | None = None) -> Model | None:
         """The current model, or a past version of it."""

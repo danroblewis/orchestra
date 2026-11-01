@@ -1,19 +1,14 @@
-"""The system dynamics core: model JSON, structure checks, Orchestra's factory, and the fitter
-recovering known rates from a simulated history."""
+"""The system dynamics core: model JSON, structure checks, Orchestra's factory, and the store's
+versions."""
 
 from __future__ import annotations
 
-import math
-import random
+import threading
 
-from orchestra.collectors import EVENTS
-
-LEVEL, IN, OUT = "sim_level", "sim_in_total", "sim_out_total"
-from orchestra.metrics import Point
-from orchestra.metrics.file import FileMetrics
-from orchestra.sd.fit import fit_model
 from orchestra.sd.model import Equation, Flow, Machine, Model, SeriesRef, Stock
 from orchestra.sd.store import ModelStore
+
+LEVEL, IN, OUT = "sim_level", "sim_in_total", "sim_out_total"
 
 
 def small_model() -> Model:
@@ -46,48 +41,6 @@ def test_check_catches_bad_structure():
     assert any("bootstrap" in e for e in errs)
 
 
-def _simulate(store, *, inflow_per_h: float, k_per_h: float, hours: int, stopped: tuple[int, int], seed: int = 7):
-    """A stock S fed at a constant rate and drained in proportion to its level, minute by minute,
-    with the loop stopped for a while (nothing moves then). Writes what the collector would."""
-    rnd = random.Random(seed)
-    lab = {"project": "p"}
-    t0, level, n_in, n_out = 1_800_000_000.0, 0, 0, 0
-    pts = [Point(EVENTS, 1, t0, {**lab, "type": "loop_started"}),
-           Point(EVENTS, 1, t0 + stopped[0] * 3600, {**lab, "type": "loop_stopped"}),
-           Point(EVENTS, 2, t0 + stopped[1] * 3600, {**lab, "type": "loop_started"})]
-    for minute in range(hours * 60):
-        t = t0 + minute * 60 + 30
-        if stopped[0] * 60 <= minute < stopped[1] * 60:
-            continue
-        if rnd.random() < inflow_per_h / 60:
-            level += 1
-            n_in += 1
-            pts += [Point(LEVEL, level, t, lab), Point(IN, n_in, t, lab)]
-        for _ in range(level):
-            if rnd.random() < k_per_h / 60:
-                level -= 1
-                n_out += 1
-                pts += [Point(LEVEL, level, t + 1, lab), Point(OUT, n_out, t + 1, lab)]
-    store.write(pts)
-
-
-def test_fit_recovers_known_rates_and_forms(tmp_path):
-    store = FileMetrics(tmp_path / "m.jsonl")
-    _simulate(store, inflow_per_h=3.0, k_per_h=0.5, hours=400, stopped=(150, 230))
-    lab = {"project": "p"}
-    m = Model("sim", "sim", stocks=[Stock("S", "S", series=SeriesRef(LEVEL, lab))],
-              flows=[Flow("outside>S", "in", None, "S", SeriesRef(IN, lab)),
-                     Flow("S>outside", "out", "S", None, SeriesRef(OUT, lab))])
-    fit_model(m, store, "p")
-    inflow, outflow = m.flow("outside>S").current(), m.flow("S>outside").current()
-    assert inflow.form == "constant" and outflow.form == "proportional"
-    assert inflow.origin == "fitted" and inflow.method == "poisson-mle"
-    assert abs(inflow.params["c"] - 3.0) < 3 * inflow.quality["se"] + 0.1, inflow.params
-    assert abs(outflow.params["k"] - 0.5) < 3 * outflow.quality["se"] + 0.02, outflow.params
-    assert math.isclose(inflow.quality["running_hours"], 400 - 80, abs_tol=1.5), "stopped hours are left out"
-    assert inflow.quality["events_while_stopped"] == 0
-
-
 def test_one_model_with_versions(tmp_path):
     store = ModelStore.for_state(tmp_path)
     m = small_model()
@@ -101,3 +54,24 @@ def test_one_model_with_versions(tmp_path):
     assert store.current_version() == 2
 
 
+
+
+def test_two_writers_saving_at_once_get_distinct_versions(tmp_path):
+    store = ModelStore.for_state(tmp_path)
+    models = []
+    for i in range(8):
+        m = small_model()
+        m.name = f"system{i}"
+        models.append(m)
+    got, go = [], threading.Barrier(len(models))
+
+    def save(m):
+        go.wait()
+        got.append(ModelStore.for_state(tmp_path).save(m, note=m.name))
+    threads = [threading.Thread(target=save, args=(m,)) for m in models]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sorted(got) == list(range(1, len(models) + 1))
+    assert {store.load(v).name for v in got} == {m.name for m in models}

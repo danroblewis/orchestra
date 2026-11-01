@@ -1804,7 +1804,6 @@ as a new version, `model/vNNNN.json`. The highest is current; past versions stay
 orchestra sd discover [--minutes 60] [--step-s 30] [--strategy conservation]   # discover now, print the result
 orchestra sd show [--version N]                                                # stocks, flows, machines
 orchestra sd versions                                                          # every saved version
-orchestra sd fit [--step 1]                                                    # refit the current model's flows
 ```
 
 `GET /observability` on the events endpoint (and `/api/dynamics/observability` on the web) answers, for the latest model:
@@ -2198,7 +2197,6 @@ printed it; `cat ~/.orchestrator/projects.json` lists every project's key.
 | `orchestra sd discover [--minutes N] [--step-s S] [--strategy S]` | Discover the model now. |
 | `orchestra sd show [--version N]` | The model: stocks with their latest level, flows, machines. |
 | `orchestra sd versions` | The saved versions. |
-| `orchestra sd fit [--version N] [--step H]` | Refit the flows over H-hour steps and save a version. |
 | `orchestra sd predictions [--json]` | The predictions recorded and their verdicts, by era. |
 | `orchestra sources check` | Probe each source's endpoints and credentials. |
 | `orchestra sources infer [--source NAME]` | Run an inference round and print what is kept and left out. |
