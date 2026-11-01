@@ -4,7 +4,8 @@ A **plugin** is a Python package, installed beside Orchestra, that adds things t
 project: the programs `orchestra run` keeps running, the instruments it measures with, the
 machines the Machines page lists before they are first seen, pages, API routes, Dashboard
 panels and machine cards in the web UI, and a subcommand of the `orchestra` command line. The task system (`~/orchestra-tasking`), the AI agents
-(`~/orchestra-agents`) and the bridges (`~/orchestra-bridges`) are plugins.
+(`~/orchestra-agents`), the bridges (`~/orchestra-bridges`), the desk (`~/orchestra-desk`), the
+outbox (`~/orchestra-outbox`) and workflows (`~/orchestra-workflows`) are plugins.
 
 This guide is for an engineer building one. It covers the interface exactly as the code on `main`
 defines it (`orchestra/plugins.py`, `orchestra/launcher.py`, `orchestra/collect/spec.py`,
@@ -1702,7 +1703,7 @@ How it stands today:
   compatibility check. A plugin is a `Plugin` dataclass instance, and that is the contract.
 - The plugins depend on `orchestra>=1.0.0a1,<1.0.0rc0`, from GitHub `main` in their own
   environments (`[tool.uv] override-dependencies`), and each one's `uv.lock` pins the commit. Orchestra's extras (`tasking`,
-  `agents`, `bridges`, `desk`, `outbox`) install them from their repositories. They run against that commit until `uv lock --upgrade-package
+  `agents`, `bridges`, `desk`, `outbox`, `workflows`) install them from their repositories. They run against that commit until `uv lock --upgrade-package
   orchestra` moves it, or against a local checkout laid over them (`uv run --with-editable`).
 - The interface changes in lockstep with its users. For example, `Declared` lost its
   `description` field in orchestra_2 `6d80b787`, and the agents dropped the argument the same day
