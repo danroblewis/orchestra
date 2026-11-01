@@ -131,6 +131,8 @@ All six are installed by step 1. Tasking and agents run from the start. The othe
 
 GitHub uses your `gh` login. Jira and Slack need a token you create; the Supervisor tells you which file to save it in. Tokens never go in `orchestra.toml`. Outbox drafts wait on the **Outbox** page until you approve them.
 
+To connect Jira, Slack, PagerDuty or a Prometheus store, ask the Supervisor, or follow [docs/INTEGRATING.md](docs/INTEGRATING.md) with your own coding tool.
+
 To leave a plugin out, drop its name from the brackets and run the install again: a plugin left out is uninstalled.
 
 ## Update, stop, remove
