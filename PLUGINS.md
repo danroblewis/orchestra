@@ -758,7 +758,7 @@ reads its `data` (`web/machines.py`):
 |---|---|---|
 | `mode` | `continuous`, `scheduled` or `ad hoc` | instance |
 | `kind` | `program`, `agent`, `person`, `service` | instance |
-| `listens_for` | event types it reads (older: `orchestra.machine.subscribed` with `types`) | machine (union) |
+| `listens_for` | event types it reads | machine (union) |
 | `package` | your plugin's name, so your card draws it | machine (latest that says one) |
 | `log` | its log file; shown only if inside the repository or the state directory | instance |
 | `name`, `group` (or `team`) | a display name and a group label | machine (latest announcement) |

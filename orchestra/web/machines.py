@@ -17,8 +17,7 @@ Everything here is observed, or announced by the machine itself:
   to show it by and the **group** it belongs to (a team): until the bus adapters provide
   subscriptions the backend can list (docs/proposals/empty-orchestra.md §3), an instance announces
   these when it starts, with ``orchestra.machine.started`` (``data.mode``, ``data.listens_for``,
-  ``data.kind``, ``data.package``, ``data.name``, ``data.group`` or else ``data.team``;
-  ``orchestra.machine.subscribed`` with ``data.types`` is read too). A group labels machines and
+  ``data.kind``, ``data.package``, ``data.name``, ``data.group`` or else ``data.team``). A group labels machines and
   groups them on the page, never separates them (AGENTS.md rule 4). How it is engaged and what
   kind it is belong to each **instance** (its latest announcement stands): a machine whose
   instances differ says so (``agent ×2, program ×1``), never just the last one to announce. So
@@ -43,7 +42,7 @@ Everything here is observed, or announced by the machine itself:
   ``ACTIVE_FLOOR_S``. A cadence is observed, never taken from what a machine says of itself
   (AGENTS.md rule 2): the median gap between its last ``BEATS`` **beats**. A beat is an event
   (an announcement, a publication, a heartbeat) that comes more than ``BURST_S`` after the
-  instance's previous event: the events of one burst (``started`` and ``subscribed`` at a restart,
+  instance's previous event: the events of one burst (an announcement and the first events at a restart,
   the few events of one run of a job) are one beat, so they never shrink the cadence. ``BURST_S``
   is ``ACTIVE_FLOOR_S / ACTIVE_MARGIN``, below which a cadence would not change the answer anyway:
   a machine whose events come faster has no cadence and is active within the floor. So a machine
@@ -83,7 +82,7 @@ from collections import Counter, OrderedDict, defaultdict, deque
 from ..cadence import BEATS, BURST_S, DAY, active_within, gaps
 from ..events import HOST, event_time, for_an_instrument, machine_and_instance
 
-ANNOUNCE = ("orchestra.machine.started", "orchestra.machine.subscribed")
+ANNOUNCE = "orchestra.machine.started"
 # records about a declaration (the intended model), not work on their subject: never a hand-off
 NOT_WORK = ("orchestra.intent.changed", "orchestra.intent.requested")
 # the cadence rule (beats, bursts, how long an instance stays active) is orchestra/cadence.py's,
@@ -137,7 +136,7 @@ class MachineIndex:
                 # before the era: an announcement still says what a machine is and listens for,
                 # but is no activity in the era
                 machine, instance = machine_and_instance(ev.get("source"))
-                if machine and ev.get("type") in ANNOUNCE and not for_an_instrument(ev):
+                if machine and ev.get("type") == ANNOUNCE and not for_an_instrument(ev):
                     self._announced(ev, machine, instance)
                 return
         machine, instance = machine_and_instance(ev.get("source"))
@@ -156,7 +155,7 @@ class MachineIndex:
         beats = self.beats[machine].setdefault(key, deque(maxlen=BEATS))
         if not burst and (not beats or seen > beats[-1]):
             beats.append(seen)
-        if ev.get("type") in ANNOUNCE:
+        if ev.get("type") == ANNOUNCE:
             self._announced(ev, machine, instance)
             return
         subject = ev.get("subject")
@@ -184,7 +183,7 @@ class MachineIndex:
         erases nothing another said; and its log."""
         key = instance or ""
         d = ev.get("data") or {}
-        self.subs[machine].update(d.get("listens_for") or d.get("types") or [])
+        self.subs[machine].update(d.get("listens_for") or [])
         for field, into in (("mode", self.mode), ("kind", self.kind)):
             if isinstance(d.get(field), str) and d[field]:
                 into[machine][key] = d[field]
@@ -192,10 +191,10 @@ class MachineIndex:
         self.cards[machine][key] = card                     # the latest to announce comes last
         if isinstance(d.get("package"), str) and d["package"]:
             card["package"] = d["package"]
-        if ev["type"] == "orchestra.machine.started":       # the instance's latest says its name and group, or that there are none
-            card["name"] = d.get("name") if isinstance(d.get("name"), str) and d["name"] else None
-            card["group"] = next((d[k] for k in ("group", "team") if isinstance(d.get(k), str) and d[k]), None)
-        card["about"] = {k: v for k, v in d.items() if k not in ("mode", "listens_for", "types", "log", "package", "kind", "name", "group")
+        # the instance's latest says its name and group, or that there are none
+        card["name"] = d.get("name") if isinstance(d.get("name"), str) and d["name"] else None
+        card["group"] = next((d[k] for k in ("group", "team") if isinstance(d.get(k), str) and d[k]), None)
+        card["about"] = {k: v for k, v in d.items() if k not in ("mode", "listens_for", "log", "package", "kind", "name", "group")
                          and isinstance(v, str | int | float | bool | type(None) | list)}
         if isinstance(d.get("log"), str) and d["log"]:
             self.logs[machine][instance or ""] = d["log"]

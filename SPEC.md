@@ -118,8 +118,7 @@ is unchanged and replay never lies (`docs/proposals/event-sources.md` §1).
 
 **Subscriptions.** Until the bus adapters provide subscriptions with leases
 (`docs/proposals/empty-orchestra.md` §3), a machine reads the bus by offset and announces what it
-listens for in `orchestra.machine.started` (the older `orchestra.machine.subscribed` with
-`data.types` is read too). The Machines page draws
+listens for in `orchestra.machine.started`. The Machines page draws
 the graph of publishers, event types and listeners from what it observes.
 
 ---
@@ -175,8 +174,8 @@ JSON), `subject`, `time` (RFC 3339 with a timezone; normalised to UTC millisecon
 event through `orchestra.events.Events.publish`, which makes the envelope (AGENTS.md rules 3 and
 5): it never reads `data`, and never touches a backend. It refuses, with a reason: an unknown
 field; a missing or malformed `type` or `source` (`<machine>` or `<machine>/<instance>`); a type
-starting `orchestra.` other than a machine's own announcements, `orchestra.machine.started` and
-`orchestra.machine.subscribed`, and its predictions, `orchestra.prediction.made` (403); the source `orchestra-host` (403); text fields over their
+starting `orchestra.` other than a machine's own announcement, `orchestra.machine.started`,
+and its predictions, `orchestra.prediction.made` (403); the source `orchestra-host` (403); text fields over their
 limits (type and source 256 characters, subject and the extensions 1024, id 256); a body over
 1 MB (413). The answer is `201 {"ok": true, "id", "duplicate": false, "event"}`. **Idempotency:**
 no backend refuses a repeated id, so the endpoint keeps the ids of the bus's last 10,000 events

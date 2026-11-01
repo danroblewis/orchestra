@@ -1076,7 +1076,7 @@ curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/events" \
 
 | Field | Required | Meaning |
 |---|---|---|
-| `type` | yes | What happened: `invoice.sent`. Letters, digits, `.`, `_`, `:`, `-`. Types starting `orchestra.` are Orchestra's: a machine may send only `orchestra.machine.started` (and the older `orchestra.machine.subscribed`). |
+| `type` | yes | What happened: `invoice.sent`. Letters, digits, `.`, `_`, `:`, `-`. Types starting `orchestra.` are Orchestra's: a machine may send only `orchestra.machine.started` (and `orchestra.prediction.made`). |
 | `source` | yes | The machine, or `<machine>/<instance>`. Not `orchestra-host`. |
 | `data` | no | Any JSON. Orchestra never reads it. |
 | `subject`, `correlationid`, `causationid` | no | Strings, as in the envelope ([§5.3](#53-the-cloudevents-envelope)). |
@@ -1256,7 +1256,7 @@ This is Orchestra's own event type, so Orchestra reads these fields of its `data
 | `group` (or `team`) | string | A label that groups it near others on the page. It never separates it. |
 
 Anything else in `data` (strings, numbers, booleans, lists) is passed to its package's card
-unread. The older `orchestra.machine.subscribed` with `data.types` is read too.
+unread.
 
 You announce only what Orchestra cannot observe. Everything else (what it publishes,
 when it was last seen) is observed. Instruments are not machines and are not announced; the

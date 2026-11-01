@@ -64,7 +64,7 @@ def test_orchestras_own_types_and_source_are_the_hosts_except_a_machines_announc
     refused({"type": "x.y", "source": "orchestra-host/2"}, 403)
     assert check({"type": "orchestra.machine.started", "source": "m/1", "data": {"mode": "continuous"}})["type"] == \
         "orchestra.machine.started"
-    assert check({"type": "orchestra.machine.subscribed", "source": "m"})["source"] == "m"
+    refused({"type": "orchestra.machine.subscribed", "source": "m"}, 403)    # the old announcement is no longer one
 
 
 def test_the_body_is_one_json_object_of_bounded_size():
