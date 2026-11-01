@@ -17,7 +17,11 @@ const kindWord = (kind) => kind || "machine";
 let OPEN = null, OPEN_TIMER = null, LOG_INST = null;
 function closeMachine() { OPEN = null; clearInterval(OPEN_TIMER); $("drawer").classList.remove("mdlg"); closeDrawer(); }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && OPEN) closeMachine(); });
-function openMachine(id) {
+// A page with a details panel (the Machines page: Orchestra.machinePanel) opens a machine there;
+// ``{dialog: true}`` asks for this dialog itself (the panel's "details and log").
+function openMachine(id, { dialog = false } = {}) {
+  const own = Orchestra.machineCards && Orchestra.machineCards.skip === id;     // a package's "machine details": this dialog
+  if (!dialog && !own && Orchestra.machinePanel && Orchestra.machinePanel(id)) return;
   const m = Orchestra.machineList().find((x) => x.id === id); if (!m) return;
   if (Orchestra.machineCards.open(m)) return;                     // its package draws its own dialog
   OPEN = id; LOG_INST = (m.logs || [])[0] || null;
