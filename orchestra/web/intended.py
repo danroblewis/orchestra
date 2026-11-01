@@ -7,14 +7,14 @@ Machines pages read of the declared layer, and the closed list of page controls.
 | ``GET /api/intended/versions`` | every ``dN``: when, by whom, its changes |
 | ``GET /api/intended/journal?after=`` | the accepted calls after a seq |
 | ``GET /api/intended/diff?d=&v=&since=`` | the comparison of ``dN`` with ``vM`` against ``vK`` (the Dynamics block) |
-| ``GET /api/intended/design`` | the plugin's summary (``design()``) |
+| ``GET /api/intended/design`` | the declared layer's summary (``design()``) |
 | ``GET /api/intended/script?instrument=`` | an option's script and its ``[[collect]]`` entry, read only inside the repository or the state directory (404 no such entry, 403 a script outside) |
 | ``POST /api/intended/control`` | an observation: ``expect``, ``unexpect``, ``ignore``, and ``confirm`` / ``discard`` on a stock, effect or flow |
 | ``POST /api/intended/request`` | a request: ``confirm``, ``discard``, ``switch_kind`` on a machine or an attachment, published as ``orchestra.intent.requested`` from ``owner`` |
 
 An observation records a declaration with ``via: page`` provenance and changes no machine, no
-configuration and no discovered version; a request changes nothing until the Supervisor applies
-it (AGENTS.md rule 9 as amended). No control carries a value. A refusal is ``{ok: false, error}``
+configuration and no discovered version; a request changes nothing until a machine that listens for it (a plugin's)
+applies it (AGENTS.md rule 9 as amended). No control carries a value. A refusal is ``{ok: false, error}``
 with its status: 400 a bad parameter or body, 403 a path outside the project, 404 not found,
 422 an op refused, 500 a version that cannot be read."""
 

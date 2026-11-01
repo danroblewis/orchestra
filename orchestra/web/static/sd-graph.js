@@ -23,7 +23,7 @@
   // - a series alone in its family whose first word other stocks' series share (a namespace, by
   //   Prometheus' convention: bakery_orders_baking, bakery_shelf_items) has that word as its family;
   // - a flow is named by its counter: its series' name, then who moved what from where to where
-  //   ("tasks ticket transitions · worker: OPEN → IN PROGRESS"), a lone end with its key ("from
+  //   ("queue item moves · packer: WAITING → PACKING"), a lone end with its key ("from
   //   REJECTED"), and any other label that tells the family's flows apart, with its key ("status
   //   landed"). A counter several flows share says so ("one counter, 2 flows"); a flow whose events
   //   another counter also counts (evidence.same_as) says so beside its name (sameAs), not in it;
@@ -57,7 +57,7 @@
       // leaving a usual value out must never make two names the same
       names = names.map((nm, i) => (names.filter((o) => o === nm).length > 1 ? said(xs[i], true).join(" · ") : nm));
       // a series alone in its family keeps the qualifier the model's own name gives it, when that is
-      // all that narrows it ("agents working (reviewer)": the one series of a family several machines write)
+      // all that narrows it ("orders open (web)": the one series of a family several machines write)
       const qualified = (x) => (!drop && typeof x.name === "string" && x.name.startsWith(fam + " (") && x.name.endsWith(")") ? x.name : fam);
       xs.forEach((x, i) => { out[x.id] = drop ? { name: fam + (names[i] ? " · " + names[i] : ""), family: "" }
         : names[i] ? { name: names[i], family: fam } : { name: qualified(x), family: "" };
@@ -94,7 +94,7 @@
     for (const f of fs) { const c = seriesOf(f); if (!c) continue; fams.set(c.name, [...(fams.get(c.name) || []), f]); byKey.set(refKey(c), [...(byKey.get(refKey(c)) || []), f.id]); }
     for (const [fname, xs] of fams) {
       // the other labels that tell this family's flows apart, said with their key
-      // (a family of one counter says every other label it has: "tasks gate runs · status landed")
+      // (a family of one counter says every other label it has: "deploy runs · status landed")
       const one = new Set(xs.map((f) => refKey(seriesOf(f)))).size === 1;
       const differ = [...new Set(xs.flatMap((f) => Object.keys(labelsOf(seriesOf(f)))))].filter((k) => !MOVE.has(k) && (one || new Set(xs.map((f) => labelsOf(seriesOf(f))[k] ?? "")).size > 1)).sort();
       for (const f of xs) {

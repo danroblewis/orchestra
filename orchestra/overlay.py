@@ -9,7 +9,7 @@ The rules (``merge``):
 
 - a table merges key by key, and the overlay's value wins;
 - an array of tables (``[[machines]]``, ``[[collect]]``, ``[[scrape]]``, ``[[sources]]``, a
-  plugin's ``[[tasks.roles]]``, at any depth) is merged entry by entry: an overlay entry whose
+  plugin's ``[[queue.roles]]``, at any depth) is merged entry by entry: an overlay entry whose
   ``name`` an entry of the repository's has replaces that entry whole, and any other is appended;
 - an overlay entry ``{ name = "x", enabled = false }`` removes the repository's entry ``x`` (and is
   itself never part of the result);

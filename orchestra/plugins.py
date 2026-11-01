@@ -40,7 +40,7 @@ The web app mounts what it returns:
   ``[[collect]]`` entries and named ``<plugin>.<name>``; a project entry of that name takes the
   place of the plugin's;
 - its ``guide``, optionally: a markdown file shipped in its package, written for an AI operator
-  (the Supervisor) that configures the plugin for the owner: what each setting is for, when to
+  (a plugin's machine) that configures the plugin for the owner: what each setting is for, when to
   choose each value, the pitfalls, how to check a setting took, and which choices are the
   human's. Orchestra serves it with its own (``orchestra.guides``, ``/api/guides``) and reads
   nothing in it;

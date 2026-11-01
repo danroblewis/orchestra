@@ -17,7 +17,7 @@ globalThis.history = { state: null, replaceState() {}, pushState() {}, back() {}
 globalThis.document = { dispatchEvent() {}, addEventListener() {}, getElementById: (id) => byId[id] || null, createElement: () => ({}), scripts: [] };
 globalThis.location = { pathname: "/machines", search: "", hash: "" };
 globalThis.fetch = () => new Promise(() => {});
-for (const f of ["app.js", "machine-dialog.js", "intended-machines.js"]) vm.runInThisContext(fs.readFileSync(path.resolve(import.meta.dirname, "../../orchestra/web/static", f), "utf8"), { filename: f });
+for (const f of ["app.js", "machine-dialog.js", "intended-core.js", "intended-machines.js"]) vm.runInThisContext(fs.readFileSync(path.resolve(import.meta.dirname, "../../orchestra/web/static", f), "utf8"), { filename: f });
 
 const now = Date.now() / 1000;
 const baker = { id: "baker", mode: "ad hoc", kind: "program", publishes: [], subscribes: [], flows: [], instances: [], first_seen: now - 100, last_seen: now - 5, active: true };

@@ -5,15 +5,15 @@ package declares it as a Python entry point in the group ``orchestra.commands``,
 plugin, naming a callable that takes the arguments after the name::
 
     [project.entry-points."orchestra.commands"]
-    tasks = "tasking.cli:main"          # def main(argv: list[str]) -> int | None
+    queue = "queue_plugin.cli:main"     # def main(argv: list[str]) -> int | None
 
 It is a group of its own, apart from ``orchestra.plugins``, because a command must work before a
-project exists (``orchestra tasks init``): it is given argv, never a project.
+project exists (``orchestra queue init``): it is given argv, never a project.
 
-``orchestra tasks add "x" --to y`` calls ``main(["add", "x", "--to", "y"])`` and exits with what it
-returns (``None`` is 0). Before the call, ``ORCHESTRA_PROG`` is set to ``orchestra tasks`` and so is
-``sys.argv[0]``, so an ``argparse.ArgumentParser()`` without a ``prog`` shows ``orchestra tasks``
-in its usage; ``orchestra --repo PATH tasks ...`` sets ``ORCHESTRA_REPO`` to PATH. ``orchestra
+``orchestra queue add "x" --to y`` calls ``main(["add", "x", "--to", "y"])`` and exits with what it
+returns (``None`` is 0). Before the call, ``ORCHESTRA_PROG`` is set to ``orchestra queue`` and so is
+``sys.argv[0]``, so an ``argparse.ArgumentParser()`` without a ``prog`` shows ``orchestra queue``
+in its usage; ``orchestra --repo PATH queue ...`` sets ``ORCHESTRA_REPO`` to PATH. ``orchestra
 --help`` lists the commands with one line each: the callable's ``help`` attribute if it has one,
 else the first line of its module's docstring.
 
@@ -82,7 +82,7 @@ def summary(ep) -> str:
 def apply_overrides(repo: str | None = None) -> list[dict]:
     """The project's overrides (``orchestra.overrides``), applied before a plugin command runs: the
     launcher starts plugin processes as commands, so their code runs patched too. No project (a
-    command run outside one, ``orchestra tasks init``) is nothing to apply; a broken one is said on
+    command run outside one, ``orchestra queue init``) is nothing to apply; a broken one is said on
     stderr, never fatal."""
     from .config import CONFIG_FILE, ConfigError, find_repo_root
     from .overrides import apply

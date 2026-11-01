@@ -1,7 +1,7 @@
 """Revising an element (§4). A revision by ``author: owner`` with a quote applies at once, except
 on a machine or an attachment that is no longer proposed: there, as for any other author, the
 revision becomes a **pending change** on the element, shown as proposed and answered by
-``confirm`` or ``discard`` with its change id (E2: the Supervisor changes a proposed machine as
+``confirm`` or ``discard`` with its change id (E2: the operator, a plugin's machine, changes a proposed machine as
 the owner talks; a confirmed one changes only when confirmed again). A revision the op has the
 owner's consent for (``consent``: it answers the owner's request, ``consent.py``) applies at once
 too, even on a confirmed machine. An applied revision records ``latest``: the element's difference from its baseline

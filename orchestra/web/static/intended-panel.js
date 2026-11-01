@@ -7,11 +7,12 @@
 //      got there, its name, its ends);
 //   ~  a − and a + of one counter: the same flow drawn between other stocks, one row;
 //   ○  an expected part this version does not have, with its candidates ("may be: …").
-// Under them, collapsed: the suggestions that came and went, and the ignored ones (listing one again is the Supervisor's: `unignore`).
+// Under them, collapsed: the suggestions that came and went, and the ignored ones (listing one again is asked of the machine that listens for requests: `unignore`).
 // The panel is patched row by row (each row keyed), so a poll that changes nothing moves nothing,
 // and a row redrawn under the keyboard's focus gives the focus to its own control again.
 const IntendedPanel = (() => {
   const I = () => Intended;
+  const ask = (what) => IntendedCore.asker(I().askers()).ask(what);
   // what this page settled from the panel: kept as a row ("expected ✓") after the server stops listing it
   const SETTLED = new Map();
   let NOTE = null;                                  // the last note, kept across redraws for a minute
@@ -71,7 +72,7 @@ const IntendedPanel = (() => {
     const p = e.provenance || {}, cands = ch.candidates || [];
     const said = e.declared ? `declared by ${I().who(p)}` : `marked expected by ${I().who(p)}`, t = e.part ? I().declTag(e) : { text: ch.why || "expected", cls: "im-t-ghost" };
     return `<div class="im-chg ghost" data-sign="o" data-key="${esc(ch.key || ch.id)}"><span class="im-sign">○</span><div><div>expected ${esc(ch.part)} <b>${esc(name)}</b> ${I().tag(t.text, t.cls)}${e.part && e.measured === false ? " " + I().tag("not measured", "im-t-ghost") : ""}</div>
-      <div class="muted">${esc(said)}; ${cands.length ? `may be: ${cands.map((c) => `<b>${esc(I().nameOf(c.id))}</b>`).join(", ")} · ask the Supervisor to link` : "discovery did not link it to anything it found"} · ghost shown</div></div><span></span></div>`;
+      <div class="muted">${esc(said)}; ${cands.length ? `may be: ${cands.map((c) => `<b>${esc(I().nameOf(c.id))}</b>`).join(", ")} · ${esc(ask("link"))}` : "discovery did not link it to anything it found"} · ghost shown</div></div><span></span></div>`;
   }
   // the rows, in the server's order, a − and + of one counter as one; each [key, html]
   function rowsOf(x, from) {
@@ -145,7 +146,7 @@ const IntendedPanel = (() => {
     const html = `<div class="im-chead" data-key="#head"><h2 style="margin:0"><span>Changes since v${esc(x.since)}</span><span class="count">${counts}</span></h2><div class="muted im-against">Against version ${esc(x.since)}${esc(saved)}</div></div>
       ${rows.map(([, h]) => h).join("") || '<div class="muted" data-key="#none">nothing changed</div>'}
       ${(x.came_and_went || []).length ? `<details class="im-fold" id="im-went" data-key="#went"><summary>came and went <span class="count">${x.came_and_went.length}</span> <span class="muted">· suggestions that left before they settled; one returns if its key comes back</span></summary>${went}</details>` : ""}
-      ${(x.ignored || []).length ? `<details class="im-fold" id="im-ignored" data-key="#ignored"><summary>ignored <span class="count">${x.ignored.length}</span> <span class="muted">· to list one again, ask the Supervisor</span></summary>${ign}</details>` : ""}
+      ${(x.ignored || []).length ? `<details class="im-fold" id="im-ignored" data-key="#ignored"><summary>ignored <span class="count">${x.ignored.length}</span> <span class="muted">· ${esc(ask("list one again"))}</span></summary>${ign}</details>` : ""}
       <div class="muted im-foot" data-key="#foot">${x.settled ? `${x.settled} settled: in enough versions running, no longer marked new. ` : ""}Either answer settles a + row: <b>expect</b> keeps the part on the diagram whatever a later discovery finds (the row stays, marked expected ✓); <b>ignore</b> takes it off this list.${(x.missing || []).length ? ` <span class="stale">Not read in time: ${esc(x.missing.join(", "))}.</span>` : ""}</div>
       <div class="im-note" id="im-note" data-key="#note" style="display:none" role="status"></div>`;
     // a details element keeps whether it is open across a redraw
@@ -158,7 +159,7 @@ const IntendedPanel = (() => {
   function kept(key, st, from) {
     const ch = { part: st.part, key };
     return `<div class="im-chg" data-sign="${st.ctl === "expect" ? "✓" : "·"}" data-key="${esc(key)}"><span class="im-sign">${st.ctl === "expect" ? "✓" : "·"}</span><div><div>${esc(st.part)} <b>${esc(st.name)}</b> ${st.ctl === "expect" ? I().tag("expected ✓", "im-t-exp") : I().tag("ignored", "im-t-ghost")}</div>
-      <div class="muted">${st.ctl === "expect" ? "settled here: it stays on the diagram" : "settled here: off this list; to list it again, ask the Supervisor"}</div></div>
+      <div class="muted">${st.ctl === "expect" ? "settled here: it stays on the diagram" : `settled here: off this list; ${esc(ask("list it again"))}`}</div></div>
       <span class="im-acts">${st.ctl === "expect" ? button("unexpect", ch, from) : ""}</span></div>`;
   }
   // a control answered: expect and ignore are remembered as rows; unexpect forgets the row

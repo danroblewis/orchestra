@@ -189,13 +189,13 @@ class ConfigEdit:
     # what each change does to the document
 
     def set(self, key, value: Any, *, target: str = REPO, check: Check | None = None, dry_run: bool = False) -> Change:
-        """Set ``key`` (``"tasks.workers"``, or a list of parts) to ``value``."""
+        """Set ``key`` (``"queue.workers"``, or a list of parts) to ``value``."""
         return self.set_many({key if isinstance(key, str) else ".".join(key): value}, target=target, check=check,
                              dry_run=dry_run)
 
     def set_many(self, values: dict[str, Any], *, target: str = REPO, check: Check | None = None,
                  dry_run: bool = False) -> Change:
-        """Set several keys (``{"tasks.workers": 3, "tasks.reviewers": 2}``) in one change."""
+        """Set several keys (``{"queue.workers": 3, "queue.reviewers": 2}``) in one change."""
         if not values:
             raise ConfigError("nothing to set")
         keys = {k: tt.split(k) for k in values}

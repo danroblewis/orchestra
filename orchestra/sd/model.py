@@ -93,7 +93,7 @@ class Flow:
 class Machine:
     id: str
     name: str
-    kind: str                           # machine (discovered: the metrics do not say what it is) | agent | program | person | team | device | external
+    kind: str                           # machine (the metrics do not say what it is)
     description: str = ""
     attributed: list[str] = field(default_factory=list)       # flow ids it may be associated with: hypotheses (flow.evidence["machines"])
     observed_by: list[SeriesRef] = field(default_factory=list)   # its event counts the hypotheses rest on

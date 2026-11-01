@@ -19,4 +19,4 @@ def page_control(ops: list) -> None:
     name = (op or {}).get("op")
     if op is None or not (name in PAGE_MARKS or (name in PAGE_SETTLES and op.get("part") in PAGE_PARTS)):
         raise IntentError("a page records one observation: expect, unexpect, ignore, or confirm or discard on a stock, "
-                          "effect or flow; anything else is the Supervisor's", status=400)
+                          "effect or flow; anything else is a plugin's", status=400)

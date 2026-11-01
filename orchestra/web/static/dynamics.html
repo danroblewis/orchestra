@@ -106,6 +106,7 @@
 <script src="/static/sd-layout.js?v={{v}}"></script>
 <script src="/static/charts.js?v={{v}}"></script>
 <script src="/static/predictions.js?v={{v}}"></script>
+<script src="/static/intended-core.js?v={{v}}"></script>
 <script src="/static/intended-dynamics.js?v={{v}}"></script>
 <script src="/static/intended-panel.js?v={{v}}"></script>
 <script src="/static/intended-drawers.js?v={{v}}"></script>
@@ -146,8 +147,8 @@ const stockColor = (id) => { const s = MODEL && MODEL.stocks.find((x) => x.id ==
       if (d.ok) MLIST = d.machines || [];
     } catch (e) {}
   }
-  // as the Machines page says it: the kind announced (agent, program, person, …, or mixed: "agent ×1,
-  // program ×1"); never "machine", which says nothing
+  // as the Machines page says it: the kind announced (program, person, service, …, or mixed: "program ×1,
+  // person ×1"); never "machine", which says nothing
   function kindWord(id, fallback) {
     const k = MKINDS[id] || MKINDS[String(id).split("/")[0]] || (fallback && fallback !== "machine" ? fallback : "");
     return k || "kind not announced";
@@ -557,7 +558,7 @@ async function expectedWaiting() {
   if (!parts.length) return "";
   IntendedDrawers.waiting(parts);
   return `<div class="panel" style="margin-top:10px"><h3 style="margin-top:0">Expected, waiting for a model <span class="count">${parts.length}</span></h3>
-    <div class="muted" style="font-size:12px;margin-bottom:6px">Declared in the Supervisor's chat; drawn as ghosts once there is a model to draw them beside.</div>
+    <div class="muted" style="font-size:12px;margin-bottom:6px">Declared through a plugin; drawn as ghosts once there is a model to draw them beside.</div>
     ${parts.map((x) => `<div class="bal" ${opens(`IntendedDrawers.openExpected('${esc(x.id)}')`)}><span class="im-ghostdot"></span><b>${esc(x.name || x.id)}</b> <span class="muted">${esc(x.part || "stock")} · ${x.state === "proposed" ? "unconfirmed" : "expected"}${(x.measure || {}).chosen ? "" : " · not measured"} · open for how to measure it</span></div>`).join("")}</div>`;
 }
 // how much there is to discover from: the window read, and how long the bus has been heard

@@ -1,7 +1,7 @@
 """Predictions: a change states its effect before it is made, and the system judges it (goal G13,
 the intended-effect test of docs/rationale/lifted-models.md §3.1, and the null test of §3.2).
 
-**How a prediction is made.** The machine making a change (or a person, through the Supervisor)
+**How a prediction is made.** The machine making a change (or a person, through a plugin's machine)
 publishes ``orchestra.prediction.made`` before the change. It is Orchestra's own type, like
 ``orchestra.machine.started``: Orchestra defines what its ``data`` holds and reads it (AGENTS.md
 rule 3 forbids reading the data of other machines' event types; this one is Orchestra's

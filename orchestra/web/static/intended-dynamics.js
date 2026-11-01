@@ -3,7 +3,8 @@
 // /api/dynamics/model answer's declared layer, web/intended.py). It draws:
 //   - ghosts: an expected stock or effect absent from the version shown, the same shape, darker
 //     fill and dashed outline, label readable, its tag ("expected · not in vN", "not measured"),
-//     and its candidate line ("may be: … · ask the Supervisor to link"); declared flows absent as
+//     and its candidate line ("may be: … · ask <machine> to link", naming the machine that listens
+//     for requests, ``intended.askers``; intended-core.js); declared flows absent as
 //     dashed ghost edges; ``intended.predicted`` flows as ghost edges;
 //   - the marks: "new in vN" rings and tags, removed parts struck through as ghosts, the gold pin
 //     on what is expected, simulated parts hatched and tagged;
@@ -11,7 +12,7 @@
 //     legend's entries, the Stocks table's Expected group and the tables' marks, and the Changes
 //     panel beside the loops, with expect / ignore on every + row.
 // The page controls are observations (POST /api/intended/control, AGENTS.md rule 9 as amended);
-// everything else is read only, and what only the Supervisor can do says "ask the Supervisor".
+// everything else is read only, and what only a machine can do says to ask the one that listens for requests.
 // The drawers are in intended-drawers.js. Nothing here changes how the page draws without it.
 const Intended = (() => {
   let ON = new URLSearchParams(location.search).get("since") !== "off";   // "changes since" is on by default
@@ -19,6 +20,9 @@ const Intended = (() => {
   const hhmm = (t) => new Date(t * 1000).toTimeString().slice(0, 5);
   const agoText = (t) => { const s = Date.now() / 1000 - t; return s < 90 ? "just now" : ago(s) + " ago"; };
   const vlabel = () => { const x = it(); return x && x.shown ? `v${x.shown}` : "this discovery"; };
+  // the machines that listen for the owner's requests (web/intended.py askers), null while the bus is unread
+  const askers = () => { const x = it(); return x && Array.isArray(x.askers) ? x.askers : null; };
+  const ask = (what) => IntendedCore.asker(askers()).ask(what);
 
   // ---- keys: what marks match by, since discovered ids are not stable; the server's (sd/intended/keys.py),
   // sent as ``intended.keys`` ({stocks: {id: key}, flows: {id: key}}), never made here ----
@@ -174,7 +178,7 @@ const Intended = (() => {
     const below = [];
     if (x.simulated) below.push(["simulated", "im-t-sim"]);
     if (x.note) below.push([`your note · ${x.note}`, "im-t-user"]);
-    if ((x.candidates || []).length) below.push([`may be: ${x.candidates.map((c) => nameOf(c.id)).join(", ")} · ask the Supervisor to link`, "im-t-ghost"]);
+    if ((x.candidates || []).length) below.push([`may be: ${x.candidates.map((c) => nameOf(c.id)).join(", ")} · ${ask("link")}`, "im-t-ghost"]);
     below.forEach(([text, cls], i) => svgTag(g, -s.w / 2, s.h / 2 + 14 + i * 19, text, cls));
   }
   function tip(x) {
@@ -222,7 +226,7 @@ const Intended = (() => {
     const parts = [!x.measured ? "not measured · no series yet" : rec ? `no series yet → <span class="im-recword">recording</span> <span class="muted">(${esc(rec.instrument || (opt || {}).instrument || "")}, since ${hhmm(rec.since)})</span>`
       : `no series of its own · discovery found none for it in ${esc(vlabel())}`];
     if (x.note) parts.push(`your note · ${esc(x.note)}`);
-    if ((x.candidates || []).length) parts.push(`may be: ${x.candidates.map((c) => `<b>${esc(nameOf(c.id))}</b>`).join(", ")} <span class="muted">· ask the Supervisor to link</span>`);
+    if ((x.candidates || []).length) parts.push(`may be: ${x.candidates.map((c) => `<b>${esc(nameOf(c.id))}</b>`).join(", ")} <span class="muted">· ${esc(ask("link"))}</span>`);
     return parts.join("<br>");
   }
   const tag = (text, cls) => `<span class="im-tag ${cls}">${esc(text)}</span>`;
@@ -252,7 +256,7 @@ const Intended = (() => {
     for (const e of x.expected.filter((e) => e.part === "flow")) {
       const t = declTag(e);
       $("flows").insertAdjacentHTML("beforeend", `<tr class="im-exprow"><td><span class="im-ghostdot"></span>${esc(e.name)} ${tag(t.text, t.cls)}<div class="muted" style="font-size:11px">${esc(nameOf(e.from) || "outside")} → ${esc(nameOf(e.to) || "outside")}</div></td>
-        <td class="num muted">—</td><td><span class="origin declared">declared</span></td><td class="muted">${e.present ? `found as ${esc(e.found_id)}` : (e.candidates || []).length ? "may be: " + e.candidates.map((c) => esc(c.id)).join(", ") + " · ask the Supervisor to link" : "not found yet"}</td></tr>`);
+        <td class="num muted">—</td><td><span class="origin declared">declared</span></td><td class="muted">${e.present ? `found as ${esc(e.found_id)}` : (e.candidates || []).length ? "may be: " + e.candidates.map((c) => esc(c.id)).join(", ") + " · " + esc(ask("link")) : "not found yet"}</td></tr>`);
     }
     for (const r of (x.removed || {}).flows || []) {
       $("flows").insertAdjacentHTML("beforeend", `<tr class="im-gone"><td><s>${esc(baseEnd(r.from, r.from_series, r.from_name))} → ${esc(baseEnd(r.to, r.to_series, r.to_name))}</s> ${tag(`gone in ${vlabel()}`, "im-t-gone")}<div class="muted" style="font-size:11px" title="${esc(r.key)}">${esc(r.counter ? removedFlowName(r) : r.key)}</div></td>
@@ -276,7 +280,7 @@ const Intended = (() => {
     if (!d.ok) { IntendedPanel.note(`${ctl} was not recorded: ${d.error || "no answer"}`); return d; }
     const name = part === "stock" ? nameOf((stockOfKey(key) || {}).id || key) : (() => { const f = MODEL.flows.find((y) => flowKey(y) === key); return f ? `${nameOf(f.from)} → ${nameOf(f.to)}` : key; })();
     const said = { expect: `${name} is expected: it stays on the diagram (unexpect in its drawer)`, unexpect: `${name} is no longer expected: a later discovery may drop it`,
-      ignore: `${name} is ignored: it leaves this list (to list it again, ask the Supervisor)`, confirm: `${name} is confirmed`, discard: `${name} is discarded` }[ctl];
+      ignore: `${name} is ignored: it leaves this list (${ask("list it again")})`, confirm: `${name} is confirmed`, discard: `${name} is discarded` }[ctl];
     if (said) IntendedPanel.note(said, true);
     if (from && String(from).startsWith("changes since")) IntendedPanel.settled(ctl, part, key, name);
     await load();
@@ -302,5 +306,5 @@ const Intended = (() => {
     return new Set(x.expected.filter((e) => e.near).map((e) => stockOfKey(e.near)).filter(Boolean).map((s) => s.id));
   }
   return { extend, decorator, tip, click, versionBar, toggleSince, param, legend, tables, control, sig, it, marksOf, stockKey, flowKey,
-    declTag, recording, nameOf, who, agoText, hhmm, vlabel, tag, nearIds, expectedIds, baseEnd, removedStockName, removedFlowName };
+    declTag, recording, nameOf, who, agoText, hhmm, vlabel, tag, nearIds, expectedIds, baseEnd, removedStockName, removedFlowName, askers };
 })();

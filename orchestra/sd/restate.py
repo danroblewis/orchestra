@@ -26,7 +26,7 @@ balance keeps it).
 Right after the join (so identification judges each stock on its own counters) and again once
 every balance is final, ``own_counters_back`` gives each stock back its own writer's
 counter of events ``unify_same_flows`` joined to another writer's: one event, two writers' records
-(the worker's review request moves a ticket and starts the reviewer's turn), each stock balanced by
+(a handover moves an item out of one queue and starts the next stage's turn), each stock balanced by
 its own, the pair still one flow and a co-flow with one rate (``sd.ends``)."""
 
 from __future__ import annotations

@@ -1,15 +1,16 @@
 // The intended model's drawers on the Dynamics page (docs/proposals/intended-model.md §7):
 //   - an expected stock or effect that is not found (frame D1): its description, who declared it and their words,
-//     its status, and "How to measure it": the options the Supervisor recorded (how collected,
+//     its status, and "How to measure it": the options a machine recorded (how collected,
 //     instrument kind, cost, caveat, the system and series it reads, the variable its token is in,
 //     clearance, provenance), the chosen one's recording line and
 //     sparkline, its script and [[collect]] entry (/api/intended/script); the radios are read
-//     only: switching is the Supervisor's, so the drawer says to tell it;
+//     only: switching is asked of the machine that listens for requests, so the drawer says to;
 //   - a declared flow that is not found;
 //   - on a discovered stock's or flow's own drawer (frame D3): the switch "Expected: always show
 //     this stock" (expect / unexpect, observations) and where the mark came from.
 const IntendedDrawers = (() => {
   const I = () => Intended;
+  const ask = (what) => IntendedCore.asker(I().askers()).ask(what);
   // with no model yet, the declared parts from /api/intended (``waiting``), shaped as the model's expected entries
   let WAITING = [];
   const find = (id) => { const x = I().it(); return (x ? x.expected.find((e) => e.id === id && e.part !== "flow") : null) || WAITING.find((e) => e.id === id) || null; };
@@ -28,11 +29,11 @@ const IntendedDrawers = (() => {
     const on = o.key === chosen;
     // clearance: who cleared it to run, or that nobody has yet; provenance: where the words came from
     const cleared = !o.clearance || /^(none|no|not cleared)$/i.test(String(o.clearance).trim()) ? "not cleared yet" : `cleared: ${o.clearance}`;
-    const prov = !o.provenance ? "" : /^free text$/i.test(o.provenance) ? "as the Supervisor wrote it" : o.provenance;
+    const prov = !o.provenance ? "" : /^free text$/i.test(o.provenance) ? "as its author wrote it" : o.provenance;
     const facts = [o.cost && `cost: ${o.cost}`, o.caveat && `caveat: ${o.caveat}`, o.system && `reads ${o.system}`, o.series && `series ${o.series}`,
       o.bearer_env && `token from $${o.bearer_env}`, cleared, prov,
       o.commit && `commit ${o.commit}`, !on && (o.first_points || []).length && `first points: ${o.first_points.map((p) => p[1]).join(", ")}`].filter(Boolean);
-    return `<div class="im-opt ${on ? "on" : ""}" data-option="${esc(o.key)}"><span class="im-radio" role="radio" aria-checked="${on}" aria-disabled="true" title="read only: tell the Supervisor to switch"></span>
+    return `<div class="im-opt ${on ? "on" : ""}" data-option="${esc(o.key)}"><span class="im-radio" role="radio" aria-checked="${on}" aria-disabled="true" title="${esc(`read only: ${ask("switch")}`)}"></span>
       <div><div><b>${esc(o.key)}</b> ${esc(o.title || "")}${on ? " " + I().tag("chosen", "im-t-chosen") : ""}</div>${o.how ? `<div class="muted">${esc(o.how)}</div>` : ""}
       ${facts.length ? `<div class="muted im-facts">${facts.map(esc).join(" · ")}</div>` : ""}${o.instrument ? `<div class="muted im-facts">${on ? "instrument" : "would record as"} <span class="ty">${esc(o.instrument)}</span>${on ? "" : " · not running"}</div>` : ""}</div>
       <span class="ty im-kind">${esc(o.kind || "")}${o.simulated && !/simulated/.test(o.kind || "") ? " · simulated" : ""}</span></div>`;
@@ -60,7 +61,7 @@ const IntendedDrawers = (() => {
     if (!t) return "";
     return `<div>target</div><div>${esc(t.op)} ${esc(t.value)}${t.hi != null ? "–" + esc(t.hi) : ""} over ${esc(ago(t.over_s))} · <b>${esc(t.met)}</b>${t.mean != null ? ` <span class="muted">(mean ${esc(t.mean)})</span>` : ""}${t.why ? ` <span class="muted">${esc(t.why)}</span>` : ""}</div>`;
   }
-  // a series key (name{k="v",…}) said by its label values, its name as the family: DONE (tasks tickets)
+  // a series key (name{k="v",…}) said by its label values, its name as the family: DONE (queue items)
   function keyName(key) {
     const m = /^([^{]+)(?:\{(.*)\})?$/.exec(String(key || "")); if (!m) return String(key || "");
     const vals = [...(m[2] || "").matchAll(/(\w+)="([^"]*)"/g)].filter(([, k]) => !["project", "instrument", "machine"].includes(k)).map(([, , v]) => v);
@@ -102,15 +103,15 @@ const IntendedDrawers = (() => {
       <div class="def"><div>now</div><div class="num">—</div>
       <div>status</div><div>${status}</div>
       <div>declared</div><div>by ${esc(by)}${p.at ? " · " + I().hhmm(p.at) : ""}${near ? ` · beside <b>${esc(stockName(near.id))}</b>` : x.near ? ` · meant to sit beside <b>${esc(keyName(x.near))}</b> <span class="muted">(${stocks.length ? "not in this model" : "no model yet"})</span>` : ""}${x.note ? ` <span class="muted">(${esc(x.note)})</span>` : ""}</div>
-      ${(x.candidates || []).length ? `<div>may be</div><div>${x.candidates.map((c) => `<b>${esc(I().nameOf(c.id))}</b> <span class="muted">(${esc(c.why)})</span>`).join(", ")}<br><span class="muted">whether it is this ${esc(x.part)} is for you to say: ask the Supervisor to link them</span></div>` : ""}
+      ${(x.candidates || []).length ? `<div>may be</div><div>${x.candidates.map((c) => `<b>${esc(I().nameOf(c.id))}</b> <span class="muted">(${esc(c.why)})</span>`).join(", ")}<br><span class="muted">whether it is this ${esc(x.part)} is for you to say: ${esc(ask("link them"))}</span></div>` : ""}
       ${targetLine(x.target)}
       <div>declared to affect it</div><div>${affects.length ? affects.map((a) => `<a href="/machines#${encodeURIComponent(a.id)}">${esc(a.name)}</a> <span class="muted">(${esc(a.how)} · ${esc(a.state)})</span>`).join("<br>") : '<span class="muted">no machine declares an effect on it or reads it</span>'}</div>
       <div>machines</div><div><span class="muted">no flow hypotheses: an expected ${esc(x.part)} has no flows until discovery finds one</span></div></div>
-      <h4>How to measure it${m && (m.options || []).length ? ` <span class="muted im-h4note">${m.chosen ? `· the Supervisor's options, in its order; chosen: <b>${esc(m.chosen)}</b>` : "· the Supervisor's options; none chosen yet"}</span>` : ""}</h4>
+      <h4>How to measure it${m && (m.options || []).length ? ` <span class="muted im-h4note">${m.chosen ? `· the options recorded, in their order; chosen: <b>${esc(m.chosen)}</b>` : "· the options recorded; none chosen yet"}</span>` : ""}</h4>
       ${m && (m.options || []).length ? `<div class="im-opts">${m.options.map((o) => option(o, m.chosen) + (o.key === m.chosen ? recordingBlock(m) : "")).join("")}</div>
-        <div class="muted im-facts" style="margin-top:6px">The choice is read only here: ${m.chosen ? "ask the Supervisor to switch to another option" : "ask the Supervisor to choose one"}.</div>`
-        : '<div class="muted">No way to measure it is recorded yet: ask the Supervisor to measure it.</div>'}
-      <h4>Level</h4><div class="muted" style="font-size:12px">No series is bound to it yet: nothing to draw. Once a discovery finds a stock in what ${m && m.recording && m.recording.instrument ? esc(m.recording.instrument) : "its instrument"} records, it is shown here, and you can tell the Supervisor whether that is this ${esc(x.part)}.</div>`, { key: "x:" + id });
+        <div class="muted im-facts" style="margin-top:6px">The choice is read only here: ${esc(ask(m.chosen ? "switch to another option" : "choose one"))}.</div>`
+        : `<div class="muted">No way to measure it is recorded yet: ${esc(ask("measure it"))}.</div>`}
+      <h4>Level</h4><div class="muted" style="font-size:12px">No series is bound to it yet: nothing to draw. Once a discovery finds a stock in what ${m && m.recording && m.recording.instrument ? esc(m.recording.instrument) : "its instrument"} records, it is shown here, and whether that is this ${esc(x.part)} is for you to say: ${esc(ask("link them"))}.</div>`, { key: "x:" + id });
     const opt = m && (m.options || []).find((o) => o.key === m.chosen);
     if (opt && opt.instrument) script(opt.instrument);
   }
@@ -122,7 +123,7 @@ const IntendedDrawers = (() => {
     openDrawer(`<h3 data-drawer-key="xf:${esc(id)}">${esc(e.name)} <span class="tag">flow</span> ${I().tag(e.why || "expected", "im-t-ghost")}</h3>
       <div class="def"><div>moves</div><div>${esc(I().nameOf(e.from))} → ${esc(I().nameOf(e.to))}</div>
       <div>declared</div><div>by ${esc(I().who(p))}${p.at ? " · " + I().agoText(p.at) : ""}${p.quote ? `: <i>"${esc(p.quote)}"</i>` : ""}</div>
-      <div>found</div><div>${e.present ? `as <b>${esc(e.found_id)}</b>` : (e.candidates || []).length ? `may be: ${e.candidates.map((c) => `<span class="ty">${esc(c.id || c.key)}</span>`).join(" ")} <span class="muted">(${esc(e.candidates[0].why)}; ask the Supervisor to link)</span>` : '<span class="muted">no flow between its ends yet</span>'}</div>
+      <div>found</div><div>${e.present ? `as <b>${esc(e.found_id)}</b>` : (e.candidates || []).length ? `may be: ${e.candidates.map((c) => `<span class="ty">${esc(c.id || c.key)}</span>`).join(" ")} <span class="muted">(${esc(e.candidates[0].why)}; ${esc(ask("link"))})</span>` : '<span class="muted">no flow between its ends yet</span>'}</div>
       ${targetLine(e.target)}</div>`, { key: "xf:" + id });
   }
   // the switch at the top of a discovered stock's or flow's drawer (frame D3)
@@ -141,7 +142,7 @@ const IntendedDrawers = (() => {
     if (mk.includes("simulated")) h3.insertAdjacentHTML("beforeend", " " + I().tag("simulated", "im-t-sim"));
     const word = part === "stock" ? "stock" : "flow", p = (entry && entry.provenance) || {};
     if (entry && entry.declared) {
-      h3.insertAdjacentHTML("afterend", `<div class="im-expect on"><b>Expected:</b> declared by ${esc(I().who(p))} as <b>${esc(entry.name || entry.id)}</b>, found as this ${word} <span class="muted">· to stop expecting it, ask the Supervisor</span></div>`);
+      h3.insertAdjacentHTML("afterend", `<div class="im-expect on"><b>Expected:</b> declared by ${esc(I().who(p))} as <b>${esc(entry.name || entry.id)}</b>, found as this ${word} <span class="muted">· ${esc(ask("stop expecting it"))}</span></div>`);
       return;
     }
     const facts = on ? [`confirmed expected`, `present in ${I().vlabel()}`, entry && entry.since_version ? `tracked by inference since v${entry.since_version}` : ""].filter(Boolean).join(" · ")

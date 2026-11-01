@@ -199,12 +199,24 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         out = model_view(project, version, bg.levels, bg.levels_error, era=era)
         if out.get("ok"):
             attach_dynamics(project, out, since, core.metrics)
+            attach_askers(out)
         elif bg.ready("index"):                     # no model: how long the bus has been heard, so the page can say how much data there is
             with bg.index._lock:
                 out["bus_since"] = min((v["first"] for insts in bg.index.instances.values() for v in insts.values()), default=None)
         if not sd_installed():                      # conservation only: say what is missing, and how to have it
             out["sd_missing"] = needs_sd("behaviour trust, simulation, experiments and SD Lab's strategies")
         return out
+
+    def attach_askers(out: dict) -> None:
+        """Who the owner's requests reach (``model.intended.askers``), so the Dynamics page names
+        them as the Machines page does; left out while the bus is unread (the page then names nobody)."""
+        from ..sd.intended.requests import askers
+        block = out["model"].get("intended")
+        if not isinstance(block, dict) or "error" in block or not bg.ready("index") or (idx := bg.era_index(None)) is None:
+            return
+        machines = idx.view(flows=bg.flows)["machines"]
+        declare(machines)
+        block["askers"] = askers(machines)
 
     @app.get("/api/dynamics/predictions")
     def dynamics_predictions(era: str | None = None) -> dict:

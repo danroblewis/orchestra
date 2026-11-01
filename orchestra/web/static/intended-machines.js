@@ -1,5 +1,5 @@
 // The declared layer on the Machines page (docs/proposals/intended-model.md §6.1, §7; frames E1–E4):
-// what /api/machines says a person or the Supervisor declared, beside what the bus shows.
+// what /api/machines says a person or a machine declared, beside what the bus shows.
 //
 //   the map    a declared machine's links and event types are drawn even when nobody listens yet
 //              (``intended_edges``); a proposed machine is dashed violet, "unconfirmed"; a declared
@@ -9,8 +9,9 @@
 //   the panel  a column beside the map, every field read-only: the envelope's rows (kind, managed,
 //              engagement, receives, emits, reads), the opaque ``spec`` in the order it was
 //              declared, "a guess" on guessed items, the expected effect, P5's "Measured by". The
-//              only controls are requests to the Supervisor (confirm, discard, the kind switch),
-//              POST /api/intended/request; nothing here changes a machine (AGENTS.md rule 9).
+//              only controls are requests (confirm, discard, the kind switch) to the machine that
+//              listens for them (IntendedCore, intended-core.js), POST /api/intended/request;
+//              nothing here changes a machine (AGENTS.md rule 9).
 //   the cards  the unconfirmed badge, the latest change's chips, the measured row.
 //
 // It never makes a machine: an undeclared machine's panel shows what the bus observed of it.
@@ -30,7 +31,7 @@ const IntendedMachines = (() => {
   const cap = (k) => words(k).charAt(0).toUpperCase() + words(k).slice(1);
   const span = (s) => (HOURS[s] || (s >= 86400 ? `${Math.round(s / 86400)} days` : s >= 3600 ? `${Math.round(s / 3600)} hours` : `${Math.round(s / 60)} min`));
 
-  // who put it there, in the owner's words: "proposed by the Supervisor", "added by you"
+  // who put it there, in the owner's words: "proposed by the Operator" (its source, named), "added by you"
   function byWhom(it) {
     const p = it.provenance || {}, a = it.author || p.author;
     if (a === "owner") return it.state === "proposed" ? "added by you" : "declared by you";
@@ -92,7 +93,7 @@ const IntendedMachines = (() => {
       if (mine.some((l) => l.gone)) tags.push({ text: "− link removed", cls: "im-t-gone" });
       if (mine.some((l) => l.added && !l.gone)) { tags.push({ text: "+ new link", cls: "im-t-add" }); n.cls = `${n.cls || ""} im-ring-add`; }
       const loose = types.every((t) => !published.has(t) || !listened.has(t)) && mine.every((l) => l.declared || l.gone) && mine.some((l) => !l.gone);
-      // "a guess" when every declaration of it is the Supervisor's guess, as the panel tags it
+      // "a guess" when every declaration of it is a machine's guess, as the panel tags it
       const guessedType = (t) => d.machines.some((m) => m.intent && ["receives", "emits"].some((f) => (m.intent[f] || []).some((x, i) => x === t && guessed(m.intent, f, i))));
       const guessWord = types.every(guessedType) ? "a guess · " : "";
       if (loose && !n.cnt) { n.sub = guessWord + (types.some((t) => !published.has(t) && !listened.has(t)) ? "declared · new type" : "declared"); n.cls = `${n.cls || ""} im-decl-event`; }
@@ -180,12 +181,14 @@ const IntendedMachines = (() => {
 
   // ---- the panel: read-only renderings, and the requests ----
   const chip = (t, st, extra = "") => `<span class="ty ${st === "add" ? "im-chip-add" : st === "gone" ? "im-chip-gone" : ""}">${esc(t)}</span>${st === "add" ? '<span class="im-tag im-t-add">+ added just now</span>' : st === "gone" ? '<span class="im-tag im-t-gone">− removed</span>' : ""}${extra}`;
-  const guess = '<span class="im-tag im-t-ghost" title="the Supervisor\'s guess: ask it to set or confirm">a guess</span>';
+  // who the owner's requests reach: the machines that listen for them (intended-core.js)
+  const A = () => IntendedCore.asker(IntendedCore.listenersOf(list()));
+  const guess = () => `<span class="im-tag im-t-ghost" title="${esc(`a guess by whoever declared it: ${A().ask("set or confirm it")}`)}">a guess</span>`;
   const field = (label, html, cls = "") => `<div class="im-f ${cls}"><div class="im-fl">${esc(label)}</div><div class="im-fv">${html}</div></div>`;
-  const ind = (opts, on, cls = "") => `<span class="im-ind ${cls}" title="read-only: ask the Supervisor to change it">${opts.map((o) => `<span class="${o === on ? "on" : ""}">${esc(o)}</span>`).join("")}</span>`;
+  const ind = (opts, on, cls = "") => `<span class="im-ind ${cls}" title="${esc(`read-only: ${A().ask("change it")}`)}">${opts.map((o) => `<span class="${o === on ? "on" : ""}">${esc(o)}</span>`).join("")}</span>`;
   const box = (v, mono) => `<div class="im-ro ${mono ? "mono" : ""}">${esc(v)}</div>`;
   const inl = (v) => `<span class="im-ro mono inline">${esc(v)}</span>`;
-  const ask = (what = "ask the Supervisor") => `<span class="im-ask">${esc(what)}</span>`;
+  const ask = (what = "") => `<span class="im-ask">${esc(A().ask(what))}</span>`;
   const h4 = (t, note = "", tag = "") => `<h4>${esc(t)}${note ? ` <span class="muted im-h4note">${note}</span>` : ""}${tag}</h4>`;
 
   // the opaque spec, as declared and in its order: every list numbered, text as a value, a table for
@@ -206,8 +209,8 @@ const IntendedMachines = (() => {
     const s = it.spec || {}, was = before(it), out = [];
     for (const [k, v] of Object.entries(s)) {
       const chg = k in was ? `<span class="im-tag im-t-chg">${Array.isArray(v) ? "rewritten" : "changed"} just now</span>` : "";
-      const g = guessed(it, `spec.${k}`) || guessed(it, k) ? guess : "";
-      const more = v && typeof v === "object" && !Array.isArray(v) ? ask("ask the Supervisor to add one") : "";
+      const g = guessed(it, `spec.${k}`) || guessed(it, k) ? guess() : "";
+      const more = v && typeof v === "object" && !Array.isArray(v) ? ask("add one") : "";
       out.push(Array.isArray(v) ? `${h4(cap(k), "", chg + g)}${specValue(k, v, mono)}` : field(words(k), specValue(k, v, mono) + more + chg + g));
     }
     return out.join("");
@@ -218,7 +221,7 @@ const IntendedMachines = (() => {
     const e = it.engagement || {}, was = before(it).engagement;
     let html = ind(["ad hoc", "continuous", "scheduled"], e.mode, it.kind === "programmatic" ? "tabs" : "");
     if (e.mode === "scheduled") html += ` ${e.at ? inl(`daily at ${e.at}`) : ""}${e.tz ? inl(e.tz) : ""}${e.missed ? `<span class="muted"> · missed: ${esc(e.missed)}</span>` : ""}`;
-    if (guessed(it, "engagement") || guessed(it, "engagement.at")) html += guess;
+    if (guessed(it, "engagement") || guessed(it, "engagement.at")) html += guess();
     if (was) html += `<span class="im-tag im-t-chg">changed just now</span><div class="muted im-was">was ${esc(was.mode || "not set")}${was.at ? ` at ${esc(was.at)}` : ""}${was.tz ? ` (${esc(was.tz)})` : ""}</div>`;
     return field("engagement", html);
   }
@@ -226,7 +229,7 @@ const IntendedMachines = (() => {
     const items = it[f] || [], gone = removed(it, f), plus = new Set(added(it, f));
     if (!items.length && !gone.length) return '<span class="muted">none declared</span>';
     const one = (t, i) => {
-      const extra = (guessed(it, f, i) ? guess : "") + (f === "emits" && !observedListeners.has(t) ? `${observedListeners.published.has(t) ? "" : '<span class="im-tag im-t-ghost">new type</span>'}<span class="muted">nobody listens for it yet</span>` : "")
+      const extra = (guessed(it, f, i) ? guess() : "") + (f === "emits" && !observedListeners.has(t) ? `${observedListeners.published.has(t) ? "" : '<span class="im-tag im-t-ghost">new type</span>'}<span class="muted">nobody listens for it yet</span>` : "")
         + (f === "receives" && !observedListeners.published.has(t) ? '<span class="im-tag im-t-ghost">new type</span><span class="muted">nobody publishes it yet</span>' : "");
       return `<span class="im-chipgrp">${chip(t, plus.has(t) ? "add" : null, extra)}</span>`;
     };
@@ -235,7 +238,7 @@ const IntendedMachines = (() => {
   function reads(it) {
     const r = it.reads || [];
     if (!r.length) return '<span class="muted">nothing declared</span>';
-    return `<div class="im-chips">${r.map((k, i) => `<a class="ty im-metric" href="/dynamics#s:${encodeURIComponent(k)}">${esc(k)}</a>${guessed(it, "reads", i) ? guess : ""}`).join("")}</div>`;
+    return `<div class="im-chips">${r.map((k, i) => `<a class="ty im-metric" href="/dynamics#s:${encodeURIComponent(k)}">${esc(k)}</a>${guessed(it, "reads", i) ? guess() : ""}`).join("")}</div>`;
   }
   function effect(it) {
     const ee = it.expected_effect;
@@ -273,16 +276,15 @@ const IntendedMachines = (() => {
     const it = m.intent, asked = ASKED[m.id] || it.requested, p = it.provenance || {};
     const when = p.at ? ` · ${ago(now() - p.at)} ago` : "";
     // who listens for the request on the bus: the waiting line never promises an answer no machine can give
-    const REQ = "orchestra.intent.requested", hears = (t) => t === REQ || t === "*" || (t.endsWith(".*") && REQ.startsWith(t.slice(0, -1))) || t === "orchestra.*";
-    const listeners = list().filter((x) => (x.subscribes || []).some(hears)).map((x) => x.id);
+    const REQ = IntendedCore.REQ, listeners = IntendedCore.listenersOf(list()), a = IntendedCore.asker(listeners);
     const what = asked && asked.control ? ` to ${esc(words(asked.control === "switch_kind" ? "switch kind" : asked.control))}` : "";
     const waitText = () => (listeners.length
-      ? `<span class="im-waiting" title="the request is on the bus as ${REQ}; heard by ${esc(listeners.join(", "))}">asked the Supervisor${what}${asked.at ? ` ${esc(ago(now() - asked.at))} ago` : ""} · waiting</span>`
+      ? `<span class="im-waiting" title="the request is on the bus as ${REQ}; heard by ${esc(listeners.join(", "))}">${esc(a.asked())}${what}${asked.at ? ` ${esc(ago(now() - asked.at))} ago` : ""} · waiting</span>`
       : `<span class="im-waiting im-unheard-ask" title="the request is on the bus; no machine announced it listens for ${REQ}">asked${what} · on the bus as ${REQ}, but no machine listens for it yet</span>`);
     // confirm and discard wait while one of them was asked; a kind switch waiting leaves them
     const settling = asked && asked.control !== "switch_kind";
     const acts = (change) => settling && (!change || asked.change === change) ? waitText()
-      : `<span class="im-acts"><button class="ctl im-primary" title="asks the Supervisor to confirm it" onclick="IntendedMachines.request('confirm','${esc(m.id)}'${change ? `,'${esc(change)}'` : ""})">confirm</button><button class="ctl" title="asks the Supervisor to discard it" onclick="IntendedMachines.request('discard','${esc(m.id)}'${change ? `,'${esc(change)}'` : ""})">discard</button></span>`;
+      : `<span class="im-acts"><button class="ctl im-primary" title="${esc(a.title("confirm it"))}" onclick="IntendedMachines.request('confirm','${esc(m.id)}'${change ? `,'${esc(change)}'` : ""})">confirm</button><button class="ctl" title="${esc(a.title("discard it"))}" onclick="IntendedMachines.request('discard','${esc(m.id)}'${change ? `,'${esc(change)}'` : ""})">discard</button></span>`;
     let html = it.state === "proposed" ? `<div class="im-status"><span>${byWhom(it)} · unconfirmed</span>${acts(null)}</div>`
       : `<div class="im-status im-status-declared"><span>${byWhom(it)}${when} · confirmed</span></div>`;
     if (asked && asked.control === "switch_kind") html += `<div class="im-status im-pending-ask">${waitText()}</div>`;
@@ -300,7 +302,7 @@ const IntendedMachines = (() => {
   }
   function why(it) {
     const q = fresh(it) && (it.latest.quotes || []).length ? it.latest.quotes : (it.provenance || {}).quote ? [it.provenance.quote] : [];
-    const g = (it.guessed || []).length ? ` · ${[...new Set(it.guessed.map((x) => words(x.split("[")[0].replace(/^spec\./, ""))))].join(", ")} ${it.guessed.length === 1 ? "is" : "are"} the Supervisor's guess${it.guessed.length === 1 ? "" : "es"}` : "";
+    const g = (it.guessed || []).length ? ` · ${[...new Set(it.guessed.map((x) => words(x.split("[")[0].replace(/^spec\./, ""))))].join(", ")} ${it.guessed.length === 1 ? "is a guess" : "are guesses"}` : "";
     if (!q.length) return g ? `<div class="im-why muted">${g.slice(3)}</div>` : "";
     return `<div class="im-why muted">${fresh(it) ? "changed just now, " : ""}from your message${q.length > 1 ? "s" : ""}: ${q.map((x) => `<i>"${esc(x)}"</i>`).join(" and ")}${g}</div>`;
   }
@@ -309,12 +311,12 @@ const IntendedMachines = (() => {
     const listeners = new Set(d.machines.flatMap((x) => [...(x.subscribes || []), ...((x.intent && x.intent.receives) || [])]));
     listeners.published = new Set(d.machines.filter((x) => x.id !== m.id).flatMap((x) => (x.publishes || []).map((p) => p.type)));
     const tag = stateTag(m), switching = (ASKED[m.id] || it.requested || {}).control === "switch_kind", canSwitch = it.state === "proposed" && !switching;
-    const kind = field("kind", (canSwitch ? `<span class="im-seg big">${["universal", "programmatic"].map((k) => `<button class="${it.kind === k ? "on" : ""}" ${it.kind === k ? "disabled" : `onclick="IntendedMachines.request('switch_kind','${esc(m.id)}')"`} title="${it.kind === k ? "its kind" : "asks the Supervisor to switch it"}">${k === "universal" ? "Universal" : "Programmatic"}</button>`).join("")}</span>` : ind(["Universal", "Programmatic"], prog ? "Programmatic" : "Universal"))
-      + `<div class="muted im-note">${prog ? "a program: a command and its interface" : "described by what it achieves"}${canSwitch ? " · switching asks the Supervisor" : switching ? " · a switch was asked of the Supervisor: waiting" : ""}</div>`);
+    const kind = field("kind", (canSwitch ? `<span class="im-seg big">${["universal", "programmatic"].map((k) => `<button class="${it.kind === k ? "on" : ""}" ${it.kind === k ? "disabled" : `onclick="IntendedMachines.request('switch_kind','${esc(m.id)}')"`} title="${it.kind === k ? "its kind" : esc(A().title("switch it"))}">${k === "universal" ? "Universal" : "Programmatic"}</button>`).join("")}</span>` : ind(["Universal", "Programmatic"], prog ? "Programmatic" : "Universal"))
+      + `<div class="muted im-note">${prog ? "a program: a command and its interface" : "described by what it achieves"}${canSwitch ? ` · switching ${esc(A().some ? `asks ${A().who}` : A().ask())}` : switching ? " · a switch was asked: waiting" : ""}</div>`);
     const byInstruments = !it.heard && (it.attachments || []).length;
     const known = byInstruments ? "the instruments attached to it (Measured by, below)" : "its events";
     const managed = field("managed", ind(["orchestra", "external"], it.managed) + `<div class="muted im-note">${ext ? `runs elsewhere: known by ${known}` : "managed by orchestra"}</div>`);
-    const text = (f, label) => field(label, (it[f] ? box(it[f]) : '<span class="muted">none</span>') + (guessed(it, f) ? guess : "") + (f in before(it) ? '<span class="im-tag im-t-chg">changed just now</span>' : ""));
+    const text = (f, label) => field(label, (it[f] ? box(it[f]) : '<span class="muted">none</span>') + (guessed(it, f) ? guess() : "") + (f in before(it) ? '<span class="im-tag im-t-chg">changed just now</span>' : ""));
     const tags = field("tags", (it.tags || []).map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">none</span>');
     const body = prog
       ? `${engagementRow(it)}<div class="im-tabbody"><div class="muted im-tabnote">${cap(MODE_NOTE[(it.engagement || {}).mode] || "no engagement declared")}${ext ? "; it runs elsewhere" : ""}.</div>${spec(it, true) || '<span class="muted">nothing declared yet</span>'}</div>${text("title", "title")}${text("description", "description")}${tags}`
@@ -322,7 +324,7 @@ const IntendedMachines = (() => {
     const heard = it.heard;
     const insts = heard ? "" : `${h4("Instances")}<div class="muted">none heard on the bus</div>`;
     const tail = heard ? "" : `${measuredBy(m, d)}${h4("Flows (hypotheses)")}<div class="muted">none hypothesised yet${measuredOf(m) && measuredOf(m).measured ? ": a machine that is only measured gets none; its route to the model is an expected effect" : ""}</div>${ext ? `${h4("Log")}<div class="muted">not readable: it runs outside the repository and the state directory</div>` : ""}`;
-    const aliases = (it.alias_candidates || []).length ? `<div class="muted im-note">heard under another name? ${it.alias_candidates.map((a) => `<span class="ty">${esc(a)}</span>`).join("")} ${ask("ask the Supervisor to join them")}</div>` : "";
+    const aliases = (it.alias_candidates || []).length ? `<div class="muted im-note">heard under another name? ${it.alias_candidates.map((a) => `<span class="ty">${esc(a)}</span>`).join("")} ${ask("join them")}</div>` : "";
     return `<div class="im-head"><span class="dot im-dashdot" style="--rc:${mcolor(m.id)}"></span><b>${esc(it.title || m.id)}</b><span class="im-tag ${tag.cls}">${tag.text}</span><button class="ctl im-close" onclick="IntendedMachines.close()" title="close the panel (Esc)">×</button></div>
       <div class="muted im-id">id and bus source <span class="ty">${esc(m.id)}</span>${heard ? ` <button class="ctl" onclick="openMachine('${esc(m.id)}',{dialog:true})">details and log</button>` : " · nothing has been heard under it"}</div>
       ${status(m)}${downLine(m)}${why(it)}${aliases}${kind}${managed}${body}
@@ -330,7 +332,7 @@ const IntendedMachines = (() => {
       ${h4("Emits")}${types(it, "emits", listeners)}
       ${h4("Reads")}${reads(it)}
       ${insts}${effect(it)}${tail}
-      <div class="muted im-foot">${byInstruments ? 'Measured, never heard: no "last seen", never "active". ' : ""}Every field is read-only: ${ask()} to change any of it.${it.state === "proposed" ? " Confirm asks the Supervisor." : ""}</div>`;
+      <div class="muted im-foot">${byInstruments ? 'Measured, never heard: no "last seen", never "active". ' : ""}Every field is read-only: ${ask("change any of it")}.${it.state === "proposed" && A().some ? ` Confirm asks ${esc(A().who)}.` : ""}</div>`;
   }
   // a machine nothing declared: what the bus observed of it, and its dialog for the rest
   function observedPanel(m) {
@@ -403,7 +405,7 @@ const IntendedMachines = (() => {
     if (typeof render === "function") render();
     if (was && typeof CSS !== "undefined") { const n = document.querySelector(`g.ng-node[data-id="${CSS.escape("m:" + was)}"]`); if (n) try { n.focus({ preventScroll: true }); } catch (e) {} }
   }
-  // a request to the Supervisor: shown as waiting at once, then as the server notes it (``requested``)
+  // a request (to whichever machine listens for it): shown as waiting at once, then as the server notes it (``requested``)
   async function request(control, id, change) {
     ASKED[id] = { control, change: change || null, at: now() };
     if (typeof render === "function") render();

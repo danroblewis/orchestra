@@ -1,4 +1,4 @@
-"""Guides: what an AI operator (the Supervisor) reads to configure Orchestra and its plugins.
+"""Guides: what an AI operator (a plugin's machine) reads to configure Orchestra and its plugins.
 
 Orchestra's own guide (``guide.md`` beside this module) comes first, then each loaded plugin's
 (``Plugin.guide``), in the order the plugins loaded. A guide is decision knowledge, not a

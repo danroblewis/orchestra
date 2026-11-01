@@ -1,10 +1,10 @@
 """The owner's requests from the pages (§6.2): a machine's or an attachment's ``confirm``,
 ``discard`` and ``switch_kind`` change nothing; the web server publishes each as
 ``orchestra.intent.requested`` with ``source`` ``owner`` and ``data`` ``{control, part, id, change,
-from}``, and the Supervisor answers by ``apply``-ing with ``provenance.request`` the request's event
+from}``, and the machine that listens for it (a plugin's) answers by ``apply``-ing with ``provenance.request`` the request's event
 id. The web server notes each request in ``requests.jsonl`` before it publishes it (the event's id
-chosen first), so a plugin answering at once finds it open, and the page can show "asked the
-Supervisor · waiting" without reading the bus; a request whose publish failed is taken out again.
+chosen first), so a plugin answering at once finds it open, and the page can show "asked <machine> ·
+waiting" without reading the bus; a request whose publish failed is taken out again.
 
 A request is answered once an accepted call's op answered it (the journal line's ``answered``,
 filled by ``consent.verified``), not merely cited it. It stays open only while it can still be
@@ -28,6 +28,17 @@ OWNER = "owner"
 CONTROLS = ("confirm", "discard", "switch_kind")
 PARTS = ("machine", "attachment")
 SETTLES = ("confirm", "discard")
+
+
+def listens(t: str) -> bool:
+    """Whether a type a machine announced it listens for takes in an owner's request."""
+    return t in (REQUESTED, "*", "orchestra.*") or (t.endswith(".*") and REQUESTED.startswith(t[:-1]))
+
+
+def askers(machines: list[dict]) -> list[str]:
+    """The machines (as the Machines page lists them) that listen for the owner's requests: who a
+    page names when it says to ask, the same rule as the pages' (static/intended-core.js)."""
+    return sorted(m["id"] for m in machines if any(listens(t) for t in m.get("subscribes") or ()))
 
 
 def check(body: dict) -> dict:

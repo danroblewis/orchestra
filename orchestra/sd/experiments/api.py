@@ -1,4 +1,4 @@
-"""The experiments' Python API, for any machine (the agents' host, other Python machines), and
+"""The experiments' Python API, for any machine (a plugin's host, other Python machines), and
 the one the HTTP API (``orchestra.endpoint.api``) calls, so both answer alike: every method takes
 and returns plain JSON-able values.
 

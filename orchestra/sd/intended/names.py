@@ -4,7 +4,7 @@ predicts (``diff.predicted``). An edit's ``stock``, ``from`` and ``to`` name, in
 
 1. a declared stock or effect, by its id: resolved through its ``found_as``, and unresolved
    while it has none: "waits for a link" when its measure has a chosen option (something records
-   it, and the Supervisor links it once that is the stock), else "waits for a series";
+   it, and the operator (a plugin's machine) links it once that is the stock), else "waits for a series";
 2. a discovered stock, by its key (§3.1).
 
 Anything else, a discovered id included, is "not in the model": ids follow arrival order, so a

@@ -1,13 +1,13 @@
 # Configuring Orchestra: the operator's guide
 
-For an AI operator (the Supervisor) setting up Orchestra in the owner's repository. It says what
+For an AI operator (a plugin's machine) setting up Orchestra in the owner's repository. It says what
 each setting is for, when to choose each value, how they interact, the pitfalls, how to check a
 setting took, and which choices are the owner's. Each installed plugin has a guide of its own
 (`GET /api/guides` lists them all). Full reference: `USING_ORCHESTRA.md` in Orchestra's
 repository.
 
 Orchestra is an event bus, a metrics store and a system dynamics model discovered from the
-metrics. It runs no AI and knows no tickets: plugins add those. What you configure here is
+metrics. It runs no AI and knows no domain: plugins add one. What you configure here is
 **what is measured** (instruments), **what is kept running** (machines), **where events and
 metrics live**, and **how the model is discovered**.
 
@@ -72,7 +72,7 @@ Propose these, say what follows from each, and wait for the owner:
   `[[sources]]` read of a store that bills per query, instruments that hit paid APIs. (Reading a
   store the owner asked you to connect is not one: it is observation; see "Two stores, and a busy one".)
 - Credentials: which environment variable or file holds one. Never ask for the value itself.
-- Anything a plugin's guide marks as the human's (letting agents change code, outbound messages).
+- Anything a plugin's guide marks as the human's (letting a plugin change code, outbound messages).
 
 ## `[events]` and `[metrics]`: where they live
 
@@ -111,7 +111,7 @@ stall_share = 0.1          # an outflow below this share of its usual rate count
 
 `orchestra.model.stalled` (subject `stock:<id>` or `flow:<id>`) and `orchestra.machine.quiet`
 (subject the machine) are what a flow keeper wakes on. Lengthen `stall_after` for a slow system
-(tickets move in hours: `"2h"`), or stalls fire on ordinary pauses; never shorten it below a few
+(items move in hours: `"2h"`), or stalls fire on ordinary pauses; never shorten it below a few
 `step`s. A stall needs the history on both sides of the window: a new stock is not judged for
 `stall_after` plus a little after it first appears.
 
@@ -124,7 +124,7 @@ time, beating the same search on the level shifted in time, on enough points; an
 carries a trust score from 0 to 1 (`evidence.trust`: its weakest measurement), shown beside it on
 the Dynamics page. Read the score before acting on a stock: a net flow at 0.2 is a correlation
 the data happen to show, not a finding. A demo wants a short window and
-a fine step (`window = "10m"`, `step = "5s"`); a slow system (tickets, deploys) a longer window.
+a fine step (`window = "10m"`, `step = "5s"`); a slow system (orders, deploys) a longer window.
 `every` below a minute costs CPU for little: discovery's deadline is 80% of it. Discoveries never
 overlap: the host starts one every `every`, or a fifth of `every` after the last one ended when it
 took longer, and logs how long each took and whether the strategy was stopped at its deadline
@@ -179,7 +179,7 @@ timeout = "6m"
   `go test -json ./... 2>&1 | go-junit-report -parser gojson > {report}` (needs
   `go-junit-report`). Use the environment the project uses: `uv run pytest` with a `uv.lock`,
   `poetry run pytest` with `poetry.lock`, `.venv/bin/pytest`, `hatch run test`, the `test` script
-  in `package.json`, the test target of a `Makefile`; the CI workflow (`.github/workflows/*.yml`)
+  in `package.json`, the test target of a `Makefile`; the CI configuration (`.github/workflows/*.yml`, `.gitlab-ci.yml`)
   shows the command the team trusts.
 - **Kinds.** Defaults, tried after any `--kind`: `e2e=*e2e*`, `acceptance=*acceptance*`,
   `unit=*`, as globs over the test's path, so `tests/e2e/` and `tests/acceptance/` sort
@@ -351,7 +351,7 @@ before a source exists):
    what you know of the exporter; where it is wrong, pin the series. A counter is a flow (read as
    its increase each step); a gauge may be a stock.
 3. **Find the stock candidates.** A good stock is a gauge of an amount that accumulates and
-   drains (a queue's depth, items in progress, open tickets, a balance), with counters beside it
+   drains (a queue's depth, items in progress, open items, a balance), with counters beside it
    that fill and drain it (`enqueued_total`, `processed_total`). Discovery makes a stock of a level
    whose changes the counters explain; a level with no counter that moves with it is a measured
    input at best. Rates and ratios (latency, utilisation, `_p95`, percent) are never stocks:
