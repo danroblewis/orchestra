@@ -55,3 +55,16 @@ def test_sum_by_name_keeps_one_series_per_metric():
     out = run('sum by (__name__) ({project="p"})', start=2400, end=2400)
     assert out == {"__name__=orchestra_flow_total": [(2400, 10)], "__name__=orchestra_stock": [(2400, 7)]}
     assert run('sum without (flow, stock) ({project="p"})', start=2400, end=2400) == {"project=p": [(2400, 17)]}
+
+
+def test_the_file_store_answers_query_range_for_one_project(tmp_path):
+    from orchestra.metrics import MetricsError, Point
+    from orchestra.metrics.file import FileMetrics
+
+    store = FileMetrics(tmp_path / "m.jsonl")
+    store.write([Point(n, v, t, {"project": p}) for n, v, p in (("a_total", 1.0, "p"), ("b_level", 5.0, "p"), ("a_total", 9.0, "q"))
+                 for t in (0, 600)])
+    out = {lab["__name__"]: pts for lab, pts in store.query_range('sum by (__name__) ({__name__=~".+"})', 0, 600, 600, {"project": "p"})}
+    assert out == {"a_total": [(0, 1.0), (600, 1.0)], "b_level": [(0, 5.0), (600, 5.0)]}
+    with pytest.raises(MetricsError, match=""):
+        store.query_range("sum by (", 0, 600, 600, {"project": "p"})

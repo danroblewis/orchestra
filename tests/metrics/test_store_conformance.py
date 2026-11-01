@@ -111,3 +111,22 @@ def test_recent_reads_only_series_with_a_point_since_and_their_last_points(store
     assert sorted(lab["job"] for _, lab, _ in deploys) == ["deploy-api", "deploy-web"], "=~ matches the whole value"
     assert store.recent("pg_", [*mine, ("job", "=", "postgres")], since=1300) == []
     assert [n for n, _, _ in store.recent("", mine, since=1215)] == ["build_seconds", "pg_up"]
+
+
+def test_query_range_is_scoped_to_the_labels_and_refuses_a_bad_query(store):
+    from orchestra.metrics import MetricsError
+    now = time.time()
+    t0 = now - 600
+    store.write([P(store, "conf_disk_bytes", 10 + i, t0 + 60 * i, disk="a") for i in range(10)]
+                + [P(store, "conf_disk_bytes", 100.0, t0 + 60 * i, disk="b") for i in range(10)]
+                + [Point("conf_disk_bytes", 999.0, t0 + 60 * i, {"project": "someone-else", "disk": "a"}) for i in range(10)])
+    try:
+        out = store.query_range("sum by (__name__) (conf_disk_bytes)", t0 + 300, t0 + 540, 60, {"project": store.project})
+        assert len(out) == 1
+        labels, pts = out[0]
+        assert labels.get("__name__") == "conf_disk_bytes"
+        assert [v for _, v in pts] == [115.0, 116.0, 117.0, 118.0, 119.0]
+        with pytest.raises(MetricsError):
+            store.query_range("sum by (", t0, now, 60, {"project": store.project})
+    finally:
+        store.delete("conf_disk_bytes", {"project": "someone-else"})

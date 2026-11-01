@@ -79,6 +79,13 @@ class MetricsStore(Protocol):
     def delete(self, series_prefix: str, labels: dict[str, str] | None = None) -> None:
         """Remove every series whose name starts with ``series_prefix`` (and matches ``labels``)."""
 
+    def query_range(self, q: str, start: float, end: float, step: float, labels: dict[str, str] | None = None
+                    ) -> list[tuple[dict[str, str], list[tuple[float, float]]]]:
+        """Evaluate the PromQL ``q`` at every ``step`` from ``start`` to ``end`` over the series
+        that carry ``labels`` (a project's, say): (labels, [(t, v)]) per result series.
+        VictoriaMetrics evaluates it natively; elsewhere ``metrics.promql``'s subset does. Raises
+        ``MetricsError`` with the reason when the query is refused."""
+
     def close(self) -> None: ...
 
 

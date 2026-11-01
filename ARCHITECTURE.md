@@ -1025,8 +1025,6 @@ divided.
 **Known departures** (as of `69111d58`). These are places where the code goes further than the
 table above says. They are listed here so nobody relies on the rule being absolute:
 
-- `web/core_explore.py:_vm` sends the PromQL editor's queries straight to VictoriaMetrics' HTTP
-  API, not through `MetricsStore` (rule 5).
 - Some CLI commands change stored data beyond rediscovery: `metrics backfill` replaces the
   event counters, and `events copy` writes to another bus. The
   Core page's probe also appends an `orchestra.core.bus_probe` event (rule 9).

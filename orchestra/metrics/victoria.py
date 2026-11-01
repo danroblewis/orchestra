@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -44,6 +45,30 @@ class VictoriaMetrics:
                 return r.read()
         except OSError as e:
             raise MetricsError(f"VictoriaMetrics at {self.base}: {e}") from e
+
+    def query_range(self, q: str, start: float, end: float, step: float, labels: dict[str, str] | None = None
+                    ) -> list[tuple[dict, list[tuple[float, float]]]]:
+        """Natively, through ``/api/v1/query_range``, every selector held to ``labels``
+        (``extra_label``). A query VictoriaMetrics refuses raises ``MetricsError`` with its reason."""
+        params = {"query": q, "start": start, "end": end, "step": f"{int(step)}s",
+                  "extra_label": [f"{k}={v}" for k, v in sorted((labels or {}).items())]}
+        url = f"{self.base}/api/v1/query_range?{urllib.parse.urlencode(params, doseq=True)}"
+        try:
+            with urllib.request.urlopen(url, timeout=30) as r:
+                d = json.loads(r.read())
+        except urllib.error.HTTPError as e:       # it explains a bad query in the body
+            try:
+                why = json.loads(e.read()).get("error", str(e))
+            except ValueError:
+                why = str(e)
+            raise MetricsError(why) from None
+        except OSError as e:
+            raise MetricsError(f"VictoriaMetrics at {self.base}: {e}") from e
+        if d.get("status") != "success":
+            raise MetricsError(d.get("error", "query failed"))
+        if d["data"]["resultType"] != "matrix":
+            raise MetricsError(f"the query returned a {d['data']['resultType']}, not series")
+        return [(res["metric"], [(float(t), float(v)) for t, v in res["values"]]) for res in d["data"]["result"]]
 
     def write(self, points: list[Point]) -> None:
         points = refuse_future(points, self.name, self.future_skew)

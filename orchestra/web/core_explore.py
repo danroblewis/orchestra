@@ -7,16 +7,12 @@ slow or broken backend shows as an error on its panel instead of hanging the pag
 
 from __future__ import annotations
 
-import json
 import math
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from collections import Counter, defaultdict
 
 from ..events import event_time, for_an_instrument
-from ..metrics import promql
+from ..metrics import MetricsError
 
 MAX_LINES = 30
 NICE_STEPS = [15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400]
@@ -110,8 +106,9 @@ class Explorer:
         return self._guard(go)
 
     def query(self, q: str, hours: float) -> dict:
-        """Run a PromQL range query over the last ``hours``, scoped to this project: natively on
-        VictoriaMetrics (with ``extra_label``), with ``metrics.promql``'s subset elsewhere."""
+        """Run a PromQL range query over the last ``hours``, scoped to this project, through the
+        metrics store (``MetricsStore.query_range``: natively on VictoriaMetrics, with
+        ``metrics.promql``'s subset elsewhere)."""
         def go():
             m = self.core.metrics
             if m is None:
@@ -119,38 +116,16 @@ class Explorer:
             end = time.time()
             start = end - hours * 3600
             step = auto_step(end - start)
-            if m.name == "victoriametrics":
-                result = self._vm(m, q, start, end, step)
-                if "error" in result:
-                    return {"ok": False, "error": result["error"]}
-            else:
-                try:
-                    result = [(lab, pts) for lab, pts in promql.query_range(self._dump(), q, start, end, step)]
-                except promql.PromQLError as e:
-                    return {"ok": False, "error": str(e)}
+            try:
+                result = m.query_range(q, start, end, step, {"project": self.core.project.key})
+            except MetricsError as e:
+                return {"ok": False, "error": str(e)}
             hide = {"project"}
             lines = [{"label": _label(lab, hide) or q, "points": [[t, v] for t, v in pts]} for lab, pts in result]
             lines.sort(key=lambda ln: -max((v for _, v in ln["points"]), default=0))
             return {"ok": True, "lines": lines[:MAX_LINES], "matched": len(lines), "step": step,
                     "engine": "victoriametrics" if m.name == "victoriametrics" else "orchestra (PromQL subset)"}
         return self._guard(go)
-
-    def _vm(self, m, q: str, start: float, end: float, step: float):
-        params = urllib.parse.urlencode({"query": q, "start": start, "end": end, "step": f"{int(step)}s",
-                                         "extra_label": f"project={self.core.project.key}"})
-        try:
-            with urllib.request.urlopen(f"{m.base}/api/v1/query_range?{params}", timeout=8) as r:
-                d = json.loads(r.read())
-        except urllib.error.HTTPError as e:      # VictoriaMetrics explains a bad query in the body
-            try:
-                return {"error": json.loads(e.read()).get("error", str(e))}
-            except ValueError:
-                return {"error": str(e)}
-        if d.get("status") != "success":
-            return {"error": d.get("error", "query failed")}
-        if d["data"]["resultType"] != "matrix":
-            return {"error": f"the query returned a {d['data']['resultType']}, not series"}
-        return [(res["metric"], [(float(t), float(v)) for t, v in res["values"]]) for res in d["data"]["result"]]
 
     # ---- events ----
     def _events(self):

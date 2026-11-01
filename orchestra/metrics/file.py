@@ -15,7 +15,7 @@ import json
 import threading
 from pathlib import Path
 
-from . import Point, matchers_of, matches, refuse_future, step_sample
+from . import MetricsError, Point, matchers_of, matches, refuse_future, step_sample
 
 
 class _Series:
@@ -158,6 +158,13 @@ class FileMetrics:
             found = self._select(lambda n: n.startswith(prefix), labels)
             out = [(n, dict(s.labels), list(s.sorted_points())) for n, s in found]
         return sorted(out, key=lambda g: (g[0], sorted(g[1].items())))
+
+    def query_range(self, q, start, end, step, labels=None):
+        from .promql import PromQLError, query_range
+        try:
+            return query_range(self.dump("", labels), q, start, end, step)
+        except PromQLError as e:
+            raise MetricsError(str(e)) from e
 
     def recent(self, prefix, matchers=None, since=0.0, keep=1):
         want = matchers_of(matchers)
