@@ -386,6 +386,8 @@ their own (they are recorder facts, on no bus); a gap in the error-rate series c
 The test: the three checks; a scripted gap in the error-rate series resets the condition's
 duration, and the item's page names the `metric:<series>` fact that moved it.
 
+Status (2026-11-01, X3, orchestra-workflows branch X34, `examples/on_call`): built; e2e (six alerts relayed as `bot.pagerduty` from a scripted fake Prometheus world: two disqualified by the `impact_analysis` program, one recovered by the metric `on`, three confirmed by a gauge done-when, above 0.05 for 30 s with exit 0.03, whose run a 7 s gap in the series restarts; the triage comment as `bot.triage` with a `within` guard raising attention once; fixer; `runbook_check` writing `runbooks/<alert>.md`) and model acceptance pass. Discovery finds the eight piles that hold alerts by construction (the two waits' held piles never hold and are left out), all eleven moves as flows, analysed's two ways out (the metric-gated branch), the error ratio only as an input (it fits the alerts' arrival, not the metric moves), no flow or stock of the metric facts, and `runbook_entries` fed by runbook → end. Differences: steps are analyse, analysed (the metric gate), awaiting_triage, fixing, runbook (no decide; no fix → decide loop, so no loop is expected); durations scaled to seconds; the triage comment's subject is the alert itself (no relation to its Jira ticket). Needed in the plugin: an outside `who` naming a relayed source (`bot.triage`).
+
 ## UC-10: release-candidate verification (M5's X4; `examples/rc-verification`)
 
 Some companies "have Release Candidates and Release Candidate verification steps" (the owner, D21).
@@ -408,6 +410,8 @@ the candidates' network (it may be read as the limit, never balance the piles).
 Needs beyond W5: person offers.
 The test: the three checks; with three candidates in verify at once, one waits with "no unit" and
 is offered when a unit is reset and freed.
+
+Status (2026-11-01, X4, orchestra-workflows branch X34, `examples/rc_verification`): built; e2e (six candidates asked for at once; cut, checks in a `staging` unit of capacity 1 (not 2) whose make/reset/release scripts manage a directory, verifying by a scripted verifier in the same unit, rejected or failed → cut with a `rounds` guard raising attention once, release as an outside wait on `release.approved` from `person.release_manager`, scripted, who tags `v1.0.<n>`) and model acceptance pass; the queue waits in `checks.waiting` with "no unit" and the held piles never hold more than one. Discovery finds the seven piles that hold candidates by construction, all ten moves as flows, the rework cycle back to cut in the flows, the staging pool by state never a stock, and `git_release_tags` fed by release → end. No loop is named: the claim into `checks.held` is fitted on the floor's open offers (an input), so no chain of influences closes and the staging limit is not what the form reads (W6's limit). Differences: a rejection is rework to cut, not an end; started by request, not `every`.
 
 ## UC-11: hotfixes across release branches (M5's X5; `examples/hotfixes`)
 
