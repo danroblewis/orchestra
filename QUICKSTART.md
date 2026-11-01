@@ -135,5 +135,6 @@ To leave a plugin out, drop its name from the brackets and run the install again
 | An instrument writes nothing | Instruments page: its last error. Try its command by hand in the repository. |
 | No model on Dynamics | Read why each series was left out on the Dynamics page; a level that never changes is never a stock. |
 | A plugin's command is missing from `orchestra --help` | The install line was missing its name. Run it again, complete. |
+| A graph or the Dashboard's grid stays blank | The core pages need no outside address: d3, elkjs and GridStack ship with Orchestra (`orchestra/web/static/vendor/`). Reload with the browser's cache bypassed; a plugin's page may still load its own from the internet. |
 
 More: [USING_ORCHESTRA.md](USING_ORCHESTRA.md) (the full guide), [PLUGINS.md](PLUGINS.md) (writing plugins), [ARCHITECTURE.md](ARCHITECTURE.md).
