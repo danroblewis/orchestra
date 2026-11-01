@@ -151,8 +151,8 @@ const IntendedMachines = (() => {
         declaredRows(it, row);
       }
       // the declared kind is the declaration's, said apart from a kind an instance announced
-      const eng = row("engaged");
-      if (eng && it.kind && !Object.keys(m.kinds || {}).length && eng.children.length >= 4) { eng.children[2].textContent = "declared as"; eng.children[3].innerHTML = `<span class="tag">${esc(cap(it.kind))}</span>`; }
+      const kr = row("kind");
+      if (kr && it.kind && !Object.keys(m.kinds || {}).length && kr.children.length >= 2) { kr.children[0].textContent = "declared as"; kr.children[1].innerHTML = `<span class="tag">${esc(cap(it.kind))}</span>`; }
       const plus = new Set([...added(it, "receives"), ...added(it, "emits")]), minus = new Set([...removed(it, "receives"), ...removed(it, "emits")]);
       if (plus.size || minus.size) card.querySelectorAll(".ty").forEach((c) => { const t = c.textContent.trim().split(" · ")[0];
         if (plus.has(t)) c.classList.add("im-chip-add"); });
