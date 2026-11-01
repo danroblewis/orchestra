@@ -8,8 +8,8 @@ of taking the page down.
 
 Components:
 - **bootstrap host**: the ``orchestra run`` process (Orchestra's own machine) and this web process;
-- **event bus**: reads the stream's end and latest events; ``write_probe`` appends a ``bus_probe``
-  event and reads it back by offset;
+- **event bus**: reads the stream's end and latest events; ``write_probe`` appends an
+  ``orchestra.core.bus_probe`` event and reads it back by offset;
 - **metrics store**: writes the probe's own measurements as ``orchestra_core_*`` series and reads
   them back until they are visible, so every probe proves the write and the read path.
 

@@ -2257,6 +2257,7 @@ All from `source = "orchestra-host"`. Nothing is published for an instrument.
 | `orchestra.process.started` | `name`, `pid`, `command`, `owner` |
 | `orchestra.process.exited` | `name`, `pid`, `code`, `restart_in` (seconds, or null) |
 | `orchestra.process.gave_up` | `name`, `code`, `failures` |
+| `orchestra.core.bus_probe` | `note`: the web server's Core page probe, appended and read back by offset |
 
 ### Series Orchestra writes
 

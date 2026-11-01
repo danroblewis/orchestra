@@ -1732,6 +1732,9 @@ it. Pages read only the web server's background caches
   metrics (a catalogue of every series with the project's label, naming any series in the file
   store that lacks it, and a PromQL editor) and the events (types, volumes, sources); logs (the
   host's, Core's, the event stream and each launched process's). It imports only the bus, the metrics store and the runtime record.
+  Its bus probe appends an `orchestra.core.bus_probe` event (`data` `note`, from `orchestra-host`)
+  and reads it back by offset: the web server's own event type, beside the owner's
+  `orchestra.intent.requested`.
   A launched process's log (the launcher's own `<state>/logs/machines/<name>.log`, for a project's
   `[[machines]]` and a plugin's `Plugin.processes` alike) is opened from its row in the host card
   (with its last exit code and restarts, and a mark when the log's last lines look like an error or

@@ -1,19 +1,19 @@
 """A project's overrides: a fix to an installed package, kept in the project until the package's own
-release has it (docs/proposals/agent-first-machines.md §10.1). Orchestra's environments are not
+release has it (SPEC §10.1). Orchestra's environments are not
 editable installs, so a bug in an installed plugin is patched here, by file, and reported upstream.
 
 An override is ``.orchestra/overrides/<name>.py``, loaded by file location as
 ``orchestra_local.overrides.<name>`` (AGENTS.md rule 10: never by adding to ``sys.path``)::
 
-    TARGET = "tasking.gate:run_specs"       # module:attribute, the name it replaces
-    PACKAGE = "orchestra-tasking==0.9.2"    # applied only while exactly this version is installed
+    TARGET = "somepkg.module:function"      # module:attribute, the name it replaces
+    PACKAGE = "somepkg==1.2.3"              # applied only while exactly this version is installed
     KIND = "wrap"                           # wrap | replace
-    ISSUE = "danroblewis/orchestra-tasking#41"   # where the fix is asked for upstream (optional)
+    ISSUE = "<owner>/<repo>#<n>"            # where the fix is asked for upstream (optional)
 
     def override(original):                 # KIND = "wrap": called once with the original,
-        def run_specs(*a, **kw):            # returns what takes its place
+        def function(*a, **kw):             # returns what takes its place
             ...
-        return run_specs
+        return function
 
 With ``KIND = "replace"``, ``override`` itself takes the attribute's place (it has the target's
 signature) and the original is not passed.

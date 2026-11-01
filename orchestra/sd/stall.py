@@ -1,5 +1,5 @@
-"""When work stops moving (the flow-keeping signal of docs/proposals/agent-first-machines.md §5.1):
-Orchestra says so in terms of the model alone, stocks and flows, never what they mean (rule 1).
+"""When work stops moving (``orchestra.model.stalled``, SPEC §4.3): Orchestra says so in terms of
+the model alone, stocks and flows, never what they mean (rule 1).
 
 From the history read after each discovery (each stock's level, each flow's rate; reading series,
 no simulator), over the last ``window_s`` (``[discovery] stall_after``):

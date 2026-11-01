@@ -1,5 +1,4 @@
-"""A machine gone quiet on the bus (the flow-keeping signal of
-docs/proposals/agent-first-machines.md §5.1): the host says so with ``orchestra.machine.quiet``,
+"""A machine gone quiet on the bus (SPEC §5): the host says so with ``orchestra.machine.quiet``,
 published as itself (``orchestra-host``), its ``subject`` the machine and its ``data``
 ``{machine, instance, last_seen, usual_gap, quiet_for, mode}``.
 
