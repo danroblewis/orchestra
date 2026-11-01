@@ -598,10 +598,12 @@ Conservation (`sd/discover.py`):
    is there (a state sampled coarsely misses the items that come and go between its writes, and
    so do the counters' totals at those writes; a pile that reads empty while the counters say an
    item is in, or moves while they say nothing moved, is another state), whose matched rises
-   and falls moved at least a quarter of the items the counters moved, or so many that chance
-   would give them less than once in a thousand (one rise and one fall at a passage that moved
-   26 items each way, 2 of 52, is chance; the bakery's 11 of 77 orders accepting, written every
-   5 s, is not), and that
+   and falls moved at least a quarter of the items the counters moved, or else beat chance (a
+   binomial tail over its rises and its falls, each matched by chance with the share of its own
+   writes within the tolerance after an event, below one in a thousand: the bakery's 11 of 77
+   orders accepting) or read the items its writes could not have missed, one at least (UC-2's
+   REJECTED, seen once at any step; one rise and one fall of 2 of 52 written every 149 s, or a
+   flag on its own clock beside a busy counter, do neither), and that
    both rose and fell by at least one in the window (the test
    is by magnitude, in the level's own unit, whatever that is: a level that only rises, the test
    reports read, 5 to 10, is a tally; one whose moves are all under one, a gate's duration of
