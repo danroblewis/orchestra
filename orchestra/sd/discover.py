@@ -26,7 +26,7 @@ equation of each flow, and the machine behind each flow:
    evidence that holds (``sd.accept``, ``sd.identify``): its counters chosen again on each half of
    the window, and, short of exact, its choice on one half predicting the other, its running residual
    reproducing the level, and a shift null of the same search priced against it. A count of reporters
-   balanced by its own turnover is a balance by construction (``sd.construction``), and so is a pile
+   balanced by its own turnover is a balance by construction (``sd.construction``), and so is a place's level
    balanced by its own moves, as its instrument declared them (``collect.views``): taken as declared,
    never searched for. Every stock records
    how far to trust it (``sd.stocktrust``); everything else is left out, with the reason. With every balance
@@ -838,7 +838,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
 
     # the stocks the operator declared ([[series]] stock and role): tried first, judged like any (sd.pins)
     pins, pin_problems = declared_stocks(series, provenance)
-    # a pile and its own moves, as their instrument declared them: one construction, recorded (sd.construction)
+    # a place's level and its own moves, as their instrument declared them: one construction, recorded (sd.construction)
     built = {s.key: t for s in series if not s.counter and s.key not in pins and (t := construction.terms(s, counters, provenance))}
     pinned: list = []                             # declared balances that fit: kept out of the restatements below
     pin_tried: dict[str, str] = {}                # a declared balance that did not fit, and how well it did
@@ -884,7 +884,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             continue
         masks[s.key] = steps
         if given := (pins[s.key].terms if s.key in pins else built.get(s.key)):
-            # the declared counters (or the pile's own moves), on the slowest one's writes when it
+            # the declared counters (or the place's own moves), on the slowest one's writes when it
             # is slower than the level, where all of them have data
             view = on_writes(s, blocks) if s.blocks is None and (blocks := slowest(given)) else s
             mine_steps = arrived(steps, [s, *(c for c, _ in given)], start, step)
@@ -1061,7 +1061,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     fid_of = {c.key: unique_id(_slug(c), writer_of(c), ids) for c in counters}
     by_counter = claims(found, sid_of, writer_of, {k: keep for k, (keep, _) in own_back.items()})
     flow_moves = moves(counters, by_counter, fid_of, writer_of)
-    # a move between piles is a flow by construction: its ends are its instrument's; its rate is still fitted
+    # a move between places is a flow by construction: its ends are its instrument's; its rate is still fitted
     built_moves = {c.key for s, terms, _, _ in found if s.key in constructed_ for c, _ in terms}
     through = {sid_of[k]: p for k, p in passed.items()}
     for mv in flow_moves:

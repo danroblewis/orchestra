@@ -104,8 +104,8 @@ Every event carries the **CloudEvents 1.0** envelope (`orchestra.events.envelope
 
 An event brought in from another system (a sync from its own log) keeps the `time` it happened
 there and an `id` stable across re-imports (`envelope(time=, id=)`), so a sync can tell what the
-bus already holds. Events written before the envelope (flat records with `ts`) stay readable; `event_time` and
-`event_source` read either shape.
+bus already holds. Events written before the envelope (flat records with `ts`) stay readable; `event_time`
+reads either shape.
 
 **Counted traffic.** A machine on another system's bus (a broker's producers and consumers, a
 Pub/Sub topic's publishers and subscribers) is known by counts, not events: a series a source
@@ -494,16 +494,16 @@ Conservation (`sd/discover.py`):
    stock only as a count of pods in a place (a deployment, node, namespace, service, job, phase or
    condition), marked `by_construction` with no R² and not counted in `discovery.stocks`; split by
    what happened to a request (an HTTP status code, a method, an outcome) it is left out. A
-   **pile** is the same construction declared by an instrument (§4.2): its level (`count` with a
-   `place`, `pile` among `construction.PLACES`) and the moves into and out of it come from one
-   record (the Workflows plugin's fold), so its balance is recorded, not fitted. Its own moves
-   (those whose entered or left label names the pile, in the same workflow) are its balance,
-   taken as declared before any search and never chosen; it is marked `by_construction` with no
-   R² and nil trust, kept whatever else it is split by (its instrument named its place), and its
-   moves are the flows between the piles, each marked `by_construction` in its `evidence`, two of
-   an instrument's moves never taken for one flow. The flows' rates are fitted like any other's:
-   they, the loops they close and agreement with an outside measurement are the evidence about
-   a pile, never its balance. A level an instrument says is an `aggregate` or an `age` is no
+   **place's level and its moves** are the same construction declared by an instrument (§4.2):
+   an instrument's count of a place and its moves, from one record (`count` naming its `place`
+   label, whatever that label is called), so its balance is recorded, not fitted. Its own moves
+   (those whose entered or left label names the place, every other label they share equal) are
+   its balance, taken as declared before any search and never chosen; it is marked
+   `by_construction` with no R² and nil trust, kept whatever else it is split by (its instrument
+   named its place), and its moves are the flows between the places, each marked
+   `by_construction` in its `evidence`, two of an instrument's moves never taken for one flow.
+   The flows' rates are fitted like any other's: they, the loops they close and agreement with
+   an outside measurement are the evidence about the place, never its balance. A level an instrument says is an `aggregate` or an `age` is no
    stock candidate. If the moves miss some of the level's changes, the level is searched like any
    other and the reason says what the construction fitted. A hidden
    state (no series measures it, step 3) records no R² either (`balance_r2` null, `measured`

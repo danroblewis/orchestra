@@ -195,10 +195,8 @@ def test_projects_do_not_see_each_other(make_bus):
 def test_events_facade_over_any_bus(make_bus):
     bus = make_bus()
     events = Events(bus=bus)
-    heard = []
-    events.subscribe(heard.append)
     ev = events.publish("bread.baked", {"loaves": 2}, source="oven", subject="batch-1")
-    assert heard == [ev] and ev["type"] == "bread.baked" and ev["specversion"] == "1.0"
+    assert ev["type"] == "bread.baked" and ev["specversion"] == "1.0"
     assert ev["source"] == "oven" and ev["subject"] == "batch-1" and ev["data"] == {"loaves": 2} and ev["id"] and ev["time"]
     got, nxt = events.read(0)
     assert got == [ev] and nxt == 1 == events.end(), "the envelope survives the round trip on every backend"

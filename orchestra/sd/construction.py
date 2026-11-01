@@ -13,14 +13,14 @@ report one lately, which no system holds, and it is left out.
 Which series are counts of reporters and their turnover is the source's to say: its definitions'
 views (``count``, ``starts``, ``stops``), passed to discovery as the reading's provenance.
 
-**Piles** are the other construction: an instrument that counts the items in each pile and every
-move between piles from one record (``items{place}`` and
+**Places** are the other construction: an instrument that counts the things in each place and every
+move between places from one record (``items{place}`` and
 ``item_moves_total{from, to}``, from one record) says so with its views
 (``orchestra.collect.views``): the level's ``count`` names its ``place`` label, a move's ``moves``
 names the labels of the place it ``starts`` (enters) and ``stops`` (leaves), or a counter is the
 ``starts`` or ``stops`` of one place. The level and its own moves are then one construction: every
-move into the pile adds one, every move out takes one, and the balance is recorded as it was
-declared (``terms``), never searched for and never fitted, its R² no evidence. The pile is kept as a
+move into the place adds one, every move out takes one, and the balance is recorded as it was
+declared (``terms``), never searched for and never fitted, its R² no evidence. The place is kept as a
 stock ``by_construction`` (an instrument's count names its place, so it is never left out for one),
 its moves are its flows, and the evidence about it is elsewhere: the fitted rates of its moves, the
 loops they make, and agreement with an outside measurement of the same quantity."""
@@ -32,7 +32,7 @@ MOVES_VIEW = "moves"
 TURNOVER_VIEWS = {"starts", "stops", MOVES_VIEW}
 # labels that say where reporters or items are held: a count of them split by these is a count of things in a place
 PLACES = {"deployment", "statefulset", "daemonset", "replicaset", "node", "namespace", "service", "job", "app", "phase",
-          "condition", "cluster", "zone", "region", "container", "workload", "pile"}
+          "condition", "cluster", "zone", "region", "container", "workload"}
 WRITERS = {"instrument", "machine", "source", "project", "instance"}
 
 
@@ -47,8 +47,8 @@ def _place(provenance: dict, level) -> str | None:
 
 
 def sign_of(level, counter, provenance: dict) -> int:
-    """How a counter moves a pile's level by construction: +1 a move into it, −1 a move out of it,
-    0 none of its own (another pile's, another workflow's, or no move at all)."""
+    """How a counter moves a place's level by construction: +1 a move into it, −1 a move out of it,
+    0 none of its own (another place's, or no move at all)."""
     place, rec = _place(provenance, level), provenance.get(counter.key) or {}
     if place is None:
         return 0
@@ -67,7 +67,7 @@ def sign_of(level, counter, provenance: dict) -> int:
 
 
 def terms(level, counters: list, provenance: dict) -> list:
-    """A pile's balance as its instrument declared it: its own moves, each with its sign; none for
+    """A place's balance as its instrument declared it: its own moves, each with its sign; none for
     a level that is no instrument's count of a place."""
     if _view(provenance, level.key) != COUNT_VIEW or _place(provenance, level) is None:
         return []
@@ -76,7 +76,7 @@ def terms(level, counters: list, provenance: dict) -> list:
 
 def constructed(level, terms: list, provenance: dict) -> bool:
     """Whether a level's balance is a count and its own turnover only: a count of reporters and the
-    reporters that started and stopped, or a pile and its own moves."""
+    reporters that started and stopped, or a place's level and its own moves."""
     if not terms or _view(provenance, level.key) != COUNT_VIEW:
         return False
     if _place(provenance, level) is not None:
@@ -100,7 +100,7 @@ def apart(a, b, provenance: dict) -> bool:
 
 
 # an instrument's views of a level that is no candidate for a stock, and why
-NO_LEVEL = {"aggregate": "its instrument says it is an aggregate (piles that overlap): never a stock",
+NO_LEVEL = {"aggregate": "its instrument says it is an aggregate (places that overlap): never a stock",
             "age": "its instrument says it is an age (how long the oldest has waited): never a stock"}
 
 

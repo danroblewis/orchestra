@@ -2,7 +2,7 @@
 
 A source's definitions say which of its series are a count and that count's turnover
 (``orchestra.sources.views``); an instrument (``[[collect]]``, ``[[scrape]]``, ``Plugin.collectors``)
-may say the same of its own series, because it knows how it made them. A pile's level and its moves
+may say the same of its own series, because it knows how it made them. A place's level and its own moves
 come from one record, so their balance holds by construction and is no evidence
 (``orchestra.sd.construction``)::
 

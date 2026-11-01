@@ -58,11 +58,8 @@ def by_pile(m):
     return {s.series.labels.get("pile"): s for s in m.stocks if s.series is not None and s.series.name == "workflow_pile_items"}
 
 
-def test_pile_is_a_place():
-    assert "pile" in PLACES
-
-
 def test_a_collector_with_views_makes_its_piles_stocks_by_construction():
+    assert "pile" not in PLACES                 # the place label is the instrument's own, honoured as declared
     dump = piles()
     prov = provenance(dump, {INSTRUMENT: parse(VIEWS)}, series_key)
     m = discover(dump, start=T0, end=T0 + MINUTES * 60, step=STEP, provenance=prov)

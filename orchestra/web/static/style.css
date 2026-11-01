@@ -145,4 +145,4 @@ g.ng-label:focus-visible .ng-elabel { fill:#fff; text-decoration:underline }
 
 
 /* no endless motion for a viewer who asked for less */
-@media (prefers-reduced-motion: reduce) { .ng-halo, .ng-flowdash, .flowdash, .evmap .halo { animation:none } }
+@media (prefers-reduced-motion: reduce) { .ng-halo, .ng-flowdash { animation:none } }

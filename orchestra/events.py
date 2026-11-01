@@ -12,13 +12,12 @@ Every event published now carries the **CloudEvents** envelope (``specversion`` 
 - ``data``: the payload, which belongs to the machines that use it; Orchestra never reads it.
 
 Events written before the envelope (flat dicts with ``ts`` and ``type``) stay readable:
-``event_time`` and ``event_source`` read either shape."""
+``event_time`` reads either shape."""
 
 from __future__ import annotations
 
 import os
 import uuid
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -64,11 +63,6 @@ def event_time(ev: dict) -> float | None:
         return None
 
 
-def event_source(ev: dict) -> str | None:
-    """The machine instance that emitted an event, when the event says so (CloudEvents ``source``)."""
-    return ev.get("source")
-
-
 def for_an_instrument(ev: dict) -> bool:
     """An announcement the host made on an instrument's behalf before 2026-10-27
     (``orchestra.machine.started`` with ``data.collector``): an instrument is not a machine
@@ -92,7 +86,6 @@ class Events:
         self.bus: EventBus = bus or FileBus(path)
         self.path = path
         self.source = source
-        self._subs: list[Callable[[dict], None]] = []
 
     @classmethod
     def for_project(cls, project: Project, source: str = HOST) -> Events:
@@ -100,20 +93,11 @@ class Events:
         return cls(project.events_file, bus=open_bus(url, project_key=project.key, file_path=project.events_file),
                    source=source)
 
-    def subscribe(self, fn: Callable[[dict], None]) -> None:
-        """Hear the events this process publishes (other processes read the bus by offset)."""
-        self._subs.append(fn)
-
     def publish(self, type: str, data: Any = None, *, source: str | None = None, **ext: Any) -> dict:
         """Publish one event with the CloudEvents envelope; ``ext`` takes subject, correlationid,
         causationid, and for an event brought in from another system its time and id."""
         ev = envelope(type, source or self.source, data, **ext)
         self.bus.append(ev)
-        for fn in list(self._subs):
-            try:
-                fn(ev)
-            except Exception:  # noqa: BLE001, S110 - a subscriber never breaks the publisher
-                pass
         return ev
 
     def emit(self, type: str, **data: Any) -> dict:

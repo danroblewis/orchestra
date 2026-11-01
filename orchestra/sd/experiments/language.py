@@ -163,7 +163,7 @@ def parse(text, *, stocks=(), inputs=(), params=None) -> Parsed:
             raise EquationError(f"unknown name {n}: not a stock ({_some(stocks)}), a measured input ({_some(inputs)}) "
                                 "or a parameter (give its value in params)")
 
-    def walk(node, in_lookup: bool = False):
+    def walk(node):
         count[0] += 1
         if count[0] > MAX_NODES:
             raise EquationError(f"an equation has at most {MAX_NODES} parts")

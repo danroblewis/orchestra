@@ -65,8 +65,3 @@ def normal(unit: str | None) -> str | None:
 def unit_of(name: str, labels: dict[str, str], declared: str | None = None) -> str:
     """The series' unit: its ``unit`` label, the unit declared for it, or its name's."""
     return normal(labels.get("unit")) or normal(declared) or from_name(name)
-
-
-def mixed(level_unit: str, counter_unit: str) -> bool:
-    """Whether a counter cannot be a term of a level's balance: their units differ."""
-    return level_unit != counter_unit
