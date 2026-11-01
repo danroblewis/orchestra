@@ -32,7 +32,6 @@ from pathlib import Path
 ID = re.compile(r"^x-[0-9a-f]{12}$")
 RUN = re.compile(r"^r-[0-9a-f]{12}$")
 MAX_LOG = 500
-STATUSES = ("draft", "committed", "discarded")
 
 
 class NotFound(LookupError):

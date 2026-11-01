@@ -87,8 +87,6 @@ class Definition:
     stock: dict = field(default_factory=dict)            # a declared stock's level or flow ({"name", "role"}; spec.DeclaredSeries)
 
 
-count_window = lookback
-
 
 def _by(fn: str, by_real: list[str], inner: str) -> str:
     return f"{fn} by ({', '.join(by_real)}) ({inner})" if by_real else f"{fn}({inner})"
