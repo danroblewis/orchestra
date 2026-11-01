@@ -1,9 +1,9 @@
 # Instruments on machines: the integration step
 
-Status: reviewed, 2026-11-01 (panel round 1, judge's verdict round 2); aligned to intended-model.md as of its round-1 revision. Nothing built. Proposal 5 of `design-backwards.md`
+Status: reviewed, 2026-11-01 (panel round 1, judge's verdict round 2); aligned to intended-model.md as of its round-1 revision; coverage pass 2026-11-01, aligned to intended-model.md as merged (round 3). Nothing built. Proposal 5 of `design-backwards.md`
 §7, written from that file's §5 and `design-backwards-notes.md` §9 (items 7 and 12, and "the
-invariants this touches") and §13.1. It builds on proposal 2 (`intended-model.md`, draft
-`f1fed34e`), which defines declared machines and the declared layer; §8 lists what is taken from
+invariants this touches") and §13.1. It builds on proposal 2 (`intended-model.md`, as
+merged), which defines declared machines and the declared layer; §8 lists what is taken from
 it.
 
 ## 1. Purpose
@@ -20,7 +20,7 @@ because this is the integration step. Because the Machines aren't likely to emit
 metrics, and because we would want to incorporate and model existing machines, we need to attach
 our measurement instruments to Machines. This is where we would do it."
 
-So an existing machine is **declared** (P2, kind `external`) as a placeholder on the map, and
+So an existing machine is **declared** (P2 §2, `managed: external`) as a placeholder on the map, and
 **instruments are attached to it**: through the Supervisor, the owner says which series measure
 which declared machine, and which of their labels counts its instances. The instrument still
 measures; the declared machine is where the measurement hangs on the map.
@@ -65,7 +65,7 @@ measured, and where on the map the owner hangs it. In particular:
 4. **An attachment never makes a machine.** The direction is name → series. A new value of the
    instance label adds an instance under the machine the owner declared, never a machine.
 
-**A declared id meets the observed names** by P2's alias (P2 §9, P5.b): the machine's id is the
+**A declared id meets the observed names** by P2's alias (P2 §6.3): the machine's id is the
 `source` it is expected under; when it is observed under another name (an observed `source`, or a
 counted `<prefix>.<name>`), `alias {machine, observed}` joins them, a declaration, never inferred.
 Joined, the observed facts win (rule 2), and the attachments stay.
@@ -124,20 +124,21 @@ attachment is made, with that reason.
 ## 3. How it is recorded, and how it is shown
 
 **Recorded** in P2's declared layer (`<state>/model/intended/`), never in `orchestra.toml`: the
-instrument is configuration (it runs), the attachment a declaration (what the owner believes). Two
-new ops of P2 §6.3, `propose_attachment {machine, instrument, match?, instance_label?}` and
+instrument is configuration (it runs), the attachment a declaration (what the owner believes). The
+ops P2 §6.3 lists for this proposal, `propose_attachment {machine, instrument, match?, instance_label?}` and
 `revise_attachment {id, set}`, with P2's `confirm`, `discard` and `retract` taking `part:
 "attachment"`; each carries P2 §4's provenance. An attachment is **proposed** or **declared** (P2
-§3), versioned with the rest of the declared map in P2's `dN` (P2 §9, P5.c), never with
-equations. **Measured** is a flag the comparison derives on read (P2 §9, P5.d), never stored or
+§3), versioned with the rest of the declared map in P2's `dN` (P2 §5), never with
+equations. **Measured** is a flag the comparison derives on read (P2 §5), never stored or
 versioned. A declared attachment that matches nothing is on P2's comparison as "attached, nothing
 measured"; a declared machine with neither events nor a measured attachment as "declared, neither
 heard nor measured".
 
-**Confirming and discarding are the Supervisor's**, in the plugin. P2's page controls (§6.2,
-`POST /api/intended/control`) write no attachment. The page's confirm and discard buttons, for
-attachments as for declared machines, publish the person's request as an event that the
-Supervisor acts on; no core route writes, confirms or discards one.
+**Confirming and discarding are the Supervisor's**, in the plugin. P2's page observations (§6.2,
+`POST /api/intended/control`) refuse an attachment. The page's confirm and discard buttons, for
+attachments as for declared machines, publish the person's request as an event
+(`POST /api/intended/request`, `orchestra.intent.requested`) that the Supervisor acts on; no core
+route writes, confirms or discards one.
 
 **The Machines page.** The surface is today's machine dialog (`static/machine-dialog.js`), or P2's
 details panel where P2 replaces it. A declared machine is drawn as P2 draws one (frame
@@ -204,7 +205,8 @@ opens". Attachments live there and need no wording of their own.
 
 **Rule 6 and rule 7's core do not move.** Rule 6 already says "Nothing declares the association,
 not configuration and not a plugin": an attachment is neither a flow nor an association, and test
-3 holds it by behaviour. Rule 7's core is that measurements are kept apart from machines so they
+3 holds it by behaviour. (P2 §8 adds a sentence to rule 6 on draft expected effects; nothing here
+touches it.) Rule 7's core is that measurements are kept apart from machines so they
 can test what we believe, and that stocks are discovered: the metrics are not changed, discovery's
 inputs are not changed, and the attachment is a belief the observed layer can contradict (nothing
 matched, the machine never heard). **Rule 9** holds: the core's pages show attachments and never
@@ -246,11 +248,12 @@ Unit (core):
     "attached, nothing measured"; the flag is never in a `dN` or the journal.
 13. With the metrics store unreachable, `/api/instruments` and `/api/machines` answer within their
     time limits, attachments listed, "series unknown".
-14. `POST /api/intended/control` with `part: "attachment"` writes nothing to the declared layer:
-    the button publishes a request event and changes nothing itself; no core route creates,
+14. `POST /api/intended/control` with `part: "attachment"` is refused with 400 (P2's test 15)
+    and writes nothing; the button publishes a request event (`POST /api/intended/request`, one
+    `orchestra.intent.requested`, no `dN`) and changes nothing itself; no core route creates,
     confirms or discards one.
 
-End to end, on the agents' demo with a declared `external` machine `postgres` and a `[[collect]]`
+End to end, on the agents' demo with a declared `managed: external` machine `postgres` and a `[[collect]]`
 script printing `pg_connections{server="db-1"}` and `{server="db-2"}` every 10 s:
 
 15. After one round, `/api/machines` shows `postgres` measured, never heard, two instances;
@@ -266,17 +269,18 @@ instrument-writing (P4's `add_instrument`), and new mockup frames.
 
 ## 8. What this takes from P2
 
-From P2 `f1fed34e`; if P2 changes, this follows.
+From P2 as merged (round 3); if P2 changes, this follows.
 
-- **Declared machines** (P2 §2): id = the expected `source`, kind `external` for machines
-  Orchestra does not run.
-- **Aliases** (P5.b): `alias {machine, observed}` joins a declared id to an observed or counted
+- **Declared machines** (P2 §2): id = the expected `source`; `kind` ∈ `universal | programmatic`,
+  `managed: external` for machines Orchestra does not run (with any engagement).
+- **Aliases** (§6.3): `alias {machine, observed}` joins a declared id to an observed or counted
   name.
-- **Store, ops and provenance** (§4, §5, §6.3): this proposal adds `propose_attachment` and
-  `revise_attachment`, and `part: "attachment"` for `confirm`, `discard`, `retract`.
-- **Versioning** (P5.c): attachments in `dN`, apart from equations.
-- **Derived on read** (P5.d): `measured` and `instances` computed by the comparison, never stored.
-- **Persistence** (P5.e): a proposed attachment stays until confirmed or discarded.
+- **Store, ops and provenance** (§4, §5, §6.3): P2 lists `propose_attachment` and
+  `revise_attachment` on the same `apply`, and `part: "attachment"` for `confirm`, `discard`,
+  `retract`.
+- **Versioning** (§5): attachments in `dN`, apart from equations.
+- **Derived on read** (§5): `measured` and `instances` computed by the comparison, never stored.
+- **Persistence** (§3.3): a proposed attachment stays until confirmed or discarded.
 - **The comparison**: two entry kinds, "attached, nothing measured" and "declared, neither heard
   nor measured".
 - **The details panel** (§7): where P2 replaces the dialog, Measured by goes after Instances.
