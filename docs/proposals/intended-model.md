@@ -307,13 +307,17 @@ and the last 20 changes, under 20 KB for 100 elements.
 title, how, kind, instrument, simulated, provenance, commit`) and `chosen`; the core proposes
 none. It stores the instrument's name, never a copy of its configuration.
 
-**Simulated series** (the coordinator's decision, overriding the panel's item 10). A simulated
-option's `[[collect]]` entry carries `simulated = true` (written by the plugin through
-`project.config_edit`), and the instrument adds the label `simulated="true"` to every point.
-Discovery leaves such series out of its candidates (`left_out`: "simulated"), so a placeholder
-never fits as a stock with a constant inflow in any `vN` or verdict. The declared stock shows its
-points from the declared layer's chosen option, tagged "simulated · recording". When a real option
-records, the plugin removes the simulated entry and the mark goes with it.
+**Simulated series** (the coordinator's decision on item 10). A simulated option's `[[collect]]`
+entry carries `simulated = true` (written by the plugin through `project.config_edit`), and the
+instrument adds the label `simulated="true"` to every point. Discovery reads the series as any
+other, and marks every stock, flow, equation and machine hypothesis fitted from a simulated series
+`simulated: true` in the saved version, from the label, so the mark lives in `vN`. The pages draw
+simulated parts distinctly ("simulated"); a prediction verdict never counts a simulated part as an
+unpredicted change or side effect; a target backed only by simulated parts is never "met". When a
+real option records, the plugin removes the simulated entry; the next discovery no longer sees its
+series and the simulated parts leave the model. The expected mark survives by key: the key
+excludes `instrument` (§3.1), so a real series of the same name and identity labels takes it;
+otherwise the Supervisor `link`s the declared stock to the real series' key.
 
 ## 7. The pages
 
@@ -338,8 +342,8 @@ work's terms; D1 drops "on DEMO-35"; D2 gains the candidate line on Features and
 the + flow row.
 
 **No frame yet, one line each (or deferred):** settled parts lose their ring, no other mark;
-came-and-went and ignored are collapsed rows in the Changes panel; "simulated · recording" on the
-declared stock's drawer and Expected row; candidates as "may be this stock" lines; alias
+came-and-went and ignored are collapsed rows in the Changes panel; simulated parts with a "simulated" tag
+and a hatched fill; candidates as "may be this stock" lines; alias
 candidates as a line on the unheard machine's card; "declared · unheard" a dashed outline on the
 map; a confirmed machine's verdict a chip on its expected-effect rows; event descriptions on
 hover over an event type; a target a line in the drawer and Expected group; `retract` is the
@@ -396,8 +400,8 @@ Why: the scenario has the user clicking (D2 "expect", E1 "confirm"). Stock and f
 change what Orchestra believes, like the rediscover button; a machine's confirm is what a plugin
 starts a machine on, so it goes to the Supervisor (decision D1).
 
-**Not a rule change:** discovery's series selection gains one exclusion, series labelled
-`simulated="true"` (§6.3), recorded in `left_out` like the others. Rule 3 is unchanged: the host's
+**Not a rule change:** discovery gains one flag, `simulated` on every part fitted from a series
+labelled `simulated="true"`, and the verdict and targets skip such parts (§6.3). Rule 3 is unchanged: the host's
 announcement is its own type, and a request is a person's event whose `data` Orchestra reads as
 its own type (`orchestra.intent.requested` joins rule 3's list of Orchestra types machines publish,
 a one-line addition made with C1).
@@ -411,7 +415,7 @@ a one-line addition made with C1).
 | P4.3 fields | the envelope (§2) is checked; `spec` is P4's, per kind and mode, with the table of §2 as the starting schema and the "no AI terms" check. |
 | P4.4 options | `measure.options`, `measure.chosen`, in the declared layer. |
 | P4.5 matching | never automatic: `candidates` on read, `link` to set; P4 links in the same turn it instruments when they are the same quantity. |
-| P4.6 simulated | the `[[collect]]` flag and label; discovery leaves it out (§6.3). |
+| P4.6 simulated | the `[[collect]]` flag and label; parts marked `simulated` in `vN`; P4 removes the entry when a real option records (§6.3). |
 | P4.7 ids | keys (§3.1). |
 | P4.8 page events | `orchestra.intent.changed` for observations, `orchestra.intent.requested` (source `owner`) for requests, which P4 handles; filter `…:subject=machine:<id>`. |
 | P4.9 predictions | `rises`/`falls` and `appears` (§2); unpublishable until linked. |
@@ -451,8 +455,10 @@ and the C2/C3 screenshot comparison against `mockups/out/` (with §7's correctio
     `owner` and writes no `dN`; neither writes `orchestra.toml` or a `vN`.
 16. A request with no later op answering it shows as `requested` on the machine; an `apply` with
     `request` set clears it.
-17. A series labelled `simulated="true"` never appears in a discovered version (it is in
-    `left_out`); the declared stock still shows its points, tagged simulated.
+17. A series labelled `simulated="true"` yields a stock marked `simulated` in the saved version;
+    a prediction verdict does not list it as unpredicted and a target on it is not met; after the
+    entry is removed it is gone from the next version, and a real series of the same key keeps
+    the expected mark.
 18. Each accepted call is announced once as `orchestra.intent.changed` by `orchestra-host`, also
     one written while the host was down; the filter `…:subject=machine:<id>` selects it.
 19. The diff cache holds only structural entries; with the same `dN`, `vM`, `vK`, era, a machine
@@ -503,9 +509,9 @@ and the floor (P3); starting a confirmed machine (the agents' plugin).
 3. **"Unexpected" machines.** `design-backwards.md` §3 marks an undeclared observed machine; the
    approved E frames do not. The diff records `unexpected`; the map does not draw it.
 4. **Declarations as priors** (D4): rule 7 as amended says "not yet".
-5. **Simulated series and the loop.** Leaving them out of discovery protects the model, but the
-   owner wanted placeholders "to make sure the rest of it works correctly"; a placeholder cannot
-   exercise a flow or a prediction that way.
+5. **Simulated parts in the loop.** Placeholders exercise the model "to make sure the rest of it
+   works correctly", marked in `vN`; whether a simulated part may seed the next era's prior
+   (`sd.prior`) is left open (default: it may not).
 6. **Suggestion volume** under churning strategies: settling, collapse and the Supervisor's
    triage (P4) are the defences.
 7. **Effects drawn as boxes?** An effect found only as an input has no level box; left to C2.
