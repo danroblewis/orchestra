@@ -6,9 +6,9 @@ benchmarked in the SD Lab repository (`~/orchestra/sdlab`) and brought in here s
 use the strategies directly.
 
 - **Source:** SD Lab commit `7edb72d` (2026-10-24): `sdlab/discovery/` and `sdlab/sdtruth_expr.py`.
-- **Changes:** imports rewritten from `sdlab.` to `orchestra.sdlab.`; nothing else.
-  `discovery/strategies/z3robust/compare.py` imports SD Lab's ladder, which was not brought in
-  (it is a benchmarking script, not part of the strategy).
+- **Changes:** imports rewritten from `sdlab.` to `orchestra.sdlab.`; and
+  `discovery/strategies/z3robust/compare.py` deleted (2026-11-01): a benchmarking script that
+  imported SD Lab's ladder, which was not brought in.
 - **Strategies:** `discovery/strategies/README.md` lists them, one line each; the research behind
   them is in SD Lab's `docs/research/`. Results in that research: `kalman_lna` and `combined2`
   did best.
