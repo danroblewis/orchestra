@@ -15,7 +15,7 @@ max_series = 200
 service = ["service", "svc", "app"]
 
 [sources.transform]
-queries = "orchestra/transform/queries.py"  # any executable, run from the repository root
+queries = "scripts/queries.py"             # any executable, run from the repository root
 
 [[series]]                                  # a hand-written definition, still allowed
 source = "work"

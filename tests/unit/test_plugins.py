@@ -81,3 +81,36 @@ def test_a_second_plugin_of_one_name_is_left_out_and_reported(project):
 def test_new_plugin_fields_come_last_with_defaults():
     p = plugins.Plugin("x", [], None, None, [], [], [], [])                   # positional callers keep working
     assert p.collectors == []
+
+
+def declare_with(project, monkeypatch, *makers):
+    from fastapi import FastAPI
+
+    from orchestra.web.app import mount_plugins
+    monkeypatch.setattr(plugins, "entry_points", lambda group: [EntryPoint(f"p{i}", m) for i, m in enumerate(makers)])
+    declare, _ = mount_plugins(FastAPI(), project, [])
+    return declare
+
+
+def test_two_plugins_declaring_one_machine_make_one_placeholder(project, monkeypatch):
+    declare = declare_with(project, monkeypatch,
+                           lambda p: plugins.Plugin("agents", machines=[plugins.Declared("worker", "agent", listens_for=["offer.made"])]),
+                           lambda p: plugins.Plugin("workflows", machines=[plugins.Declared("worker", "role", mode="ad hoc")]))
+    machines: list[dict] = []
+    declare(machines)
+    assert len(machines) == 1, machines                     # the first declaration adds it
+    [m] = machines
+    assert (m["package"], m["kind"], m["subscribes"], m["unseen"]) == ("agents", "agent", ["offer.made"], True)
+
+
+def test_a_declared_kind_of_none_is_unknown(project, monkeypatch):
+    declare = declare_with(project, monkeypatch,
+                           lambda p: plugins.Plugin("workflows", machines=[plugins.Declared("reviewer", None), plugins.Declared("baker", None)]),
+                           lambda p: plugins.Plugin("bakery", machines=[plugins.Declared("baker", "program")]))
+    machines = [{"id": "reviewer", "kind": "person", "package": None}]
+    declare(machines)
+    by = {m["id"]: m for m in machines}
+    assert by["reviewer"]["kind"] == "person" and by["reviewer"]["package"] == "workflows"   # observed wins
+    assert by["baker"]["kind"] == "program" and by["baker"]["package"] == "workflows"        # a later one fills the empty kind
+    declare(fresh := [])
+    assert {m["id"]: m["kind"] for m in fresh} == {"reviewer": None, "baker": "program"}

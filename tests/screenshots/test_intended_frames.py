@@ -1,7 +1,7 @@
-"""The Dynamics page renders each intended-model frame (docs/proposals/intended-model.md §7, §10 test
-32) from C1's API on a seeded store, not from fixture JSON: the screenshots land in
-``tests/screenshots/intended/`` to compare by eye with ``mockups/out/D*.png``, and each frame's DOM is
-checked here. Needs node, puppeteer-core and Chrome for Testing (as ``mockups/tools/render.cjs``);
+"""The Dynamics and Machines pages render each intended-model frame (docs/proposals/intended-model.md
+§7, §10 test 32) from the API on a seeded store, not from fixture JSON: the screenshots land in
+``tests/screenshots/intended/`` to compare by eye with ``mockups/out/D*.png`` and ``E*.png``, and each
+frame's DOM is checked here (the E frames by ``machine_checks.cjs``). Needs node, puppeteer-core and Chrome for Testing (as ``mockups/tools/render.cjs``);
 skips without them. Not in the default test paths: ``uv run python -m pytest tests/screenshots``."""
 
 import importlib.util
@@ -100,3 +100,9 @@ def test_the_states_with_no_frame(frames):
     assert "predicted" in d["predictedFlow"]
     assert d["simulated"] == {"hatch": True, "tags": ["simulated"]}
     assert "simulated" in d["legend"]
+
+
+def test_the_machines_page_frames(frames):
+    for f in ("E1", "E2", "E3", "E3-continuous", "E3-external", "E4"):
+        assert frames[f]["fails"] == [] and frames[f]["errors"] == [], (f, frames[f])
+        assert (HERE / "intended" / f"{f}.png").stat().st_size > 10_000

@@ -171,5 +171,5 @@ const IntendedPanel = (() => {
     NOTE = { text, ok, at: Date.now() };
     const n = $("im-note"); if (n) { n.textContent = text; n.style.display = ""; n.classList.toggle("stale", !ok); n.classList.toggle("im-ok", ok); }
   }
-  return { render, note, settled, patch };
+  return { render, note, settled };
 })();

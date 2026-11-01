@@ -1,6 +1,8 @@
-// Render the Dynamics page's frames D1–D3 from the real page and API (intended_frames.py starts
-// the servers) and report what each frame shows, as JSON on the last line of stdout.
-//   D1_URL=… D2_URL=… OUT=… node render_intended.cjs [frame ...]
+// Render the Dynamics page's frames D1–D3 and the Machines page's frames E1–E4 from the real pages
+// and API (intended_frames.py starts the servers) and report what each frame shows, as JSON on the
+// last line of stdout: a D frame's DOM as inspect() reads it, an E frame's failed checks
+// (machine_checks.cjs) and errors.
+//   D1_URL=… D2_URL=… EXTRAS_URL=… E_URLS='{"E1": …}' OUT=… node render_intended.cjs [frame ...]
 // Like mockups/tools/render.cjs: headless Chrome for Testing through puppeteer-core (PC and CH
 // override where they are found), 1440 px wide; writes <OUT>/<frame>.png (the full page) and
 // <OUT>/<frame>-1440x900.png (the first screen). The graph is pinned where the mockups pinned it,
@@ -14,7 +16,9 @@ const CH = process.env.CH || (() => { const base = path.join(HOME, ".cache/puppe
   return path.join(base, v, "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"); })();
 const puppeteer = require(PC);
 const { D1_URL, D2_URL, EXTRAS_URL, OUT } = process.env;
-const want = process.argv.slice(2).length ? process.argv.slice(2) : ["D1", "D1-closed", "D2", "D3", "D3-closed", "D-extras"];
+const E_URLS = JSON.parse(process.env.E_URLS || "{}");
+const M = require("./machine_checks.cjs");
+const want = process.argv.slice(2).length ? process.argv.slice(2) : ["D1", "D1-closed", "D2", "D3", "D3-closed", "D-extras", ...Object.keys(M.FRAMES)];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // where a person would have dragged them (mockups/additions.js), the ghost beside DONE
 const LAYOUT = [["s:tasks_tickets_OPEN", 0, 0], ["s:tasks_tickets_IN_PROGRESS", 330, 0], ["s:tasks_tickets_READY_FOR_REVIEW", 680, 0], ["s:test_report_files_read", 1030, 0],
@@ -84,6 +88,27 @@ function inspect() {
     const errs = errors.filter((e) => !/favicon\.ico$/.test(e) && !(skip > 0 && /Failed to load resource: .*404/.test(e) && skip--));
     report[f] = { ...(await page.evaluate(inspect)), errors: errs };
   };
+  // a Machines-page frame: the panel open on its machine, the map pinned as the mockups pinned it
+  const machinesFrame = async (frame, url) => {
+    const id = M.FRAMES[frame], errs = [];
+    const p = await b.newPage();
+    p.on("pageerror", (e) => errs.push(`page error: ${e.message}`));
+    p.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errs.push(`console: ${m.text()}`); });
+    p.on("response", (r) => { if (r.status() >= 400 && !/favicon/.test(r.url())) errs.push(`${r.status()} ${r.url()}`); });
+    await p.setViewport({ width: 1440, height: 900 });
+    await p.evaluateOnNewDocument((lay) => { try { localStorage.clear(); localStorage.setItem("orchestra.netgraph.machines.events", lay); localStorage.setItem("orchestra.evmap.mode", "events"); } catch (e) {} }, M.layout());
+    await p.goto(`${url}/machines#${id}`, { waitUntil: "networkidle2", timeout: 60000 });
+    await p.waitForFunction((i) => document.querySelector("#im-row.open") && document.querySelector(`g.ng-node[data-id="m:${i}"]`)
+      && [...document.querySelectorAll("#cards .panel")].length >= 7, { timeout: 60000, polling: 250 }, id);
+    await sleep(3500);                                  // the new nodes settle
+    const fails = [];
+    for (const c of [M.CHECKS.common, ...M.checksOf(frame)]) fails.push(...await p.evaluate(`(${c.toString()})(${JSON.stringify(id)}, ${JSON.stringify(frame.split("-")[1] || "adhoc")})`));
+    await p.screenshot({ path: path.join(OUT, `${frame}-1440x900.png`) });
+    await p.evaluate(() => { const s = document.getElementById("im-side"); s.style.maxHeight = "none"; s.style.position = "static"; });   // the whole panel, on the full page
+    await p.screenshot({ path: path.join(OUT, `${frame}.png`), fullPage: true });
+    await p.close();
+    return { fails, errors: errs };
+  };
   try {
     for (const f of want) {
       if (f === "D1") {
@@ -112,6 +137,8 @@ function inspect() {
         await fresh(EXTRAS_URL); await shoot(f);
       } else if (f === "D3-closed") {
         await page.evaluate(() => closeDrawer()); await shoot(f);
+      } else if (M.FRAMES[f]) {
+        report[f] = await machinesFrame(f, E_URLS[f]);
       }
       process.stderr.write(`${f}: ${path.join(OUT, f + ".png")}\n`);
     }

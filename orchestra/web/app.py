@@ -565,7 +565,9 @@ def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
 
     def declare(machines: list[dict]) -> None:
         """Observed machines keep what was observed; a declaration names the package and the kind
-        of a machine that announced neither, and adds a machine not seen yet (marked so)."""
+        of a machine that announced neither, and adds a machine not seen yet (marked so). The first
+        plugin to declare an id adds it; a later declaration of that id only fills in what is
+        still empty, as for an observed machine. A kind of None is unknown: left empty."""
         seen = {m["id"]: m for m in machines}
         for pkg, d in declared:
             m = seen.get(d.id)
@@ -573,7 +575,9 @@ def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
                 m["package"] = m.get("package") or pkg
                 m["kind"] = m.get("kind") or d.kind
                 continue
-            machines.append({"id": d.id, "bootstrap": False, "mode": d.mode, "kind": d.kind, "package": pkg, "about": {},
-                             "unseen": True, "publishes": [], "subscribes": list(d.listens_for), "flows": [], "logs": [],
-                             "instances": [], "first_seen": None, "last_seen": None, "active": False})
+            m = {"id": d.id, "bootstrap": False, "mode": d.mode, "kind": d.kind, "package": pkg, "about": {},
+                 "unseen": True, "publishes": [], "subscribes": list(d.listens_for), "flows": [], "logs": [],
+                 "instances": [], "first_seen": None, "last_seen": None, "active": False}
+            machines.append(m)
+            seen[d.id] = m
     return declare, [replace(c, owner=p.name) for p in loaded.plugins for c in p.collectors]

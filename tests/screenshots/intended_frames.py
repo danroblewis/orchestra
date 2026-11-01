@@ -1,5 +1,8 @@
-"""The Dynamics page's frames D1–D3 (docs/proposals/intended-model.md §7) rendered from the real
-page and the real API, on stores seeded as task C1's tests seed them (``tests/unit/intended_seed.py``):
+"""The intended model's frames (docs/proposals/intended-model.md §7) rendered from the real pages and
+the real API: the Dynamics page's D1–D3 on stores seeded as task C1's tests seed them
+(``tests/unit/intended_seed.py``), and the Machines page's E1–E4 on projects seeded as
+``tests/unit/machine_frames.py`` seeds them (the captured machines replayed onto the bus, the frame's
+declarations through the intended model's ops):
 
 - **D1** (and D1-closed): the captured model as the only version, the owner's Features stock
   declared with the Supervisor's measurement options, the chosen instrument recording three points;
@@ -8,14 +11,16 @@ page and the real API, on stores seeded as task C1's tests seed them (``tests/un
 - **D3** (and D3-closed): D2 after the owner pressed *expect* on the new stock in the Changes panel,
   with the changes switched off and the stock's drawer open;
 - **D-extras**, with no approved frame: a simulated stock, an expected stock nothing measures, a
-  declared flow to it and a predicted one out of it.
+  declared flow to it and a predicted one out of it;
+- **E1–E4** (E1, E2, E3, E3-continuous, E3-external, E4): the Machines page with the panel open on
+  the frame's machine, checked by ``machine_checks.cjs``.
 
     uv run python tests/screenshots/intended_frames.py [out_dir]
 
 seeds the stores in a temporary directory, serves each with ``orchestra web``'s app on a free
 loopback port (auth off), runs ``render_intended.cjs`` (headless Chrome for Testing, as the
 mockups' ``tools/render.cjs``) and prints what it found on each page as JSON. The screenshots go to
-``tests/screenshots/intended/`` by default; compare them with ``mockups/out/D*.png``."""
+``tests/screenshots/intended/`` by default; compare them with ``mockups/out/D*.png`` and ``E*.png``."""
 
 from __future__ import annotations
 
@@ -52,14 +57,26 @@ timeout = "5m"
 """
 
 
-def _seed_helpers():
-    """C1's seed helper, loaded by file (no path hacks, AGENTS.md rule 10)."""
+E_FRAMES = ("E1", "E2", "E3", "E3-continuous", "E3-external", "E4")
+
+
+def _unit(name: str):
+    """A seed helper of tests/unit, loaded by file (no path hacks, AGENTS.md rule 10) and registered
+    under its name, so a helper that imports another (machine_frames imports intended_seed) finds it."""
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location("intended_seed", ROOT / "tests" / "unit" / "intended_seed.py")
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, ROOT / "tests" / "unit" / f"{name}.py")
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
     spec.loader.exec_module(mod)
     return mod
+
+
+def _seed_helpers():
+    """C1's seed helper."""
+    return _unit("intended_seed")
 
 
 def project(root: Path):
@@ -149,6 +166,16 @@ def seed_extras(root: Path):
     return p
 
 
+def seed_e(root: Path, frame: str):
+    """A Machines-page frame's project: the captured machines on its bus, then the frame's own
+    declarations (``machine_frames.seed_frame``)."""
+    _seed_helpers()
+    frames = _unit("machine_frames")
+    p = project(root)
+    frames.replay_observed(p)
+    return frames.seed_frame(p, frame)
+
+
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -177,9 +204,13 @@ def render(out: Path = OUT, work: Path | None = None, frames: list[str] | None =
         os.environ["ORCHESTRATOR_HOME"] = str(work / "home")
         os.environ.pop("ORCHESTRA_METRICS_URL", None)
         servers = [serve(seed_d1(work / "d1")), serve(seed_d2(work / "d2")), serve(seed_extras(work / "extras"))]
+        e_frames = [f for f in (frames or E_FRAMES) if f in E_FRAMES]
+        e_servers = {f: serve(seed_e(work / f, f)) for f in e_frames}
+        servers += list(e_servers.values())
         try:
             out.mkdir(parents=True, exist_ok=True)
-            env = {**os.environ, "D1_URL": servers[0][1], "D2_URL": servers[1][1], "EXTRAS_URL": servers[2][1], "OUT": str(out)}
+            env = {**os.environ, "D1_URL": servers[0][1], "D2_URL": servers[1][1], "EXTRAS_URL": servers[2][1], "OUT": str(out),
+                   "E_URLS": json.dumps({f: url for f, (_, url) in e_servers.items()})}
             r = subprocess.run(["node", str(RENDER), *(frames or [])], check=False, env=env, capture_output=True, text=True, timeout=600)
             if r.returncode != 0:
                 raise RuntimeError(f"render failed ({r.returncode}): {r.stderr[-4000:]}{r.stdout[-2000:]}")

@@ -529,3 +529,14 @@ def test_rediscover_reads_the_plugins_collectors_again_once_the_configuration_ch
     project.config_file.write_text(project.config_file.read_text() + '\n[[collect]]\nname = "x"\ncommand = "true"\nsimulated = true\n')
     run()
     assert seen == [[], ["reloaded"]]
+
+
+def test_a_misspelt_provenance_field_on_the_endpoint_is_refused_never_dropped(tmp_path, monkeypatch):
+    from orchestra.endpoint.api import handle
+    project = project_at(tmp_path, monkeypatch)
+    seed(project)
+    body = {"source": "operator", "reasn": "a typo", "ops": [{"op": "declare_stock", "name": "Bugs"}]}
+    status, out = handle(project, "POST", "/intended", "", json.dumps(body).encode())
+    assert status == 400 and "reasn" in out["error"], out
+    status, out = handle(project, "POST", "/intended", "", json.dumps({**body, "reasn": None, "reason": "spelt right"}).encode())
+    assert status == 200 and out["ok"], out

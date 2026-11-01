@@ -304,6 +304,6 @@ const Live = (() => {
     chart();
   }
   function drawn(graph) { GRAPH = graph; graph.setRates((e) => (e.flowPart ? recentRate(e.fid) : 0)); chart(); }
-  return { refresh, drawn, toggle, openStock, openFlow, decorateStock, decorateInput, stockSummary, flowSummary, edgeLabel, against, fmt };
+  return { refresh, drawn, toggle, openStock, openFlow, decorateStock, decorateInput, stockSummary, flowSummary, edgeLabel };
 })();
 Live.refresh(); setInterval(Live.refresh, 15000);

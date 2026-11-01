@@ -96,7 +96,7 @@ class Page:
 @dataclass
 class Declared:
     id: str                                   # the machine, as its events' source names it
-    kind: str = "program"                     # what the package says it is: program, person, service, ...
+    kind: str | None = "program"              # what the package says it is: program, person, service, ...; None: unknown
     mode: str | None = None                   # continuous | scheduled | ad hoc
     listens_for: list[str] = field(default_factory=list)
 

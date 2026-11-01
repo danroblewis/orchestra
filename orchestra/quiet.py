@@ -25,7 +25,7 @@ from .events import HOST, event_time, for_an_instrument, machine_and_instance
 QUIET = "orchestra.machine.quiet"
 ANNOUNCE = "orchestra.machine.started"
 MIN_BEATS = 3                     # two gaps: a cadence of its own, not one interval
-AD_HOC = ("ad hoc", "ad_hoc", "ad-hoc")
+AD_HOC = ("ad hoc",)
 
 
 class QuietWatch:

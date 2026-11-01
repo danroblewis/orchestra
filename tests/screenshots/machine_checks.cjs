@@ -1,28 +1,10 @@
-// Render the Machines page's frames E1–E4 from the real web app, check each frame's DOM, and write
-// tests/screenshots/intended/<frame>.png (full page) and <frame>-1440x900.png (the first screen).
-//   node tests/screenshots/intended/render.cjs [frame ...]       (from the repository root)
-// It is run by hand, and by no test (the unit tests check the same frames' API answers,
-// tests/unit/test_intended_frames.py).
-// Each frame: serve_frame.py serves a seeded project (tests/unit/machine_frames.py) on its own port; headless
-// Chrome for Testing logs in with the project's token, opens /machines#<machine> (the panel open on
-// it), with the map pinned where the mockups pinned it (mockups/fixtures/layouts.json and the
-// places in mockups/additions.js), waits for it to settle, checks the frame's structure and that
-// nothing was logged as an error. Exits 1 on any failed check. PC (puppeteer-core) and CH (Chrome)
-// default to the ones in ~/.npm/_npx and ~/.cache/puppeteer, as mockups/tools/render.cjs.
-const { spawn } = require("child_process");
-const fs = require("fs"), path = require("path"), os = require("os"), readline = require("readline");
-const HOME = os.homedir(), ROOT = path.resolve(__dirname, "../../.."), OUT = __dirname;
-const PC = process.env.PC || fs.readdirSync(path.join(HOME, ".npm/_npx")).map((d) => path.join(HOME, ".npm/_npx", d, "node_modules/puppeteer-core"))
-  .filter((d) => fs.existsSync(d)).sort((a, b) => require(b + "/package.json").version.localeCompare(require(a + "/package.json").version, undefined, { numeric: true }))[0];
-const CH = process.env.CH || (() => { const base = path.join(HOME, ".cache/puppeteer/chrome"); const v = fs.readdirSync(base).sort().pop();
-  return path.join(base, v, "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"); })();
-const puppeteer = require(PC);
-// a free port for each frame's server (never a fixed one: other work may be serving there)
-const freePort = () => new Promise((resolve) => { const s = require("net").createServer(); s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => resolve(p)); }); });
+// The Machines page's frames E1–E4 (docs/proposals/intended-model.md §7): which machine each opens,
+// the map as the mockups pinned it, and the structural checks run in the page. Used by
+// render_intended.cjs, which renders them beside the Dynamics page's frames.
+const fs = require("fs"), path = require("path");
+const ROOT = path.resolve(__dirname, "../..");
 const FRAMES = { E1: "feature_count_improver", E2: "feature_count_improver", E3: "nightly_metrics", "E3-continuous": "nightly_metrics",
   "E3-external": "nightly_metrics", E4: "sail" };
-const want = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(FRAMES);
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // the map as the mockups pinned it
 function layout() {
@@ -45,7 +27,7 @@ const CHECKS = {
     const f = [], side = document.getElementById("im-side"), q = (s) => side.querySelector(s);
     if (!document.getElementById("im-row").classList.contains("open")) f.push("the panel is not open");
     if (side.querySelector("input, textarea, select")) f.push("the panel has an input: every field is read-only");
-    if (!side.querySelector(".im-ask")) f.push("no 'ask the Supervisor' affordance");
+    if (!side.querySelector(".im-ask")) f.push("no 'ask' affordance");
     const node = document.querySelector(`#evsvg-host g.ng-node[data-id="m:${id}"]`);
     if (!node) f.push(`no node m:${id}`); else if (node.matches(".ng-dim,.ng-shade1,.ng-shade2")) f.push("the open machine is shaded");
     const card = document.querySelector("#cards .panel");
@@ -105,7 +87,7 @@ const CHECKS = {
     const fields = { adhoc: ["command", "arguments", "environment", "stdin", "exit"], continuous: ["command", "protocol", "listens on", "send", "receive", "health"], external: ["source", "runs where", "log"] }[mode];
     for (const s of fields) if (!label(s)) f.push(`no ${s} row`);
     if (mode === "external" && label("command")) f.push("an external machine shows a command");
-    if (mode === "adhoc" && [...side.querySelectorAll(".im-ask")].filter((e) => e.textContent.includes("add one")).length !== 2) f.push("not two 'ask the Supervisor to add one'");
+    if (mode === "adhoc" && [...side.querySelectorAll(".im-ask")].filter((e) => e.textContent.includes("add one")).length !== 2) f.push("not two 'ask … to add one'");
     if (!document.querySelector('g.ng-node[data-id="m:nightly_metrics"].im-proposed')) f.push("node not unconfirmed");
     return f;
   },
@@ -126,53 +108,4 @@ const CHECKS = {
 };
 const checksOf = (frame) => frame === "E1" ? [CHECKS.E1, CHECKS.shades] : frame === "E2" ? [CHECKS.E2, CHECKS.shades] : frame === "E4" ? [CHECKS.E4] : [CHECKS.E3];
 
-function serve(frame, port) {
-  const proc = spawn("uv", ["run", "--no-sync", "python", path.join(__dirname, "serve_frame.py"), frame, String(port)],
-    { cwd: ROOT, env: { ...process.env, PYTHONPATH: path.join(ROOT, "tests/unit") }, stdio: ["ignore", "pipe", "inherit"] });
-  return new Promise((resolve, reject) => {
-    readline.createInterface({ input: proc.stdout }).once("line", async (l) => {
-      const srv = { proc, ...JSON.parse(l) };
-      for (let i = 0; i < 100; i++) { try { if ((await fetch(srv.url + "/health")).ok) return resolve(srv); } catch (e) { /* not up yet */ } await sleep(200); }
-      reject(new Error(`serve_frame ${frame} never answered`));
-    });
-    proc.once("exit", (c) => reject(new Error(`serve_frame ${frame} exited ${c}`)));
-  });
-}
-
-(async () => {
-  const profile = fs.mkdtempSync(path.join(os.tmpdir(), "puppeteer_dev_chrome_profile-intended-"));
-  const b = await puppeteer.launch({ executablePath: CH, headless: true, userDataDir: profile, args: ["--no-first-run", "--hide-scrollbars"] });
-  let failed = 0;
-  try {
-    for (const frame of want) {
-      const id = FRAMES[frame], port = await freePort(), srv = await serve(frame, port), errors = [];
-      try {
-        const ctx = await b.createBrowserContext(), p = await ctx.newPage();
-        p.on("pageerror", (e) => errors.push(`page error: ${e.message}`));
-        p.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(`console: ${m.text()}`); });
-        let loggedIn = false;
-        p.on("response", (r) => { if (loggedIn && r.status() >= 400 && !/favicon/.test(r.url())) errors.push(`${r.status()} ${r.url()}`); });
-        await p.setViewport({ width: 1440, height: 900 });
-        await p.evaluateOnNewDocument((lay) => { try { localStorage.setItem("orchestra.netgraph.machines.events", lay); localStorage.setItem("orchestra.evmap.mode", "events"); } catch (e) {} }, layout());
-        await p.goto(`${srv.url}/login`, { waitUntil: "domcontentloaded" });
-        await p.type("#token", srv.token);
-        await Promise.all([p.waitForNavigation({ waitUntil: "domcontentloaded" }), p.keyboard.press("Enter")]);
-        loggedIn = true;
-        await p.goto(`${srv.url}/machines#${id}`, { waitUntil: "networkidle2", timeout: 60000 });
-        await p.waitForFunction((i) => document.querySelector("#im-row.open") && document.querySelector(`g.ng-node[data-id="m:${i}"]`)
-          && [...document.querySelectorAll("#cards .panel")].length >= 7, { timeout: 60000, polling: 250 }, id);
-        await sleep(3500);                                  // the new nodes settle
-        const fails = [];
-        for (const c of [CHECKS.common, ...checksOf(frame)]) fails.push(...await p.evaluate(`(${c.toString()})(${JSON.stringify(id)}, ${JSON.stringify(frame.split("-")[1] || "adhoc")})`));
-        fails.push(...errors.filter((e) => !/favicon/.test(e)));
-        await p.screenshot({ path: path.join(OUT, `${frame}-1440x900.png`) });
-        await p.evaluate(() => { const s = document.getElementById("im-side"); s.style.maxHeight = "none"; s.style.position = "static"; });   // the whole panel, on the full page
-        await p.screenshot({ path: path.join(OUT, `${frame}.png`), fullPage: true });
-        console.log(`${frame}: ${fails.length ? "FAILED\n  " + fails.join("\n  ") : "ok"} · ${path.relative(ROOT, path.join(OUT, frame + ".png"))}`);
-        failed += fails.length ? 1 : 0;
-        await ctx.close();
-      } finally { srv.proc.kill(); }
-    }
-  } finally { await b.close(); fs.rmSync(profile, { recursive: true, force: true }); }
-  process.exit(failed ? 1 : 0);
-})().catch((e) => { console.error(e); process.exit(1); });
+module.exports = { FRAMES, layout, CHECKS, checksOf };

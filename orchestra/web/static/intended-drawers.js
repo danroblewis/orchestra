@@ -153,5 +153,5 @@ const IntendedDrawers = (() => {
       onclick="Intended.control('${on ? "unexpect" : "expect"}','${part}',${esc(JSON.stringify(key))},'its drawer',${esc(reopen)})"><span class="im-sw"></span><b>Expected:</b>&nbsp;always show this ${word}</button>
       <div class="muted">${facts}</div></div>`);
   }
-  return { openExpected, openExpectedFlow, expectSwitch, keyName, declaredBy, waiting };
+  return { openExpected, openExpectedFlow, expectSwitch, waiting };
 })();

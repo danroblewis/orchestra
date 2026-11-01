@@ -268,5 +268,5 @@
     return { ...cur, ...best.clouds };
   }
 
-  return { layout, pack, refine, untangle, groupsOf, OPTIONS, COST };
+  return { layout, pack, refine, untangle, OPTIONS };
 });

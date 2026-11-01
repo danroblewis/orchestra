@@ -312,7 +312,7 @@ const IntendedMachines = (() => {
     listeners.published = new Set(d.machines.filter((x) => x.id !== m.id).flatMap((x) => (x.publishes || []).map((p) => p.type)));
     const tag = stateTag(m), switching = (ASKED[m.id] || it.requested || {}).control === "switch_kind", canSwitch = it.state === "proposed" && !switching;
     const kind = field("kind", (canSwitch ? `<span class="im-seg big">${["universal", "programmatic"].map((k) => `<button class="${it.kind === k ? "on" : ""}" ${it.kind === k ? "disabled" : `onclick="IntendedMachines.request('switch_kind','${esc(m.id)}')"`} title="${it.kind === k ? "its kind" : esc(A().title("switch it"))}">${k === "universal" ? "Universal" : "Programmatic"}</button>`).join("")}</span>` : ind(["Universal", "Programmatic"], prog ? "Programmatic" : "Universal"))
-      + `<div class="muted im-note">${prog ? "a program: a command and its interface" : "described by what it achieves"}${canSwitch ? ` · switching ${esc(A().some ? `asks ${A().who}` : A().ask())}` : switching ? " · a switch was asked: waiting" : ""}</div>`);
+      + `<div class="muted im-note">${prog ? "a program: a command and its interface" : "described by what it achieves"}${canSwitch ? ` · ${esc(A().some ? `switching asks ${A().who}` : A().ask("switch it"))}` : switching ? " · a switch was asked: waiting" : ""}</div>`);
     const byInstruments = !it.heard && (it.attachments || []).length;
     const known = byInstruments ? "the instruments attached to it (Measured by, below)" : "its events";
     const managed = field("managed", ind(["orchestra", "external"], it.managed) + `<div class="muted im-note">${ext ? `runs elsewhere: known by ${known}` : "managed by orchestra"}</div>`);

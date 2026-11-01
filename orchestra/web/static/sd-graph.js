@@ -252,5 +252,5 @@
     return { nodes, edges, causal, flowEdge, flows, acc };
   }
 
-  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, sameAs, nice, num, correlational, machineLabel, UNTESTED };
+  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, sameAs, num, correlational, machineLabel, UNTESTED };
 });
