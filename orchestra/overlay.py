@@ -16,7 +16,7 @@ The rules (``merge``):
 - anything else (a string, a number, an array of plain values) is replaced by the overlay's.
 
 ``[overlay]`` in the overlay file is the overlay's own and is not merged: ``secret`` lists the
-keys (dotted, as ``slack.channels`` or ``machines[pager]``; a key covers what is under it) whose
+keys (dotted, as ``myplugin.channels`` or ``machines[pager]``; a key covers what is under it) whose
 values are never shown (``describe``), only where they came from. Secret here means private, not
 a credential: credentials never go in a configuration file, overlay or not."""
 
@@ -102,7 +102,7 @@ def merge(repo: dict, overlay: dict, path: str = "") -> tuple[dict, Layers]:
         raise OverlayError("[overlay] must be a table")
     secret = own.get("secret", [])
     if not isinstance(secret, list) or not all(isinstance(s, str) for s in secret):
-        raise OverlayError("[overlay] secret must be an array of keys, as [\"slack.channels\"]")
+        raise OverlayError("[overlay] secret must be an array of keys, as [\"myplugin.channels\"]")
     layers = Layers(path=path, secret=list(secret))
     return _merge(repo, overlay, "", layers), layers
 

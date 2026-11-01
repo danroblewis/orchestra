@@ -25,8 +25,8 @@ Everything here is observed, or announced by the machine itself:
   has none, and the machine shows the package, name and group of the instance that announced one
   latest, and passes what is left of its instances' announcements (the latest instance's over the
   others) to the package's card unread. An instance that announces only what it listens for and
-  what it is (a part of a machine implemented elsewhere: a plugin's dispatch acting as the
-  coordinator) so never erases what another instance said of the machine;
+  what it is (a part of a machine implemented elsewhere: a plugin's dispatch acting as one
+  of its machines) so never erases what another instance said of the machine;
 - **publishes**: the event types its instances emitted, with counts (all time and the last day);
 - **flows**: the flows of the latest discovery the machine is hypothesised to be associated with
   (``sd.attribute``: its events match a flow's counter in time), each with its confidence and

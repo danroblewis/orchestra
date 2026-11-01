@@ -21,7 +21,7 @@ machine added by a merged commit starts without restarting the host, one removed
 whose command or restart changed is restarted (and a given-up one tried again); the plugins'
 processes are asked for again then too, so a plugin's section added or removed starts or stops
 them. A plugin's process that reads its settings once, when it starts, names them in
-``config_keys`` (dotted keys of the merged configuration, ``["bridges.github"]``): when the value
+``config_keys`` (dotted keys of the merged configuration, ``["myplugin.upstream"]``): when the value
 under any of them changes, it is restarted the same way, and one given up on is tried again, so a
 fixed setting reaches it without restarting the host. Every process is
 in the runtime record under ``processes`` for the Core page. A plugin's processes are named

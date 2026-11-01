@@ -326,8 +326,8 @@ pins one definition the inference would not rank.
 
 A company's store is rarely organised for this: thousands of names, several spellings of one
 label, per-pod series, recording rules beside their bases. Look before declaring anything
-(`orchestra sources check|infer|preview`, or the Supervisor's `check_sources`, `source_schema`,
-`preview_query` and `infer_source`, which take a `url` and `auth` before a source exists):
+(`orchestra sources check|infer|preview`, or a plugin's tools, which may take a `url` and `auth`
+before a source exists):
 
 1. **Start from the owner's question, not the store.** Name the few things whose amount or flow
    the question is about (requests waiting, jobs queued, orders shipped) and search the names for

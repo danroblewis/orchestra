@@ -3,7 +3,7 @@ for the Machines page (``machines_view``) and the plugin's summary (``design``),
 ``names.resolve`` reads them: an edit naming a declared stock or effect with no ``found_as``, as
 its ``stock`` or as an end of an ``appears`` flow, waits for a series (or a link); one naming what
 is neither declared nor in the model is not in the model. For a flow's end, the why names the end
-("tickets_open: not in the model"). An edit on a flow or a loop names the model's id and is
+("orders_open: not in the model"). An edit on a flow or a loop names the model's id and is
 published as it is."""
 
 from __future__ import annotations

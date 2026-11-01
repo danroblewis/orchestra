@@ -32,7 +32,7 @@ The web app mounts what it returns:
   to stop), such as a scheduler or
   the host of the programs it runs. Orchestra starts them as it starts the project's own
   ``[[machines]]`` and knows nothing else of them. One that reads its settings once, when it
-  starts, names them in ``config_keys`` (``["bridges.github"]``), and is restarted when they change;
+  starts, names them in ``config_keys`` (``["myplugin.upstream"]``), and is restarted when they change;
 - its ``collectors``, optionally: the instruments ``orchestra run`` reads measurements from for
   it (instruments, not machines: their series are labelled ``instrument=<name>`` and nothing is
   announced for them) (``orchestra.collect.spec.Collector``: ``Collector.scrape(name, url, ...)`` or

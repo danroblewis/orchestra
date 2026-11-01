@@ -1,7 +1,6 @@
 """States an item leaves within a step: a chain the grid splits through outside, joined again.
 
-An order picked up from the shelf is accepted or rejected by the customer at once; a ticket
-rejected by its reviewer is back in progress a second later. On a grid of steps the state in
+An order picked up from the shelf is accepted or rejected by the customer at once. On a grid of steps the state in
 between is empty at almost every step, so it is no stock (it changed in too few steps), and its
 inflow ends at outside while its outflows begin there: the shelf drains to nowhere and the
 rejected orders come back from nowhere. The rework loop is open.

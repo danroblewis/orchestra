@@ -7,13 +7,13 @@ come from one record, so their balance holds by construction and is no evidence
 (``orchestra.sd.construction``)::
 
     [[collect]]
-    name = "piles"
-    command = "python -m piles"
+    name = "places"
+    command = "python -m places"
     [collect.views]
-    workflow_pile_items = { view = "count", place = "pile", where = { kind = "step" } }
-    workflow_item_moves_total = { view = "moves", starts = "to", stops = "from" }
+    items = { view = "count", place = "place", where = { kind = "step" } }
+    item_moves_total = { view = "moves", starts = "to", stops = "from" }
 
-or, from a plugin, ``Collector.collect("piles", cmd, views={...the same table...})``. Each key is a
+or, from a plugin, ``Collector.collect("places", cmd, views={...the same table...})``. Each key is a
 series name the instrument prints; its value is one view or a list of them (the first whose
 ``where`` the series' labels match is taken). The views:
 

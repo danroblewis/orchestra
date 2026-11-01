@@ -45,7 +45,7 @@ survives all four is the net flow:
 
 A level is never driven by another of its own name (a part of it, its total, or another part),
 nor by a series that may be its part or its total under another name: counts in the same unit
-(whole numbers, and the same last word of the name, ``processes`` in ``claude_processes``) of
+(whole numbers, and the same last word of the name, ``processes`` in ``worker_processes``) of
 which one never rises above the other and swings no wider. A part's changes are in its total's,
 so the total "explains" them by containing them. The rule only keeps a driver out; the unit is
 read from the name, so two counts in one unit that are not part and total (a repository's bytes
@@ -256,7 +256,7 @@ def _eligible(d: Driver, starts: list[int], k: int) -> str:
 
 
 def _unit(name: str) -> str:
-    """The unit a series' name ends in (``processes`` in ``claude_processes``)."""
+    """The unit a series' name ends in (``processes`` in ``worker_processes``)."""
     return name.rsplit("_", 1)[-1]
 
 

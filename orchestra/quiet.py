@@ -7,7 +7,7 @@ Quiet means what the Machines page means by not active (``cadence.py``): an inst
 cadence of its own (at least ``MIN_BEATS`` beats on the bus) and has now been silent longer than
 ``active_within`` its cadence. Observed only (AGENTS.md rule 2): beats are its events, never what
 it says of itself; the one thing read from its announcement is its mode, so an instance that says
-it is engaged ad hoc (a worker started per ticket) is never called quiet, its silence being its
+it is engaged ad hoc (a job started per request) is never called quiet, its silence being its
 nature. Orchestra's host itself and the instruments' old announcements are left out.
 
 Announced once per silence: an instance heard again may be announced again when it next falls

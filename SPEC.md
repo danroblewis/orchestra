@@ -1128,7 +1128,7 @@ it (rule 7).
   are resolved one way everywhere (`intended/names.py`): a declared id through its `found_as`
   (without one, "waits for a link" when its measure has a chosen option, else "waits for a
   series"), or a discovered key; otherwise, a discovered id included, "not in the model" (an
-  unresolved end of a flow is named: "tickets_open: not in the model"). A draft names keys; a
+  unresolved end of a flow is named: "orders_open: not in the model"). A draft names keys; a
   plugin publishing a draft as
   `orchestra.prediction.made` turns them into the era's ids. A target on an effect found only as
   an input is judged on that input's series. A recording is read for the project's own points. A
@@ -1288,8 +1288,8 @@ simulated = true                 # optional: a placeholder; its points are label
 draft = true                     # optional: an option being tried; its points are labelled draft="true"
 expires = "2026-11-08T00:00:00Z" # with draft: when its plugin removes it (data only)
 [collect.views]                  # optional: how it made its series (§4.2), for discovery
-workflow_pile_items = { view = "count", place = "pile", where = { kind = "step" } }
-workflow_item_moves_total = { view = "moves", starts = "to", stops = "from" }
+items = { view = "count", place = "place", where = { kind = "step" } }
+item_moves_total = { view = "moves", starts = "to", stops = "from" }
 
 [[scrape]]
 name = "app"
