@@ -3,6 +3,8 @@ balance, judged on another writer's (UC-1: the customers' waiting on the board's
 accepted), and a buffer between two counters, which makes them its inflow and its outflow (UC-1:
 the shelf between inspections passed and orders picked up)."""
 
+import math
+
 from orchestra.metrics import Point
 from orchestra.metrics.file import FileMetrics
 from orchestra.sd.discover import discover
@@ -32,17 +34,21 @@ def _balance(m, sid):
     return {(b["series"].partition("{")[0], b["sign"]) for b in m.stock(sid).evidence["balance"]}
 
 
-def test_a_stock_is_judged_on_its_own_counters_not_another_writers_count_of_the_same_events(tmp_path):
+def test_identification_judges_a_stock_on_its_own_counters_not_another_writers_count_of_the_same_events(tmp_path):
     # the customers order (the board places it a second later) and are served (three seconds after
     # the board's accepted), and give up only in the first half hour. The customers' waiting is
     # exactly ordered - served - gave up; with the board's counts, which unify_same_flows joins to
     # the customers', it misses the steps a lag crosses, and judged on those its halves are another
-    # writer's counters (the real run: 113 of 120 steps, refused by the halves' vote)
+    # writer's counters (the real run: 113 of 120 steps, refused by the halves' vote). A rating
+    # gauge in counts whose moves are all fractions is no buffer between two counters: the
+    # customers' gave up and the board's cancelled still join
     cu, bo = {"project": "p", "instrument": "customers"}, {"project": "p", "instrument": "board"}
     st = dict.fromkeys(("ordered", "served", "gave_up", "cwait", "placed", "assigned", "accepted", "cancelled", "bwait", "ready"), 0)
 
     def tick(rng, t, pend):
         out = _due(pend, t)
+        if (t - T0) % 10 == 0:
+            out.append(Point("bakery_rating", 4 + 0.3 * math.sin((t - T0) / 300), t, {"project": "p", "instrument": "yelp"}))
         if rng.random() < 0.037:
             st["ordered"] += 1; st["cwait"] += 1
             out += [Point("customers_ordered_total", st["ordered"], t, cu), Point("customers_waiting", st["cwait"], t, cu)]
@@ -75,6 +81,8 @@ def test_a_stock_is_judged_on_its_own_counters_not_another_writers_count_of_the_
     idn = m.stock("customers_waiting").evidence["identification"]
     assert idn["exact_moved"] == 1.0, idn
     assert all(c.split("{")[0].lstrip("+-").startswith("customers_") for half in idn["halves"] for c in half), idn["halves"]
+    assert m.discovery["left_out"].get('orders_cancelled_total{instrument="board"}', "").startswith("the same as") or \
+        _balance(m, "orders_waiting") >= {("orders_cancelled_total", -1)}, m.discovery["left_out"]
 
 
 def test_a_measured_level_between_two_counters_keeps_them_apart_however_seldom_it_moves(tmp_path):

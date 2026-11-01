@@ -118,7 +118,7 @@ from .pins import declared as declared_stocks
 from .properties import statistic
 from .resolution import LINEAR, intervals_with, real_points, steps_of
 from .restate import (
-    measured_between,
+    buffers,
     own_counters_back,
     split_event_counters,
     split_foreign_counters,
@@ -937,8 +937,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         found, made = pass_(found, counters, masks, writer_of, fits, MIN_EVENTS)
         notes.update(made)
     found, made, joined = unify_same_flows(found, masks, lambda a, b: (same_flow(a, b, n) or lagged_flow(a, b)) and not counts_apart(a, b, named),
-                                           first_stamped, writer_of, fits,
-                                           lambda a, b: measured_between([lv for lv in series if unit[lv.key] == unit[a.key]], a, b))
+                                           first_stamped, writer_of, fits, buffers(series, unit))
     notes.update(made)
     for keep, drop in joined:              # a counter joined to another stands for nothing on its own
         same_as[keep.key] += [{"name": drop.name, "labels": drop.labels}, *same_as.pop(drop.key, [])]

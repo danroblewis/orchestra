@@ -110,17 +110,26 @@ def _held_together(found: list, a: Series, b: Series) -> bool:
 
 def measured_between(levels: list[Series], a: Series, b: Series) -> bool:
     """Whether a measured level is the buffer between two counters: one fills it and the other
-    drains it, exactly in every step where any of them is live, and it moved. However seldom it
-    moved (the shelf an order leaves within seconds, read as held in two steps of an hour, too
-    few to be a stock), the grid tells the two apart in its steps: its inflow and its outflow,
-    never one flow."""
+    drains it (either way round), within half a unit in every step where the level and both
+    counters are live, and in at least one of those steps the counters differ and the level moved
+    by a whole unit with them. However seldom it moved (the shelf an order leaves within seconds,
+    read as held in two steps of an hour, too few to be a stock), the grid tells the two apart in
+    its steps: its inflow and its outflow, never one flow. A gauge whose moves are all fractions
+    (a rating, a mean age) explains no difference of counts, and is never a buffer."""
     for lv in levels:
+        if lv.counter:
+            continue
         steps = balance_steps(lv, [a, b])
-        if lv.counter or not any(lv.deltas[i] for i in steps):
+        if not any(abs(lv.deltas[i]) >= 1 and a.deltas[i] != b.deltas[i] for i in steps):
             continue
         if any(fit_of(lv, [(a, sg), (b, -sg)], steps)[1] >= 1.0 - 1e-9 for sg in (1, -1)):
             return True
     return False
+
+
+def buffers(levels: list[Series], unit: dict[str, str]):
+    """``measured_between`` over the levels in the counters' own unit, for ``unify_same_flows``."""
+    return lambda a, b: measured_between([lv for lv in levels if unit[lv.key] == unit[a.key]], a, b)
 
 
 def unify_same_flows(found: list, masks: dict[str, list[int]], same, first_stamped, writer_of, fits,
