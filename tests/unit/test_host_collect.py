@@ -76,3 +76,4 @@ def test_a_detector_is_an_instrument_not_a_machine(project, tmp_path):
     assert "Instruments" in web.get("/instruments").text
     cat = web.get("/api/core/metrics/catalog").json()
     assert {"goes_proton_flux", "goes_readings_total"} <= {m["name"] for m in cat["metrics"]}
+

@@ -137,6 +137,7 @@ class CoreProbe:
         rec = launching or next(iter(runtime.hosts(record)), None) or {}
         loop = _proc(rec.get("pid")) if rec.get("pid") else {"alive": False}
         loop["since"] = rec.get("since", loop.get("since"))
+        collector = ((record.get("hosts") or {}).get(str(rec.get("pid"))) or {}).get("collector") if loop.get("alive") else None
         log = self.project.logs_dir / "orchestra-host.log"
         last = _tail(log, 1)
         me = _proc(os.getpid())
@@ -151,7 +152,7 @@ class CoreProbe:
                 "python": f"{platform.python_implementation()} {sys.version.split()[0]}",
                 "project": self.project.key, "repo": str(self.project.repo_root), "state": str(self.project.state_dir),
                 "host_log": str(log), "host_log_last": last[0] if last else None,
-                "processes": self._processes(record) if launching else []}
+                "processes": self._processes(record) if launching else [], "collector": collector}
 
     def _bus(self) -> dict:
         bus = self.events.bus

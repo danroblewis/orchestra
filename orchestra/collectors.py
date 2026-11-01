@@ -66,7 +66,10 @@ class BackfillReport:
 
 
 def backfill(events: list[dict], *, project: str, store: MetricsStore, replace: bool = True) -> BackfillReport:
-    """Replay a whole event log into the metrics store."""
+    """Replay a whole event log into the metrics store. The points are computed before anything
+    is deleted; when the write fails after the old counters were deleted it raises, never returns,
+    and the caller replays again (the host retries until it succeeds), so the counters are never
+    left deleted by a replay that said it was done."""
     col = EventCollector(project)
     points: list[Point] = []
     for ev in events:

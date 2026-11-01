@@ -5,8 +5,10 @@ In an empty Orchestra it does little, on purpose:
 - it publishes ``orchestra.host.started`` and ``orchestra.host.stopped``, and writes
   ``orchestra_host_up`` to the metrics store, so the host is observed like any machine;
 - it runs Orchestra's event collector: every event on the bus, from any machine, counted by type
-  and source (``orchestra.collectors``). It replays the whole bus once at start, so the counters
-  continue from the full history, then follows the bus;
+  and source (``orchestra.collectors``). The host that launches replays the whole bus once at start,
+  in order, so the counters continue from the full history, retrying until the replay succeeds,
+  then follows the bus; a second host follows from the bus's end and writes no counters. What the
+  collector is doing is in the runtime record (``hosts.<pid>.collector``, on the Core page);
 - it says when a machine falls silent past its own cadence on the bus (``orchestra.quiet``:
   ``orchestra.machine.quiet``, subject the machine);
 - it records the eras the bus begins (``orchestra.sd.eras``: ``system.changed`` and the events
@@ -69,6 +71,7 @@ from .quiet import QUIET, QuietWatch
 
 HOST_LOG_MAX = 5_000_000
 ERAS_EVERY_S = 5.0              # how often the collector looks for events that begin an era
+REPLAY_PAUSE_MAX = 60.0         # the longest pause between two tries of the collector's replay at start
 LEAST_PAUSE = 0.2               # of [discovery] every: the least pause between one discovery's end and the next's start
 
 
@@ -109,6 +112,7 @@ class Host:
         self._declared: dict[str, tuple[list[Process], list[Collector]]] = {}   # each plugin's, as last loaded
         self._loaded_for: tuple | None = None            # the configuration's stamp they were loaded for
         self._stop = threading.Event()
+        self._said_state: str | None = None              # the collector's state as last recorded
 
     def log(self, msg: str) -> None:
         line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {msg}"
@@ -130,35 +134,85 @@ class Host:
         except Exception as e:  # noqa: BLE001 - the host keeps running without its metric
             self.log(f"metrics: {type(e).__name__}: {e}")
 
-    def _collect(self) -> None:
-        """Follow the bus and keep the event counters current."""
-        store = metrics_for(self.project)
-        evs, offset = self.events.read(0, limit=10_000_000)
-        rep = backfill(evs, project=self.project.key, store=store)
-        col = EventCollector(self.project.key)
+    def _collector_state(self, state: str) -> None:
+        """Say in the runtime record what the collector is doing (``replaying``, ``following``,
+        ``failing: <why>``), under this host, for the Core page; written only when it changes."""
+        if state == self._said_state:
+            return
+        self._said_state = state
+
+        def put(d: dict) -> None:
+            mine = (d.setdefault("hosts", {})).setdefault(str(os.getpid()), runtime.me())
+            mine["collector"] = {"state": state, "at": time.time()}
+        try:
+            runtime.update(self.project, put)
+        except Exception as e:  # noqa: BLE001 - the record is for the page; the collector goes on
+            self.log(f"collector: cannot record its state: {type(e).__name__}: {e}")
+
+    def _replay(self, counts: bool):
+        """The collector's start: with ``counts`` (the host that launches), replay the whole bus in
+        order into the counters (``backfill``) and the quiet watch; without, follow from the bus's
+        end, writing no counters (the launching host keeps them). Returns (collector or None, quiet
+        watch, offset); raises when the bus or the store fails, and the caller retries."""
         quiet = QuietWatch()
+        if not counts:
+            offset = self.events.end()
+            self.log("collector: another orchestra run keeps the event counters; following the bus from its end")
+            return None, quiet, offset
+        self._collector_state("replaying")
+        evs, offset = self.events.after(0)
+        rep = backfill(evs, project=self.project.key, store=metrics_for(self.project))
+        col = EventCollector(self.project.key)
         for ev in evs:
             col.observe(ev)
             quiet.observe(ev)
         quiet.settle()
         self.log(f"collector: replayed {rep.events} events into {rep.points} points; following the bus")
-        eras_at = 0.0
+        return col, quiet, offset
+
+    def _look(self, quiet: QuietWatch) -> None:
+        """What the host looks for every ``ERAS_EVERY_S``, whether or not the replay has landed."""
+        self._eras()
+        self._quiet(quiet)
+        self._intent()
+
+    def _collect(self, counts: bool = True) -> None:
+        """Follow the bus and keep the event counters current. The replay at start is retried,
+        with a growing pause, until it succeeds; meanwhile the eras, quiet machines and the
+        intended model's announcements are still looked at (quiet with an empty watch until the
+        replay lands)."""
+        col, quiet, offset = None, QuietWatch(), None
+        eras_at = retry_at = 0.0
+        pause = self.collect_every
         while not self._stop.is_set():
             if time.time() - eras_at >= ERAS_EVERY_S:
                 eras_at = time.time()
-                self._eras()
-                self._quiet(quiet)
-                self._intent()
+                self._look(quiet)
+            if offset is None:
+                if time.time() >= retry_at:
+                    try:
+                        col, quiet, offset = self._replay(counts)
+                        self._collector_state("following")
+                    except Exception as e:  # noqa: BLE001 - retried; the looks go on meanwhile
+                        why = f"{type(e).__name__}: {e}"
+                        self.log(f"collector: replay failed: {why}; retrying in {pause:.0f} s")
+                        self._collector_state(f"failing: replay: {why}")
+                        retry_at = time.time() + pause
+                        pause = min(pause * 2, REPLAY_PAUSE_MAX)
+            else:
+                try:
+                    new, offset = self.events.after(offset)
+                    for ev in new:
+                        quiet.observe(ev)
+                    if col is not None:
+                        pts = collapse([p for ev in new for p in col.observe(ev)])
+                        if pts:
+                            metrics_for(self.project).write(pts)
+                    self._collector_state("following")
+                except Exception as e:  # noqa: BLE001 - keep following; the next read retries
+                    self.log(f"collector: {type(e).__name__}: {e}")
+                    self._collector_state(f"failing: {type(e).__name__}: {e}")
             self._stop.wait(self.collect_every)
-            try:
-                new, offset = self.events.read(offset, limit=100_000)
-                for ev in new:
-                    quiet.observe(ev)
-                pts = collapse([p for ev in new for p in col.observe(ev)])
-                if pts:
-                    store.write(pts)
-            except Exception as e:  # noqa: BLE001 - keep following; the next read retries
-                self.log(f"collector: {type(e).__name__}: {e}")
 
     def _quiet(self, watch: QuietWatch) -> None:
         """Announce the machines that fell silent past their own cadence (``orchestra.quiet``)."""
@@ -390,9 +444,6 @@ class Host:
         self.events.publish("orchestra.host.started", {"pid": os.getpid()})
         self.events.publish("orchestra.machine.started", {"mode": "continuous", "listens_for": []})
         self.log(f"host started (pid {os.getpid()}) for {self.project.key}")
-        if not once:
-            threading.Thread(target=self._collect, name="collector", daemon=True).start()
-            threading.Thread(target=self._discover, name="discovery", daemon=True).start()
         launching = None
         if not once:
             if other := self._claim():
@@ -400,6 +451,8 @@ class Host:
             else:
                 launching = threading.Thread(target=self._launch, name="launcher")
                 launching.start()
+            threading.Thread(target=self._collect, args=(launching is not None,), name="collector", daemon=True).start()
+            threading.Thread(target=self._discover, name="discovery", daemon=True).start()
         try:
             while not self._stop.is_set():
                 self._beat(1.0)
