@@ -102,9 +102,23 @@ const Live = (() => {
     const rows = [...io.in.map((f) => ["+", f]), ...io.out.map((f) => ["−", f])].map(([sg, f]) => `<div class="tr"><span>${sg} ${esc(flowName(f))}</span><b>${rateFmt(recentRate(f.id))}${per()}</b></div>`).join("");
     const changers = [...new Set([...io.in, ...io.out].flatMap((f) => (f.machines || []).map((x) => x.machine)))];
     const ev = s.evidence || {};
-    return `<div class="tt">${stockHead(s.id)}</div><div class="tr"><span>now</span><b>${fmt(v)}</b></div>
+    return `<div class="tt">${stockHead(s.id)}</div>${stockAbout(s.id)}<div class="tr"><span>now</span><b>${fmt(v)}</b></div>
       <div class="tr"><span>machines (hypotheses)</span><b>${changers.map((m) => `<span style="color:${mcolor(m)}">${esc(m)}</span>`).join(", ") || "—"}</b></div>
       <div class="tr"><span>${ev.hidden ? "its counters from" : "measured by"}</span><b>${esc(ev.hidden ? counterInstruments(ev) : ev.written_by || ev.machine || "—")}</b></div><div class="tr"><span>range, ${esc(spanText(stockHist(id)))}</span><b>${fmt(h.length ? Math.min(...h) : null)} – ${fmt(h.length ? Math.max(...h) : null)}</b></div>${rows}<div class="hint">click for history and details</div>`;
+  }
+  // why what the page shows as one stock is one: a passage's counters count the same items in and
+  // out of a state no series measures; twins are one stock measured by several series (the owner,
+  // 2026-11-01, read a passage named by its counter's labels as three things in one stock)
+  function whyOne(s, io) {
+    const ev = s.evidence || {}, rows = [];
+    if (ev.passing) {
+      const ends = (fs, end) => [...new Set(fs.map((f) => (f[end] ? stockName(f[end]) : "outside")))].join(" or ");
+      rows.push(`<div>why one stock</div><div>items leave ${esc(ends(io.in, "from"))} and reach ${esc(ends(io.out, "to"))} within one step of the grid, and the counters that move them count the same items (${ev.passing.ins.length + ev.passing.outs.length} counters, their totals agree): ${ev.hidden ? "no series measures the state between, so it is one stock whose level is what they imply" : "the level between is measured, and rises and falls with them"}.</div>`);
+    }
+    if ((ev.twins || []).length) {
+      rows.push(`<div>why one stock</div><div>one stock, measured ${ev.twins.length + 1} ways: ${esc(s.series ? keyOf(s.series) : s.id)} (kept)${ev.twins.map((t) => `, ${esc(t.series)} <span class="muted">(changes equal in ${Math.round(100 * (t.equal_steps || 0))}% of steps${t.change_correlation != null ? `, correlate by ${(+t.change_correlation).toFixed(2)}` : ""})</span>`).join("")}</div>`);
+    }
+    return rows.join("");
   }
   // the instruments that wrote a hidden stock's balance counters: what its level is implied from
   function counterInstruments(ev) {
@@ -168,8 +182,10 @@ const Live = (() => {
     for (const l of lines) for (const [t, v] of l.points) net.set(t, (net.get(t) || 0) + v);
     if (lines.length > 1) lines.push({ label: "net (in − out)", points: [...net.entries()].sort((a, b) => a[0] - b[0]), color: "#e5e7eb" });
     openDrawer(`<h3 data-drawer-key="s:${esc(id)}">${stockHead(s.id)} <span class="tag">stock</span>${ev.hidden ? ' <span class="tag">hidden: found from the levels, not measured</span>' : ""}</h3>
-      ${ev.hidden ? `<div class="muted" style="font-size:12px;margin-bottom:8px">A question about the system: ${esc(ev.note || "something in it is not measured or not understood yet")}.</div>` : ""}
+      ${stockAbout(s.id)}
+      ${ev.hidden ? `<div class="muted" style="font-size:12px;margin-bottom:8px">A question about the system: ${esc(ev.note || (ev.passing && ev.passing.note) || "something in it is not measured or not understood yet")}.</div>` : ""}
       <div class="def"><div>now</div><div class="num">${fmt(now(id))}</div>
+      ${whyOne(s, io)}
       <div>machines</div><div>${[...new Set([...io.in, ...io.out].flatMap((f) => (f.machines || []).map((h) => h.machine)))].map((m) => `<span class="mdot" style="--c:${mcolor(m)}"></span>${esc(m)}`).join(" ") || '<span class="muted">none associated yet</span>'} <span class="muted">(hypotheses, from its flows)</span></div>
       ${ev.hidden ? `<div>its counters from</div><div>${esc(counterInstruments(ev))} <span class="muted">(no series measures it: its level is what these counters imply)</span></div>` : `<div>measured by</div><div>${writerLink(s, ev)} <span class="muted">(wrote the series: an instrument, or the series' own label)</span></div>`}<div>bound to</div><div class="num">${esc(s.series ? keyOf(s.series) : "—")}</div>
       ${s.series && s.series.source && s.series.source !== "own" ? `<div>read from</div><div>source <b>${esc(s.series.source)}</b><div class="num" style="font-size:11.5px">${esc(s.series.query || "")}</div><div class="muted" style="font-size:11.5px">${esc((s.series.origin || []).join(" → "))}</div></div>` : ""}

@@ -116,6 +116,8 @@ const nice = (s) => (s || "outside").toLowerCase().replace(/_/g, " ");
 // stocks and flows by what tells them apart (SDGraph.names); the model's ``name`` is the full record
 const stockName = (id) => SDGraph.stockName(MODEL, id), flowName = (f) => SDGraph.flowName(MODEL, f);
 const stockHead = (id) => { const n = SDGraph.names(MODEL).stocks[id]; return n ? esc(n.name) + (n.family ? ` <span class="muted">${esc(n.family)}</span>` : "") : esc(nice(id)); };
+// a stock's own sentence (its series' ``describes`` label), said under its name; "" when it has none
+const stockAbout = (id) => { const n = SDGraph.names(MODEL).stocks[id]; return n && n.about ? `<div class="muted about">${esc(n.about)}</div>` : ""; };
 const num = (v, short) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(short ? 2 : 3));
 // the model's text and graph come from sd-graph.js (shared with the layout tests)
 const readName = (x) => SDGraph.readName(MODEL, x);
@@ -353,7 +355,7 @@ function tables() {
       <td class="mcell">${(f.machines || []).length ? f.machines.map((h) => `<div title="${esc(h.why || h.origin || "")}"><span class="mdot" style="--c:${mcolor(h.machine)}"></span><a href="/machines#${encodeURIComponent(h.machine)}" onclick="event.stopPropagation()">${esc((byMachine[h.machine] || {}).name || h.machine)}</a>${h.confidence != null ? ` <span class="muted num">${Math.round(100 * h.confidence)}%</span>` : ""}</div>`).join("") : `<span class="muted" title="${esc(f.association || "")}">no machine associated yet</span>`}</td></tr>`; }).join("");
   // how far to trust each stock, as its drawer says it
   const trustCell = (s) => { const t = (s.evidence || {}).trust; return t ? `<span class="num">${t.score.toFixed(2)}</span> <span class="muted">${esc(t.level)}</span>` : '<span class="muted">—</span>'; };
-  const stocksHtml = `<tr><th>stock</th><th>now</th><th>trust</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr data-sid="${esc(s.id)}" ${opens(`Live.openStock('${esc(s.id)}')`)}><td>${stockHead(s.id)}</td><td class="num">${m.levels[s.id] ? levelText(m.levels[s.id].v, s.unit) : "—"}</td><td>${trustCell(s)}</td>
+  const stocksHtml = `<tr><th>stock</th><th>now</th><th>trust</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr data-sid="${esc(s.id)}" ${opens(`Live.openStock('${esc(s.id)}')`)}><td>${stockHead(s.id)}${stockAbout(s.id)}</td><td class="num">${m.levels[s.id] ? levelText(m.levels[s.id].v, s.unit) : "—"}</td><td>${trustCell(s)}</td>
       <td class="num muted bound">${s.series ? esc(keyOf(s.series)) + `<div style="font-family:inherit">${esc(resOf(m.discovery, keyOf(s.series)))}</div>` : "not measured"}</td></tr>`).join("");
   const hypm = m.machines.filter((x) => x.attributed.length), total = (window.MLIST || []).length;
   const machinesHtml = `<tr><th>machine</th><th>kind</th><th>flows (hypotheses)</th></tr>` + hypm.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span><a href="/machines#${encodeURIComponent(x.id)}">${esc(x.name)}</a>${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>

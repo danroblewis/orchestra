@@ -37,3 +37,26 @@ def test_a_queue_named_for_its_consumer_and_exchange_is_said_once():
     dump = [("backlog", lab, pts(level)), ("published_total", lab, pts(ins)), ("acked_total", lab, pts(outs))]
     m = discover(dump, start=T0, end=T0 + 240 * 60, step=60.0)
     assert [(s.id, s.name) for s in m.stocks] == [("backlog_analytics_clicks", "backlog (analytics.clicks)")]
+
+
+def test_a_series_that_names_a_step_is_named_by_it_and_its_place_never_by_its_description():
+    """The owner (2026-11-01) read the pile ``write.held`` as a disk write: a series that names a
+    ``step`` and its ``place`` there is named by them, then by what they do not spell; its
+    ``describes`` sentence is never in its id or name."""
+    rng = random.Random(4)
+    lab = {"instrument": "piles", "workflow": "delivery_sail", "pile": "write.held", "step": "write", "place": "held",
+           "describes": "held by role worker until its turn finishes; then ready → open_pr"}
+    move = {"instrument": "piles", "workflow": "delivery_sail"}
+    level, ins, outs = [0], [0], [0]
+    for _ in range(240):
+        a, b = rng.randint(0, 3), rng.randint(0, 2) if level[-1] > 2 else 0
+        ins.append(ins[-1] + a)
+        outs.append(outs[-1] + b)
+        level.append(level[-1] + a - b)
+    pts = lambda vs: [(T0 + 60 * i, float(v)) for i, v in enumerate(vs)]
+    dump = [("workflow_pile_items", lab, pts(level)),
+            ("workflow_pile_moves_total", {**move, "from": "write.waiting", "to": "write.held"}, pts(ins)),
+            ("workflow_pile_moves_total", {**move, "from": "write.held", "to": "open_pr.waiting"}, pts(outs))]
+    m = discover(dump, start=T0, end=T0 + 240 * 60, step=60.0)
+    assert [(s.id, s.name) for s in m.stocks] == [("workflow_pile_items_write_held_delivery_sail", "write (held) · delivery_sail")]
+    assert m.stocks[0].series.labels["describes"] == lab["describes"]          # kept on the series: the page shows it
