@@ -3,8 +3,9 @@
 The Core page must keep working when the rest of Orchestra does not: when the system dynamics
 model is broken or every other machine is down. So this module
 imports only the event bus, the metrics store and the runtime record; each component is probed in
-its own thread with a time limit, and a failure or a hang shows on that component's card instead
-of taking the page down.
+its own single worker (``Lane``) with a time limit, at most one probe in flight per component, so a
+failure or a hang shows on that component's card instead of taking the page, or the other
+components' probes, down.
 
 Components:
 - **bootstrap host**: the ``orchestra run`` process (Orchestra's own machine) and this web process;
@@ -87,6 +88,49 @@ def _tail(path: Path, lines: int) -> list[str]:
         return []
 
 
+class Lane:
+    """One component's probe: a worker of its own, and at most one call in flight. While a call is
+    still running (a hung store), the next asks get its last result marked as still waiting rather
+    than queueing another call behind it, so a hang holds one thread, never the others' workers."""
+
+    def __init__(self, name: str):
+        self.name = name
+        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"core-{name}")
+        self._lock = threading.Lock()
+        self._fut = None
+        self._since: float | None = None
+        self.last: dict | None = None
+
+    def start(self, fn, *args):
+        """Submit ``fn``, or return None when the previous call has not returned yet."""
+        with self._lock:
+            if self._fut is not None and not self._fut.done():
+                return None
+            self._since = time.time()
+            self._fut = self._pool.submit(fn, *args)
+            self._fut.add_done_callback(self._keep)
+            return self._fut
+
+    def _keep(self, fut) -> None:
+        if not fut.cancelled() and fut.exception() is None and isinstance(fut.result(), dict):
+            self.last = fut.result()
+
+    def waiting(self) -> dict:
+        since = datetime.fromtimestamp(self._since or time.time()).strftime("%H:%M:%S")
+        return {**(self.last or {}), "ok": False, "waiting_since": self._since,
+                "error": f"still waiting since {since}: the probe started then has not returned"}
+
+    def wait(self, fut, timeout: float):
+        """The call's result within ``timeout`` (raises ``FutureTimeout`` or the call's error), or
+        the still-waiting answer when ``fut`` is None."""
+        if fut is None:
+            return self.waiting()
+        return fut.result(timeout=max(0.0, timeout))
+
+    def run(self, fn, *args, timeout: float):
+        return self.wait(self.start(fn, *args), timeout)
+
+
 class CoreProbe:
     def __init__(self, project: Project, events: Events):
         self.project = project
@@ -95,7 +139,8 @@ class CoreProbe:
         self._lock = threading.Lock()
         self._last: dict | None = None
         self._at = 0.0
-        self._pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="core")
+        # one lane per component, so a hung store never starves another component's probe
+        self._lanes = {name: Lane(name) for name in ("host", "bus", "metrics", "bus-write", "events-log", "process-log")}
         self.log: collections.deque = collections.deque(maxlen=500)
         self._state: dict[str, bool] = {}
         try:
@@ -217,24 +262,34 @@ class CoreProbe:
             out.update(ok=False, error="a point written was not readable within 3 s")
         return out
 
-    def _guarded(self, component: str, fn, *args) -> dict:
+    def _start(self, component: str, fn, *args):
+        return self._lanes[component].start(fn, *args)
+
+    def _finish(self, component: str, fut, deadline: float) -> dict:
+        lane = self._lanes[component]
         try:
-            return self._record(component, self._pool.submit(fn, *args).result(timeout=TIMEOUT))
+            return self._record(component, lane.wait(fut, deadline - time.monotonic()))
         except FutureTimeout:
             return self._record(component, {"ok": False, "error": f"timed out after {TIMEOUT:g} s"})
         except Exception as e:  # noqa: BLE001 - shown on the page
             return self._record(component, {"ok": False, "error": f"{type(e).__name__}: {e}"})
 
+    def _guarded(self, component: str, fn, *args) -> dict:
+        deadline = time.monotonic() + TIMEOUT
+        return self._finish(component, self._start(component, fn, *args), deadline)
+
     def status(self) -> dict:
         with self._lock:
             if self._last is None or time.time() - self._at >= INTERVAL:
-                # all three at once, so the slowest bounds the wait; the metrics probe records the
-                # previous bus reading rather than waiting for this one
+                # all three at once, each in its own lane, so the slowest bounds the wait; the
+                # metrics probe records the previous bus reading rather than waiting for this one
                 prev_bus = (self._last or {}).get("bus") or {}
-                host = self._pool.submit(self._guarded, "host", self._host)
-                bus = self._pool.submit(self._guarded, "bus", self._bus)
-                met = self._pool.submit(self._guarded, "metrics", self._metrics, prev_bus if prev_bus.get("ok") else {})
-                self._last = {"host": host.result(), "bus": bus.result(), "metrics": met.result(),
+                deadline = time.monotonic() + TIMEOUT
+                host = self._start("host", self._host)
+                bus = self._start("bus", self._bus)
+                met = self._start("metrics", self._metrics, prev_bus if prev_bus.get("ok") else {})
+                self._last = {"host": self._finish("host", host, deadline), "bus": self._finish("bus", bus, deadline),
+                              "metrics": self._finish("metrics", met, deadline),
                               "probed_at": time.time(), "interval": INTERVAL, "timeout": TIMEOUT}
                 self._at = time.time()
             return self._last
@@ -270,7 +325,7 @@ class CoreProbe:
     def process_log(self, name: str, lines: int = 200) -> dict:
         """A launched process's log tail (``process_logs.read``), within the time limit."""
         try:
-            return self._pool.submit(process_logs.read, name, self.project.logs_dir, self._roots(), lines).result(timeout=TIMEOUT)
+            return self._lanes["process-log"].run(process_logs.read, name, self.project.logs_dir, self._roots(), lines, timeout=TIMEOUT)
         except FutureTimeout:
             return {"name": name, "lines": [], "more": False, "error": None, "note": f"reading the log timed out after {TIMEOUT:g} s"}
         except Exception as e:  # noqa: BLE001 - shown on the page
@@ -292,7 +347,10 @@ class CoreProbe:
                 evs, _ = bus.read(max(0, end - lines), limit=lines)
                 return [json.dumps(e, ensure_ascii=False)[:400] for e in evs]
             try:
-                return {"source": source, "lines": self._pool.submit(go).result(timeout=TIMEOUT)}
+                got = self._lanes["events-log"].run(go, timeout=TIMEOUT)
+                if isinstance(got, dict):                  # the previous read is still running
+                    return {"source": source, "lines": [], "note": f"the event bus did not answer: {got['error']}"}
+                return {"source": source, "lines": got}
             except Exception as e:  # noqa: BLE001
                 return {"source": source, "lines": [], "note": f"the event bus did not answer: {type(e).__name__}: {e}"}
         if source.startswith("process:"):

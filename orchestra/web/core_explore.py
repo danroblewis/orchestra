@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 import time
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 
 from ..events import event_time, for_an_instrument
 from ..metrics import MetricsError
@@ -43,7 +44,10 @@ def emitter(ev: dict) -> str:
 
 class Explorer:
     def __init__(self, core):
-        self.core = core                    # CoreProbe: project, events, metrics, the guarded pool
+        self.core = core                    # CoreProbe: project, events, metrics
+        # its own workers, never Core's probes', so a slow catalogue or query cannot make the host
+        # or the bus card time out
+        self._pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="core-explore")
         self._cache: dict[str, tuple[float, object]] = {}
 
     def _cached(self, key: str, fn):
@@ -56,7 +60,7 @@ class Explorer:
 
     def _guard(self, fn, *args) -> dict:
         try:
-            return self.core._pool.submit(fn, *args).result(timeout=self.core_timeout())
+            return self._pool.submit(fn, *args).result(timeout=self.core_timeout())
         except Exception as e:  # noqa: BLE001 - shown on the panel
             return {"ok": False, "error": f"{type(e).__name__}: {e}" if str(e) else f"timed out after {self.core_timeout():g} s"}
 

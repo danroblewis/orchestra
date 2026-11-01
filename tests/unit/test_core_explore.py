@@ -1,5 +1,4 @@
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -12,7 +11,7 @@ from orchestra.web.core_explore import Explorer, emitter
 def _core(tmp_path, key="p1"):
     bus = FileBus(tmp_path / "events.jsonl")
     return SimpleNamespace(project=SimpleNamespace(key=key), metrics=FileMetrics(tmp_path / "metrics.jsonl"),
-                           events=SimpleNamespace(bus=bus), _pool=ThreadPoolExecutor(2))
+                           events=SimpleNamespace(bus=bus))
 
 
 def test_emitter_names_the_machine():
