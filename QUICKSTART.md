@@ -115,6 +115,7 @@ its worktree; you merge it.
 
 | Page | What it shows |
 |---|---|
+| Dashboard | What runs now: the machines heard in their rhythm, the latest model, and what waits for you |
 | Agents | The Supervisor's chat, every agent, and what each one is doing |
 | Items | Each piece of work: its step, who holds it, and why it waits |
 | Machines | Who does the work (agents, programs, people), and who hands work to whom |
