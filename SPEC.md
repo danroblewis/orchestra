@@ -1239,7 +1239,7 @@ is never read as an overlay. With no overlay, the configuration is `orchestra.to
 - An overlay entry `{ name = "x", enabled = false }` removes the repository's `x`.
 - Anything else is replaced.
 
-`[overlay]` in the overlay is not merged: `secret` lists keys (`desk.me`, `machines[pager]`,
+`[overlay]` in the overlay is not merged: `secret` lists keys (`desk.owner`, `machines[pager]`,
 `machines[pager].command`; a key covers what is under it) whose values are never shown.
 `/api/project` lists both files and each key of the merged configuration with `from` (`repo` or
 `overlay`) and its value unless secret, and the entries the overlay removed. Credentials never

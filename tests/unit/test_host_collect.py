@@ -10,6 +10,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
+from orchestra import plugins
 from orchestra.config import init_project
 from orchestra.events import Events
 from orchestra.metrics import for_project
@@ -17,10 +18,15 @@ from orchestra.web.app import create_app
 from orchestra.web.auth import bearer
 from orchestra.web.machines import machines_view
 
+# `orchestra run` without the installed plugins: their machines and instruments are not this test's
+WITHOUT_PLUGINS = ("import sys; from orchestra import plugins; plugins.entry_points = lambda group: []; "
+                   "from orchestra.cli import main; sys.exit(main())")
+
 
 @pytest.fixture
 def project(tmp_path, monkeypatch):
     monkeypatch.setenv("ORCHESTRATOR_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(plugins, "entry_points", lambda group: [])      # nor in the web app
     r = tmp_path / "repo"
     r.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=r, check=True)
@@ -39,7 +45,7 @@ def project(tmp_path, monkeypatch):
 
 def test_a_detector_is_an_instrument_not_a_machine(project, tmp_path):
     out = (tmp_path / "host.out").open("w")
-    host = subprocess.Popen([sys.executable, "-m", "orchestra", "--repo", str(project.repo_root), "run"],
+    host = subprocess.Popen([sys.executable, "-c", WITHOUT_PLUGINS, "--repo", str(project.repo_root), "run"],
                             stdout=out, stderr=subprocess.STDOUT)
     web = TestClient(create_app(project), headers=bearer(project))
     try:
