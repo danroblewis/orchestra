@@ -32,6 +32,7 @@ class Round:
     bad: list[tuple[int, str]] = field(default_factory=list)      # lines not understood: (line number, why)
     left_out: list[str] = field(default_factory=list)             # a histogram's or summary's other series, non-numbers
     error: str | None = None                                      # why the round wrote nothing
+    note: str | None = None                                       # the last line a command printed to standard error
 
 
 OWN = ("project", "instrument", "simulated", "draft")     # the labels Orchestra sets on collected points
@@ -66,7 +67,9 @@ def collect(c: Collector, repo: Path, project: str, log: Path, stop: threading.E
     """Run the collector once: its points, or the error that left it with none."""
     now = time.time()
     try:
-        text = run_command(c, repo, log, stop) if c.kind == "collect" else fetch_url(c)
+        text, note = run_command(c, repo, log, stop) if c.kind == "collect" else (fetch_url(c), None)
     except Failed as e:
-        return Round(error=str(e))
-    return points_of(c, text, project, now)
+        return Round(error=str(e), note=e.note)
+    r = points_of(c, text, project, now)
+    r.note = note
+    return r

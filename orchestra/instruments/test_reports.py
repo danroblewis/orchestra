@@ -603,7 +603,10 @@ def run_round(a: argparse.Namespace, rules: list[tuple[str, str]]) -> tuple[Ran,
     if ran.result != "reported":
         what = {"no_report": f"exited with {ran.code} and wrote no report", "unreadable": "wrote a report that cannot be read",
                 "timed_out": f"took longer than {timeout:g} s (--run-timeout); killed"}[ran.result]
-        print(f"test_reports: `{a.run}` {what}; no tests counted this round. Its output ended:\n{ran.tail}", file=sys.stderr)
+        # the clear line first, the command's own output after it, and the clear line again last:
+        # the collect runner shows a round's last standard error line on the Instruments page
+        said = f"no tests counted: `{a.run}` {what}"
+        print(f"test_reports: {said}. Its output ended:\n{ran.tail}\n{said}", file=sys.stderr)
     current = {RUN_FILE: seen.streams.get(RUN_FILE, [])} if ran.result == "reported" else {}
     return ran, seen, current, {"read": read, "unreadable": bad}
 

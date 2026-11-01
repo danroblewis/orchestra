@@ -169,6 +169,11 @@ class Collecting:
 
     def _record(self, c: Collector, r: Round) -> None:
         at = time.time()
+        with self._lock:                         # what the round said last on standard error, or nothing
+            h = self.health.setdefault(c.name, {})
+            if h.get("last_note") != r.note:
+                self._urgent = True
+            h.update(last_note=r.note, last_note_at=at if r.note else None)
         if r.error:
             with self._lock:
                 self.failures[c.name] += 1

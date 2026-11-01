@@ -553,8 +553,9 @@ flowchart LR
 An instrument is not a machine. It is not announced on the bus and is not on the Machines page.
 It has a page of its own, **Instruments** (`/instruments`, and `/api/instruments`): each
 instrument's name, kind (script, URL, source), target, how often it is read, its last write and
-how many points, its failures, its last error and its log
-(`/api/instruments/<name>/log`). Its health is in `runtime.json` under `instruments`, its log in
+how many points, its failures, its last error (or, when there is none, the last line its last
+round printed to standard error, as "last run said: …": a script that exits 0 but measured
+nothing says why there) and its log (`/api/instruments/<name>/log`). Its health is in `runtime.json` under `instruments`, its log in
 `<state>/logs/instruments/<name>.log`. A plugin's collectors run like yours, named
 `<plugin>.<name>`; a `[[collect]]` or `[[scrape]]` of the same name takes its place, and the
 host's log says so ([`PLUGINS.md`](PLUGINS.md)).
@@ -2114,7 +2115,8 @@ printed it; `cat ~/.orchestrator/projects.json` lists every project's key.
    running them. Check `<state>/runtime.json` (`launcher`, `instruments`), the Core page or the
    Instruments page.
 
-4. **Did the run fail?** The Instruments page shows each instrument's failures and last error.
+4. **Did the run fail?** The Instruments page shows each instrument's failures and last error,
+   or what its last round said last on standard error.
    Its own log says each round's result:
 
    ```bash

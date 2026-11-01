@@ -167,3 +167,28 @@ def test_stop_kills_a_command_under_way(project):
     c.stop()
     assert time.time() - t0 < 5
     assert c.idle(1) and not any("slow:" in ln and "nothing written" in ln for ln in lines)
+
+
+def test_what_a_round_last_said_on_standard_error_is_on_the_instruments_page(project, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from orchestra import plugins
+    from orchestra.web.app import create_app
+    from orchestra.web.auth import bearer
+
+    script = project.repo_root / "machines" / "tests.sh"
+    script.write_text('#!/bin/sh\necho "tests_passed 0"\necho "running the suite" >&2\n'
+                      'echo "no tests counted: \\`make test\\` exited with 2 and wrote no report" >&2\n')
+    script.chmod(0o755)
+    c, _, _ = collecting(project)
+    declare(project, '\n[[collect]]\nname = "tests"\ncommand = "machines/tests.sh"\nevery = "60s"\n')
+    runtime.update(project, lambda d: d.__setitem__("launcher", runtime.me()))       # this process stands for the host
+    c.tick(1000.0)
+    assert c.idle(10)
+    c.tick(1001.0)                                                                    # records the health
+    monkeypatch.setattr(plugins, "entry_points", lambda group: [])
+    got = TestClient(create_app(project), headers=bearer(project)).get("/api/instruments").json()
+    [row] = [x for x in got["instruments"] if x["name"] == "tests"]
+    assert row["failures"] == 0 and not row.get("last_error")
+    assert row["last_note"] == "no tests counted: `make test` exited with 2 and wrote no report"
+    assert row["last_note_at"]

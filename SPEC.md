@@ -289,7 +289,8 @@ A project's own instruments, a command run on an interval (`[[collect]]`) or a U
 (`[[scrape]]`), and a plugin's (`Plugin.collectors`), are in §5.2; another store read at each
 discovery (`[[sources]]`) is in §4.4. The web UI lists them on the Instruments page
 (`web/instruments.py`): what kind each is, its target, how often it is read, its last write, its
-failures and last error, its log, and whether it is `simulated` ("simulated: placeholder numbers")
+failures and last error (or, without one, what its last round printed last on standard error:
+"last run said: …"), its log, and whether it is `simulated` ("simulated: placeholder numbers")
 or a `draft` (with `expires`: "draft until … · left out of discovery"; §5.2).
 
 An instrument may say how it made the series it prints (**views**, `collect/views.py`, §5.2), as
