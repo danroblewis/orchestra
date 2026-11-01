@@ -1,5 +1,6 @@
 """The Dynamics page's ``model.intended`` (§6.1, frames D1–D3): the expected set, the marks, what
-was removed, the Changes panel's rows, and the suggestions' groups, for one discovered model
+was removed, the Changes panel's rows, the suggestions' groups and each part's key (``keys``:
+``{stocks: {id: key}, flows: {id: key}}``, so the page never makes a key itself), for one discovered model
 against a base version (``since``: the previous version by default, ``off`` for no marks, or any
 version). Browsing a past ``vN`` pairs it with the ``dN`` current when ``vN`` was saved.
 
@@ -193,4 +194,4 @@ def dynamics_block(intended, model=None, since=None, *, hold: int, version: int 
                                            if s["status"] == "settled" and k in shown.of(p)),
             "unsettled": len(suggestions), "stabilised": not suggestions, "suggestions": suggestions, "targets": targets,
             "predicted": [{**p, "id": shown.flows.get(p["key"]) if p["key"] else None} for p in diffs.predicted(layer, shown)],
-            "missing": facts.missing}
+            "keys": {"stocks": shown.stock_of_id, "flows": shown.flow_of_id}, "missing": facts.missing}
