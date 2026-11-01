@@ -75,6 +75,7 @@
       <div class="wide muted" id="d-plain"></div>
       <div class="wide muted">These apply to "rediscover now" only. The host rediscovers every <span id="d-every"></span> with <code>[discovery]</code> in orchestra.toml.</div>
     </div></details>
+  <div class="muted" id="sd-note" style="display:none;margin-bottom:6px"></div>
   <div class="diagram" id="diagram"></div>
   <div class="legend" id="legend"></div>
   <div class="ng-loops panel" id="loops" style="margin:0 0 10px"></div>
@@ -462,6 +463,7 @@ async function load() {
     const d = await (await fetch("/api/dynamics/model" + (VERSION ? `?version=${VERSION}` : ERA ? `?era=${encodeURIComponent(ERA)}` : ""))).json();
     await loadKinds();
     showModelParts(d.ok);
+    $("sd-note").textContent = d.sd_missing || ""; $("sd-note").style.display = d.sd_missing ? "" : "none";
     if (!d.ok) {
       const lo = d.discovery && d.discovery.left_out;       // no model yet: what discovery saw, and why each series was left out
       const src = d.discovery ? sourcesNote(d.discovery) : "";   // ... and the sources that were missing or refused
