@@ -28,6 +28,7 @@ from .core_explore import Explorer
 from .dynamics import era_eras, model_view, predictions_view
 from .intended import attach_dynamics, attach_machines
 from .intended import install as install_intended
+from .machines import model_parts
 from .sd_extra import install as install_sd_extra
 from .sd_extra import unavailable
 from .traffic import merge as merge_counted
@@ -198,6 +199,9 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         out = model_view(project, version, bg.levels, bg.levels_error, era=era)
         if out.get("ok"):
             attach_dynamics(project, out, since, core.metrics)
+        elif bg.ready("index"):                     # no model: how long the bus has been heard, so the page can say how much data there is
+            with bg.index._lock:
+                out["bus_since"] = min((v["first"] for insts in bg.index.instances.values() for v in insts.values()), default=None)
         if not sd_installed():                      # conservation only: say what is missing, and how to have it
             out["sd_missing"] = needs_sd("behaviour trust, simulation, experiments and SD Lab's strategies")
         return out
@@ -397,10 +401,12 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         declare(out["machines"])
         attach_machines(project, out, bg.model(), bg.measured)   # the declared machines and what measures them (web/intended.py)
         # the host publishes only when it starts and stops; whether it runs is in the runtime record
+        # (``active_by``: what the flag was judged by, so no page says "in rhythm" of it)
         up = bool(runtime.hosts(runtime.read(project)))
         for m in out["machines"]:
             if m["bootstrap"]:
-                m["active"] = up
+                m["active"], m["active_by"] = up, "runtime"
+        out["model_parts"] = model_parts(bg.model())   # what the cards' flow chips are named by (sd-graph.js), as on Dynamics
         if bg.errors:
             out["errors"] = dict(bg.errors)
         return out

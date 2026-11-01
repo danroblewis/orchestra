@@ -47,7 +47,11 @@ h2 .hctl { display:flex; gap:8px; align-items:center; text-transform:none; lette
 /* ---- drawers ---- */
 .overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:9 }
 .overlay.open { display:flex } .drawer { width:min(940px,94vw); max-height:88vh; overflow:auto; background:var(--panel2); border:1px solid var(--border2); border-radius:12px; padding:18px 20px }
-.drawer h3 { margin:0 0 10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap }
+.drawer h3 { margin:0 0 10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-right:34px }
+/* every drawer's close bar: a zero-height strip that sticks to the drawer's top, its × at the right */
+.drawer-bar { position:sticky; top:-18px; height:0; z-index:5; display:flex; justify-content:flex-end; margin:0 -8px 0 0 }
+.drawer-bar .drawer-close { margin:-6px 0 0; width:30px; height:30px; padding:0; font-size:18px; line-height:1; border-radius:8px; background:var(--panel3) }
+.stale { color:#fcd34d } nav #conn.stale { color:#fcd34d }
 pre { background:#07090d; border:1px solid var(--border); border-radius:8px; padding:8px 10px; white-space:pre-wrap; font-size:12px; max-height:50vh; overflow:auto }
 .note { border-top:1px solid var(--border); padding:8px 0; font-size:12px } .note b { color:var(--muted) }
 
@@ -58,12 +62,14 @@ pre { background:#07090d; border:1px solid var(--border); border-radius:8px; pad
   .col { display:none; border-right:0; padding:12px; height:auto; overflow:visible } .col.on { display:block }
   .page { padding:6px; height:auto }
   .overlay { align-items:stretch } .drawer { width:100vw; max-height:100vh; height:100vh; border-radius:0; padding:14px }
+  .drawer-bar { top:-14px } .drawer-bar .drawer-close { width:40px; height:40px; font-size:22px }
   .kv { grid-template-columns:auto 1fr }
 }
 nav #proj { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-/* one row on phones: the links that do not fit scroll sideways (the page itself never does), so a
-   page a plugin adds is never cut off out of reach */
-@media (max-width: 900px) { html, body { overflow-x:hidden; max-width:100vw } nav { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none } nav a { flex:none } nav #proj { font-size:11px; min-width:80px } }
+/* narrow: the links wrap onto a second line rather than scroll out of sight, so a page a plugin
+   adds is never cut off out of reach; nothing masks a page that is wider than the screen */
+@media (max-width: 900px) { nav { flex-wrap:wrap } nav a { flex:none } nav #proj { font-size:11px; min-width:80px } }
+@media (max-width: 600px) { .meter .lbl { white-space:normal; flex-wrap:wrap; gap:0 6px } .meters { flex-wrap:wrap } .meter { min-width:140px } }
 /* range selectors in chart headers */
 select.range { background:var(--panel3); color:var(--text2); border:1px solid var(--border); border-radius:5px; font:inherit; font-size:10.5px; padding:1px 4px; margin-left:4px; text-transform:none; letter-spacing:0; cursor:pointer }
 /* operator controls */
@@ -87,6 +93,10 @@ svg.spark.blue .l { stroke:#6ea8fe } svg.spark.blue .a { fill:#6ea8fe22 } svg.sp
 /* ---- network graphs (netgraph.js): the event map and the stock-and-flow model ---- */
 svg.netgraph { display:block; width:100%; min-height:0; font-size:11px; cursor:grab; background:var(--panel2); border-radius:10px }
 .ng-node { cursor:pointer } .ng-node text { pointer-events:none }
+/* keyboard focus on a node: a white ring outside a dark gap (focusRing in netgraph.js), readable on any node's colour */
+g.ng-node:focus, g.ng-label:focus { outline:none } .ng-focusring { fill:none; pointer-events:none; display:none } g.ng-node:focus-visible > .ng-focusring { display:inline }
+.ng-focusring.gap { stroke:#0b0d12; stroke-width:4 } .ng-focusring.ring { stroke:#fff; stroke-width:2 }
+g.ng-label:focus-visible .ng-elabel { fill:#fff; text-decoration:underline }
 .ng-initial { fill:#0b0d12; font-weight:800; font-size:15px }
 .ng-name { fill:var(--text); font-weight:600; font-size:11.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
 .ng-sub { fill:var(--muted); font-size:9.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
@@ -98,7 +108,9 @@ svg.netgraph { display:block; width:100%; min-height:0; font-size:11px; cursor:g
 .ng-line { fill:none; opacity:.85 } .ng-gap { fill:none; stroke:var(--panel2); stroke-width:1.8; pointer-events:none } .ng-double .ng-line, .ng-double .ng-line.ng-hover, .ng-hl.ng-double .ng-line { stroke-width:5 } .ng-hit { fill:none; stroke:transparent; stroke-width:12; cursor:pointer }
 .ng-flowdash { fill:none; stroke:#fff; stroke-width:2.2; stroke-dasharray:2 14; opacity:.7; pointer-events:none; animation:ng-flow linear infinite }
 @keyframes ng-flow { to { stroke-dashoffset:-32 } }
-.ng-elabel { fill:var(--text); font-size:10.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px; pointer-events:none } .ng-elabel tspan + tspan { font-weight:600 }
+.ng-elabel { fill:var(--text); font-size:10.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3.5px; stroke-linejoin:round; pointer-events:none } .ng-elabel tspan + tspan { font-weight:600 }
+.ng-elabel tspan.ng-muted { fill:var(--muted); font-weight:400; font-style:italic }
+.ng-label.ng-clickable { cursor:pointer } .ng-label.ng-clickable .ng-elabel { pointer-events:all }
 .ng-sign { font-size:15px; font-weight:800; paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
 .ng-dim { opacity:.1; transition:opacity .15s } .ng-hl .ng-line { stroke:#fcd34d !important; stroke-width:2.6 } .ng-node.ng-hl .ng-box, .ng-node.ng-hl > circle:not(.ng-halo) { stroke:#fcd34d; stroke-width:3 }
 .ng-tip { display:none; position:fixed; z-index:60; pointer-events:none; background:var(--panel2); border:1px solid var(--border2); border-radius:8px; padding:7px 10px; font-size:12px; box-shadow:0 8px 24px #0008; max-width:440px }
@@ -111,6 +123,9 @@ svg.netgraph { display:block; width:100%; min-height:0; font-size:11px; cursor:g
 .ng-frame { fill:rgba(148,163,184,.035); stroke:var(--muted); stroke-width:1.4; stroke-dasharray:9 6; pointer-events:none }
 .ng-frame-label { fill:var(--muted); font-size:11px; letter-spacing:.06em; text-transform:uppercase; pointer-events:none }
 .ng-fit { position:absolute; top:8px; right:8px; z-index:2 }
+.ng-more { position:absolute; right:8px; top:50%; transform:translateY(-50%); z-index:2; background:var(--panel); border-color:var(--accent); color:var(--text); box-shadow:0 2px 10px #0008 }
+/* a flow nothing moved through lately: its line and label step back */
+.ng-edge.ng-quiet .ng-line { opacity:.35 } .ng-label.ng-quiet .ng-elabel { opacity:.65 }
 .ng-edge.ev-seen .ng-line { opacity:.85 } .ng-edge.ev-unseen .ng-line { opacity:.55 } .ng-edge.ev-declared-listener .ng-line { opacity:.4 } .ng-edge .ng-line.ng-hover { stroke-width:2; opacity:1 }
 .ng-pol.X { background:#1f2937; color:#cbd5e1 } .ng-pol.L { background:#3b2f0b; color:#fcd34d }
 .ng-kind { display:inline-block; font-size:10.5px; border:1px solid var(--border2); border-radius:999px; padding:0 7px; margin-right:6px; color:var(--text2) } .ng-kind.mat { border-color:#14532d; color:#86efac }
@@ -128,3 +143,6 @@ svg.netgraph { display:block; width:100%; min-height:0; font-size:11px; cursor:g
 .mdlg .ty { background:var(--panel3); border:1px solid var(--border); border-radius:999px; padding:0 8px; font-size:11px; font-family:var(--mono); max-width:100%; overflow-wrap:anywhere }
 .mdlg h3 .tag { font-size:9.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:#fde68a; border:1px solid #92400e; border-radius:4px; padding:0 4px; margin-left:4px }
 
+
+/* no endless motion for a viewer who asked for less */
+@media (prefers-reduced-motion: reduce) { .ng-halo, .ng-flowdash, .flowdash, .evmap .halo { animation:none } }

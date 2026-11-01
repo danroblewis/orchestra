@@ -13,11 +13,15 @@
   holder.hidden = true; document.body.appendChild(holder);
   const grid = GridStack.init({
     column: 12, cellHeight: 40, margin: 3, float: false, animate: true, handle: ".dhead",
-    resizable: { handles: "e,se,s,sw,w" }, columnOpts: { breakpoints: [{ w: 820, c: 1 }] },
+    // one column on a phone: the panels as a list in the order of the wide layout (top to bottom, left to right)
+    resizable: { handles: "e,se,s,sw,w" }, columnOpts: { breakpoints: [{ w: 820, c: 1, layout: "list" }] },
   }, board);
+  const narrow = () => grid.getColumn() === 1;
   const els = new Map();                                 // panel id -> its grid item (mounted once)
 
+  // the wide layout is the one kept: a phone's one column never overwrites it
   function remember() {
+    if (narrow()) return;
     for (const n of grid.save(false)) if (n.id) L.items[n.id] = { x: n.x, y: n.y, w: n.w, h: n.h };
     save();
   }
@@ -41,7 +45,8 @@
     if (fresh) { el = build(p); els.set(p.id, el); }
     const at = L.items[p.id], size = p.size || { w: 6, h: 8 };
     board.appendChild(el);
-    grid.makeWidget(el, at ? { id: p.id, x: at.x, y: at.y, w: at.w, h: at.h } : { id: p.id, w: size.w, h: size.h, autoPosition: true });
+    // in one column the panels stack in their wide order (sync places them sorted), so each goes after the last
+    grid.makeWidget(el, at && !narrow() ? { id: p.id, x: at.x, y: at.y, w: at.w, h: at.h } : { id: p.id, w: at ? at.w : size.w, h: at ? at.h : size.h, autoPosition: true });
     if (fresh) {                                         // drawn once, when it is first on the page
       try { p.mount(el.querySelector(".dbody"), { setSub: (t) => { el.querySelector(".sub").textContent = t || ""; } }); }
       catch (e) { el.querySelector(".dbody").innerHTML = `<div class="empty">This panel failed: ${esc(String(e))}</div>`; }
@@ -80,9 +85,21 @@
   }
 
   const placed = new Set();
+  // panels in the order of the wide layout, (y, x); one never placed goes after them, in the order it registered
+  const wideOrder = (ps) => ps.map((p, i) => ({ p, i, at: L.items[p.id] })).sort((a, b) => (a.at ? 0 : 1) - (b.at ? 0 : 1) || (a.at && b.at ? a.at.y - b.at.y || a.at.x - b.at.x : 0) || a.i - b.i).map((x) => x.p);
   function sync() {
-    for (const p of Orchestra.panels.all()) if (!placed.has(p.id)) { placed.add(p.id); place(p); }
+    for (const p of wideOrder(Orchestra.panels.all())) if (!placed.has(p.id)) { placed.add(p.id); place(p); }
+    relist();
     menu();
+  }
+  // one column: every shown panel stacked in the wide layout's order, whenever one arrives late
+  function relist() {
+    if (!narrow()) return;
+    let y = 0;
+    grid.batchUpdate();
+    for (const p of wideOrder(Orchestra.panels.all())) { const el = els.get(p.id); if (!el || L.hidden.includes(p.id) || !el.gridstackNode) continue;
+      grid.update(el, { x: 0, y }); y += el.gridstackNode.h; }
+    grid.batchUpdate(false);
   }
   document.addEventListener("orchestra:panels", sync);
   sync();

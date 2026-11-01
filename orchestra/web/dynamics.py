@@ -76,11 +76,15 @@ def model_view(project, version: int | None = None, levels: dict | None = None, 
             d = cached[1].discovery
             n = looked_at(d)
             why = (f"a source was missing ({d['not_saved']})" if d.get("not_saved") else "nothing balances yet")
+            left = d.get("left_out") or {}
             return {"ok": False, "error": f"There is no model yet: the host's last discovery found no stocks among the "
                                           f"{n} series it looked at ({why}). It looks again every few minutes; "
-                                          "`orchestra sd discover` does it now.",
+                                          "press \u201crediscover now\u201d to look at once.",
+                    "as_of": cached[0],
                     "discovery": {**{k: d[k] for k in ("left_out", "series", "step", "start", "end", "min_r2", "sources", "not_saved",
-                                                       "since_last_s") if k in d}, "looked_at": n}}
+                                                       "since_last_s", "window_s", "summed") if k in d}, "looked_at": n,
+                                  # the series considered and not left out: so "left out N of M" accounts for every one
+                                  "kept": sorted(k for k in (d.get("resolution") or {}) if k not in left)}}
         if cached:
             as_of, model = cached
             live = True
@@ -88,7 +92,7 @@ def model_view(project, version: int | None = None, levels: dict | None = None, 
             model = store.load()
     if model is None:
         return {"ok": False, "error": "There is no model yet. The bootstrap host (`orchestra run`) discovers it from the "
-                                      "metrics store every few minutes; `orchestra sd discover` does it now."}
+                                      "metrics store every few minutes; press \u201crediscover now\u201d to discover it at once."}
     out = model.to_json()
     out["stored"] = bool(versions)
     out["version"] = version or current

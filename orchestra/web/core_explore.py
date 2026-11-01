@@ -8,6 +8,7 @@ slow or broken backend shows as an error on its panel instead of hanging the pag
 from __future__ import annotations
 
 import json
+import math
 import time
 import urllib.error
 import urllib.parse
@@ -171,8 +172,8 @@ class Explorer:
             stamps = [_ts(e) for e in evs]
             first = min((t for t in stamps if t), default=now)
             t0 = max(since, first) if since else first
-            nb = 48
-            width = max(60.0, (now - t0) / nb)
+            width = max(60.0, (now - t0) / 48)
+            nb = max(1, min(48, math.ceil((now - t0) / width)))    # the last bucket ends at now, none drawn in the future
             buckets: dict[str, Counter] = defaultdict(Counter)
             for e, t in zip(evs, stamps):
                 ty = e.get("type", "?")

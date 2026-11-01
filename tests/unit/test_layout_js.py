@@ -1,4 +1,4 @@
-"""The Node tests (tests/layout: the Dynamics layout; tests/loops: feedback loops; tests/names: what stocks and flows are called; tests/cards: the rows of a machine's card; tests/machine_graph: the Machines page's event map), run here so the suite covers them.
+"""The Node tests (tests/layout: the Dynamics layout; tests/loops: feedback loops; tests/names: what stocks and flows are called; tests/cards: the rows of a machine's card, and its details panel; tests/machine_graph: the Machines page's event map), run here so the suite covers them.
 
 They need Node and elkjs (``npm ci`` in tests/layout); without them they are skipped, with how to
 get them."""
@@ -37,6 +37,13 @@ def test_the_names_of_stocks_and_flows():
 def test_the_rows_of_a_machines_card():
     cards = LAYOUT.parent / "cards"
     r = subprocess.run(["node", "--test", "cards.test.mjs"], cwd=cards, capture_output=True, text=True, timeout=120, check=False)
+    assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs Node")
+def test_a_machines_panel_closed_and_reopened_is_drawn_again():
+    cards = LAYOUT.parent / "cards"
+    r = subprocess.run(["node", "--test", "intended-panel.test.mjs"], cwd=cards, capture_output=True, text=True, timeout=120, check=False)
     assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
 
 

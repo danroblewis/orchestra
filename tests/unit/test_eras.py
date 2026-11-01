@@ -192,7 +192,7 @@ def test_the_event_map_differs_before_and_after_a_change_that_adds_a_machine():
     second = machines_view(evs, now=CHANGE + 30, since=CHANGE)
     assert "reviewer" in every and "reviewer" not in first and "reviewer" in {m["id"] for m in second["machines"]}
     worker = next(m for m in second["machines"] if m["id"] == "worker")
-    assert worker["publishes"] == [{"type": "job.done", "count": 1, "day": 1, "per_min_10m": 0.1}], "counted within the era"
+    assert worker["publishes"] == [{"type": "job.done", "count": 1, "day": 1, "n_10m": 1, "window_s": 600, "per_min_10m": 0.1}], "counted within the era"
     assert worker["kind"] == "program" and worker["subscribes"] == ["job.reviewed"], "announced before the era, still what it is"
     assert "idle" not in {m["id"] for m in second["machines"]}, "an announcement before the era is no activity in it"
 

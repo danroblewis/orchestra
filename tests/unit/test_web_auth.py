@@ -67,6 +67,17 @@ def logged_in(project) -> TestClient:
     return c
 
 
+def test_the_login_link_is_the_login_page_even_when_already_logged_in(project):
+    """A link printed by `orchestra web` carries the token after '#'. A redirect from /login would
+    carry that fragment on to the next page, the secret left in the address bar; the page is
+    served instead, and its script drops the fragment before it goes on."""
+    c = logged_in(project)
+    r = c.get("/login?next=%2Fmachines", headers={"Accept": "text/html"}, follow_redirects=False)
+    assert r.status_code == 200 and "text/html" in r.headers["content-type"]
+    assert "history.replaceState" in r.text and 'value="/machines"' in r.text
+    assert c.head("/login", follow_redirects=False).status_code == 200
+
+
 def test_the_token_is_the_projects_kept_owner_only(project):
     t = auth.token(project)
     assert len(t) >= 40 and auth.token(project) == t

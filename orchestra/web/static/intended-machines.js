@@ -17,7 +17,7 @@
 const IntendedMachines = (() => {
   const JUST_S = 600;                         // "just now": the latest change, for ten minutes
   const HOURS = { 3600: "1 hour", 86400: "1 day", 604800: "7 days" };
-  let OPEN = null, ASKED = {};                // the panel's machine; requests sent and not yet seen in the answer
+  let OPEN = null, ASKED = {}, LAST_D = null, MODE_BEFORE = null, UNKNOWN = null;   // UNKNOWN: an id the address named that no machine has  // MODE_BEFORE: the map's view before a declared machine switched it  // the panel's machine; requests sent and not yet seen in the answer; the last answer drawn
   const list = () => Orchestra.machineList() || [];
   const byId = (id) => list().find((m) => m.id === id);
   const now = () => Date.now() / 1000;
@@ -61,7 +61,7 @@ const IntendedMachines = (() => {
     if (!l.declared && !l.gone && !l.added) return null;
     if (l.gone) return { cls: "im-gone-edge", dash: "2 6", color: "#5b6272", hoverColor: "#8b95a7", width: 1.4 };
     if (l.added) return { cls: "im-add-edge", color: "#86efac", hoverColor: "#86efac", width: 2, dash: l.declared ? "5 4" : undefined };
-    return { cls: "im-decl-edge", dash: "5 4" };
+    return { cls: "im-decl-edge", dash: "5 4", color: "#a78bfa", hoverColor: "#c4b5fd" };
   }
   // the machine nodes and event types a declaration touches: their classes, sub-lines and tags
   function decorate(d, nodes, links) {
@@ -78,7 +78,8 @@ const IntendedMachines = (() => {
           n.tags = [{ text: it.author === "owner" ? "unconfirmed · added by you" : "unconfirmed", cls: "im-t-unconf" }];
         } else if (!it.heard) {
           n.cls = `${n.cls || ""} im-unheard`; n.halo = false; n.color = "transparent"; n.sub = "declared · never heard";
-          n.tags = [{ text: measuredOf(m) && measuredOf(m).measured ? "declared · measured" : "declared · unheard", cls: "im-t-ghost" }];
+          const k = measuredCount(m), dn = Orchestra.downOf(m).length;
+          n.tags = k ? [{ text: `declared · measured ×${k}${dn ? ` · ${dn} down?` : ""}`, cls: "im-t-meas" }] : [];
         }
         if (fresh(it)) (n.tags = n.tags || []).push({ text: "changed just now", cls: "im-t-chg", below: true });
         continue;
@@ -91,7 +92,10 @@ const IntendedMachines = (() => {
       if (mine.some((l) => l.gone)) tags.push({ text: "− link removed", cls: "im-t-gone" });
       if (mine.some((l) => l.added && !l.gone)) { tags.push({ text: "+ new link", cls: "im-t-add" }); n.cls = `${n.cls || ""} im-ring-add`; }
       const loose = types.every((t) => !published.has(t) || !listened.has(t)) && mine.every((l) => l.declared || l.gone) && mine.some((l) => !l.gone);
-      if (loose && !n.cnt) { n.sub = types.some((t) => !published.has(t) && !listened.has(t)) ? "declared · new type" : "declared"; n.cls = `${n.cls || ""} im-decl-event`; }
+      // "a guess" when every declaration of it is the Supervisor's guess, as the panel tags it
+      const guessedType = (t) => d.machines.some((m) => m.intent && ["receives", "emits"].some((f) => (m.intent[f] || []).some((x, i) => x === t && guessed(m.intent, f, i))));
+      const guessWord = types.every(guessedType) ? "a guess · " : "";
+      if (loose && !n.cnt) { n.sub = guessWord + (types.some((t) => !published.has(t) && !listened.has(t)) ? "declared · new type" : "declared"); n.cls = `${n.cls || ""} im-decl-event`; }
       if (tags.length) n.tags = tags;
     }
   }
@@ -133,20 +137,45 @@ const IntendedMachines = (() => {
       card.classList.add(it.state === "proposed" ? "im-card" : "im-card-declared");
       const h3 = card.querySelector("h3");
       if (h3 && !h3.querySelector(".im-tag")) h3.insertAdjacentHTML("beforeend", `<span class="im-tag ${tag.cls}">${tag.text}</span>${it.state === "proposed" ? `<span class="muted im-by">${byWhom(it)}</span>` : ""}`);
-      const rows = [...card.querySelectorAll(".row")], row = (name) => rows.find((r) => r.firstElementChild && r.firstElementChild.textContent === name);
+      const rows = [...card.querySelectorAll(".row")], row = (name) => rows.find((r) => r.firstElementChild && r.firstElementChild.dataset.k === name || (r.firstElementChild && r.firstElementChild.textContent === name));
       const seen = row("seen"), ms = measuredOf(m);
       if (seen && !it.heard) {
         const n = ms ? (ms.instruments || []).length : 0, inst = measuredCount(m);
-        seen.lastElementChild.innerHTML = `never heard${n ? ` · measured by ${n} instrument${n === 1 ? "" : "s"} · ${inst} instance${inst === 1 ? "" : "s"} (last hour)` : m.comparison ? ` · ${esc(m.comparison)}` : ""}${ms && ms.last_measured ? ` <span class="muted">· last measured ${ago(now() - ms.last_measured)} ago</span>` : ""}`;
+        seen.lastElementChild.innerHTML = `never heard${n ? ` · measured by ${n} instrument${n === 1 ? "" : "s"} · ${inst} instance${inst === 1 ? "" : "s"} (last hour)` : m.comparison ? ` · ${esc(comparisonText(m))}` : ""}${ms && ms.last_measured ? ` <span class="muted">· last measured ${ago(now() - ms.last_measured)} ago</span>` : ""}`;
         const chips = ms ? ms.attachments.flatMap((a) => instList(a).filter((i) => i.measured).map((i) => i.value)) : [];
-        if (inst && !card.querySelector(".im-meas-row")) seen.insertAdjacentHTML("afterend", `<div class="row im-meas-row"><span class="muted">measured ×${inst}</span>${[...new Set(chips)].map((v) => `<span class="ty im-meas-chip">${esc(v)}</span>`).join("")}<span class="muted">by ${ms.instruments.map(esc).join(", ")}</span></div>`);
+        // an instance whose own up series reads 0 is said so: points arrive, and it reports down
+        const down = new Map(Orchestra.downOf(m).map((x) => [x.instance, x]));
+        const old = card.querySelector(".im-meas-row"); if (old) old.remove();
+        if (inst) seen.insertAdjacentHTML("afterend", `<div class="row im-meas-row"><span class="muted">measured ×${inst}</span>${[...new Set(chips)].map((v) => down.has(v)
+          ? `<span class="ty im-meas-chip im-down-chip" title="points arrive; its ${esc(down.get(v).series)} reads 0"><span class="im-live im-live-zero"></span> ${esc(v)}</span>` : `<span class="ty im-meas-chip">${esc(v)}</span>`).join("")}<span class="muted">by ${ms.instruments.map(esc).join(", ")}${down.size ? ` · <span class="stale">${down.size} report${down.size === 1 ? "s" : ""} down</span>` : ""}</span></div>`);
+        declaredRows(it, row);
       }
+      // the declared kind is the declaration's, said apart from a kind an instance announced
+      const eng = row("engaged");
+      if (eng && it.kind && !Object.keys(m.kinds || {}).length && eng.children.length >= 4) { eng.children[2].textContent = "declared as"; eng.children[3].innerHTML = `<span class="tag">${esc(cap(it.kind))}</span>`; }
       const plus = new Set([...added(it, "receives"), ...added(it, "emits")]), minus = new Set([...removed(it, "receives"), ...removed(it, "emits")]);
       if (plus.size || minus.size) card.querySelectorAll(".ty").forEach((c) => { const t = c.textContent.trim().split(" · ")[0];
         if (plus.has(t)) c.classList.add("im-chip-add"); });
       const listens = row("listens for");
       if (listens && minus.size) for (const t of minus) if (![...listens.querySelectorAll(".ty")].some((c) => c.textContent.trim() === t)) listens.insertAdjacentHTML("beforeend", `<span class="ty im-chip-gone" title="removed just now">${esc(t)}</span>`);
     }
+  }
+
+  // what the comparison of heard and measured says, in words: "series unknown" before any read
+  function comparisonText(m) {
+    if (m.comparison === "series unknown" && !(LAST_D && LAST_D.measured_at)) return "not read yet · read every 60 s";
+    return m.comparison || "";
+  }
+  // a declared machine nothing has been heard from: its card's engaged, listens for and publishes
+  // rows say what was declared (marked so), never "not announced" or "nothing" beside a panel that
+  // says otherwise; once heard, what is observed stands
+  function declaredRows(it, row) {
+    const dec = '<span class="muted im-decl-word">declared</span> ';
+    const eng = row("engaged"), lis = row("listens for"), pub = row("publishes");
+    const mode = (it.engagement || {}).mode;
+    if (eng && mode) { const span = eng.children[1]; if (span) span.innerHTML = `${dec}<span class="tag k-${esc(mode.replace(/ /g, "_"))}">${esc(mode)}</span>`; }
+    if (lis && (it.receives || []).length) lis.innerHTML = `<span class="muted" data-k="listens for">listens for</span>${dec}${(it.receives || []).map((t, i) => `<span class="ty">${esc(t)}</span>${guessed(it, "receives", i) ? '<span class="im-tag im-t-ghost">a guess</span>' : ""}`).join("")}`;
+    if (pub && (it.emits || []).length) pub.innerHTML = `<span class="muted" data-k="publishes">publishes</span>${dec}${(it.emits || []).map((t) => `<span class="ty" title="declared: nothing published yet">${esc(t)} · 0</span>`).join("")}`;
   }
 
   // ---- the panel: read-only renderings, and the requests ----
@@ -197,8 +226,9 @@ const IntendedMachines = (() => {
     const items = it[f] || [], gone = removed(it, f), plus = new Set(added(it, f));
     if (!items.length && !gone.length) return '<span class="muted">none declared</span>';
     const one = (t, i) => {
-      const extra = (guessed(it, f, i) ? guess : "") + (f === "emits" && !observedListeners.has(t) ? `${observedListeners.published.has(t) ? "" : '<span class="im-tag im-t-ghost">new type</span>'}<span class="muted">nobody listens for it yet</span>` : "");
-      return chip(t, plus.has(t) ? "add" : null, extra);
+      const extra = (guessed(it, f, i) ? guess : "") + (f === "emits" && !observedListeners.has(t) ? `${observedListeners.published.has(t) ? "" : '<span class="im-tag im-t-ghost">new type</span>'}<span class="muted">nobody listens for it yet</span>` : "")
+        + (f === "receives" && !observedListeners.published.has(t) ? '<span class="im-tag im-t-ghost">new type</span><span class="muted">nobody publishes it yet</span>' : "");
+      return `<span class="im-chipgrp">${chip(t, plus.has(t) ? "add" : null, extra)}</span>`;
     };
     return `<div class="im-chips">${items.map(one).join("")}${gone.map((t) => chip(t, "gone")).join("")}</div>`;
   }
@@ -217,37 +247,56 @@ const IntendedMachines = (() => {
   }
   // "Measured by" (P5 §3): per attachment its instrument and kind, match, instance label, state, the
   // series it matches, and its measured and quiet instances with their last values
-  function measuredBy(m) {
+  function measuredBy(m, d) {
     const ms = m.measured && m.measured.attachments ? m.measured : null, atts = ms ? ms.attachments : (m.intent.attachments || []);
     if (!atts.length) return "";
+    const at = d && d.measured_at ? new Date(d.measured_at * 1000).toTimeString().slice(0, 8) : null;
     const one = (a) => {
       const inst = a.instances || {}, list = inst.list || [], names = (a.names || []).map((x) => x.name);
       const valueOf = (v, name) => { const x = (a.series || []).find((s) => s.name === name && (s.labels || {})[a.instance_label] === v); return x ? x.value : ""; };
+      // an instance whose own "up" series (up, or a name ending _up) reads 0: points arrive, it reports down
+      const down = Orchestra.downOf({ measured: { attachments: [a] } }).map((x) => ({ i: { value: x.instance }, s: { name: x.series } }));
+      const downOf = new Set(down.map((x) => x.i.value));
       const state = a.state === "proposed" ? '<span class="im-tag im-t-unconf">unconfirmed</span>' : `<span class="im-tag im-t-decl">${esc(a.state || "declared")}</span>`;
       const match = a.shown || (a.match ? [a.match.prefix ? `${a.match.prefix}*` : "", ...Object.entries(a.match.labels || {}).map(([k, v]) => `${k}="${v}"`)].filter(Boolean).join(" ") : "");
       const status = a.status && a.status !== "measured" ? `<span class="im-tag im-t-ghost">${esc(a.comparison || a.status)}</span>` : "";
-      return `<div class="im-attach"><div class="im-attach-head"><b>${esc(a.instrument)}</b>${a.kind ? ` <span class="ty">${esc(a.kind)}</span>` : ""} ${state}${status}${a.shared ? '<span class="im-tag im-t-ghost" title="another declared machine\'s match selects the same series">shared</span>' : ""}</div>
+      return `<div class="im-attach"><div class="im-attach-head"><a class="im-inst" href="/instruments#${encodeURIComponent(a.instrument)}" title="open it on the Instruments page"><b>${esc(a.instrument)}</b></a>${a.kind ? ` <span class="ty">${esc(a.kind)}</span>` : ""} ${state}${status}${a.shared ? '<span class="im-tag im-t-ghost" title="another declared machine\'s match selects the same series">shared</span>' : ""}</div>
         ${field("match", match ? `<span class="ty">${esc(match)}</span>` : '<span class="muted">everything the instrument records</span>')}
-        ${field("instances", a.instance_label ? `<span class="ty">${esc(a.instance_label)}</span>${ms ? ` <span class="muted">· ${inst.measured || 0} measured, ${inst.quiet || 0} quiet${inst.too_many ? ", too many to list" : ""}</span>` : ""}${inst.note ? `<div class="muted im-note">${esc(inst.note)}</div>` : ""}` : '<span class="muted">one: no instance label</span>')}
+        ${field("instances", a.instance_label ? `<span class="ty">${esc(a.instance_label)}</span>${ms ? ` <span class="muted">· ${inst.measured || 0} measured${down.length ? ` <span class="stale">(${down.length} report${down.length === 1 ? "s" : ""} up = 0: ${down.map((x) => esc(x.i.value)).join(", ")})</span>` : ""}, ${inst.quiet || 0} quiet${inst.too_many ? ", too many to list" : ""}</span>` : ""}${inst.note ? `<div class="muted im-note">${esc(inst.note)}</div>` : ""}` : '<span class="muted">one: no instance label</span>')}
         ${ms ? field("series", (a.names || []).map((x) => `<span class="ty">${esc(x.name)} ×${x.count}</span>`).join("") || '<span class="muted">none matches yet</span>') : ""}
-        ${list.length ? `<div class="im-scroll"><table class="dt im-meas"><tr><th>${esc(a.instance_label)}</th><th>state</th>${names.map((c) => `<th class="num" title="${esc(c)}">${esc(a.match && a.match.prefix && c.startsWith(a.match.prefix) ? c.slice(a.match.prefix.length) : c)}</th>`).join("")}<th class="num">last</th></tr>${list.map((i) => `<tr><td class="num">${esc(i.value)}</td><td><span class="im-live ${i.measured ? "" : "off"}"></span> ${i.measured ? "measured" : "quiet"}</td>${names.map((c) => `<td class="num">${esc(valueOf(i.value, c))}</td>`).join("")}<td class="num">${i.last ? `${ago(now() - i.last)} ago` : ""}</td></tr>`).join("")}</table></div>
-          <div class="muted im-note">measured means points are arriving, not that it is up</div>` : ms ? "" : '<div class="muted im-note">what it measures is being read</div>'}</div>`;
+        ${list.length ? `${at ? `<div class="muted im-note">as of ${esc(at)} (read every 60 s)</div>` : ""}<div class="im-scroll"><table class="dt im-meas"><tr><th>${esc(a.instance_label)}</th><th>state</th>${names.map((c) => `<th class="num" title="${esc(c)}">${esc(a.match && a.match.prefix && c.startsWith(a.match.prefix) ? c.slice(a.match.prefix.length) : c)}</th>`).join("")}<th class="num">last</th></tr>${list.map((i) => `<tr><td class="num">${esc(i.value)}</td><td><span class="im-live ${i.measured ? (downOf.has(i.value) ? "im-live-zero" : "") : "off"}" ${downOf.has(i.value) ? `title="points arrive; its ${esc(down.find((x) => x.i.value === i.value).s.name)} reads 0"` : ""}></span> ${i.measured ? "measured" : "quiet"}</td>${names.map((c) => `<td class="num">${esc(valueOf(i.value, c))}</td>`).join("")}<td class="num">${i.last ? `${ago(now() - i.last)} ago` : ""}</td></tr>`).join("")}</table></div>
+          <div class="muted im-note">measured means points are arriving, not that it is up${down.length ? `: ${down.map((x) => `${esc(x.i.value)} reports <span class="ty">${esc(x.s.name)} = 0</span>`).join(", ")}` : ""}</div>` : ms ? "" : '<div class="muted im-note">what it measures is being read</div>'}</div>`;
     };
-    return `${h4("Measured by", `${atts.length} instrument${atts.length === 1 ? "" : "s"} · declared provenance: what measures it, never a sign it runs`)}${atts.map(one).join("")}`;
+    return `<div id="im-measured">${h4("Measured by", `${atts.length} instrument${atts.length === 1 ? "" : "s"} · declared provenance: what measures it, never a sign it runs`)}${atts.map(one).join("")}</div>`;
   }
   function status(m) {
-    const it = m.intent, asked = it.requested || ASKED[m.id], p = it.provenance || {};
+    const it = m.intent, asked = ASKED[m.id] || it.requested, p = it.provenance || {};
     const when = p.at ? ` · ${ago(now() - p.at)} ago` : "";
-    const acts = (change) => asked && (!change || asked.change === change)
-      ? `<span class="im-waiting" title="the request is on the bus; the Supervisor answers it">asked the Supervisor${asked.control ? ` to ${esc(words(asked.control))}` : ""} · waiting</span>`
+    // who listens for the request on the bus: the waiting line never promises an answer no machine can give
+    const REQ = "orchestra.intent.requested", hears = (t) => t === REQ || t === "*" || (t.endsWith(".*") && REQ.startsWith(t.slice(0, -1))) || t === "orchestra.*";
+    const listeners = list().filter((x) => (x.subscribes || []).some(hears)).map((x) => x.id);
+    const what = asked && asked.control ? ` to ${esc(words(asked.control === "switch_kind" ? "switch kind" : asked.control))}` : "";
+    const waitText = () => (listeners.length
+      ? `<span class="im-waiting" title="the request is on the bus as ${REQ}; heard by ${esc(listeners.join(", "))}">asked the Supervisor${what}${asked.at ? ` ${esc(ago(now() - asked.at))} ago` : ""} · waiting</span>`
+      : `<span class="im-waiting im-unheard-ask" title="the request is on the bus; no machine announced it listens for ${REQ}">asked${what} · on the bus as ${REQ}, but no machine listens for it yet</span>`);
+    // confirm and discard wait while one of them was asked; a kind switch waiting leaves them
+    const settling = asked && asked.control !== "switch_kind";
+    const acts = (change) => settling && (!change || asked.change === change) ? waitText()
       : `<span class="im-acts"><button class="ctl im-primary" title="asks the Supervisor to confirm it" onclick="IntendedMachines.request('confirm','${esc(m.id)}'${change ? `,'${esc(change)}'` : ""})">confirm</button><button class="ctl" title="asks the Supervisor to discard it" onclick="IntendedMachines.request('discard','${esc(m.id)}'${change ? `,'${esc(change)}'` : ""})">discard</button></span>`;
     let html = it.state === "proposed" ? `<div class="im-status"><span>${byWhom(it)} · unconfirmed</span>${acts(null)}</div>`
-      : `<div class="im-status im-status-declared"><span>${byWhom(it)}${when} · confirmed</span>${asked && asked.control === "switch_kind" ? acts(null) : ""}</div>`;
+      : `<div class="im-status im-status-declared"><span>${byWhom(it)}${when} · confirmed</span></div>`;
+    if (asked && asked.control === "switch_kind") html += `<div class="im-status im-pending-ask">${waitText()}</div>`;
     for (const pc of it.pending || []) {
       const what = [...Object.keys(pc.set || {}).map((k) => `set ${words(k)}`), ...Object.entries(pc.add || {}).map(([k, v]) => `add ${v.join(", ")} to ${words(k)}`), ...Object.entries(pc.remove || {}).map(([k, v]) => `remove ${v.join(", ")} from ${words(k)}`)].join("; ");
       html += `<div class="im-status im-pending"><span>a change ${esc(((pc.provenance || {}).source) ? `by the ${pc.provenance.source}` : "")} waits for you: ${esc(what)}</span>${acts(pc.change)}</div>`;
     }
     return html;
+  }
+  // a measured machine nothing was heard from, with an instance reporting itself down: said at the top
+  function downLine(m) {
+    const dn = m.intent.heard ? [] : Orchestra.downOf(m);
+    if (!dn.length) return "";
+    return `<div class="im-status im-downline"><span>${dn.map((x) => `${esc(x.instance)} reports <span class="ty">${esc(x.series)} = 0</span>`).join(", ")} · <a href="#im-measured" onclick="document.getElementById('im-measured').scrollIntoView({block:'start'});return false">Measured by</a></span></div>`;
   }
   function why(it) {
     const q = fresh(it) && (it.latest.quotes || []).length ? it.latest.quotes : (it.provenance || {}).quote ? [it.provenance.quote] : [];
@@ -259,10 +308,12 @@ const IntendedMachines = (() => {
     const it = m.intent, prog = it.kind === "programmatic", ext = it.managed === "external";
     const listeners = new Set(d.machines.flatMap((x) => [...(x.subscribes || []), ...((x.intent && x.intent.receives) || [])]));
     listeners.published = new Set(d.machines.filter((x) => x.id !== m.id).flatMap((x) => (x.publishes || []).map((p) => p.type)));
-    const tag = stateTag(m), canSwitch = it.state === "proposed";
+    const tag = stateTag(m), switching = (ASKED[m.id] || it.requested || {}).control === "switch_kind", canSwitch = it.state === "proposed" && !switching;
     const kind = field("kind", (canSwitch ? `<span class="im-seg big">${["universal", "programmatic"].map((k) => `<button class="${it.kind === k ? "on" : ""}" ${it.kind === k ? "disabled" : `onclick="IntendedMachines.request('switch_kind','${esc(m.id)}')"`} title="${it.kind === k ? "its kind" : "asks the Supervisor to switch it"}">${k === "universal" ? "Universal" : "Programmatic"}</button>`).join("")}</span>` : ind(["Universal", "Programmatic"], prog ? "Programmatic" : "Universal"))
-      + `<div class="muted im-note">${prog ? "a program: a command and its interface" : "described by what it achieves"}${canSwitch ? " · switching asks the Supervisor" : ""}</div>`);
-    const managed = field("managed", ind(["orchestra", "external"], it.managed) + `<div class="muted im-note">${ext ? "runs elsewhere: known by its events" + ((m.intent.attachments || []).length ? " or by the instruments attached to it" : "") : "managed by orchestra"}</div>`);
+      + `<div class="muted im-note">${prog ? "a program: a command and its interface" : "described by what it achieves"}${canSwitch ? " · switching asks the Supervisor" : switching ? " · a switch was asked of the Supervisor: waiting" : ""}</div>`);
+    const byInstruments = !it.heard && (it.attachments || []).length;
+    const known = byInstruments ? "the instruments attached to it (Measured by, below)" : "its events";
+    const managed = field("managed", ind(["orchestra", "external"], it.managed) + `<div class="muted im-note">${ext ? `runs elsewhere: known by ${known}` : "managed by orchestra"}</div>`);
     const text = (f, label) => field(label, (it[f] ? box(it[f]) : '<span class="muted">none</span>') + (guessed(it, f) ? guess : "") + (f in before(it) ? '<span class="im-tag im-t-chg">changed just now</span>' : ""));
     const tags = field("tags", (it.tags || []).map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">none</span>');
     const body = prog
@@ -270,16 +321,16 @@ const IntendedMachines = (() => {
       : `${engagementRow(it)}${text("title", "title")}${text("description", "description")}${tags}${spec(it, false)}`;
     const heard = it.heard;
     const insts = heard ? "" : `${h4("Instances")}<div class="muted">none heard on the bus</div>`;
-    const tail = heard ? "" : `${measuredBy(m)}${h4("Flows (hypotheses)")}<div class="muted">none hypothesised yet${measuredOf(m) && measuredOf(m).measured ? ": a machine that is only measured gets none; its route to the model is an expected effect" : ""}</div>${ext ? `${h4("Log")}<div class="muted">not readable: it runs outside the repository and the state directory</div>` : ""}`;
+    const tail = heard ? "" : `${measuredBy(m, d)}${h4("Flows (hypotheses)")}<div class="muted">none hypothesised yet${measuredOf(m) && measuredOf(m).measured ? ": a machine that is only measured gets none; its route to the model is an expected effect" : ""}</div>${ext ? `${h4("Log")}<div class="muted">not readable: it runs outside the repository and the state directory</div>` : ""}`;
     const aliases = (it.alias_candidates || []).length ? `<div class="muted im-note">heard under another name? ${it.alias_candidates.map((a) => `<span class="ty">${esc(a)}</span>`).join("")} ${ask("ask the Supervisor to join them")}</div>` : "";
     return `<div class="im-head"><span class="dot im-dashdot" style="--rc:${mcolor(m.id)}"></span><b>${esc(it.title || m.id)}</b><span class="im-tag ${tag.cls}">${tag.text}</span><button class="ctl im-close" onclick="IntendedMachines.close()" title="close the panel (Esc)">×</button></div>
-      <div class="muted im-id">id and bus source <span class="ty">${esc(m.id)}</span>${heard ? ` <button class="ctl" onclick="openMachine('${esc(m.id)}',{dialog:true})">details and log</button>` : ""}</div>
-      ${status(m)}${why(it)}${aliases}${kind}${managed}${body}
+      <div class="muted im-id">id and bus source <span class="ty">${esc(m.id)}</span>${heard ? ` <button class="ctl" onclick="openMachine('${esc(m.id)}',{dialog:true})">details and log</button>` : " · nothing has been heard under it"}</div>
+      ${status(m)}${downLine(m)}${why(it)}${aliases}${kind}${managed}${body}
       ${h4("Receives")}${types(it, "receives", listeners)}
       ${h4("Emits")}${types(it, "emits", listeners)}
       ${h4("Reads")}${reads(it)}
       ${insts}${effect(it)}${tail}
-      <div class="muted im-foot">Every field is read-only: ${ask()} to change any of it.${it.state === "proposed" ? " Confirm asks the Supervisor." : ""}</div>`;
+      <div class="muted im-foot">${byInstruments ? 'Measured, never heard: no "last seen", never "active". ' : ""}Every field is read-only: ${ask()} to change any of it.${it.state === "proposed" ? " Confirm asks the Supervisor." : ""}</div>`;
   }
   // a machine nothing declared: what the bus observed of it, and its dialog for the rest
   function observedPanel(m) {
@@ -294,24 +345,67 @@ const IntendedMachines = (() => {
     const side = $("im-side"), row = $("im-row");
     if (!side) return;
     const m = OPEN && byId(OPEN);
-    if (!m) { if (OPEN) OPEN = null; row.classList.remove("open"); side.innerHTML = ""; return; }
+    LAST_D = d;
+    if (!m && UNKNOWN) {
+      const html = `<div class="im-head"><b>${esc(UNKNOWN)}</b><span class="im-tag im-t-ghost">not here</span><button class="ctl im-close" onclick="IntendedMachines.close()" title="close">×</button></div>
+        <div class="muted im-why">not here: no machine <span class="ty">${esc(UNKNOWN)}</span> is known on the bus or declared. The link may be from an older era or another page's guess.</div>`;
+      row.classList.add("open"); side.classList.remove("im-side-declared"); side.classList.add("im-side-observed");
+      if (side.dataset.html !== html) { side.dataset.html = html; side.innerHTML = html; }
+      return;
+    }
+    if (!m) { if (OPEN) OPEN = null; row.classList.remove("open"); side.innerHTML = ""; delete side.dataset.html; return; }
     row.classList.add("open");
     side.classList.toggle("im-side-declared", !!m.intent && m.intent.state !== "proposed");
     side.classList.toggle("im-side-observed", !m.intent);
     const html = m.intent ? declaredPanel(m, d) : observedPanel(m);
-    if (side.dataset.html !== html) { side.dataset.html = html; const top = side.scrollTop; side.innerHTML = html; side.scrollTop = top; }
+    // redrawn only when it changed; the keyboard's place in it is kept (the same control, by its place)
+    if (side.dataset.html !== html) {
+      const ctls = () => [...side.querySelectorAll("button, a[href], [tabindex]")], f = document.activeElement, at = f && side.contains && side.contains(f) ? ctls().indexOf(f) : -1;
+      side.dataset.html = html; const top = side.scrollTop; side.innerHTML = html; side.scrollTop = top;
+      if (at >= 0) { const c = ctls()[at]; if (c) try { c.focus({ preventScroll: true }); } catch (e) {} }
+    }
+    sizeSide();
   }
+  // the panel's own scroll ends within the window, from where it starts (it sticks 12 px from the top)
+  function sizeSide() {
+    const side = $("im-side"); if (!side || !OPEN) return;
+    const r = side.getBoundingClientRect(), wide = window.innerWidth > 1000;
+    side.style.maxHeight = wide ? `${Math.max(240, window.innerHeight - Math.max(12, r.top) - 12)}px` : "";
+  }
+  if (typeof window.addEventListener === "function") { window.addEventListener("scroll", sizeSide, { passive: true }); window.addEventListener("resize", sizeSide); }
   // the page calls these
   function open(id) {
-    if (!byId(id)) return false;
-    OPEN = id; window.LOOPSIG = null;
-    if (typeof render === "function") render();
+    const m = byId(id);
+    if (!m) return false;
+    OPEN = id; UNKNOWN = null; window.LOOPSIG = null;
+    // a declared machine nothing has been heard from is read with its event types (frame E1)
+    if (m.intent && !m.intent.heard && typeof EV_MODE !== "undefined" && EV_MODE !== "events" && typeof setMode === "function") { MODE_BEFORE = MODE_BEFORE || EV_MODE; setMode("events", false); }
+    else if (typeof render === "function") render();
+    if (decodeURIComponent(location.hash.slice(1)) !== id) { try { history.replaceState(history.state, "", "#" + encodeURIComponent(id)); } catch (e) {} }
+    // on a phone, or from a card below the fold, the panel is out of sight: bring it into view
+    const side = $("im-side");
+    // (after the map is redrawn, which may change the page's height above the panel)
+    if (side) setTimeout(() => { const r = side.getBoundingClientRect(); if (r.top < 0 || r.top > window.innerHeight - 80) side.scrollIntoView({ block: "start", behavior: "smooth" }); }, 450);
+    if (side) setTimeout(() => { const c = side.querySelector ? side.querySelector(".im-close") : null; if (c && OPEN === id) try { c.focus({ preventScroll: true }); } catch (e) {} }, 60);
     return true;
   }
-  function close() { OPEN = null; if (typeof render === "function") render(); }
+  // an id the address named that no machine has: whatever was open closes, and the panel says so
+  function unknown(id) {
+    if (OPEN) close();
+    UNKNOWN = id;
+    if (LAST_D) draw(LAST_D);
+  }
+  function close() {
+    const was = OPEN;
+    OPEN = null; UNKNOWN = null;
+    if (MODE_BEFORE && typeof setMode === "function") { const was = MODE_BEFORE; MODE_BEFORE = null; setMode(was, false); }
+    if (location.hash.length > 1) { try { history.replaceState(history.state, "", location.pathname + location.search); } catch (e) {} }
+    if (typeof render === "function") render();
+    if (was && typeof CSS !== "undefined") { const n = document.querySelector(`g.ng-node[data-id="${CSS.escape("m:" + was)}"]`); if (n) try { n.focus({ preventScroll: true }); } catch (e) {} }
+  }
   // a request to the Supervisor: shown as waiting at once, then as the server notes it (``requested``)
   async function request(control, id, change) {
-    ASKED[id] = { control, change: change || null };
+    ASKED[id] = { control, change: change || null, at: now() };
     if (typeof render === "function") render();
     try {
       const r = await fetch("/api/intended/request", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -323,7 +417,7 @@ const IntendedMachines = (() => {
     delete ASKED[id];
     if (typeof render === "function") render();
   }
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && OPEN && !$("overlay").classList.contains("open")) close(); });
-  return { links, edgeStyle, decorate, focusSpec, sort, decorateCards, draw, open, close, request, opened: () => OPEN,
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && (OPEN || UNKNOWN) && !$("overlay").classList.contains("open")) close(); });
+  return { links, edgeStyle, decorate, focusSpec, sort, decorateCards, draw, open, close, unknown, request, opened: () => OPEN,
            added };
 })();

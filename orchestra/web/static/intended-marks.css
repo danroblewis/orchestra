@@ -1,0 +1,46 @@
+/* The declared layer's marks, shared by the Dynamics and Machines pages (intended.css and
+   intended-machines.css hold only what is their page's own): the tags, the status lines with their
+   requests, the notes and the live dot, in the pages' tokens (style.css :root).
+     unconfirmed  proposed and not yet confirmed: dashed violet (im-t-unconf; im-t-user is the
+                  same look for what is yours: your note, added by you)
+     ghost        expected but absent: dashed outline
+     new / add    found or added since: blue (inferred) / green (asked for)
+     gone         removed: red, struck through
+     expected     a person said to always show it: gold
+     simulated    fitted from a placeholder: hatched */
+:root { --im-new:#6ea8fe; --im-user:#c4b5fd; --im-add:#86efac; --im-gone:#fca5a5; --im-ghost:#8b95a7; --im-pin:#fcd34d; --im-sim:#94a3b8 }
+
+/* tags (HTML) */
+.im-tag { display:inline-block; font-size:9.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; border:1px solid var(--border2); border-radius:4px; padding:0 5px; line-height:15px; vertical-align:1px; white-space:nowrap; color:var(--text2) }
+.im-t-unconf, .im-t-user { color:#ddd6fe; border-color:#5b21b6; border-style:dashed; background:#1b1430 }
+.im-t-ghost { color:var(--text2); border-style:dashed }
+.im-t-new { color:#bfdbfe; border-color:#1d4ed8; background:#0f1d3a }
+.im-t-add { color:var(--im-add); border-color:#166534; background:#0f2a1a }
+.im-t-gone { color:var(--im-gone); border-color:#7f1d1d }
+.im-t-chg { color:#fcd34d; border-color:#92400e; background:#2a2208 }
+.im-t-decl, .im-t-exp { color:#fde68a; border-color:#92400e }
+.im-t-obs { color:var(--text2) }
+.im-t-chosen { color:#bbf7d0; border-color:#166534 }
+.im-t-meas { color:#67e8f9; border-color:#0e7490 }
+.im-t-sim { color:#e2e8f0; border-color:#475569; background:repeating-linear-gradient(45deg, #1f2430, #1f2430 3px, #2a3140 3px, #2a3140 6px) }
+
+/* a status line, its requests and its controls (observations and requests: the closed list) */
+.im-status { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:6px 0; padding:6px 8px; border-radius:8px; background:#1b1430; border:1px dashed #5b21b6; color:#ddd6fe; font-size:12px }
+.im-status-declared { background:var(--panel); border:1px solid var(--border2); color:var(--text) }
+.im-pending { background:#2a2208; border-color:#92400e; color:#fde68a }
+.im-acts { display:flex; gap:4px; flex:none } .im-acts .ctl { margin:0 }
+.im-waiting { font-size:11px; color:var(--im-user); white-space:nowrap }
+button.ctl.im-primary { color:var(--text); border-color:var(--accent); background:#13233f }
+
+/* notes, a heading's note, a panel's foot */
+.im-h4note { text-transform:none; letter-spacing:0; font-weight:400 }
+.im-note { font-size:11px; margin-top:4px } .im-note.im-ok { color:var(--im-add) }
+.im-foot { font-size:11px; margin-top:10px; border-top:1px solid var(--border); padding-top:8px }
+
+/* the live dot: points arriving (green), an up series reading 0 (amber), nothing (grey) */
+.im-live, .im-idle { display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e; box-shadow:0 0 6px #22c55e; flex:none }
+.im-live.off, .im-idle { background:var(--muted); box-shadow:none }
+.im-live.im-live-zero { background:#f59e0b; box-shadow:0 0 6px #f59e0b }
+
+/* a switch, as a button (reachable from the keyboard) */
+button.im-toggle { font:inherit; font-size:12px }
