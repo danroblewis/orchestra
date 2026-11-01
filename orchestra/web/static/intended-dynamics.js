@@ -45,7 +45,7 @@ const Intended = (() => {
   const removedStockName = (r) => baseEnd(r.id, r.series, r.full_name || r.name);
   // a removed flow by its counter, as the page names flows (its own family: its other labels said)
   const removedFlowName = (r) => (r.counter ? SDGraph.flowName({ stocks: [], flows: [{ id: "g", from: r.from, to: r.to, counter: r.counter }] }, { id: "g" }) : r.name || r.key);
-  const who = (p) => { if (!p) return ""; if (p.author === "owner") return "you"; const w = p.source || p.author || ""; return w && `the ${w.charAt(0).toUpperCase() + w.slice(1)}`; };   // as byWhom on the Machines page
+  const who = (p) => { if (!p) return ""; if (p.author === "owner") return IntendedCore.owner(p); const w = p.source || p.author || ""; return w && `the ${w.charAt(0).toUpperCase() + w.slice(1)}`; };   // as byWhom on the Machines page
   // what a declared element's tag says: who put it there; "not in vN" only for a part an earlier
   // version had (a mark tracked by inference since a version), never for one never measured or
   // never found (mockups/README.md: a declared stock with no series is "not measured")

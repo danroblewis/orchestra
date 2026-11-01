@@ -34,7 +34,7 @@ const IntendedMachines = (() => {
   // who put it there, in the owner's words: "proposed by the Operator" (its source, named), "added by you"
   function byWhom(it) {
     const p = it.provenance || {}, a = it.author || p.author;
-    if (a === "owner") return it.state === "proposed" ? "added by you" : "declared by you";
+    if (a === "owner") return `${it.state === "proposed" ? "added" : "declared"} by ${esc(IntendedCore.owner(p))}`;
     const who = p.source || a || "a plugin";
     return `${it.state === "proposed" ? "proposed" : "declared"} by the ${esc(who.charAt(0).toUpperCase() + who.slice(1))}`;
   }
@@ -76,7 +76,7 @@ const IntendedMachines = (() => {
         const mode = (it.engagement || {}).mode, eng = mode === "scheduled" && it.engagement.at ? `scheduled · ${it.engagement.at}` : mode;
         if (it.state === "proposed") {
           n.cls = `${n.cls || ""} im-proposed`; n.sub = ["unconfirmed", eng, it.managed === "external" ? "external" : ""].filter(Boolean).join(" · ");
-          n.tags = [{ text: it.author === "owner" ? "unconfirmed · added by you" : "unconfirmed", cls: "im-t-unconf" }];
+          n.tags = [{ text: it.author === "owner" ? `unconfirmed · added by ${IntendedCore.owner(it.provenance)}` : "unconfirmed", cls: "im-t-unconf" }];
         } else if (!it.heard) {
           n.cls = `${n.cls || ""} im-unheard`; n.halo = false; n.color = "transparent"; n.sub = "declared · never heard";
           const k = measuredCount(m), dn = Orchestra.downOf(m).length;

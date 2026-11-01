@@ -1,6 +1,6 @@
 """Whether an op has the owner's consent (§4, §6.2), in one place for the ops.
 
-- The owner **asks**: through a plugin with the owner's words quoted (``checks.provenance``
+- The owner **asks**: through a plugin or the events endpoint with the owner's words quoted (``checks.provenance``
   requires the quote of a plugin's ``author: owner``), or on a page. A plugin's ``author: owner``
   is its assertion, backed by the quote.
 - A plugin **answers the owner's request**: ``provenance.request`` names a request the web server

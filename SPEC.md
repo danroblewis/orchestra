@@ -1141,8 +1141,12 @@ it (rule 7).
   another's touch the same fields, the other carries `overridden_by` (on read) and is confirmed
   only when the owner asks for it or the owner's request names it. The owner's re-declaration of
   a declared flow is a revision (a non-owner's is a 422). A call `via: page` is one control of rule
-  9's closed list (400 otherwise); a call is `via` a plugin or a page (inference's `host` joins once
-  inference writes here).
+  9's closed list (400 otherwise); a call is `via` a `plugin` (in process), the `endpoint` (over
+  the events endpoint) or a `page` (inference's `host` joins once inference writes here). What is
+  enforced: `author: owner` from a plugin or the endpoint is the caller's assertion, backed by its
+  `quote` (refused without one), and any holder of the events token can make it; the pages show
+  who made it ("the owner (quoted), per <source>"), keeping "you" for the owner's own page
+  controls.
 - **Keys.** A discovered part is matched by key, never by id: a stock's series name and labels
   without instrument, machine, source, project, instance, simulated and draft; a flow's ends' keys
   and its counter's key. A stock no series measures is keyed by the level its counters imply,

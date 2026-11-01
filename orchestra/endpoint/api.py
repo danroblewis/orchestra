@@ -122,7 +122,7 @@ def _intended(project, name: str, q: dict, d: dict) -> tuple[int, dict]:
             return 200, {"ok": True, **store.design()}
         # every field but ops is provenance, so a misspelt one is refused (checks.PROVENANCE), never dropped
         prov = {k: v for k, v in d.items() if k != "ops" and v is not None}
-        return 200, {"ok": True, **store.apply(d.get("ops"), prov, via="plugin")}
+        return 200, {"ok": True, **store.apply(d.get("ops"), prov, via="endpoint")}
     except IntentError as e:
         return e.status, {"ok": False, "error": str(e), **({"index": e.index} if e.index is not None else {})}
     except _Bad as e:

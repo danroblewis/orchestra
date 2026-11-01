@@ -828,7 +828,10 @@ it never writes under `<state>/model/intended/` itself (AGENTS.md rule 5 as amen
   is the declared layer at `dN`; `diff(model, since)` is the comparison the Dynamics page reads;
   `design()` is the summary of the layer and its open items, under 20 KB for 100 elements.
   `provenance` is `{author, source, turn, message, quote, reason, request?}`: `author: owner`
-  needs the owner's words as `quote`, and `via` and `at` are set by the store.
+  needs the owner's words as `quote`, and `via` and `at` are set by the store (`plugin` here,
+  `endpoint` for a call over the events endpoint). `author: owner` is the caller's assertion,
+  backed by its quote; the pages show it as "the owner (quoted), per <source>", never as the
+  owner's own click.
 - **From any other process**: `POST /intended` on the host's events endpoint (SPEC §3.1), with
   the project's token, body `{source, author, turn, message, quote, reason, request?, ops}`,
   answered `{"ok": true, "version", "changes"}` or 422 `{"ok": false, "error", "index"}`; `GET
@@ -855,8 +858,8 @@ it never writes under `<state>/model/intended/` itself (AGENTS.md rule 5 as amen
   re-targeted only by the owner ("the owner declared this: ask the owner"); re-marking the
   owner's mark leaves it as it is. A key is expected or ignored, never both. A declared stock or
   effect that a flow, a target, an expected effect or a pending change names is retracted only
-  after them, and an event type a machine names only after the machine changes. `via` is the
-  plugin's or the page's; nothing writes as `host` until inference does.
+  after them, and an event type a machine names only after the machine changes. `via` is
+  `plugin`, `endpoint` or `page`; nothing writes as `host` until inference does.
 
 ### 6.7 The whole path, in order
 

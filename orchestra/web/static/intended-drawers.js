@@ -147,7 +147,7 @@ const IntendedDrawers = (() => {
       return;
     }
     const facts = on ? [`confirmed expected`, `present in ${I().vlabel()}`, entry && entry.since_version ? `tracked by inference since v${entry.since_version}` : ""].filter(Boolean).join(" · ")
-      + (p.author ? ` <span class="im-sep">·</span> ${p.author === "owner" ? "confirmed by you" : "marked by " + esc(I().who(p))} ${esc(I().agoText(p.at))}${p.from ? `, from "${esc(p.from)}"` : ""}` : "")
+      + (p.author ? ` <span class="im-sep">·</span> ${p.author === "owner" ? "confirmed by " + esc(I().who(p)) : "marked by " + esc(I().who(p))} ${esc(I().agoText(p.at))}${p.from ? `, from "${esc(p.from)}"` : ""}` : "")
       : `not expected: a later discovery may drop it unmarked${mk.includes("new") ? ` · new in ${I().vlabel()}, not yet settled` : ""}`;
     const reopen = part === "stock" ? `()=>Live.openStock('${esc(id)}')` : `()=>Live.openFlow('${esc(id)}')`;
     h3.insertAdjacentHTML("afterend", `<div class="im-expect ${on ? "on" : ""}"><button type="button" class="im-toggle ${on ? "on" : ""}" id="im-expect" role="switch" aria-checked="${on}"

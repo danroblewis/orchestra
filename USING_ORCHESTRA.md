@@ -1863,8 +1863,12 @@ never reads it.
 **Who declares.** A plugin, or any machine through `POST /intended` on the events endpoint
 (section 5.2; read it back with `GET /intended` and `GET /intended/design`). Each call is applied
 whole or refused, and every element it touches records its provenance: who (`source`,
-`author`), how (`via`: a plugin, the endpoint or a page) and when. [docs/INTEGRATING.md](docs/INTEGRATING.md)
-shows a call.
+`author`), how (`via`: `plugin` in process, `endpoint` over the events endpoint, or `page`) and
+when. [docs/INTEGRATING.md](docs/INTEGRATING.md) shows a call. What is enforced: `author: owner`
+from a plugin or the endpoint is the caller's assertion, backed by the owner's words in `quote`
+(refused without one); any holder of the events token can make it. The pages show who made it:
+"declared by you" only for your own clicks, and otherwise "declared by the owner (quoted), per
+worker/1" (the calling `source`).
 
 **Three states.** An element is **proposed** (by inference, a part new in a discovered version,
 or by a plugin or machine), **declared** (by you: through a plugin quoting your words, or by

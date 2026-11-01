@@ -28,11 +28,18 @@ const IntendedCore = (() => {
           : `To ${what}, ask the machine that listens for requests.`),
     };
   }
+  // the owner, as the provenance says: "you" for the owner's own click on a page; through a plugin
+  // or the endpoint, author: owner is the caller's assertion backed by its quote, so the page says
+  // who made it: "the owner (quoted), per worker/1"
+  function owner(p) {
+    if (!p || p.via === "page" || !p.via) return "you";
+    return `the owner (quoted), per ${p.source || (p.via === "endpoint" ? "a caller of the endpoint" : "a plugin")}`;
+  }
   // who put an element in the declared layer, from its provenance: "declared by you", "proposed by
-  // integrator"; the source as the call named it, never how the call came (a plugin, the endpoint)
+  // integrator"; the source as the call named it
   function declaredBy(x) {
-    const p = (x && x.provenance) || {}, who = p.author === "owner" ? "you" : (p.source || p.author || "");
+    const p = (x && x.provenance) || {}, who = p.author === "owner" ? owner(p) : (p.source || p.author || "");
     return who ? `${x.state === "proposed" ? "proposed" : "declared"} by ${who}` : "";
   }
-  return { REQ, hears, listenersOf, asker, declaredBy };
+  return { REQ, hears, listenersOf, asker, declaredBy, owner };
 })();

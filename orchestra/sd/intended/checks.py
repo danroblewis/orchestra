@@ -21,7 +21,8 @@ SCHEDULED_ONLY = ("at", "tz", "missed")
 # what the comparison derives on read (§5): an op carrying one is refused
 DERIVED = frozenset({"present", "heard", "recording", "points", "points_series", "measured", "met", "instances",
                      "candidates", "alias_candidates", "unexpected", "verdict", "verdicts"})
-AUTHOR_VIA = ("plugin", "page")          # "host" (inference) joins once inference writes here
+AUTHOR_VIA = ("plugin", "endpoint", "page")   # in process, over the events endpoint, a page control; "host" (inference) joins once inference writes here
+CALLERS = ("plugin", "endpoint")               # a caller's author: owner is its assertion, backed by its quote
 PROVENANCE = ("author", "source", "turn", "message", "quote", "reason", "request")    # what a caller gives
 PAGE = ("control", "page", "from")                                                     # ... and a page control
 TARGET_OPS = ("below", "above", "within")
@@ -150,9 +151,11 @@ def target(t: dict) -> dict:
 
 def provenance(p: dict | None, via: str = "plugin") -> dict:
     """A call's provenance, checked, with ``via`` filled in from the store's caller, never from
-    the dict. In process ``via`` is the caller's argument, so a plugin's ``via: page`` is its
-    assertion, backed by nothing more than its quote is for ``author: owner``; what a page call
-    may do is rule 9's closed list all the same (``store.page_control``). ``at`` is stamped by
+    the dict: ``plugin`` in process, ``endpoint`` over the events endpoint (``endpoint.api``),
+    ``page`` for a page control. A plugin's or an endpoint caller's ``author: owner`` is its
+    assertion, backed by its quote, and the pages show who made it (its ``source``). In process
+    ``via`` is the caller's argument, so a plugin's ``via: page`` is its assertion too; what a page
+    call may do is rule 9's closed list all the same (``store.page_control``). ``at`` is stamped by
     the store when it writes (``IntendedStore.apply``), never given."""
     p = dict(p or {})
     if "via" in p or "at" in p:
@@ -170,6 +173,6 @@ def provenance(p: dict | None, via: str = "plugin") -> dict:
     for k in ("source", "turn", "message", "quote", "reason", "request", *PAGE):
         if k in p:
             text(p[k], k)
-    if p["author"] == "owner" and via == "plugin" and not p.get("quote"):
+    if p["author"] == "owner" and via in CALLERS and not p.get("quote"):
         raise IntentError("a plugin's author: owner is backed by the owner's words: give the quote", status=400)
     return {k: v for k, v in p.items() if v is not None}

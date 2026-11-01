@@ -171,6 +171,6 @@ def test_a_stock_a_pending_change_names_is_not_retracted(tmp_path):
 
 @pytest.mark.parametrize("author", ["owner", "supervisor"])
 def test_nothing_writes_as_the_host_until_inference_does(tmp_path, author):
-    with pytest.raises(IntentError, match="via is one of plugin, page") as e:
+    with pytest.raises(IntentError, match="via is one of plugin, endpoint, page") as e:
         store(tmp_path).apply([{"op": "declare_stock", "name": "Bugs"}], {"author": author}, via="host")
     assert e.value.status == 400

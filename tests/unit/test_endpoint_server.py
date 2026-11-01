@@ -174,3 +174,14 @@ def test_the_host_runs_on_without_an_endpoint_it_cannot_serve(project):
     project.config.events_listen = "nonsense"
     assert host._serve_events() is None and "ConfigError" in said[-1]
     assert endpoint.recorded(project) is None
+
+
+def test_a_call_to_the_declared_layer_through_the_endpoint_is_recorded_as_the_endpoints(ep, project):
+    status, out = call(ep, "POST", "/intended", {"source": "worker/1", "author": "owner", "quote": "track features",
+                                                 "ops": [{"op": "declare_stock", "id": "features", "name": "Features"}]})
+    assert status == 200 and out["ok"], out
+    p = project.intended.read()["layer"]["stocks"]["features"]["provenance"]
+    assert p["via"] == "endpoint" and p["source"] == "worker/1" and p["author"] == "owner"
+    status, out = call(ep, "POST", "/intended", {"source": "worker/1", "author": "owner",
+                                                 "ops": [{"op": "declare_stock", "id": "bugs", "name": "Bugs"}]})
+    assert status == 400 and "quote" in out["error"]       # the caller's author: owner is backed by its quote
