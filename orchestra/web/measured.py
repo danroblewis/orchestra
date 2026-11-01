@@ -26,7 +26,7 @@ import time
 
 from ..sd.intended import measured as m
 from ..sd.intended.attach import parse
-from ..sd.intended.facts import _within
+from ..sd.intended.facts import within
 from ..sd.intended.instruments import Instruments
 from .traffic import READ_S, READ_STEP_S
 
@@ -43,7 +43,7 @@ def read_all(project, metrics, catalogue, layer: dict, now: float | None = None)
     errors: dict[str, str] = {}
     own = [a for a in atts if kinds.get(a["instrument"]) not in ("source", None)]
     if own:
-        got, ok = _within(lambda: {a["id"]: m.read_own(metrics, project.key, a, now) for a in own}, LIMIT_S)
+        got, ok = within(lambda: {a["id"]: m.read_own(metrics, project.key, a, now) for a in own}, LIMIT_S)
         if ok:
             series |= got
         else:

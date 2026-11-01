@@ -1,7 +1,9 @@
 """The facts the comparison derives from the metrics store on every read, never stored (§5): a
 chosen option's **recording** and its points, and the means a **target** is judged on. Each read
-runs under a time limit; past it the fact is left out and named in ``missing``, so a slow store
-never holds up a page.
+runs under a time limit, on one small process-wide pool (``POOL``): past the limit the fact is
+left out and named in ``missing``, and when every worker is still busy with an earlier read (a
+hung store) the fact is missing at once, never queued, so a slow store neither holds up a page
+nor grows the threads.
 
 A target (§2) is judged on the **mean** over its last ``over_s``: a stock's or effect's level, or a
 flow's count over the window (the rate per ``over_s``: "land five a day" is ``above 5`` over a
@@ -13,31 +15,45 @@ import itertools
 import statistics
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 LIMIT_S = 2.0
 RECORDING_SPAN_S = 7 * 86400.0
 SPARK = 60
+POOL = 4
+
+_pool = ThreadPoolExecutor(max_workers=POOL, thread_name_prefix="intended-fact")
+_free = threading.BoundedSemaphore(POOL)
 
 
-def _within(fn, limit: float):
-    box: dict = {}
+def within(fn, limit: float):
+    """``(fn(), True)`` if it answered within ``limit``; ``(None, False)`` if it failed, ran past
+    the limit, or no worker was free."""
+    if limit <= 0 or not _free.acquire(blocking=False):
+        return None, False
 
     def run():
         try:
-            box["v"] = fn()
-        except Exception as e:  # noqa: BLE001 - a failed read is a missing fact
-            box["e"] = e
-    t = threading.Thread(target=run, name="intended-fact", daemon=True)
-    t.start()
-    t.join(max(0.0, limit))
-    if t.is_alive() or "e" in box:
+            return fn()
+        finally:
+            _free.release()
+    try:
+        fut = _pool.submit(run)
+    except RuntimeError:                    # the interpreter is shutting down
+        _free.release()
         return None, False
-    return box.get("v"), True
+    try:
+        return fut.result(timeout=limit), True
+    except Exception:  # noqa: BLE001 - a failed or late read is a missing fact
+        return None, False
 
 
 class Facts:
-    def __init__(self, metrics, limit_s: float = LIMIT_S, now: float | None = None):
+    def __init__(self, metrics, limit_s: float = LIMIT_S, now: float | None = None, project: str | None = None):
+        """``project``: the project's key, so a store several projects share is read for this one's
+        points only (None for a store with no project)."""
         self.metrics = metrics
+        self.project = project
         self.deadline = time.monotonic() + limit_s
         self.now = now or time.time()
         self.missing: list[str] = []
@@ -47,7 +63,7 @@ class Facts:
             self._miss(what)
             return None
         left = self.deadline - time.monotonic()
-        v, ok = _within(fn, left) if left > 0 else (None, False)
+        v, ok = within(fn, left) if left > 0 else (None, False)
         if not ok:
             self._miss(what)
         return v
@@ -60,7 +76,8 @@ class Facts:
         """What an instrument has written: its busiest series' points (the last ``SPARK``)."""
         def read():
             best: list = []
-            for name, labels in self.metrics.series("", {"instrument": instrument}):
+            match = {"instrument": instrument, **({"project": self.project} if self.project else {})}
+            for name, labels in self.metrics.series("", match):
                 pts = self.metrics.raw(name, labels, start=self.now - RECORDING_SPAN_S, end=self.now)
                 if len(pts) > len(best):
                     best = pts

@@ -9,6 +9,7 @@ import asyncio
 import os
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import psutil
@@ -56,7 +57,19 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     bg = Refresher(project, events, core.metrics)
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
     install_sd_extra(app)
-    install_intended(app, project, events, core.metrics)
+
+    def observed_machines() -> set[str] | None:
+        """The machine ids the Machines page has observed in the current era (the bus and counted
+        traffic), what ``design()`` says is heard by; None until the bus is first read."""
+        from ..sd.intended.machines_view import observed_ids
+        bg.want("counted")
+        idx = bg.era_index(None) if bg.ready("index") else None
+        if idx is None:
+            return None
+        out = {"machines": idx.view(flows=bg.flows)["machines"]}
+        merge_counted(out, bg.counted, time.time())
+        return observed_ids(out["machines"])
+    install_intended(app, project, events, core.metrics, observed=observed_machines)
 
     @app.middleware("http")
     async def no_cache(request, call_next):
@@ -197,6 +210,19 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         return predictions_view(project, era)
 
     rediscovery: dict = {"running": False}
+    plugin_collectors: dict = {"stamp": None, "list": []}   # the loaded plugins' (mount_plugins): which instruments are simulated
+
+    def collectors_now() -> list:
+        """The plugins' collectors, loaded again, with the configuration, when orchestra.toml or the
+        private overlay changed since they were loaded: a plugin writes its entries while the web
+        server runs, and only the host reloads otherwise."""
+        stamp = project.config_stamp()
+        if stamp != plugin_collectors["stamp"]:
+            from ..config import fresh_config
+            from ..sd.simulated import plugin_collectors as load_collectors
+            fresh_config(project)
+            plugin_collectors.update(stamp=stamp, list=load_collectors(project))
+        return plugin_collectors["list"]
 
     @app.get("/api/dynamics/strategies")
     def dynamics_strategies() -> dict:
@@ -228,7 +254,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
                 with reading_only():                # another store's definitions are the host's to infer
                     r = rediscover(project, core.metrics, strategy=body.get("strategy") or None, options=body.get("options"),
                                    window_s=body.get("window_s") or None, step_s=body.get("step_s") or None,
-                                   note="discovered on request: the structure changed")
+                                   note="discovered on request: the structure changed", collectors=collectors_now())
                 rediscovery.update(result={"at": r.at, "stocks": len(r.model.stocks), "flows": len(r.model.flows), "version": r.version,
                                            "strategy": r.strategy, "compute_ms": r.model.discovery.get("compute_ms")}, error=None)
             except Exception as e:  # noqa: BLE001 - reported to the page
@@ -466,7 +492,9 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         except WebSocketDisconnect:
             return
 
-    declare = mount_plugins(app, project, stylesheets)
+    stamp = project.config_stamp()
+    declare, loaded_collectors = mount_plugins(app, project, stylesheets)
+    plugin_collectors.update(stamp=stamp, list=loaded_collectors)
     app.add_middleware(AuthMiddleware, project=project, on=auth_on)   # added last: the outermost, in front of every route
     return app
 
@@ -474,7 +502,8 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
 def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
     """Pages, static files and API routes of the installed plugins (orchestra/plugins.py).
     Adds their every-page stylesheets to ``stylesheets``; returns what adds their declared
-    machines to the observed ones."""
+    machines to the observed ones, and their collectors (each with its owner), which discovery
+    reads the simulated flag from."""
     from .. import plugins as plug
     loaded = plug.load(project)
     taken = {getattr(r, "path", None) for r in app.routes}
@@ -529,4 +558,4 @@ def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
             machines.append({"id": d.id, "bootstrap": False, "mode": d.mode, "kind": d.kind, "package": pkg, "about": {},
                              "unseen": True, "publishes": [], "subscribes": list(d.listens_for), "flows": [], "logs": [],
                              "instances": [], "first_seen": None, "last_seen": None, "active": False})
-    return declare
+    return declare, [replace(c, owner=p.name) for p in loaded.plugins for c in p.collectors]

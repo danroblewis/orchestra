@@ -8,9 +8,12 @@ base ``vK`` (§3.2, §5), computed on keys (``keys.py``), never with ``sd.compar
   the parts ``sd.prior`` carries into the era;
 - each key's **suggestion status** (``history.py``).
 
-The structural diff of a pair is cached as ``diff/d{N}-v{M}-v{K}-{era}.json``: its inputs never
-change, so a file never changes (``live`` for the latest discovery: newest only, rewritten when
-the discovery is newer). Bus and metrics facts are never cached (``facts.py``)."""
+The structural diff of a pair is cached as ``diff/d{N}-v{M}-v{K}-{era}-h{hold}.json`` (``hold``
+the ``announce_hold`` its suggestions settled by): its inputs never change, so a file never
+changes (``live`` for an unsaved latest discovery: rewritten when the discovery is newer; a live
+file of another discovery is removed when one of this discovery is written, and the live files of
+one discovery's other pairs, a page's ``since`` or another ``hold``, stay). Bus and metrics facts
+are never cached (``facts.py``)."""
 
 from __future__ import annotations
 
@@ -19,26 +22,36 @@ from pathlib import Path
 
 from . import history
 from .keys import Keys, ref_key
+from .names import resolve
 
 
-def _end_key(end, layer: dict, keys: Keys) -> tuple[bool, str | None]:
-    """A declared flow's end as a stock key: (resolved, key); None is outside."""
+def _end_key(end, layer: dict) -> tuple[bool, str | None]:
+    """A declared flow's end as a stock key: (resolved, key); None is outside. An end is a
+    declared stock's or effect's id (its ``found_as``; unresolved while it has none) or a
+    discovered stock's key, taken literally, never a discovered id (ids follow arrival order).
+    A declared id wins over a key of the same text."""
     if end is None:
         return True, None
     for group in ("stocks", "effects"):
         if end in layer[group]:
             fa = layer[group][end].get("found_as")
             return (fa is not None), fa
-    if end in keys.stock_of_id:
-        return True, keys.stock_of_id[end]
     return True, end
 
 
 def flow_matches(el: dict, layer: dict, keys: Keys) -> tuple[str | None, list[str]]:
     """A declared flow's match in a model: (the one flow key it is, or None; the candidates)."""
-    ok_a, a = _end_key(el.get("from"), layer, keys)
-    ok_b, b = _end_key(el.get("to"), layer, keys)
-    if not (ok_a and ok_b) or keys.model is None:
+    ok_a, a = _end_key(el.get("from"), layer)
+    ok_b, b = _end_key(el.get("to"), layer)
+    if not (ok_a and ok_b):
+        return None, []
+    return between(a, b, keys)
+
+
+def between(a: str | None, b: str | None, keys: Keys) -> tuple[str | None, list[str]]:
+    """The flow between two stock keys (None is outside): (the one flow key, or None; the
+    candidates when an end is outside or two flows match)."""
+    if keys.model is None:
         return None, []
     found = [k for k in keys.flows if keys.ends(k) == (a, b)]
     if a is None or b is None or len(found) != 1:
@@ -48,29 +61,38 @@ def flow_matches(el: dict, layer: dict, keys: Keys) -> tuple[str | None, list[st
 
 def predicted(layer: dict, keys: Keys) -> list[dict]:
     """The flows the declared machines' expected effects predict to appear (``{"from", "to",
-    "appears": true}``), drawn as expected ghost flows: each with its ends, whether a flow between
-    them is in the model, and no machine (a draft prediction is not an association, rule 6 as
-    amended). The same ends predicted twice are one entry."""
-    out: dict[tuple, dict] = {}
-    for m in layer["machines"].values():
+    "appears": true}``), drawn as expected ghost flows labelled with the machine whose expected
+    effect it is: one entry per machine and edit, each with its ends, the edit as stored, whether
+    a flow between the ends is in the model, and ``machines: []`` (a draft prediction is not an
+    association, rule 6 as amended). Its ends are read as the draft's other names are
+    (``names.resolve``)."""
+    out = []
+    for mid, m in layer["machines"].items():
         for e in (m.get("expected_effect") or {}).get("edits") or []:
             if not e.get("appears") or ("from" not in e and "to" not in e):
                 continue
             row = {"from": e.get("from"), "to": e.get("to")}
-            key, cands = flow_matches(row, layer, keys)
-            out.setdefault((row["from"], row["to"]), {**row, "key": key, "present": key is not None, "candidates": cands,
-                                                     "state": "predicted"})
-    return list(out.values())
+            a, b = (resolve(x, layer, keys) for x in (row["from"], row["to"]))
+            key, cands = between(a.key, b.key, keys) if a.why is None and b.why is None else (None, [])
+            out.append({"machine": mid, **row, "edit": e, "key": key, "present": key is not None, "candidates": cands,
+                        "state": "predicted", "machines": []})
+    return out
+
+
+def input_refs(model) -> dict:
+    """The series an equation reads as measured inputs, by key: an effect may be found only as one."""
+    from ..model import SeriesRef
+
+    out = {}
+    for ref in ((model.discovery or {}).get("inputs") or {}).values() if model else []:
+        if isinstance(ref, dict) and ref.get("name"):
+            r = SeriesRef(ref["name"], ref.get("labels") or {})
+            out.setdefault(ref_key(r), r)
+    return out
 
 
 def input_keys(model) -> set[str]:
-    """The series an equation reads as measured inputs: an effect may be found only as one."""
-    out = set()
-    for ref in ((model.discovery or {}).get("inputs") or {}).values() if model else []:
-        if isinstance(ref, dict) and ref.get("name"):
-            from ..model import SeriesRef
-            out.add(ref_key(SeriesRef(ref["name"], ref.get("labels") or {})))
-    return out
+    return set(input_refs(model))
 
 
 def structural(layer: dict, shown: Keys, base: Keys | None, statuses: dict) -> dict:
@@ -95,16 +117,28 @@ def structural(layer: dict, shown: Keys, base: Keys | None, statuses: dict) -> d
     return out
 
 
-def cache_name(d: int, v, since, era) -> str:
-    return f"d{d}-v{v}-v{since if since is not None else 'off'}-{era or 'none'}.json"
+def cache_name(d: int, v, since, era, hold: int) -> str:
+    return f"d{d}-v{v}-v{since if since is not None else 'off'}-{era or 'none'}-h{hold}.json"
+
+
+def _drop_stale_live(folder: Path, stamp: float | None) -> None:
+    """Remove the live files written for another discovery than the one ``stamp`` names."""
+    for old in folder.glob("d*-vlive-*.json"):
+        try:
+            if json.loads(old.read_text(encoding="utf-8")).get("stamp") == stamp:
+                continue
+        except (OSError, ValueError, AttributeError):
+            pass
+        old.unlink(missing_ok=True)
 
 
 def cached(intended, d: int, v, since, era, shown: Keys, base: Keys | None, layer: dict, hold: int, models,
-           stamp: float | None = None) -> dict:
+           stamp: float | None = None, nums: list[int] | None = None) -> dict:
     """The structural diff of a pair, from the cache or computed and written there. ``v`` is a
-    saved version's number or ``"live"`` (with ``stamp``, the discovery's time)."""
+    saved version's number or ``"live"`` (with ``stamp``, the discovery's time); ``nums`` the
+    saved versions' numbers, when the caller has them."""
     folder = Path(intended.dir) / "diff"
-    p = folder / cache_name(d, v, since, era)
+    p = folder / cache_name(d, v, since, era, hold)
     try:
         got = json.loads(p.read_text(encoding="utf-8"))
         if v != "live" or got.get("stamp") == stamp:
@@ -112,13 +146,12 @@ def cached(intended, d: int, v, since, era, shown: Keys, base: Keys | None, laye
     except (OSError, ValueError, KeyError):
         pass
     upto = None if v == "live" else v
-    statuses = history.statuses(models, upto, shown if v == "live" else None, hold)
+    statuses = history.statuses(models, upto, shown if v == "live" else None, hold, nums)
     out = structural(layer, shown, base, statuses)
     try:
         folder.mkdir(parents=True, exist_ok=True)
         if v == "live":
-            for old in folder.glob("d*-vlive-*.json"):
-                old.unlink(missing_ok=True)
+            _drop_stale_live(folder, stamp)
         tmp = p.with_suffix(".tmp")
         tmp.write_text(json.dumps({"stamp": stamp, "diff": out}) + "\n", encoding="utf-8")
         tmp.replace(p)

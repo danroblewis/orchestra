@@ -1,7 +1,7 @@
 # The intended model
 
 Status: reviewed, 2026-11-01 (panel round 1; judge's verdicts rounds 2–3); aligned to
-machine-design.md and instruments-on-machines.md as merged. Nothing built. Proposal 2 of
+machine-design.md and instruments-on-machines.md as merged; coverage pass 2026-11-01. Nothing built. Proposal 2 of
 `design-backwards.md` §7, written from `design-backwards-notes.md` §9, §11 and §13 and decision
 D21, for milestone M2 of `docs/roadmap/GOAL-2026-11-01-workflows.md`. The page states are the
 approved mockups `mockups/out/D1–D3`, `E1–E3` (`mockups/README.md`), with the corrections of §7.
@@ -109,7 +109,7 @@ owner asks for are declared at once; machines always enter proposed. Whether thi
 
 Discovered ids are assigned by arrival order (`sd/discover.py` `unique_id`) and are not stable.
 A part's **key** is: for a stock, its series name plus `_identity(labels)` (the labels without
-`NOT_IDENTITY`: instrument, machine, source, project, instance, and also `simulated`, so a real
+`NOT_IDENTITY`: instrument, machine, source, project, instance, and also `simulated` and `draft`, so a real
 series takes over a placeholder's mark); for a flow, its ends' keys plus
 its counter's key (none for a net flow). Marks, ignores, suggestions, settling and new/removed
 all match by key; the id is for display. The diff (§5) is computed on keys, inside `intended/`,
@@ -156,8 +156,9 @@ element until `retract`; a mark until `unexpect`. Nothing expires by time.
 `author` ∈ `owner | inference | <source>`; `reason` is the plugin's one-line why (P4 needs 1, 5).
 `via` is `plugin` (§6.3), `page` (§6.2, with
 `control`, `page`, `from`) or `host` (inference). Every change has an id (`c<seq>.<i>`: call,
-op). A **revision** by `author: owner` with a `quote` applies at once (E2: the Supervisor changes
-the machine as the owner talks); any other revision becomes a **pending change** on the element,
+op). A **revision** by `author: owner` with a `quote` applies at once while the element is still
+proposed (E2: the Supervisor changes the machine as the owner talks); on a confirmed machine, and
+for any other author, a revision becomes a **pending change** on the element,
 shown as proposed, answered by confirm/discard `{part, id, change}`. "You" is the holder of the
 web token (SPEC §10.2 has no other identity); a plugin's `author: owner` is its assertion, backed
 by the quote.
@@ -230,7 +231,9 @@ version, `since=off` drops the marks). The answer's `model` gains:
     {"sign": "-", "part": "flow", "key": "…", "in": 14},
     {"sign": "o", "part": "stock", "id": "features", "why": "expected · not in v15", "candidates": [ … ]}
   ],
-  "came_and_went": [], "ignored": [], "settled": 3
+  "came_and_went": [], "ignored": [], "settled": 3,
+  "predicted": [{"machine": "feature_count_improver", "from": "tasks_tickets{state=\"DONE\"}", "to": "features",
+                 "edit": {"from": "…", "to": "features", "appears": true}, "present": false, "machines": []}]
 }
 ```
 
@@ -259,8 +262,15 @@ one.
 `guessed` names a whole field or one item (`field[i]`). `latest` is the latest change's
 difference; the page marks it "just now" for ten minutes. `requested` is the owner's latest
 request (§6.2) with no later op answering it: the page shows "asked the Supervisor · waiting". The
-top level gains `intended_edges` (`{from, to, kind, state, observed, gone}`) and `intended_types`
+machine also gains `comparison`: `heard`, "attached, nothing measured" or "declared, neither
+heard nor measured" (P5 §3; the same entries are open items in `design()`), beside P5's
+`measured`. The top level gains `intended_edges` (`{from, to, kind, state, observed, gone}`) and `intended_types`
 (declared event types and descriptions).
+
+`predicted` lists the flows a declared machine's expected effect makes appear (`appears` edits),
+drawn as expected ghost flows labelled "predicted by <machine>'s expected effect"; they carry no
+machine association (`machines: []`, rule 6 as amended) and are `present` once a version has a flow
+between those ends.
 
 **Also:** `GET /api/intended?version=`, `/api/intended/versions`, `/api/intended/journal?after=`,
 `/api/intended/diff?d=&v=&since=`, and `/api/intended/script?instrument=` (the script of an
@@ -329,6 +339,14 @@ the simulated parts leave the next version. The expected mark survives by key: t
 excludes `instrument` (§3.1), so a real series of the same name and identity labels takes it;
 otherwise the Supervisor `link`s the declared stock to the real series' key.
 
+**Draft instruments** (P4 need 2). An option offered and not yet chosen may record under a
+`[[collect]]` entry with `draft = true` and `expires` (a time), and its points carry the label
+`draft="true"`. Discovery leaves a `draft="true"` series out of its candidates (`left_out`:
+"draft") while such an entry names its instrument, and also once the entry is gone, as it does an
+expired simulated series. The core honours the flag and nothing more; the plugin sets it, removes
+the entry at `expires` or clears the flag when the option is chosen (points written after that
+are ordinary; the key leaves `draft` out, so they join the same stock).
+
 ## 7. The pages
 
 The marks are the mockups' language (`mockups/README.md`). What each frame needs:
@@ -341,6 +359,7 @@ The marks are the mockups' language (`mockups/README.md`). What each frame needs
 | E1 | the proposed machine dashed violet, "unconfirmed", engagement sub-line; the highlight; the panel: status strip with confirm / discard (requests), quote, kind row, envelope, `spec` rendered in order, "a guess" on guessed items, expected effect rows with label, link and "waits for a series"; its card first | `intent`, `intended_edges` |
 | E2 | "+ new link", "− link removed", "changed just now", "was continuous: …" from `latest.before`, "rewritten just now"; card chips marked | `intent.latest` |
 | E3, -continuous, -external | kind row (Universal \| Programmatic) and `managed` (orchestra / external) separate from the engagement tabs; `spec` by mode | `intent` |
+| E4 | a declared external machine measured and never heard (P5 §3): an outline "declared · never heard", no halo, no links, the rest shadowed by the highlight rule; its card "seen: never heard · measured by 1 instrument · 3 instances · last measured 1m ago" and "measured ×3"; the panel's kind, managed, engagement rows, "Instances: none heard on the bus", and **Measured by** after Instances (instrument, match, instance label, series, measured instances with last values) | `intent`, `comparison`, P5's `measured` |
 
 **Read-only renderings, "ask the Supervisor":** E3's "+ argument" and "+ variable" and its
 input-like boxes; D1's option radios; D1's "you can say whether that is this stock" (the
@@ -349,7 +368,7 @@ candidate line; linking is `link`, the Supervisor's); every field of the E panel
 **Mockup corrections for C2/C3:** E3 gets a kind row apart from its engagement tabs; E1's footnote
 becomes "confirm asks the Supervisor", and "an AI agent: a prompt, its tools" is reworded in the
 work's terms; D1 drops "on DEMO-35"; D2 gains the candidate line on Features and expect / ignore on
-the + flow row.
+the + flow row (every + row, stock or flow, keeps expect / ignore; the frame changes to match).
 
 **No frame yet, one line each (or deferred):** settled parts lose their ring, no other mark;
 came-and-went and ignored are collapsed rows in the Changes panel; simulated parts with a "simulated" tag
@@ -359,9 +378,12 @@ map; a confirmed machine's verdict a chip on its expected-effect rows; event des
 hover over an event type; a target a line in the drawer and Expected group; `retract` is the
 Supervisor's, no control. Deferred to C2/C3: their exact styling.
 
-**The highlight rule** (notes §13.2), whenever the panel is open on a machine: the machine, its
-event types and the machines on them at full colour; their other event types and the machines on
-those at .45 opacity; the rest at `ng-dim` (.1). An edge takes the lesser of its two ends; links
+**The highlight rule** (notes §13.2: "The Machine should be highlighted and the other shadowed
+out, showing the Machine and the Event nodes with good colors, and the second-connection Machines
+slightly less shadowed"), whenever the panel is open on a machine: the machine and its event
+types at full colour (1); the machines one hop away (on those event types) slightly shadowed
+(.7); two hops away (their other event types and the machines on those) more (.45); the rest at
+`ng-dim` (.1). An edge takes the lesser of its two ends; links
 the latest change removed stay drawn as ghosts at full colour. Both pages refresh while open, so
 changes appear without a reload.
 
@@ -426,7 +448,7 @@ a one-line addition made with C1).
 | P4.4 options | `measure.options`, `measure.chosen`, in the declared layer. |
 | P4.5 matching | never automatic: `candidates` on read, `link` to set; P4 links in the same turn it instruments when they are the same quantity. |
 | P4.6 simulated | the `[[collect]]` flag and label; parts marked `simulated` in `vN`; read only while the entry exists; P4 removes the entry when a real option records (§6.3). |
-| P4 need 2, draft namespace | **P4-owned**; the core has none. An unchosen option's instrument is ordinary; the agents plugin removes its entry after the expiry, and any points already written stay as real measurements. |
+| P4 need 2, drafts | the `draft = true` + `expires` flag on an instrument entry, which discovery leaves out (§6.3); the core honours it, the plugin sets and removes it. |
 | P4.7 ids | keys (§3.1). |
 | P4.8 page events | `orchestra.intent.changed` for observations, `orchestra.intent.requested` (source `owner`) for requests, which P4 handles; filter `…:subject=machine:<id>`. |
 | P4.9 predictions | `rises`/`falls` and `appears` (§2); unpublishable until linked. |
@@ -486,8 +508,9 @@ and the C2/C3 screenshot comparison against `mockups/out/` (with §7's correctio
     source publishes, the same entry has observed fields and `heard: true`; the card's kind
     switches from declared to announced; `alias` joins a counted `<prefix>.<name>`.
 24. An undeclared observed machine has `intent: null`.
-25. A revision by `owner` with a quote applies at once, with `latest.added`, `removed` and
-    `before`; one by another author is `pending` until confirm/discard `{change}`.
+25. A revision by `owner` with a quote on a proposed machine applies at once, with
+    `latest.added`, `removed` and `before`; the same revision on a confirmed machine, or one by
+    another author, is `pending` until confirm/discard `{change}`.
 26. `set_expected_effect` adds no flow and no hypothesis; edits carry `label`, `link`,
     `publishable`; an edit on an unlinked declared stock is unpublishable; `record_prediction`
     links the verdict.
@@ -495,17 +518,25 @@ and the C2/C3 screenshot comparison against `mockups/out/` (with §7's correctio
     its slope before by `|z| ≥ 2`, and absent when the slope is unchanged though the level rose.
 28. A target on a flow is judged on its mean rate over `over_s`; on a stock, its mean level.
 29. Browsing `vN` returns the `dN` current at its `saved_at`.
-30. E1: node opacity 1 for the machine, its event types and their machines, .45 for the second
-    ring, .1 for the rest; edges the lesser of their ends.
-31. The Core page answers with `intended/` missing, corrupt or locked (rule 8).
-32. Each frame of §7 renders from C1's answers and matches its mockup in the C2/C3 screenshot
+30. E1: node opacity 1 for the machine and its event types, .7 for one-hop machines, .45 for the
+    two-hop ring, .1 for the rest; edges the lesser of their ends.
+31. A declared machine with an `appears` edit in its expected effect puts that flow in
+    `intended.predicted` with `machines: []`, adds no flow and no hypothesis to `vN`, and is
+    `present` once a version has a flow between its ends.
+32. A series labelled `draft="true"` is in `left_out` ("draft") while its entry exists and after
+    it is removed; points written after the flag is cleared enter discovery under the same key.
+33. A declared machine with an attachment matching nothing has `comparison` "attached, nothing
+    measured"; with neither events nor a measured attachment, "declared, neither heard nor
+    measured"; both are open items in `design()`.
+34. The Core page answers with `intended/` missing, corrupt or locked (rule 8).
+35. Each frame of §7 renders from C1's answers and matches its mockup in the C2/C3 screenshot
     comparison.
 
 **Coverage of notes §13.4 (the core's part):** related series enter with no declaration (6);
 expected stock drawn and listed when absent (7); new parts listed until answered, never dismissed
-(12, 13); placeholder series marked (17); a new machine's node and panel (23, 32); the highlight
-(30); live changes (25, 32); the engagement change (25); each kind's fields, no AI terms (4, and
-P4's `spec` check); predicted flows shown and judged (26, 27); no page control changes the system
+(12, 13); placeholder series marked (17); a new machine's node and panel (23, 35); the highlight
+(30); live changes (25, 35); the engagement change (25); each kind's fields, no AI terms (4, and
+P4's `spec` check); predicted flows shown and judged (26, 27, 31); no page control changes the system
 (15). The Supervisor's tests (instrument within one turn, options, script readable) are P4's.
 
 ## 11. Out of scope and open questions
