@@ -261,3 +261,28 @@ def test_of_a_total_and_the_one_part_that_moves_the_part_is_kept():
     m = discover(dump, start=T0, end=T0 + N * STEP, step=STEP)
     [st] = [s for s in m.stocks if s.series and s.series.name == "queue_messages"]
     assert st.series.labels.get("queue") == "dlq" and len(st.evidence["twins"]) == 1
+
+
+def test_two_halves_that_balance_on_different_counters_are_two_balances_and_not_stable(monkeypatch):
+    # delivery_sail's git_branch_commits (R2, the modeller): the whole window balanced it on two
+    # counters, exact; one half chose those, the other a third counter: two balances fit, so which
+    # flows move it is not identified, and its trust says so however exact the window's balance is
+    from orchestra.sd import identify as idmod
+    from orchestra.sd import stocktrust
+
+    rng = random.Random(3)
+    ins, outs, lv = _queue(rng)
+    dump = [_counter("in_total", ins), _counter("out_total", outs), _counter("other_total", [rng.randint(5, 30) for _ in range(N + 1)]),
+            ("queue_length", {"instrument": "lab"}, lv)]
+    s = _series(dump)
+    level, pool = s["queue_length"], [s["in_total"], s["out_total"], s["other_total"]]
+    steps = balance_steps(level, pool)
+    terms = [(s["in_total"], 1), (s["out_total"], -1)]
+    r2, exact = fit_of(level, terms, steps)
+    halves = iter([terms, [(s["other_total"], 1)]])
+    monkeypatch.setattr(idmod, "balance", lambda *a, **k: (next(halves), 1.0, 1.0))
+    got = identify(level, terms, r2, exact, pool, steps, _solver)
+    assert got.is_exact and got.two_balances and got.stable is False, got.record()
+    tr = stocktrust.conservation(got, exact)
+    assert tr["components"]["stable"] == stocktrust.UNSTABLE and any(w.startswith("two balances fit") for w in tr["why"]), tr
+    assert got.record()["two_balances"] is True

@@ -673,7 +673,8 @@ moves matched` scores 0.08, not 1.0; a version saved before the items were kept 
 first), its steps in step, and its units. A balance's: the shift null (1 at the least p-value its shifts can give, 0 at p = 1), the
 held-out R² (an exact balance's own R² on each half), the level reproduced (one less the running
 residual's spread over the level's), its units (`1 − e^(−units/20)`), and whether both halves chose
-the same counters (0.6 when not: its flows are not identified). A net flow's (`sd/netnull.py`): the
+the same counters (0.6 when not: its flows are not identified; when each half balanced it on
+counters the other did not choose, exact or not, "two balances fit"). A net flow's (`sd/netnull.py`): the
 same, for its fitted form, with the shift null refitting the whole procedure over the same drivers on
 the level moved in time, and its R². Hidden states and counts by construction score 0. Net-flow
 stocks are kept, whatever their score: a coincidental driver is the data's to cure with more

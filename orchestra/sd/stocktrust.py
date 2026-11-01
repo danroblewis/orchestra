@@ -10,7 +10,8 @@ reproduces the level but that the shift null matches as often is a coincidence.
   ``1 / (shifts + 1)``, the least the null can say, falling to 0 at p = 1); the held-out R² (the
   balance chosen on one half, scored on the other); the level reproduced (one less the running
   residual's spread over the level's); how many units it was judged on (``1 − e^(−units / 20)``); and
-  whether both halves chose the same counters (``UNSTABLE`` when not: the flows are not identified).
+  whether both halves chose the same counters (``UNSTABLE`` when not: the flows are not identified;
+  when each half chose a balance of its own, "two balances fit", exact or not).
 - **net flow** (``sd.netflow``): the same, for its fitted form: the shift null over the same
   drivers, held-out R², the level reproduced by the integrated net flow, its stretches, and its R²
   itself (it explains only that share of the level's changes).
@@ -70,14 +71,17 @@ def conservation(idn, exact: float) -> dict:
         why.append("its source declared it a channel's backlog and its traffic: a balance by declaration, not chosen by a search")
     if getattr(idn, "pinned", False):
         why.append("declared in [[series]] as a stock's level and flows: a hypothesis tested by the same evidence, not chosen by a search")
-    if idn.stable is False and not idn.is_exact:
+    two = getattr(idn, "two_balances", False)
+    if two:
+        why.append("two balances fit: each half of the window balanced it on counters the other did not choose, so which flows move it is not identified")
+    elif idn.stable is False and not idn.is_exact:
         why.append("the halves of the window chose different counters: its flows are not identified")
     return scored("conservation", {
         "null": null_component(idn.p_null, shifts),
         "held_out": None if held is None else _clamp(held),
         "level": None if idn.cum_ratio is None else _clamp(1 - idn.cum_ratio),
         "units": 1 - math.exp(-idn.units / UNITS_SCALE),
-        "stable": None if idn.stable is None or idn.is_exact else (1.0 if idn.stable else UNSTABLE),
+        "stable": UNSTABLE if two else None if idn.stable is None or idn.is_exact else (1.0 if idn.stable else UNSTABLE),
     }, {"p_null": idn.p_null, "null_shifts": shifts, "held_out_r2": idn.held_out_r2, "halves_r2": idn.halves_r2,
         "exact_share": round(exact, 4), "exact_moved": round(idn.exact_moved, 4), "cum_residual_ratio": idn.cum_ratio,
         "units": idn.units, "stable": idn.stable}, why)
