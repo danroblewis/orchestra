@@ -1283,9 +1283,9 @@ stop_grace = 10                                     # seconds from SIGTERM to SI
 and a plugin in `Plugin.processes` (§10.1). Inside commands Orchestra runs, `python` is
 Orchestra's Python (`sys.executable`), even inside `sh -c`, whatever is first on the PATH, so
 Orchestra and the plugins are importable: every process it starts gets its environment from
-`launcher.child_env`, whose PATH begins with a directory where `python` and `python3` are that
-Python (`launcher.python_dir`), and a first word `python` or `python3` is replaced by it
-(`launcher.own_python`). The project's own is `uv run python` or `.venv/bin/python`. A
+`launcher_env.child_env`, whose PATH begins with a directory where `python` and `python3` are that
+Python (`launcher_env.python_dir`), and a first word `python` or `python3` is replaced by it
+(`launcher_env.own_python`). The project's own is `uv run python` or `.venv/bin/python`. A
 `[[collect]]` command follows the same rule, and
 either may be a string or a list of words. The host starts each in the repository root, in a
 process group of its own, with `ORCHESTRA_REPO` (the root) and `ORCHESTRA_MACHINE_LOG` (its log,
@@ -1434,7 +1434,7 @@ keeps its own harness (`~/orchestra-agents/SPEC.md`).
 ~/.orchestrator/                 (ORCHESTRATOR_HOME overrides)
   projects.json                  repository root → project key
   stores/<store>/                what every project on this computer shares about another store it reads: its request rate and daily count (sources/limits.py, AGENTS.md rule 5)
-  python/<id>/                   python and python3 scripts that run Orchestra's own Python, for what the launcher starts (launcher.python_dir)
+  python/<id>/                   python and python3 scripts that run Orchestra's own Python, for what the launcher starts (launcher_env.python_dir)
   <key>/
     project.json
     orchestra.local.toml         the private configuration overlay, if the owner writes one (§8)

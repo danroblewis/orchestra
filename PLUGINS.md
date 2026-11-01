@@ -102,7 +102,7 @@ is called from two places, at different times:
 
 | Caller | When | What it uses |
 |---|---|---|
-| `orchestra web` (`web/app.py`, `mount_plugins`) | **once**, when the web server starts | `pages`, `static`, `router`, `scripts`, `stylesheets`, `machines` |
+| `orchestra web` (`web/app.py`, `web/plugins_mount.py`) | **once**, when the web server starts | `pages`, `static`, `router`, `scripts`, `stylesheets`, `machines` |
 | `orchestra run` (`host.py`, `Host._from_plugins`) | when the host starts, and **again every time `orchestra.toml` changes** (after re-reading the config); one load serves the launcher and the instruments | `processes`, `collectors` |
 
 ```mermaid
