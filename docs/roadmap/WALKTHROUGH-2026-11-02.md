@@ -165,11 +165,12 @@ and Q13.
 (b) The machine declared (receives heard on the bus), scheduled 09:00, confirmed; `orchestra.prediction.made` from `supervisor`, factor 1.2.
 (c) Machines: Review Nudger "declared, never heard". Dynamics: the expected change drawn beside
 the model, as a hypothesis.
-(d) The answer says the declared 09:00 is not what runs: the program behind it is the
-`review_nudger` workflow, run daily at 00:00 UTC and on
-request, since no calendar time is supported yet (SPEC §12.1); it asks which time zone the owner
-means for a later 09:00 (default Q10: ask, guess none); says each reminder is a comment drafted to
-the Outbox that waits for the owner's approval; gives the prediction's id and when it is judged.
+(d) The answer says what runs: the program behind the machine is the `review_nudger`
+workflow, started daily at the declared time (`every` with `at`, honoured by the scheduler since
+T11) and on request; it asks which time zone the owner means by 09:00 (default Q10: ask, guess
+none) and, once answered, declares `tz` and says whether that revision waits for the owner's
+confirm; says each reminder is a comment drafted to the Outbox that waits for the owner's
+approval; gives the prediction's id and when it is judged.
 (e) 90 s. The SRE answers the zone question: "This machine's clock."
 (f) Pass: L3's `check_nudger`; and the answer says what was declared ("09:00 <zone>"; the
 workflows scheduler honours `at` since T11) and, when the plugin's revision of the proposed
