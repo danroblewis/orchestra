@@ -4,7 +4,7 @@ shows the title (the Dynamics, Machines and Instruments pages, and the diff betw
 An instrument that counts the things in each place says which label names the place (its
 ``count`` view's ``place``, ``collect.views``; ``sd.construction`` reads the same). When other
 labels of the series spell that label's value, part by part, they are the place in words, in
-the order they spell it: ``pile="write.held"`` with ``step="write"`` and ``place="held"`` is
+the order they spell it: ``stage="write.held"`` with ``step="write"`` and ``place="held"`` is
 "write (held)"; the series' other values follow ("write (held) · delivery_sail"). The convention
 is the labels' own: no label's name is known here (AGENTS.md rule 1). A series of the ``age``
 view with the same labels is "age of" that place.
@@ -16,7 +16,7 @@ no series measures between such moves (a hidden passage, ``sd.passing``) is name
 its moves name: the places its ins enter and its outs leave ("open_pr (waiting) … ci (waiting)",
 one place said once). Label values keep their spelling (``sail_check``, never "sail check"); "-" and
 "_" are alike inside a part (``code-review.waiting`` with ``step="code-review"``), and a place
-value with no letters in it (``pile="3"``) spells no words, so the series keeps its own name."""
+value with no letters in it (``stage="3"``) spells no words, so the series keeps its own name."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ class Places:
         place = rec.get("place") if rec.get("view") == "count" else None
         value = labels.get(place) if place else None
         if not value or not re.search(r"[^\W\d_]", value):
-            return None                                  # a value that spells no words (pile="3"): named by its series
+            return None                                  # a value that spells no words (stage="3"): named by its series
         own = {k: v for k, v in sorted(labels.items()) if k != place and k not in WRITERS}
         spell: list[str] = []
         for part in _parts(value):
@@ -69,7 +69,7 @@ class Places:
 
     def place(self, value: str, labels: dict) -> str | None:
         """The place a move's label value names, in words, among places whose other labels the
-        move carries (the same workflow's pile)."""
+        move carries (the same instrument's place)."""
         for short, scope in self.by_value.get(value, []):
             if all(labels.get(k) == v for k, v in scope.items()):
                 return short

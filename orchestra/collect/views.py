@@ -29,7 +29,7 @@ series name the instrument prints; its value is one view or a list of them (the 
 ``describes`` (optional, any view) is a sentence about what the matching series measure, kept
 beside them and never a label, so editing it never starts a new series: the Dynamics and
 Instruments pages show it under the part's name (an instrument may declare one view per series,
-each with its ``where`` and its sentence: ``workflows.piles`` says what each pile holds).
+each with its ``where`` and its sentence: an instrument's declared views say what each place holds).
 A view is a statement about how the series was made, never about a machine or a flow (AGENTS.md
 rules 6 and 7): it changes no equation, and the moves' rates are still fitted. Discovery reads
 the views of the instruments the host runs (its runtime record, ``instruments``) and of
