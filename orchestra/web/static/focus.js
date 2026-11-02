@@ -13,9 +13,9 @@
 //   Orchestra.focus.offer({title, subtitle, get: () => subset})   a chip above each diagram; click sets, again clears
 //   Orchestra.focus.update(title, {subtitle})                     an offer's chip says something new
 //
-// ``stocks`` and ``flows`` name a stock or a flow by the series it is bound to, as a discovery keys
-// a series (``name{label="value",...}``, sorted, without the project label: LeftOut.keyOf), or by
-// its id. The focus is kept in the page's hash (``#focus=<title>``) so a link carries it; on load it
+// ``stocks`` and ``flows`` name a stock or a flow by the series it is bound to: ``{name, labels}``,
+// keyed here as a discovery keys a series (``name{label="value",...}``, sorted, without the project
+// label: LeftOut.keyOf), or that key already made, or by its id. The focus is kept in the page's hash (``#focus=<title>``) so a link carries it; on load it
 // is restored only when an extension offers that title again.
 //
 // The pure part (Focus.eventMap, Focus.dynamics, Focus.resolve) is used by the pages and by the Node
@@ -25,15 +25,18 @@
   if (typeof module === "object" && module.exports) module.exports = F;
   else { root.Focus = F; if (root.Orchestra) F.install(root.Orchestra); }
 })(typeof self !== "undefined" ? self : this, function () {
-  const list = (x) => (Array.isArray(x) ? x.map(String) : x == null ? [] : [String(x)]);
+  // a series as a discovery keys it (left-out.js LeftOut.keyOf; the same here so the tests need no page)
+  const keyOf = (ref) => { if (!ref) return null; const ls = Object.entries(ref.labels || {}).filter(([k]) => k !== "project").sort(([a], [b]) => (a < b ? -1 : 1));
+    return ref.name + (ls.length ? "{" + ls.map(([k, v]) => `${k}="${v}"`).join(",") + "}" : ""); };
+  // a field's entries as strings; a series given as {name, labels} is keyed here, so no extension
+  // keeps a copy of the key's rule
+  const one = (x) => (x && typeof x === "object" && x.name ? keyOf(x) : String(x));
+  const list = (x) => (Array.isArray(x) ? x.map(one) : x == null ? [] : [one(x)]);
   // a subset as given, normalised: every field a list of strings
   function normal(f) {
     if (!f || !f.title) return null;
     return { title: String(f.title), machines: list(f.machines), events: list(f.events), stocks: list(f.stocks), flows: list(f.flows), reason: f.reason ? String(f.reason) : "" };
   }
-  // a series as a discovery keys it (left-out.js LeftOut.keyOf; the same here so the tests need no page)
-  const keyOf = (ref) => { if (!ref) return null; const ls = Object.entries(ref.labels || {}).filter(([k]) => k !== "project").sort(([a], [b]) => (a < b ? -1 : 1));
-    return ref.name + (ls.length ? "{" + ls.map(([k, v]) => `${k}="${v}"`).join(",") + "}" : ""); };
   // the model's stock and flow ids a focus names, by series key or id: {stocks: Set, flows: Set}
   function resolve(model, f) {
     const sk = new Set(f.stocks), fk = new Set(f.flows);

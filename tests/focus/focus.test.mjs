@@ -90,6 +90,11 @@ test("a focus names the stocks it leaves out, and draws a co-flow's stock as a s
   assert.deepEqual(r.left, ["other"], "a stock with no stub is named as left out");
 });
 
+test("a focus takes a series as {name, labels} and keys it itself", () => {
+  const f = Focus.normal({ title: "t", stocks: [{ name: "workflow_pile_items", labels: { step: "write", project: "p", pile: "write.held" } }, "s2"] });
+  assert.deepEqual(f.stocks, ['workflow_pile_items{pile="write.held",step="write"}', "s2"]);
+});
+
 // the browser's side: a page with a hash, and nothing else
 function browser(hash = "") {
   const events = [];

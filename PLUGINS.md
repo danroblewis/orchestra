@@ -705,8 +705,8 @@ if (Orchestra.focus) Orchestra.focus.offer({
   get: () => ({                              // the subset, read when the chip is pressed
     machines: ["worker", "reviewer"],        // machine ids (or the names they are shown by)
     events: ["offer.made"],                  // event types (optional: with none, every type between the machines)
-    stocks: ['workflow_pile_items{instrument="workflows.piles",pile="write.waiting",...}'],   // series keys (or stock ids)
-    flows: ['workflow_pile_moves_total{...}'],                                               // series keys (or flow ids)
+    stocks: [{ name: "workflow_pile_items", labels: { instrument: "workflows.piles", pile: "write.waiting" } }],   // series (or keys, or stock ids)
+    flows: [{ name: "workflow_pile_moves_total", labels: { /* … */ } }],                                       // series (or keys, or flow ids)
     reason: "the workflow's steps",          // said in the bar
   }),
 });
@@ -715,8 +715,9 @@ Orchestra.focus.set({ title, machines, events, stocks, flows, reason });      //
 Orchestra.focus.clear();
 ```
 
-- A series key is how a discovery names a series: its name and every label but `project`, sorted,
-  `name{k="v",...}` (the `instrument` label the collector adds included).
+- Give a series as `{name, labels}`: the focus keys it itself, as a discovery names a series (its
+  name and every label but `project`, sorted, `name{k="v",...}`, the `instrument` label the
+  collector adds included), so no plugin keeps a copy of that rule. A key already made works too.
 - With a focus, the event map draws the named machines and what passes among them (the hub and
   relay rules unchanged), and each machine outside that hands work in or takes it out as a small
   grey named stub at the edge; the Dynamics diagram draws the named stocks (and the ends of the
