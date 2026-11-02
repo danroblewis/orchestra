@@ -88,8 +88,10 @@
   // ends of the named flows that are stocks), every flow from or to one of them, with an end that is
   // a stock outside drawn as a small grey stub named for that stock, just outside the system's frame
   // beside the stock inside (one per pair, tethered as a cloud is); the clouds, places and
-  // auxiliaries those flows touch; and the influences on them (one from a stock outside, from its stub).
-  // ``ids``: Focus.resolve's answer; ``name(id)``: a stock node's name. -> {nodes, edges, inside, total, outside}
+  // auxiliaries those flows touch; the influences on them (one from a stock outside, from its stub);
+  // and a stub for the stock a drawn flow's co-flow moves (its twin's counter, ``<flow>@<writer>``).
+  // ``ids``: Focus.resolve's answer; ``name(id)``: a stock node's name.
+  // -> {nodes, edges, inside, total, outside, left: the stocks it leaves out with no stub, by name}
   function dynamics(nodes, edges, ids, { name } = {}) {
     const byId = new Map(nodes.map((n) => [n.id, n])), isStock = (n) => !!(n && n.sid);
     const inside = new Set(nodes.filter((n) => isStock(n) && ids.stocks.has(n.sid)).map((n) => n.id));
@@ -121,11 +123,23 @@
       else if (isStock(src) && anchor) outEdges.push({ ...e, source: stub(e.source, anchor), cls: `${e.cls || ""} ng-focus-cross` });
       else if (!isStock(src)) { keep.add(e.source); outEdges.push(e); }   // an auxiliary the rate reads
     }
+    // a co-flow (the same counter's events moving another machine's stock: ids "<flow>@<writer>") of a
+    // flow drawn: its stock outside is a stub beside the stock its twin moves, never dropped unsaid
+    const base = (fid) => String(fid || "").split("@")[0];
+    const twins = new Map();
+    for (const e of flowEdges) if (kept.has(e.id)) { const at = [e.source, e.target].find((x) => inside.has(x)); if (at) twins.set(base(e.fid), at); }
+    for (const e of flowEdges) {
+      if (kept.has(e.id) || !twins.has(base(e.fid))) continue;
+      for (const end of [e.source, e.target]) if (isStock(byId.get(end)) && !inside.has(end)) stubs.get(stub(end, twins.get(base(e.fid)))).co = true;
+    }
     // a cloud stays only with a flow that is drawn
     const used = new Set(outEdges.flatMap((e) => [e.source, e.target]));
     const drawn = nodes.filter((n) => keep.has(n.id) && (inside.has(n.id) || used.has(n.id)));
+    const stubbed = new Set([...stubs.values()].map((s) => s.of));
     return { nodes: [...drawn, ...stubs.values()], edges: outEdges, inside: inside.size, total: nodes.filter(isStock).length,
-             outside: [...new Set([...stubs.values()].map((s) => s.label))] };
+             outside: [...new Set([...stubs.values()].map((s) => s.label))],
+             // the stocks it leaves out with no stub: named, so nothing is dropped silently
+             left: [...new Set(nodes.filter((n) => isStock(n) && !inside.has(n.id) && !stubbed.has(n.id)).map((n) => (name && name(n)) || n.label))] };
   }
 
   // a page's hash holds what it opens (a machine's id) and the focus beside it: "#worker&focus=t".
@@ -177,7 +191,7 @@
       if (!el.isConnected) { mounts.delete(el); return; }
       const chips = [...offers.values()].map((o) => { const on = current && current.title === o.title, sub = subtitleOf(o);
         return `<button type="button" class="focus-chip${on ? " on" : ""}" data-title="${esc(o.title)}" aria-pressed="${on ? "true" : "false"}" title="${on ? "showing this part of the system: press to show everything" : "show only this part of the system"}">${esc(o.title)}${sub ? ` <span class="muted">${esc(sub)}</span>` : ""}</button>`; }).join("");
-      const bar = current && c ? `<div class="focus-bar" role="status">showing <b>${esc(current.title)}</b>: ${c.shown} of ${c.total} ${esc(c.noun || "")}${current.reason ? ` <span class="muted">· ${esc(current.reason)}</span>` : ""}${c.outside ? ` <span class="muted">· grey stubs: ${esc(c.outside)} outside it</span>` : ""} · <a href="#" class="focus-clear">show everything</a></div>` : "";
+      const bar = current && c ? `<div class="focus-bar" role="status">showing <b>${esc(current.title)}</b>: ${c.shown} of ${c.total} ${esc(c.noun || "")}${current.reason ? ` <span class="muted">· ${esc(current.reason)}</span>` : ""}${c.outside ? ` <span class="muted">· grey stubs: ${esc(c.outside)} outside it</span>` : ""}${c.left ? ` <span class="muted">· not shown: ${esc(c.left)}</span>` : ""} · <a href="#" class="focus-clear">show everything</a></div>` : "";
       const html = (chips ? `<div class="focus-chips">${chips}</div>` : "") + bar;
       if (el.dataset.html === html) return;
       el.dataset.html = html; el.innerHTML = html;

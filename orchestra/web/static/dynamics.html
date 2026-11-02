@@ -193,7 +193,7 @@ function draw() {
   let { nodes, edges } = g;
   const F = Orchestra.focus.current();
   if (F) { const fc = Focus.dynamics(nodes, edges, Focus.resolve(m, F)); nodes = fc.nodes; edges = fc.edges;
-    Orchestra.focus.mount($("focus-row"), { shown: fc.inside, total: fc.total, noun: "stocks", outside: fc.outside.join(", ") }); }
+    Orchestra.focus.mount($("focus-row"), { shown: fc.inside, total: fc.total, noun: "stocks", outside: fc.outside.join(", "), left: fc.left.join(", ") }); }
   else Orchestra.focus.mount($("focus-row"), null);
   window.PLACES = (g.places || []).length;
   // a flow's label: the equation, or the observed rate first where it parts from it (dynamics-live.js)

@@ -77,6 +77,19 @@ test("a focus of 2 stocks keeps them, the flow between them, and every flow cros
   assert.ok(r.outside.length >= 2);
 });
 
+test("a focus names the stocks it leaves out, and draws a co-flow's stock as a stub beside its twin's (R3: commits on main dropped silently)", () => {
+  const box = (sid) => ({ id: "s:" + sid, sid, kind: "box", label: sid.replace(/_/g, " ") });
+  const nodes = [box("review"), box("sail"), box("commits_on_main"), box("other"), { id: "c:out:sail", kind: "cloud" }, { id: "c:in:commits_on_main", kind: "cloud" }];
+  const edges = [{ id: "e1", source: "s:review", target: "s:sail", fid: "moves_review_sail", flowPart: true },
+    { id: "e2", source: "s:sail", target: "c:out:sail", fid: "moves_sail_end", flowPart: true },
+    { id: "e3", source: "c:in:commits_on_main", target: "s:commits_on_main", fid: "moves_sail_end@base", flowPart: true }];
+  const r = Focus.dynamics(nodes, edges, { stocks: new Set(["review", "sail"]), flows: new Set() }, {});
+  const stub = r.nodes.find((n) => n.stub && n.of === "s:commits_on_main");
+  assert.ok(stub && stub.co && stub.tether === "s:sail", "the co-flow's stock is a stub beside sail");
+  assert.ok(r.outside.includes("commits on main"));
+  assert.deepEqual(r.left, ["other"], "a stock with no stub is named as left out");
+});
+
 // the browser's side: a page with a hash, and nothing else
 function browser(hash = "") {
   const events = [];
