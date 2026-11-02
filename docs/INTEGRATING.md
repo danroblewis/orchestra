@@ -657,36 +657,49 @@ Assignments are built in: `jira.issue.assigned` for each change of assignee (`st
 Jira collector agrees. A changelog that the search cut short (`changelog.total > maxResults`) needs
 `/rest/api/2/issue/<key>?expand=changelog`; add that before you rely on long histories.
 
-## 7. Slack (channel history, with mentions)
+## 7. Slack (channel threads, read only)
 
 The owner tracks "about six channels, mine and other teams'" and wants to "respond to Slack
-quickly" (work charter §3D). For a channel's traffic, and for pings to the owner (the mention
-filter below), scaffold the `slack` kit:
+quickly" (work charter §3D); at work there will be a bot token, and nothing is posted at first
+(the owner, 2026-11-02: "we will get a slack bot token, we wont post initially"). Scaffold the
+`slack` kit:
 
 ```bash
 orchestra bridges scaffold slack team_channels --root repo
 ```
 
 Set `[settings]`: `channels = ["C0123", "C0456"]` (ids, not names), `every = "5m"` and
-`per_minute = 20` (`conversations.history` is Tier 3, about 50 a minute). The token needs
-`channels:history` (and `groups:history` for private channels) and `users:read`. Each message
-becomes `slack.message.posted`: subject `<channel>/<thread ts>`, source `person.slack.<member id>`
-or `bot.slack.<id>`, and data `channel`, `reply` and `bot`. `measure` prints
-`slack_channel_messages_last_hour{channel}`.
+`per_minute = 20` (`conversations.history` is Tier 3, about 50 a minute). The token is a bot token
+(`xoxb-`, the bot added to each channel), kept in a `chmod 600` file (`token_file`) or named by
+`token_env`. One scope table, the same as the bridges guide's:
 
-**Mention filtering** works in memory and keeps ids only. In `keep_history`, check each message's
-text against the ids to watch, and keep only what matched:
+| To | Scopes |
+|---|---|
+| read (the kit: history, threads, reactions, the channel's name) | `channels:history`, `channels:read`; for a private channel also `groups:history`, `groups:read` |
+| post (an Outbox draft, never the kit) | adds `chat:write` |
 
-```python
-WATCH = ["U0OWNER", "S0TEAMGROUP"]             # or settings.extra["watch"]
-def mentions(text):                            # called inside keep_history; the text is never kept
-    return [w for w in WATCH if f"<@{w}>" in text or f"<!subteam^{w}" in text]
-# in keep_history's message dict:  "mentions": mentions(m.get("text", "")),
-# in poll:  p.emit("slack.message.mentioned" if m["mentions"] else "slack.message.posted", ..., data={..., "mentions": m["mentions"]})
-```
+Nothing else: no `users:read` (a bot's message says it is one) and no `reactions:read` (the
+parent's reactions come with the history). A user token (`xoxp-`) reads the same; the owner's own
+pings (mentions of them, their DMs) need a user token with `search:read`, since a bot cannot search.
 
-Thread replies are not in `conversations.history` (only parents and broadcasts). Reading them
-costs one `conversations.replies` call per thread, so leave them out unless the owner asks.
+Each poll reads a channel's history (`conversations.history`: the top-level messages, each with its
+replies' summary and its reactions) and, for a thread with a reply it has not seen, that thread
+(`conversations.replies`, one call per such thread). It relays facts, each once, as who acted,
+with the subject `<channel>/<thread ts>`:
+
+| type | source | data |
+|---|---|---|
+| `slack.thread.started` | the author (`person.slack.<member id>`, `bot.slack.<id>`) | `channel`, `channel_name`, `user`, `bot`, `permalink` |
+| `slack.thread.replied` | who replied | `channel`, `channel_name`, `permalink`, `user`, `author`, `by_author`, `bot`, `first` (the first reply by a person other than the author) |
+| `slack.thread.checked` | the first who added the check emoji (`check_emoji`) | `channel`, `channel_name`, `permalink`, `by`, `emoji` |
+| `slack.thread.unchecked` | who removed the last check | `channel`, `channel_name`, `permalink`, `by`, `emoji` |
+| `slack.message.posted` | the author | `channel`, `reply`, `bot` |
+
+It keeps ids and timestamps only, never a message's text or a person's name. How soon a thread is
+to be answered is the workflow's setting, never the poller's: see
+`orchestra-workflows/examples/slack_queues`, which times the first reply from the thread's start.
+`measure` prints `slack_channel_messages_last_hour{channel}`, `slack_threads_awaiting_reply{channel}`
+and `slack_threads_unchecked{channel}`.
 
 ## 8. Chronosphere (a Prometheus-API store)
 
@@ -794,8 +807,8 @@ Run it at the end. Every line must be true.
   (`--base-url http://127.0.0.1:…`) until the owner approves.
 - **`waiting for approval` in the poller's log**: its `[[machines]]` entry is in, the approval is
   not. It reads nothing until `poller.toml` says `clearance = "approved"`, then polls on its own.
-- **HTTP 401 or 403**: the wrong token, or a scope it lacks (Slack: `channels:history`,
-  `users:read`; PagerDuty: a read-only REST key sent as `Token token=…`; Jira DC: a personal access
+- **HTTP 401 or 403**: the wrong token, or a scope it lacks (Slack: `channels:history` and
+  `channels:read`, plus `groups:history` and `groups:read` for a private channel; PagerDuty: a read-only REST key sent as `Token token=…`; Jira DC: a personal access
   token sent as `Bearer`). Look at the status code only, never the body.
 - **Rate-limited (`HTTP 429` in the log)**: the client waited `Retry-After` and gave up after its
   retries. Raise `every`, raise `ttl`, lower `per_minute`, or narrow the query (fewer channels, a
