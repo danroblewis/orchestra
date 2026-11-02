@@ -128,7 +128,8 @@ class Places:
             spell.append(k)
         if not spell:
             return None
-        pl = Place(own[spell[0]], tuple(own[k] for k in spell[1:]), {k: v for k, v in own.items() if k not in spell}, noun_of(name))
+        pl = Place(own[spell[0]], tuple(own[k] for k in spell[1:]), {k: v for k, v in own.items() if k not in spell},
+                   rec.get("noun") or noun_of(name))
         return pl, value
 
     def _sits(self, pl: Place) -> str:

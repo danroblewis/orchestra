@@ -501,9 +501,11 @@ function machinesCell(m, f, byMachine) {
   return row(hs[0]) + (rest.length ? `<details class="more-h" onclick="event.stopPropagation()"><summary>+${rest.length}</summary>${rest.map(row).join("")}</details>` : "")
     + (untold && (!apart || hs.length > 1) ? `<div class="muted" style="font-size:11px">${esc(untold)}</div>` : "");
 }
-// a stock's unit: the noun its title says it counts ("items waiting at write": items), else none
+// a stock's unit: the noun its instrument declared ("release candidates"), else the one its title
+// says it counts ("items waiting at write": items), else none
 function unitOf(s) {
   const n = SDGraph.names(MODEL).stocks[s.id];
+  if (s.evidence && s.evidence.noun) return s.evidence.noun;
   return s.evidence && s.evidence.named && n ? n.name.split(" ")[0] : "";
 }
 // Eras (sd/eras.py): a new one begins when a machine changes the system; each is discovered from

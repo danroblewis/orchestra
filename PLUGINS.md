@@ -497,7 +497,10 @@ Collector.collect("piles", ["python", "-m", "workflows.piles"], every_s=15, view
 
 The views are `count` (`place`), `moves` (`starts`, `stops`: the labels naming the place entered
 and the place left), `starts` / `stops` (`place`), `aggregate` and `age` (never a stock); a value
-may be a list of views told apart by `where`. A table that cannot be read raises `ConfigError` when
+may be a list of views told apart by `where`. A `count` may also say what its things are, `noun`
+(plural, one to four plain words under 40 characters: `"deliveries"`), which the pages print in its
+stock's title in place of the noun of the series' name ("deliveries waiting at write"); any other
+key is refused. A table that cannot be read raises `ConfigError` when
 the `Collector` is made. The host records them in the runtime record, where discovery reads them.
 
 ### 4.7.1 `guide`: how to configure the plugin

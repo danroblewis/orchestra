@@ -303,8 +303,10 @@ A view also names the parts its series become, once, on the server (`sd/titles.p
 page shows that title (the Dynamics, Machines and Instruments pages, the diff between versions):
 where a count's other labels spell its place label's value part by part, they are the place in
 words, in the order they spell it (`pile="write.held"`, `step="write"`, `place="held"`), and the
-stock is what sits there: the noun its series counts (the last word of its name when that is a
-plural noun: `workflow_pile_items`, items), what is said of it there and where ("items held at
+stock is what sits there: the noun its series counts (the count view's own `noun` when it declares
+one, a plural of one to four plain words: `noun = "deliveries"`, "deliveries waiting at write";
+else the last word of its name when that is a plural noun: `workflow_pile_items`, items; Orchestra
+knows no such word, it prints the label), what is said of it there and where ("items held at
 write"); the labels it does not spell (`workflow`) are said only when two of their values share a
 thing of one name ("items held at write (hotfix)"); an `age` series of the same labels is "age of"
 it; a move between places is named by the things it leaves and enters ("write → ci"; inside one,

@@ -167,3 +167,39 @@ def test_a_view_may_say_what_its_series_measure_beside_them_never_as_a_label():
     assert "describes" not in got[series_key("items", {"instrument": "p", "pile": "a.waiting"})]
     with pytest.raises(ConfigError):
         parse({"items": {"view": "age", "describes": 3}})
+
+
+def _noun_titles(noun=None):
+    from orchestra.sd.series import Series
+    from orchestra.sd.titles import Places
+
+    items = [Series("workflow_pile_items", {"instrument": "piles", "workflow": "w", "pile": f"{st}.waiting", "step": st, "place": "waiting"},
+                    [], [], False) for st in ("write", "review")]
+    move = Series("workflow_pile_moves_total", {"instrument": "piles", "workflow": "w", "from": "write.waiting", "to": "review.waiting"},
+                  [], [], True)
+    vs = parse({"workflow_pile_items": {"view": "count", "place": "pile", **({"noun": noun} if noun else {})},
+                "workflow_pile_moves_total": {"view": "moves", "starts": "to", "stops": "from"}})
+    prov = provenance([(s.name, s.labels, []) for s in (*items, move)], {"piles": vs}, series_key)
+    places = Places([(s.name, s.labels, s.key) for s in (*items, move)], prov)
+    return places.level(items[0].labels, items[0].key, items[0].name), places.move(move.labels, move.key), prov[items[0].key]
+
+
+def test_a_count_may_say_what_its_things_are_and_the_titles_say_it():
+    """The owner (2026-11-02): "'item' is a generic idea, a 'task' is a type of 'item'". A count's
+    ``noun`` is a label the titles print; the core learns no word."""
+    level, move, rec = _noun_titles("deliveries")
+    assert (level, move, rec["noun"]) == ("deliveries waiting at write", "write → review", "deliveries")
+    assert parse({"x": {"view": "count", "place": "pile", "noun": "release candidates"}})[0].table()["noun"] == "release candidates"
+    level, move, rec = _noun_titles()
+    assert (level, move, "noun" in rec) == ("items waiting at write", "write → review", False)
+
+
+@pytest.mark.parametrize("noun", ["", "x" * 40, "<b>deliveries</b>", "deliveries!", 3, "one two three four five"])
+def test_a_noun_that_is_no_plain_words_is_refused(noun):
+    with pytest.raises(ConfigError, match="noun must be"):
+        parse({"x": {"view": "count", "place": "pile", "noun": noun}})
+
+
+def test_only_a_count_takes_a_noun():
+    with pytest.raises(ConfigError, match="takes no noun"):
+        parse({"x": {"view": "moves", "starts": "to", "stops": "from", "noun": "deliveries"}})

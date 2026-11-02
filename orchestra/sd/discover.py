@@ -210,7 +210,8 @@ def _named(s: Series, places: Places | None) -> dict:
     """The record that a part's title is its instrument's places' or its words' (the pages show it
     as it is)."""
     if places is not None and (places.move(s.labels, s.key) if s.counter else places.level(s.labels, s.key, s.name)):
-        return {"named": "places"}
+        noun = None if s.counter else (places.provenance.get(s.key) or {}).get("noun")
+        return {"named": "places", **({"noun": noun} if noun else {})}
     return {"named": "words"} if _in_words(s) else {}
 
 

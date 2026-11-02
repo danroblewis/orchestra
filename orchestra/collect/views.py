@@ -30,6 +30,9 @@ series name the instrument prints; its value is one view or a list of them (the 
 beside them and never a label, so editing it never starts a new series: the Dynamics and
 Instruments pages show it under the part's name (an instrument may declare one view per series,
 each with its ``where`` and its sentence: an instrument's declared views say what each place holds).
+``noun`` (optional, ``count`` only) is what the counted things are, plural, in one to four plain
+words (``"deliveries"``): a label the pages print in place of the noun of the series' name
+("deliveries waiting at write", not "items waiting at write"); Orchestra knows no such word.
 A view is a statement about how the series was made, never about a machine or a flow (AGENTS.md
 rules 6 and 7): it changes no equation, and the moves' rates are still fitted. Discovery reads
 the views of the instruments the host runs (its runtime record, ``instruments``) and of
@@ -38,6 +41,7 @@ the views of the instruments the host runs (its runtime record, ``instruments``)
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -55,23 +59,40 @@ class View:
     fields: tuple[tuple[str, str], ...] = ()    # place, or starts and stops
     where: tuple[tuple[str, str], ...] = ()
     describes: str = ""
+    noun: str = ""                               # a count's things, in words ("deliveries")
 
     def matches(self, name: str, labels: dict[str, str]) -> bool:
         return name == self.series and all(labels.get(k) == v for k, v in self.where)
 
     def record(self, instrument: str) -> dict:
         return {"source": OWN, "instrument": instrument, "view": self.view, **dict(self.fields),
-                **({"describes": self.describes} if self.describes else {})}
+                **({"describes": self.describes} if self.describes else {}),
+                **({"noun": self.noun} if self.noun else {})}
 
     def table(self) -> dict:
         """As it is declared, for the runtime record."""
         return {"view": self.view, **dict(self.fields), **({"where": dict(self.where)} if self.where else {}),
-                **({"describes": self.describes} if self.describes else {})}
+                **({"describes": self.describes} if self.describes else {}),
+                **({"noun": self.noun} if self.noun else {})}
 
 
 def _label(v, what: str) -> str:
     if not isinstance(v, str) or not v:
         raise ConfigError(f"{what} must name a label, not {v!r}")
+    return v
+
+
+# what a count's things are: one to four plain words, letters only ("deliveries", "release candidates")
+_NOUN = re.compile(r"[^\W\d_]+(?:[ -][^\W\d_]+){0,3}")
+NOUN_MAX = 40
+
+
+def _noun(v, series: str) -> str:
+    if v is None:
+        return ""
+    if not isinstance(v, str) or len(v) >= NOUN_MAX or not _NOUN.fullmatch(v):
+        raise ConfigError(f"views: {series}: noun must be what the count's things are, one to four plain words "
+                          f"under {NOUN_MAX} characters (\"deliveries\"), not {v!r}")
     return v
 
 
@@ -83,7 +104,7 @@ def _one(series: str, t) -> View:
     view = t.get("view")
     if view not in FIELDS:
         raise ConfigError(f"views: {series}: view must be one of {', '.join(FIELDS)}, not {view!r}")
-    extra = set(t) - {"view", "where", "describes", *FIELDS[view]}
+    extra = set(t) - {"view", "where", "describes", *FIELDS[view], *(("noun",) if view == "count" else ())}
     if extra:
         raise ConfigError(f"views: {series}: {view} takes no {', '.join(sorted(extra))}")
     fields = tuple((f, _label(t.get(f), f"views: {series}: {f}")) for f in FIELDS[view])
@@ -93,7 +114,7 @@ def _one(series: str, t) -> View:
     describes = t.get("describes") or ""
     if not isinstance(describes, str):
         raise ConfigError(f"views: {series}: describes must be a sentence, not {describes!r}")
-    return View(series, view, fields, tuple(sorted(where.items())), describes)
+    return View(series, view, fields, tuple(sorted(where.items())), describes, _noun(t.get("noun"), series))
 
 
 def parse(views) -> tuple[View, ...]:
