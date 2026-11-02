@@ -37,6 +37,16 @@ follows its `--` to `examples/delivery_live/demo.sh`:
 This gives exactly one rejection (the first pull request at SAIL, ticket A) and holds the second
 pull request's review (ticket B) for 40 minutes or until released.
 
+**The venv has no `orchestra-tasking`.** Plugins load by entry point when installed, so a venv
+made with the agents' `dev` extra brings the task system in: a Tickets entry in the navbar, a TASKS
+panel, a `coordinator` that announces itself, `snapshot` in the tools and twelve unanswered task
+queries (T2 saw all of them). Install the agents without `dev`, or `uv pip uninstall
+orchestra-tasking` in the run's venv, and check `orchestra --help` lists no `tasking` before step 1.
+
+**Tools over bash.** The start uses `tools_via = "bash"` (the launcher's `--via bash`), not MCP:
+at work the MCP server may be blocked, and the day must work without it. The record says which
+`--via` ran. (T2 ran `--via mcp`; the coordinator row from T3.)
+
 **Ports:** the web on the first free port in 8300-8319; the outbox and the fakes take any free
 port (the example's `port = 0`); nothing on the never-list (8096, 8101, 8157, 8173).
 
@@ -162,9 +172,15 @@ means for a later 09:00 (default Q10: ask, guess none); says each reminder is a 
 the Outbox that waits for the owner's approval; gives the prediction's id and when it is judged.
 (e) 90 s. The SRE answers the zone question: "This machine's clock."
 (f) Pass: L3's `check_nudger`; and the answer does not claim the nudger runs at 09:00.
+What a two-ticket, sixty-minute run can show here: no model (each step moves at most three times
+and a flow needs five), so the expectation is recorded as waiting on a flow discovery has not found,
+and the answer says so. It must never say no metrics are collected: the Dynamics page lists the
+series looked at and why each was left out, and the Supervisor's `read_model` returns that reason.
 
 **11. The nudge, and B released.**
-(a) The owner: "Remind the reviewer on B's pull request."
+(a) The owner, naming the pull request as the pages show it: "Remind the reviewer on pull request
+#<n>, <ticket B's key>'s." (Never "B": the Supervisor has no letter for a ticket, and T2's
+one failure here was the script's label, not the Supervisor's.)
 (b) The Supervisor calls `request_work` on `review_nudger`, the brief naming B's ticket. The
 program `review_nudger/1` finds the item waiting longest at `review` or `sail_check` (past 30
 minutes; the one the brief names first) and exits `found`; `remind` drafts a comment on B's pull request
@@ -235,7 +251,11 @@ triage, the incident opened and resolved, what the outbox sent, the item started
 what waits on the owner now, and the prediction's state.
 (e) 90 s.
 (f) Pass: every one of those, checked against the bus, with none invented; a Dynamics page that
-draws no stock must say why.
+draws no stock must say why. No verdict on "SAILED per day ×1.2" is expected: judging a factor of
+1.2 needs the flow fitted in both eras and about 200 events in each, which is months at three a
+day; the answer says the prediction waits and when it could be judged. Before relying on the
+overnight run, the SRE checks the Dynamics page when the latest discovery finds no stocks although
+an earlier version exists: the piles go flat overnight and the 60-minute window may lose them.
 
 ## Known gaps the script does not pretend are solved
 
@@ -247,8 +267,9 @@ draws no stock must say why.
   posts until an `xoxb-` bot token exists (default Q9: disabled).
 - **The Jira poller must not replay Done tickets** (L3 saw it). Step 2 fails if it recurs.
 - **The GitHub poller must not replay history** (L3 saw it). Step 3 fails if it recurs.
-- **No model within 20 minutes of two tickets.** L3's prediction names an event type, not a flow;
-  step 16's stocks rest on the overnight run.
+- **No model within 20 minutes of two tickets.** Each step moves at most three times and a flow
+  needs five; step 16's stocks rest on the overnight run, and no verdict on ×1.2 is possible in the
+  run (about 200 events per era are needed).
 - **The fake CI takes 15 seconds** in a dry run.
 - **A request's ticket is left out of the Jira poller's scope** (the label
   `orchestra-live-requested`), so its assignment never starts a second item.
