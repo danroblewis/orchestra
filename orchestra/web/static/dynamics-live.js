@@ -350,15 +350,16 @@ const Live = (() => {
   }
   function toggle(id) { HIDDEN = HIDDEN || new Set(); HIDDEN.has(id) ? HIDDEN.delete(id) : HIDDEN.add(id); try { localStorage.setItem("orchestra.dyn.hidden", JSON.stringify([...HIDDEN])); } catch (e) {} chart(); }
 
-  // a flow's label on the diagram: the observed rate first, then the equation's ("0.31 /min observed ·
-  // equation 1.5 /min"), and ``warn`` where they part by more than chance; quiet when nothing moved over
+  // a flow's label on the diagram: its name, then the observed rate, then the equation's ("write →
+  // open_pr", "0.31 /min observed · equation 1.5 /min"), and ``warn`` where they part by more than chance; quiet when nothing moved over
   // the recent window. A flow with too few events to fit has no equation: its label says so
   function edgeLabel(e) {
     const f = MODEL && MODEL.flows.find((x) => x.id === e.fid); if (!f || !e.eqLabel) return null;
     const a = against(f), few = typeof Evidence !== "undefined" && Evidence.tooFew(f);
     const eq = a.eq != null ? `equation ${sig2(a.eq)} ${per()}` : `equation ${e.eqLabel}`;
     const first = few ? Evidence.tooFewText(f) : a.obs != null ? `${sig2(a.obs)} ${per()} observed · ${eq}` : eq;
-    return { label: [first, ...(Array.isArray(e.label) ? e.label.slice(1) : [])], quiet: !!a.quiet && HISTORY != null, warn: !few && !!a.differs };
+    // the flow's name first (R3: a label of numbers alone said nothing of which flow it was)
+    return { label: [flowName(f), first, ...(Array.isArray(e.label) ? e.label.slice(1) : [])], quiet: !!a.quiet && HISTORY != null, warn: !few && !!a.differs };
   }
   let GRAPH = null;
   async function refresh() {
