@@ -555,7 +555,7 @@ async function expectedWaiting() {
   IntendedDrawers.waiting(parts);
   return `<div class="panel" style="margin-top:10px"><h3 style="margin-top:0">Expected, waiting for a model <span class="count">${parts.length}</span></h3>
     <div class="muted" style="font-size:12px;margin-bottom:6px">Declared, each with who declared it; drawn as ghosts once there is a model to draw them beside.</div>
-    ${parts.map((x) => `<div class="bal" ${opens(`IntendedDrawers.openExpected('${esc(x.id)}')`)}><span class="im-ghostdot"></span><b>${esc(x.name || x.id)}</b> <span class="muted">${esc(x.part || "stock")} · ${x.state === "proposed" ? "unconfirmed" : "expected"}${IntendedCore.declaredBy(x) ? " · " + esc(IntendedCore.declaredBy(x)) : ""}${(x.measure || {}).chosen ? "" : " · not measured"} · open for how to measure it</span></div>`).join("")}</div>`;
+    ${parts.map((x) => `<div class="bal" ${opens(`IntendedDrawers.openExpected('${esc(x.id)}')`)}><span class="im-ghostdot"></span><b>${esc(x.name || x.id)}</b> <span class="muted">${esc(x.part || "stock")} · ${x.state === "proposed" ? "proposed" : "expected"}${IntendedCore.declaredBy(x) ? " · " + esc(IntendedCore.declaredBy(x)) : ""}${(x.measure || {}).chosen ? "" : " · not measured"} · open for how to measure it</span></div>`).join("")}</div>`;
 }
 // how much there is to discover from: the window read, and the time stamped on the bus's first event
 function windowNote(d, busSince) {

@@ -1,7 +1,7 @@
 /* The declared layer's marks, shared by the Dynamics and Machines pages (intended.css and
    intended-machines.css hold only what is their page's own): the tags, the status lines with their
    requests, the notes and the live dot, in the pages' tokens (style.css :root).
-     unconfirmed  proposed and not yet confirmed: dashed violet (im-t-unconf; im-t-user is the
+     proposed     proposed and not yet confirmed: dashed violet (im-t-unconf; im-t-user is the
                   same look for what is yours: your note, added by you)
      ghost        expected but absent: dashed outline
      new / add    found or added since: blue (inferred) / green (asked for)

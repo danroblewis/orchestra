@@ -48,7 +48,7 @@ function hungOn(list) {
   if (!list || !list.length) return "";
   return list.map((h) => {
     const what = h.series == null ? "series unknown" : `${h.series} series`;
-    const tags = [h.state === "proposed" ? "unconfirmed" : "", h.shared ? `shared with ${h.shared_with.join(", ")}` : ""].filter(Boolean);
+    const tags = [h.state === "proposed" ? "proposed" : "", h.shared ? `shared with ${h.shared_with.join(", ")}` : ""].filter(Boolean);
     return `<div><a href="/machines#${encodeURIComponent(h.machine)}" onclick="event.stopPropagation()">${esc(h.machine)}</a>
       <span class="num muted">${esc(h.shown)}</span>${h.instance_label ? ` <span class="muted">instances by ${esc(h.instance_label)}</span>` : ""}
       <span class="muted">· ${esc(what)}</span>${tags.map((t) => ` <span class="tag">${esc(t)}</span>`).join("")}</div>`;

@@ -2,8 +2,9 @@
 // what /api/machines says a person or a machine declared, beside what the bus shows.
 //
 //   the map    a declared machine's links and event types are drawn even when nobody listens yet
-//              (``intended_edges``); a proposed machine is dashed violet, "unconfirmed"; a declared
-//              one never heard is an outline with no halo; the latest change's links are marked
+//              (``intended_edges``); a proposed machine is dashed violet, tagged by what is
+//              observed ("heard", "proposed, never heard") with who proposed it under its name
+//              (IntendedCore.machineWords); a declared one never heard is an outline with no halo; the latest change's links are marked
 //              "+ new link" or "− link removed" for ten minutes; while the panel is open the
 //              highlight rule shades everything by its distance from the machine.
 //   the panel  a column beside the map, every field read-only: the envelope's rows (kind, managed,
@@ -12,7 +13,7 @@
 //              only controls are requests (confirm, discard, the kind switch) to the machine that
 //              listens for them (IntendedCore, intended-core.js), POST /api/intended/request;
 //              nothing here changes a machine (AGENTS.md rule 9).
-//   the cards  the unconfirmed badge, the latest change's chips, the measured row.
+//   the cards  the same tag and who said it, the latest change's chips, the measured row.
 //
 // It never makes a machine: an undeclared machine's panel shows what the bus observed of it.
 const IntendedMachines = (() => {
@@ -31,19 +32,10 @@ const IntendedMachines = (() => {
   const cap = (k) => words(k).charAt(0).toUpperCase() + words(k).slice(1);
   const span = (s) => (HOURS[s] || (s >= 86400 ? `${Math.round(s / 86400)} days` : s >= 3600 ? `${Math.round(s / 3600)} hours` : `${Math.round(s / 60)} min`));
 
-  // who put it there, in the owner's words: "proposed by the Operator" (its source, named), "added by you"
-  function byWhom(it) {
-    const p = it.provenance || {}, a = it.author || p.author;
-    if (a === "owner") return `${it.state === "proposed" ? "added" : "declared"} by ${esc(IntendedCore.owner(p))}`;
-    const who = p.source || a || "a plugin";
-    return `${it.state === "proposed" ? "proposed" : "declared"} by the ${esc(who.charAt(0).toUpperCase() + who.slice(1))}`;
-  }
-  function stateTag(m) {
-    const it = m.intent;
-    if (it.state === "proposed") return { text: "unconfirmed", cls: "im-t-unconf" };
-    if (!it.heard) return { text: "declared · never heard", cls: "im-t-ghost" };
-    return { text: "declared", cls: "im-t-decl" };
-  }
+  // who said what, in the owner's words: "proposed by the workflows plugin", "added by you" (escaped)
+  const byWhom = (m) => esc(IntendedCore.machineWords(m, list()).by);
+  // the tag: what is observed and who said what ("heard", "proposed, never heard", "confirmed by you"), escaped
+  const stateTag = (m) => { const w = IntendedCore.machineWords(m, list()); return { text: esc(w.text), cls: w.cls }; };
   // P5's per-machine block (web/measured.py): {attachments, measured, last_measured, instances, instruments, unknown}
   const measuredOf = (m) => (m.measured && !m.measured.unknown ? m.measured : null);
   const measuredCount = (m) => { const ms = measuredOf(m); return ms ? ms.instances || 0 : 0; };
@@ -75,10 +67,11 @@ const IntendedMachines = (() => {
         const mode = (it.engagement || {}).mode, eng = mode === "scheduled" && it.engagement.at ? `scheduled · ${it.engagement.at}` : mode;
         if (it.state === "proposed") {
           // the observed mode stays (machineSub, from /api/machines); a declared one that differs is tagged beside it (rule 2)
-          n.cls = `${n.cls || ""} im-proposed`; n.sub = ["unconfirmed", n.sub || "", eng && mode !== m.mode ? `declared ${eng}` : "", it.managed === "external" ? "external" : ""].filter(Boolean).join(" · ");
-          n.tags = [{ text: it.author === "owner" ? `unconfirmed · added by ${IntendedCore.owner(it.provenance)}` : "unconfirmed", cls: "im-t-unconf" }];
+          const w = IntendedCore.machineWords(m, d.machines, true);
+          n.cls = `${n.cls || ""} im-proposed`; n.sub = [w.by, n.sub || "", eng && mode !== m.mode ? `declared ${eng}` : "", it.managed === "external" ? "external" : ""].filter(Boolean).join(" · ");
+          n.tags = [{ text: w.text, cls: w.cls }];
         } else if (!it.heard) {
-          n.cls = `${n.cls || ""} im-unheard`; n.halo = false; n.color = "transparent"; n.sub = "declared · never heard";
+          n.cls = `${n.cls || ""} im-unheard`; n.halo = false; n.color = "transparent"; n.sub = IntendedCore.machineWords(m).text;
           const k = measuredCount(m), dn = Orchestra.downOf(m).length;
           n.tags = k ? [{ text: `declared · measured ×${k}${dn ? ` · ${dn} down?` : ""}`, cls: "im-t-meas" }] : [];
         }
@@ -122,7 +115,7 @@ const IntendedMachines = (() => {
     return { id: nid, levelOf: level, edgeLevel: (e) => ((e.cls || "").includes("im-gone-edge") && (e.source.id === nid || e.target.id === nid) ? 1 : null) };
   }
 
-  // the cards' order: declared machines first: the unconfirmed ones, then the rest of the declared, then the page's order
+  // the cards' order: declared machines first: the proposed ones, then the rest of the declared, then the page's order
   function sort(ms) {
     const rank = (m) => (!m.intent ? 2 : m.intent.state === "proposed" ? 0 : 1);
     return [...ms].sort((a, b) => rank(a) - rank(b));
@@ -136,7 +129,7 @@ const IntendedMachines = (() => {
       const tag = stateTag(m);
       card.classList.add(it.state === "proposed" ? "im-card" : "im-card-declared");
       const h3 = card.querySelector("h3");
-      if (h3 && !h3.querySelector(".im-tag")) h3.insertAdjacentHTML("beforeend", `<span class="im-tag ${tag.cls}">${tag.text}</span>${it.state === "proposed" ? `<span class="muted im-by">${byWhom(it)}</span>` : ""}`);
+      if (h3 && !h3.querySelector(".im-tag")) h3.insertAdjacentHTML("beforeend", `<span class="im-tag ${tag.cls}">${tag.text}</span><span class="muted im-by">${byWhom(m)}</span>`);
       const rows = [...card.querySelectorAll(".row")], row = (name) => rows.find((r) => r.firstElementChild && r.firstElementChild.dataset.k === name || (r.firstElementChild && r.firstElementChild.textContent === name));
       const seen = row("seen"), ms = measuredOf(m);
       if (seen && !it.heard) {
@@ -259,7 +252,7 @@ const IntendedMachines = (() => {
       // an instance whose own "up" series (up, or a name ending _up) reads 0: points arrive, it reports down
       const down = Orchestra.downOf({ measured: { attachments: [a] } }).map((x) => ({ i: { value: x.instance }, s: { name: x.series } }));
       const downOf = new Set(down.map((x) => x.i.value));
-      const state = a.state === "proposed" ? '<span class="im-tag im-t-unconf">unconfirmed</span>' : `<span class="im-tag im-t-decl">${esc(a.state || "declared")}</span>`;
+      const state = a.state === "proposed" ? '<span class="im-tag im-t-unconf">proposed</span>' : `<span class="im-tag im-t-decl">${esc(a.state || "declared")}</span>`;
       const match = a.shown || (a.match ? [a.match.prefix ? `${a.match.prefix}*` : "", ...Object.entries(a.match.labels || {}).map(([k, v]) => `${k}="${v}"`)].filter(Boolean).join(" ") : "");
       const status = a.status && a.status !== "measured" ? `<span class="im-tag im-t-ghost">${esc(a.comparison || a.status)}</span>` : "";
       return `<div class="im-attach"><div class="im-attach-head"><a class="im-inst" href="/instruments#${encodeURIComponent(a.instrument)}" title="open it on the Instruments page"><b>${esc(a.instrument)}</b></a>${a.kind ? ` <span class="ty">${esc(a.kind)}</span>` : ""} ${state}${status}${a.shared ? '<span class="im-tag im-t-ghost" title="another declared machine\'s match selects the same series">shared</span>' : ""}</div>
@@ -283,9 +276,10 @@ const IntendedMachines = (() => {
     // confirm and discard wait while one of them was asked; a kind switch waiting leaves them
     const settling = asked && asked.control !== "switch_kind";
     const acts = (change) => settling && (!change || asked.change === change) ? waitText()
-      : `<span class="im-acts"><button class="ctl im-primary" title="${esc(a.title("confirm it"))}" onclick="IntendedMachines.request('confirm','${esc(m.id)}'${change ? `,'${esc(change)}'` : ""})">confirm</button><button class="ctl" title="${esc(a.title("discard it"))}" onclick="IntendedMachines.request('discard','${esc(m.id)}'${change ? `,'${esc(change)}'` : ""})">discard</button></span>`;
-    let html = it.state === "proposed" ? `<div class="im-status"><span>${byWhom(it)} · unconfirmed</span>${acts(null)}</div>`
-      : `<div class="im-status im-status-declared"><span>${byWhom(it)}${when} · confirmed</span></div>`;
+      : !listeners.length ? `<span class="muted im-nolisten" title="confirming publishes ${REQ}; no machine announced it listens for it">no machine listens for requests here</span>`
+      : `<span class="im-acts"><button class="ctl im-primary" title="${esc(a.title(IntendedCore.CONFIRMS))}" onclick="IntendedMachines.request('confirm','${esc(m.id)}'${change ? `,'${esc(change)}'` : ""})">confirm</button><button class="ctl" title="${esc(a.title("discard it"))}" onclick="IntendedMachines.request('discard','${esc(m.id)}'${change ? `,'${esc(change)}'` : ""})">discard</button></span>`;
+    let html = it.state === "proposed" ? `<div class="im-status"><span>${byWhom(m)}${when}</span>${acts(null)}</div>`
+      : `<div class="im-status im-status-declared"><span>${byWhom(m)}${when}</span></div>`;
     if (asked && asked.control === "switch_kind") html += `<div class="im-status im-pending-ask">${waitText()}</div>`;
     for (const pc of it.pending || []) {
       const what = [...Object.keys(pc.set || {}).map((k) => `set ${words(k)}`), ...Object.entries(pc.add || {}).map(([k, v]) => `add ${v.join(", ")} to ${words(k)}`), ...Object.entries(pc.remove || {}).map(([k, v]) => `remove ${v.join(", ")} from ${words(k)}`)].join("; ");

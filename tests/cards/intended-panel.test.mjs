@@ -41,8 +41,9 @@ test("a proposed machine's map subtitle keeps the observed mode; a declared one 
   const sup = { id: "supervisor", mode: "continuous", intent: { state: "proposed", heard: true, engagement: { mode: "ad hoc" } } };
   const n = { machine: true, mid: "supervisor", sub: "continuous" };
   IntendedMachines.decorate({ machines: [sup] }, [n], []);
-  assert.equal(n.sub, "unconfirmed · continuous · declared ad hoc");
+  assert.equal(n.sub, "proposed by a plugin · continuous · declared ad hoc");
+  assert.deepEqual(n.tags, [{ text: "heard", cls: "im-t-unconf" }]);
   const same = { machine: true, mid: "supervisor", sub: "continuous" };
   IntendedMachines.decorate({ machines: [{ ...sup, intent: { ...sup.intent, engagement: { mode: "continuous" } } }] }, [same], []);
-  assert.equal(same.sub, "unconfirmed · continuous");
+  assert.equal(same.sub, "proposed by a plugin · continuous");
 });

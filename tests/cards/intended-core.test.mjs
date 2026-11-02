@@ -33,3 +33,28 @@ test("declaredBy names who from the provenance, never how the call came", () => 
   assert.equal(IntendedCore.declaredBy({ state: "proposed", provenance: { source: "agents", author: "agents" } }), "proposed by agents");
   assert.equal(IntendedCore.declaredBy({ state: "declared" }), "");
 });
+
+// The owner (2026-11-01): "What does confirmed or unconfirmed even mean here?" A declared machine's
+// tag says what is observed and who said what; the word "unconfirmed" is gone.
+test("a declared machine's tag says what is heard and who said what", () => {
+  const w = (intent, extra = {}) => IntendedCore.machineWords({ id: "worker", package: "workflows", ...extra, intent });
+  const plugin = { author: "workflows", provenance: { author: "workflows", source: "workflow delivery_sail" } };
+  assert.deepEqual(w({ state: "proposed", heard: true, ...plugin }), { text: "heard", cls: "im-t-unconf", by: "proposed by the workflows plugin (workflow delivery_sail)" });
+  assert.equal(w({ state: "proposed", heard: false, ...plugin }).text, "proposed, never heard");
+  assert.equal(w({ state: "declared", heard: true, author: "owner", provenance: { author: "owner", via: "page" } }).text, "declared");
+  assert.equal(w({ state: "declared", heard: false, author: "owner", provenance: { author: "owner", via: "page" } }).text, "declared, never heard");
+  const confirmed = w({ state: "declared", heard: true, ...plugin, confirmed: { by: "owner", via: "page" } });
+  assert.equal(confirmed.text, "confirmed by you");
+  assert.equal(confirmed.by, "proposed by the workflows plugin (workflow delivery_sail), confirmed by you");
+  assert.equal(w({ state: "proposed", heard: true, author: "ops", provenance: { source: "integrator" } }).by, "proposed by the Integrator");
+  // a machine of no package, proposed by a plugin another machine on the bus belongs to; brief on the map
+  const bot = { id: "bot.sail", intent: { state: "proposed", heard: true, ...plugin } };
+  assert.equal(IntendedCore.machineWords(bot).by, "proposed by the Workflow delivery_sail");
+  assert.equal(IntendedCore.machineWords(bot, [{ id: "worker", package: "workflows" }], true).by, "proposed by the workflows plugin");
+  for (const it of [{ state: "proposed", heard: true }, { state: "proposed" }, { state: "declared" }]) assert.ok(!/unconfirmed/.test(JSON.stringify(w(it))));
+});
+
+test("the confirm control says what confirming does", () => {
+  assert.equal(IntendedCore.asker(["supervisor"]).title(IntendedCore.CONFIRMS),
+    "asks supervisor to adopt this proposal as a declaration; it changes nothing observed");
+});

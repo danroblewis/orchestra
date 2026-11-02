@@ -41,5 +41,36 @@ const IntendedCore = (() => {
     const p = (x && x.provenance) || {}, who = p.author === "owner" ? owner(p) : (p.source || p.author || "");
     return who ? `${x.state === "proposed" ? "proposed" : "declared"} by ${who}` : "";
   }
-  return { REQ, hears, listenersOf, asker, declaredBy, owner };
+  // who put a machine in the declared layer, by name: "you" (or the owner, quoted), "the workflows
+  // plugin" when the author is a package a machine on the bus announced (``ms``: the machines; the
+  // source after it when that says more and ``brief`` is not asked: "the workflows plugin (workflow
+  // delivery_sail)"), else its source as the call named it
+  function author(it, m, ms = null, brief = false) {
+    const p = (it && it.provenance) || {}, a = (it && it.author) || p.author;
+    if (a === "owner") return owner(p);
+    const packages = new Set([m, ...(ms || [])].filter(Boolean).map((x) => x.package).filter(Boolean));
+    if (a && packages.has(a)) return `the ${a} plugin${!brief && p.source && p.source !== a ? ` (${p.source})` : ""}`;
+    const who = p.source || a;
+    return who ? `the ${who.charAt(0).toUpperCase() + who.slice(1)}` : "a plugin";
+  }
+  // what a declared machine's tag and its line under it say: what is observed (heard, or never
+  // heard) and who said what (proposed by, declared, confirmed by), never "unconfirmed" (the owner,
+  // 2026-11-01: "What does confirmed or unconfirmed even mean here?"). ``ms``: the machines on the
+  // bus (whose packages name a plugin); ``brief``: without the source (the map's sub-line). {text, cls, by}
+  function machineWords(m, ms = null, brief = false) {
+    const it = (m && m.intent) || {}, c = it.confirmed, by = author(it, m, ms, brief);
+    if (it.state === "proposed") {
+      const said = `${it.author === "owner" ? "added" : "proposed"} by ${by}`;
+      return it.heard ? { text: "heard", cls: "im-t-unconf", by: said } : { text: "proposed, never heard", cls: "im-t-unconf", by: said };
+    }
+    const never = it.heard ? "" : ", never heard";
+    if (c && c.by) {
+      const who = c.by === "owner" ? owner(c) : c.by;
+      return { text: `confirmed by ${who}${never}`, cls: it.heard ? "im-t-decl" : "im-t-ghost", by: `proposed by ${by}, confirmed by ${who}` };
+    }
+    return { text: `declared${never}`, cls: it.heard ? "im-t-decl" : "im-t-ghost", by: `declared by ${by}` };
+  }
+  // what confirming does, said on the control (rule 9: a request, changing nothing until acted on)
+  const CONFIRMS = "adopt this proposal as a declaration; it changes nothing observed";
+  return { REQ, hears, listenersOf, asker, declaredBy, owner, author, machineWords, CONFIRMS };
 })();

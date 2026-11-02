@@ -58,7 +58,7 @@ Orchestra.downOf = (m) => {
 };
 // The Dashboard's Machines panel: every machine on the Machines page is a row or in a note, so the
 // rows and notes add up to the count in its header. Rows: the continuous machines and any other
-// while it is active; notes: the declared ones not heard (and the proposed, unconfirmed ones) and
+// while it is active; notes: the declared ones not heard (and the proposed ones never heard) and
 // the quiet ones that are not continuous.
 Orchestra.dashboardGroups = (ms) => {
   const rows = ms.filter((m) => !m.unseen && (m.mode === "continuous" || m.active)), rest = ms.filter((m) => !rows.includes(m));

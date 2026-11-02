@@ -75,7 +75,7 @@ const IntendedDrawers = (() => {
       const it = mc.intent; if (!it) continue;
       const eff = ((it.expected_effect || {}).edits || []).some((e) => (e.edit || {}).stock === id), rd = (it.reads || []).includes(id);
       if (!eff && !rd) continue;
-      const state = it.state === "proposed" ? "unconfirmed" : !it.heard ? "declared · never heard" : mc.active ? "active" : "quiet";
+      const w = IntendedCore.machineWords(mc, window.MLIST), state = it.heard ? `${w.text === "heard" ? w.by : w.text} · ${mc.active ? "active" : "quiet"}` : w.text;
       out.push({ id: mc.id, name: it.title || mc.id, how: [eff ? "expected effect" : "", rd ? "reads it" : ""].filter(Boolean).join(", "), state });
     }
     return out;
@@ -92,7 +92,7 @@ const IntendedDrawers = (() => {
     const relayed = owner && IntendedCore.owner(p) !== "you";        // author: owner asserted by a plugin or an endpoint caller
     const said = owner ? (relayed ? `Declared for you ${I().agoText(p.at)} by ${p.source || "a plugin"}, quoting you` : `You declared it ${I().agoText(p.at)}`) : `${by[0].toUpperCase() + by.slice(1)} ${x.state === "proposed" ? "proposed" : "declared"} it ${I().agoText(p.at)}`;
     const quote = p.quote ? `: <i>"${esc(p.quote)}"</i>` : ".";
-    const proposed = x.state === "proposed" ? `<div class="im-status">unconfirmed: ${esc(by)} proposed it, and it is not expected until you confirm it
+    const proposed = x.state === "proposed" ? `<div class="im-status">proposed by ${esc(by)}: not expected until you confirm it
       <span class="im-acts"><button class="ctl im-primary" onclick="Intended.control('confirm','${esc(x.part)}','${esc(x.id)}','its drawer',()=>IntendedDrawers.openExpected('${esc(x.id)}'))">confirm</button>
       <button class="ctl" onclick="Intended.control('discard','${esc(x.part)}','${esc(x.id)}','its drawer',closeDrawer)">discard</button></span></div>` : "";
     const pending = (x.pending || []).map((c) => `<div class="im-status">a change waiting for you: ${esc(c.summary || c.change || c.id || JSON.stringify(c))}</div>`).join("");
@@ -105,7 +105,7 @@ const IntendedDrawers = (() => {
       <div class="def"><div>now</div><div class="num">—</div>
       <div>status</div><div>${status}</div>
       <div>declared</div><div>by ${esc(by)}${p.at ? " · " + I().hhmm(p.at) : ""}${near ? ` · beside <b>${esc(stockName(near.id))}</b>` : x.near ? ` · meant to sit beside <b>${esc(keyName(x.near))}</b> <span class="muted">(${stocks.length ? "not in this model" : "no model yet"})</span>` : ""}${x.note ? ` <span class="muted">(${esc(x.note)})</span>` : ""}</div>
-      ${(x.candidates || []).length ? `<div>may be</div><div>${x.candidates.map((c) => `<b>${esc(I().nameOf(c.id))}</b> <span class="muted">(${esc(c.why)})</span>`).join(", ")}<br><span class="muted">whether it is this ${esc(x.part)} is for you to say: ${esc(ask("link them"))}</span></div>` : ""}
+      ${(x.candidates || []).length ? `<div>suggested from labels</div><div>${x.candidates.map((c) => `<b>${esc(I().nameOf(c.id))}</b> <span class="muted">(${esc(c.why)})</span>`).join(", ")}<br><span class="muted">whether it is this ${esc(x.part)} is for you to say: ${esc(ask("link them"))}</span></div>` : ""}
       ${targetLine(x.target)}
       <div>declared to affect it</div><div>${affects.length ? affects.map((a) => `<a href="/machines#${encodeURIComponent(a.id)}">${esc(a.name)}</a> <span class="muted">(${esc(a.how)} · ${esc(a.state)})</span>`).join("<br>") : '<span class="muted">no machine declares an effect on it or reads it</span>'}</div>
       <div>machines</div><div><span class="muted">no flow hypotheses: an expected ${esc(x.part)} has no flows until discovery finds one</span></div></div>
@@ -125,7 +125,7 @@ const IntendedDrawers = (() => {
     openDrawer(`<h3 data-drawer-key="xf:${esc(id)}">${esc(e.name)} <span class="tag">flow</span> ${I().tag(e.why || "expected", "im-t-ghost")}</h3>
       <div class="def"><div>moves</div><div>${esc(I().nameOf(e.from))} → ${esc(I().nameOf(e.to))}</div>
       <div>declared</div><div>by ${esc(I().who(p))}${p.at ? " · " + I().agoText(p.at) : ""}${p.quote ? `: <i>"${esc(p.quote)}"</i>` : ""}</div>
-      <div>found</div><div>${e.present ? `as <b>${esc(e.found_id)}</b>` : (e.candidates || []).length ? `may be: ${e.candidates.map((c) => `<span class="ty">${esc(c.id || c.key)}</span>`).join(" ")} <span class="muted">(${esc(e.candidates[0].why)}; ${esc(ask("link"))})</span>` : '<span class="muted">no flow between its ends yet</span>'}</div>
+      <div>found</div><div>${e.present ? `as <b>${esc(e.found_id)}</b>` : (e.candidates || []).length ? `suggested from labels: ${e.candidates.map((c) => `<span class="ty">${esc(c.id || c.key)}</span>`).join(" ")} <span class="muted">(suggested from labels: ${esc(e.candidates[0].why)}; ${esc(ask("link"))})</span>` : '<span class="muted">no flow between its ends yet</span>'}</div>
       ${targetLine(e.target)}</div>`, { key: "xf:" + id });
   }
   // the switch at the top of a discovered stock's or flow's drawer (frame D3)

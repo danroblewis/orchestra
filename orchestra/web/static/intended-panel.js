@@ -6,7 +6,7 @@
 //   −  a part the base had and this version does not, said as the base's record says it (how it
 //      got there, its name, its ends);
 //   ~  a − and a + of one counter: the same flow drawn between other stocks, one row;
-//   ○  an expected part this version does not have, with its candidates ("may be: …").
+//   ○  an expected part this version does not have, with its candidates ("suggested from labels: …", display only).
 // Under them, collapsed: the suggestions that came and went, and the ignored ones (listing one again is asked of the machine that listens for requests: `unignore`).
 // The panel is patched row by row (each row keyed), so a poll that changes nothing moves nothing,
 // and a row redrawn under the keyboard's focus gives the focus to its own control again.
@@ -72,7 +72,7 @@ const IntendedPanel = (() => {
     const p = e.provenance || {}, cands = ch.candidates || [];
     const said = e.declared ? `declared by ${I().who(p)}` : `marked expected by ${I().who(p)}`, t = e.part ? I().declTag(e) : { text: ch.why || "expected", cls: "im-t-ghost" };
     return `<div class="im-chg ghost" data-sign="o" data-key="${esc(ch.key || ch.id)}"><span class="im-sign">○</span><div><div>expected ${esc(ch.part)} <b>${esc(name)}</b> ${I().tag(t.text, t.cls)}${e.part && e.measured === false ? " " + I().tag("not measured", "im-t-ghost") : ""}</div>
-      <div class="muted">${esc(said)}; ${cands.length ? `may be: ${cands.map((c) => `<b>${esc(I().nameOf(c.id))}</b>`).join(", ")} · ${esc(ask("link"))}` : "discovery did not link it to anything it found"} · ghost shown</div></div><span></span></div>`;
+      <div class="muted">${esc(said)}; ${cands.length ? `suggested from labels: ${cands.map((c) => `<b>${esc(I().nameOf(c.id))}</b>`).join(", ")} · ${esc(ask("link"))}` : "discovery did not link it to anything it found"} · ghost shown</div></div><span></span></div>`;
   }
   // the rows, in the server's order, a − and + of one counter as one; each [key, html]
   function rowsOf(x, from) {

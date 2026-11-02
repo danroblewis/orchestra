@@ -3,7 +3,7 @@
 // /api/dynamics/model answer's declared layer, web/intended.py). It draws:
 //   - ghosts: an expected stock or effect absent from the version shown, the same shape, darker
 //     fill and dashed outline, label readable, its tag ("expected · not in vN", "not measured"),
-//     and its candidate line ("may be: … · ask <machine> to link", naming the machine that listens
+//     and its candidate line ("suggested from labels: … · ask <machine> to link", naming the machine that listens
 //     for requests, ``intended.askers``; intended-core.js); declared flows absent as
 //     dashed ghost edges; ``intended.predicted`` flows as ghost edges;
 //   - the marks: "new in vN" rings and tags, removed parts struck through as ghosts, the gold pin
@@ -44,11 +44,11 @@ const Intended = (() => {
   // never found (mockups/README.md: a declared stock with no series is "not measured")
   const wasPresent = (x) => !!(x.was_present || (!x.declared && x.since_version != null));
   const declTag = (x) => {
-    if (x.state === "proposed") return { text: `unconfirmed · proposed by ${who(x.provenance)}`, cls: "im-t-unconf" };
+    if (x.state === "proposed") return { text: `proposed by ${who(x.provenance)}`, cls: "im-t-unconf" };
     if (x.present) return { text: "expected", cls: "im-t-exp" };
     if (hasEarlier() && wasPresent(x) && x.measured !== false) return { text: `expected · not in ${vlabel()}`, cls: "im-t-ghost" };
     const p = x.provenance || {};
-    return { text: `expected · declared by ${who(p)}${p.at ? " · " + agoText(p.at) : ""}`, cls: p.author === "owner" ? "im-t-user" : "im-t-ghost" };
+    return { text: `expected by ${who(p)}${p.at ? " · " + agoText(p.at) : ""}`, cls: p.author === "owner" ? "im-t-user" : "im-t-ghost" };
   };
   const recording = (x) => ((x.measure || {}).recording && x.measure.recording.points ? x.measure.recording : null);
   const subline = (x) => (!x.measured ? "not measured" : recording(x) ? "no series yet · recording" : "no series of its own");
@@ -146,7 +146,7 @@ const Intended = (() => {
     const below = [];
     if (x.simulated) below.push(["simulated", "im-t-sim"]);
     if (x.note) below.push([`your note · ${x.note}`, "im-t-user"]);
-    if ((x.candidates || []).length) below.push([`may be: ${x.candidates.map((c) => nameOf(c.id)).join(", ")} · ${ask("link")}`, "im-t-ghost"]);
+    if ((x.candidates || []).length) below.push([`suggested from labels: ${x.candidates.map((c) => nameOf(c.id)).join(", ")} · ${ask("link")}`, "im-t-ghost"]);
     below.forEach(([text, cls], i) => svgTag(g, -s.w / 2, s.h / 2 + 14 + i * 19, text, cls));
   }
   function tip(x) {
@@ -154,7 +154,7 @@ const Intended = (() => {
     if (x.gone) return `<div class="tt"><s>${esc(x.gone.counter || x.gone.from !== undefined ? `${baseEnd(x.gone.from, x.gone.from_series, x.gone.from_name)} → ${baseEnd(x.gone.to, x.gone.to_series, x.gone.to_name)}` : removedStockName(x.gone))}</s></div><div class="muted">${x.gone.counter ? esc(removedFlowName(x.gone)) + " · " : ""}gone in ${esc(vlabel())}; was ${esc(x.gone.origin || "found")} in v${esc(x.gone.in)}</div>`;
     if (x.ghostFlow) return `<div class="tt">${esc(x.ghostFlow.name)}</div><div class="muted">${esc(x.ghostFlow.why || "expected")}</div><div class="hint">click for details</div>`;
     if (x.predicted) return `<div class="tt">${esc(nameOf(x.predicted.from))} → ${esc(nameOf(x.predicted.to))}</div><div class="muted">predicted to appear by a machine's expected effect: a prediction, judged later, not an association</div>`
-      + ((x.predicted.candidates || []).length ? `<div class="muted">may be: ${x.predicted.candidates.map((c) => esc(c.id || c.key)).join(", ")}</div>` : "");
+      + ((x.predicted.candidates || []).length ? `<div class="muted">suggested from labels: ${x.predicted.candidates.map((c) => esc(c.id || c.key)).join(", ")}</div>` : "");
     return null;
   }
   function click(x) {
@@ -194,7 +194,7 @@ const Intended = (() => {
     const parts = [!x.measured ? "not measured · no series yet" : rec ? `no series yet → <span class="im-recword">recording</span> <span class="muted">(${esc(rec.instrument || (opt || {}).instrument || "")}, since ${hhmm(rec.since)})</span>`
       : `no series of its own · discovery found none for it in ${esc(vlabel())}`];
     if (x.note) parts.push(`your note · ${esc(x.note)}`);
-    if ((x.candidates || []).length) parts.push(`may be: ${x.candidates.map((c) => `<b>${esc(nameOf(c.id))}</b>`).join(", ")} <span class="muted">· ${esc(ask("link"))}</span>`);
+    if ((x.candidates || []).length) parts.push(`suggested from labels: ${x.candidates.map((c) => `<b>${esc(nameOf(c.id))}</b>`).join(", ")} <span class="muted">· ${esc(ask("link"))}</span>`);
     return parts.join("<br>");
   }
   const tag = (text, cls) => `<span class="im-tag ${cls}">${esc(text)}</span>`;
@@ -224,7 +224,7 @@ const Intended = (() => {
     for (const e of x.expected.filter((e) => e.part === "flow")) {
       const t = declTag(e);
       $("flows").insertAdjacentHTML("beforeend", `<tr class="im-exprow"><td><span class="im-ghostdot"></span>${esc(e.name)} ${tag(t.text, t.cls)}<div class="muted" style="font-size:11px">${esc(nameOf(e.from) || "outside")} → ${esc(nameOf(e.to) || "outside")}</div></td>
-        <td class="num muted">—</td><td><span class="origin declared">declared</span></td><td class="muted">${e.present ? `found as ${esc(e.found_id)}` : (e.candidates || []).length ? "may be: " + e.candidates.map((c) => esc(c.id)).join(", ") + " · " + esc(ask("link")) : "not found yet"}</td></tr>`);
+        <td class="num muted">—</td><td><span class="origin declared">declared</span></td><td class="muted">${e.present ? `found as ${esc(e.found_id)}` : (e.candidates || []).length ? "suggested from labels: " + e.candidates.map((c) => esc(c.id)).join(", ") + " · " + esc(ask("link")) : "not found yet"}</td></tr>`);
     }
     for (const r of (x.removed || {}).flows || []) {
       $("flows").insertAdjacentHTML("beforeend", `<tr class="im-gone"><td><s>${esc(baseEnd(r.from, r.from_series, r.from_name))} → ${esc(baseEnd(r.to, r.to_series, r.to_name))}</s> ${tag(`gone in ${vlabel()}`, "im-t-gone")}<div class="muted" style="font-size:11px" title="${esc(r.key)}">${esc(r.counter ? removedFlowName(r) : r.key)}</div></td>

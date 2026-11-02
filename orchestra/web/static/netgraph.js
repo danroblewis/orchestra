@@ -288,7 +288,7 @@ const NetGraph = (() => {
       }
     }
     // ``tags``: small labelled boxes stacked above a node (or below, ``below: true``), each
-    // {text, cls}: what the page wants said of it on the map ("unconfirmed", "+ new link")
+    // {text, cls}: what the page wants said of it on the map ("heard", "+ new link")
     function drawTags(g, n, s) {
       const hh = s.r || s.h / 2, up = n.tags.filter((t) => !t.below), down = n.tags.filter((t) => t.below);
       const one = (t, y) => {

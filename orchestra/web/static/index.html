@@ -72,7 +72,7 @@ Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 
       const live = (m) => { const lv = Orchestra.liveness(m); return `<span class="lw ${lv.cls}" title="${esc(lv.title)}">${esc(lv.word)}</span>`; };
       const down = (m) => { const n = Orchestra.downOf(m).length; return n ? ` <span class="stale" title="points arrive and its up series reads 0: a report, not a verdict">(${n} instance${n === 1 ? "" : "s"} report${n === 1 ? "s" : ""} down)</span>` : ""; };
       const note = (ms, what) => (ms.length ? `<div class="mnote">· ${ms.length} ${what}: ${ms.map((m) => link(m, what.startsWith("declared") ? down(m) : what.startsWith("quiet") ? ` <span class="muted">(${m.mode ? esc(m.mode) + ", " : ""}${m.last_seen ? "since " + hhmm(m.last_seen) : "never heard"})</span>` : "")).join(", ")}</div>` : "");
-      const notes = note(G.declared, "declared, not heard") + note(G.proposed, "proposed, unconfirmed") + note(G.quiet, "quiet, not continuous");
+      const notes = note(G.declared, "declared, not heard") + note(G.proposed, "proposed, never heard") + note(G.quiet, "quiet, not continuous");
       body.innerHTML = (run.length ? Orchestra.machineCards.sort(run).map((m) => {
         const kind = m.kind || "";
         const own = Orchestra.machineCards.summary(m), lv = Orchestra.liveness(m);
