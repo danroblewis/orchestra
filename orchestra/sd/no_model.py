@@ -127,7 +127,7 @@ def reason(discovery: dict | None, host: bool | None = None) -> dict:
                by_reason=dict(Counter(kind_of(w) for w in left.values()).most_common()),
                summary=no_model_reason(discovery, where="for the other reasons listed"),
                counter_events=discovery.get("counter_events"), missing_source=discovery.get("not_saved"),
-               too_young=bool(discovery.get("too_young")),
+               too_young=bool(discovery.get("too_young")), widened=discovery.get("widened"),
                window_s=(discovery["end"] - discovery["start"]) if discovery.get("end") is not None and discovery.get("start") is not None else None)
     return out
 

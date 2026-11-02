@@ -616,7 +616,7 @@ function versionBar() {
     const quiet = m.discovery && m.discovery.quiet && m.discovery.quiet.stands ? m.discovery.quiet : null;
     html = `<button onclick="step(-1)" title="${same ? `the version before: v${esc((vs[vs.length - 2] || vs[vs.length - 1]).version)}` : "saved versions"}">‹</button>
       <span><b>latest discovery</b> · ${m.as_of ? ago(Date.now() / 1000 - m.as_of) + " ago" : ""}</span>
-      <span class="muted">${quiet ? `quiet${quiet.since != null ? " since " + esc(Orchestra.when(quiet.since, { date: true })) : ""}: v${esc(quiet.version)} stands, nothing refitted` : same && vs.length === 1 ? `first version, saved ${vs[0].saved_at ? ago(Date.now() / 1000 - vs[0].saved_at) + " ago" : ""}` : same && savedNow(m, vs) ? savedNowText(m, vs) : same ? `same structure as v${esc(m.current ?? "—")}, refitted` : `a new structure, not saved yet (the newest saved is v${esc(m.current ?? "—")})`} · rediscovered by the host every few minutes; saved as a version when its structure changes${!quiet && m.discovery && m.discovery.live_minutes ? ` · fitted over ${m.discovery.live_minutes} min when every series involved was being written` : ""}${m.discovery && m.discovery.end && m.discovery.start != null ? ` · read over the last ${ago(m.discovery.end - m.discovery.start)}` : ""}</span>`;
+      <span class="muted">${quiet ? `quiet${quiet.since != null ? " since " + esc(Orchestra.when(quiet.since, { date: true })) : ""}: v${esc(quiet.version)} stands, nothing refitted` : same && vs.length === 1 ? `first version, saved ${vs[0].saved_at ? ago(Date.now() / 1000 - vs[0].saved_at) + " ago" : ""}` : same && savedNow(m, vs) ? savedNowText(m, vs) : same ? `same structure as v${esc(m.current ?? "—")}, refitted` : `a new structure, not saved yet (the newest saved is v${esc(m.current ?? "—")})`} · rediscovered by the host every few minutes; saved as a version when its structure changes${!quiet && m.discovery && m.discovery.live_minutes ? ` · fitted over ${m.discovery.live_minutes} min when every series involved was being written` : ""}${m.discovery && m.discovery.end && m.discovery.start != null ? ` · read over the last ${ago(m.discovery.end - m.discovery.start)}${m.discovery.widened ? ` (widened from ${ago(m.discovery.widened.from_s)}: it held too few events for any counter)` : ""}` : ""}</span>`;
   } else {
     const v = vs[i] || {}, past = m.version !== m.current;
     const when = v.saved_at ? Orchestra.when(v.saved_at, { date: true }) : "";
@@ -733,7 +733,8 @@ async function expectedWaiting() {
 // how much there is to discover from: the window read, and the time stamped on the bus's first event
 function windowNote(d, busSince) {
   const dd = d.discovery || {}, w = dd.window_s || (dd.end && dd.start ? dd.end - dd.start : null), now = Date.now() / 1000;
-  const parts = [w ? `window ${ago(w)}` : "", busSince ? `the first event on this project's bus is stamped ${ago(now - busSince)} ago (by its source; the bus keeps no time of receipt), so at most that much data` : "",
+  const wd = dd.widened, tried = wd ? wd.tried_s.map((x) => ago(x)).join(", then ") : "";
+  const parts = [w ? `window ${ago(w)}${wd ? ` (widened: ${tried} held too few events for any counter)` : ""}` : "", busSince ? `the first event on this project's bus is stamped ${ago(now - busSince)} ago (by its source; the bus keeps no time of receipt), so at most that much data` : "",
     d.as_of ? `last discovery ${Orchestra.when(d.as_of)} (${ago(now - d.as_of)} ago)` : ""].filter(Boolean);
   return parts.length ? `<div class="muted" style="font-size:12px;margin-top:6px">${parts.join(" · ")}</div>` : "";
 }

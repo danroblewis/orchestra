@@ -35,7 +35,14 @@ compared: a window with too little motion is no evidence
 that a stock is gone, so it never saves a poorer version. When nothing else changed, no version
 is saved and the record says the model of v<N> stands (``stands``; quiet since ``since``). An era younger than two
 steps is not discovered: its model is its prior, carried whole. With no era (no change was ever
-announced) nothing of this applies, and discovery is exactly as before."""
+announced) nothing of this applies, and discovery is exactly as before.
+
+**A window too quiet for any counter** (``widen``). When a discovery finds no stock because no
+counter counted ``MIN_EVENTS`` in the window (the owner, 2026-11-02: "the sprint board itself is
+low traffic"), the window is doubled, with its step (the grid keeps its number of steps), up to
+``MAX_WINDOW`` (7 days) and never past the era's start, and discovered again, before any "no
+model" is said; the record says which windows were read (``discovery["widened"]``) and
+``window_s`` is the one the model was fitted over."""
 
 from __future__ import annotations
 
@@ -52,6 +59,7 @@ from ..sources.catalogue import Catalogue
 from . import eras as era_record
 from . import persistence, quiet, simulated
 from . import snapshot as snap
+from .balance import MIN_EVENTS
 from .compare import compare
 from .discover import structure
 from .model import Model
@@ -104,6 +112,29 @@ def aligned(start: float, end: float, step: float) -> tuple[float, float]:
     return last - round((end - start) / step) * step, last
 
 
+MAX_WINDOW = 7 * 86400.0      # the furthest back a widened window reaches
+
+
+def window_words(s: float) -> str:
+    """A window's length in words: "1 h", "2 d"."""
+    return f"{s / 86400:g} d" if s >= 86400 else f"{s / 3600:g} h" if s >= 3600 else f"{s / 60:g} min"
+
+
+def widen(m: Model, window_s: float, step_s: float, now: float, era_start: float | None) -> tuple[float, float] | None:
+    """The next window to read (doubled, with its step, so the grid keeps its number of steps),
+    when the discovery ``m`` found no stock because no counter counted ``MIN_EVENTS`` in its window
+    (a low-traffic system: a sprint board moves a few tickets an hour); None when it found one,
+    when its counters had the events, when the window is already ``MAX_WINDOW``, or when the era
+    began inside it (a wider window reads nothing more)."""
+    ce = (m.discovery or {}).get("counter_events") or {}
+    if m.stocks or not ce.get("counters") or ce.get("most", 0) >= MIN_EVENTS or window_s >= MAX_WINDOW:
+        return None
+    if era_start is not None and era_start > now - window_s:
+        return None
+    wider = min(MAX_WINDOW, 2 * window_s)
+    return wider, step_s * wider / window_s
+
+
 def era_window(start: float, end: float, step: float, era_start: float | None) -> float:
     """The window's start, moved forward to the era's start (on the grid) when the era is younger."""
     if era_start is None or era_start <= start:
@@ -136,17 +167,30 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
         start, end = aligned(now - window_s, now, step_s)
         start = era_window(start, end, step_s, era.start if era else None)
         if era is None or end - start >= 2 * step_s:
-            reading = Catalogue(project, metrics).read(start, end, step_s)
-            allowed = None
-            if snapshot is not None:
-                sim = snap.simulated_allowed(project, reading, collectors)
-                snap.write(snapshot, reading, start=start, end=end, step=step_s, strategy=strategy, options=options,
-                           deadline=DEADLINE_SHARE * cfg.discovery_every, window_s=window_s, project=project, simulated=sim)
-                allowed = lambda: set(sim or [])  # the same set the snapshot records
-            m = simulated.discovered(project, reading, collectors=collectors, start=start, end=end, step=step_s, strategy=strategy,
-                                     options=options, deadline=DEADLINE_SHARE * cfg.discovery_every, provenance=reading.provenance,
-                                     allowed=allowed)
-            annotate(m, reading.provenance)
+            base_s, tried = window_s, []
+            while True:
+                reading = Catalogue(project, metrics).read(start, end, step_s)
+                allowed = None
+                if snapshot is not None:
+                    sim = snap.simulated_allowed(project, reading, collectors)
+                    snap.write(snapshot, reading, start=start, end=end, step=step_s, strategy=strategy, options=options,
+                               deadline=DEADLINE_SHARE * cfg.discovery_every, window_s=window_s, project=project, simulated=sim)
+                    allowed = lambda sim=sim: set(sim or [])  # the same set the snapshot records
+                m = simulated.discovered(project, reading, collectors=collectors, start=start, end=end, step=step_s, strategy=strategy,
+                                         options=options, deadline=DEADLINE_SHARE * cfg.discovery_every, provenance=reading.provenance,
+                                         allowed=allowed)
+                annotate(m, reading.provenance)
+                wider = widen(m, window_s, step_s, now, era.start if era else None)
+                if wider is None:
+                    break
+                tried.append(window_s)
+                window_s, step_s = wider
+                start, end = aligned(now - window_s, now, step_s)
+                start = era_window(start, end, step_s, era.start if era else None)
+            if tried:
+                m.discovery["widened"] = {"from_s": base_s, "tried_s": tried, "window_s": window_s, "step_s": step_s,
+                                          "why": f"the {window_words(base_s)} window held too few events for any counter "
+                                                 f"(a balance needs {MIN_EVENTS}): widened to {window_words(window_s)}"}
         else:                                   # the era is too young to read: its prior, carried whole
             reading = None
             m = Model("system", "The system", "The era is too young to discover: its prior, carried.")
