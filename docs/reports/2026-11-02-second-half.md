@@ -668,3 +668,64 @@ the other side's row goes in the same round.
 
 **4. T12.** Agents: step 16's three misses. Workflows: the `at`/`tz` edit lands in the copy that
 wins. [outcome pending]
+
+## Addendum 4, 2026-11-02 (the standing demo, Slack queues public, eight walkthroughs)
+
+**1. The seventh and eighth walkthroughs.**
+
+| run | pass / misleading / fail | fixed before it | the failing step | spend |
+|---|---|---|---|---|
+| T2f | 15 / 0 / 1 | T11 | 16 | $0.63 |
+| T2g | 15 / 0 / 1 | T12 | 16 | $0.64 |
+| T2h | 15 / 0 / 1 | T13 | 10 | $0.71 |
+
+T12 fixed step 16's three misses from T2f. The answer now closes with the model line, taken
+verbatim from the version's record. It credits the change to discovery, and it has a "waits on
+you" section. But T2g's answer dropped the prediction's state and the triage verdict, and got
+times and counts wrong: pull requests #33 and #34 "opened 04:57" when it was 04:16, "all three
+merged 05:12" when one was, and "2 opened/2 closed" when three were Done. Every one of those facts
+was in the tool's answer. The error was Haiku's synthesis.
+
+T13 (agents `9bb7d5c`) renders the whole "what changed since" answer in the tool, with times in
+the pages' zone, and the prompt relays it verbatim and never guesses at a cause. In T2h, step 16
+passed for the first time. The reply was the tool's digest character for character (3,681
+characters), and every fact checked against the bus. Its "waiting on you" missed the Supervisor's
+own open question. Steps 8, 9 and 15 carried no guessed causes.
+
+T2h failed step 10 in a new way. The example git-ignores `.orchestra/`, so T12's rule read the
+repository's copy of the definition as "untracked" and refused both writes. The Supervisor asked
+the owner which copy to use, a question the script's owner never answers, so no 09:00 was
+declared.
+
+The run's live spend is about $11.6, under the $30 cap.
+
+**2. Two new public demos.** Both links are in `~/url`.
+
+- **The standing delivery demo on the real SCRUM board** runs on :8105 behind a quick tunnel. It
+  opens a test ticket every 4 h, with at most 2 open and 6 a day, and writes only within the
+  approved scope. Its Supervisor runs on Haiku over bash, capped at $2 a day. Its first start
+  failed: `--supervisor` needs `orchestra_agents` in the plugin's venv, and the script installs
+  nothing. So it runs from a dedicated worktree, `~/orchestra-workflows-wt-standing`, with the
+  agents and the outbox installed.
+- **The Slack queues example** runs on fakes on :8606 behind a quick tunnel, with a scripted day
+  every 30 minutes.
+
+A walkthrough now owns the board while it runs. The coordinator pauses the standing demo first
+(`standing/stop.sh`, state kept) and resumes it after (`--resume`). Otherwise the walkthrough's
+`--cleanup` would close the standing demo's tickets. Once that happened, and it was allowed: the
+first T2g cleanup closed the paused demo's SCRUM-34 and pull request #32.
+
+**3. Contracts and the script.** The third contract drift (`poller.toml` against `machine.toml`)
+and the same-round rule for schema rows are in Addendum 3. Nothing has drifted since. The
+walkthrough's step 10 now reflects the scheduler. The declared 09:00 really runs, because the
+scheduler honours `at`. `tz` may wait as a pending revision for your confirm.
+
+**4. T14.** Workflows: a git-ignored repository copy is the live one and is written without
+refusal. Agents: every unanswered Supervisor question goes into "waiting on you". [outcome pending]
+
+**5. Where this leaves the walkthrough.** Two runs in a row passed 15 of 16 steps. The last
+failure moved from step 16 to step 10, a different step each time, so no one step
+keeps failing. Two things are structural. The walkthrough has
+never run overnight: step 16 has always been asked after a short quiet period, not the next morning. And the
+answer that passed step 16 is text the tool rendered, not Haiku's own synthesis. The small model
+relays a digest well, but on this evidence it cannot yet be trusted to summarise a day by itself.
