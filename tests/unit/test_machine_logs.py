@@ -47,6 +47,17 @@ def test_hand_offs_are_inferred_from_events_about_the_same_subject():
     assert h == {("counter", "order.placed", "baker"): 2, ("baker", "order.baked", "packer"): 1}
 
 
+def test_a_subject_handed_on_through_a_machine_is_a_relay_from_the_one_before_it():
+    ev = lambda src, ty, subj: {"type": ty, "source": src, "subject": subj, "time": "2026-10-25T00:00:00Z"}
+    # a worker finishes, the planner offers the next step, a reviewer takes it: the planner relayed
+    # the subject from the worker to the reviewer (the Machines page draws worker → reviewer through it)
+    evs = [ev("planner", "x.made", "i1"), ev("worker/1", "x.done", "i1"), ev("planner", "x.made", "i1"), ev("reviewer/1", "x.done", "i1"),
+           ev("planner", "x.made", "i1"), ev("worker/2", "x.done", "i1")]
+    r = {(x["from"], x["through"], x["to"]): x["count"] for x in machines_view(evs)["relays"]}
+    # back to the machine it came from (planner → worker → planner) is no relay
+    assert r == {("worker", "planner", "reviewer"): 1, ("reviewer", "planner", "worker"): 1}
+
+
 def test_a_hand_off_is_credited_to_an_event_the_receiver_listens_for():
     ev = lambda src, ty, subj: {"type": ty, "source": src, "subject": subj, "time": "2026-10-25T00:00:00Z"}
     # A publishes X then Y about the subject; B, which announced it listens for X, acts next: the

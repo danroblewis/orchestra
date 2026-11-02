@@ -1683,7 +1683,20 @@ intended model's closed list of page controls (§4.6, AGENTS.md rule 9). Navigat
   reading as traffic (two machines that publish and listen for the same type are not thereby
   talking: the workflows plugin's `offer.*` events, worker → merge gate). Dotted, a hand-off through
   a type the receiver never announced, which connects machines that announce nothing, such as a
-  system brought in from outside (`static/machine-graph.js`); and **counted
+  system brought in from outside (`static/machine-graph.js`). **A hub's protocol** is folded: a
+  machine that exchanges event types both ways with at least two others (it publishes a type each
+  of them listens for, and listens for a type each of them publishes; observed, announced or
+  declared) is a hub and they are its members (the widest first: a member of a hub is no hub
+  itself, so roles that pass the hub's type to each other, as the task loop's do, stay roles and
+  what they hand each other stays drawn); the types between the hub and a member, and those
+  the hub both publishes and listens for (its own bookkeeping), are its protocol, the plumbing every
+  member shares (a workflow's planner and its roles). By default each member has one thin dotted
+  line to the hub, labelled by the protocol's families, and "show the protocol" draws its types;
+  no type's name is known to the core. What a hub relays is a hand-off: a subject handed to the hub
+  by one machine and on by it, over its protocol, to another (the API's `relays`) is an arrow from
+  the one to the other "through" the hub. A machine's line to itself is drawn only for a hand-off
+  to itself, never for a type it both publishes and listens for. A hand-off arrow is labelled by
+  what was handed on; and **counted
 traffic** (§2, §4.4): each channel a box with what waits in it, each producer → channel and channel
 → consumer a double line labelled with its rate per minute, a count no machine is attributed to
 coming from or going to a grey "unattributed" stub), its feedback loops, and the flows of the

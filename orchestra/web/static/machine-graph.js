@@ -8,10 +8,53 @@
 // and never received a hand-off through it keeps its edge as a **declared listener** (drawn faint),
 // and a machine → machine chain through it is not a communication: cycles are made only of
 // observed chains. A hand-off through a type the machine never announced is **inferred** (dotted).
+//
+// **The protocol** (the owner, 2026-11-01: "most of the agents look like they both publish and
+// subscribe to the same events"): a machine that exchanges event types both ways with at least two
+// others (it publishes a type each of them announces it listens for, and listens for a type each of
+// them publishes) is a **hub**, and those machines are its members (the widest first: a member of a
+// hub is no hub itself, so roles that pass the hub's type to each other stay roles). The types between a hub and a
+// member, and the types the hub both publishes and listens for (its own bookkeeping), are the hub's
+// protocol: the plumbing every member shares, which says nothing about who hands work to whom. The
+// map draws them folded into one thin edge per member, labelled by their families ("x.*" for x.made, x.done), and
+// shows them only when asked. Who hands work to whom through a hub is the relay the API records (a
+// subject handed to the hub by one machine and on by it to another): drawn as a hand-off from the
+// one to the other "via" the hub. Publishing is what was observed or declared; listening what was
+// announced or declared. No event type's name is known here (AGENTS.md rule 1).
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
   else root.MachineGraph = factory();
 })(typeof self !== "undefined" ? self : this, function () {
+  const hears = (pattern, type) => pattern === type || pattern === "*" || (pattern.endsWith(".*") && type.startsWith(pattern.slice(0, -1)));
+  const family = (type) => type.split(".")[0] + ".*";
+  // the hubs and their members, and whether a type from one machine to another is a hub's protocol.
+  // d: the API's answer; intended: the declared layer's links ({machine, kind: "publishes"|"listens", type})
+  function protocol(d, intended = []) {
+    const pub = new Map(), sub = new Map(), add = (m, id, t) => { if (!m.has(id)) m.set(id, new Set()); m.get(id).add(t); };
+    for (const m of d.machines || []) { for (const p of m.publishes || []) add(pub, m.id, p.type); for (const t of m.subscribes || []) add(sub, m.id, t); }
+    for (const e of intended || []) add(e.kind === "publishes" ? pub : sub, e.machine, e.type);
+    const listens = (id, type) => [...(sub.get(id) || [])].some((p) => hears(p, type));
+    const sends = (a, b) => [...(pub.get(a) || [])].filter((t) => listens(b, t));     // types a publishes that b listens for
+    const ids = [...new Set([...pub.keys(), ...sub.keys()])], hubs = new Map();
+    // the widest first: a member of a hub is no hub of its own (roles that pass the hub's own type
+    // to each other are its members, and what they hand each other stays drawn)
+    const cands = ids.map((h) => [h, new Set(ids.filter((m) => m !== h && sends(h, m).length && sends(m, h).length))])
+      .filter(([, ms]) => ms.size >= 2).sort((a, b) => b[1].size - a[1].size || a[0].localeCompare(b[0]));
+    for (const [h, members] of cands) if (![...hubs.values()].some((ms) => ms.has(h))) hubs.set(h, members);
+    // a type from ``a`` that ``b`` receives is protocol: between a hub and its member, or a hub's own
+    const is = (a, type, b) => (a === b ? hubs.has(a) && listens(a, type)
+      : (hubs.has(a) && hubs.get(a).has(b)) || (hubs.has(b) && hubs.get(b).has(a)));
+    // each hub and member, with the families of the types between them, both ways
+    const folds = [];
+    for (const [h, members] of hubs) for (const m of members) {
+      const types = [...new Set([...sends(h, m), ...sends(m, h)])].sort();
+      folds.push({ hub: h, member: m, types, families: [...new Set(types.map(family))] });
+    }
+    const own = [...hubs.keys()].flatMap((h) => sends(h, h));
+    const families = [...new Set([...folds.flatMap((f) => f.families), ...own.map(family)])].sort();
+    return { hubs, is, folds, families };
+  }
+
   // d: the API's answer (machines, handoffs). opts.intended: the declared layer's links
   // ({machine, kind: "publishes"|"listens", type, observed, gone, added}); opts.showAll: keep event
   // types nobody listens for.
@@ -50,6 +93,15 @@
     }
     // a listener edge no hand-off came through: the machine only said it listens
     for (const l of Object.values(links)) l.declaredListener = l.source.startsWith("ev:") && !l.observed;
+    // a hub's protocol: a publish edge whose every receiver is the hub's (or a member's) by it, and a
+    // listen edge whose every sender is
+    const proto = protocol(d, opts.intended), all = Object.values(links), type = (id) => id.slice(3);
+    for (const l of all) {
+      const ev = l.source.startsWith("ev:") ? l.source : l.target;
+      const pubs = all.filter((x) => x.target === ev).map((x) => x.source.slice(2)), subs = all.filter((x) => x.source === ev).map((x) => x.target.slice(2));
+      const [ps, ss] = l.source.startsWith("ev:") ? [[...pubs, ...Object.keys(l.from).map((k) => k.slice(2))], [l.target.slice(2)]] : [[l.source.slice(2)], subs];
+      l.protocol = ps.length > 0 && ss.length > 0 && ps.every((a) => ss.every((b) => proto.is(a, type(ev), b)));
+    }
     // An event nobody listens for is a dead end on the map; hide those unless asked, so the
     // picture is the communication pattern rather than the catalogue of everything published.
     let ls = Object.values(links);
@@ -78,12 +130,12 @@
         const x = merged[k]; x.seen += l.seen; x.handoffs += l.handoffs || 0; x.observed += l.observed || 0;
         for (const [m, n] of Object.entries(l.from || {})) x.from[m] = (x.from[m] || 0) + n;
         x.inferred = x.inferred && l.inferred; x.declared = x.declared && l.declared; x.gone = x.gone && l.gone; x.added = x.added || l.added;
-        x.declaredListener = x.declaredListener && l.declaredListener; }
+        x.declaredListener = x.declaredListener && l.declaredListener; x.protocol = x.protocol && l.protocol; }
       ls = Object.values(merged);
     }
     const used = new Set(ls.flatMap((l) => [l.source, l.target]));
     // every machine is drawn, connected or not; events only when something links them
-    return { nodes: [...Object.values(nodes), ...Object.values(evNodes).filter((n) => used.has(n.id))], links: ls };
+    return { nodes: [...Object.values(nodes), ...Object.values(evNodes).filter((n) => used.has(n.id))], links: ls, protocol: proto };
   }
 
   // machine → machine, through an event type one publishes and the other listens for. ``observed``:
@@ -94,9 +146,23 @@
     for (const a of links) if (a.source.startsWith("m:") && a.target.startsWith("ev:") && !a.gone)
       for (const b of links) if (b.source === a.target && b.target.startsWith("m:") && !b.gone)
         out.push({ source: a.source, target: b.target, via: a.target, evIds: [id(a), id(b)], seen: Math.min(a.seen, b.seen),
-                   inferred: b.inferred, observed: !!(b.from && b.from[a.source]), handoffs: (b.from && b.from[a.source]) || 0 });
-    return out;
+                   inferred: b.inferred, observed: !!(b.from && b.from[a.source]), handoffs: (b.from && b.from[a.source]) || 0,
+                   protocol: !!(a.protocol || b.protocol) });
+    // a machine's edge to itself is drawn only when it handed something to itself and it is no hub's bookkeeping
+    return out.filter((c) => c.source !== c.target || (c.observed && !c.protocol));
   }
 
-  return { graph, chains };
+  // who handed work to whom through a hub: a relay (the API's ``relays``) whose hand-off from the hub
+  // is its protocol, as a chain from the one to the other "via" the hub ({source, target, through, seen, observed})
+  function relays(d, proto) {
+    const out = new Map();
+    for (const r of d.relays || []) {
+      if (r.from === r.to || !proto.hubs.has(r.through) || !proto.is(r.through, r.through_via || "", r.to)) continue;
+      const k = r.from + ">" + r.to + ">" + r.through, x = out.get(k) || { source: "m:" + r.from, target: "m:" + r.to, through: r.through, seen: 0, count: 0, observed: true };
+      x.seen += r.day || 0; x.count += r.count || 0; out.set(k, x);
+    }
+    return [...out.values()];
+  }
+
+  return { graph, chains, protocol, relays };
 });

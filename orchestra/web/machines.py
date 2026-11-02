@@ -120,9 +120,14 @@ class MachineIndex:
         self.latest: dict[str, deque] = defaultdict(lambda: deque(maxlen=RECENT))  # machine -> its last events' envelopes
         self.unattributed = 0
         self.skipped = 0                                                  # events that could not be read
-        self.last_on: OrderedDict[str, tuple[str, list[str]]] = OrderedDict()  # subject -> (machine, its last event types) that last acted on it
+        # subject -> (machine, its last event types, the hand-off that brought it: (from machine, via) or None) that last acted on it
+        self.last_on: OrderedDict[str, tuple[str, list[str], tuple | None]] = OrderedDict()
         self.handoffs: Counter = Counter()                               # (from machine, its event type or None, to machine) -> count
         self.recent_handoffs: dict[tuple[str, str, str], deque] = defaultdict(deque)
+        # a subject handed on through a machine: (from, via, through, its via, to) -> count; the page
+        # draws the ones through a hub's protocol as the hand-off from the one to the other
+        self.relays: Counter = Counter()
+        self.recent_relays: dict[tuple, deque] = defaultdict(deque)
         self._lock = threading.Lock()
 
     def update(self) -> None:
@@ -181,16 +186,22 @@ class MachineIndex:
         subject = ev.get("subject")
         if subject and ev.get("type") not in NOT_WORK:
             prev = self.last_on.pop(subject, None)
+            came = None
             if prev and prev[0] == machine:
-                trail = [*prev[1][-(TRAIL - 1):], ev["type"]]
+                trail, came = [*prev[1][-(TRAIL - 1):], ev["type"]], prev[2]
             else:
                 if prev:
                     subs = self.subs.get(machine)
                     via = next((ty for ty in reversed(prev[1]) if ty in subs), None) if subs else prev[1][-1]
                     self.handoffs[(prev[0], via, machine)] += 1
                     self.recent_handoffs[(prev[0], via, machine)].append(t)
+                    came = (prev[0], via)
+                    if prev[2] and prev[2][0] != machine:       # handed on through prev, from the one before it
+                        relay = (prev[2][0], prev[2][1], prev[0], via, machine)
+                        self.relays[relay] += 1
+                        self.recent_relays[relay].append(t)
                 trail = [ev["type"]]
-            self.last_on[subject] = (machine, trail)
+            self.last_on[subject] = (machine, trail, came)
             if len(self.last_on) > SUBJECTS:
                 self.last_on.popitem(last=False)
         self.total[machine][ev["type"]] += 1
@@ -241,7 +252,7 @@ class MachineIndex:
         now = now or time.time()
         flows = flows or {}
         with self._lock:
-            for q in [*self.recent.values(), *self.recent_handoffs.values()]:
+            for q in [*self.recent.values(), *self.recent_handoffs.values(), *self.recent_relays.values()]:
                 while q and q[0] < now - DAY:
                     q.popleft()
             # machines are what the bus shows; a series labelled with a name makes no machine
@@ -289,7 +300,10 @@ class MachineIndex:
             edges += [{"from": t, "to": x["id"], "kind": "subscribes"} for x in machines for t in x["subscribes"]]
             handoffs = [{"from": a, "via": ty, "to": b, "count": n, "day": len(self.recent_handoffs.get((a, ty, b), ()))}
                         for (a, ty, b), n in self.handoffs.most_common()]
-            return {"machines": machines, "types": types, "edges": edges, "handoffs": handoffs, "unattributed_events": self.unattributed}
+            relays = [{"from": a, "via": ty, "through": h, "through_via": hv, "to": b, "count": n, "day": len(self.recent_relays.get((a, ty, h, hv, b), ()))}
+                      for (a, ty, h, hv, b), n in self.relays.most_common()]
+            return {"machines": machines, "types": types, "edges": edges, "handoffs": handoffs, "relays": relays,
+                    "unattributed_events": self.unattributed}
 
 
 def of_instances(counts: Counter, instances: int | None = None) -> str | None:

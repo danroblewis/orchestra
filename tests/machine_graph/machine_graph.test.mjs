@@ -66,3 +66,74 @@ test("event types are grouped only with types their listeners received the same 
   assert.ok(edge(g, "ev:T", "m:B") && edge(g, "ev:T2", "m:B"));
   assert.equal(edge(g, "ev:T2", "m:B").declaredListener, true);
 });
+
+// A hub and three roles alike, as a planner offers work (the owner, 2026-11-01: "most of the agents
+// look like they both publish and subscribe to the same events"): H publishes x.made, which every
+// role listens for, and listens for x.done, which every role publishes; H also publishes and listens
+// for h.closed (its own bookkeeping). P, a person, acts next after R1's x.done and publishes p.opened,
+// which Q listens for.
+const hubbed = () => {
+  const ms = [machine("H", ["x.made", "h.closed"], ["x.done", "h.closed"]), machine("R1", ["x.done"], ["x.made"]),
+              machine("R2", ["x.done"], ["x.made"]), machine("R3", [], ["x.made"]), machine("P", ["p.opened"], []), machine("Q", [], ["p.opened"])];
+  const intended = [{ machine: "R3", kind: "publishes", type: "x.done" }];     // R3 declared, never yet seen to publish
+  const handoffs = [{ from: "H", via: "x.made", to: "R1", count: 2, day: 2 }, { from: "R1", via: "x.done", to: "P", count: 2, day: 2 },
+                    { from: "P", via: "p.opened", to: "Q", count: 2, day: 2 }, { from: "R1", via: "x.done", to: "H", count: 1, day: 1 },
+                    { from: "H", via: "x.made", to: "R2", count: 1, day: 1 }];
+  const relays = [{ from: "R1", via: "x.done", through: "H", through_via: "x.made", to: "R2", count: 1, day: 1 },
+                  { from: "Q", via: null, through: "H", through_via: "x.made", to: "R2", count: 1, day: 1 },
+                  { from: "P", via: "p.opened", through: "Q", through_via: "q.done", to: "R1", count: 1, day: 1 }];
+  return { d: { machines: ms, handoffs, relays }, intended };
+};
+
+test("a machine exchanging types both ways with two or more others is a hub; those types are its protocol", () => {
+  const { d, intended } = hubbed(), p = MachineGraph.protocol(d, intended);
+  assert.deepEqual([...p.hubs.keys()], ["H"]);
+  assert.deepEqual([...p.hubs.get("H")].sort(), ["R1", "R2", "R3"], "R3 is a member by its declaration");
+  assert.equal(p.is("H", "x.made", "R1"), true);
+  assert.equal(p.is("R2", "x.done", "H"), true);
+  assert.equal(p.is("H", "h.closed", "H"), true, "the hub's own bookkeeping");
+  assert.equal(p.is("R1", "x.done", "P"), false, "a role handing work to a person is no protocol");
+  assert.equal(p.is("P", "p.opened", "Q"), false);
+  assert.deepEqual(p.families, ["h.*", "x.*"]);
+  assert.deepEqual(p.folds.map((f) => [f.member, f.types.join(",")]).sort(), [["R1", "x.done,x.made"], ["R2", "x.done,x.made"], ["R3", "x.done,x.made"]]);
+});
+
+test("two machines alone exchanging both ways are no hub: a request and its reply stay drawn", () => {
+  const p = MachineGraph.protocol({ machines });
+  assert.equal(p.hubs.size, 0);
+  assert.equal(p.is("A", "T", "B"), false);
+});
+
+test("the map's chains: the protocol is marked, the hub's own loop is never drawn, a hand-off between roles and people is", () => {
+  const { d, intended } = hubbed();
+  const g = MachineGraph.graph(d, { intended: intended.map((e) => ({ ...e, observed: false })), showAll: true });
+  const ch = MachineGraph.chains(g.links), of = (a, b) => ch.find((c) => c.source === "m:" + a && c.target === "m:" + b);
+  assert.equal(of("H", "R1").protocol, true);
+  assert.equal(of("R1", "H").protocol, true);
+  assert.equal(of("H", "H"), undefined, "H publishing and listening for h.closed is no edge to itself");
+  assert.equal(of("R1", "P").protocol, false);
+  assert.equal(of("R1", "P").observed, true);
+  assert.equal(of("P", "Q").protocol, false);
+});
+
+test("work handed through a hub's protocol is a hand-off from the one to the other, through the hub", () => {
+  const { d, intended } = hubbed(), p = MachineGraph.protocol(d, intended);
+  const r = MachineGraph.relays(d, p);
+  assert.deepEqual(r.map((x) => [x.source, x.target, x.through]), [["m:R1", "m:R2", "H"], ["m:Q", "m:R2", "H"]],
+    "a relay through a machine that is no hub, or not over its protocol, is not one");
+});
+
+test("a machine that publishes a type and listens for it has no edge to itself without a hand-off to itself", () => {
+  const ms = [machine("S", ["s.step"], ["s.step"])];
+  const g = MachineGraph.graph({ machines: ms, handoffs: [] }, { showAll: true });
+  assert.equal(MachineGraph.chains(g.links).length, 0, "announced only: no edge to itself");
+});
+
+test("roles that pass the hub's own type to each other are its members, not hubs, and what they hand on stays drawn", () => {
+  // the task loop: the floor publishes x.made under the role that finished, so W and V exchange it too
+  const ms = [machine("C", ["x.made"], ["x.done"]), machine("W", ["x.made", "x.done"], ["x.made"]), machine("V", ["x.made", "x.done"], ["x.made"]), machine("G", ["x.done"], ["x.made"])];
+  const p = MachineGraph.protocol({ machines: ms });
+  assert.deepEqual([...p.hubs.keys()], ["C"]);
+  assert.equal(p.is("W", "x.made", "V"), false, "W hands work to V");
+  assert.equal(p.is("C", "x.made", "W"), true);
+});
