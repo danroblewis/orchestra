@@ -22,19 +22,21 @@ const IntendedPanel = (() => {
   const button = (ctl, ch, from) => `<button class="ctl${ctl === "expect" ? " im-primary" : ""}" data-control="${esc(ctl)}"
     onclick="Intended.control('${esc(ctl)}','${esc(ch.part)}',${esc(JSON.stringify(ch.key))},'${esc(from)}')">${esc(ctl)}</button>`;
   const counterOf = (f) => (f && f.counter ? keyOf(f.counter) : "");
+  // a part's tags as chips beside its name (sd/titles.py), as in the tables
+  const chips = (group, id) => { const n = SDGraph.names(MODEL)[group][id]; return n ? SDGraph.tagsHtml(n.tags, esc) : ""; };
   function plus(ch, from) {
     const v = I().vlabel(), exp = (ch.controls || []).includes("unexpect");
     let what, why, title = "";
     if (ch.part === "stock") {
       const s = MODEL.stocks.find((x) => x.id === ch.id) || {}, ev = s.evidence || {}, by = (s.series && s.series.labels && s.series.labels.instrument) || ev.written_by;
-      what = `stock <b>${esc(I().nameOf(ch.id))}</b> ${I().tag("new · inferred", "im-t-new")}`;
+      what = `stock <b>${esc(I().nameOf(ch.id))}</b>${chips("stocks", ch.id)} ${I().tag("new · inferred", "im-t-new")}`;
       why = s.series ? `from the series <span class="ty">${esc(s.series.name)}</span>${by ? ` recorded by ${esc(by)}` : ""}${ev.net_flow ? "; no counters, its net flow fitted" : ""}` : esc(ch.why || `new in ${v}`);
       title = s.series ? keyOf(s.series) : "";
     } else {
       const f = MODEL.flows.find((x) => x.id === ch.id);
       what = `flow <b>${esc(f ? `${end(f.from)} → ${end(f.to)}` : ch.key)}</b> ${I().tag("new", "im-t-new")}`;
       // its name and equation: two flows between the same ends are told apart; the raw counter is in the title (and the drawer)
-      why = f ? `${esc(flowName(f))} · <span class="num">${esc(eqText(f))}</span>${SDGraph.correlational(MODEL, f) ? " · fitted from correlation; untested" : ""}` : esc(ch.why || "");
+      why = f ? `${esc(flowName(f))}${chips("flows", f.id)} · <span class="num">${esc(eqText(f))}</span>${SDGraph.correlational(MODEL, f) ? " · fitted from correlation; untested" : ""}` : esc(ch.why || "");
       title = f ? `counter ${counterOf(f)}` : ch.key;
     }
     return `<div class="im-chg new" data-sign="+" data-key="${esc(ch.key)}" title="${esc(title)}"><span class="im-sign">+</span><div><div>${what}${exp ? " " + I().tag("expected ✓", "im-t-exp") : ""}</div><div class="muted">${why}</div></div>
@@ -55,7 +57,7 @@ const IntendedPanel = (() => {
     const named = ch.part === "flow" && r.counter ? `${esc(I().removedFlowName(r))} · ` : "";
     const how = r.origin ? `was ${ORIGIN[r.origin] || esc(r.origin)} in v${esc(ch.in)}` : `was in v${esc(ch.in)}`;
     const title = ch.part === "flow" && r.counter ? `counter ${keyOf(r.counter)}` : r.series ? keyOf(r.series) : ch.key;
-    return `<div class="im-chg gone" data-sign="-" data-key="${esc(ch.key)}" title="${esc(title)}"><span class="im-sign">−</span><div><div>${esc(ch.part)} <s>${esc(goneName(ch, r))}</s> ${I().tag(`gone in ${I().vlabel()}`, "im-t-gone")}</div>
+    return `<div class="im-chg gone" data-sign="-" data-key="${esc(ch.key)}" title="${esc(title)}"><span class="im-sign">−</span><div><div>${esc(ch.part)} <s>${esc(goneName(ch, r))}</s>${SDGraph.tagsHtml(r.tags, esc)} ${I().tag(`gone in ${I().vlabel()}`, "im-t-gone")}</div>
       <div class="muted">${named}${how}${facts ? ` (${facts})` : ""}${drawn ? " · ghost shown" : ""}</div></div><span></span></div>`;
   }
   // a − and a + of one counter: the flow moved between stocks, said once

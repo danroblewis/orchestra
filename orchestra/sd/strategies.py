@@ -65,6 +65,7 @@ from .rates import combine, numbers, reads, scale
 from .resolution import steps_of
 from .series import sample, series_key, sum_instances
 from .stocktrust import unmeasured
+from .titles import merge_tags
 
 CONSERVATION = "conservation"
 BALANCED_R2 = 0.98    # a counter balance this good is what a stock's change is: an SD Lab flow describing the whole change never replaces it
@@ -377,7 +378,9 @@ def _discover_with(dump, *, start: float, end: float, step: float, strategy: str
         eq = Equation(rate.get("form", "unknown"), numbers(rate), "discovered", f"sdlab:{strategy}", (fit_start, fit_start + n * coarse),
                       None, q, [ref(x) for x in reads(rate)], rate)
         # merged from several named moves: named as they are, so the pages never fall back to a counter's raw labels
-        ev = matched[0].evidence if len(matched) == 1 else ({"named": "places"} if all((m.evidence or {}).get("named") for m in matched) else {})
+        ev = matched[0].evidence if len(matched) == 1 else (
+            {"named": "places", **({"tags": tags} if (tags := merge_tags(*((m.evidence or {}).get("tags") for m in matched))) else {})}
+            if all((m.evidence or {}).get("named") for m in matched) else {})
         if "machines" not in ev:
             ev = {**ev, "machines": _associated(matched)}
         flows.append(Flow(fid, name, src, dst, counter, [eq], [m.counter for m in matched if m.counter], ev))

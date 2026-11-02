@@ -192,7 +192,7 @@ Orchestra.machineCards = (() => {
       ? `<span class="ty" title="what waits for it in ${esc(t.channel)}">${esc(t.channel)} · ${Math.round(t.backlog ?? 0).toLocaleString()} waiting</span>`
       : `<span class="ty" title="${Math.round(t.window).toLocaleString()} in the last hour, counted on another system's bus">${t.direction === "out" ? "→" : "←"} ${esc(t.channel)} · ${t.per_min}/min</span>`).join("")}</div>` : ""}
     <div class="row"><span class="muted" title="flows of the model its events match in time: hypotheses, not causes">flows (hypotheses)</span>${(m.flows || []).map((f) => { const h = Orchestra.hypothesis(m, f);
-      return `<a class="ty fl" href="/dynamics#f:${encodeURIComponent(f.flow)}" onclick="event.stopPropagation()" title="${esc([h.title, f.why].filter(Boolean).join(" · "))} · open it on Dynamics">${esc(Orchestra.flowLabel(f))}${h.text ? ` · ${esc(h.text)}` : ""}</a>`; }).join("") || '<span class="muted">none hypothesised yet</span>'}</div>`;
+      return `<a class="ty fl" href="/dynamics#f:${encodeURIComponent(f.flow)}" onclick="event.stopPropagation()" title="${esc([h.title, f.why].filter(Boolean).join(" · "))} · open it on Dynamics">${esc(Orchestra.flowLabel(f))}${h.text ? ` · ${esc(h.text)}` : ""}${Orchestra.flowTags(f)}</a>`; }).join("") || '<span class="muted">none hypothesised yet</span>'}</div>`;
     },
     rank(m) { if (m.bootstrap) return 0; const s = this.of(m); try { return s && s.rank ? s.rank(m) : 50; } catch (e) { return 50; } },
     sort(ms) { return [...ms].sort((a, b) => this.rank(a) - this.rank(b) || a.id.localeCompare(b.id)); },
@@ -240,6 +240,12 @@ Orchestra.flowLabel = (f) => {
   const rec = mp.flows.find((x) => x.id === f.flow), end = (which) => (rec ? G.endName(mp, rec, which) : f[which] ? G.stockName(mp, f[which]) : "outside");
   const move = rec ? G.flowName(mp, rec) : f.name || f.flow;
   return `${end("from")} → ${end("to")} · ${move}`;
+};
+// a hypothesised flow's tags (sd/titles.py: "workflow=delivery_sail"), as chips beside its label, as on Dynamics
+Orchestra.flowTags = (f) => {
+  const mp = Orchestra.modelParts, G = window.SDGraph, rec = mp && G ? mp.flows.find((x) => x.id === f.flow) : null;
+  const n = rec ? G.names(mp).flows[rec.id] : null;
+  return n ? G.tagsHtml(n.tags, esc) : "";
 };
 
 // Dashboard panels (static/dashboard.js): Orchestra's own and any a package registers from its

@@ -208,10 +208,11 @@ def _title(s: Series, places: Places | None = None) -> str:
 
 def _named(s: Series, places: Places | None) -> dict:
     """The record that a part's title is its instrument's places' or its words' (the pages show it
-    as it is)."""
+    as it is), with its tags (``sd.titles``: the labels its place does not spell, its view's noun)."""
     if places is not None and (places.move(s.labels, s.key) if s.counter else places.level(s.labels, s.key, s.name)):
         noun = None if s.counter else (places.provenance.get(s.key) or {}).get("noun")
-        return {"named": "places", **({"noun": noun} if noun else {})}
+        tags = places.move_tags(s.labels, s.key) if s.counter else places.level_tags(s.labels, s.key, s.name)
+        return {"named": "places", **({"noun": noun} if noun else {}), **({"tags": tags} if tags else {})}
     return {"named": "words"} if _in_words(s) else {}
 
 
@@ -225,21 +226,22 @@ def _words(v: str) -> list[str]:
     return [w for w in re.split(r"[\W_]+", v.lower()) if w]
 
 
-def _between_titles(found: list, passed: dict, places: Places | None = None) -> tuple[dict[str, str], dict[str, list[str]]]:
+def _between_titles(found: list, passed: dict, places: Places | None = None) -> tuple[dict[str, str], dict[str, dict]]:
     """A state no series measures (an unmeasured passage, ``sd.passing``) is named by the places
     its moves name, when every one names one (``sd.titles``: "deliveries between write and
-    sail_check", with the places it spans);
+    sail_check", with the places it spans and its tags);
     otherwise by its neighbours: "between <what its ins drain> and <what its outs fill>", never
     after the counter that fills it (the owner, 2026-11-01: "after work item moves (write.held,
     open_pr.waiting, delivery_sail)" read as three things in one stock). Its id keeps the level
-    the counters imply. Returns the titles, and, of those named by places, the places each spans."""
+    the counters imply. Returns the titles, and, of those named by places, the record of each
+    (``spans``: the places it spans; ``tags``)."""
     out, named = {}, {}
     for key, p in passed.items():
         if p.measured:
             continue
         if places is not None and (t := places.between(p.ins, p.outs)):
             out[key] = t
-            named[key] = places.spans(p.ins, p.outs)
+            named[key] = {k: v for k, v in (("spans", places.spans(p.ins, p.outs)), ("tags", places.between_tags(p.ins, p.outs))) if v}
             continue
         ins, outs = {c.key for c in p.ins}, {c.key for c in p.outs}
         side = lambda keys, sign, key=key: list(dict.fromkeys(
@@ -1140,7 +1142,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         by_cons = s.key in constructed_
         unfit = by_cons or r2 is None           # no R² that is evidence: a balance by construction, or no series measures the level
         stocks.append(Stock(sid, between.get(s.key) or _title(s, places), "items", ref(s) if not p or p.measured else None,
-                            {**({"named": "places", **({"spans": between_named[s.key]} if between_named[s.key] else {})}
+                            {**({"named": "places", **between_named[s.key]}
                                 if s.key in between_named else {} if s.key in between else _named(s, places)),
                              "balance_r2": None if unfit else round(r2, 4), "exact_steps": None if unfit else round(exact, 4),
                              "steps": n, "balance_steps": len(masks[s.key]),
@@ -1328,6 +1330,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                        # what the pages call a left-out series its instrument's places or its words name
                        # (sd.titles): "items waiting at ci", never its raw key
                        "titles": {x.key: t for x in series if x.key in left_out and (t := _left_title(x, places))},
+                       "title_tags": {x.key: t for x in series if x.key in left_out and (t := _left_tags(x, places))},
                        # a left-out count of a place that holds items now: its level and its place, so a page
                        # draws or captions it (never a count that silently leaves something out)
                        "held_levels": _held_levels(series, left_out, provenance)}
@@ -1346,6 +1349,11 @@ def _held_levels(series: list[Series], left_out: dict, provenance: dict) -> dict
         if v and v > 0 and at:
             out[x.key] = {"level": v, "place": at}
     return out
+
+
+def _left_tags(s: Series, places: Places) -> list[str]:
+    """A left-out series' tags, when its instrument's places name it (``sd.titles``)."""
+    return places.move_tags(s.labels, s.key) if s.counter else places.level_tags(s.labels, s.key, s.name)
 
 
 def _left_title(s: Series, places: Places) -> str | None:

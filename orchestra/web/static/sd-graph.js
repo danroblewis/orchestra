@@ -40,8 +40,15 @@
   // - a stock no series measures (a passage, sd/passing.py, or a hidden stock a strategy found) is
   //   otherwise named by its neighbours: "between write (held) and outside", never by the counter
   //   that fills it nor by its id.
+  // - a part's tags (``tags``, sd/titles.py: "workflow=delivery_sail", a view's noun "deliveries")
+  //   are drawn beside its name as chips, never in it (the owner, 2026-11-02); two parts the server
+  //   named alike are told apart by the tags they do not share, said after the name in text
+  //   ("held at write · workflow=hotfix") and drawn as chips;
+  // - a part a declaration names (``declared_name``: a declared stock linked to it, a declared flow
+  //   found as it; sd/intended/display.py) is shown by that name, the name it would have had kept
+  //   beneath it as its identifier (``generated``) with who named it (``namedBy``).
   // Label values keep their spelling (sail_check, delivery_sail); a series' name is said in words.
-  // Names are {name, family, about}; ``label`` is the name, with the family only where the name
+  // Names are {name, family, about, tags}; ``label`` is the name, with the family only where the name
   // alone is not unique in the model. The model's own ``name`` stays the full record.
   const IGNORE = new Set(["project", "machine", "instrument", "instance", "source"]);
   // the view the series' instrument declared of it (collect/views.py; ``views``: by instrument, then
@@ -52,6 +59,16 @@
   }
   // a part the server named by its instrument's places: its name as it is, its view's sentence beside it
   const named = (x) => !!(x && x.evidence && x.evidence.named);
+  // a part's tags (sd/titles.py): what narrows its name, said beside it
+  const tagsOf = (x) => (x && (x.tags || (x.evidence && x.evidence.tags))) || [];
+  // the chips of a part's tags, as HTML (``esc``: the page's escaper)
+  const tagsHtml = (tags, esc) => (tags || []).map((t) => `<span class="ptag" title="a tag: ${esc(String(t).includes("=") ? "a label of its series" : "what its instrument says it counts")}">${esc(t)}</span>`).join("");
+  // who named a part, from its declaration's provenance: "you", "the owner (quoted), per supervisor", "integrator"
+  function namedBy(p) {
+    p = p || {};
+    if (p.author === "owner") return !p.via || p.via === "page" ? "you" : `the owner (quoted), per ${p.source || (p.via === "endpoint" ? "a caller of the endpoint" : "a plugin")}`;
+    return p.source || p.author || "a declaration";
+  }
   const aboutOf = (r, views, instrument) => { const v = viewOf(views, r, instrument); return (v && v.describes) || ""; };
   const words = (v) => String(v);
   const seriesOf = (x) => x.series || x.counter || (x.measured_by && x.measured_by[0]) || null;
@@ -93,8 +110,14 @@
     if (!drop) {
       const mine = items.filter(named);
       for (const x of mine) out[x.id] = { name: x.name, family: "", about: seriesOf(x) ? aboutOf(seriesOf(x), views) : "", stepped: true };
-      // two series of one name: their family tells them apart
-      for (const x of mine) if (seriesOf(x) && mine.some((y) => y !== x && out[y.id].name === out[x.id].name)) out[x.id].family = familyName(seriesOf(x).name);
+      // two parts of one name: the tags they do not share tell them apart, else their families
+      for (const x of mine) {
+        const like = mine.filter((y) => y !== x && out[y.id].name === out[x.id].name);
+        if (!like.length) continue;
+        const apart = tagsOf(x).filter((t) => like.some((y) => !tagsOf(y).includes(t)));
+        out[x.id].family = apart.length ? apart.join(" · ") : seriesOf(x) ? familyName(seriesOf(x).name) : "";
+        out[x.id].byTags = apart.length > 0;          // its chips tell it apart: the family is for text only
+      }
     }
     // what no series measures: a stock by its own name; a flow is a balance's remainder, named by
     // what it does (its ends are always shown beside it)
@@ -134,11 +157,11 @@
   }
   // one series by itself, as the Instruments page lists an instrument's series: by the title the
   // server gave it (``title``, sd/titles.py, as a stock or a flow of it would be named), else by its
-  // labels, with the sentence its view gives it (``views``: by instrument, as the model carries them):
-  // {name, family, about}
+  // labels, with the sentence its view gives it (``views``: by instrument, as the model carries them)
+  // and its tags (``tags``, with its title): {name, family, about, tags?}
   function seriesName(r, views = null, instrument = null) {
     const fam = familyName(r.name);
-    if (r.title) return { name: r.title, family: fam, about: aboutOf(r, views, instrument) };
+    if (r.title) return { name: r.title, family: fam, about: aboutOf(r, views, instrument), ...(r.tags ? { tags: r.tags } : {}) };
     const l = labelsOf(r), rest = Object.entries(l).filter(([k]) => !MOVE.has(k)).sort(([x], [y]) => x.localeCompare(y)).map(([k, v]) => `${words(k)} ${words(v)}`);
     const parts = [moveText(l), ...rest].filter(Boolean);
     return { name: parts.length ? parts.join(", ") : fam, family: parts.length ? fam : "", about: "" };
@@ -188,8 +211,13 @@
     for (const s of m.stocks || []) { if (seriesOf(s) || named(s) || !(s.evidence && (s.evidence.passing || s.evidence.hidden))) continue;
       const b = betweenName(m, s, stocks); if (b) stocks[s.id] = { name: b, family: "", about: "", between: true }; }
     const flows = flowNames(m.flows || []);
-    for (const f of m.flows || []) if (named(f)) flows[f.id] = { name: f.name, family: "" };
-    for (const group of [stocks, flows]) {
+    const namedFlows = (m.flows || []).filter(named);
+    for (const f of namedFlows) {
+      const like = namedFlows.filter((g) => g !== f && g.name === f.name), apart = tagsOf(f).filter((t) => like.some((g) => !tagsOf(g).includes(t)));
+      flows[f.id] = { name: f.name, family: like.length ? apart.join(" · ") : "", byTags: like.length > 0 && apart.length > 0 };
+    }
+    for (const [group, xs] of [[stocks, m.stocks || []], [flows, m.flows || []]]) {
+      for (const x of xs) if (group[x.id]) group[x.id].tags = tagsOf(x);
       const seen = new Map(); for (const v of Object.values(group)) seen.set(v.name, (seen.get(v.name) || 0) + 1);
       for (const v of Object.values(group)) v.label = v.family && seen.get(v.name) > 1 ? `${v.name} · ${v.family}` : v.name;
     }
@@ -199,6 +227,11 @@
     for (const of of [(f) => (f.to ? `into ${end(f.to)}` : "to outside"), (f) => `from ${end(f.from, "outside")}`]) {
       const seen = new Map(); for (const f of m.flows || []) { const l = flows[f.id] && flows[f.id].label; if (l) seen.set(l, (seen.get(l) || 0) + 1); }
       for (const f of m.flows || []) { const v = flows[f.id]; if (v && seen.get(v.label) > 1) v.label = `${v.label} · ${of(f)}`; }
+    }
+    // a part a declaration names: by that name, the one it would have had kept as its identifier
+    for (const [group, xs] of [[stocks, m.stocks || []], [flows, m.flows || []]]) for (const x of xs) {
+      const d = x.declared_name, v = group[x.id]; if (!d || !d.name || !v) continue;
+      group[x.id] = { ...v, name: d.name, label: d.name, family: "", generated: v.label, namedBy: namedBy(d.provenance), declared: d };
     }
     const out = { stocks, flows }; NAMES.set(m, out); return out;
   }
@@ -337,9 +370,12 @@
     const nodes = [], edges = [], causal = [], flowEdge = {};
     const has = (id) => nodes.some((n) => n.id === id);
     const nm = names(m).stocks;
-    for (const s of m.stocks.filter((s) => !hiddenStock(s.id))) { const { name, family, about } = nm[s.id] || { name: s.name, family: "" };
-      // a stepped stock's caption is its sentence, cut to the box (the drawer and the hover say it all)
-      const fit = Math.max(180, s.name.length * 7 + 30) / 6.2 - 2, cap = family || wrap(about || "", fit);
+    for (const s of m.stocks.filter((s) => !hiddenStock(s.id))) { const { name, family, about, generated, byTags } = nm[s.id] || { name: s.name, family: "" };
+      // a stepped stock's caption is its sentence, cut to the box (the drawer and the hover say it all);
+      // a stock a declaration names, the name it would have had (its identifier)
+      const fit = Math.max(180, s.name.length * 7 + 30) / 6.2 - 2, cap = generated ? wrap(generated, fit) : (!byTags && family) || wrap(about || "", fit);
+      // its tags, chips under the box (sd/titles.py), after "by construction"
+      const chips = tagsOf(s).map((t) => ({ text: t, cls: "ng-t-tag", below: true, row: true }));
       nodes.push({ id: "s:" + s.id, kind: "box", sid: s.id, label: name, lines: [name], caption: cap,
       // sized by the full name, as before the short names: the layout search is sensitive to box
       // sizes (narrower boxes break the layout tests' fixtures), which is its own open problem
@@ -348,7 +384,7 @@
       // a stock that holds by construction (its level is the count of its own moves): tagged, so it
       // never reads as trusted as one the evidence balances
       // (under the box: above it is where a version's marks go)
-      ...(byConstruction(s) ? { tags: [{ text: "by construction", cls: "ng-t-bc", below: true }] } : {}) }); }
+      ...(byConstruction(s) || chips.length ? { tags: [...(byConstruction(s) ? [{ text: "by construction", cls: "ng-t-bc", below: true }] : []), ...chips] } : {}) }); }
     // a place no stock was kept for, drawn named and unmeasured: with its level when its count holds
     // items now (``discovery.held_levels``), so the diagram never leaves out what a pile holds
     const placeBox = (v, p) => { const id = "p:" + v, title = placeTitle(v, p), lv = p.level != null ? `${count(p.level)} now · ` : "";
@@ -441,5 +477,5 @@
     const parts = String(v).split(".").filter(Boolean);
     return parts.length > 1 ? `${parts[0]} (${parts.slice(1).join(", ")})` : String(v);
   }
-  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, seriesName, sameAs, drawnApart, nice, num, correlational, untestedText, drivers, machineLabel, untoldGroups, placeTitle, placeOf, endName, wrap, UNTESTED, FLOW_INK, byConstruction };
+  return { tagsOf, tagsHtml, namedBy, build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, seriesName, sameAs, drawnApart, nice, num, correlational, untestedText, drivers, machineLabel, untoldGroups, placeTitle, placeOf, endName, wrap, UNTESTED, FLOW_INK, byConstruction };
 });

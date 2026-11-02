@@ -302,22 +302,31 @@ was made, never a machine or a flow (rules 6 and 7): it changes no equation.
 A view also names the parts its series become, once, on the server (`sd/titles.py`), and every
 page shows that title (the Dynamics, Machines and Instruments pages, the diff between versions):
 where a count's other labels spell its place label's value part by part, they are the place in
-words, in the order they spell it (`pile="write.held"`, `step="write"`, `place="held"`), and the
-stock is what sits there: the noun its series counts (the count view's own `noun` when it declares
-one, a plural of one to four plain words: `noun = "deliveries"`, "deliveries waiting at write";
-else the last word of its name when that is a plural noun: `workflow_pile_items`, items; Orchestra
-knows no such word, it prints the label), what is said of it there and where ("items held at
-write"); the labels it does not spell (`workflow`) are said only when two of their values share a
-thing of one name ("items held at write (hotfix)"); an `age` series of the same labels is "age of"
-it; a move between places is named by the things it leaves and enters ("write → ci"; inside one,
-"write: waiting → held"), "(sent back)" when it goes to a thing fewer moves from outside than the
-one it leaves ("ci → write (sent back)"), a value in angle brackets as outside ("outside → write"; one word for one idea, never "the start"), any other value no place spells in its words,
-and by the places' own parts when two moves would read alike ("ci (waiting) → write (waiting)"); a
-hidden state between such moves by the first and last things its items pass ("deliveries between
-write and sail_check"; never its places' states joined), with the places it spans listed in its
-evidence (`spans`) and its drawer, or by what sits there when they enter and leave one ("items
-waiting at sail"). No
-label's name is known to the core (rule 1), and label values keep their spelling (`sail_check`).
+words, in the order they spell it (`pile="write.held"`, `step="write"`, `place="held"`). A title
+says the place and the state only (the owner, 2026-11-02: "I don't know what 'deliveries'
+means"): a stock is what is said of what sits there, and where ("held at write"; "at write" when
+nothing is said of it); an `age` series of the same labels is the "age at" it ("age at write
+(held)"); a move between places is named by the things it leaves and enters ("write → ci"; inside
+one, "write: waiting → held"), "(sent back)" when it goes to a thing fewer moves from outside than
+the one it leaves ("ci → write (sent back)"), a value in angle brackets as outside ("outside →
+write"; one word for one idea, never "the start"), any other value no place spells in its words;
+a hidden state between such moves by the first and last things its items pass ("between write and
+sail_check"; never its places' states joined), with the places it spans listed in its evidence
+(`spans`) and its drawer, or by what is said of what sits there when they enter and leave one
+("waiting at sail"). What narrows a title is said beside it as **tags**, never in it: a list of
+short strings, on the part's evidence (`tags`) and as `tags` on every stock and flow of
+`/api/dynamics/model` (`[]` when none), on `/api/machines`' `model_parts`, on an instrument's
+series (`/api/instruments/…/series`, beside its `title`) and on a removed part of the diff. Each
+tag is either `label=value`, a label of the series its place does not spell (`workflow=delivery_sail`;
+a move's labels other than its places'), in the series' label order, or, bare, the noun its count
+view declares (`noun = "deliveries"`, a plural of one to four plain words: `deliveries`), after the
+labels; the noun a series' name ends in (`workflow_pile_items`: items) is its unit, said by neither.
+Two parts whose titles read alike are told apart by the tags they do not share ("held at write"
+twice, `workflow=delivery_sail` and `workflow=hotfix`): chips on the pages, and in running text
+after the title ("held at write · workflow=hotfix"); two moves that read alike with the same tags
+are said by their places' own parts ("ci (waiting) → write (waiting)"). A part's identifier is its
+key (§4.6) and its id, shown in its drawer and on hover, never as its name. No label's name is
+known to the core (rule 1), and label values keep their spelling (`sail_check`).
 Such a part's evidence says `named: "places"`. A series its own name and labels say in words is
 named so on the server too, with `named: "words"`: Orchestra's count of the bus by its type and
 source ("item.closed events (supervisor)"), and a series whose one label is a word of its name
@@ -1286,6 +1295,18 @@ it (rule 7).
   fails partway through a call repeats the elements already sent, so a listener de-duplicates by
   `version` and change ids. Intent events are records about a declaration, never
   hand-offs on the Machines page.
+- **Declared names.** A declared stock or effect linked to a discovered stock (`link`, its
+  `found_as` that stock's key), or a declared flow found as one discovered flow by its ends and
+  declared with a `name` of its own (not the "<from> → <to>" made when none is given), lends its
+  `name` to that part, once it is declared (a proposal lends none); a part two declarations name
+  takes the owner's, else the first's (`sd/intended/display.py`). `model.intended.names`
+  (`{stocks: {id: {name, part, id, provenance, linked?}}, flows: {…}}`) lists them, and each such
+  stock and flow of `/api/dynamics/model` (and of `/api/machines`' `model_parts`) carries it as
+  `declared_name`. The pages show it as the part's name, the generated title beneath it as its
+  identifier, with "named by <who>" from the declaration's provenance ("you", "the owner (quoted),
+  per supervisor"). It is display only: it binds no series, changes no title, key or equation, and
+  no page control sets it (rule 9): a plugin (the Supervisor) declares it, `declare_stock {id,
+  name}` then `link {part: "stock", id, found_as: <key>}`, or `declare_flow {id, from, to, name}`.
 - **The pages** (§10): `GET /api/dynamics/model?since=` gains `model.intended`, `/api/machines`
   gains each machine's `intent` (a declared machine not heard is appended, `unseen`, with no
   observed values: no `subscribes`, `publishes` or `mode`) and `comparison` (`heard`, or
