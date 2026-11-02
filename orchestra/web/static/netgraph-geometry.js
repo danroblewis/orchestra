@@ -175,6 +175,16 @@ const NetGeometry = (() => {
     return Math.round(Math.max(min, Math.min(max, (viewport || 0) - (used || 0))));
   }
 
-  return { size, edgePoint, frameOf, tetherPlaces, labelSize, placeLabels, tagBoxes, isolatedRows, fitView, boundsOf, viewHeight, PAD, GAP, DESK_K, VIEW_MIN, VIEW_MAX };
+  // what a redraw does to the layout. With ``resetOnStructure`` (the owner, 2026-11-02: "load the page
+  // and it already be in the position it would be after hitting Reset, and run the Reset operation
+  // when a new graph is generated"), a drawing whose structure is new (the first, a new version, a
+  // focus) is laid out exactly as the reset button lays it out: "reset"; while the viewer is
+  // dragging a node, once the drag ends: "defer". Otherwise (the same structure, new data): "keep".
+  function onRender({ resetOnStructure = false, structural = false, dragging = false } = {}) {
+    if (!resetOnStructure || !structural) return "keep";
+    return dragging ? "defer" : "reset";
+  }
+
+  return { size, edgePoint, onRender, frameOf, tetherPlaces, labelSize, placeLabels, tagBoxes, isolatedRows, fitView, boundsOf, viewHeight, PAD, GAP, DESK_K, VIEW_MIN, VIEW_MAX };
 })();
 if (typeof module === "object" && module.exports) module.exports = NetGeometry;

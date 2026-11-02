@@ -149,7 +149,7 @@ function eventMap(d0) {
     $("evmap-host").innerHTML = `<div class="evmap"><div class="evbar" id="ev-bar"></div><div id="evsvg-host"></div>
       <div class="legend" id="ev-legend"></div>
       <div class="ng-loops" id="loops"></div></div>`;
-    GRAPH = NetGraph.create($("evsvg-host"), { key: "machines." + EV_MODE, height: 600, isolateHops: EV_MODE === "machines" ? 1 : 2, isolatedRow: true,
+    GRAPH = NetGraph.create($("evsvg-host"), { key: "machines." + EV_MODE, height: 600, isolateHops: EV_MODE === "machines" ? 1 : 2, isolatedRow: true, resetOnStructure: true,
       onClick: (x, kind) => { if (kind === "node" && x.machine) openMachine(x.mid || x.label); },   // the panel (or, elsewhere, the dialog)
       tip: (x, kind) => kind === "node" ? (x.machine ? `<div class="tt">${esc(x.label)}</div><div class="hint">${esc(rhythm(x.mid))} · click for its details${(byMid(x.mid) || {}).logs && byMid(x.mid).logs.length ? " and log" : ""}</div>`
           : x.channel ? `<div class="tt">${esc(x.label)}</div><div class="hint">a channel on another system's bus, known by counts</div><div class="tr"><span>produced</span><b>${perMin(x.channel.out_per_min)}/min</b></div><div class="tr"><span>consumed</span><b>${perMin(x.channel.in_per_min)}/min</b></div>${x.channel.backlog != null ? `<div class="tr"><span>waiting</span><b>${Math.round(x.channel.backlog).toLocaleString()}</b></div>` : ""}`
@@ -352,7 +352,7 @@ function legendOf(edges, nodes, d0) {
     has((e) => e.double) ? `<span>${sw("5px double #94a3b8")} counted on another system's bus (no events)</span>` : "",
   ].filter(Boolean);
   return items.join("") + `<label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_ALL ? "checked" : ""} onchange="window.EV_SHOW_ALL=this.checked;window.LOOPSIG=null;render()"> show events nobody listens for</label>`
-    + `<span class="muted">drag nodes (they stay where dropped; double-click to release) · scroll to zoom · hover to isolate · click a machine for its details</span>`;
+    + `<span class="muted">drag nodes (they stay where dropped until the structure of the map changes, which lays it out afresh as reset does; double-click to release) · scroll to zoom · hover to isolate · click a machine for its details</span>`;
 }
 function cards() {
   $("nm").textContent = DATA.machines.length;

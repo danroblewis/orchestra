@@ -194,7 +194,7 @@ function draw() {
   for (const n of nodes) n.decorate = Intended.decorator(n, n.sid ? Live.decorateStock : n.input ? Live.decorateInput : undefined);
   const sig = JSON.stringify([nodes.map((n) => n.id), edges.map((e) => e.id)]);
   if (!GRAPH || sig !== GSIG || !document.querySelector("#diagram svg")) {
-    if (!GRAPH || !document.querySelector("#diagram svg")) GRAPH = NetGraph.create($("diagram"), { key: "dynamics.v2", height: 620,   // v2: layouts saved before ELK are not reused
+    if (!GRAPH || !document.querySelector("#diagram svg")) GRAPH = NetGraph.create($("diagram"), { key: "dynamics.v2", height: 620, resetOnStructure: true,   // v2: layouts saved before ELK are not reused
       // one system: everything is inside but the clouds, the environment flows come from and go to
       boundary: { inside: (n) => n.kind !== "cloud", label: "the system · clouds: where its counters start and end" },
       // laid out by ELK (sd-layout.js): the system in layers along its flows, clouds beside their stocks
@@ -233,7 +233,7 @@ function draw() {
     + (m.stocks.some((s) => s.evidence && s.evidence.hidden) ? `<span class="lg" title="a stock no series measures: its level is what its counters imply"><i style="height:9px;width:14px;background:none;border:1.5px dashed var(--muted);border-radius:2px"></i>hidden: found from the levels, not measured</span>` : "")
     + (acc.size || window.SHOW_ACC ? `<label class="lg" style="cursor:pointer" title="stocks that only fill and that no flow shown feeds, such as the event bus's length"><input type="checkbox" ${window.SHOW_ACC ? "checked" : ""} onchange="showAcc(this.checked)" style="margin:0"> stocks that only fill, fed by nothing shown${acc.size ? ` (${acc.size})` : ""}</label>` : "")
     + Intended.legend()
-    + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it, through rediscoveries; double-click to release) · tidy lays out the rest · reset starts over · scroll to zoom · hover or click a stock or a flow</span>`;
+    + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it until the structure of the model changes, which lays the diagram out afresh as reset does; double-click to release) · tidy lays out the rest · reset starts over · scroll to zoom · hover or click a stock or a flow</span>`;
   fillHeight();
 }
 // on a desktop the diagram fills the viewport under the page's header, less the note and the legend

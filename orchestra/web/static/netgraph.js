@@ -30,7 +30,7 @@
 const NetGraph = (() => {
   const NS = "http://www.w3.org/2000/svg";
   const POS_KEY = (k) => `orchestra.netgraph.${k}`;
-  const { size, edgePoint, frameOf, tetherPlaces, labelSize, placeLabels, isolatedRows, fitView, boundsOf, PAD, DESK_K } = NetGeometry;
+  const { size, edgePoint, onRender, frameOf, tetherPlaces, labelSize, placeLabels, isolatedRows, fitView, boundsOf, PAD, DESK_K } = NetGeometry;
 
   // ``boundary``: {inside: node => bool, label}: a frame around the nodes inside (the system),
   // with every other node kept outside it, so what crosses the frame is visibly what crosses the
@@ -45,10 +45,13 @@ const NetGraph = (() => {
   // at any scale.
   // ``isolatedRow``: nodes linked to nothing are set in a row under the rest after the first layout,
   // rather than wherever the forces threw them.
+  // ``resetOnStructure``: a drawing whose structure is new (the first one included) is laid out as
+  // the reset button lays it out: placed from scratch, the viewer's placements and the saved
+  // positions forgotten, and fitted (NetGeometry.onRender); a redraw of the same structure moves nothing.
   // ``TOP``: the band at the top of the drawing the controls (reset, tidy, fit) sit in: a fit keeps
   // every node below it
   const NARROW = 600, TOP = 40, REVEAL_ALPHA = 0.1;
-  function create(container, { key, height = 600, isolateHops = 1, onClick, tip, boundary, layout, polish, isolatedRow = false } = {}) {
+  function create(container, { key, height = 600, isolateHops = 1, onClick, tip, boundary, layout, polish, isolatedRow = false, resetOnStructure = false } = {}) {
     container.innerHTML = "";
     const svgEl = document.createElementNS(NS, "svg");
     svgEl.setAttribute("class", "netgraph");
@@ -311,10 +314,13 @@ const NetGraph = (() => {
 
     function render(nodes, edges) {
       const newSig = JSON.stringify([nodes.map((n) => n.id + n.kind), edges.map((e) => e.id)]);
+      const mode = onRender({ resetOnStructure, structural: newSig !== sig, dragging });
+      if (mode === "defer") pendingReset = true;
       const old = new Map(NODES.map((n) => [n.id, n]));
       // a node keeps its place across redraws and structures; one the viewer dropped is marked so
+      // (a reset forgets the saved places: a node still drawn glides from where it is)
       NODES = nodes.map((n) => {
-        const o = old.get(n.id), sv = saved[n.id];
+        const o = old.get(n.id), sv = mode === "reset" ? null : saved[n.id];
         // a tethered node (a cloud) is never pinned: it always sits by the node it belongs to
         const p = o && o.x !== undefined ? [o.x, o.y] : sv, pin = !n.tether && (o ? !!o.pin : !!(sv && sv[2]));
         return { ...n, x: p ? p[0] : undefined, y: p ? p[1] : undefined, pin, fx: null, fy: null, _new: !p };
@@ -371,9 +377,10 @@ const NetGraph = (() => {
       nodeSel.on("mouseenter", (ev, n) => { HOVER = n.id; isolate(n.id); showTip(tip && tip(n, "node"), ev); }).on("mousemove", moveTip)
         .on("mouseleave", () => { HOVER = null; isolate(null); hideTip(); }).on("click", (ev, n) => { hideTip(); onClick && onClick(n, "node"); })
         // dragging moves this node alone (nothing else is pushed around), and it stays where it is dropped
-        .call(d3.drag().on("start", () => { if (sim) sim.stop(); if (settling) { settling = null; for (const n of NODES) { n.fx = n.fy = null; n._new = false; } } })
+        .call(d3.drag().on("start", () => { dragging = true; if (sim) sim.stop(); if (settling) { settling = null; for (const n of NODES) { n.fx = n.fy = null; n._new = false; } } })
           .on("start.place", () => { placing++; })                 // a layout in progress gives way to the viewer
-          .on("drag", (ev, d) => { d.x = ev.x; d.y = ev.y; tick(); }).on("end", (ev, d) => { d.pin = !d.tether; tick(); save(); relabel(); }))   // a cloud goes back beside its stock
+          .on("drag", (ev, d) => { d.x = ev.x; d.y = ev.y; tick(); }).on("end", (ev, d) => { dragging = false; d.pin = !d.tether; tick(); save(); relabel();
+            if (pendingReset) { pendingReset = false; resetLayout(); } }))   // a cloud goes back beside its stock
         .on("dblclick", (ev, d) => { ev.stopPropagation(); d.pin = false; settle(new Set([d.id]), 0.3, false); });   // let the forces place it again
       // parallel edges (several flows between the same two nodes) spread apart
       const par = new Map();
@@ -383,7 +390,8 @@ const NetGraph = (() => {
       // new nodes move, or nothing does
       RAW_EDGES = edges;
       const fresh = NODES.filter((n) => n._new);
-      if (layout && fresh.length === NODES.length && !settling) placeAll(false);
+      if (mode === "reset") { drawnOnce = true; resetLayout(); }
+      else if (layout && fresh.length === NODES.length && !settling) placeAll(false);
       // a layout settling carries on; it starts again only for new nodes (a redraw every few seconds
       // with nothing new must not keep it from ever settling, and the view from being fitted)
       else if (settling && !fresh.length && sim) {
@@ -437,7 +445,7 @@ const NetGraph = (() => {
     }
     // run the forces on ``movable`` nodes only; every other node, and every node the viewer placed,
     // is held where it is
-    let settling = null, drawnOnce = false, RAW_EDGES = [], placing = 0;
+    let settling = null, drawnOnce = false, RAW_EDGES = [], placing = 0, dragging = false, pendingReset = false;
     // place every node with ``layout`` (keeping the viewer's placements unless ``all``), then fit
     // Reset (``all``) and the first layout: the whole layout (``layout``, then ``polish``) is worked
     // out in the background, and the nodes glide once, to where it ends. Tidy (``fromHere``): only
@@ -560,18 +568,21 @@ const NetGraph = (() => {
     // lay it out again: around the viewer's placements, or (``reset``) from nothing
     function tidy(reset) {
       if (!NODES.length) return;
+      if (reset) { resetLayout(); return; }
       asked = true;
-      if (layout) {                                              // the layout engine, not the forces
-        if (reset) for (const n of NODES) { n.pin = false; delete saved[n.id]; }
-        userZoomed = false;
-        placeAll(reset, !reset);                                 // tidy: from where the nodes are
-        return;
-      }
-      if (reset) {
-        for (const n of NODES) { n.pin = false; n._new = true; delete saved[n.id]; }
-        placeNew(ALLEDGES.filter((e) => !e.toEdge).map((e) => ({ source: e.source.id, target: e.target.id })), new Map(NODES.map((n) => [n.id, n])));
-      }
       userZoomed = false;
+      if (layout) { placeAll(false, true); return; }             // the layout engine, from where the nodes are
+      settle(new Set(NODES.map((n) => n.id)), 1, true);
+    }
+    // reset: every position forgotten (the viewer's placements and the saved ones), the whole graph
+    // laid out from scratch and fitted. The button, and with ``resetOnStructure`` every new structure
+    function resetLayout() {
+      if (!NODES.length) return;
+      asked = true; userZoomed = false; pendingReset = false;
+      for (const n of NODES) { n.pin = false; delete saved[n.id]; }
+      if (layout) { settling = null; placeAll(true, false); return; }
+      for (const n of NODES) n._new = true;
+      placeNew(ALLEDGES.filter((e) => !e.toEdge).map((e) => ({ source: e.source.id, target: e.target.id })), new Map(NODES.map((n) => [n.id, n])));
       settle(new Set(NODES.map((n) => n.id)), 1, true);
     }
     function tick() {
