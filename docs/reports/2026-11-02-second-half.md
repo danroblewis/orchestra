@@ -1,4 +1,4 @@
-# The second half, 2026-11-02: report (draft)
+# The second half, 2026-11-02: report
 
 The unattended run of [GOAL-2026-11-02-second-half.md](../roadmap/GOAL-2026-11-02-second-half.md),
 run by [COORDINATOR.md](../roadmap/COORDINATOR.md), with product decisions taken by the owner proxy
