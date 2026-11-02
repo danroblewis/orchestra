@@ -438,8 +438,6 @@ on the `NetGeometry` split (20:02Z); the Items graph fix merged first.
 
 ## Addendum, 2026-11-02 (after the owner's return)
 
-From the progress log, 04:18Z to 05:38Z.
-
 **1. Your words, and what the coordinator got wrong.** You looked at the example demo's Dynamics
 page at 04:19Z: "not very impressive. The names of the all the system dynamics stocks are weird,
 most of the agents in the Event Map look like they both publish and subscribe to the same events.
@@ -466,8 +464,8 @@ it, because no Supervisor runs in delivery_sail. D1 (04:49Z) changed three thing
 - **States.** "Unconfirmed" is gone. A machine reads "heard · proposed by the workflows plugin",
   "declared, never heard" or "confirmed by <who>".
 
-D1 has limits. A stock reads "waiting at", not "waiting for", because the core has no step words.
-`ci` stays lowercase, and hand-off arrows are labelled by event type, not by step. D1 passed 1115
+Limits: "waiting at", not "waiting for" (the core has no step words); `ci` stays lowercase;
+hand-off arrows are labelled by event type, not step. D1 passed 1115
 tests, rc=0, and is in core main `fc007dc9`. The plugins were relocked to core `a0ba8631`, and the
 example runs it as run17 (04:53Z).
 
