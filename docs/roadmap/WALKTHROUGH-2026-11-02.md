@@ -171,7 +171,9 @@ request, since no calendar time is supported yet (SPEC §12.1); it asks which ti
 means for a later 09:00 (default Q10: ask, guess none); says each reminder is a comment drafted to
 the Outbox that waits for the owner's approval; gives the prediction's id and when it is judged.
 (e) 90 s. The SRE answers the zone question: "This machine's clock."
-(f) Pass: L3's `check_nudger`; and the answer does not claim the nudger runs at 09:00.
+(f) Pass: L3's `check_nudger`; and the answer says what was declared ("09:00 <zone>"; the
+workflows scheduler honours `at` since T11) and, when the plugin's revision of the proposed
+machine waits for the owner's confirm, says so rather than claiming the zone is in force.
 What a two-ticket, sixty-minute run can show here: no model (each step moves at most three times
 and a flow needs five), so the expectation is recorded as waiting on a flow discovery has not found,
 and the answer says so. It must never say no metrics are collected: the Dynamics page lists the
