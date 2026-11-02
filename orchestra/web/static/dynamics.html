@@ -516,14 +516,16 @@ function erasBar() {
   const now = Date.now() / 1000, shown = m.era ?? "none", current = m.current_era ?? "none";
   const segs = [{ id: "none", label: "before any era", start: null }, ...eras];
   const when = (t) => (t ? Orchestra.when(t, { date: true }) : "the start");
-  const bar = segs.map((e, i) => { const end = i + 1 < segs.length ? segs[i + 1].start : now, len = e.start ? Math.max(1, end - e.start) : Math.max(1, (end - eras[0].start) / 4 || 1);
+  // no era recorded yet (a prediction waits for the era its change begins, SPEC §4.5): said, and no bar
+  const none = '<div class="eranone">No era recorded yet: the first begins when a machine says it changed the system. Each prediction below waits for its first era.</div>';
+  const bar = !eras.length ? "" : segs.map((e, i) => { const end = i + 1 < segs.length ? segs[i + 1].start : now, len = e.start ? Math.max(1, end - e.start) : Math.max(1, (end - eras[0].start) / 4 || 1);
     return `<button class="${e.id === shown ? "on" : ""} ${e.id === current ? "cur" : ""}" style="flex-grow:${Math.max(0.15, Math.sqrt(len))}" onclick="pickEra('${esc(e.id)}')"
       title="${esc(e.id === "none" ? "before any era" : `${e.id}: ${e.label}${e.subject ? " (" + e.subject + ")" : ""}, from ${when(e.start)}`)}${e.id === current ? " · current" : ""}">${esc(e.id === "none" ? "before" : e.id)}</button>`; }).join("");
   const e = eras.find((x) => x.id === shown);
   const head = e ? `era <b>${esc(e.id)}</b>${e.id === current ? " (current)" : ' <span class="past">· a past era</span>'}: began ${esc(ago(now - e.start))} ago, when ${esc(e.label)}${e.subject ? ` changed <span class="ty">${esc(e.subject)}</span>` : ""}`
     : "the time before any era";
   $("eras").innerHTML = `<div><span class="muted">Eras: a new one begins when a machine says it changed the system (<code>system.changed</code>, or <code>[discovery] eras_from</code>); each is discovered from its own data, with the era before as its prior.</span></div>
-    ${eras.length ? `<div class="eratl">${bar}</div><div>${head}</div><div class="erachg">${eraChanges(m)}</div>` : ""}${eraPredictions(m)}`;
+    ${eras.length ? `<div class="eratl">${bar}</div><div>${head}</div><div class="erachg">${eraChanges(m)}</div>` : none}${eraPredictions(m)}`;
 }
 // Predictions (sd/predictions.py, sd/judge.py): what the machine that made the era's change said
 // it would do, and the verdict once the horizon passed: the intended-effect test (drawn by
@@ -669,6 +671,17 @@ function offline() {
 function online() { Orchestra.conn(true); const x = $("ver-asof"); if (x) x.remove(); }
 // the server answered but the page could not draw what it sent: say what broke, not that the server is down
 function renderError(e) { const x = $("render-err"); x.textContent = `This page could not draw the model: ${(e && e.message) || e}. The server is answering; the rest of the page may be incomplete.`; x.style.display = ""; console.error(e); }
+// one panel's renderer failing says so in that panel only; the others still draw
+function paint(id, fn) {
+  const el = $(id), note = el && el.querySelector(":scope > .panel-err");
+  try { fn(); if (note && note.isConnected) note.remove(); }
+  catch (e) {
+    console.error(e);
+    if (!el) throw e;
+    const n = el.querySelector(":scope > .panel-err") || el.insertAdjacentElement("afterbegin", Object.assign(document.createElement("div"), { className: "panel-err stale" }));
+    n.textContent = `this panel could not be drawn: ${(e && e.message) || e}`; el.style.display = "";
+  }
+}
 function rendered() { const x = $("render-err"); if (x) x.style.display = "none"; }
 // with no model yet: the declared layer still says what is expected, waiting for a model
 async function expectedWaiting() {
@@ -713,7 +726,7 @@ async function load() {
           + `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d.discovery))} A level is a stock when counters balance it.</div>${keptNote(d.discovery, lo)}${leftOut(lo)}${unnamedBucket(d.discovery, lo)}</div>` : "");
       return;
     }
-    MODEL = d.model; versionBar(); erasBar(); draw(); tables(); rendered();
+    MODEL = d.model; paint("ver", versionBar); paint("eras", erasBar); paint("diagram", draw); paint("tables", tables); rendered();
     if (!HASH_SEEN) { HASH_SEEN = true; fromHash(); setTimeout(reserved, 3000); }
   } catch (e) { renderError(e); }
 }
@@ -731,8 +744,8 @@ setInterval(async () => {
   try {
     if (!d.ok) { if (!MODEL) load(); return; }
     const changed = !MODEL || d.model.version !== MODEL.version || d.model.as_of !== MODEL.as_of || Intended.sig(d.model) !== Intended.sig(MODEL);
-    if (!MODEL) { showModelParts(true); MODEL = d.model; versionBar(); erasBar(); draw(); tables(); if (!HASH_SEEN) { HASH_SEEN = true; fromHash(); } return; }
-    MODEL = d.model; versionBar(); erasBar(); if (changed) draw(); tables(); rendered();
+    if (!MODEL) { showModelParts(true); MODEL = d.model; paint("ver", versionBar); paint("eras", erasBar); paint("diagram", draw); paint("tables", tables); if (!HASH_SEEN) { HASH_SEEN = true; fromHash(); } return; }
+    MODEL = d.model; paint("ver", versionBar); paint("eras", erasBar); if (changed) paint("diagram", draw); paint("tables", tables); rendered();
   } catch (e) { renderError(e); }
 }, 15000);
 // /dynamics#s:<stock> and #x:<expected part> open that part's drawer (the Machines page links here);

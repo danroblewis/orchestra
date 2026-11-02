@@ -94,3 +94,10 @@ def test_the_dynamics_pages_tags_say_who_said_what():
     cards = LAYOUT.parent / "cards"
     r = subprocess.run(["node", "--test", "intended-tags.test.mjs"], cwd=cards, capture_output=True, text=True, timeout=120, check=False)
     assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs Node")
+def test_the_eras_bar_with_no_era_and_the_panel_wrapper():
+    here = LAYOUT.parent / "eras"
+    r = subprocess.run(["node", "--test", "eras.test.mjs"], cwd=here, capture_output=True, text=True, timeout=120, check=False)
+    assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]

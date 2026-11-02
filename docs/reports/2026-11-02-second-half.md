@@ -18,6 +18,10 @@ ready, and the core's fixes small: P1 was already fixed, and P2 and P4 were fixe
 
 Each is answerable in one sentence. Until you answer, the run uses the default in brackets.
 
+Answer these two first; your return raised them (see the addendum). How much traffic may the SCRUM
+board take from the standing live demo? [not started] Will you give a Slack bot token (`xoxb-`)?
+This is question 9 below. [Slack disabled]
+
 ### The goal's own questions
 
 1. Which Jira Data Center project and board, and which GitHub repository, should Orchestra watch
@@ -431,3 +435,78 @@ on the `NetGeometry` split (20:02Z); the Items graph fix merged first.
 - **Restarts minted a new login token for about a minute** before the pin; you saw it change
   (19:10Z). `restart-example.sh` now writes the pinned token first.
 - **Cleanup leaks.** An orphaned `fake_bridges.py` ran 5 h 30 from a plugin test (killed 00:10Z).
+
+## Addendum, 2026-11-02 (after the owner's return)
+
+**1. Your words, and what the coordinator got wrong.** You looked at the example demo's Dynamics
+page at 04:19Z: "not very impressive. The names of the all the system dynamics stocks are weird,
+most of the agents in the Event Map look like they both publish and subscribe to the same events.
+These are bad things. I would have expected one of our reviewer steps to notice this. Most of the
+agents in the event map are still marked 'unconfirmed', I would have expected those to be tested
+somehow? Are there unconfirmed stocks as well? What does confirmed or unconfirmed even mean here?
+If one of the demo apps is integrated with our sample Jira API and some sort of Slack or whatever,
+that would be impressive." On :8101 the stocks were named "write (waiting) · delivery_sail" and
+"git branch commits (main)", and the floor's offer events, which every role machine both publishes
+and subscribes to, filled the map. Two of the faults were the coordinator's. It ran the
+release gate with `skip=[ux, models]`. It also judged R2's naming row fixed from the code, without
+looking at the page.
+
+**2. What "unconfirmed" meant, and what the pages say now (D1).** "Unconfirmed" meant a machine
+the Workflows plugin proposed from the definition and that was heard on the bus. Nothing confirmed
+it, because no Supervisor runs in delivery_sail. D1 (04:49Z) changed three things:
+
+- **Names.** Stocks now read "items waiting at write", "items waiting at review" and "commits on
+  main". Flows read "start → write", "ci → write (sent back)", "review → sail" and "sail_check →
+  end".
+- **The Machines map.** A machine that exchanges event types both ways with two or more others is
+  drawn as a hub. Its types fold into one thin `offer.*` line, and hand-offs are drawn machine to
+  machine, "through supervisor". On task_loop that gives worker → reviewer → merge_gate.
+- **States.** "Unconfirmed" is gone. A machine reads "heard · proposed by the workflows plugin",
+  "declared, never heard" or "confirmed by <who>".
+
+Limits: "waiting at", not "waiting for" (the core has no step words); `ci` stays lowercase;
+hand-off arrows are labelled by event type, not step. D1 passed 1115
+tests, rc=0, and is in core main `fc007dc9`. The plugins were relocked to core `a0ba8631`, and the
+example runs it as run17 (04:53Z).
+
+**3. The public demo without the task system.** At 04:56Z orchestra.dansproject.space switched to
+the Workflows task_loop example. It runs from `~/orchestra-live-demo/restart-task-loop.sh` (agents
+`demo-task-loop`, merged as `8dc2501`), makes 5 items every 300 s, and cannot import tasking. The
+old `restart.sh` would reinstall tasking; `README-task-loop.md` beside it says so.
+
+**4. The standing real-Jira demo (D2).** `delivery_live --standing` is built, merged and pushed
+(workflows `a63cf56`, agents `2be2a8f`). It opens one test ticket every 2 h while fewer than 2 are
+open, at most 12 a day. It keeps its counters across restarts, resumes, and pins its token. At the defaults, a day makes about 36 Jira writes,
+about 12 pull requests and about 80 GitHub writes, plus one cleanup commit and 288 polls per poller.
+The Supervisor pauses at a daily cap ($2 by default), with the reason on the Agents page; a turn
+already running may go slightly over. A dry run on fakes passed. The real run waits for your word
+on the board's traffic, and Slack still needs a bot token.
+
+**5. T2c, the third walkthrough (on T6).** 12 steps passed (2 to 9, 11 to 14), 2 misled (1, 15)
+and 2 failed (10, 16). The counts match T2b, on different steps. Step 8 is fixed: there is no
+"quiet, restart" claim, and the unasked wake calls the hold deliberate. Step 14 is fixed: it says
+it cannot tell the impact, where T2b said there was none. All three checks were good: no token in
+`logs/web.log`, `/api/dynamics/model` gave 404 and then 200 and never 500, and there was no
+coordinator card. The example's `--supervisor` started first time with the right role. Spend:
+$0.47 over 11 Haiku calls, and about $8.4 for the run. SCRUM-23 to 25 are Done and pull requests
+#21 to #23 merged.
+
+New findings:
+- At steps 1, 10 and 15 the Supervisor said the proposed machines and the nudger's program "don't
+  run", and pointed at a Coordinator that does not exist.
+- At step 10 the nudger listened for `github.pr.approved` and `changes_requested`, which never
+  appear on the bus, so `check_nudger` fails.
+- At step 16 it said "two were merged" when three were, said "the outbox will not send" when it
+  was only idle, and left out the triage verdict and the model.
+- On the Dynamics page, `erasBar()` breaks when a prediction exists but no era is recorded.
+
+**6. In progress.** T8 fixes T2c's findings: core `T8-eras` for the eras bar, and agents
+`T8-agents` for the Supervisor's wording, receives taken only from heard types, event tallies, the
+idle Outbox and the model's state. [outcome pending] UX2 is a two-round ux-review on the example,
+with its implementor on core branch `UX2`. [outcome pending]
+
+**7. The test leak (T7).** `test_host_launch.py`'s fixture stopped hosts only at teardown, which
+never runs when pytest is killed. `test_host_collect`, `test_endpoint_e2e`, `test_config_edit` and
+three launcher tests leaked on timeouts. A spawn fixture with a reaper (`tests/unit/reap.py`) now
+stops the process group. Merged and pushed as core `ff3876c7`: 1111 passed, 2 skipped, rc=0, and
+no orphan after the suite.
