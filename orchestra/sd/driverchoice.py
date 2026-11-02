@@ -29,7 +29,11 @@ driver is kept only when it passes all of these, in this order:
   source was never empty in the window, when its rate never fell below a floor that alone
   expects at least one event over the window and is above the lowest rate of the flow's own form
   (an intercept, or a driver that never reads zero: :8096 fitted gate → end as 0.366 + 4.82 ×
-  items held at review). The flow's own line (``c + k × source``) is held to the first test, and
+  items held at review). A form on another stock of the model is not held to either: it is an
+  interaction the simulator steps with the source's own limit (no stock gives more than it holds),
+  as a role's capacity on its held pile is (the claim ``2.0 − 1.4 × held``, the fuller the slower:
+  the Workflows plugin's task loop and delivery sail), and what it says at an empty source is the
+  role's readiness, not items claimed. The flow's own line (``c + k × source``) is held to the first test, and
   so is its plain constant: one that drains an empty source gives way to the proportion of the
   source, so a refused driver never falls back to a form that drains it faster. A source that
   read empty while the flow's events came is no evidence (``read_empty``): items that pass
@@ -55,6 +59,7 @@ from .path import Path, by_level, nelder_mead
 BINS = 120             # the stretches the events' dispersion is measured over
 TESTED = 12            # the leading drivers (by likelihood) put through the refutations
 LISTED = 6             # the refuted drivers recorded on the flow
+INPUT = "input:"         # a measured input's path; every other path a form reads is a stock of the model
 QUIET = {"instance", "instrument", "machine", "project", "source", "job", "le", "quantile", "__name__"}
 GENERIC = {"total", "count", "sum", "bucket", "seconds", "bytes", "max", "min", "avg", "current", "value", "info"}
 
@@ -396,7 +401,7 @@ def choose(cands: list[dict], plain: dict, src: str | None, paths: dict[str, Pat
         gain, why, how = _judge(w, cand, paths[cand["inputs"][0]], own, p_own, price, ll_trend)
         if why is None:
             continue
-        if not why and outflow:
+        if not why and outflow and cand["inputs"][0].startswith(INPUT):
             why = drains_empty(cand, paths[cand["inputs"][0]], empty, w.t, floor_of(own, p_own))
         priced += 1
         if why:
