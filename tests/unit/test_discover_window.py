@@ -110,3 +110,12 @@ def test_a_series_not_live_in_the_window_says_why_without_calling_its_writer_sil
         "too new to measure: its first point is after the window's last step, so the next discovery considers it")
     assert why['old_level{instrument="kicad"}'] == (
         "not written while its writer kicad was live in the window: its last point is 40 min before the end")
+
+
+def test_a_series_whose_writer_restarted_at_the_end_says_so_never_0_min_before_the_end():
+    # R3 (c): "its last point is 0 min before the end" for a writer that had just restarted
+    from orchestra.sd.series import Series, not_current_reason
+
+    end = 1_800_003_600.0
+    s = Series("jobs_total", {"machine": "kicad"}, [(end - 3600, 1.0), (end - 10, 2.0)], [], True)
+    assert not_current_reason(s, end) == "not written live at the end: its writer kicad restarted at the window's end, so the next discovery considers it"

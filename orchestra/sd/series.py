@@ -73,15 +73,25 @@ def not_current_reason(ser: Series, end: float) -> str:
     last = max((t for t, _ in ser.points), default=end)
     if ser.intervals:
         quiet = round((end - ser.intervals[-1][1]) / 60)
+        if not quiet:
+            return restarted(who)
         if who:
             return f"no longer written: its writer {who} has written nothing in the last {quiet} min of the window"
         return f"no longer written: nothing in the last {quiet} min of the window"
     if ser.points and ser.points[0][0] >= end:
         return "too new to measure: its first point is after the window's last step, so the next discovery considers it"
     ago = max(0, round((end - last) / 60))
+    if not ago:
+        return restarted(who)
     if who:
         return f"not written while its writer {who} was live in the window: its last point is {ago} min before the end"
     return f"not written in the window: its last point is {ago} min before the end"
+
+
+def restarted(who: str | None) -> str:
+    """Why a series written up to the window's end is not live there: its writer restarted at the
+    end (never "0 min before the end")."""
+    return f"not written live at the end: its writer{' ' + who if who else ''} restarted at the window's end, so the next discovery considers it"
 
 
 @dataclass(frozen=True)

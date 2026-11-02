@@ -745,6 +745,7 @@ async function load() {
     await loadKinds();
     showModelParts(d.ok);
     $("sd-note").textContent = d.sd_missing || ""; $("sd-note").style.display = d.sd_missing ? "" : "none";
+    $("focus-row").style.display = d.ok ? "" : "none";     // no chips to focus while there is no model to focus
     if (!d.ok) {
       const lo = d.discovery && d.discovery.left_out;       // no model yet: what discovery saw, and why each series was left out
       const src = d.discovery ? sourcesNote(d.discovery) : "";   // ... and the sources that were missing or refused
