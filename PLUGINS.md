@@ -693,6 +693,40 @@ Orchestra.panels.register({ id: "tasks", title: "Tasks", size: { w: 12, h: 9 }, 
 `size` is in grid columns of 12 and rows of 40 px. Where a panel sits, its size and whether it
 is shown belong to the viewer and are kept in the browser.
 
+**A focus: `Orchestra.focus`** (`static/focus.js`, on the Machines and Dynamics pages). A part of the
+system your plugin knows (a workflow, say) can be shown on its own, as a sub-graph of the one
+event map and the one model, never a separate model. Offer it, and the pages draw a chip for it
+above each diagram; a click shows only that part, a second click (or "show everything") shows all:
+
+```js
+if (Orchestra.focus) Orchestra.focus.offer({
+  title: "delivery_sail",                    // the chip's name, and the focus's (kept in the hash: #focus=delivery_sail)
+  subtitle: "10 steps · 1 open",             // a few words beside it (a string, or a function the page calls on each redraw)
+  get: () => ({                              // the subset, read when the chip is pressed
+    machines: ["worker", "reviewer"],        // machine ids (or the names they are shown by)
+    events: ["offer.made"],                  // event types (optional: with none, every type between the machines)
+    stocks: ['workflow_pile_items{instrument="workflows.piles",pile="write.waiting",...}'],   // series keys (or stock ids)
+    flows: ['workflow_pile_moves_total{...}'],                                               // series keys (or flow ids)
+    reason: "the workflow's steps",          // said in the bar
+  }),
+});
+Orchestra.focus.update("delivery_sail", { subtitle: "10 steps · 2 open" });   // or offer it again: same title, replaced
+Orchestra.focus.set({ title, machines, events, stocks, flows, reason });      // without a chip
+Orchestra.focus.clear();
+```
+
+- A series key is how a discovery names a series: its name and every label but `project`, sorted,
+  `name{k="v",...}` (the `instrument` label the collector adds included).
+- With a focus, the event map draws the named machines and what passes among them (the hub and
+  relay rules unchanged), and each machine outside that hands work in or takes it out as a small
+  grey named stub at the edge; the Dynamics diagram draws the named stocks (and the ends of the
+  named flows) and every flow from or to them, a stock outside as a grey named stub beside the one
+  inside. The cards and the tables are filtered the same way, with "n of N". A bar says what is
+  shown of what, with one link that clears it.
+- A focus hides; it changes nothing that is computed (hypotheses, counts, loops, titles), and the
+  core never knows what it is about. It survives a refresh; it is restored from a link only when
+  your script offers the same title again (offering it again with a new subset updates it).
+
 **Helpers** in `app.js` that plugin scripts use: `$` (getElementById), `esc` (HTML-escape),
 `ago(seconds)`, `color(state)`, `openDrawer(html)` / `closeDrawer()`. `openMachine(id)` exists only
 on pages that load `machine-dialog.js`.

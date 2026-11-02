@@ -1711,7 +1711,14 @@ minutes, which allows for the store's scrape interval and the minute between rea
   refreshed while open. With eras recorded (§4.3) the map and the cards are of the current era by
   default, from its events alone (an announcement before it still says what a machine is and listens
   for); a menu picks a past era, the time before any, or all time
-  (`/api/machines?era=`).
+  (`/api/machines?era=`). On a desktop the map is as tall as the viewport less the header and its
+  own bar and legend (600 to 1100 px). **A focus** (`static/focus.js`, `Orchestra.focus`): a page
+  extension may offer a part of the system (a workflow) as a chip above the map; picked, the map
+  draws only the machines it names and what passes among them (the hub and relay rules unchanged),
+  each machine outside that hands work in or takes it out as a small grey named stub at the edge,
+  and the cards are filtered the same way, with a bar ("showing <title>: n of N machines · show
+  everything"). A focus is a view of the one map, never a separate one: it hides, and changes
+  nothing computed; it is kept in the hash (`#focus=<title>`) and restored when offered again.
 - **Instruments:** every instrument (`web/instruments.py`): a script (`[[collect]]`), a URL
   (`[[scrape]]`) or a source (`[[sources]]`), the project's and the plugins', with its target, how
   often it is read, its last write and how many points, its failures and last error, and its log;
@@ -1739,8 +1746,13 @@ minutes, which allows for the store's scrape interval and the minute between rea
 
 The model's graph frames **the system**. There is one system: every stock and auxiliary is
 inside it, and only the environment (the clouds flows come from and go to) is outside, so what
-crosses the frame is what the model does not explain. Subsystems (perhaps feedback loops in boxes
-of their own) are a later question. A **rediscover now** button reruns discovery in the background (an observation: it
+crosses the frame is what the model does not explain. A part of it may be shown on its own (a
+**focus**, as on the Machines page; the owner, 2026-11-02: "they deserve to be shown on their own,
+but they are inherently interconnected to the whole system"): the stocks a page extension names by
+their series keys, every flow from or to them, a stock outside drawn as a grey named stub just
+outside the frame beside the stock inside, and the tables filtered the same way; the loops, the
+hypotheses and the counts stay those of the whole model. The diagram on a desktop is as tall as
+the viewport less the header and the legend (600 to 1100 px). A **rediscover now** button reruns discovery in the background (an observation: it
 re-reads the metrics and may save a version, as the host does every 5 minutes). With eras, the
 timeline's era shows the predictions of the change that began it, with their verdicts;
 `/dynamics?era=<id>` opens an era.
@@ -1755,9 +1767,12 @@ groups) so that no two lines cross (flows, dashed influences and cloud stubs ali
 behind a box unless avoiding it would shrink the drawing below readable size; nodes glide to each stage. Edge labels sit where they cover no box and no
 other label (`placeLabels`); the Machines page's event map uses d3's forces, its lines in
 their machine's colour, toned down (`static/edge-color.js`: solid, it publishes; dashed, it
-listens; near-grey, not seen in 24 hours; full colour on hover). A layout keeps its shape: only
-new nodes are placed (the known ones held still), every position is remembered per viewer,
-dragging moves one node, and "tidy" or "reset" lay it out again on purpose. The layout is measured
+listens; near-grey, not seen in 24 hours; full colour on hover). A layout keeps its shape while
+its structure does: a refresh of the same nodes and edges moves nothing, and dragging moves one
+node. A new structure (the first drawing, a new version, a focus) is laid out exactly as "reset"
+lays it out, from scratch and fitted (the owner, 2026-11-02: "load the page and it already be in
+the position it would be after hitting Reset"; not while a node is being dragged, after it);
+"tidy" lays it out again around the viewer's placements. The layout is measured
 (`static/layout-score.js`) by `tests/layout` on saved models (`tests/fixtures/dynamics`). On the Dynamics page each stock has at most one source cloud and one sink cloud. A cloud is
 placed by rule: just outside the frame, level with its stock, on the side whose stub (and the
 influences into it) crosses fewest lines and boxes, nearest first, a crossing worth at most 300 px

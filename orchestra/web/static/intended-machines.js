@@ -408,7 +408,8 @@ const IntendedMachines = (() => {
     // a declared machine nothing has been heard from is read with its event types (frame E1)
     if (m.intent && !m.intent.heard && typeof EV_MODE !== "undefined" && EV_MODE !== "events" && typeof setMode === "function") { MODE_BEFORE = MODE_BEFORE || EV_MODE; setMode("events", false); }
     else if (typeof render === "function") render();
-    if (decodeURIComponent(location.hash.slice(1)) !== id) { try { history.replaceState(history.state, "", "#" + encodeURIComponent(id)); } catch (e) {} }
+    // the address names the machine; a focus beside it (focus.js) stays
+    if (Focus.hashId(location.hash) !== id) { try { history.replaceState(history.state, "", location.pathname + location.search + Focus.hashWith(id, location.hash)); } catch (e) {} }
     // on a phone, or from a card below the fold, the panel is out of sight: bring it into view
     const side = $("im-side");
     // (after the map is redrawn, which may change the page's height above the panel)
@@ -426,7 +427,7 @@ const IntendedMachines = (() => {
     const was = OPEN;
     OPEN = null; UNKNOWN = null;
     if (MODE_BEFORE && typeof setMode === "function") { const was = MODE_BEFORE; MODE_BEFORE = null; setMode(was, false); }
-    if (location.hash.length > 1) { try { history.replaceState(history.state, "", location.pathname + location.search); } catch (e) {} }
+    if (Focus.hashId(location.hash)) { try { history.replaceState(history.state, "", location.pathname + location.search + Focus.hashWith("", location.hash)); } catch (e) {} }
     if (typeof render === "function") render();
     if (was && typeof CSS !== "undefined") { const n = document.querySelector(`g.ng-node[data-id="${CSS.escape("m:" + was)}"]`); if (n) try { n.focus({ preventScroll: true }); } catch (e) {} }
   }

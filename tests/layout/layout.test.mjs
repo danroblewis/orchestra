@@ -94,3 +94,57 @@ test("ten connected machines and one alone fit a 1330×600 view at no less than 
   const sx = host.x * after.k + after.tx, sy = host.y * after.k + after.ty;
   assert.ok(sx > 0 && sx < 1330 && sy > 40 && sy < 600, `host at ${sx}, ${sy}`);
 });
+
+// The Machines map and the Dynamics diagram on a desktop fill the viewport under the header
+// (NetGeometry.viewHeight, 600 to 1100 px): on a 1440×1000 screen with 160 px of header, bar and
+// legend the drawing is 840 px tall, and the same eleven machines fit it whole, larger than at 600.
+test("a desktop drawing as tall as the viewport allows fits the map larger, every node in view", () => {
+  const { viewHeight, fitView, boundsOf, isolatedRows, DESK_K } = require(path.join(STATIC, "netgraph-geometry.js"));
+  assert.equal(viewHeight(1000, 160), 840);
+  assert.equal(viewHeight(700, 160), 600, "never shorter than 600");
+  assert.equal(viewHeight(1600, 160), 1100, "never taller than 1100");
+  const ring = Array.from({ length: 10 }, (_, i) => ({ id: "m:" + i, kind: "circle", label: "machine " + i, x: 200 + 260 * Math.cos(i * Math.PI / 5), y: 220 + 260 * Math.sin(i * Math.PI / 5) }));
+  const host = { id: "m:host", kind: "circle", label: "orchestra-host", x: 0, y: 0 };
+  Object.assign(host, { x: isolatedRows([host], ring)[host.id][0], y: isolatedRows([host], ring)[host.id][1] });
+  const box = boundsOf([...ring, host]), h = viewHeight(1000, 160);
+  const short = fitView(box, { w: 1330, h: 600, top: 40, all: true }), tall = fitView(box, { w: 1330, h, top: 40, all: true });
+  assert.ok(short.k < DESK_K && tall.k > short.k, `600 px: ${short.k.toFixed(2)}, ${h} px: ${tall.k.toFixed(2)}`);
+  for (const n of [...ring, host]) {
+    const sx = n.x * tall.k + tall.tx, sy = n.y * tall.k + tall.ty;
+    assert.ok(sx > 0 && sx < 1330 && sy > 40 && sy < h, `${n.id} at ${sx.toFixed(0)}, ${sy.toFixed(0)}`);
+  }
+});
+
+// Reset on every new structure (the owner, 2026-11-02: "We should load the page and it already been in
+// the position it would be after hitting Reset, and it should run the Reset operation when a new
+// graph is generated"). netgraph.js asks NetGeometry.onRender what a redraw does and runs the reset
+// button's own code (resetLayout) for "reset"; the reset forgets every position, so what it lays out
+// is a function of the graph alone: positions the nodes carried in (saved ones, the viewer's) change nothing.
+test("a new structure is laid out as reset lays it out; the same structure moves nothing; a drag defers it", () => {
+  const { onRender } = require(path.join(STATIC, "netgraph-geometry.js"));
+  assert.equal(onRender({ resetOnStructure: true, structural: true }), "reset", "the first drawing, a new version, a focus");
+  assert.equal(onRender({ resetOnStructure: true, structural: false }), "keep", "a data refresh of the same structure");
+  assert.equal(onRender({ resetOnStructure: true, structural: true, dragging: true }), "defer", "not while the viewer drags");
+  assert.equal(onRender({ resetOnStructure: false, structural: true }), "keep", "a graph that keeps its places");
+});
+
+test("the first drawing (with saved positions) and the reset end in the same layout", async () => {
+  const file = fs.readdirSync(FIXTURES).filter((f) => f.endsWith(".json")).sort()[0];
+  const model = JSON.parse(fs.readFileSync(path.join(FIXTURES, file), "utf8")).model;
+  const geo = { size, inside, frameOf, tetherPlaces };
+  const run = async (nodes, edges) => {
+    const elk = await SDLayout.layout(nodes, edges, { elk: new ELK(), ...geo, hierarchy: true });
+    return SDLayout.refine(nodes, edges, SDLayout.pack(nodes, edges, elk, geo), { ...geo, labelSize });
+  };
+  const { nodes, edges } = SDGraph.build(model);
+  const reset = await run(nodes.map((n) => ({ ...n })), edges);
+  // as a first drawing finds them: places saved by an earlier visit, some dragged by the viewer
+  const stale = nodes.map((n, i) => ({ ...n, x: 37 * i - 400, y: (i % 3) * 211, pin: i % 2 === 0 }));
+  const first = await run(stale, edges);
+  assert.deepEqual(first, reset);
+  // and a new structure (one stock fewer) is laid out from scratch too: the same as its own reset
+  const fewer = SDGraph.build({ ...model, stocks: model.stocks.slice(1), flows: model.flows.filter((f) => f.from !== model.stocks[0].id && f.to !== model.stocks[0].id) });
+  const placed = Object.fromEntries(Object.entries(reset));
+  const again = await run(fewer.nodes.map((n) => ({ ...n, x: (placed[n.id] || [0, 0])[0], y: (placed[n.id] || [0, 0])[1] })), fewer.edges);
+  assert.deepEqual(again, await run(fewer.nodes.map((n) => ({ ...n })), fewer.edges));
+});

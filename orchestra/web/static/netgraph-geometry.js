@@ -89,14 +89,20 @@ const NetGeometry = (() => {
       count.set(k, i + 1);
       out[n.id] = spot(s, side, i);
       out[n.id].side = side;
+      // a focus's stub (focus.js) is named under or over itself on a top or bottom side: as wide as its name
+      // (a cloud's name runs to its right: twice that, centred on it), counted only beside a stub
+      out[n.id].w = !n.label ? 0 : n.stub ? String(n.label).length * 5.8 + 12 : 2 * (String(n.label).length * 5.8 + 20);
+      out[n.id].stub = !!n.stub;
     }
-    // clouds on one side never sit on each other: spread them along it, at least SPREAD apart
+    // clouds on one side never sit on each other: spread them along it, at least SPREAD apart (and a
+    // stub's name clear of its neighbours')
     const SPREAD = 38;
     for (const side of ["t", "b", "l", "r"]) {
       const along = side === "t" || side === "b" ? 0 : 1;
       const row = Object.values(out).filter((p) => p.side === side).sort((p, q) => p[along] - q[along]);
-      for (let i = 1; i < row.length; i++) row[i][along] = Math.max(row[i][along], row[i - 1][along] + SPREAD);
+      for (let i = 1; i < row.length; i++) row[i][along] = Math.max(row[i][along], row[i - 1][along] + (along || !(row[i - 1].stub || row[i].stub) ? SPREAD : Math.max(SPREAD, (row[i - 1].w + row[i].w) / 2)));
     }
+    for (const p of Object.values(out)) { delete p.w; delete p.stub; }
     return out;
   }
 
@@ -168,6 +174,23 @@ const NetGeometry = (() => {
     return [x0, y0, x1, y1];
   }
 
-  return { size, edgePoint, frameOf, tetherPlaces, labelSize, placeLabels, tagBoxes, isolatedRows, fitView, boundsOf, PAD, GAP, DESK_K };
+  // a desktop drawing's height: the viewport's, less what must stay on screen with it (the page's
+  // header, the drawing's own bar and legend), at least ``min`` and at most ``max``
+  const VIEW_MIN = 600, VIEW_MAX = 1100;
+  function viewHeight(viewport, used, { min = VIEW_MIN, max = VIEW_MAX } = {}) {
+    return Math.round(Math.max(min, Math.min(max, (viewport || 0) - (used || 0))));
+  }
+
+  // what a redraw does to the layout. With ``resetOnStructure`` (the owner, 2026-11-02: "load the page
+  // and it already be in the position it would be after hitting Reset, and run the Reset operation
+  // when a new graph is generated"), a drawing whose structure is new (the first, a new version, a
+  // focus) is laid out exactly as the reset button lays it out: "reset"; while the viewer is
+  // dragging a node, once the drag ends: "defer". Otherwise (the same structure, new data): "keep".
+  function onRender({ resetOnStructure = false, structural = false, dragging = false } = {}) {
+    if (!resetOnStructure || !structural) return "keep";
+    return dragging ? "defer" : "reset";
+  }
+
+  return { size, edgePoint, onRender, frameOf, tetherPlaces, labelSize, placeLabels, tagBoxes, isolatedRows, fitView, boundsOf, viewHeight, PAD, GAP, DESK_K, VIEW_MIN, VIEW_MAX };
 })();
 if (typeof module === "object" && module.exports) module.exports = NetGeometry;

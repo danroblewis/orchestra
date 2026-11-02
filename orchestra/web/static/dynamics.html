@@ -89,6 +89,7 @@
     </div></details>
   <div class="muted" id="sd-note" style="display:none;margin-bottom:6px"></div>
   <div class="panel stale" id="render-err" role="alert" style="display:none;margin-bottom:6px"></div>
+  <div class="focus-row" id="focus-row"></div>
   <div class="phone-list panel" id="phone-list"></div>
   <button class="ctl phone-only" id="show-diagram" onclick="document.body.classList.toggle('diag-on');this.textContent=document.body.classList.contains('diag-on')?'hide the diagram':'show the diagram';setTimeout(()=>GRAPH&&GRAPH.fit(),50)">show the diagram</button>
   <div id="diagram-box"><div class="diagram" id="diagram"></div>
@@ -109,6 +110,7 @@
 </div>
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
+<script src="/static/focus.js?v={{v}}"></script>
 <script src="/static/vendor/d3.min.js"></script>
 <script src="/static/netgraph-geometry.js?v={{v}}"></script>
 <script src="/static/netgraph.js?v={{v}}"></script>
@@ -185,7 +187,14 @@ function draw() {
   const ex = Intended.expectedIds();
   const g = Intended.extend(SDGraph.build(m, { showAll: window.SHOW_ALL, showAcc: window.SHOW_ACC, keep: new Set([...Intended.nearIds(), ...ex.stocks]), keepFlows: ex.flows, rare: Evidence.tooFew, place: placeOf, stockColor,
     moving: (f) => Live.has() && (Live.recentRate(f.id) || 0) > 0 }));
-  const { nodes, edges, causal, flows, acc, rare } = g;
+  const { causal, flows, acc, rare } = g;
+  // a focus (focus.js): only its stocks and the flows from and to them, a stock outside drawn as a grey
+  // stub beside the one inside; the loops, the legend and the notes are still of the whole model
+  let { nodes, edges } = g;
+  const F = Orchestra.focus.current();
+  if (F) { const fc = Focus.dynamics(nodes, edges, Focus.resolve(m, F)); nodes = fc.nodes; edges = fc.edges;
+    Orchestra.focus.mount($("focus-row"), { shown: fc.inside, total: fc.total, noun: "stocks", outside: fc.outside.join(", ") }); }
+  else Orchestra.focus.mount($("focus-row"), null);
   window.PLACES = (g.places || []).length;
   // a flow's label: the equation, or the observed rate first where it parts from it (dynamics-live.js)
   for (const e of edges) if (e.flowPart && e.fid && Array.isArray(e.label)) { e.eqLabel = e.label[0]; const u = Live.edgeLabel(e); if (u) { e.label = u.label; e.quiet = u.quiet; e.warn = u.warn; } }
@@ -194,7 +203,7 @@ function draw() {
   for (const n of nodes) n.decorate = Intended.decorator(n, n.sid ? Live.decorateStock : n.input ? Live.decorateInput : undefined);
   const sig = JSON.stringify([nodes.map((n) => n.id), edges.map((e) => e.id)]);
   if (!GRAPH || sig !== GSIG || !document.querySelector("#diagram svg")) {
-    if (!GRAPH || !document.querySelector("#diagram svg")) GRAPH = NetGraph.create($("diagram"), { key: "dynamics.v2", height: 620,   // v2: layouts saved before ELK are not reused
+    if (!GRAPH || !document.querySelector("#diagram svg")) GRAPH = NetGraph.create($("diagram"), { key: "dynamics.v2", height: 620, resetOnStructure: true,   // v2: layouts saved before ELK are not reused
       // one system: everything is inside but the clouds, the environment flows come from and go to
       boundary: { inside: (n) => n.kind !== "cloud", label: "the system · clouds: where its counters start and end" },
       // laid out by ELK (sd-layout.js): the system in layers along its flows, clouds beside their stocks
@@ -212,11 +221,11 @@ function draw() {
         w.onerror = (ev) => { reject(ev.message || ev); w.terminate(); };
         w.postMessage({ nodes, edges, at, fixed });
       }) : null,
-      tip: (x, kind) => Intended.tip(x) ?? (kind === "node" ? (x.sid ? Live.stockSummary(x.sid) : x.place ? `<div class="tt">${esc(x.label)}</div><div class="muted">a place its counters name, kept as no stock${x.why ? `: ${esc(x.why)}` : ""}</div>` : x.fid ? Live.flowSummary(x.fid) : "") : (x.fid ? Live.flowSummary(x.fid) : "")),
-      onClick: (x, kind) => { if (Intended.click(x)) return; if (x.sid) Live.openStock(x.sid); else if (x.fid) Live.openFlow(x.fid); } });
+      tip: (x, kind) => x.stub ? `<div class="tt">${esc(x.label)}</div><div class="muted">a stock outside this focus · show everything to see it in place</div>` : Intended.tip(x) ?? (kind === "node" ? (x.sid ? Live.stockSummary(x.sid) : x.place ? `<div class="tt">${esc(x.label)}</div><div class="muted">a place its counters name, kept as no stock${x.why ? `: ${esc(x.why)}` : ""}</div>` : x.fid ? Live.flowSummary(x.fid) : "") : (x.fid ? Live.flowSummary(x.fid) : "")),
+      onClick: (x, kind) => { if (x.stub) return; if (Intended.click(x)) return; if (x.sid) Live.openStock(x.sid); else if (x.fid) Live.openFlow(x.fid); } });
     GSIG = sig;
     GRAPH.render(nodes, edges);
-    loops(nodes, causal, g.places);
+    loops(g.nodes, causal, g.places);
   } else GRAPH.render(nodes, edges);
   Live.drawn(GRAPH);
   // what is not drawn is said: the flows with too few events to fit (folded under "flows with no events")
@@ -233,8 +242,18 @@ function draw() {
     + (m.stocks.some((s) => s.evidence && s.evidence.hidden) ? `<span class="lg" title="a stock no series measures: its level is what its counters imply"><i style="height:9px;width:14px;background:none;border:1.5px dashed var(--muted);border-radius:2px"></i>hidden: found from the levels, not measured</span>` : "")
     + (acc.size || window.SHOW_ACC ? `<label class="lg" style="cursor:pointer" title="stocks that only fill and that no flow shown feeds, such as the event bus's length"><input type="checkbox" ${window.SHOW_ACC ? "checked" : ""} onchange="showAcc(this.checked)" style="margin:0"> stocks that only fill, fed by nothing shown${acc.size ? ` (${acc.size})` : ""}</label>` : "")
     + Intended.legend()
-    + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it, through rediscoveries; double-click to release) · tidy lays out the rest · reset starts over · scroll to zoom · hover or click a stock or a flow</span>`;
+    + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it until the structure of the model changes, which lays the diagram out afresh as reset does; double-click to release) · tidy lays out the rest · reset starts over · scroll to zoom · hover or click a stock or a flow</span>`;
+  fillHeight();
 }
+// on a desktop the diagram fills the viewport under the page's header, less the note and the legend
+// under it (600 to 1100 px, NetGeometry.viewHeight); a phone keeps its own height
+function fillHeight() {
+  if (!GRAPH || innerWidth <= 760 || !document.querySelector("#diagram svg")) return;
+  const header = $("nav") ? $("nav").offsetHeight : 0, under = $("diagram-note").offsetHeight + $("legend").offsetHeight + 24;
+  GRAPH.setHeight(NetGeometry.viewHeight(innerHeight, header + under + 16));
+}
+let RESIZE_T = null;
+addEventListener("resize", () => { clearTimeout(RESIZE_T); RESIZE_T = setTimeout(fillHeight, 150); });
 // a place a flow's counter names where discovery kept no stock (sd-graph.js placeOf)
 const placeOf = (v) => SDGraph.placeOf(MODEL, v);
 // a flow's end as the diagram draws it: its stock, the place it names "(not a stock)", or outside at a cloud
@@ -409,10 +428,18 @@ const levelText = (v, unit) => { const u = unit || ""; const one = v === 1 && /s
 // a row that opens a drawer, from the pointer or the keyboard
 const opens = (fn) => `tabindex="0" role="button" style="cursor:pointer" onclick="${fn}" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();${fn}}"`;
 let TABLES_SIG = null;
+// with a focus (focus.js), the stocks it names and the flows from or to them (or that it names)
+function focused(m) {
+  const F = Orchestra.focus.current(); if (!F) return { F: null, stocks: m.stocks, flows: m.flows };
+  const ids = Focus.resolve(m, F);
+  for (const f of m.flows) if (ids.flows.has(f.id)) for (const s of [f.from, f.to]) if (s) ids.stocks.add(s);
+  return { F, stocks: m.stocks.filter((s) => ids.stocks.has(s.id)), flows: m.flows.filter((f) => ids.flows.has(f.id) || ids.stocks.has(f.from) || ids.stocks.has(f.to)) };
+}
 function tables() {
   const m = MODEL, byMachine = Object.fromEntries(m.machines.map((x) => [x.id, x]));
+  const fx = focused(m), of = (n, N) => (fx.F ? `${n} of ${N} · ${fx.F.title}` : N);
   const sig2 = Live.sig2, per = Live.per();
-  const flowsHtml = `<tr><th>flow</th><th>observed · equation</th><th>fit</th><th title="machines whose events match the flow's counter: hypotheses, with their confidence. Two similar flows between the same stocks may not be told apart, so a hypothesis may belong to a flow's twin.">machines (hypotheses)</th></tr>` + m.flows.map((f) => { const e = f.current, q = (e && e.quality) || {};
+  const flowsHtml = `<tr><th>flow</th><th>observed · equation</th><th>fit</th><th title="machines whose events match the flow's counter: hypotheses, with their confidence. Two similar flows between the same stocks may not be told apart, so a hypothesis may belong to a flow's twin.">machines (hypotheses)</th></tr>` + fx.flows.map((f) => { const e = f.current, q = (e && e.quality) || {};
     const end = (which) => endOf(f, which);
     const same = SDGraph.sameAs(m, f);
     const zero = e && (q.events ?? 0) === 0 && (Object.values(e.params || {}).some((x) => x) || (e.spec && e.spec.value));
@@ -421,17 +448,17 @@ function tables() {
       <td class="mcell">${machinesCell(m, f, byMachine)}</td></tr>`; }).join("");
   // how far to trust each stock, as its drawer says it
   const trustCell = Evidence.trustCell;
-  const stocksHtml = `<tr><th>stock</th><th>now</th><th>trust</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr data-sid="${esc(s.id)}" ${opens(`Live.openStock('${esc(s.id)}')`)}><td>${stockHead(s.id)}${stockAbout(s.id)}</td><td class="num" style="white-space:nowrap">${!Live.has() ? '<span class="muted">loading…</span>' : Live.now(s.id) != null ? levelText(Live.now(s.id), unitOf(s)) : "—"}</td><td>${trustCell(s)}</td>
+  const stocksHtml = `<tr><th>stock</th><th>now</th><th>trust</th><th>bound to series</th></tr>` + fx.stocks.map((s) => `<tr data-sid="${esc(s.id)}" ${opens(`Live.openStock('${esc(s.id)}')`)}><td>${stockHead(s.id)}${stockAbout(s.id)}</td><td class="num" style="white-space:nowrap">${!Live.has() ? '<span class="muted">loading…</span>' : Live.now(s.id) != null ? levelText(Live.now(s.id), unitOf(s)) : "—"}</td><td>${trustCell(s)}</td>
       <td class="muted bound">${boundCell(s)}</td></tr>`).join("");
   const hypm = m.machines.filter((x) => x.attributed.length), total = (window.MLIST || []).length;
   const machinesHtml = `<tr><th>machine</th><th>kind</th><th>flows (hypotheses)</th></tr>` + hypm.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span><a href="/machines#${encodeURIComponent(x.id)}">${esc(x.name)}</a>${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
       <td>${kindWord(x.id, x.kind)}</td><td class="num">${x.attributed.length}</td></tr>`).join("");
   // a poll that changes nothing redraws nothing: focus, a selection and the declared layer's marks stay
-  const sig = JSON.stringify([flowsHtml, stocksHtml, machinesHtml, m.discovery, m.intended, window.ACC_HIDDEN, total, m.stored, m.levels_error, m.flows.map((f) => Live.has() && Live.against(f).differs)]);
+  const sig = JSON.stringify([fx.F && fx.F.title, flowsHtml, stocksHtml, machinesHtml, m.discovery, m.intended, window.ACC_HIDDEN, total, m.stored, m.levels_error, m.flows.map((f) => Live.has() && Live.against(f).differs)]);
   phoneList(m);
   if (sig === TABLES_SIG) return;
   TABLES_SIG = sig;
-  $("nflows").textContent = m.flows.length; $("nstocks").textContent = m.stocks.length; $("nmachines").textContent = `${hypm.length} of ${total || m.machines.length}`;
+  $("nflows").textContent = of(fx.flows.length, m.flows.length); $("nstocks").textContent = of(fx.stocks.length, m.stocks.length); $("nmachines").textContent = `${hypm.length} of ${total || m.machines.length}`;
   $("flows").innerHTML = flowsHtml; $("stocks").innerHTML = stocksHtml; $("machines").innerHTML = machinesHtml;
   const fitted = m.flows.filter((f) => f.current && f.current.origin === "fitted" && !Evidence.tooFew(f)).length;
   const d = m.discovery || {};
@@ -457,8 +484,9 @@ function tables() {
 // each flow with its ends and its observed rate (the drawing is behind "show the diagram")
 function phoneList(m) {
   const el = $("phone-list"); if (!el) return;
-  const rows = m.stocks.map((s) => { const n = Live.now(s.id); return `<div class="pl" ${opens(`Live.openStock('${esc(s.id)}')`)}><span><b>${esc(stockName(s.id))}</b></span><span class="num">${!Live.has() ? "loading…" : n == null ? "—" : levelText(n, unitOf(s))}</span></div>`; }).join("");
-  const flows = m.flows.filter((f) => !Evidence.tooFew(f)).map((f) => { const a = Live.has() ? Live.against(f) : {};
+  const fx = focused(m);
+  const rows = fx.stocks.map((s) => { const n = Live.now(s.id); return `<div class="pl" ${opens(`Live.openStock('${esc(s.id)}')`)}><span><b>${esc(stockName(s.id))}</b></span><span class="num">${!Live.has() ? "loading…" : n == null ? "—" : levelText(n, unitOf(s))}</span></div>`; }).join("");
+  const flows = fx.flows.filter((f) => !Evidence.tooFew(f)).map((f) => { const a = Live.has() ? Live.against(f) : {};
     return `<div class="pl" ${opens(`Live.openFlow('${esc(f.id)}')`)}><span>${esc(flowName(f))} <span class="muted">${esc(endOf(f, "from"))} → ${esc(endOf(f, "to"))}</span></span><span class="num ${a.differs ? "stale" : ""}">${a.obs != null ? `${esc(Live.sig2(a.obs))} ${esc(Live.per())}` : "—"}</span></div>`; }).join("");
   el.innerHTML = `<h3 style="margin-top:0">Stocks</h3>${rows || '<div class="muted">none</div>'}<h3>Flows, observed</h3>${flows || '<div class="muted">none with events enough</div>'}`;
 }
@@ -736,6 +764,7 @@ async function load() {
 const RESERVE = "orchestra.dyn.reserve";
 try { const r = JSON.parse(localStorage.getItem(RESERVE) || "null"); if (r) { $("diagram").style.minHeight = r.diagram + "px"; $("tables").style.minHeight = r.tables + "px"; } } catch (e) {}
 function reserved() { try { localStorage.setItem(RESERVE, JSON.stringify({ diagram: $("diagram").offsetHeight, tables: $("tables").offsetHeight })); } catch (e) {} $("diagram").style.minHeight = ""; $("tables").style.minHeight = ""; }
+Orchestra.focus.mount($("focus-row"), null);   // the offers' chips, before the first model
 load();
 // follow the current model (a fit makes a new version), unless a past one is being read
 setInterval(async () => {
@@ -754,7 +783,7 @@ setInterval(async () => {
 // an s: not in this model falls back to the expected part of that id, and neither says why
 let HASH_SEEN = false;
 function fromHash() {
-  const h = decodeURIComponent(location.hash.slice(1));
+  const h = Focus.hashId(location.hash);          // a focus beside it (focus.js) is not a part's id
   const m = /^([sxf]):(.+)$/.exec(h); if (!m || !MODEL) return;
   const [, kind, id] = m, x = Intended.it(), exp = x && x.expected.find((e) => e.id === id && e.part !== "flow");
   if (kind === "f" && MODEL.flows.some((f) => f.id === id)) return Live.openFlow(id);
@@ -763,7 +792,9 @@ function fromHash() {
   if (kind === "s") { const st = MODEL.stocks.find((s) => Intended.stockKey(s) === id); if (st) return Live.openStock(st.id); }
   openDrawer(`<h3>${esc(id)} <span class="tag">not here</span></h3><div class="muted">This model has no stock, flow or expected part called <span class="ty">${esc(id)}</span>: discovery has not found it, and nothing declared it under that id. The link may be from an older version or another page's guess.</div>`);
 }
-window.addEventListener("hashchange", () => { if (/^#[sxf]:/.test(location.hash)) fromHash(); });
+window.addEventListener("hashchange", () => { if (/^[sxf]:/.test(Focus.hashId(location.hash))) fromHash(); });
+// a focus set or cleared: the diagram and the tables again (focus.js)
+document.addEventListener("orchestra:focus", () => { if (MODEL) { paint("diagram", draw); paint("tables", tables); } });
 </script>
 <script src="/static/dynamics-live.js?v={{v}}"></script>
 </body>
