@@ -1,6 +1,6 @@
 # Proposal: subsystems, boxes in the one map
 
-Status: proposal, 2026-11-02. Nothing built. It answers the
+Status: proposal, 2026-11-02. Step 1 (§7) built; steps 2 and 3 not built. It answers the
 owner's words of 2026-11-02 (`docs/roadmap/GOAL-2026-11-02-second-half.md`, the 21:49Z entry) and
 sits beside D2a, the names proposal in flight (scopes and nouns become tags beside a place-only
 name). No invariant of `AGENTS.md` changes; SPEC §10 gains a paragraph per step. This
@@ -186,7 +186,7 @@ attention). No page control that declares one. No partition by an event's `data`
 
 ## 7. Build plan
 
-1. **Server, additive.** `orchestra/sd/subsystems.py`: pure, the
+1. **Server, additive (built).** `orchestra/sd/subsystems.py`: pure, the
    model in, the partitions out (B3–B9); `web/dynamics.py` `model_view` adds
    `model.subsystems`; SPEC §10 says so. No page reads it yet. Tests, `tests/unit/test_subsystems.py`: writer labels
    and flags are never a partition; groups, unassigned and hidden stocks; flows inside, crossing

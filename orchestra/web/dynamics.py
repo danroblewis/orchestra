@@ -20,6 +20,7 @@ from ..sd import eras as era_record
 from ..sd import predictions as prediction_record
 from ..sd.no_model import NoModel, host_running, looked_at
 from ..sd.store import ModelStore
+from ..sd.subsystems import subsystems
 
 NONE = "no machine associated yet"
 
@@ -119,6 +120,7 @@ def model_view(project, version: int | None = None, levels: dict | None = None, 
         f["association"] = (assoc or {}).get("why") or (None if f["machines"] else NONE)
         f["machine"] = f["machines"][0]["machine"] if f["machines"] else None     # the colour it is drawn in
         f["current"] = f["equations"][-1] if f["equations"] else None
+    out["subsystems"] = subsystems(model)          # derived, display only (docs/proposals/subsystems.md)
     if model.discovery:
         out["discovery"]["looked_at"] = looked_at(model.discovery)
     out["levels"] = levels or {}

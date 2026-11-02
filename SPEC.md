@@ -1763,7 +1763,14 @@ crosses the frame is what the model does not explain. A part of it may be shown 
 but they are inherently interconnected to the whole system"): the stocks a page extension names by
 their series keys, every flow from or to them, a stock outside drawn as a grey named stub just
 outside the frame beside the stock inside, and the tables filtered the same way; the loops, the
-hypotheses and the counts stay those of the whole model. The diagram on a desktop is as tall as
+hypotheses and the counts stay those of the whole model. **Subsystems** (`sd/subsystems.py`,
+`docs/proposals/subsystems.md`): `/api/dynamics/model` reports `model.subsystems`, every partition
+of the model by a label its stocks' series carry (never who wrote them, nor `simulated` or
+`draft`; two values at least): per value its stocks, the flows inside it and the machines whose
+hypotheses lie in it; the unassigned; the machines spanning groups; and the flows crossing between
+each pair of groups (`count`, the simulated apart), the default first (the most flows kept inside a
+group, then the fewest crossing). Derived on read, display only, saved in no version; no page
+draws it yet. The diagram on a desktop is as tall as
 the viewport less the header and the legend (600 to 1100 px). A **rediscover now** button reruns discovery in the background (an observation: it
 re-reads the metrics and may save a version, as the host does every 5 minutes). With eras, the
 timeline's era shows the predictions of the change that began it, with their verdicts;
