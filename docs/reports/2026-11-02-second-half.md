@@ -447,10 +447,9 @@ These are bad things. I would have expected one of our reviewer steps to notice 
 agents in the event map are still marked 'unconfirmed', I would have expected those to be tested
 somehow? Are there unconfirmed stocks as well? What does confirmed or unconfirmed even mean here?
 If one of the demo apps is integrated with our sample Jira API and some sort of Slack or whatever,
-that would be impressive." The coordinator checked on :8101 and found stocks named
-"write (waiting) · delivery_sail" and "git branch commits (main)", and flows such as
-"orchestra events (supervisor, item.closed)". Every role machine published and subscribed to the
-floor's offer events, and they filled the map. Two of the faults were the coordinator's. It ran the
+that would be impressive." On :8101 the stocks were named "write (waiting) · delivery_sail" and
+"git branch commits (main)", and the floor's offer events, which every role machine both publishes
+and subscribes to, filled the map. Two of the faults were the coordinator's. It ran the
 release gate with `skip=[ux, models]`. It also judged R2's naming row fixed from the code, without
 looking at the page.
 
@@ -479,8 +478,7 @@ old `restart.sh` would reinstall tasking; `README-task-loop.md` beside it says s
 
 **4. The standing real-Jira demo (D2).** `delivery_live --standing` is built, merged and pushed
 (workflows `a63cf56`, agents `2be2a8f`). It opens one test ticket every 2 h while fewer than 2 are
-open, at most 12 a day. It keeps its counters across restarts, resumes, and pins its token. Slack's
-card names the token kind and scopes it needs. At the defaults, a day makes about 36 Jira writes,
+open, at most 12 a day. It keeps its counters across restarts, resumes, and pins its token. At the defaults, a day makes about 36 Jira writes,
 about 12 pull requests and about 80 GitHub writes, plus one cleanup commit and 288 polls per poller.
 The Supervisor pauses at a daily cap ($2 by default), with the reason on the Agents page; a turn
 already running may go slightly over. A dry run on fakes passed. The real run waits for your word
