@@ -22,6 +22,14 @@ driver is kept only when it passes all of these, in this order:
   under ``SHIFTED`` of the gain it has in place. A cause explains the events it causes when they
   happen; a series that moves smoothly explains a smooth rate as well an hour off.
 
+- **an outflow's rate goes to zero when its source is empty**: a flow that drains a stock takes
+  only what is there. A driver form of an outflow is refuted when, over the stretches its source
+  was empty, it expects at least one event (items that were not there to leave), or, when the
+  source was never empty in the window, when its rate never fell below a floor that alone
+  expects at least one event over the window (an intercept, or a driver that never reads zero: :8096 fitted gate → end as
+  0.366 + 4.82 × items held at review, which drains 22 items an hour from an empty gate). The
+  flow's own line (``c + k × source``) is held to the first test.
+
 What survives is the driver; when several survive within ``AIC_MARGIN`` of the best, the one
 nearest the flow by its name and labels (``adjacency``: the same unit, a shared service, queue or
 topic, words of the name) is preferred, a tie-break and never a reason on its own. When none
@@ -32,6 +40,7 @@ rather than explained by free disk. Every flow records what was tried and why th
 from __future__ import annotations
 
 import math
+from bisect import bisect_right
 
 from .drivers import AIC_MARGIN, EVENTS_PER_PARAM
 from .live import intersect, length
@@ -239,6 +248,52 @@ def _judge(w: Window, cand: dict, p: Path, ref: dict, p_ref: Path | None, price:
     return gain, why, {**how, **({"shifted": shift} if shift else {})}
 
 
+def _empty(p: Path) -> list[tuple[float, float]]:
+    """The stretches of the live time a stock's path held nothing (its level at most zero)."""
+    out: list[tuple[float, float]] = []
+
+    def add(a: float, b: float) -> None:
+        if out and abs(out[-1][1] - a) < 1e-9:
+            out[-1] = (out[-1][0], b)
+        else:
+            out.append((a, b))
+    for start, end in p.live:
+        i = bisect_right(p.times, start) - 1
+        level, t0 = (p.values[i] if i >= 0 else (p.values[0] if p.values else 0.0)), start
+        for t, v in zip(p.times[i + 1:], p.values[i + 1:]):
+            if t >= end:
+                break
+            if level <= 1e-9 and t > t0:
+                add(t0, t)
+            t0, level = t, v
+        if level <= 1e-9 and end > t0:
+            add(t0, end)
+    return out
+
+
+def drains_empty(cand: dict, p: Path, p_src: Path | None, t: float, driver: bool) -> str:
+    """Why an outflow's form does not go to zero when its source is empty (``p``: the path the form
+    reads; ``p_src``: its source's; ``t``: the live time), or nothing. ``driver``: a form on
+    another series, held to the floor test as well when the source was never empty."""
+    c, k = cand["params"].get("c", 0.0), cand["params"].get("k", 0.0)
+    rate = (lambda a, b: p.expected(a, b, c, k)) if cand["form"] != "constant" else (lambda a, b: max(0.0, c) * (b - a) / p.unit_s)
+    empty = _empty(p_src) if p_src is not None else []
+    if empty:
+        due = sum(rate(a, b) for a, b in empty)
+        if due >= 1.0:
+            held = sum(b - a for a, b in empty) / 60
+            return (f"an outflow takes only what its source holds: over the {held:.3g} min its source was empty this form expects "
+                    f"{due:.1f} events, of items that were not there")
+        return ""
+    if not driver or cand["form"] == "constant":
+        return ""
+    floor = min((max(0.0, c + k * x) for x in p.time_at), default=0.0)
+    if floor * t >= 1.0:
+        return (f"an outflow's rate must go to zero when its source is empty, and this one never falls below {floor:.3g} "
+                f"(at the lowest level of what it reads), which alone drains {floor * t:.1f} items over the window")
+    return ""
+
+
 def choose(cands: list[dict], plain: dict, src: str | None, paths: dict[str, Path], events: list, unit_s: float,
            near: dict[str, int] | None = None) -> tuple[dict, dict]:
     """The flow's chosen form and the evidence for its driver (or for having none). ``cands``: every
@@ -264,7 +319,10 @@ def choose(cands: list[dict], plain: dict, src: str | None, paths: dict[str, Pat
     own = plain
     for line in lines:
         if line["params"]["k"] >= 0:            # a drain that grows with what waits: the usual first-order outflow
-            if line["aic"] <= plain["aic"] - AIC_MARGIN:
+            if why := drains_empty(line, paths[src], paths[src], w.t, False):
+                line["refuted"] = why
+                ev["own_line"] = {"refuted": why}
+            elif line["aic"] <= plain["aic"] - AIC_MARGIN:
                 own = line
             continue
         gain, why, how = _judge(w, line, paths[src], plain, p_plain, AIC_MARGIN, ll_trend)
@@ -277,11 +335,14 @@ def choose(cands: list[dict], plain: dict, src: str | None, paths: dict[str, Pat
             own = line
             ev["own_line"] = {"chosen": True, **how}
     p_own = paths.get(own["inputs"][0]) if own["inputs"] else None
+    outflow = src is not None
     survivors, refuted, priced = [], [], 0
     for cand in open_[:TESTED]:
         gain, why, how = _judge(w, cand, paths[cand["inputs"][0]], own, p_own, price, ll_trend)
         if why is None:
             continue
+        if not why and outflow:
+            why = drains_empty(cand, paths[cand["inputs"][0]], paths.get(src), w.t, True)
         priced += 1
         if why:
             refuted.append({"driver": cand["inputs"][0], "form": cand["form"], "why": why})
