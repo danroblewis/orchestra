@@ -3,7 +3,7 @@ gate → end = 0.366 + 4.82 × items held at review, a rate that drains 22 items
 empty gate. A driver form of an outflow is refuted when it expects events while its source was
 empty, or, its source never empty, when its intercept alone expects one over the window."""
 
-from orchestra.sd.driverchoice import _empty, drains_empty
+from orchestra.sd.driverchoice import _empty, drains_empty, read_empty
 from orchestra.sd.path import Path
 
 T0 = 1_800_000_000.0
@@ -22,13 +22,16 @@ def test_the_stretches_a_source_was_empty():
 def test_a_driver_with_an_intercept_on_an_outflow_whose_source_never_empties_is_refuted():
     src, drv = _path([3] * 60), _path([0, 1] * 30)
     line = {"form": "linear", "params": {"c": 0.366, "k": 4.82}}
-    why = drains_empty(line, drv, src, 60.0, True)
+    why = drains_empty(line, drv, _empty(src), 60.0, 0.0)
     assert "never falls below 0.366" in why and "22.0 items" in why
     # through the origin: the rate goes to zero with its driver, so nothing says it drains an empty stock
-    assert drains_empty({"form": "proportional", "params": {"k": 4.82}}, drv, src, 60.0, True) == ""
+    assert drains_empty({"form": "proportional", "params": {"k": 4.82}}, drv, [], 60.0, 0.0) == ""
     # a driver that never reads zero: its rate never does either
-    assert "never falls below 4.82" in drains_empty({"form": "proportional", "params": {"k": 4.82}}, _path([1, 2] * 30), src, 60.0, True)
-    assert drains_empty({"form": "linear", "params": {"c": 0.001, "k": 4.82}}, drv, src, 60.0, True) == ""
+    assert "never falls below 4.82" in drains_empty({"form": "proportional", "params": {"k": 4.82}}, _path([1, 2] * 30), [], 60.0, 0.0)
+    # unless the form it would fall back to never falls lower: refusing it would drain an empty source faster
+    assert drains_empty(line, drv, [], 60.0, 5.5) == ""
+    assert drains_empty(line, drv, [], 60.0, None) == ""                 # the own line: not held to the floor
+    assert drains_empty({"form": "linear", "params": {"c": 0.001, "k": 4.82}}, drv, [], 60.0, 0.0) == ""
 
 
 def test_a_driver_that_expects_events_while_its_source_is_empty_is_refuted_one_that_does_not_is_kept():
@@ -36,21 +39,20 @@ def test_a_driver_that_expects_events_while_its_source_is_empty_is_refuted_one_t
     busy = _path([2] * 60)                          # the driver held 2 while the source was empty
     idle = _path([0] * 20 + [2] * 40)               # the driver held nothing then
     prop = {"form": "proportional", "params": {"k": 0.5}}
-    assert "over the 20 min its source was empty this form expects 20.0 events" in drains_empty(prop, busy, src, 60.0, True)
-    assert drains_empty(prop, idle, src, 60.0, True) == ""
+    assert "over the 20 min its source was empty this form expects 20.0 events" in drains_empty(prop, busy, _empty(src), 60.0, 0.0)
+    assert drains_empty(prop, idle, _empty(src), 60.0, 0.0) == ""
 
 
 def test_the_flows_own_line_is_held_only_to_what_it_expects_while_its_source_was_empty():
     full, gaps = _path([3] * 60), _path([0] * 10 + [3] * 50)
     line = {"form": "linear", "params": {"c": 0.5, "k": 0.2}}
-    assert drains_empty(line, full, full, 60.0, False) == ""        # never empty: its intercept is extrapolation
-    assert "expects 5.0 events" in drains_empty(line, gaps, gaps, 60.0, False)
+    assert drains_empty(line, full, _empty(full), 60.0) == ""        # never empty: its intercept is extrapolation
+    assert "expects 5.0 events" in drains_empty(line, gaps, _empty(gaps), 60.0)
 
 
-def test_fit_flow_keeps_its_own_form_rather_than_a_driver_with_an_intercept_on_an_outflow():
-    """End to end: an outflow whose events follow a demand with a base rate. Read as a driver, the
-    demand would be chosen with an intercept (inflow-like); on an outflow it is refuted, and the
-    refutation is said."""
+def test_fit_flow_keeps_a_driver_with_an_intercept_whose_floor_is_below_its_own_forms():
+    """End to end: an outflow whose events follow a demand with a base rate, its source never empty.
+    The refuter round (T16): refused, it fell back to a constant draining faster still."""
     import random
 
     from orchestra.sd.discover import fit_flow
@@ -68,5 +70,12 @@ def test_fit_flow_keeps_its_own_form_rather_than_a_driver_with_an_intercept_on_a
     as_inflow = fit_flow(events, 60.0, {"d": drv}, None, {"d"})[0]
     assert as_inflow["inputs"] == ["d"], as_inflow["driver"]
     best = fit_flow(events, 60.0, {"s": src, "d": drv}, "s", {"d"})[0]
-    assert best["inputs"] != ["d"], best["driver"]
-    assert any("go to zero when its source is empty" in r["why"] for r in best["driver"].get("refuted", [])), best["driver"]
+    # its floor (0.5 + 2 × 1) is below the flow's own constant (the mean, about 5.5): refusing it
+    # would leave a form that drains an empty source faster, so it is kept
+    assert best["inputs"] == ["d"], best["driver"]
+
+
+def test_a_source_that_read_empty_while_the_flows_items_left_is_no_evidence():
+    src = _path([0] * 20 + [4] * 40)
+    assert read_empty(src, [(T0 + 30 * 60, 1.0)]) == _empty(src)            # every event while it held something
+    assert read_empty(src, [(T0 + 5 * 60, 1.0), (T0 + 30 * 60, 1.0)]) == []  # one left while it read empty

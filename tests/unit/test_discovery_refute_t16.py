@@ -1,6 +1,8 @@
 """Refuter round for T16's three discovery changes (driverchoice's drain rule and alias test,
-rediscover's widened window). A case marked ``xfail(strict=True)`` is a refutation: it states
-what should hold and fails on the branch as it stands; the rest hold."""
+rediscover's widened window): what each must still do, and the three cases that refuted them
+(a refused driver falling back to a constant that drained an empty source faster; a slow board
+whose last hour held no move never widened; a cause acting 15 min later called a period alias),
+which hold since the fixes."""
 
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ from orchestra.metrics.file import FileMetrics
 from orchestra.sd import rediscover as rd
 from orchestra.sd.discover import fit_flow
 from orchestra.sd.driverchoice import _empty
+from orchestra.sd.model import Model
 from orchestra.sd.path import Path
 from orchestra.sd.strategies import CONSERVATION
 
@@ -54,13 +57,11 @@ def test_a_timer_and_per_item_drain_of_a_stock_that_empties_is_still_fitted_as_a
     assert _due_while_empty(best, p) < 1.0, best
 
 
-@pytest.mark.xfail(strict=True, reason="refuted: the drain rule throws out a driver for draining an empty source, "
-                                       "and falls back to a constant that drains it faster")
 def test_an_outflow_whose_driver_is_refuted_for_draining_falls_back_to_no_worse_a_drain():
     """The commit's own end-to-end case (a demand with a base rate, its source never empty). The
     driver is refuted because its rate never falls below 0.5 + 2 × 1; what is kept instead is
     the constant, whose rate never falls below the mean, 5.5 a minute: the rule's own criterion,
-    broken more by what it chooses. Replayed on UC-1 and UC-3, all 11 of the flows it changed
+    broken more by what it chose. Replayed on UC-1 and UC-3, all 11 of the flows it changed
     went the same way (uc3 READY_FOR_REVIEW → IN_REVIEW: 0.11 + 59 × level, ≈5 events due over
     the 44.7 min its source was empty, became the constant 0.489, ≈22 due)."""
     rng = random.Random(1)
@@ -75,10 +76,11 @@ def test_an_outflow_whose_driver_is_refuted_for_draining_falls_back_to_no_worse_
     drv = Path.of([(T0 + i, demand(T0 + i)) for i in range(0, 3600, 15)], LIVE, 60.0)
     forms = fit_flow(events, 60.0, {"s": src, "d": drv}, "s", {"d"})
     best = forms[0]
-    driver = next(f for f in forms if f["inputs"] == ["d"] and "refuted" in f)
+    driver = next(f for f in forms if f["inputs"] == ["d"] and f["form"] == "linear")
     floor = lambda f, p: (f["params"]["c"] if f["form"] == "constant"
                           else min(max(0.0, f["params"].get("c", 0.0) + f["params"]["k"] * x) for x in p.time_at))
-    assert floor(best, src) <= floor(driver, drv), (best["form"], best["params"], driver["params"])
+    p_best = drv if best["inputs"] == ["d"] else src
+    assert floor(best, p_best) <= floor(driver, drv), (best["form"], best["params"], driver["params"])
 
 
 def _project(tmp_path):
@@ -113,20 +115,18 @@ def test_a_slow_board_whose_last_hour_holds_a_move_gets_a_model_by_widening(tmp_
     assert r.model.discovery["widened"]["tried_s"] == [3600.0, 7200.0, 14400.0]
 
 
-@pytest.mark.xfail(strict=True, reason="refuted: widen needs a counter that moved in the hour; on a board moving once "
-                                       "in two hours, half the hours hold none, and no window is widened")
 def test_a_slow_board_whose_last_hour_holds_no_move_gets_a_model_by_widening(tmp_path):
     # the same board, 10 h of one add every 2 h (five adds, two moves out), the last add 1 h ago:
-    # counter_events is {"counters": 0}, and widen says a wider window is no help
+    # counter_events was {"counters": 0}, and widen said a wider window was no help
     r = rd.rediscover(_project(tmp_path), _board(tmp_path, 10.0, 2.0, 0.5), now=NOW, collectors=[])
     assert r.version == 1 and r.model.stocks, r.model.discovery.get("counter_events")
 
 
-def test_a_widened_window_stops_at_seven_days_but_reads_no_history_that_is_not_there(tmp_path):
-    # 4 h of history: the window doubles eight times, to 7 days, reading the same 4 h each time
-    # (a cost, not a wrong model: eight discoveries in one round, each with the round's whole deadline)
+def test_a_widened_window_stops_once_it_covers_all_the_history_there_is(tmp_path):
+    # 4 h of history: the window doubled eight times, to 7 days, reading the same 4 h each time
     r = rd.rediscover(_project(tmp_path), _board(tmp_path, 4.0, 2.0, 0.5), now=NOW, collectors=[])
-    assert r.version is None and len(r.model.discovery["widened"]["tried_s"]) == 8
+    assert r.version is None and r.model.discovery["widened"]["tried_s"] == [3600.0, 7200.0]
+    assert r.model.discovery["window_s"] == 14400.0
 
 
 def _switching(rng, hold=(120, 600)):
@@ -147,8 +147,6 @@ def test_a_driver_acting_in_place_is_untouched_by_the_alias_test():
         assert fit_flow(events, 60.0, {"input:a": gauge}, None, {"input:a"})[0]["inputs"] == ["input:a"], seed
 
 
-@pytest.mark.xfail(strict=True, reason="refuted: a driver that acts 15 min later (a pipeline), not periodic, is "
-                                       "refuted as 'a period alias, not a cause'; before e06c2c80 it was kept")
 def test_a_driver_that_acts_fifteen_minutes_later_is_not_called_a_period_alias():
     rng = random.Random(1)
     a = _switching(rng)                                     # random holds of 2 to 10 min: no period
@@ -157,3 +155,12 @@ def test_a_driver_that_acts_fifteen_minutes_later_is_not_called_a_period_alias()
     best = fit_flow(events, 60.0, {"input:a": gauge}, None, {"input:a"})[0]
     assert not any("period alias" in r["why"] for r in best["driver"].get("refuted", [])), best["driver"]["refuted"]
     assert best["inputs"] == ["input:a"], best["driver"]
+
+
+def test_widen_reads_counters_that_did_not_move_and_stops_at_the_oldest_point():
+    m = Model("system", "The system")
+    m.discovery = {"counters_read": 2, "counter_events": {"counters": 0, "most": 0.0, "needed": 5}}
+    assert rd.widen(m, 3600.0, 30.0, NOW, None) == (7200.0, 60.0)               # read, not moved: widened
+    assert rd.widen(m, 3600.0, 30.0, NOW, None, NOW - 1800) is None             # the window holds all there is
+    m.discovery["counters_read"] = 0
+    assert rd.widen(m, 3600.0, 30.0, NOW, None) is None                         # no counter at all

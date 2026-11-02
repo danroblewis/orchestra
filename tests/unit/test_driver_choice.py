@@ -116,15 +116,16 @@ def test_an_outflow_fitted_as_falling_while_its_stock_climbed_steadily_keeps_its
     assert "trend in time" in line.get("refuted", "") or "rejected" in line, line
 
 
-def test_a_driver_read_away_that_gains_more_than_in_place_is_a_period_alias():
+def test_a_driver_read_a_period_away_both_ways_that_gains_as_much_as_in_place_is_a_period_alias():
     # R3 (:8096): a driver gained 81 read 15 min earlier against 24 in place, the median of its
-    # shifted reads under the bar. A read away that gains as much as in place refutes it
-    rng = random.Random(6)
-    a = switching(rng, 0.0, 1.0)
-    lagged = lambda t: a(t - 900) if t - 900 >= T0 else 0.0
-    events = events_at(rng, lambda t: 0.5 + 3.0 * a(t) + 6.0 * lagged(t))
+    # shifted reads under the bar. A square wave repeating every 15 min explains the events as well
+    # read 15 min earlier and later: a period alias. Gaining only one way is a cause that acts
+    # later, not an alias (tests/unit/test_discovery_refute_t16.py)
+    rng = random.Random(0)
+    a = lambda t: 1.0 if ((t - T0) % 900) < 450 else 0.0
+    events = events_at(rng, lambda t: 0.5 + 3.0 * a(t))
     forms = fit_flow(events, 60.0, {"input:a": gauge(a)}, None, {"input:a"})
     ev = forms[0]["driver"]
     assert forms[0]["inputs"] == [], ev
-    assert any(r["why"].startswith("read 15 min earlier it gains as much as in place") and "a period alias" in r["why"]
+    assert any(r["why"].startswith("read 15 min earlier and later it gains as much as in place") and "a period alias" in r["why"]
                for r in ev.get("refuted", [])), ev

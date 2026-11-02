@@ -40,7 +40,7 @@ announced) nothing of this applies, and discovery is exactly as before.
 **A window too quiet for any counter** (``widen``). When a discovery finds no stock because no
 counter counted ``MIN_EVENTS`` in the window (the owner, 2026-11-02: "the sprint board itself is
 low traffic"), the window is doubled, with its step (the grid keeps its number of steps), up to
-``MAX_WINDOW`` (7 days) and never past the era's start, and discovered again, before any "no
+``MAX_WINDOW`` (7 days), never past the era's start and no further than the oldest point read, and discovered again, before any "no
 model" is said; the record says which windows were read (``discovery["widened"]``) and
 ``window_s`` is the one the model was fitted over."""
 
@@ -120,19 +120,31 @@ def window_words(s: float) -> str:
     return f"{s / 86400:g} d" if s >= 86400 else f"{s / 3600:g} h" if s >= 3600 else f"{s / 60:g} min"
 
 
-def widen(m: Model, window_s: float, step_s: float, now: float, era_start: float | None) -> tuple[float, float] | None:
+def widen(m: Model, window_s: float, step_s: float, now: float, era_start: float | None,
+          first: float | None = None) -> tuple[float, float] | None:
     """The next window to read (doubled, with its step, so the grid keeps its number of steps),
-    when the discovery ``m`` found no stock because no counter counted ``MIN_EVENTS`` in its window
-    (a low-traffic system: a sprint board moves a few tickets an hour); None when it found one,
-    when its counters had the events, when the window is already ``MAX_WINDOW``, or when the era
-    began inside it (a wider window reads nothing more)."""
-    ce = (m.discovery or {}).get("counter_events") or {}
-    if m.stocks or not ce.get("counters") or ce.get("most", 0) >= MIN_EVENTS or window_s >= MAX_WINDOW:
+    when the discovery ``m`` found no stock because no counter it read counted ``MIN_EVENTS`` in its
+    window (a low-traffic system: a sprint board moves a few tickets an hour, and on one that moves
+    once in two hours half the hours hold no move at all); None when it found one, when it read no
+    counter, when one had the events, when the window is already ``MAX_WINDOW``, when the era began
+    inside it, or when it already reaches back to ``first``, the oldest point read (a wider window
+    reads nothing more)."""
+    d = m.discovery or {}
+    ce = d.get("counter_events") or {}
+    read = d.get("counters_read", ce.get("counters"))
+    if m.stocks or not read or ce.get("most", 0) >= MIN_EVENTS or window_s >= MAX_WINDOW:
         return None
     if era_start is not None and era_start > now - window_s:
         return None
+    if first is not None and first >= now - window_s:
+        return None
     wider = min(MAX_WINDOW, 2 * window_s)
     return wider, step_s * wider / window_s
+
+
+def oldest(reading) -> float | None:
+    """The oldest point a reading holds (the own store's series hold all their history)."""
+    return min((pts[0][0] for _, _, pts in reading.dump if pts), default=None)
 
 
 def era_window(start: float, end: float, step: float, era_start: float | None) -> float:
@@ -180,7 +192,7 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
                                          options=options, deadline=DEADLINE_SHARE * cfg.discovery_every, provenance=reading.provenance,
                                          allowed=allowed)
                 annotate(m, reading.provenance)
-                wider = widen(m, window_s, step_s, now, era.start if era else None)
+                wider = widen(m, window_s, step_s, now, era.start if era else None, oldest(reading))
                 if wider is None:
                     break
                 tried.append(window_s)

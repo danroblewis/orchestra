@@ -751,9 +751,10 @@ not quiet: both go as before. When nothing else changed, no version is saved and
 the time from the record's `since` in the viewer's own zone.
 
 **A window too quiet for any counter** (`sd/rediscover.py`, `widen`). When a discovery finds no
-stock because no counter counted 5 events in the window (a low-traffic system: a sprint board),
-the window is doubled with its step (the grid keeps its number of steps), up to 7 days and never
-past the era's start, and discovered again before "no model" is said; `discovery.widened` says
+stock because no counter it read counted 5 events in the window (a low-traffic system: a sprint
+board, whose last hour may hold no move at all), the window is doubled with its step (the grid
+keeps its number of steps), up to 7 days, never past the era's start and no further than the
+oldest point read, and discovered again before "no model" is said; `discovery.widened` says
 which windows were read, and the page says the window the model was fitted over.
 
 **Eras** (`sd/eras.py`, `sd/prior.py`, `sd/compare.py`; goal G11). After a machine changes how
