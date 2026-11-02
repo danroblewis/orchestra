@@ -29,6 +29,7 @@ from .intended import install as install_intended
 from .machines import model_parts
 from .pages import STATIC, render
 from .plugins_mount import mount_plugins
+from .redact import install as install_redact
 from .sd_extra import install as install_sd_extra
 from .sd_extra import unavailable
 from .system import install as install_system
@@ -41,7 +42,9 @@ EVENTS_PAGE_MAX = 10_000
 @contextlib.asynccontextmanager
 async def _lifespan(app: FastAPI):
     """At shutdown, kill a rediscovery's strategy child (``sd.bounded``): it runs in a session of
-    its own, so stopping the server would otherwise leave it running."""
+    its own, so stopping the server would otherwise leave it running. At start, the token filter on
+    the server's loggers (web/redact.py), after uvicorn has configured them."""
+    install_redact()
     yield
     from ..sd.bounded import kill_running
     kill_running()
@@ -50,6 +53,7 @@ async def _lifespan(app: FastAPI):
 def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     """The app, as served on ``host``: whether it asks for the token follows ``[web] auth`` and
     whether ``host`` is a loopback address (web/auth.py)."""
+    install_redact()
     app = FastAPI(title="Orchestra", lifespan=_lifespan, default_response_class=FiniteJSONResponse)
     auth_on = enabled(project, host)
     events = Events.for_project(project)

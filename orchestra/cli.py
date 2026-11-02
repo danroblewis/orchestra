@@ -86,10 +86,14 @@ def cmd_web(args) -> int:
 
     shown = {"0.0.0.0": "127.0.0.1", "": "127.0.0.1", "::": "[::1]"}.get(args.host, f"[{args.host}]" if ":" in args.host else args.host)
     url = f"http://{shown}:{args.port}"
-    if on:
+    if on and sys.stdout.isatty():
         tok = auth.token(project)
         print(f"orchestra web: {url}/\n  log in:  {url}/login#token={tok}\n  token:   {tok}  "
               f"(again: `orchestra web token`; kept in {auth.token_file(project)})", flush=True)
+    elif on:
+        # not a terminal: the banner lands in a log file (logs/web.log), which never holds the token
+        print(f"orchestra web: {url}/\n  log in:  {url}/login with the token from `orchestra web token` "
+              f"(kept in {auth.token_file(project)})", flush=True)
     else:
         print(f"orchestra web: {url}/  ([web] auth = \"off\": no login, and only requests from this computer are served)", flush=True)
     runtime.update(project, lambda d: d.__setitem__("web", {"port": args.port, "pid": os.getpid(), "since": time.time()}))
