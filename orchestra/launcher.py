@@ -9,8 +9,10 @@ A project declares them in ``orchestra.toml``::
     stop_grace = 10                                  # seconds from SIGTERM to SIGKILL (default 10)
 
 and a plugin in ``Plugin.processes`` (the same ``Process``). Each runs in the repository root
-with ``ORCHESTRA_REPO`` (the root) and ``ORCHESTRA_MACHINE_LOG`` (its log,
-``<state>/logs/machines/<name>.log``, which gets its output) set, and what the host adds (``env``:
+with ``ORCHESTRA_REPO`` (the root), ``ORCHESTRA_MACHINE_LOG`` (its log,
+``<state>/logs/machines/<name>.log``, which gets its output) and ``ORCHESTRA_PROCESS`` (its name
+here, ``<plugin>.<name>`` for a plugin's; a machine's announcement passes it on as ``process``,
+``events.announcing``) set, and what the host adds (``env``:
 the events endpoint's address and token, ``orchestra.endpoint``), in a process group of its own so
 stopping it stops what it started: SIGTERM to the group, then SIGKILL after its stop grace
 (``stop_grace``, ``STOP_GRACE_S`` unless given). One that exits is started again after a pause that doubles
@@ -32,7 +34,8 @@ Inside every command Orchestra runs, ``python`` and ``python3`` are the Python O
 (``orchestra.launcher_env``: ``child_env``, ``own_python``).
 
 Orchestra starts commands and knows nothing else of them: a process is not a machine to it until
-it publishes (AGENTS.md rules 1 and 2)."""
+it publishes (AGENTS.md rules 1 and 2). ``ORCHESTRA_PROCESS`` is a name, not a machine: the launcher
+never reads what a process announces."""
 
 from __future__ import annotations
 
@@ -53,6 +56,7 @@ import psutil
 
 from . import runtime
 from .config import ConfigError, Project
+from .events import PROCESS_ENV
 from .launcher_env import child_env, own_python
 
 RESTARTS = ("always", "on-failure", "never")
@@ -226,7 +230,7 @@ class Launcher:
             run.log.replace(run.log.with_suffix(".log.1"))
         argv = run.spec.argv()
         env = child_env({**self.env, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_MACHINE_LOG": str(run.log),
-                         "PYTHONUNBUFFERED": "1"})
+                         PROCESS_ENV: run.spec.name, "PYTHONUNBUFFERED": "1"})
         try:
             with run.log.open("ab") as out:
                 run.popen = subprocess.Popen(argv, cwd=self.project.repo_root, env=env, stdin=subprocess.DEVNULL,

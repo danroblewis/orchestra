@@ -135,8 +135,8 @@ the program a machine. Instrument names are their own namespace, so a `[[scrape]
 `[[collect]]` may share a `[[machines]]` entry's name; they are still two things, a process and
 an instrument.
 
-`orchestra run` starts it in the repository root with `ORCHESTRA_REPO` and `ORCHESTRA_MACHINE_LOG`
-set, sends its output to `<state>/logs/machines/app.log`, and starts it again when it exits, after
+`orchestra run` starts it in the repository root with `ORCHESTRA_REPO`, `ORCHESTRA_MACHINE_LOG` and
+`ORCHESTRA_PROCESS` (the entry's name) set, sends its output to `<state>/logs/machines/app.log`, and starts it again when it exits, after
 a pause that doubles with each quick exit (up to a minute). Only failing exits (a non-zero code)
 count towards giving up: after five in a row, each within a minute of starting, it is given up on,
 which its log, the host's log and the bus (`orchestra.process.gave_up`) say; it is tried again when
@@ -220,7 +220,8 @@ curl -sf "$ORCHESTRA_EVENTS_ENDPOINT/events?after=0&types=disk.full&wait=30" \
 ```
 
 What `orchestra.machine.started`'s `data` may say is stated once, in SPEC §2 ("The
-announcement"); a launched process gives `$ORCHESTRA_MACHINE_LOG` as its `log`. Instruments are not
+announcement"); a launched process gives `$ORCHESTRA_MACHINE_LOG` as its `log` and `$ORCHESTRA_PROCESS` (the
+launcher entry that started it) as its `process`. Instruments are not
 announced: they are not machines.
 
 ### Being seen
@@ -280,7 +281,7 @@ from orchestra.events import Events
 
 project = load_project()                      # ORCHESTRA_REPO (the launcher sets it), else the working directory
 events = Events.for_project(project, source="baker")
-events.publish("orchestra.machine.started", {
+events.announce({                              # orchestra.machine.started, with `process` when the launcher started it
     "mode": "continuous", "kind": "program", "listens_for": ["order.placed"], "log": os.environ.get("ORCHESTRA_MACHINE_LOG")})
 events.publish("order.baked", {"loaves": 1}, subject="order-17")   # one event per loaf baked
 ```

@@ -37,6 +37,10 @@ Everything here is observed, or announced by the machine itself:
   (AGENTS.md rules 2 and 7): a write to a series labelled ``machine=<id>`` says nothing of whether
   the machine is there, and a series so labelled makes no machine and no instance. Never in the
   future: an event stamped ahead counts as seen when it was read;
+- **the process that started it** (``process``, per instance; ``processes``, the machine's): the
+  launcher entry its latest announcement named (``ORCHESTRA_PROCESS``, SPEC §8). It says which
+  process published and nothing more: a launcher process that never announces is no machine, and
+  the name makes none (AGENTS.md rule 2);
 - **its announcements**, per instance: how many ``orchestra.machine.started`` it published and when the
   latest was (``announced``, ``announced_at``; envelopes only), so a restart reads as one;
 - **its cadence** (``cadence_s``): the machine's own rhythm, from its instances' beats merged (a beat
@@ -130,6 +134,7 @@ class MachineIndex:
         self.instances: dict[str, dict[str, dict]] = defaultdict(dict)  # machine -> instance -> first/last seen
         self.announced: dict[str, dict[str, list]] = defaultdict(dict)  # machine -> instance -> [how many announcements, the latest's time]
         self.logs: dict[str, dict[str, str]] = defaultdict(dict)        # machine -> instance -> announced log path
+        self.process: dict[str, dict[str, str]] = defaultdict(dict)     # machine -> instance -> the launcher entry it said started it
         self.latest: dict[str, deque] = defaultdict(lambda: deque(maxlen=RECENT))  # machine -> its last events' envelopes
         self.unattributed = 0
         self.skipped = 0                                                  # events that could not be read
@@ -244,7 +249,13 @@ class MachineIndex:
         # the instance's latest says its name and group, or that there are none
         card["name"] = d.get("name") if isinstance(d.get("name"), str) and d["name"] else None
         card["group"] = next((d[k] for k in ("group", "team") if isinstance(d.get(k), str) and d[k]), None)
-        card["about"] = {k: v for k, v in d.items() if k not in ("mode", "listens_for", "log", "package", "kind", "name", "group", "team")
+        # the launcher entry that started it (``process``): which process published, never a machine
+        # of its own; the latest announcement says it, or that there is none
+        if isinstance(d.get("process"), str) and d["process"]:
+            self.process[machine][key] = d["process"]
+        else:
+            self.process[machine].pop(key, None)
+        card["about"] = {k: v for k, v in d.items() if k not in ("mode", "listens_for", "log", "package", "kind", "name", "group", "team", "process")
                          and isinstance(v, str | int | float | bool | type(None) | list)}
         if isinstance(d.get("log"), str) and d["log"]:
             self.logs[machine][instance or ""] = d["log"]
@@ -349,6 +360,7 @@ class MachineIndex:
                     times, at = self.announced[m].get(i, [0, None])
                     insts.append({"id": i or m, "first_seen": v["first"], "last_seen": v["last"], "active": active,
                                   "cadence_s": cadence, "kind": self.kind[m].get(i), "mode": self.mode[m].get(i),
+                                  "process": self.process[m].get(i),
                                   "announced": times, **({"announced_at": at} if times else {})})
                 last = max((v["last"] for v in self.instances[m].values()), default=None)
                 # the machine's own rhythm: its instances' beats merged, a beat within a burst of another one beat
@@ -369,6 +381,7 @@ class MachineIndex:
                                  **said, "about": about, "publishes": pubs,
                                  "subscribes": sorted(self.subs.get(m, ())), "flows": flows.get(m, []),
                                  "logs": sorted(i or m for i in self.logs.get(m, {})),
+                                 "processes": sorted(set(self.process.get(m, {}).values())),
                                  "instances": [i for i in insts if i["id"] != m] if any(k for k in self.instances[m]) else [],
                                  "first_seen": first, "last_seen": last, "active": alive, "cadence_s": gaps(merged),
                                  "announced": sum(a[0] for a in self.announced[m].values()),

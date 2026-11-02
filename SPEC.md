@@ -67,7 +67,7 @@ from its own `source`. It is a plain event: a machine sends it over HTTP like an
 is Orchestra's own event type, so Orchestra reads its `data` (`web/machines.py`). This is the one
 full statement of the fields Orchestra reads; every other document points here. The events
 endpoint refuses an announcement whose `data` is not an object, whose `listens_for` is not a list
-of event types, or whose `mode`, `kind`, `log`, `package`, `name`, `group` or `team` is not a
+of event types, or whose `mode`, `kind`, `log`, `package`, `name`, `group`, `team` or `process` is not a
 string (`endpoint/validate.py`); a reader takes any other shape already on the bus as empty
 (`events.announcement`):
 
@@ -80,6 +80,7 @@ string (`endpoint/validate.py`); a reader takes any other shape already on the b
 | `package` | the package it belongs to, whose card draws it | instance; the machine shows the latest instance's that names one |
 | `name` | the name to show it by | instance (one that drops it has none); the machine shows the latest instance's that names one |
 | `group`, or else `team` | its group, a label | instance, as `name` |
+| `process` | the launcher entry that started it (`ORCHESTRA_PROCESS`, §8: a `[[machines]]` entry's name, or `<plugin>.<name>`), shown as "started by the launcher as <name>"; `events.announcing` and `Events.announce` add it | instance (one that drops it has none); the machine lists its instances' (`processes`) |
 | `collector` | marks an announcement the host made for an instrument before 2026-10-27: ignored | — |
 
 A machine whose instances differ in mode or kind says so (`agent ×2, program ×1`), never just the
@@ -92,7 +93,9 @@ the map, but every machine stays on the one page and the one map (AGENTS.md rule
 shows an announced log only when its real path is a regular file inside the project's repository
 or state directory (`web/machine_logs.py`), because anything that can publish could name any
 file. The host starts and keeps running the commands a project or a plugin declares (§5.1), but
-knows them only as processes: a process becomes a machine by what it publishes. The instruments
+knows them only as processes: a process becomes a machine by what it publishes. `process` says
+which process published and nothing more: a launched process that never announces is no machine,
+the name makes none, and the launcher never reads what a process announces. The instruments
 a project declares (§5.2) are not machines, and nothing is announced for them; announcements the
 host made for them before 2026-10-27 (`data.collector`) are ignored by the Machines page. Running machines on
 a clock is not built (`docs/roadmap/decisions.md`, D7).
@@ -1377,7 +1380,9 @@ Python (`launcher_env.python_dir`), and a first word `python` or `python3` is re
 `[[collect]]` command follows the same rule, and
 either may be a string or a list of words. The host starts each in the repository root, in a
 process group of its own, with `ORCHESTRA_REPO` (the root) and `ORCHESTRA_MACHINE_LOG` (its log,
-`<state>/logs/machines/<name>.log`, which receives its output) set, and, while the events
+`<state>/logs/machines/<name>.log`, which receives its output) and `ORCHESTRA_PROCESS` (its name
+there, `<plugin>.<name>` for a plugin's, which a machine's announcement passes on as `process`, §2)
+set, and, while the events
 endpoint serves (§3.1), `ORCHESTRA_EVENTS_ENDPOINT` (its URL) and `ORCHESTRA_EVENTS_TOKEN`. A plugin's processes are named
 `<plugin>.<name>` (in the runtime record, on the Core page and in their logs' names), so a
 project's `[[machines]]` entry never takes a plugin process's place; a project entry named

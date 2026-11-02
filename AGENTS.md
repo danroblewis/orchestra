@@ -37,7 +37,9 @@ Rules 2, 3, 4, 5, 6, 7 and 9 were amended on 2026-11-01 for the intended model
    machine's description of itself. The exceptions are what an instance
    announces in `orchestra.machine.started`: its mode, what it listens for,
    its kind (program, agent, person, service), where its log is, which
-   package it belongs to, and the name and group (or team) to show it by
+   package it belongs to, the name and group (or team) to show it by, and
+   the launcher entry that started its process (`process`, which says which
+   process published and never makes a machine)
    (SPEC §2; the rest of the announcement is passed on to that package's
    card, unread), and the machines a plugin declares
    (`Plugin.machines`): placeholders that only fill in machines not seen yet,

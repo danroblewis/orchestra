@@ -93,7 +93,8 @@ def for_an_instrument(ev: dict) -> bool:
 
 
 ANNOUNCEMENT = "orchestra.machine.started"
-ANNOUNCED_TEXT = ("mode", "kind", "log", "package", "name", "group", "team")   # each a string when present
+ANNOUNCED_TEXT = ("mode", "kind", "log", "package", "name", "group", "team", "process")   # each a string when present
+PROCESS_ENV = "ORCHESTRA_PROCESS"   # the launcher's name for a process it started (SPEC §8)
 
 
 def announcement(ev: dict) -> dict:
@@ -105,6 +106,19 @@ def announcement(ev: dict) -> dict:
     d = dict(d) if isinstance(d, dict) else {}
     subs = d.get("listens_for")
     d["listens_for"] = [t for t in subs if isinstance(t, str)] if isinstance(subs, list) else []
+    return d
+
+
+def announcing(data: dict | None = None, environ: dict | None = None) -> dict:
+    """The data of this process's ``orchestra.machine.started``: ``data``, with ``process`` set to
+    the name of the launcher entry that started it (``ORCHESTRA_PROCESS``: a ``[[machines]]``
+    entry's name, or ``<plugin>.<name>``) when the launcher started it and ``data`` names none. It
+    says which process published, nothing more: a process is a machine only by what it publishes
+    (AGENTS.md rule 2)."""
+    d = dict(data or {})
+    name = (os.environ if environ is None else environ).get(PROCESS_ENV)
+    if name and "process" not in d:
+        d["process"] = name
     return d
 
 
@@ -137,6 +151,11 @@ class Events:
         ev = envelope(type, source or self.source, data, **ext)
         self.bus.append(ev)
         return ev
+
+    def announce(self, data: dict | None = None, *, source: str | None = None, **ext: Any) -> dict:
+        """Publish this process's ``orchestra.machine.started``, its data ``announcing(data)``: with
+        the launcher entry that started it, when one did."""
+        return self.publish(ANNOUNCEMENT, announcing(data), source=source, **ext)
 
     def emit(self, type: str, **data: Any) -> dict:
         """Publish an event from this process's own source, its keyword arguments as the data."""

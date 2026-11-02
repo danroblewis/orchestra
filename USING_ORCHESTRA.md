@@ -501,6 +501,7 @@ kind = "rate"
 | `ORCHESTRA_REPO` | every command, `load_project()`, `for_repo()` | The repository, when `--repo` is not given. The launcher and the instruments set it for what they run. |
 | `ORCHESTRA_EVENTS_URL` | every command, `Events.for_project` | Overrides `[events] url`. |
 | `ORCHESTRA_METRICS_URL` | every command, `for_repo()` | Overrides `[metrics] url`. |
+| `ORCHESTRA_PROCESS` | set for what the launcher runs | The name of the `[[machines]]` entry (or `<plugin>.<name>`) that started it; its announcement passes it on as `process`. |
 | `ORCHESTRA_MACHINE_LOG` | set for what Orchestra runs | The log file of the process or `[[collect]]` script (the name is kept for both). |
 | `ORCHESTRA_EVENTS_ENDPOINT` | set for what the launcher runs | The events endpoint's URL, `http://127.0.0.1:<port>`. Not the same as `ORCHESTRA_EVENTS_URL`, which names the bus backend. |
 | `ORCHESTRA_EVENTS_TOKEN` | set for what the launcher runs | The token the events endpoint wants, as `Authorization: Bearer <token>`. |
@@ -1180,7 +1181,7 @@ from orchestra.events import Events
 project = load_project()                        # ORCHESTRA_REPO (the launcher sets it), else the working directory
 bus = Events.for_project(project, source="billing/1")   # machine "billing", instance "1"
 
-bus.publish("orchestra.machine.started", {      # announce yourself once, at start
+bus.announce({                                  # announce yourself once, at start (orchestra.machine.started)
     "mode": "continuous", "kind": "service", "listens_for": ["order.placed"],
     "log": os.environ.get("ORCHESTRA_MACHINE_LOG")})
 
@@ -1191,6 +1192,7 @@ bus.publish("invoice.sent", {"order": 42}, subject="order-42", correlationid="ch
 |---|---|
 | `Events.for_project(project, source=...)` | Opens the project's bus (`[events] url`, or `ORCHESTRA_EVENTS_URL`). `source` is the default source of what it publishes. |
 | `publish(type, data=None, *, source=None, subject=None, correlationid=None, causationid=None, time=None, id=None)` | Appends one event with the envelope and returns it. `time` and `id` are for an event brought in from another system (it keeps the time it happened there and an id stable across re-imports). |
+| `announce(data=None, *, source=None)` | Publishes `orchestra.machine.started` with `data`, adding `process` (the launcher entry that started it, `ORCHESTRA_PROCESS`) when the launcher started it. |
 | `after(offset)` | Every event after `offset`, in order, and the offset to read from next. Follow the bus by calling it in a loop. |
 | `end()` | How many events the bus holds. |
 
@@ -1257,7 +1259,7 @@ curl -sf -X POST "$ORCHESTRA_EVENTS_ENDPOINT/events" \
   -H "Authorization: Bearer $ORCHESTRA_EVENTS_TOKEN" -H "Content-Type: application/json" \
   -d "{\"type\": \"orchestra.machine.started\", \"source\": \"billing/1\",
        \"data\": {\"mode\": \"continuous\", \"kind\": \"service\", \"listens_for\": [\"order.placed\"],
-                \"log\": \"$ORCHESTRA_MACHINE_LOG\"}}"
+                \"log\": \"$ORCHESTRA_MACHINE_LOG\", \"process\": \"$ORCHESTRA_PROCESS\"}}"
 ```
 
 This is Orchestra's own event type, so Orchestra reads its `data`: the fields, and which are kept
@@ -1282,6 +1284,7 @@ environment is `orchestra run`'s, plus:
 |---|---|
 | `ORCHESTRA_REPO` | The repository root. |
 | `ORCHESTRA_MACHINE_LOG` | Its log file. |
+| `ORCHESTRA_PROCESS` | Its name here (`<plugin>.<name>` for a plugin's), for its announcement's `process`. |
 | `ORCHESTRA_EVENTS_ENDPOINT`, `ORCHESTRA_EVENTS_TOKEN` | The events endpoint and its token ([§5.2](#52-publishing-and-reading-events)), unless `[events] listen = "off"`. |
 | `PYTHONUNBUFFERED` | `1`, so a Python program's output reaches its log at once. |
 

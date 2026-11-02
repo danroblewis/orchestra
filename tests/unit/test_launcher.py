@@ -446,3 +446,19 @@ def test_a_bus_that_fails_neither_leaves_a_process_running_nor_skips_the_record(
     assert not any(runtime.alive(p) for p in pids)
     assert "processes" not in runtime.read(project)
     assert sum("orchestra.process.exited for" in ln and "not published" in ln for ln in lines) == 2
+
+
+def test_every_process_is_told_its_launcher_name(project):
+    """ORCHESTRA_PROCESS: a [[machines]] entry's name, a plugin's process as <plugin>.<name>, so the
+    announcement can say which process published (SPEC §8)."""
+    out = project.repo_root / "names"
+    out.mkdir()
+    code = lambda tag: f"import os; open({str(out / tag)!r}, 'w').write(os.environ['ORCHESTRA_PROCESS']); import time; time.sleep(30)"
+    declare(project, ("telemetry", code("project"), "always"))
+    la, _, _ = launcher(project, plugin_processes=[Process("sampler", [PY, "-c", code("plugin")], owner="tools")])
+    try:
+        until(lambda: all((out / t).exists() and (out / t).read_text() for t in ("project", "plugin")), la)
+        assert (out / "project").read_text() == "telemetry"
+        assert (out / "plugin").read_text() == "tools.sampler"
+    finally:
+        la.stop_all()

@@ -552,6 +552,7 @@ stop_grace = 10            # seconds from SIGTERM to SIGKILL
 ```
 
 Each runs in the repository root in its own process group, with `ORCHESTRA_REPO`,
+`ORCHESTRA_PROCESS` (the entry's name, which its announcement passes on as `process`),
 `ORCHESTRA_EVENTS_ENDPOINT` and `ORCHESTRA_EVENTS_TOKEN` set, its output in its log. One that
 exits is restarted after a pause that doubles (up to a minute); five quick failures in a row and
 it is given up on (`orchestra.process.gave_up`; the Core page says so). One that exits 0 under

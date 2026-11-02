@@ -181,3 +181,8 @@ test("a machine that announced it is disabled reads disabled, with its reason, a
   assert.deepEqual(g.rows, [off]);                                      // a row of its own, saying why it is off
   assert.match(Orchestra.livenessHtml(Orchestra.liveness(off)), /disabled: no bot token/);
 });
+
+test("a card says the launcher entry its announcement named, and nothing when none did", () => {
+  assert.match(Orchestra.machineCards.rows({ ...m, processes: ["tools.sampler"] }), /process<\/span><span>started by the launcher as <code>tools.sampler<\/code><\/span>/);
+  assert.doesNotMatch(Orchestra.machineCards.rows(m), /started by the launcher/);
+});

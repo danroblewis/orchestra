@@ -150,6 +150,10 @@ Orchestra.aboutLines = (m) => {
   const word = (v) => (Array.isArray(v) ? v.map(String).join(", ") : v === null ? "none" : String(v));
   return keys.map((k) => `${k}: ${word(about[k])}`);
 };
+// the launcher entries its instances said started them (orchestra.machine.started data.process,
+// from ORCHESTRA_PROCESS): which process published, never what makes it a machine (rule 2)
+Orchestra.processRow = (m) => ((m && m.processes) || []).length
+  ? `<div class="row"><span class="muted" title="the [[machines]] entry, or a plugin's process, its announcement named">process</span><span>started by the launcher as ${m.processes.map((p) => `<code>${esc(p)}</code>`).join(", ")}</span></div>` : "";
 Orchestra.aboutHtml = (m) => Orchestra.aboutLines(m).map((l) => `<div class="about-line">${esc(l)}</div>`).join("");
 Orchestra.machineCards = (() => {
   const by = new Map();
@@ -182,6 +186,7 @@ Orchestra.machineCards = (() => {
       const lv = Orchestra.liveness(m, now), about = Orchestra.aboutHtml(m);
       return `${about ? `<div class="row"><span class="muted" title="what it announced of itself, as it said it">announced</span><span class="about">${about}</span></div>` : ""}<div class="row"><span class="muted">engaged</span><span>${m.mode ? `<span class="tag k-${esc(m.mode.replace(/ /g, "_"))}">${esc(m.mode.replace("_", " "))}</span>` : '<span class="muted">not announced</span>'}</span></div><div class="row"><span class="muted" data-k="kind">kind</span><span>${m.kind ? `<span class="tag">${esc(kindWord(m.kind))}</span>` : '<span class="muted">not announced</span>'}</span></div>
     <div class="row"><span class="muted">package</span><span>${m.package ? esc(m.package) : '<span class="muted">no package</span>'}</span>${m.group ? `<span class="muted">group</span><span><span class="tag" title="the group it announced (a team): a label, not a separate system">${esc(m.group)}</span></span>` : ""}</div>
+    ${Orchestra.processRow(m)}
     ${m.instances && m.instances.length ? `<div class="row"><span class="muted">instances</span>${m.instances.map((i) => `<span class="ty" title="${i.kind ? `${esc(i.kind)}, ` : ""}last seen ${ago(now - i.last_seen)} ago"><span class="dot ${i.active ? "" : "off"}" style="--rc:${i.active ? "#22c55e" : "#64748b"};width:7px;height:7px"></span> ${esc(i.id)}</span>`).join("")}</div>` : ""}
     ${m.note ? `<div class="row"><span class="muted">what</span><span>${esc(m.note)}</span></div>` : ""}
     <div class="row"><span class="muted">seen</span><span class="rv">${seenText(m, now)}${m.first_seen || m.active_by ? ` · ${Orchestra.livenessHtml(lv)}` : ""}</span></div>
