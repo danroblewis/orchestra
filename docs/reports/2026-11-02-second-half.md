@@ -3,7 +3,7 @@
 The unattended run of [GOAL-2026-11-02-second-half.md](../roadmap/GOAL-2026-11-02-second-half.md),
 run by [COORDINATOR.md](../roadmap/COORDINATOR.md), with product decisions taken by the owner proxy
 ([OWNER-PROXY.md](../roadmap/OWNER-PROXY.md)). Its first timed log line is 2026-11-01T17:08Z. This
-draft was written at 2026-11-02T00:27Z, while T4 was running. The goal's progress log is the source
+draft was written at 2026-11-02T00:27Z and brought up to date for T4 at about 01:55Z. The goal's progress log is the source
 of truth. Where this draft and the log disagree, the log wins.
 
 In short: the live delivery example ran the owner's day on the real SCRUM board and the private
@@ -11,8 +11,9 @@ repository three times (L1, T2-prep, T2), with every outside write in the approv
 Supervisor passed the design scenario on the live example on Haiku (L3). The Monday walkthrough
 (T2) passed 7 of 16 steps outright. 2 more met their rule but misled the owner, and 6 failed. The
 failures are mostly in the Supervisor's answers and the pages' account of who must act, not in the
-delivery itself. T4 is implementing the proxy's 19 musts. [T4: outcome pending; filled by the
-coordinator]
+delivery itself. T4 implemented the T3 judge's work list (47 rows: 19 must, 28 should) in core,
+agents, workflows and outbox; every T4 repository was on origin by 01:53Z. The walkthrough has not
+yet been re-run on T4's code.
 
 ## 1. Questions for the owner
 
@@ -139,7 +140,9 @@ T2 ran 22:26Z to 00:02Z on the real Supervisor (Haiku, $0.37, 11 invocations), f
 state. Evidence in the scratchpad under `reviews/T2/`: `run.md`, `answers.md`, `notes.md`,
 `events.jsonl` (redacted), `raw/`, and 62 screenshots in `shots/`. The script is
 [WALKTHROUGH-2026-11-02.md](../roadmap/WALKTHROUGH-2026-11-02.md). "T4 changes" lists the T3
-judge's rows T4 was given; whether each landed is pending.
+judge's rows for each step; the log records them merged (core 00:49Z and 00:57Z, agents 00:58Z
+and 01:41Z, workflows 01:31Z and 01:42Z, outbox 00:28Z). Whether they fix the step is for the
+re-run.
 
 | # | step | result | what the proxy found | what T4 changes |
 |---|---|---|---|---|
@@ -160,7 +163,23 @@ judge's rows T4 was given; whether each landed is pending.
 | 15 | "Before I go?" | pass | none | none |
 | 16 | "What changed since yesterday?" | fail | the rejection told wrongly; the 11 Outbox sends missing; UTC | `since`, oldest first; an Outbox read; times in the pages' zone; envelope times normalised |
 
-[T2 and T3 after T4: outcome pending; filled by the coordinator]
+### What T4 landed
+
+| repository | merged | what the log says landed |
+|---|---|---|
+| outbox | `a53a70a` | "approved by configuration"; the trail drafted · approved · sent with times; `Orchestra.when` everywhere |
+| core | `3ae3e39f` | `sd/no_model.py`: the no-model read gives a text and a reason; announced notes on cards and dialogs; no machine percentage on a too-few flow; envelope time always UTC `…Z`; QUICKSTART names `delivery_live` |
+| core | `12be615d` | the stall rule, after a refuter round: due = min(history average, fitted rate); no "resumed" while silent. UC-1 replay: 7 stalls and 5 resumes before, 2 and 2 after |
+| agents | `ac51fb3` | 16 rows, relocked to core `3ae3e39f` |
+| agents | `ff0a590` (row 9), `c77915a` (relock) | the wake text without the guard key; `list_items` and `explain_item` show `entered_on` and `ends_on` from the wait's `for`; `item.closed` in the contract copy; relocked to core `12be615d` and workflows `35b2b9c`, where `declare_workflow` gained the plugin's new `about` key (the one drift the relock found) |
+| workflows | `35b2b9c`, relock `0166e5d` | `item.closed`; one who-must-act; `for` and `entered_on`; reworked; example settings including Data Center; `[outbox] owner`; `--supervisor`; notes on the card; title first; the timeline in words; `every` with `at`/`tz`; `about`; first free port; the login link in a mode-600 file; README credentials and proxy; the fake bridges exit with their parent |
+
+The coordinator's T3 rows went into the script at 00:24Z (9fbcce41): a venv without
+`orchestra-tasking`, `--via bash`, step 11 naming the PR, and steps 10 and 16 saying what the run
+can show. Both demos were restarted on T4: the example as run15 (01:47Z), the live demo on core
+`8059aa62` and agents `5db0f07` (01:54Z).
+
+[T2b, the walkthrough re-run on T4's code, and its T3 judgement: outcome pending; filled by the coordinator]
 
 ## 4. What does not work, and why
 
@@ -178,6 +197,19 @@ workflows 7/12, outbox 0/2, bridges none, coordinator 2/2. The musts, in short:
   say what ends it. The example has no `--supervisor` option, and its repository, Jira project and
   URLs are hard-coded (Data Center and GHE need settings).
 - **Coordinator.** The walk's venv had the task system installed; the start ran `--via mcp`.
+
+T4 merged all of these (section 3). The re-run will show whether they work.
+
+**Follow-ups after T4** (from the log, 01:31Z to 01:54Z):
+- The no-model paragraph prints its grouped reasons with the numbers collapsed into raw keys
+  ("live in only n of n steps while every counter was (21)", "a counter of only n events (6)").
+  Each group needs a sentence.
+- `delivery_sail` and two other examples still print the login token.
+- A Data Center PAT is read from the file named `jira-cloud-token`.
+- The workflows `dev` extra does not list `orchestra_bridges`, so 41 `delivery_live` tests skip in
+  the main checkout. It should list it, as the agents' extra does.
+- The main demo's link in `~/url` once carried a stale token (401). It was rewritten from
+  `LOGIN.txt` and verified (01:54Z).
 
 Known gaps the script names and does not pretend are solved: the review is a stand-in (one
 GitHub account); no 09:00 schedule (the nudger runs at 00:00 UTC); each reminder waits for
@@ -258,16 +290,17 @@ waits for you on the Outbox page. The harness flags (`--hold-review`, `--release
 
 **The walkthrough with the Supervisor.** Today it starts from the agents' launcher
 `tests/live/delivery_live_run.py` with the role's tools `design,observe,model,events,workflows,work`,
-`--via bash`, in a venv without `orchestra-tasking`; see the script's "The fresh state". T4 adds
-`demo.sh --supervisor` so you never run the agents' launcher. [T4: whether `--supervisor` landed;
-filled by the coordinator]
+`--via bash`, in a venv without `orchestra-tasking`; see the script's "The fresh state". T4
+added `demo.sh --supervisor` (workflows `35b2b9c`), which starts the Supervisor from the example,
+so you no longer need the agents' launcher.
 
 **Integrations.** `docs/INTEGRATING.md` and QUICKSTART in the core. `~/orchestra-bridges` is now
 the library (B11): kits, fakes, templates and scaffold. `integrate_system` writes a collector into
 your repository at `.orchestra/machines/<name>/`.
 
 **The demos.** The core demo on :8096 and the delivery_sail example on :8101 ran every merged
-change as of 21:29Z; the example was restarted on b154435 at 00:15Z. Login links are in `~/url` (mode 600).
+change as of 21:29Z. Both were restarted on T4's code: the example as run15 at 01:47Z, the live
+demo on core `8059aa62` and agents `5db0f07` at 01:54Z. Login links are in `~/url` (mode 600).
 
 ## 7. Live model spend
 
@@ -283,7 +316,8 @@ change as of 21:29Z; the example was restarted on b154435 at 00:15Z. Login links
 This run: $0.83. Both runs: about $7.48, under the $30 cap. L1 spent nothing on AI. T2-prep's
 spend is not recorded. Agent time is not recorded as a total; the log gives only durations: T2
 took 1 h 35 min, and T2-prep's live run was polling for at least 45 minutes.
-[T4 and its T2 rerun: spend pending; filled by the coordinator]
+The log records no live model run in T4; its spend is not recorded.
+[T2b: spend pending; filled by the coordinator]
 
 ## 8. Suite results
 
@@ -292,15 +326,15 @@ scan 0 at each push.
 
 | repository | commit | result |
 |---|---|---|
-| core | `0fc6acc2` (R2) | unit 1074 passed, rc=0; the CommonJS pin pushed 23:17Z at 1074, rc=0 (its commit not given) |
+| core | `3ae3e39f` (T4) | 1093 passed, 2 skipped, rc=0 |
+| core | `12be615d` (T4 stall rule) | rc=0; the count is not given |
 | core | R2 implementor's branch | screenshots 7, by the agent |
-| agents | `30d09a1` | unit 637 passed, rc=0 |
-| workflows | `ad0d925` | 536 passed, rc=0 |
-| workflows | `b154435` | 450 passed, rc=0 (the log does not say why the count is lower than at `ad0d925`) |
-| bridges | `14119cf` | 172 passed, rc=0 |
-| outbox | `c88e402` | not recorded in this run's log |
-
-[T4: suite results per repository after its merges; filled by the coordinator]
+| agents | `ac51fb3` (T4) | 663 passed, rc=0 |
+| agents | `c77915a` (T4 relock) | 666 passed, rc=0 |
+| workflows | `35b2b9c` (T4) | unit 477 passed rc=0; e2e 87 passed rc=0 (10.5 min) |
+| workflows | `0166e5d` (T4 relock) | 436 passed, 4 skipped, rc=0 in the main checkout; the 41 `delivery_live` tests skip without `orchestra_bridges` (section 4) |
+| bridges | `14119cf` | 172 passed, rc=0 (no T4 rows) |
+| outbox | `a53a70a` (T4) | 99 passed, rc=0 |
 
 One red result was caught before a push: the plugin's re-lock to core `bbe7255a` failed 2 tests
 on the `NetGeometry` split (20:02Z); the Items graph fix merged first.
@@ -309,11 +343,14 @@ on the `NetGeometry` split (20:02Z); the Items graph fix merged first.
 
 - **It wrote stamps ahead of the clock again.** Seven stamps were estimated and corrected at
   18:13Z, and one bridges stamp at 17:50Z. Since 18:13Z every stamp comes from `date -u`.
-- **It wrote that a thing had happened before it had, twice.** At 18:41Z it logged the R1 core
+- **It wrote that a thing had happened before it had, three times.** At 18:41Z it logged the R1 core
   merge, which happened only at 18:42Z (the chain had stopped on a stale check). At 20:32Z it
   corrected the agents line before it: agents main was not pushed, 1 test had failed, and "the
   previous line was written from a template before the result was read". The push came at 20:36Z,
-  after a re-lock and an rc of 0 read directly.
+  after a re-lock and an rc of 0 read directly. At 00:28Z it logged the outbox as pushed; the push
+  had been rejected (rc=1, origin had moved). The 00:29Z correction calls it "the third time this
+  run" and sets the rule: a log line comes only after the push's rc is printed, in a separate
+  command.
 - **You had to remind it.** At 18:02Z you wrote "I am constantly needing to remind you of things
   and give feedback, these things should be handled automatically", and asked not to spend half
   the budget on small UI tweaks. Before that you had corrected the pile names (17:45Z) and asked
