@@ -40,8 +40,8 @@ const Live = (() => {
   const hm = (t) => Orchestra.when(t);
   const spanText = (pts) => { if (!pts || !pts.length) return "no data yet"; const a = pts[0][0], b = pts[pts.length - 1][0], m = (b - a) / 60;
     return `since ${hm(a)} · ${m < 1 ? `${Math.round(b - a)} s` : m < 90 ? `${Math.round(m)} min` : `${(m / 60).toFixed(1)} h`} of data`; };
-  // a flow's machines, as hypotheses with their confidence: never one name as if it were a fact
-  const machinesText = (f) => (f.machines || []).length ? f.machines.map((h) => `${h.machine}${h.confidence != null ? ` ${Math.round(100 * h.confidence)}%` : ""}`).join(", ") : "none associated yet";
+  // a flow's machines, as hypotheses with their confidence (none on a flow with too few events): never one name as if it were a fact
+  const machinesText = (f) => (f.machines || []).length ? f.machines.map((h) => `${h.machine}${Evidence.confidence(f, h)}`).join(", ") : "none associated yet";
   // a stock's (or, by its SD Lab name, a measured input's) level at time t
   const levelAt = (sid, t) => { const h = stockHist(sid).length ? stockHist(sid) : inputHist(sid); let v = null; for (const [tt, x] of h) { if (tt > t) break; v = x; } return v; };
   // what the flow's fitted equation says its rate is, given the levels at time t
