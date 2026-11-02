@@ -78,7 +78,7 @@ def test_a_place_its_count_view_names_is_named_by_the_labels_that_spell_it():
     # sail_check.waiting nor "sail check"); a value no place spells is said as it is
     names = {f.counter.labels["to"]: (f.name, f.evidence.get("named")) for f in m.flows if f.counter}
     assert names["sail_check.waiting"] == ("write → sail_check", "places")
-    assert names["write.held"] == ("start → write", "places")
+    assert names["write.held"] == ("outside → write", "places")      # "<start>" is outside: one word for one idea
 
 
 def test_a_left_out_pile_that_holds_items_says_its_level_and_place():
@@ -221,7 +221,7 @@ def test_a_stock_is_what_sits_in_its_place_and_a_flow_is_the_move_in_words():
     assert move[("write.held", "ci.waiting")] == "write → ci"
     assert move[("ci.waiting", "review.waiting")] == "ci → review"
     assert move[("ci.waiting", "write.waiting")] == "ci → write (sent back)"
-    assert move[("<start>", "write.waiting")] == "start → write"
+    assert move[("<start>", "write.waiting")] == "outside → write"
     assert move[("write.waiting", "write.held")] == "write: waiting → held"
 
 

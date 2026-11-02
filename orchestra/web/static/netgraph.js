@@ -268,7 +268,7 @@ const NetGraph = (() => {
       } else if (n.kind === "cloud") {
         g.append("circle").attr("class", "ng-grab").attr("r", 18);          // an outline alone is too thin to grab
         g.append("path").attr("class", "ng-cloud").attr("transform", "scale(.8)").attr("d", "M-10,6 a6,6 0 0 1 0,-12 a8,8 0 0 1 14,-3 a6,6 0 0 1 8,9 a5,5 0 0 1 -4,6 Z");
-        if (n.label) g.append("text").attr("class", "ng-sub").attr("x", 16).attr("dy", 4).text(n.label);   // where it is: "the start", "the end", beside it (clear of the frame's title)
+        if (n.label) g.append("text").attr("class", "ng-sub").attr("x", 16).attr("dy", 4).text(n.label);   // where it is: "outside", beside it (clear of the frame's title)
       } else {
         g.append("rect").attr("class", "ng-box").attr("x", -s.w / 2).attr("y", -s.h / 2).attr("width", s.w).attr("height", s.h).attr("rx", n.rx ?? 5)
           .attr("stroke", n.color || "#6b5313").attr("fill", n.fill || "#0b0e14").attr("stroke-dasharray", n.dashed ? "6 4" : null);

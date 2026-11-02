@@ -311,7 +311,7 @@ write"); the labels it does not spell (`workflow`) are said only when two of the
 thing of one name ("items held at write (hotfix)"); an `age` series of the same labels is "age of"
 it; a move between places is named by the things it leaves and enters ("write → ci"; inside one,
 "write: waiting → held"), "(sent back)" when it goes to a thing fewer moves from outside than the
-one it leaves ("ci → write (sent back)"), a value no place spells in its words ("start → write"),
+one it leaves ("ci → write (sent back)"), a value in angle brackets as outside ("outside → write"; one word for one idea, never "the start"), any other value no place spells in its words,
 and by the places' own parts when two moves would read alike ("ci (waiting) → write (waiting)"); a
 hidden state between such moves by the first and last things its items pass ("deliveries between
 write and sail_check"; never its places' states joined), with the places it spans listed in its

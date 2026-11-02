@@ -16,7 +16,8 @@ A move between two places (a ``moves`` view: its ``starts`` and ``stops`` labels
 places' values) is named by the things it leaves and enters, whether or not either is a stock:
 "write → open_pr"; inside one thing, by what is said of it: "write: waiting → held"; a move to a
 thing fewer moves from outside than the one it leaves is "(sent back)" ("ci → write (sent
-back)"); a value no place spells is said in its words ("<start>": "start → write"); two moves
+back)"); a value in angle brackets is outside ("<start>": "outside → write"), any other value no
+place spells is said in its words; two moves
 that would read alike are said by their places' own parts ("ci (waiting) → write (waiting)"). A
 state no series measures between such moves (a hidden passage, ``sd.passing``) is named by the
 first and last things its items pass, in words ("deliveries between write and sail_check"; the
@@ -85,7 +86,10 @@ def noun_of(name: str) -> str:
 
 
 def _outside(value: str) -> str:
-    """A value no place spells, in words: "<start>" is "start"."""
+    """A value no place spells, in words: one in angle brackets (``<start>``, ``<end>``) is outside
+    the system, "outside", one word for one idea (R3, the information designer); any other, its words."""
+    if re.fullmatch(r"<[^>]*>", value or ""):
+        return "outside"
     return " ".join(w for w in re.split(r"[^\w-]+", value) if w) or value
 
 

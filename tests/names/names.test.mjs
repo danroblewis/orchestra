@@ -45,7 +45,7 @@ test("a counter several flows share says so; two flows between the same ends are
   const m = { stocks: [], flows: [twin("x", "o", null), twin("y", null, "p"), flow("z", "o", null, "t_total", { by: "w", from: "A", to: "C" })] };
   const n = m.flows.map((x) => SDGraph.flowName(m, x));
   // two flows of one name are told apart by where each goes, everywhere a flow is named
-  assert.deepEqual(n, ["t · w: A → B (one counter, 2 flows) · into the end", "t · w: A → B (one counter, 2 flows) · into p", "t · w: A → C"]);
+  assert.deepEqual(n, ["t · w: A → B (one counter, 2 flows) · to outside", "t · w: A → B (one counter, 2 flows) · into p", "t · w: A → C"]);
 });
 
 test("a flow's label names its machines as hypotheses: the leader with its confidence, a tie by names, none without one", () => {
@@ -209,10 +209,10 @@ test("two flows whose short names collide are qualified by their destination, th
     flows: [named("f", "s", null, "sail_check → end"), named("g", "s", "c", "sail_check → end")] };
   const [a, b] = m.flows.map((f) => SDGraph.flowName(m, f));
   assert.notEqual(a, b);
-  assert.equal(a, "sail_check → end · into the end");
+  assert.equal(a, "sail_check → end · to outside");
   assert.equal(b, "sail_check → end · into commits on main");
   const twice = { stocks: [], flows: [named("h", "x", null, "a → b"), named("i", "y", null, "a → b")] };
-  assert.deepEqual(twice.flows.map((f) => SDGraph.flowName(twice, f)), ["a → b · into the end · from x", "a → b · into the end · from y"]);
+  assert.deepEqual(twice.flows.map((f) => SDGraph.flowName(twice, f)), ["a → b · to outside · from x", "a → b · to outside · from y"]);
 });
 
 test("a flow whose rate reads anything but its own ends is fitted from correlation, its driver named", () => {

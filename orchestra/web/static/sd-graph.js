@@ -196,9 +196,9 @@
     // two flows of one name are told apart by where each goes ("sail_check → end · into commits on
     // main"), then where each comes from: the one name used everywhere a flow is named
     const end = (id, fallback) => (id ? (stocks[id] ? stocks[id].label : nice(id)) : fallback);
-    for (const [how, of] of [["into", (f) => end(f.to, "the end")], ["from", (f) => end(f.from, "the start")]]) {
+    for (const of of [(f) => (f.to ? `into ${end(f.to)}` : "to outside"), (f) => `from ${end(f.from, "outside")}`]) {
       const seen = new Map(); for (const f of m.flows || []) { const l = flows[f.id] && flows[f.id].label; if (l) seen.set(l, (seen.get(l) || 0) + 1); }
-      for (const f of m.flows || []) { const v = flows[f.id]; if (v && seen.get(v.label) > 1) v.label = `${v.label} · ${how} ${of(f)}`; }
+      for (const f of m.flows || []) { const v = flows[f.id]; if (v && seen.get(v.label) > 1) v.label = `${v.label} · ${of(f)}`; }
     }
     const out = { stocks, flows }; NAMES.set(m, out); return out;
   }
@@ -371,7 +371,7 @@
       // named as a stock of it would be (its level series' title), else its value in words ("sail_check (waiting)");
       // ``inert``: no drawer of its own, so it is no tab stop (its tooltip says why it is no stock)
       const placeNode = (v, p) => placeBox(v, p);
-      const outsideName = (v) => (/^<(.*)>$/.test(String(v || "")) ? "the " + String(v).slice(1, -1) : "");
+      const outsideName = (v) => (/^<(.*)>$/.test(String(v || "")) ? "outside" : "");     // one word for one idea, never "the start"
       const src = f.from ? "s:" + f.from : sFrom || (pFrom ? placeNode(cl.from, pFrom) : "c:in:" + (f.to || f.id));
       const dst = f.to ? "s:" + f.to : sTo || (pTo ? placeNode(cl.to, pTo) : "c:out:" + (f.from || f.id));
       if (!f.from && !sFrom && !pFrom && f.to && !has(src)) nodes.push({ id: src, kind: "cloud", charge: -20, tether: "s:" + f.to, label: outsideName(cl.from) });
