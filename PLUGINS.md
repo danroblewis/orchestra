@@ -1783,7 +1783,8 @@ How to stay compatible:
     `orchestra.sd.equations.language` (`reference`);
   - **the intended model:** prefer `project.intended`; the names its callers share come from
     `orchestra.sd.intended.ops` (`ENV_NAME`, `OPTION`), `.names` (`resolve`, `ABSENT`, `WAITS`,
-    `WAITS_LINK`), `.keys` (`Keys`) and `.checks` (`PROVENANCE`);
+    `WAITS_LINK`), `.keys` (`Keys`), `.checks` (`PROVENANCE`) and `.display` (`declared_names`: the
+    names declared parts lend to the discovered ones they are linked to);
   - **used today, to be moved out of the web package:** `orchestra.web.machine_logs` (`tail`,
     `readable`), `orchestra.web.instruments` (`instruments_view`), `orchestra.web.dynamics`
     (`model_view`). Do not add to these.

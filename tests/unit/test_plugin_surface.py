@@ -26,6 +26,7 @@ SURFACE = {
     "orchestra.sd.flows_of": ["flows_of", "name_unit"],
     "orchestra.sd.intended.checks": ["PROVENANCE"],
     "orchestra.sd.intended.keys": ["Keys"],
+    "orchestra.sd.intended.display": ["declared_names"],
     "orchestra.sd.intended.names": ["ABSENT", "WAITS", "WAITS_LINK", "resolve"],
     "orchestra.sd.intended.ops": ["ENV_NAME", "OPTION"],
     "orchestra.sd.predictions": ["PredictionError", "Predictions", "expectation", "plain"],
