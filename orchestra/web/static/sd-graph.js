@@ -250,13 +250,15 @@
   const shorten = (t, n = 44) => (t.length > n ? t.slice(0, n - 2) + "…" : t);
   // the machines a flow's label names: its hypotheses tied with the top confidence (within TIE), each
   // with a question mark; one leader "planner 94%?", a tie "reviewer / merge_gate?", more than two
-  // "3 machines?"; none, or none with a confidence, no label. Never one name as a fact.
+  // "3 machines?"; none, or none with a confidence, no label; on a flow with too few events to fit,
+  // the name without its percentage. Never one name as a fact.
   const TIE = 0.02;
   function machineLabel(f, nameOf = (id) => id) {
     const hs = (f.machines || []).filter((h) => h.machine && h.confidence != null);
     if (!hs.length) return "";
     const top = Math.max(...hs.map((h) => h.confidence)), lead = hs.filter((h) => top - h.confidence <= TIE);
-    if (lead.length === 1) return `${nameOf(lead[0].machine)} ${Math.round(100 * lead[0].confidence)}%?`;
+    const few = typeof Evidence !== "undefined" && Evidence.tooFew(f);     // too few events to fit: no percentage (evidence-text.js)
+    if (lead.length === 1) return few ? `${nameOf(lead[0].machine)}?` : `${nameOf(lead[0].machine)} ${Math.round(100 * lead[0].confidence)}%?`;
     return lead.length > 2 ? `${lead.length} machines?` : `${lead.map((h) => nameOf(h.machine)).join(" / ")}?`;
   }
 

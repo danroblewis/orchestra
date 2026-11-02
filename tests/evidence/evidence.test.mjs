@@ -45,3 +45,18 @@ test("a match in time that cannot tell machines apart says so: one machine on 3 
   const two = [{ id: "x", machines: [h("a", 0.95)] }, { id: "y", machines: [h("a", 0.95), h("b", 0.5)] }];
   assert.equal(Evidence.untold({ flows: two }, two[0]), "");
 });
+
+test("a flow with too few events to fit shows no machine percentage, as it shows no equation or fit", () => {
+  const h = { machine: "worker", confidence: 0.87 };
+  const few = { machines: [h], current: { origin: "fitted", quality: { events: 3 } } };
+  const enough = { machines: [h], current: { origin: "fitted", quality: { events: 40 } } };
+  assert.ok(Evidence.tooFew(few) && !Evidence.tooFew(enough));
+  assert.equal(Evidence.confidence(few, h), "");
+  assert.equal(Evidence.confidence(enough, h), " 87%");
+  assert.equal(Evidence.confidence(enough, { machine: "worker" }), "");
+  globalThis.Evidence = Evidence;                     // the diagram's label (sd-graph.js) reads it as the page does
+  const SDGraph = createRequire(import.meta.url)("../../orchestra/web/static/sd-graph.js");
+  assert.equal(SDGraph.machineLabel(few), "worker?");
+  assert.equal(SDGraph.machineLabel(enough), "worker 87%?");
+  delete globalThis.Evidence;
+});

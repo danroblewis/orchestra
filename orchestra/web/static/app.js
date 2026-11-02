@@ -78,6 +78,15 @@ Orchestra.dashboardGroups = (ms) => {
 // it, and what Orchestra observed of the machine (``rows``) is drawn under it on every card.
 // ``changed()`` asks the pages to draw the cards again (its data arrived). Any machine no package
 // claims gets Orchestra's card and dialog.
+// What a machine's instances announced beyond what Orchestra reads (``about``: the rest of
+// orchestra.machine.started's data, passed on unread, rule 2), as plain "key: value" lines in the
+// order announced; no key means anything here, only ``disabled`` is put first.
+Orchestra.aboutLines = (m) => {
+  const about = (m && m.about) || {}, keys = Object.keys(about).sort((a, b) => (b === "disabled") - (a === "disabled"));
+  const word = (v) => (Array.isArray(v) ? v.map(String).join(", ") : v === null ? "none" : String(v));
+  return keys.map((k) => `${k}: ${word(about[k])}`);
+};
+Orchestra.aboutHtml = (m) => Orchestra.aboutLines(m).map((l) => `<div class="about-line">${esc(l)}</div>`).join("");
 Orchestra.machineCards = (() => {
   const by = new Map();
   const changed = () => document.dispatchEvent(new Event("orchestra:machinecards"));
@@ -90,7 +99,7 @@ Orchestra.machineCards = (() => {
       return `<div class="panel ${extra} ${m.unseen ? "unseen" : ""}" data-id="${esc(m.id)}" tabindex="0" role="button" aria-label="${esc(m.name || m.id)}: open its details" onclick="openMachine(this.dataset.id)" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openMachine(this.dataset.id)}">${html}</div>`;
     },
     // What Orchestra observed of a machine, as the rows of its card, drawn under whatever its
-    // package put there: how it is engaged and what kind of thing it is (announced), its package,
+    // package put there: the notes it announced (Orchestra.aboutLines), how it is engaged and what kind of thing it is (announced), its package,
     // its instances, when it was seen, what it publishes (all time, and the rate in the last ten
     // minutes when there is one) and listens for, its counted traffic on another system's bus
     // (rates and backlogs, never events), and the flows the latest discovery hypothesises it is
@@ -104,8 +113,8 @@ Orchestra.machineCards = (() => {
         const why = p.count <= 1 ? "seen once: no rate" : !m.active ? "quiet: no rate" : `none in ${win}`;
         const title = rated ? `${p.count} events, ${p.day} in 24 h, ${p.n_10m != null ? `${p.n_10m} in ${win}` : `over ${win}`}: ${p.per_min_10m}/min` : `${p.count} events, ${p.day} in 24 h · ${why}`;
         return `<span class="ty" title="${title}">${esc(p.type)} · ${p.count}${rated ? ` · ${p.per_min_10m}/min` : ""}</span>`; };
-      const lv = Orchestra.liveness(m, now);
-      return `<div class="row"><span class="muted">engaged</span><span>${m.mode ? `<span class="tag k-${esc(m.mode.replace(/ /g, "_"))}">${esc(m.mode.replace("_", " "))}</span>` : '<span class="muted">not announced</span>'}</span></div><div class="row"><span class="muted" data-k="kind">kind</span><span>${m.kind ? `<span class="tag">${esc(kindWord(m.kind))}</span>` : '<span class="muted">not announced</span>'}</span></div>
+      const lv = Orchestra.liveness(m, now), about = Orchestra.aboutHtml(m);
+      return `${about ? `<div class="row"><span class="muted" title="what it announced of itself, as it said it">announced</span><span class="about">${about}</span></div>` : ""}<div class="row"><span class="muted">engaged</span><span>${m.mode ? `<span class="tag k-${esc(m.mode.replace(/ /g, "_"))}">${esc(m.mode.replace("_", " "))}</span>` : '<span class="muted">not announced</span>'}</span></div><div class="row"><span class="muted" data-k="kind">kind</span><span>${m.kind ? `<span class="tag">${esc(kindWord(m.kind))}</span>` : '<span class="muted">not announced</span>'}</span></div>
     <div class="row"><span class="muted">package</span><span>${m.package ? esc(m.package) : '<span class="muted">no package</span>'}</span>${m.group ? `<span class="muted">group</span><span><span class="tag" title="the group it announced (a team): a label, not a separate system">${esc(m.group)}</span></span>` : ""}</div>
     ${m.instances && m.instances.length ? `<div class="row"><span class="muted">instances</span>${m.instances.map((i) => `<span class="ty" title="${i.kind ? `${esc(i.kind)}, ` : ""}last seen ${ago(now - i.last_seen)} ago"><span class="dot ${i.active ? "" : "off"}" style="--rc:${i.active ? "#22c55e" : "#64748b"};width:7px;height:7px"></span> ${esc(i.id)}</span>`).join("")}</div>` : ""}
     ${m.note ? `<div class="row"><span class="muted">what</span><span>${esc(m.note)}</span></div>` : ""}

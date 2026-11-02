@@ -25,12 +25,14 @@ def test_no_versions_and_no_model_say_why(project, capsys):
     repo = str(project.repo_root)
     assert main(["--repo", repo, "sd", "versions"]) == 0
     out = capsys.readouterr().out
-    assert out.startswith("no versions yet: no discovery has run yet; no orchestra run is running")
+    assert out.startswith("no versions yet. There is no model yet: no discovery has run yet. No orchestra run is running")
     new = "too new to measure: its first point is after the window's last step, so the next discovery considers it"
     ModelStore.for_state(project.state_dir).write_discovery(
         Model("m", "nothing yet", discovery={"left_out": {"a": new, "b": new}, "sampled": 2, "series": 0}))
     assert main(["--repo", repo, "sd", "show"]) == 0
-    assert "no model yet: none could be judged yet: all 2 series are newer than one step" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "There is no model yet: the last discovery found no stocks among the 2 series it looked at (none could be judged yet: all 2 series are newer than one step)." in out
+    assert "It left out 2 of them: too new (2)." in out
     assert main(["--repo", repo, "sd", "show", "--version", "4"]) == 1
     assert "there is no version 4" in capsys.readouterr().out
 
@@ -72,10 +74,12 @@ def test_the_cli_never_points_to_a_list_below_it_does_not_print(project, capsys)
                                              "sampled": 3, "series": 0}))
     assert main(["--repo", str(project.repo_root), "sd", "versions"]) == 0
     out = capsys.readouterr().out
-    assert "below" not in out and "the Dynamics page lists why each was left out" in out
+    assert "below" not in out and "the rest left out for the other reasons listed" in out
+    assert "The Dynamics page lists why each series was left out" in out
     ModelStore.for_state(project.state_dir).write_discovery(Model("m", "nothing", discovery={"left_out": {}, "sampled": 2, "series": 2}))
     assert main(["--repo", str(project.repo_root), "sd", "versions"]) == 0
-    assert "nothing balances yet (why each series was not a stock: the Dynamics page lists it" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "(nothing balances yet)." in out and "The Dynamics page lists why each series was left out" in out
 
 
 def test_init_outside_a_git_repository_says_so_in_one_line(tmp_path, monkeypatch, capsys):

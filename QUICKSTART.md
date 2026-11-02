@@ -167,6 +167,13 @@ a file's path, never the token), and writes the rest. Or follow
 [docs/INTEGRATING.md](docs/INTEGRATING.md) with your own coding tool. Tokens never go in
 `orchestra.toml`. Outbox drafts wait on the **Outbox** page until you approve them.
 
+To see the plugins work together before setting up your own, run the Workflows plugin's live
+example, `orchestra-workflows/examples/delivery_live`: a delivery workflow on a Jira board, a GitHub
+repository and Slack, with a PagerDuty fake. Its `demo.sh`, run from a clone of the
+`orchestra-workflows` repository, installs the bridges' kits and the Outbox plugin beside the
+Workflows plugin the first time and starts its own Orchestra (`demo.sh --dry-run` runs it all on
+fakes); its README says which credentials it reads, and from where.
+
 The tasking plugin (`orchestra[tasking]`: tickets, milestones, a merge gate) is the older, naive
 implementation of the same loop; this quickstart leaves it out.
 

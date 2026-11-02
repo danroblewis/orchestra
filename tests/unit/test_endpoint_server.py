@@ -73,7 +73,7 @@ def test_a_published_event_lands_on_the_bus_with_the_envelope(ep, project):
     assert ev["id"] == out["id"] and ev == out["event"]
     assert ev["specversion"] == "1.0" and ev["type"] == "bread.baked" and ev["source"] == "baker/2"
     assert ev["subject"] == "batch-9" and ev["data"] == {"loaves": 3} and ev["datacontenttype"] == "application/json"
-    assert ev["time"].endswith("+00:00")
+    assert ev["time"].endswith("Z")
 
 
 def test_a_repeated_id_is_written_once(ep, project):

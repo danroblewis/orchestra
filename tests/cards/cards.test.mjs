@@ -92,3 +92,13 @@ test("one palette for a machine's colour, defined once, in app.js", () => {
   assert.equal(mcolor("worker"), mcolor("worker"));
   assert.equal(mcolor(null), "#94a3b8"); assert.equal(mcolor("none"), "#94a3b8");
 });
+
+test("what a machine announced beyond what Orchestra reads is printed as key: value lines, disabled first", () => {
+  const noted = { ...m, package: null, about: { fake: true, writes: ["slack.post", "slack.dm"], disabled: "token expired", stand_in: "for the reviewer" } };
+  assert.deepEqual(Orchestra.aboutLines(noted), ["disabled: token expired", "fake: true", "writes: slack.post, slack.dm", "stand_in: for the reviewer"]);
+  const rows = Orchestra.machineCards.rows(noted);       // no package card registered: Orchestra's rows still say it
+  assert.match(rows, /announced<\/span><span class="about"><div class="about-line">disabled: token expired<\/div><div class="about-line">fake: true</);
+  assert.match(Orchestra.machineCards.rows({ ...noted, package: "bakery" }), /disabled: token expired/);
+  assert.match(Orchestra.aboutHtml({ about: { disabled: "<b>x</b>" } }), /disabled: &lt;b&gt;x&lt;\/b&gt;/);
+  assert.doesNotMatch(Orchestra.machineCards.rows({ ...m, about: {} }), /announced</);
+});

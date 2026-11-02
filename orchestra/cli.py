@@ -127,22 +127,18 @@ def _predictions(models, args) -> int:
     return 0
 
 
-ELSEWHERE = "(the Dynamics page lists why each was left out, or `orchestra sd discover` prints it)"
-PER_SERIES = "why each series was not a stock: the Dynamics page lists it, or `orchestra sd discover` prints it"
+ELSEWHERE = "The Dynamics page lists why each series was left out, or `orchestra sd discover` prints it (and looks once)."
 
 
 def _why_no_model(project, models) -> str:
-    """Why there is no saved model, as the Dynamics page says it (``web.dynamics``): from the
-    latest discovery's left-out list, or that none has run; and whether one will run by itself."""
-    from .web.dynamics import host_running, no_model_reason
+    """Why there is no saved model, in the paragraph the Dynamics page and the model reads give
+    (``sd.no_model``), and where the reason for each series is."""
+    from .sd.no_model import NoModel, host_running
 
     cached = models.latest_discovery()
-    why = no_model_reason(cached[1].discovery, where=ELSEWHERE) if cached else "no discovery has run yet"
-    if why == "nothing balances yet":
-        why += f" ({PER_SERIES})"
-    if not host_running(project):
-        why += "; no orchestra run is running, so discovery will not run until it starts (orchestra sd discover looks once)"
-    return why
+    if cached and cached[1].stocks:
+        return f"the latest discovery found {len(cached[1].stocks)} stocks, but no version of it is saved yet. {ELSEWHERE}"
+    return f"{NoModel(cached[1].discovery if cached else None, host_running(project)).text} {ELSEWHERE}"
 
 
 def _discovered(m, strategy: str) -> None:
@@ -221,7 +217,7 @@ def cmd_sd(args) -> int:
         return _predictions(models, args)
     if args.action == "versions":
         if not models.versions():
-            print(f"no versions yet: {_why_no_model(project, models)}")
+            print(f"no versions yet. {_why_no_model(project, models)}")
             return 0
         for v in models.versions():
             era = f"  era {v['era']}" if v.get("era") else ""
@@ -232,7 +228,7 @@ def cmd_sd(args) -> int:
         if args.version is not None:
             print(f"there is no version {args.version}")
             return 1
-        print(f"no model yet: {_why_no_model(project, models)}")
+        print(_why_no_model(project, models))
         return 0
     store = metrics_for(project)
     print(f"{m.name} (version {args.version or models.current_version()})")

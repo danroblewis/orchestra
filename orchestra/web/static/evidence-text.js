@@ -26,6 +26,9 @@ const Evidence = (() => {
   const eventsOf = (f) => ((((f || {}).current || {}).quality || {}).events ?? 0);
   const tooFew = (f) => !!(f && f.current && f.current.origin === "fitted" && eventsOf(f) < MIN_EVENTS);
   const tooFewText = (f) => `${eventsOf(f)} event${eventsOf(f) === 1 ? "" : "s"}: too few to fit`;
+  // a hypothesis' confidence beside its machine, " 87%": none on a flow with too few events to fit,
+  // as its equation and fit show none
+  const confidence = (f, h) => (tooFew(f) || (h || {}).confidence == null ? "" : ` ${Math.round(100 * h.confidence)}%`);
   // beside a hypothesis' confidence: how much of the evidence matched
   function matched(h) {
     const c = (h || {}).counts;
@@ -47,6 +50,6 @@ const Evidence = (() => {
     const flowsOf = (mc) => ((m || {}).flows || []).filter((g) => strong(g).some((h) => h.machine === mc)).length;
     return mine.some((h) => flowsOf(h.machine) >= MANY) ? UNTOLD : "";
   }
-  return { trust, trustCell, byConstruction, tooFew, tooFewText, matched, untold, MIN_EVENTS };
+  return { trust, trustCell, byConstruction, tooFew, tooFewText, confidence, matched, untold, MIN_EVENTS };
 })();
 if (typeof module !== "undefined") module.exports = Evidence;

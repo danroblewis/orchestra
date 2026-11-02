@@ -90,7 +90,7 @@ def test_orchestra_without_the_sd_extra(tmp_path):
         assert status == 200, body
 
         status, body = get(base + "/api/dynamics/model", token)
-        assert status == 200, body
+        assert status == 404 and '"error":"no model"' in body, body
         assert "orchestra[sd]" in body and "pip install" in body, body
 
         status, body = get(base + "/api/dynamics/simulate", token)
