@@ -250,9 +250,39 @@ alert source; polling, so a short job waits up to 25 minutes.
 Not done or not recorded: L4 (the push block against a full-path `gh` and an explicit pushurl) is
 open (20:21Z). L5 is done in L1's README; the token refresh how-to stands. B1 to B10 have no log
 line under their ids; some of their substance came in other rows (B6's page names in the R1 agents
-fixes; the phone layout in R1 and R2). F2 has no log line. F4, the first report's pending
-section, is not yet recorded. [F4: outcome pending; filled by the coordinator] [Release gate:
-final verifier's verdict pending; filled by the coordinator]
+fixes; the phone layout in R1 and R2). F2 has no log line.
+
+**F4, the first report.** It is complete. Its gate section is filled, and branch `report` is
+merged into core main (`16739f95`, "Merge branch 'report': the first run's report, complete
+(F4)"). It is at `docs/reports/2026-11-01-workflows-run.md`.
+
+**The release gate** (workflow `w7b12cqig`, finished 03:43Z). It took 60 agents, 15 h and 14.7M
+tokens. The subtraction audit found 186 findings. Each repository had two layered review rounds:
+
+| repository | findings, round 1 / round 2 | commits |
+|---|---|---|
+| core | 51 / 51 | 29 + 29 |
+| agents | 50 / 43 | 1 |
+| workflows | 57 / 45 | 25 + 34 |
+
+The gate branches had already been merged in F3 (agents `30d09a1`, workflows, bridges `69a4b43`).
+The final verifier says agents, workflows and bridges are ready to push. For the core it says
+"no, fixes are small":
+
+- P1. 7 layout JS failures caused by `~/package.json`. Already fixed on main by the CommonJS pin.
+- P2. Plugin words in core code: a user-facing "the Supervisor's confirm" in
+  `predictions_report.py:71`, and pile, workflow, agent and ticket in comments
+  (`predictions.py:10`, `capacity.py:19,134`, `collect/views.py:32`, `discover.py:180`,
+  `instrument_series.py:5`, `sd-graph.js`, `instruments.html:101`).
+- P3. `discover.py:184-189` names a series by its step and place labels. Reported as a design
+  question; SPEC's views mechanism and D33 cover it.
+- P4. The workflows README calls bridges and outbox private (on GitHub they are public) and never
+  names orchestra-agents.
+- P5. The tasking extra in the core's `pyproject.toml`.
+
+Suites at the gate heads: core 1214 passed (plus 7 environment failures, P1), agents 697,
+workflows 547, bridges 312. P2 is being fixed on core branch `T6-words` and P4 on `T6-workflows`;
+their outcome is in the T6 placeholder (section 3).
 
 ## 5. Decisions taken, and by whom
 
