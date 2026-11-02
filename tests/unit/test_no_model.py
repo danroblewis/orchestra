@@ -44,6 +44,7 @@ def test_like_reasons_count_together():
     assert kind_of("the same as x_total (counts the same events)") == "the same as another series"
     assert kind_of("Orchestra's own: not a measure") == "Orchestra's own"
     assert kind_of("live in only 3 of 40 steps while every counter was: too few") == "live in only n of n steps while every counter was"
+    assert kind_of("a counter of only 1 event") == kind_of("a counter of only 3 events") == "a counter of only n events"
 
 
 def test_no_discovery_says_so():

@@ -47,6 +47,7 @@ def kind_of(why: str) -> str:
     if why.startswith("the same as "):
         return "the same as another series"
     head = re.split(r": | \(|; |, ", why, maxsplit=1)[0]
+    head = re.sub(r"\b1 (event|step|time|point|value)\b", r"1 \1s", head)     # "1 event" counts with "3 events"
     return re.sub(r"\d+(\.\d+)?", "n", head).strip()
 
 
