@@ -27,6 +27,7 @@ function openMachine(id, { dialog = false } = {}) {
   $("drawer").classList.add("mdlg");
   openDrawer(`<h3 data-drawer-key="m:${esc(id)}"><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.id)} <span class="tag">${esc(kindWord(m.kind))}</span>${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}${m.mode ? ` <span class="tag k-${esc(m.mode.replace(/ /g, "_"))}">${esc(m.mode.replace("_", " "))}</span>` : ""}${m.package ? ` <span class="tag">package: ${esc(m.package)}</span>` : ""}</h3>
     <div class="row" id="m-seen">${dlgSeen(m)}</div>
+    ${Orchestra.aboutLines(m).length ? `<h4>Announced <span style="text-transform:none;letter-spacing:0;font-weight:400">(what it said of itself, as it said it)</span></h4><div class="about">${Orchestra.aboutHtml(m)}</div>` : ""}
     <div id="m-insts">${dlgInstances(m)}</div>
     <h4>Log</h4><div class="seg" id="m-loginst"></div><div class="muted" id="m-lognote" style="font-size:11.5px"></div><div class="term" id="m-log" style="display:none"></div>
     <h4>Publishes</h4><div id="m-pubs">${dlgPublishes(m)}</div>

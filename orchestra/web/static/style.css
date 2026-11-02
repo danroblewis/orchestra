@@ -151,3 +151,4 @@ g.ng-label:focus-visible .ng-elabel { fill:#fff; text-decoration:underline; stro
 
 /* no endless motion for a viewer who asked for less */
 @media (prefers-reduced-motion: reduce) { .ng-halo, .ng-flowdash { animation:none } }
+.about .about-line { overflow-wrap:anywhere } /* a machine's announced notes, key: value (Orchestra.aboutLines) */
