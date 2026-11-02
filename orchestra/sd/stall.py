@@ -11,17 +11,31 @@ no simulator), over the last ``window_s`` (``[discovery] stall_after``):
 - a **flow is stalled** when its usual rate is above zero and every rate measured within the
   window is zero.
 
+Silence is evidence only where events were due: a flow is judged stalled, or counted as usually
+draining a stock, only when at its usual rate the window should have held at least
+``MIN_EXPECTED`` events, and, when its equation was fitted, only when the fit had at least
+``MIN_EVENTS`` events (``sd.balance``: the minimum the fit itself takes, the Dynamics page's
+"too few to fit"). A flow fitted on two events says nothing about when the next is due. The
+usual rate it is judged at is the lower of the history's mean before the window and the fit's own
+mean (its events over its live minutes): a burst early in a short history does not make events due
+that the fit, over its whole window, does not expect.
+
 An item is judged only when the history covers both parts (points before the window and within
-it); otherwise it is left as it was. ``step`` keeps, in the announce record, what is stalled
+it); otherwise it is left as it was, and so is a flow measured at zero throughout the window that
+is not stalled now (no longer due, or no longer usual): it has not moved again, so it has not
+resumed; likewise a stock still rising past outflows that hold but no longer usually drain it. ``step`` keeps, in the announce record, what is stalled
 since when, so each stall is announced once (``orchestra.model.stalled``) and its end once
 (``orchestra.model.resumed``), when the item is judged again and no longer stalled. An item that
 leaves the model is forgotten without a word."""
 
 from __future__ import annotations
 
-from .model import Model
+from .balance import MIN_EVENTS
+from .model import Flow, Model
 
 ZERO = 1e-12
+MIN_EXPECTED = 3        # the events the window should have held at the usual rate, at the least, for silence to say anything
+UNIT_S = {"second": 1.0, "minute": 60.0, "hour": 3600.0}
 
 
 def _split(points: list, cut: float) -> tuple[list[float], list[float]]:
@@ -32,6 +46,29 @@ def _split(points: list, cut: float) -> tuple[list[float], list[float]]:
 
 def _mean(xs: list[float]) -> float:
     return sum(xs) / len(xs) if xs else 0.0
+
+
+def fitted_rate(f: Flow, time_unit: str) -> float | None:
+    """The fit's mean rate per ``time_unit``: its events over its live minutes, or None when the
+    equation was not fitted or does not say."""
+    eq = f.current()
+    q = (eq.quality or {}) if eq is not None and eq.origin == "fitted" else {}
+    events, minutes = q.get("events"), q.get("live_minutes")
+    if events is None or not minutes:
+        return None
+    return float(events) / (float(minutes) * 60.0 / UNIT_S.get(time_unit, 60.0))
+
+
+def due(f: Flow, usual: float, window_s: float, time_unit: str) -> bool:
+    """Whether the flow's silence over the window says anything: at its usual rate (per
+    ``time_unit``, the lower of ``usual`` and the fit's mean) at least ``MIN_EXPECTED`` events were
+    due, and its equation, when fitted, was fitted on at least ``MIN_EVENTS``."""
+    fit = fitted_rate(f, time_unit)
+    rate = usual if fit is None else min(usual, fit)
+    if rate * window_s / UNIT_S.get(time_unit, 60.0) < MIN_EXPECTED:
+        return False
+    eq = f.current()
+    return not (eq is not None and eq.origin == "fitted" and ((eq.quality or {}).get("events") or 0) < MIN_EVENTS)
 
 
 def find(model: Model, history: dict, at: float, window_s: float, share: float) -> tuple[dict[str, dict], set[str]]:
@@ -50,8 +87,11 @@ def find(model: Model, history: dict, at: float, window_s: float, share: float) 
         if f.id not in rates:
             continue
         usual, recent, within = rates[f.id]
+        silent = all(abs(v) <= ZERO for v in within)
+        if silent and not (usual > ZERO and due(f, usual, window_s, model.time_unit)):
+            continue                      # still not moving: not resumed, left as it was
         judged.add(f"flow:{f.id}")
-        if usual > ZERO and all(abs(v) <= ZERO for v in within):
+        if silent:
             last_moving = max((t for t, v in flows_h.get(f.id) or [] if abs(v) > ZERO), default=cut)
             stalled[f"flow:{f.id}"] = {"kind": "flow", "id": f.id, "name": f.name, "since": last_moving, "window_s": window_s,
                                        "rate": round(recent, 6), "usual": round(usual, 6), "per": model.time_unit}
@@ -62,11 +102,13 @@ def find(model: Model, history: dict, at: float, window_s: float, share: float) 
         before, within = _split(pts, cut)
         if not outs or not before or not within or any(f.id not in rates for f in outs):
             continue
-        judged.add(f"stock:{s.id}")
         rose_by = within[-1] - before[-1]
         drains = [{"flow": f.id, "rate": round(rates[f.id][1], 6), "usual": round(rates[f.id][0], 6)} for f in outs]
-        usually = any(d["usual"] > ZERO for d in drains)
+        usually = any(d["usual"] > ZERO and due(f, rates[f.id][0], window_s, model.time_unit) for d, f in zip(drains, outs, strict=True))
         held = all(d["rate"] <= share * d["usual"] if d["usual"] > ZERO else abs(d["rate"]) <= ZERO for d in drains)
+        if rose_by > ZERO and held and not usually:
+            continue                      # still rising, still held: not resumed, left as it was
+        judged.add(f"stock:{s.id}")
         if rose_by > ZERO and usually and held:
             stalled[f"stock:{s.id}"] = {"kind": "stock", "id": s.id, "name": s.name, "since": cut, "window_s": window_s,
                                         "level": within[-1], "rose_by": round(rose_by, 6), "outflows": drains,
