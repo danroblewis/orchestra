@@ -2,7 +2,8 @@
 // page's stock-and-flow model): a d3 force layout with
 //   nodes   circle (a machine: initial inside, name beneath, optional halo), box (an event type, a
 //           stock: lines of text, optional decoration), valve (a flow: a small dot with a label),
-//           cloud (outside: a source or a sink);
+//           cloud (outside: a source or a sink; with ``stub``, a part of the system outside a focus,
+//           focus.js: a small grey dot named beside it, on the side away from the drawing);
 //   edges   solid, dashed or double (``double``: two thin lines, for a count rather than events),
 //           coloured, with an arrow, an optional label and sign, and optional
 //           moving dashes whose speed follows a rate; an edge may end on another edge
@@ -273,6 +274,11 @@ const NetGraph = (() => {
       } else if (n.kind === "valve") {
         g.append("circle").attr("class", "ng-grab").attr("r", 14);
         g.append("circle").attr("r", s.r).attr("fill", n.color || "#94a3b8").attr("stroke", "var(--panel)").attr("stroke-width", 2);
+      } else if (n.kind === "cloud" && n.stub) {
+        // a stub (focus.js): a part of the system outside the focus, drawn small and grey, named beside it
+        g.append("circle").attr("class", "ng-grab").attr("r", 16);
+        g.append("circle").attr("class", "ng-stub").attr("r", 6);
+        if (n.label) g.append("text").attr("class", "ng-sub ng-stub-label").attr("x", 11).attr("dy", 4).text(n.label);
       } else if (n.kind === "cloud") {
         g.append("circle").attr("class", "ng-grab").attr("r", 18);          // an outline alone is too thin to grab
         g.append("path").attr("class", "ng-cloud").attr("transform", "scale(.8)").attr("d", "M-10,6 a6,6 0 0 1 0,-12 a8,8 0 0 1 14,-3 a6,6 0 0 1 8,9 a5,5 0 0 1 -4,6 Z");
@@ -614,6 +620,15 @@ const NetGraph = (() => {
           .attr("x1", mx).attr("y1", my).attr("x2", Math.max(-s.w / 2, Math.min(s.w / 2, mx))).attr("y2", Math.max(top, Math.min(bot, my)));
       });
       gNodes.selectAll("g.ng-node").attr("transform", (n) => (n.x === undefined ? null : `translate(${n.x},${n.y})`));
+      // a stub's name reads away from the drawing: under it below the frame, over it above, to its
+      // left on the left (clouds and stubs side by side along a side never print over each other)
+      const mid = b ? (b.x0 + b.x1) / 2 : W() / 2;
+      const sideOf = (n) => (b && n.y > b.y1 ? "b" : b && n.y < b.y0 ? "t" : n.x < mid ? "l" : "r");
+      gNodes.selectAll("g.ng-node.ng-cloud text.ng-stub-label").each(function () {
+        const n = d3.select(this.parentNode).datum(); if (!n || n.x === undefined) return;
+        const sd = sideOf(n), t = d3.select(this);
+        t.attr("text-anchor", sd === "l" ? "end" : sd === "r" ? "start" : "middle").attr("x", sd === "l" ? -11 : sd === "r" ? 11 : 0).attr("dy", sd === "b" ? 20 : sd === "t" ? -12 : 4);
+      });
     }
     // hover: a node, its edges and their far ends; with two hops, also what those reach (a
     // machine, its event types, and the machines on the other side of them)

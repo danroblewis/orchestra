@@ -89,14 +89,20 @@ const NetGeometry = (() => {
       count.set(k, i + 1);
       out[n.id] = spot(s, side, i);
       out[n.id].side = side;
+      // a focus's stub (focus.js) is named under or over itself on a top or bottom side: as wide as its name
+      // (a cloud's name runs to its right: twice that, centred on it), counted only beside a stub
+      out[n.id].w = !n.label ? 0 : n.stub ? String(n.label).length * 5.8 + 12 : 2 * (String(n.label).length * 5.8 + 20);
+      out[n.id].stub = !!n.stub;
     }
-    // clouds on one side never sit on each other: spread them along it, at least SPREAD apart
+    // clouds on one side never sit on each other: spread them along it, at least SPREAD apart (and a
+    // stub's name clear of its neighbours')
     const SPREAD = 38;
     for (const side of ["t", "b", "l", "r"]) {
       const along = side === "t" || side === "b" ? 0 : 1;
       const row = Object.values(out).filter((p) => p.side === side).sort((p, q) => p[along] - q[along]);
-      for (let i = 1; i < row.length; i++) row[i][along] = Math.max(row[i][along], row[i - 1][along] + SPREAD);
+      for (let i = 1; i < row.length; i++) row[i][along] = Math.max(row[i][along], row[i - 1][along] + (along || !(row[i - 1].stub || row[i].stub) ? SPREAD : Math.max(SPREAD, (row[i - 1].w + row[i].w) / 2)));
     }
+    for (const p of Object.values(out)) { delete p.w; delete p.stub; }
     return out;
   }
 

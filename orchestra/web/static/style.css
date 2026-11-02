@@ -118,6 +118,14 @@ g.ng-label:focus-visible .ng-elabel { fill:#fff; text-decoration:underline; stro
 /* a node's tags (netgraph.js drawTags): the same on every page; a page adds only its own variants */
 .ng-tag rect { fill:var(--panel2); stroke:var(--border2); stroke-width:1 }
 .ng-tag text { font-size:8.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; fill:var(--text2) }
+.ng-stub { fill:var(--panel3); stroke:#64748b; stroke-width:1.2; stroke-dasharray:2 2 } .ng-stub-label { fill:var(--text2) } .ng-edge.ng-focus-cross .ng-line { opacity:.45 }
+/* a focus (focus.js): the offers as chips above a diagram, and the bar saying what is shown of what */
+.focus-row:empty { display:none } .focus-row { margin:0 0 8px; font-size:12px }
+.focus-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px }
+.focus-chip { background:var(--panel3); color:var(--text); border:1px solid var(--border2); border-radius:999px; font:inherit; font-size:11.5px; padding:2px 10px; cursor:pointer; max-width:100%; overflow-wrap:anywhere; text-align:left }
+.focus-chip:hover { border-color:var(--accent) } .focus-chip.on { border-color:var(--accent); background:var(--panel2); box-shadow:inset 0 0 0 1px var(--accent) }
+.focus-chip:focus-visible { outline:2px solid var(--accent); outline-offset:1px }
+.focus-bar { background:var(--panel2); border:1px solid var(--accent); border-radius:8px; padding:5px 10px; color:var(--text2) } .focus-bar b { color:var(--text) }
 .ng-cloud { fill:none; stroke:var(--muted); stroke-width:1.2; opacity:.7 } .ng-edge.ng-outside .ng-line { opacity:.5 } .ng-edge.ng-outside .ng-flowdash { opacity:.4 } .ng-grab { fill:transparent; pointer-events:all } .ng-cloud:hover, .ng-node:hover .ng-cloud { stroke:var(--text) }
 /* active: a solid glow that breathes, never dashed (dashed is "declared, not observed") */
 .ng-halo { fill:none; stroke:#4ade80; stroke-width:3; stroke-opacity:.55; filter:drop-shadow(0 0 5px #22c55e); animation:ng-halo 2.4s ease-in-out infinite alternate }
