@@ -42,6 +42,6 @@ def _titles(got: list, name: str, views: tuple) -> dict[int, str]:
     out = {}
     for i, (n, lab, _) in enumerate(got):
         k = key(n, lab)
-        if t := (places.move(lab, k) if (prov.get(k) or {}).get("view") == "moves" else places.level(lab, k)):
+        if t := (places.move(lab, k) if (prov.get(k) or {}).get("view") == "moves" else places.level(lab, k, n)):
             out[i] = t
     return out

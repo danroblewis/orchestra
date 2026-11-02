@@ -42,6 +42,5 @@ def test_each_series_its_views_name_carries_the_title_its_part_gets(tmp_path):
                    "workflow_pile_moves_total": {"view": "moves", "starts": "to", "stops": "from"}})
     got = instrument_series(m, "workflows.piles", T0 + 1, views=views)
     assert sorted(r.get("title") for r in got["series"]) == [
-        "age of write (held) · delivery_sail", "ci (waiting) · delivery_sail", "write (held) · delivery_sail",
-        "write (held) → ci (waiting) · delivery_sail"]
+        "age of items held at write", "items held at write", "items waiting at ci", "write → ci"]
     assert all("title" not in r for r in instrument_series(m, "workflows.piles", T0 + 1)["series"])

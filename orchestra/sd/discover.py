@@ -140,7 +140,7 @@ from .series import (
     sum_instances,
     writer_of,
 )
-from .titles import Places
+from .titles import Places, plural
 from .units import unit_of
 
 MIN_R2 = 0.9            # how well a balance must fit for a level to count as a stock
@@ -175,11 +175,31 @@ def _slug(s: Series) -> str:
     return "_".join([s.name, *[re.sub(r"\W+", "_", v) for v in _said(s)]])
 
 
+def _in_words(s: Series) -> str | None:
+    """A series said in words by how its name and labels read, not by a place: Orchestra's own count
+    of the bus by its event type and source ("item.closed events (supervisor)"); a series whose one
+    label is a word of its name, with a plural noun after it, is what those words count on that
+    label's value (``git_branch_commits{branch="main"}``: "commits on main")."""
+    own = {k: v for k, v in s.labels.items() if k not in NOT_NAMED}
+    if s.name == EVENT_COUNTER and own.get("type"):
+        return f"{own['type']} events" + (f" ({own['source']})" if own.get("source") else "")
+    words = [w for w in re.sub(r"_total$", "", s.name).split("_") if w]
+    if len(own) == 1:
+        [(k, v)] = own.items()
+        rest = words[words.index(k) + 1:] if k in words[:-1] else []
+        if rest and len(rest) == 1 and plural(rest[0]) and re.search(r"[^\W\d_]", v):
+            return " ".join(rest) + f" on {v}"
+    return None
+
+
 def _title(s: Series, places: Places | None = None) -> str:
-    """What the model calls a part: a place its instrument's count spells, the age of one, or a
-    move between places, in words (``sd.titles``); otherwise its series' name and the label
-    values that say which one. The pages show this title (sd-graph.js)."""
-    if places is not None and (t := places.level(s.labels, s.key) if not s.counter else places.move(s.labels, s.key)):
+    """What the model calls a part: what sits in a place its instrument's count spells, the age of
+    them, or a move between places, in words (``sd.titles``); a series its name and labels say in
+    words (``_in_words``); otherwise its series' name and the label values that say which one. The
+    pages show this title (sd-graph.js)."""
+    if places is not None and (t := places.level(s.labels, s.key, s.name) if not s.counter else places.move(s.labels, s.key)):
+        return t
+    if t := _in_words(s):
         return t
     base = re.sub(r"_total$", "", s.name).replace("_", " ")
     extra = _said(s)
@@ -187,10 +207,11 @@ def _title(s: Series, places: Places | None = None) -> str:
 
 
 def _named(s: Series, places: Places | None) -> dict:
-    """The record that a part's title is its instrument's places' (the pages show it as it is)."""
-    if places is None:
-        return {}
-    return {"named": "places"} if (places.move(s.labels, s.key) if s.counter else places.level(s.labels, s.key)) else {}
+    """The record that a part's title is its instrument's places' or its words' (the pages show it
+    as it is)."""
+    if places is not None and (places.move(s.labels, s.key) if s.counter else places.level(s.labels, s.key, s.name)):
+        return {"named": "places"}
+    return {"named": "words"} if _in_words(s) else {}
 
 
 def _never_falls(s: Series) -> bool:
@@ -1159,6 +1180,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     for st, made, was_input, lv in net_flow_stocks(series, [s for s, _, _, _ in found], sid_of, inputs, input_refs, left_out, step,
                                                    unit_s, (since, end), lambda x: (unique_id(_slug(x), writer_of(x), ids), _title(x, places)),
                                                    ref, writer_of, measure=net_evidence, units=unit):
+        st.evidence.update(_named(lv, places))
         stocks.append(st)
         net_flows += made
         sources.pop(f"input:{was_input}", None)

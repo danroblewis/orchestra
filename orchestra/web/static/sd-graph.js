@@ -30,9 +30,9 @@
   // - a stock named by a label that also names the stocks of another series (pods by region, for
   //   two services) says its machine too ("search · eu-west"), so two services' regions never
   //   look alike. A remote machine's source prefix is left out (rig.search: "search").
-  // - a part the server named by its instrument's places (``evidence.named``, sd/titles.py: "write
-  //   (held) · delivery_sail", a move "write (held) → open_pr (waiting) · delivery_sail", a hidden
-  //   state "open_pr (waiting) … ci (waiting)") is shown by that name, as every page shows it; the
+  // - a part the server named by its instrument's places or in words (``evidence.named``,
+  //   sd/titles.py: "items held at write", a move "write → open_pr", a hidden state "open_pr
+  //   (waiting) … ci (waiting)"; "commits on main") is shown by that name, as every page shows it; the
   //   sentence its instrument's view gives it (``describes``, collect/views.py; the model carries
   //   the views) is its description (``about``), never part of its name (the owner, 2026-11-01:
   //   "write.held" read as a disk write); two such series of one name are told apart by their families;

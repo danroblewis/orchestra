@@ -302,12 +302,23 @@ was made, never a machine or a flow (rules 6 and 7): it changes no equation.
 A view also names the parts its series become, once, on the server (`sd/titles.py`), and every
 page shows that title (the Dynamics, Machines and Instruments pages, the diff between versions):
 where a count's other labels spell its place label's value part by part, they are the place in
-words, in the order they spell it (`pile="write.held"`, `step="write"`, `place="held"`: "write
-(held) · delivery_sail"); an `age` series of the same labels is "age of" it; a move between places
-is named by them, a stock or not ("write (held) → ci (waiting) · delivery_sail"); a hidden state
-between such moves by the places its moves enter and leave ("open_pr (waiting) … ci (waiting)").
-No label's name is known to the core (rule 1), and label values keep their spelling (`sail_check`).
-Such a part's evidence says `named: "places"`.
+words, in the order they spell it (`pile="write.held"`, `step="write"`, `place="held"`), and the
+stock is what sits there: the noun its series counts (the last word of its name when that is a
+plural noun: `workflow_pile_items`, items), what is said of it there and where ("items held at
+write"); the labels it does not spell (`workflow`) are said only when two of their values share a
+thing of one name ("items held at write (hotfix)"); an `age` series of the same labels is "age of"
+it; a move between places is named by the things it leaves and enters ("write → ci"; inside one,
+"write: waiting → held"), "(sent back)" when it goes to a thing fewer moves from outside than the
+one it leaves ("ci → write (sent back)"), a value no place spells in its words ("start → write"),
+and by the places' own parts when two moves would read alike ("ci (waiting) → write (waiting)"); a
+hidden state between such moves by the places its moves enter and leave ("open_pr (waiting) … ci
+(waiting)"), or by what sits there when they enter and leave one ("items waiting at sail"). No
+label's name is known to the core (rule 1), and label values keep their spelling (`sail_check`).
+Such a part's evidence says `named: "places"`. A series its own name and labels say in words is
+named so on the server too, with `named: "words"`: Orchestra's count of the bus by its type and
+source ("item.closed events (supervisor)"), and a series whose one label is a word of its name
+followed by a plural noun by that noun on the label's value (`git_branch_commits{branch="main"}`:
+"commits on main").
 
 ### 4.3 The model
 

@@ -73,12 +73,12 @@ def test_a_place_its_count_view_names_is_named_by_the_labels_that_spell_it():
     the order they spell it, then what they do not spell; no label's name is known to the core."""
     m = _piles()
     [st] = [s for s in m.stocks if s.series is not None]
-    assert (st.id, st.name, st.evidence.get("named")) == ("workflow_pile_items_write_held_delivery_sail", "write (held) · delivery_sail", "places")
+    assert (st.id, st.name, st.evidence.get("named")) == ("workflow_pile_items_write_held_delivery_sail", "items held at write", "places")
     # a move is named by the places it leaves and enters, a stock or not ("sail_check (waiting)", never
     # sail_check.waiting nor "sail check"); a value no place spells is said as it is
     names = {f.counter.labels["to"]: (f.name, f.evidence.get("named")) for f in m.flows if f.counter}
-    assert names["sail_check.waiting"] == ("write (held) → sail_check (waiting) · delivery_sail", "places")
-    assert names["write.held"] == ("<start> → write (held) · delivery_sail", "places")
+    assert names["sail_check.waiting"] == ("write → sail_check", "places")
+    assert names["write.held"] == ("start → write", "places")
 
 
 def test_without_its_instruments_views_a_pile_is_named_by_its_series():
@@ -100,8 +100,8 @@ def test_hidden_state_between_moves_that_name_places_is_named_by_them():
     prov = {series_key(n, lab): {"view": "count", "place": "pile"} for n, lab in items}
     prov.update({c.key: {"view": "moves", "starts": "to", "stops": "from"} for c in ins + outs + [same, nowhere]})
     places = Places([(n, lab, series_key(n, lab)) for n, lab in items], prov)
-    assert places.between(ins, outs) == "open_pr (waiting) … ci (waiting) · delivery_sail"
-    assert places.between(ins, [same]) == "open_pr (waiting) · delivery_sail"
+    assert places.between(ins, outs) == "open_pr (waiting) … ci (waiting)"
+    assert places.between(ins, [same]) == "items waiting at open_pr"
     assert places.between(ins, [nowhere]) is None      # by its neighbours, then
 
 
@@ -115,8 +115,8 @@ def test_a_series_of_the_age_view_is_the_age_of_its_place_never_its_name():
     prov = {pile.key: {"source": "own", "instrument": "piles", "view": "count", "place": "pile"},
             age.key: {"source": "own", "instrument": "piles", "view": "age"}}
     places = Places([(x.name, x.labels, x.key) for x in (pile, age)], prov)
-    assert _title(pile, places) == "write (held) · delivery_sail"
-    assert _title(age, places) == "age of write (held) · delivery_sail"
+    assert _title(pile, places) == "items held at write"
+    assert _title(age, places) == "age of items held at write"
 
 
 def test_a_place_value_with_no_words_keeps_the_series_name_and_dashes_spell_like_underscores():
@@ -130,4 +130,61 @@ def test_a_place_value_with_no_words_keeps_the_series_name_and_dashes_spell_like
     prov = {x.key: {"view": "count", "place": "pile"} for x in (num, dash)}
     places = Places([(x.name, x.labels, x.key) for x in (num, dash)], prov)
     assert _title(num, places).startswith("queue depth")
-    assert _title(dash, places) == "code-review (waiting) · w"
+    assert _title(dash, places) == "items waiting at code-review"
+
+
+def _pile_places(*workflows):
+    from orchestra.sd.series import Series, series_key
+    from orchestra.sd.titles import Places
+
+    items, moves = [], []
+    for wf in workflows:
+        for st in ("write", "ci", "review"):
+            for pl in ("waiting", "held"):
+                items.append(("workflow_pile_items", {"instrument": "piles", "workflow": wf, "pile": f"{st}.{pl}", "step": st, "place": pl}))
+        for a, b in (("<start>", "write.waiting"), ("write.waiting", "write.held"), ("write.held", "ci.waiting"),
+                     ("ci.waiting", "review.waiting"), ("ci.waiting", "write.waiting")):
+            moves.append(Series("workflow_pile_moves_total", {"instrument": "piles", "workflow": wf, "from": a, "to": b}, [], [], True))
+    prov = {series_key(n, lab): {"view": "count", "place": "pile"} for n, lab in items}
+    prov.update({c.key: {"view": "moves", "starts": "to", "stops": "from"} for c in moves})
+    places = Places([*[(n, lab, series_key(n, lab)) for n, lab in items], *[(c.name, c.labels, c.key) for c in moves]], prov)
+    return places, items, moves
+
+
+def test_a_stock_is_what_sits_in_its_place_and_a_flow_is_the_move_in_words():
+    """The owner (2026-11-01): "the names of all the system dynamics stocks are weird". A stock is
+    what sits there, the noun its series counts, what is said of it there and where ("items held at
+    review"), with no workflow when one is on the model; a move is between the things it leaves and
+    enters, "sent back" when it goes nearer the start, and from outside in words."""
+    from orchestra.sd.series import series_key
+
+    places, items, moves = _pile_places("delivery_sail")
+    level = {lab["pile"]: places.level(lab, series_key(n, lab), n) for n, lab in items}
+    assert (level["write.waiting"], level["review.held"], level["ci.waiting"]) == ("items waiting at write", "items held at review", "items waiting at ci")
+    move = {(c.labels["from"], c.labels["to"]): places.move(c.labels, c.key) for c in moves}
+    assert move[("write.held", "ci.waiting")] == "write → ci"
+    assert move[("ci.waiting", "review.waiting")] == "ci → review"
+    assert move[("ci.waiting", "write.waiting")] == "ci → write (sent back)"
+    assert move[("<start>", "write.waiting")] == "start → write"
+    assert move[("write.waiting", "write.held")] == "write: waiting → held"
+
+
+def test_two_workflows_with_a_step_of_one_name_say_whose_it_is():
+    from orchestra.sd.series import series_key
+
+    places, items, moves = _pile_places("delivery_sail", "hotfix")
+    n, lab = next((n, lab) for n, lab in items if lab["workflow"] == "hotfix" and lab["pile"] == "write.held")
+    assert places.level(lab, series_key(n, lab), n) == "items held at write (hotfix)"
+    c = next(c for c in moves if c.labels["workflow"] == "hotfix" and c.labels["from"] == "write.held")
+    assert places.move(c.labels, c.key) == "write → ci (hotfix)"
+
+
+def test_a_series_its_name_and_labels_say_in_words():
+    from orchestra.sd.discover import _named, _title
+    from orchestra.sd.series import Series
+
+    commits = Series("git_branch_commits", {"instrument": "git", "branch": "main"}, [], [], False)
+    closed = Series("orchestra_events_total", {"type": "item.closed", "source": "supervisor"}, [], [], True)
+    assert (_title(commits), _named(commits, None)) == ("commits on main", {"named": "words"})
+    assert (_title(closed), _named(closed, None)) == ("item.closed events (supervisor)", {"named": "words"})
+    assert _title(Series("queue_depth", {"queue": "orders"}, [], [], False)) == "queue depth (orders)"
