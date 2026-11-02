@@ -15,7 +15,10 @@ gone still: its stock goes, as discovery says.
 ``hold`` carries each quiet stock from the current version into the discovery, with the current
 version's flows that reach it (whose other end is outside or in the discovery), marked
 ``evidence["quiet"]``: the version they stand on and since when (the last time its series moved,
-else the window's start). Nothing is fitted or deleted: the held parts are the current version's,
+else the window's start). A flow discovery found that reaches a held stock from outside, only
+because that stock was not found, gets its end back (``evidence["quiet_end"]``): the held stock's
+balance claims it (the Slack demo's v17: "late → awaiting_check" in both balances, drawn from
+outside, so "threads waiting at late" only filled). Nothing is fitted or deleted: the held parts are the current version's,
 numbers and all, and a discovery whose structure is then the current version's saves no version
 (``rediscover``); the record says so (``stands``, and ``quiet: the model of v<N> stands, nothing
 refitted``), its ``since`` a time the page says in the viewer's zone."""
@@ -85,6 +88,18 @@ def hold(model: Model, current: Model | None, version: int | None, dump: list | 
         model.stocks.append(c)
         have.add(s.id)
     ids, flows = {s.id for s in held}, {f.id for f in model.flows}
+    # a flow discovery drew from or to outside because the stock at that end was quiet (not found)
+    # gets that end back from the current version, now the stock is held: its balance claims the flow
+    was = {f.id: f for f in current.flows}
+    for f in model.flows:
+        if (c := was.get(f.id)) is None:
+            continue
+        rejoined = [end for end in ("src", "dst") if getattr(f, end) is None and getattr(c, end) in ids]
+        for end in rejoined:
+            setattr(f, end, getattr(c, end))
+        if rejoined:
+            f.evidence = {**f.evidence, "quiet_end": {"version": version, "ends": rejoined,
+                                                      "why": "the stock at this end was held through a quiet window"}}
     carried = []
     for f in current.flows:
         if f.id in flows or not ({f.src, f.dst} & ids) or not all(x is None or x in have for x in (f.src, f.dst)):

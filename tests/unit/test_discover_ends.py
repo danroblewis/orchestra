@@ -8,6 +8,7 @@ from orchestra.metrics import Point
 from orchestra.metrics.file import FileMetrics
 from orchestra.sd.balance import balance, cancel
 from orchestra.sd.discover import Path, Series, discover, fit_flow, same_flow, twin_levels
+from orchestra.sd.ends import Claim, moves
 
 T0 = 1_800_000_000.0
 
@@ -220,3 +221,12 @@ def test_twin_levels_are_judged_on_the_levels_when_their_balances_differ():
     assert [s.key for s, _, _, _ in kept] == ['waiting{machine="board"}'], [s.key for s, _, _, _ in kept]
     assert twins['waiting{machine="board"}'][0]["change_correlation"] >= 0.9
     assert "correlate by" in left_out['bake_queue{machine="expo"}']
+
+
+def test_a_move_two_stocks_of_one_writer_hold_has_both_ends():
+    # the Slack demo's v17 drew "late → awaiting_check" from outside though both balances hold it:
+    # ends.moves gives it both ends (the fault was sd.quiet's, test_discover_quiet)
+    c = Series("workflow_pile_moves_total", {"from": "late.waiting", "to": "awaiting_check.waiting"}, [], [], False)
+    by = {c.key: [Claim("late", -1, 0.5, "workflows.piles", False), Claim("check", 1, 0.3, "workflows.piles", False)]}
+    [mv] = moves([c], by, {c.key: "late_check"}, lambda s: "workflows.piles")
+    assert (mv.src, mv.dst) == ("late", "check")
