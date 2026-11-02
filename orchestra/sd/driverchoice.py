@@ -19,8 +19,21 @@ driver is kept only when it passes all of these, in this order:
   better than the own form and the trend fitted on that half, and its slope must keep its sign. A
   driver that wins a window by a coincidence of one stretch rarely carries to the other;
 - **the driver read a quarter of the window away** (earlier and later) must explain clearly less:
-  under ``SHIFTED`` of the gain it has in place. A cause explains the events it causes when they
+  under ``SHIFTED`` of the gain it has in place, at the median of the reads, and not as much as in
+  place both earlier and later by the same shift (a period alias). A cause explains the events it causes when they
   happen; a series that moves smoothly explains a smooth rate as well an hour off.
+
+- **an outflow's rate goes to zero when its source is empty**: a flow that drains a stock takes
+  only what is there. A driver form of an outflow is refuted when, over the stretches its source
+  was empty, it expects at least one event (items that were not there to leave), or, when the
+  source was never empty in the window, when its rate never fell below a floor that alone
+  expects at least one event over the window and is above the lowest rate of the flow's own form
+  (an intercept, or a driver that never reads zero: :8096 fitted gate → end as 0.366 + 4.82 ×
+  items held at review). The flow's own line (``c + k × source``) is held to the first test, and
+  so is its plain constant: one that drains an empty source gives way to the proportion of the
+  source, so a refused driver never falls back to a form that drains it faster. A source that
+  read empty while the flow's events came is no evidence (``read_empty``): items that pass
+  through within a sample never show in its level.
 
 What survives is the driver; when several survive within ``AIC_MARGIN`` of the best, the one
 nearest the flow by its name and labels (``adjacency``: the same unit, a shared service, queue or
@@ -32,6 +45,7 @@ rather than explained by free disk. Every flow records what was tried and why th
 from __future__ import annotations
 
 import math
+from bisect import bisect_right
 
 from .drivers import AIC_MARGIN, EVENTS_PER_PARAM
 from .live import intersect, length
@@ -195,11 +209,17 @@ def _shifted(w: Window, cand: dict, p: Path, own: dict, p_own: Path | None) -> t
     gains. It is read an eighth, a quarter and three eighths of the window earlier and later, and
     refuted when, at the median of those, it keeps ``SHIFTED`` of its gain in place: a series that
     only moves smoothly explains a smooth rate at any of them, while a cause (even one that
-    repeats, read half its period off) explains clearly less at most."""
+    repeats, read half its period off) explains clearly less at most. It is refuted too when any
+    shift gains as much as the read in place, with its slope the same way, both earlier and later:
+    a series that repeats with the events, read a period off, explains them as well either way (a
+    period alias; read half a period off, a square wave explains them as well the other way round,
+    which is no alias; :8096's driver gained 81 read 15 min earlier against 24 in place, with the
+    median under the bar). Gaining only one way is a cause that acts later (a pipeline 15 min
+    long), not an alias, and is left to the median."""
     if not w.live:
         return "", {}
     span = w.live[-1][1] - w.live[0][0]
-    out, ratios = {}, []
+    out, ratios, gains = {}, [], {}
     for s in [f * span for f in (1 / 8, 1 / 4, 3 / 8, -1 / 8, -1 / 4, -3 / 8)]:
         sub = intersect(w.live, [(p.times[0] - s, p.times[-1] - s)])
         ev, pp, t = w.on(sub, p)
@@ -209,10 +229,19 @@ def _shifted(w: Window, cand: dict, p: Path, own: dict, p_own: Path | None) -> t
         base = loglik(evo, po, _form(own), _fit(evo, po, _form(own), t), t)
         here = loglik(ev, pp, _form(cand), _fit(ev, pp, _form(cand), t), t) - base
         moved_path = Path.of([(x - s, v) for x, v in zip(p.times, p.values)], sub, w.unit_s)
-        moved = loglik(ev, moved_path, _form(cand), _fit(ev, moved_path, _form(cand), t), t) - base
+        fit_moved = _fit(ev, moved_path, _form(cand), t)
+        moved = loglik(ev, moved_path, _form(cand), fit_moved, t) - base
         out[f"{s / 60:+.3g} min"] = {"in_place": round(here, 2), "moved": round(moved, 2)}
         if here > 0:
             ratios.append(moved / here)
+            same_way = fit_moved is not None and fit_moved.get("k", 0.0) * cand["params"].get("k", 0.0) > 0
+            if moved >= here and same_way:
+                gains[s] = (moved, here)
+    alias = next((s for s in sorted(gains) if s > 0 and -s in gains), None)
+    if alias is not None:
+        (later, here_l), (earlier, here_e) = gains[alias], gains[-alias]
+        return (f"read {alias / 60:.3g} min earlier and later it gains as much as in place ({earlier:.1f} and {later:.1f} against "
+                f"{here_e:.1f} and {here_l:.1f}): a period alias, not a cause"), out
     if ratios:
         mid = sorted(ratios)[len(ratios) // 2]
         if mid >= SHIFTED:
@@ -239,6 +268,78 @@ def _judge(w: Window, cand: dict, p: Path, ref: dict, p_ref: Path | None, price:
     return gain, why, {**how, **({"shifted": shift} if shift else {})}
 
 
+def _empty(p: Path) -> list[tuple[float, float]]:
+    """The stretches of the live time a stock's path held nothing (its level at most zero)."""
+    out: list[tuple[float, float]] = []
+
+    def add(a: float, b: float) -> None:
+        if out and abs(out[-1][1] - a) < 1e-9:
+            out[-1] = (out[-1][0], b)
+        else:
+            out.append((a, b))
+    for start, end in p.live:
+        i = bisect_right(p.times, start) - 1
+        level, t0 = (p.values[i] if i >= 0 else (p.values[0] if p.values else 0.0)), start
+        for t, v in zip(p.times[i + 1:], p.values[i + 1:]):
+            if t >= end:
+                break
+            if level <= 1e-9 and t > t0:
+                add(t0, t)
+            t0, level = t, v
+        if level <= 1e-9 and end > t0:
+            add(t0, end)
+    return out
+
+
+def read_empty(p_src: Path | None, events: list) -> list[tuple[float, float]]:
+    """The stretches the source read empty, when that reading can be trusted: none when the flow had
+    events while it read empty (items that pass through within a sample are never seen in its level,
+    so its zero is no evidence that nothing was there; uc3 and UC-1's queues read empty for 40 to 59
+    minutes of an hour while 5 to 57 of their items left)."""
+    empty = _empty(p_src) if p_src is not None else []
+    if not empty:
+        return []
+    starts = [a for a, _ in empty]
+    for t, _ in events:
+        i = bisect_right(starts, t) - 1
+        if i >= 0 and empty[i][0] < t <= empty[i][1] + 1e-9:
+            return []
+    return empty
+
+
+def floor_of(cand: dict, p: Path | None) -> float:
+    """The lowest rate a form gives over what it read."""
+    c, k = cand["params"].get("c", 0.0), cand["params"].get("k", 0.0)
+    if cand["form"] == "constant" or p is None:
+        return max(0.0, c)
+    return min((max(0.0, c + k * x) for x in p.time_at), default=0.0)
+
+
+def drains_empty(cand: dict, p: Path, empty: list[tuple[float, float]], t: float, than: float | None = None) -> str:
+    """Why an outflow's form does not go to zero when its source is empty (``p``: the path the form
+    reads; ``empty``: the stretches its source read empty, ``read_empty``; ``t``: the live time), or
+    nothing. ``than``: with the source never empty, the lowest rate of the form it would fall back
+    to; a driver whose own floor alone drains an item over the window is refuted only when that
+    floor is above it (the fallback would drain an empty source at least as fast)."""
+    c, k = cand["params"].get("c", 0.0), cand["params"].get("k", 0.0)
+    rate = (lambda a, b: p.expected(a, b, c, k)) if cand["form"] != "constant" else (lambda a, b: max(0.0, c) * (b - a) / p.unit_s)
+    if empty:
+        due = sum(rate(a, b) for a, b in empty)
+        if due >= 1.0:
+            held = sum(b - a for a, b in empty) / 60
+            return (f"an outflow takes only what its source holds: over the {held:.3g} min its source was empty this form expects "
+                    f"{due:.1f} events, of items that were not there")
+        return ""
+    if than is None or cand["form"] == "constant":
+        return ""
+    floor = floor_of(cand, p)
+    if floor * t >= 1.0 and floor > than:
+        return (f"an outflow's rate must go to zero when its source is empty, and this one never falls below {floor:.3g} "
+                f"(at the lowest level of what it reads; its own form's lowest is {than:.3g}), which alone drains "
+                f"{floor * t:.1f} items over the window")
+    return ""
+
+
 def choose(cands: list[dict], plain: dict, src: str | None, paths: dict[str, Path], events: list, unit_s: float,
            near: dict[str, int] | None = None) -> tuple[dict, dict]:
     """The flow's chosen form and the evidence for its driver (or for having none). ``cands``: every
@@ -261,10 +362,22 @@ def choose(cands: list[dict], plain: dict, src: str | None, paths: dict[str, Pat
     trend = _fit(events, w.clock, "linear", w.t)
     ll_trend = loglik(events, w.clock, "linear", trend, w.t)
     p_plain = paths.get(plain["inputs"][0]) if plain["inputs"] else None
+    empty = read_empty(paths.get(src), events) if src is not None else []
     own = plain
+    if empty and plain["form"] == "constant" and (why := drains_empty(plain, paths[src], empty, w.t)):
+        # the plain constant drains an empty source too: the proportion of the source takes its place when it was fitted
+        prop = next((c for c in cands if c["form"] == "proportional" and c["inputs"] == [src] and "rejected" not in c
+                     and math.isfinite(c["loglik"])), None)
+        if prop is not None:
+            own = plain = prop
+            p_plain = paths[src]
+            ev["plain"] = {"refuted": f"the constant: {why}"}
     for line in lines:
         if line["params"]["k"] >= 0:            # a drain that grows with what waits: the usual first-order outflow
-            if line["aic"] <= plain["aic"] - AIC_MARGIN:
+            if why := drains_empty(line, paths[src], empty, w.t):
+                line["refuted"] = why
+                ev["own_line"] = {"refuted": why}
+            elif line["aic"] <= plain["aic"] - AIC_MARGIN:
                 own = line
             continue
         gain, why, how = _judge(w, line, paths[src], plain, p_plain, AIC_MARGIN, ll_trend)
@@ -277,11 +390,14 @@ def choose(cands: list[dict], plain: dict, src: str | None, paths: dict[str, Pat
             own = line
             ev["own_line"] = {"chosen": True, **how}
     p_own = paths.get(own["inputs"][0]) if own["inputs"] else None
+    outflow = src is not None
     survivors, refuted, priced = [], [], 0
     for cand in open_[:TESTED]:
         gain, why, how = _judge(w, cand, paths[cand["inputs"][0]], own, p_own, price, ll_trend)
         if why is None:
             continue
+        if not why and outflow:
+            why = drains_empty(cand, paths[cand["inputs"][0]], empty, w.t, floor_of(own, p_own))
         priced += 1
         if why:
             refuted.append({"driver": cand["inputs"][0], "form": cand["form"], "why": why})

@@ -129,3 +129,52 @@ def test_a_quiet_hour_saves_no_version_and_the_current_one_stands(tmp_path, monk
     assert store.latest_discovery()[1].stock("t_DONE") is not None
     since = store.latest_discovery()[1].discovery["quiet"]["since_by_stock"]
     assert since["t_DONE"] == 1_800_000_000.0 and since["t_OPEN"] == 1_800_003_600.0   # DONE last moved then; OPEN never, in the window read
+
+
+def test_a_found_flow_from_outside_gets_back_the_end_a_held_stock_claims():
+    # the Slack demo's v17: "late → awaiting_check" was in both stocks' balances yet drawn from
+    # outside: discovery did not find the quiet "late" (so the move began outside), and holding
+    # "late" left the found move as it was, so "threads waiting at late" only filled
+    fresh = _quiet_hour(("IN_PROGRESS",))
+    fresh.flows = [_flow(None, "IN_PROGRESS")]
+    fresh.flows[0].id = "OPEN_IN_PROGRESS"
+    m = quiet.hold(fresh, _v3(), 3, [_written(s) for s in STATES])
+    f = {x.id: x for x in m.flows}
+    assert (f["OPEN_IN_PROGRESS"].src, f["OPEN_IN_PROGRESS"].dst) == ("t_OPEN", "t_IN_PROGRESS")
+    assert f["OPEN_IN_PROGRESS"].evidence["quiet_end"]["ends"] == ["src"]
+    assert "quiet" not in f["OPEN_IN_PROGRESS"].evidence          # found, not carried: its numbers are this window's
+
+
+def _found_open_move() -> Model:
+    fresh = _quiet_hour(("IN_PROGRESS",))
+    fresh.flows = [_flow(None, "IN_PROGRESS")]
+    fresh.flows[0].id = "OPEN_IN_PROGRESS"
+    fresh.flows[0].counter = SeriesRef("OPEN_IN_PROGRESS_total", {"instrument": "tasks.tickets"})
+    return fresh
+
+
+def test_a_found_flow_a_still_stock_could_not_have_fed_stays_drawn_from_outside():
+    # refuter round: OPEN held still at 3 and nothing came into it, while 28 items moved on: they
+    # did not come from OPEN, whatever v3 said; the end stays outside and the record says why
+    moved = tuple(START + 100 * k for k in range(1, 29))
+    dump = [_written(s) for s in STATES] + [_counter("OPEN_IN_PROGRESS", moved), _counter("in_OPEN")]
+    f = {x.id: x for x in quiet.hold(_found_open_move(), _v3(), 3, dump).flows}["OPEN_IN_PROGRESS"]
+    assert (f.src, f.dst) == (None, "t_IN_PROGRESS")
+    assert "leaves room for 0 of its 28 events" in f.evidence["quiet_end"]["kept_outside"]["src"]
+
+
+def test_a_found_flow_a_still_stock_passed_through_gets_its_end_back():
+    # the same 28 items, each arriving at OPEN as one leaves: its level still, its balance whole
+    moved = tuple(START + 100 * k for k in range(1, 29))
+    dump = [_written(s) for s in STATES] + [_counter("OPEN_IN_PROGRESS", moved), _counter("in_OPEN", moved)]
+    f = {x.id: x for x in quiet.hold(_found_open_move(), _v3(), 3, dump).flows}["OPEN_IN_PROGRESS"]
+    assert (f.src, f.dst) == ("t_OPEN", "t_IN_PROGRESS") and f.evidence["quiet_end"]["ends"] == ["src"]
+
+
+def test_a_found_flow_between_two_held_stocks_gets_both_ends_back():
+    fresh = _quiet_hour(("DONE",))
+    fresh.flows = [_flow(None, None)]
+    fresh.flows[0].id = "IN_PROGRESS_READY_FOR_REVIEW"
+    m = quiet.hold(fresh, _v3(), 3, [_written(s) for s in STATES])
+    f = {x.id: x for x in m.flows}["IN_PROGRESS_READY_FOR_REVIEW"]
+    assert (f.src, f.dst) == ("t_IN_PROGRESS", "t_READY_FOR_REVIEW") and f.evidence["quiet_end"]["ends"] == ["src", "dst"]

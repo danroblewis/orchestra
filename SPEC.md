@@ -747,7 +747,15 @@ when: the last time its series moved, else the window's start), before the struc
 compared, so a quiet window never saves a poorer version. A series that stopped being written
 inside the window has stopped, not gone still, and a stock that moved and no longer balances is
 not quiet: both go as before. When nothing else changed, no version is saved and the record
-(`discovery.quiet`) and the page say `quiet since <time>: the model of v<N> stands`.
+(`discovery.quiet`, `stands`) and the page say "quiet since <time>: vN stands, nothing refitted",
+the time from the record's `since` in the viewer's own zone.
+
+**A window too quiet for any counter** (`sd/rediscover.py`, `widen`). When a discovery finds no
+stock because no counter it read counted 5 events in the window (a low-traffic system: a sprint
+board, whose last hour may hold no move at all), the window is doubled with its step (the grid
+keeps its number of steps), up to 7 days, never past the era's start and no further than the
+oldest point read, and discovered again before "no model" is said; `discovery.widened` says
+which windows were read, and the page says the window the model was fitted over.
 
 **Eras** (`sd/eras.py`, `sd/prior.py`, `sd/compare.py`; goal G11). After a machine changes how
 the system works (a prompt or role edited, the configuration changed, a deploy) it is a different

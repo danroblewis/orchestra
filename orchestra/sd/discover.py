@@ -864,6 +864,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # of that it covers (MIN_COVER), so a collector started a few minutes ago is an input, not a
     # stock fitted on its few minutes
     since = observed_from(series, start, end)
+    counters_read = sum(1 for s in series if s.counter)    # still written, moved or not: a wider window may see them move (sd.rediscover.widen)
     counters = [s for s in series if s.counter and any(s.deltas)]
     # counters that moved together in (almost) every step measure the same thing (a machine's own
     # count and Orchestra's count of the event it publishes for it; they may differ by a step at the
@@ -1315,6 +1316,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                        "stocks": sum(1 for st in stocks if not st.evidence.get("by_construction")), "flows": len(flows), "min_r2": MIN_R2,
                        "by_construction": sorted(sid_of[k] for k in constructed_ if k in sid_of),
                        "refused": refused,
+                       "counters_read": counters_read,
                        "counter_events": {"counters": len(moved_events), "most": round(max(moved_events, default=0.0), 3), "needed": MIN_EVENTS},
                        **({"declared": {"stocks": {p.name: {"level": p.level, **p.record(),
                                                             "outcome": "a stock" if p.level in declared_keys and p.level in sid_of

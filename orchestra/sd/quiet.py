@@ -15,7 +15,13 @@ gone still: its stock goes, as discovery says.
 ``hold`` carries each quiet stock from the current version into the discovery, with the current
 version's flows that reach it (whose other end is outside or in the discovery), marked
 ``evidence["quiet"]``: the version they stand on and since when (the last time its series moved,
-else the window's start). Nothing is fitted or deleted: the held parts are the current version's,
+else the window's start). A flow discovery found that reaches a held stock from outside, only
+because that stock was not found, gets its end back (``evidence["quiet_end"]``): the held stock's
+balance claims it (the Slack demo's v17: "late → awaiting_check" in both balances, drawn from
+outside, so "threads waiting at late" only filled), unless the held stock's balance over the
+window (its level and its other flows' counters) leaves room for under half of the flow's events:
+a stock that held still while nothing else moved it gave none to it, and the flow stays outside
+(``kept_outside``). Nothing is fitted or deleted: the held parts are the current version's,
 numbers and all, and a discovery whose structure is then the current version's saves no version
 (``rediscover``); the record says so (``stands``, and ``quiet: the model of v<N> stands, nothing
 refitted``), its ``since`` a time the page says in the viewer's zone."""
@@ -55,6 +61,43 @@ def _quiet_stock(s, flows: list, read: dict, start: float, end: float, step: flo
     return all(q for q, _ in found), max((t for _, t in found if t is not None), default=None)
 
 
+def _counted(points: list, start: float, end: float) -> float | None:
+    """A counter's events in the window (a drop is a reset); None when it was not read."""
+    if not points:
+        return None
+    return sum((b - a if b >= a else b) for (_, a), (t, b) in pairwise(points) if start < t <= end)
+
+
+def _change(points: list, start: float, end: float) -> float | None:
+    """A level's change over the window; None when it was not read."""
+    before = [v for t, v in points if t <= start] or [v for t, v in points if t <= end][:1]
+    at_end = [v for t, v in points if t <= end]
+    return at_end[-1] - before[-1] if before and at_end else None
+
+
+def _not_its(f, end: str, sid: str, current: Model, read: dict, start: float, stop: float) -> str:
+    """Why a found flow drawn from or to outside does not take back its end at the held stock
+    ``sid``, or nothing: the stock's balance over the window, from its level and its other flows'
+    counters, leaves room for under half of the flow's events (a stock that held still while
+    nothing else moved it gave none to a flow that moved twenty). Unread series: nothing is known
+    against the end, and it is restored."""
+    ref = lambda r: read.get(series_key(r.name, r.labels), []) if r is not None else []
+    stock = next((s for s in current.stocks if s.id == sid), None)
+    mine = _counted(ref(f.counter), start, stop)
+    dx = _change(ref(stock.series), start, stop) if stock is not None and stock.series is not None else None
+    others = [g for g in current.flows if g.id != f.id and sid in (g.src, g.dst)]
+    counts = [_counted(ref(g.counter), start, stop) for g in others]
+    if mine is None or dx is None or any(n is None for n in counts):
+        return ""
+    into = sum(n for g, n in zip(others, counts) if g.dst == sid)
+    out = sum(n for g, n in zip(others, counts) if g.src == sid)
+    room = into - out - dx if end == "src" else dx + out - into
+    if room >= mine / 2:
+        return ""
+    return (f"{sid}'s balance over the window leaves room for {room:g} of its {mine:g} events (its level changed by {dx:g}, "
+            f"its other flows moved {into:g} in and {out:g} out): the flow does not {'leave' if end == 'src' else 'reach'} it")
+
+
 def hold(model: Model, current: Model | None, version: int | None, dump: list | None) -> Model:
     """The discovered ``model`` with the quiet stocks of ``current`` (saved as ``version``) it
     lacks carried in, each with the flows that reach it; recorded in ``model.discovery["quiet"]``.
@@ -85,6 +128,24 @@ def hold(model: Model, current: Model | None, version: int | None, dump: list | 
         model.stocks.append(c)
         have.add(s.id)
     ids, flows = {s.id for s in held}, {f.id for f in model.flows}
+    # a flow discovery drew from or to outside because the stock at that end was quiet (not found)
+    # gets that end back from the current version, now the stock is held: its balance claims the flow
+    was = {f.id: f for f in current.flows}
+    for f in model.flows:
+        if (c := was.get(f.id)) is None:
+            continue
+        rejoined, refused = [], {}
+        for side in ("src", "dst"):
+            if getattr(f, side) is None and (sid := getattr(c, side)) in ids:
+                if why := _not_its(f, side, sid, current, read, start, end):
+                    refused[side] = why
+                else:
+                    rejoined.append(side)
+                    setattr(f, side, sid)
+        if rejoined or refused:
+            f.evidence = {**f.evidence, "quiet_end": {"version": version, "ends": rejoined,
+                                                      "why": "the stock at this end was held through a quiet window",
+                                                      **({"kept_outside": refused} if refused else {})}}
     carried = []
     for f in current.flows:
         if f.id in flows or not ({f.src, f.dst} & ids) or not all(x is None or x in have for x in (f.src, f.dst)):
