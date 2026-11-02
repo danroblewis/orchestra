@@ -10,6 +10,10 @@
 <link rel="stylesheet" href="/static/intended-marks.css?v={{v}}">
 <link rel="stylesheet" href="/static/intended-machines.css?v={{v}}">
 <style>
+  /* a phone: who hands work to whom as a list; the map behind a toggle */
+  .phone-list, .phone-only { display:none }
+  @media (max-width:760px) { .phone-list { display:block; font-size:12.5px } .phone-only { display:inline-block; margin:6px 0 } body:not(.map-on) #evmap-host { display:none }
+    .phone-list .pl { padding:4px 0; border-bottom:1px solid var(--border) } }
   .mwrap { max-width:1400px; margin:0 auto; padding:16px 20px }
   .mwrap .intro { font-size:12.5px; color:var(--text2); margin-bottom:12px; max-width:1050px }
   .mwrap h2 { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:18px 0 8px; display:flex; gap:8px; align-items:center }
@@ -38,6 +42,8 @@
 <div class="mwrap">
   <div class="intro">A machine does actual work: a program, an AI agent or a person. Orchestra knows one by its events on the bus, and links its work to the model's flows only as hypotheses.<details class="more"><summary>more about this page</summary>One that runs as several copies is one machine with instances: events from <code>baker/1</code> are instance 1 of the machine <code>baker</code>. What it publishes, its instances and the hand-offs between machines are observed on the bus; a machine on another system's bus is known by the counts a source reads there (what it produced into or consumed from a channel, marked counted); how it is engaged, what it listens for, what kind of thing it is, where its log is and which package it belongs to are what the machine announces about itself when it starts. A package may list a machine before it is first seen (marked unseen); what is observed always wins. What measures the system is not a machine: scripts, scraped URLs and sources are on the <a href="/instruments">Instruments</a> page. How a machine's work relates to the model's flows is not known in advance; each card shows the flows discovery infers it may be associated with, as hypotheses with their confidence, and the Dynamics page shows them on the model.<br>A program becomes a machine by publishing to the bus: it announces itself with <code>orchestra.machine.started</code> (docs/machines.md).</details></div>
   <h2>Event map <select id="era" class="ctl" style="font-size:12px;margin-left:8px;display:none" onchange="ERA = this.value; load()" title="eras begin when a machine says it changed the system: the map and the cards of one era are drawn from that era's events alone"></select></h2>
+  <div class="phone-list panel" id="phone-list"></div>
+  <button class="ctl phone-only" id="show-map" onclick="document.body.classList.toggle('map-on');this.textContent=document.body.classList.contains('map-on')?'hide the map':'show the map'">show the map</button>
   <div id="im-row" class="im-row"><div id="evmap-host"></div><aside id="im-side" class="panel im-side" aria-label="the machine's details"></aside></div>
   <h2>Machines <span class="count" id="nm"></span></h2>
   <div class="cards" id="cards"></div>
@@ -103,8 +109,9 @@ function countedGraph(d, nodeColor) {
   return { nodes, edges };
 }
 let GRAPH = null;
-// under a machine's name: how many instances run it and how it is engaged
-const machineSub = (m) => [m.group || "", m.bootstrap ? "bootstrap" : "", m.instances && m.instances.length ? `×${m.instances.length}` : "", m.mode || ""].filter(Boolean).join(" · ");
+// under a machine's name: how many instances run it, nothing else (how it is engaged, its group and
+// who declared it are in its card and its panel)
+const machineSub = (m) => (m.instances && m.instances.length > 1 ? `×${m.instances.length}` : "");
 // machines that announced a group (a team) are drawn near each other: each group is pulled toward
 // its own spot on a ring around the middle. A grouping, never a separation: one map, every machine
 function groupAnchors(machines) {
@@ -128,7 +135,7 @@ function familyBar(d) {
   const day = {};
   for (const m of d.machines) { for (const p of m.publishes) day[family(p.type)] = (day[family(p.type)] || 0) + p.day; for (const t of m.subscribes) day[family(t)] = day[family(t)] || 0; }
   const fams = Object.keys(day).sort((a, b) => day[b] - day[a] || a.localeCompare(b));
-  $("ev-bar").innerHTML = `<span class="seg"><button class="${EV_MODE === "machines" ? "on" : ""}" onclick="setMode('machines')" title="one arrow per pair of machines that talk, standing for every event type between them">machines</button><button class="${EV_MODE === "events" ? "on" : ""}" onclick="setMode('events')" title="every event type as a box between the machines that publish and listen for it">with event types</button></span>
+  $("ev-bar").innerHTML = `<span class="seg"><button class="${EV_MODE === "machines" ? "on" : ""}" onclick="setMode('machines')" title="one arrow per pair of machines that talk, standing for every event type between them">machines</button><button class="${EV_MODE === "events" ? "on" : ""}" onclick="setMode('events')" title="every event type as a box between the machines that publish and listen for it">with event types</button></span><span id="ev-proto"></span>
     <span class="muted">event families (click to hide or show):</span>` + fams.map((f) => `<button type="button" class="fam ${EV_HIDDEN.has(f) ? "off" : ""}" aria-pressed="${EV_HIDDEN.has(f) ? "false" : "true"}" onclick="toggleFamily('${esc(f)}')" title="${day[f]} in the last 24 h · ${EV_HIDDEN.has(f) ? "hidden: press to show" : "shown: press to hide"}">${esc(f)}.*</button>`).join("");
 }
 function eventMap(d0) {
@@ -138,7 +145,7 @@ function eventMap(d0) {
   if (!$("evsvg-host") || window.EV_DRAWN_MODE !== EV_MODE) {      // each view has a layout of its own
     window.EV_DRAWN_MODE = EV_MODE; window.LOOPSIG = null;
     $("evmap-host").innerHTML = `<div class="evmap"><div class="evbar" id="ev-bar"></div><div id="evsvg-host"></div>
-      <div class="legend"><span>○ machine</span><span>${EV_MODE === "machines" ? "an arrow: a hand-off observed on the bus" : "a line: published, or handed on"}</span><span><i style="border-top:2px dashed #a78bfa"></i>declared, not observed</span><label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_ALL ? "checked" : ""} onchange="window.EV_SHOW_ALL=this.checked;window.LOOPSIG=null;render()"> show events nobody listens for</label><span id="ev-proto"></span><details class="legend-more"><summary>more</summary><div class="legend">${EV_MODE === "machines" ? "" : '<span><i style="border-color:#4b5563"></i>publishes / handed on to</span><span><span style="color:#fcd34d">▭</span> event type</span>'}${(d0.channels || []).length ? '<span><i style="border-top:5px double #94a3b8"></i>counted: a producer\'s or consumer\'s count on another system\'s bus, with its rate (no events)</span><span><span style="color:#67e8f9">▭</span> channel, with what waits in it</span>' : ""}<span>○ machine</span><span>halo: active by its own rhythm (heard within 2.5× its usual gap, at least 2 min; with no cadence yet, the 2-minute floor)</span><span><span style="color:#fbbf24">○</span> the host: running by the runtime record, not by its rhythm</span><span><i style="border-top:2px dashed #a78bfa"></i>dashed violet: declared, not observed (a guess)</span>${EV_MODE === "machines" ? "<span>an arrow: the other machine acted next on a subject after this one's event about it, an observed hand-off (hover a line for which events); arrowheads at both ends: they talk both ways; thicker: more in the last 24 h; grey: not seen in 24 h</span><span><i style=\"border-top:1px dashed #64748b;opacity:.6\"></i>dashed and faint: declared only: the other announced it listens for what this one publishes, but no hand-off between them was observed</span>" : "<span>lines take their machine's colour: into an event type, the machine publishes it; out of one, a hand-off through it to the machine was observed on some subject; grey, not seen in 24 h</span><span><i style=\"border-top:1px dashed #64748b;opacity:.6\"></i>dashed and faint: a declared listener: the machine announced it listens for the type, but no hand-off through it was observed</span>"}<span>dotted: inferred, not announced: the machine acted on something (an event's subject) right after this event about it, without saying it listens for it</span><span><i style="border-top:1px dashed #64748b"></i>thin, both ends, labelled by the families of its types: a hub's protocol, folded: the event types a machine exchanges both ways with every one of several others alike, and the ones it both publishes and listens for; "show the protocol" draws them</span><span>"through" a machine: work handed to it by one and on by it to another, over its protocol</span><span>communication cycles count observed hand-offs only</span><span>· drag nodes (they stay where dropped; double-click to release), scroll to zoom, hover to isolate, click a machine for its details and log</span></div></details></div>
+      <div class="legend" id="ev-legend"></div>
       <div class="ng-loops" id="loops"></div></div>`;
     GRAPH = NetGraph.create($("evsvg-host"), { key: "machines." + EV_MODE, height: 600, isolateHops: EV_MODE === "machines" ? 1 : 2, isolatedRow: true,
       onClick: (x, kind) => { if (kind === "node" && x.machine) openMachine(x.mid || x.label); },   // the panel (or, elsewhere, the dialog)
@@ -172,6 +179,9 @@ function eventMap(d0) {
              gone: l.gone, declared: l.declared, ...withCls(IntendedMachines.edgeStyle(l), cls) };
   });
   IntendedMachines.decorate(d, nodes, g.links.filter((l) => l.declared || l.gone || l.added).map((l) => ({ ...l, ev: l.source.startsWith("ev:") ? l.source : l.target })));
+  // a machine late by its own rhythm, or not answering what it listens for, is marked on the map as on its card
+  for (const n of nodes) { if (!n.machine) continue; const m = byMid(n.mid); if (!m) continue; const lv = Orchestra.liveness(m);
+    if (lv.cls === "late") { n.tags = [...(n.tags || []), { text: lv.word.startsWith("not answering") ? `not answering · ${Orchestra.unanswered(m).n}` : "late", cls: "ng-t-late", below: true }]; n.halo = false; } }
   // machine → machine, through an event type one publishes and the other listens for; observed when
   // a hand-off from the one through it to the other was seen (machine-graph.js)
   // declared: one of its two edges is the declared layer's, not observed
@@ -181,11 +191,17 @@ function eventMap(d0) {
     .filter((c) => !folded || !c.protocol);
   // the hub's protocol, folded: one thin edge per hub and member, labelled by its families (both ways)
   const foldEdges = !folded ? [] : proto.folds.filter((f) => nodes.some((n) => n.id === "m:" + f.member) && nodes.some((n) => n.id === "m:" + f.hub)).map((f) => ({
-    id: `proto:${f.hub}>${f.member}`, source: "m:" + f.hub, target: "m:" + f.member, both: true, protocol: true, label: f.families.join(", "),
+    id: `proto:${f.hub}>${f.member}`, source: "m:" + f.hub, target: "m:" + f.member, both: true, protocol: true,
     color: edgeColor(nodeColor("m:" + f.hub), "unseen"), hoverColor: nodeColor("m:" + f.hub), width: 0.8, dash: "2 3", bend: 0, distance: 150, cls: "ev-protocol",
-    vias: [`${f.hub}'s protocol with ${f.member}: ${f.types.join(", ")}`, "the plumbing every member shares; show the protocol to draw it"] }));
-  $("ev-proto").innerHTML = proto.folds.length ? `<label style="cursor:pointer" title="a hub exchanges these event types with every member alike (machine-graph.js); folded, each member has one thin edge to it"><input type="checkbox" id="ev-protocol" ${EV_PROTOCOL ? "checked" : ""} onchange="setProtocol(this.checked)"> show the protocol (${esc(proto.families.join(", "))})</label>` : "";
+    vias: [`${f.hub}'s protocol with ${f.member}: ${f.types.join(", ")}`, "the plumbing every member shares; show the protocol's event types to draw them"] }));
+  $("ev-proto").innerHTML = proto.folds.length ? `<label class="ev-protocol" style="cursor:pointer" title="a hub exchanges these event types with every member alike (machine-graph.js); folded, each member has one thin unlabelled line to it"><input type="checkbox" id="ev-protocol" ${EV_PROTOCOL ? "checked" : ""} onchange="setProtocol(this.checked)"> show the protocol's event types (${esc(proto.families.join(", "))})</label>` : "";
   let drawNodes = nodes, drawEdges = evEdges;
+  if (EV_MODE !== "machines") for (const a of g.acts) {
+    const id = `act:${a.source}>${a.target}`, base = nodeColor(a.source);
+    drawEdges = [...drawEdges, { id, source: a.source, target: a.target, dash: "1 5", width: 1.2 + Math.min(2, Math.log10(1 + a.day)), color: edgeColor(base, a.day ? "publish" : "unseen"), hoverColor: base, cls: "ev-handoff", acted: true,
+      vias: [`${a.target.slice(2)} acted next on the same subject after ${a.source.slice(2)}'s ${a.after || "event"}, ${a.count} time${a.count === 1 ? "" : "s"}`] }];
+    chains.push({ source: a.source, target: a.target, via: null, observed: true, inferred: true, seen: a.day, day: a.day, evIds: [id], acted: true });
+  }
   if (EV_MODE !== "machines" && folded) {
     drawEdges = [...evEdges.filter((e) => !e.protocol), ...foldEdges];
     const used = new Set(drawEdges.flatMap((e) => [e.source, e.target]));
@@ -198,12 +214,20 @@ function eventMap(d0) {
     if (folded) for (const r of MachineGraph.relays(d0, proto)) {
       const k = r.source + ">" + r.target, p = pairs.get(k) || { id: k, source: r.source, target: r.target, vias: [], seen: 0, inferred: false, observed: true, declared: false };
       if (!p.observed) { p.vias = []; p.seen = 0; }
-      p.vias.push(`through ${r.through}`); p.seen += r.seen; p.inferred = false; p.observed = true; p.declared = false; p.relayed = true; pairs.set(k, p);
-      chains.push({ source: r.source, target: r.target, via: null, through: r.through, observed: true, seen: r.seen, relayed: true });
+      p.vias.push(`through ${r.through}${r.vias.length ? ` (after ${r.vias.join(", ")})` : ""}`); p.seen += r.seen; p.inferred = false; p.observed = true; p.declared = false; p.relayed = true; pairs.set(k, p);
+      chains.push({ source: r.source, target: r.target, via: null, through: r.through, observed: true, seen: r.seen, day: r.seen, relayed: true });
+    }
+    // acted next on a subject after the other's event, through no type it said it listens for (g.acts)
+    for (const a of g.acts) {
+      const k = a.source + ">" + a.target, p = pairs.get(k);
+      const said = `${a.target.slice(2)} acted next on the same subject after ${a.source.slice(2)}'s ${a.after || "event"}, ${a.count} time${a.count === 1 ? "" : "s"}`;
+      if (p && p.observed) { p.notes = [...(p.notes || []), said]; continue; }
+      pairs.set(k, { id: k, source: a.source, target: a.target, vias: [], notes: [said], seen: a.day, inferred: true, observed: true, declared: false, acted: true });
     }
     for (const c of chains) {
       if (c.relayed) continue;
-      const k = c.source + ">" + c.target, p = pairs.get(k) || { id: k, source: c.source, target: c.target, vias: [], seen: 0, inferred: true, observed: false, declared: true };
+      const k = c.source + ">" + c.target, p0 = pairs.get(k), p = p0 && !p0.acted ? p0 : { ...(p0 || {}), id: k, source: c.source, target: c.target, vias: [], seen: 0, inferred: true, observed: false, declared: true, acted: false };
+      if (p0 && p0.acted && !c.observed) continue;                // acted next is observed: a declared-only chain says less
       // what was handed on is named; what the other only said it listens for, once nothing was
       if (c.observed && !p.observed) { p.vias = []; p.seen = 0; p.inferred = true; }
       if (c.observed || !p.observed) { p.vias.push(...label(c.via)); p.seen += c.seen; p.inferred = p.inferred && c.inferred; }
@@ -218,21 +242,26 @@ function eventMap(d0) {
       if (back && p.source !== p.target && back.observed === p.observed) {
         const [a, b] = p.source < p.target ? [p, back] : [back, p], k = a.id;
         if (!merged.has(k)) merged.set(k, { id: k, source: a.source, target: a.target, both: true, alias: b.id, seen: a.seen + b.seen, inferred: a.inferred && b.inferred, observed: p.observed, declared: a.declared && b.declared,
+          relayed: a.relayed && b.relayed, acted: a.acted && b.acted, notes: [...(a.notes || []), ...(b.notes || [])],
           vias: [...[...new Set(a.vias)].map((v) => "→ " + v), ...[...new Set(b.vias)].map((v) => "← " + v)] });
       } else merged.set(p.id, { ...p, vias: [...new Set(p.vias)] });
     }
     // declared and never seen: the declared layer's guess (violet); otherwise observed, or a declared listener only
     drawEdges = [...merged.values()].map((p) => { const base = nodeColor(p.source), decl = p.declared && !p.seen, dl = !p.observed && !decl;
-      return { ...p, color: decl ? "#a78bfa" : edgeColor(base, p.seen && !dl ? "publish" : "unseen"), hoverColor: decl ? "#c4b5fd" : base, bend: p.both ? 0 : 22, dash: decl ? "5 4" : p.inferred ? "1 5" : dl ? "5 4" : undefined,
-               vias: dl ? [...p.vias, "declared only: the other announced it listens for this, but nothing was handed on between them"] : p.vias,
+      return { ...p, color: decl ? "#a78bfa" : edgeColor(base, p.seen && !dl ? "publish" : "unseen"), hoverColor: decl ? "#c4b5fd" : base, bend: p.both ? 0 : 22,
+               dash: decl ? "5 4" : p.relayed ? RELAY_DASH : p.inferred ? "1 5" : dl ? "5 4" : undefined,
+               vias: [...(dl ? [...p.vias, "declared only: the other announced it listens for this, but nothing was handed on between them"] : p.vias), ...(p.notes || [])],
                width: dl ? 1 : 1.2 + Math.min(3, Math.log10(1 + p.seen)), cls: decl ? "im-decl-edge" : (p.seen && !dl ? "ev-seen" : "ev-unseen") + (p.inferred ? " ev-handoff" : "") + (dl ? " ev-declared-listener" : ""), distance: 190,
                // a hand-off is labelled by what was handed on (or the hub it went through)
-               ...(p.observed && p.vias.length ? { label: handoffLabel(p.vias) } : {}) }; });
+               // (a relay is said by its line and its hover, never written on it: one hub would label many lines alike)
+               ...(p.observed && p.vias.length && !p.relayed ? { label: handoffLabel(p.vias) } : {}) }; });
     drawEdges.push(...foldEdges);
+    for (const a of g.acts) if (!chains.some((c) => c.source === a.source && c.target === a.target && c.observed)) chains.push({ source: a.source, target: a.target, via: null, observed: true, inferred: true, seen: a.day, day: a.day, acted: true });
     const aliasOf = new Map(drawEdges.filter((e) => e.alias).map((e) => [e.alias, e.id]));
     for (const c of chains) { const k = c.source + ">" + c.target; c.machineId = aliasOf.get(k) || k; }
   }
   for (const c of chains) c.ids = EV_MODE === "machines" ? [c.machineId] : c.evIds || [];
+  $("ev-legend").innerHTML = legendOf(drawEdges, drawNodes, d0);
   const counted = countedGraph(d0, nodeColor);
   GRAPH.render([...drawNodes, ...counted.nodes], [...drawEdges, ...counted.edges]);
   // the panel open on a machine: the highlight rule (intended-machines.js)
@@ -245,7 +274,8 @@ function eventMap(d0) {
   // through an event type (an observed hand-off, never only an announcement). Two machines that talk both ways directly are an exchange (a request and its reply);
   // the rest is shown as its feedback structures and their independent loops, not every cycle
   const name = (id) => { const n = nodes.find((x) => x.id === id); return n ? (n.lines ? n.lines.join("/") : n.label) : id; };
-  const mm = chains.filter((c) => c.observed);
+  // communication: observed in the last 24 h (the edges' window), in a fixed order so the count is the same on every load
+  const mm = chains.filter((c) => c.observed && (c.day ?? c.seen ?? 0) > 0).sort((a, b) => (a.source + ">" + a.target + ">" + (a.via || a.through || "")).localeCompare(b.source + ">" + b.target + ">" + (b.via || b.through || "")));
   const machineIds = nodes.filter((n) => n.machine).map((n) => n.id);
   const r = Loops.analyse(machineIds, mm, { exchanges: true });
   const vias = (ls) => (EV_MODE === "machines" ? [] : [...new Set(ls.map((l) => l.via).filter(Boolean))]);
@@ -253,7 +283,8 @@ function eventMap(d0) {
   const viaText = (ls) => { const inf = new Map(); for (const l of ls) inf.set(l.via, (inf.get(l.via) ?? true) && !!l.inferred);
     return [...inf].map(([v, i]) => esc(name(v)) + (i ? " (inferred)" : "")).join(", "); };
   // what went from one to the next: "via <its types>", or "through <the hub>" for a relay
-  const viaOf = (ls) => [...(ls.some((l) => !l.through) ? ['<span class="muted">via</span> ' + viaText(ls.filter((l) => !l.through))] : []),
+  const viaOf = (ls) => [...(ls.some((l) => !l.through && !l.acted) ? ['<span class="muted">via</span> ' + viaText(ls.filter((l) => !l.through && !l.acted))] : []),
+    ...(ls.some((l) => l.acted) ? ['<span class="muted">acted next</span>'] : []),
     ...new Set(ls.filter((l) => l.through).map((l) => '<span class="muted">through</span> ' + esc(l.through)))].join(", ");
   const items = [];
   for (const x of r.exchanges) items.push({ nodes: [...x.nodes, ...vias(x.there), ...vias(x.back)], edges: [...x.there, ...x.back].flatMap((l) => l.ids),
@@ -268,9 +299,29 @@ function eventMap(d0) {
   if (lsig === window.LOOPSIG) return;                  // unchanged: keep the selected one
   window.LOOPSIG = lsig; GRAPH.highlight(null);
   const st = r.structures[0];
-  $("loops").innerHTML = items.length ? `<div class="head">Communication cycles · click one to highlight it · ${r.exchanges.length} exchange${r.exchanges.length === 1 ? "" : "s"} (two machines talking both ways)${st ? ` · ${r.structures.reduce((a, x) => a + x.loops.length, 0)} independent loop${r.structures.reduce((a, x) => a + x.loops.length, 0) === 1 ? "" : "s"} of three or more machines, which make up all ${r.structures.reduce((a, x) => a + x.cycles, 0)}${r.structures.some((x) => x.cycles >= 2000) ? "+" : ""} cycles between them` : ""}</div><div id="looplist"></div>`
-    : "<span class='muted'>No communication cycles: nothing any machine handed on reached a machine that handed something back to it.</span>";
+  const scope = `in the last 24 h; ${EV_PROTOCOL ? "with the protocol's event types shown" : "with the protocol folded (its hand-offs through a hub counted as relays)"}`;
+  $("loops").innerHTML = items.length ? `<div class="head">Communication cycles, ${scope} · click one to highlight it · ${r.exchanges.length} exchange${r.exchanges.length === 1 ? "" : "s"} (two machines talking both ways)${st ? ` · ${r.structures.reduce((a, x) => a + x.loops.length, 0)} independent loop${r.structures.reduce((a, x) => a + x.loops.length, 0) === 1 ? "" : "s"} of three or more machines, which make up all ${r.structures.reduce((a, x) => a + x.cycles, 0)}${r.structures.some((x) => x.cycles >= 2000) ? "+" : ""} cycles between them` : ""}</div><div id="looplist"></div>`
+    : `<span class='muted'>No communication cycles ${scope}: nothing any machine handed on reached a machine that handed something back to it.</span>`;
   if (items.length) NetGraph.loopList($("looplist"), GRAPH, items);
+}
+// the key, for the line styles drawn now and nothing else, unfolded
+const RELAY_DASH = "10 3 2 3";
+function legendOf(edges, nodes, d0) {
+  const has = (f) => edges.some(f), sw = (style) => `<i style="display:inline-block;width:22px;vertical-align:middle;border-top:${style}"></i>`;
+  const items = [
+    nodes.some((n) => n.machine && n.halo) ? `<span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;box-shadow:0 0 0 2px #4ade80aa,0 0 6px #22c55e;vertical-align:middle"></span> glow: active by its own rhythm</span>` : "",
+    nodes.some((n) => n.bootstrap) ? `<span><span style="color:#fbbf24">○</span> the host: running by the runtime record</span>` : "",
+    has((e) => !e.dash && !e.protocol && !e.double) ? `<span>${sw("2px solid #94a3b8")} ${EV_MODE === "machines" ? "a hand-off observed on the bus (labelled with the event handed on)" : "published, or handed on through the type"}</span>` : "",
+    has((e) => e.relayed) ? `<span>${sw(`2px dashed #94a3b8;border-image:repeating-linear-gradient(90deg,#94a3b8 0 10px,transparent 10px 13px,#94a3b8 13px 15px,transparent 15px 18px) 1`)} relayed: work handed to a hub by one and on by it to the other (hover for the hub and the events)</span>` : "",
+    has((e) => e.acted || (e.dash === "1 5")) ? `<span>${sw("2px dotted #94a3b8")} acted next: the other acted on the same subject after this one's event, without announcing it listens for it</span>` : "",
+    has((e) => e.declaredListener || (e.cls || "").includes("ev-declared-listener")) ? `<span>${sw("1px dashed #64748b")} announced only: it says it listens, but no hand-off was observed</span>` : "",
+    has((e) => (e.cls || "").includes("im-decl-edge")) ? `<span>${sw("2px dashed #a78bfa")} declared, not observed</span>` : "",
+    has((e) => e.protocol) ? `<span>${sw("1px dotted #64748b")} a hub's protocol, folded (both ends; hover for its event types)</span>` : "",
+    has((e) => e.both) ? `<span>arrowheads at both ends: both ways</span>` : "",
+    has((e) => e.double) ? `<span>${sw("5px double #94a3b8")} counted on another system's bus (no events)</span>` : "",
+  ].filter(Boolean);
+  return items.join("") + `<label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_ALL ? "checked" : ""} onchange="window.EV_SHOW_ALL=this.checked;window.LOOPSIG=null;render()"> show events nobody listens for</label>`
+    + `<span class="muted">drag nodes (they stay where dropped; double-click to release) · scroll to zoom · hover to isolate · click a machine for its details</span>`;
 }
 function cards() {
   $("nm").textContent = DATA.machines.length;
@@ -298,7 +349,18 @@ function cards() {
   $("note").textContent = [DATA.unattributed_events ? `${DATA.unattributed_events.toLocaleString()} older events carry no source (they predate the event envelope) and are not attributed to any machine.` : "",
     ...Object.entries(DATA.counted_failed || {}).map(([k, v]) => `Counted traffic from ${k} could not be read: ${v}`)].filter(Boolean).join(" ");
 }
-function render() { if (DATA) { IntendedMachines.draw(DATA); eventMap(DATA); cards(); } }
+// at phone width: each hand-off as a line, "a → b · via x, N times" (relays through a hub said so)
+function phoneList(d) {
+  const el = $("phone-list"); if (!el) return;
+  const rows = new Map();
+  for (const h of d.handoffs || []) { if (h.from === h.to) continue; const k = h.from + ">" + h.to, r = rows.get(k) || { from: h.from, to: h.to, n: 0, via: new Set() };
+    r.n += h.count || 0; if (h.via) r.via.add(h.via); else if (h.after) r.via.add(`after ${h.after}`); rows.set(k, r); }
+  for (const x of d.relays || []) { const k = x.from + ">" + x.to, r = rows.get(k) || { from: x.from, to: x.to, n: 0, via: new Set() };
+    r.n += x.count || 0; r.via.add(`through ${x.through}`); rows.set(k, r); }
+  const list = [...rows.values()].sort((a, b) => a.from.localeCompare(b.from) || b.n - a.n);
+  el.innerHTML = `<h3 style="margin-top:0">Who hands work to whom</h3>${list.map((r) => `<div class="pl"><b>${esc(r.from)}</b> → <b>${esc(r.to)}</b> <span class="muted">· ${esc([...r.via].join(", ") || "acted next")} · ${r.n} time${r.n === 1 ? "" : "s"}</span></div>`).join("") || '<div class="muted">no hand-offs observed yet</div>'}`;
+}
+function render() { if (DATA) { IntendedMachines.draw(DATA); eventMap(DATA); cards(); phoneList(DATA); } }
 // a style from the declared layer over an edge's own: its class added to the page's
 const withCls = (st, base) => (st ? { ...st, cls: `${base} ${st.cls}` } : {});
 async function load() {
@@ -308,6 +370,7 @@ async function load() {
     if (!d.ok) { $("evmap-host").innerHTML = `<div class="empty">${esc(d.error)}</div>`; return; }
     const first = !DATA;
     Orchestra.modelParts = d.model_parts || null;
+    if (!ERA) Orchestra.setMachines(d.machines);
     DATA = d; render();
     if (first && location.hash.length > 1) setTimeout(() => openFromHash(decodeURIComponent(location.hash.slice(1))), 300);   // /machines#<id>
     Orchestra.conn(true);

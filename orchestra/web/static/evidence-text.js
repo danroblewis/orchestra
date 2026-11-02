@@ -4,7 +4,7 @@
 const Evidence = (() => {
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const fix = (v) => (typeof v === "number" && isFinite(v) ? v.toFixed(2) : "—");
-  const BY_CONSTRUCTION = "by construction: no evidence (D33)";
+  const BY_CONSTRUCTION = "holds by construction: its level is the count of its own moves, so the balance proves nothing";
   const byConstruction = (t) => !!t && t.kind === "by_construction";
   // the drawer's and "How it was found"'s line: " · trust 0.42 (low; weakest: …) · behaviour …"
   function trust(ev) {
@@ -25,10 +25,12 @@ const Evidence = (() => {
   const MIN_EVENTS = 5;
   const eventsOf = (f) => ((((f || {}).current || {}).quality || {}).events ?? 0);
   const tooFew = (f) => !!(f && f.current && f.current.origin === "fitted" && eventsOf(f) < MIN_EVENTS);
-  const tooFewText = (f) => `${eventsOf(f)} event${eventsOf(f) === 1 ? "" : "s"}: too few to fit`;
+  const tooFewText = (f) => `${eventsOf(f)} event${eventsOf(f) === 1 ? "" : "s"} in the window: too few to fit, no equation`;
   // a hypothesis' confidence beside its machine, " 87%": none on a flow with too few events to fit,
   // as its equation and fit show none
   const confidence = (f, h) => (tooFew(f) || (h || {}).confidence == null ? "" : ` ${Math.round(100 * h.confidence)}%`);
+  // beside it, what chance alone would pair (sd/attribute.py's ``chance``): ", 41% by chance"
+  const chance = (f, h) => (tooFew(f) || (h || {}).chance == null || !confidence(f, h) ? "" : `, ${Math.round(100 * h.chance)}% by chance`);
   // beside a hypothesis' confidence: how much of the evidence matched
   function matched(h) {
     const c = (h || {}).counts;
@@ -39,17 +41,18 @@ const Evidence = (() => {
     return `${m} events to ${Math.round(c.flow ?? 0)} counted`;
   }
   // a match in time cannot tell apart machines whose events all come within one step of each other
-  // (sd/attribute.py: a hypothesis is a match in time): one machine that matches 3 or more flows at
-  // STRONG, or 3 or more machines that match one flow so, says so once beside the flow's hypotheses
-  const STRONG = 0.85, MANY = 3;
-  const UNTOLD = "events within one step: timing cannot tell these apart";
+  // (sd/attribute.py: a hypothesis is a match in time): two or more hypotheses within MARGIN of the
+  // best, or a best that chance alone would half make (CHANCE), says so once beside the flow's
+  // hypotheses; then no one machine is named on the diagram (sd-graph.js)
+  const MARGIN = 0.15, CHANCE = 0.3;
+  const UNTOLD = "timing cannot tell these machines apart";
+  const ranked = (f) => ((f || {}).machines || []).filter((h) => h.machine && h.confidence != null).sort((a, b) => b.confidence - a.confidence);
   function untold(m, f) {
-    const strong = (g) => ((g || {}).machines || []).filter((h) => h.machine && (h.confidence ?? 0) >= STRONG);
-    const mine = strong(f);
-    if (mine.length >= MANY) return UNTOLD;
-    const flowsOf = (mc) => ((m || {}).flows || []).filter((g) => strong(g).some((h) => h.machine === mc)).length;
-    return mine.some((h) => flowsOf(h.machine) >= MANY) ? UNTOLD : "";
+    const hs = ranked(f);
+    if (!hs.length) return "";
+    if (hs.length > 1 && hs[0].confidence - hs[1].confidence < MARGIN) return UNTOLD;
+    return (hs[0].chance ?? 0) > CHANCE ? UNTOLD : "";
   }
-  return { trust, trustCell, byConstruction, tooFew, tooFewText, confidence, matched, untold, MIN_EVENTS };
+  return { trust, trustCell, byConstruction, tooFew, tooFewText, confidence, chance, matched, untold, ranked, MARGIN, MIN_EVENTS, BY_CONSTRUCTION };
 })();
 if (typeof module !== "undefined") module.exports = Evidence;

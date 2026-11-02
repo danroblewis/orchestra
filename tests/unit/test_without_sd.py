@@ -48,7 +48,7 @@ SCRIPT = textwrap.dedent('''
     project = init_project(repo)
     c = TestClient(create_app(project), headers={"Authorization": f"Bearer {auth.token(project)}"})
     r = c.get("/api/dynamics/model")
-    assert r.status_code == 404 and r.json()["error"] == "no model" and "orchestra[sd]" in r.json()["sd_missing"], r.text
+    assert r.status_code == 200 and r.json()["error"] == "no model" and "orchestra[sd]" in r.json()["sd_missing"], r.text
     for path in ("/api/dynamics/simulate", "/api/dynamics/observability"):
         r = c.get(path)
         assert r.status_code == 503 and r.json()["needs"] == "orchestra[sd]", (path, r.text)

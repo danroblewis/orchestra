@@ -170,7 +170,8 @@
       return (ser && Object.values(ser.labels || {}).includes(v)) || fold(stockName(m, id)).includes(fold(v)); };
     const end = (id) => (id ? stockName(m, id) : "outside");
     const apart = [!agrees(f.from, l.from) ? `from ${end(f.from)}` : "", !agrees(f.to, l.to) ? `into ${end(f.to)}` : ""].filter(Boolean);
-    return apart.length ? `counted as ${l.from} → ${l.to}, drawn ${apart.join(" and ")}` : "";
+    const said = (v) => String(v).replace(/^<(.*)>$/, "$1");
+    return apart.length ? `counted as ${said(l.from)} → ${said(l.to)}, drawn ${apart.join(" and ")}` : "";
   }
   // the other counters that count a flow's events (evidence.same_as), named as flows are: "same events as …"
   function sameAs(m, f) {
@@ -248,29 +249,32 @@
   }
 
   const shorten = (t, n = 44) => (t.length > n ? t.slice(0, n - 2) + "…" : t);
-  // the machines a flow's label names: its hypotheses tied with the top confidence (within TIE), each
-  // with a question mark; one leader "planner 94%?", a tie "reviewer / merge_gate?", more than two
-  // "3 machines?"; none, or none with a confidence, no label; on a flow with too few events to fit,
-  // the name without its percentage. Never one name as a fact.
-  const TIE = 0.02;
+  // the machines a flow's label names: one, only when its hypothesis beats the next by a clear
+  // MARGIN and chance alone would not half make it ("worker?"); hypotheses within the margin of each
+  // other: "3 machines: timing cannot tell them apart"; otherwise, and on a flow with too few events
+  // to fit, nothing. Never a percentage on the diagram, and never one name as a fact.
+  const MARGIN = 0.15, CHANCE = 0.3;
   function machineLabel(f, nameOf = (id) => id) {
-    const hs = (f.machines || []).filter((h) => h.machine && h.confidence != null);
+    const hs = (f.machines || []).filter((h) => h.machine && h.confidence != null).sort((a, b) => b.confidence - a.confidence);
     if (!hs.length) return "";
-    const top = Math.max(...hs.map((h) => h.confidence)), lead = hs.filter((h) => top - h.confidence <= TIE);
-    const few = typeof Evidence !== "undefined" && Evidence.tooFew(f);     // too few events to fit: no percentage (evidence-text.js)
-    if (lead.length === 1) return few ? `${nameOf(lead[0].machine)}?` : `${nameOf(lead[0].machine)} ${Math.round(100 * lead[0].confidence)}%?`;
-    return lead.length > 2 ? `${lead.length} machines?` : `${lead.map((h) => nameOf(h.machine)).join(" / ")}?`;
+    if (typeof Evidence !== "undefined" && Evidence.tooFew(f)) return "";     // too few events to fit: no machine either (evidence-text.js)
+    const near = hs.filter((h) => hs[0].confidence - h.confidence < MARGIN);
+    if (near.length > 1) return `${near.length} machines: timing cannot tell them apart`;
+    return (hs[0].chance ?? 0) > CHANCE ? "" : `${nameOf(hs[0].machine)}?`;
   }
 
-  // the graph: {nodes, edges, causal, flowEdge, flows, acc}. ``opts``: showAll (flows with no
-  // events), showAcc (stocks that only fill that nothing shown feeds), keep (stock ids never hidden),
-  // keepFlows (flow ids drawn with no events), and the colours
-  // (mcolor(machine), stockColor(id)).
+  // the graph: {nodes, edges, causal, flowEdge, flows, acc, rare}. ``opts``: showAll (flows with no
+  // events, and rare ones), showAcc (stocks that only fill that nothing shown feeds), keep (stock ids
+  // never hidden), keepFlows (flow ids drawn with no events), rare (f -> true for a flow with too few
+  // events to fit: not drawn unless showAll; ``rare`` is those left out), and the colours
+  // (stockColor(id)). A flow is drawn in one neutral ink, never in a machine's colour: which machine
+  // moves it is a hypothesis (its label says it, when one stands out).
   function build(m, opts = {}) {
-    const mcolor = opts.mcolor || (() => "#94a3b8"), stockColor = opts.stockColor || (() => "#cbd5e1");
+    const stockColor = opts.stockColor || (() => "#cbd5e1");
     const byMachine = Object.fromEntries((m.machines || []).map((x) => [x.id, x]));
     // ``keepFlows``: flow ids drawn whatever their events (expected ones: an expectation stays on the diagram)
-    const shown = (f) => (f.current && f.current.quality && f.current.quality.events > 0) || opts.showAll || !!(opts.keepFlows && opts.keepFlows.has(f.id));
+    const isRare = (f) => !!(opts.rare && opts.rare(f));
+    const shown = (f) => ((f.current && f.current.quality && f.current.quality.events > 0) && !isRare(f)) || opts.showAll || !!(opts.keepFlows && opts.keepFlows.has(f.id));
     // a stock that only fills is where another stock's material ends up (the orders delivered) when a
     // flow shown drains a stock into it: drawn. One that no such flow feeds (the event bus's
     // length, a tally) starts hidden, with its flows; ``acc`` is those.
@@ -290,16 +294,28 @@
       // sized by the full name, as before the short names: the layout search is sensitive to box
       // sizes (narrower boxes break the layout tests' fixtures), which is its own open problem
       w: Math.max(180, s.name.length * 7 + 30), h: 92, dashed: !!(s.evidence && s.evidence.hidden), color: stockColor(s.id),
-      fill: "#0b0e14", charge: -1600, sub: " " }); }
+      fill: "#0b0e14", charge: -1600, sub: " ",
+      // a stock that holds by construction (its level is the count of its own moves): tagged, so it
+      // never reads as trusted as one the evidence balances
+      ...(byConstruction(s) ? { tags: [{ text: "by construction", cls: "ng-t-bc" }] } : {}) }); }
     for (const f of flows) {
       // in the causal graph used for loops, a flow is a node between its ends ("f:<id>")
-      const col = mcolor(f.machine), v = "f:" + f.id, e = f.current || {};
-      // one cloud per stock and direction, named for the stock (flow ids change between discoveries;
-      // a stock's place outside does not); it sits just outside the frame by its stock (tethered)
-      const src = f.from ? "s:" + f.from : "c:in:" + (f.to || f.id), dst = f.to ? "s:" + f.to : "c:out:" + (f.from || f.id);
-      if (!f.from && f.to && !has(src)) nodes.push({ id: src, kind: "cloud", charge: -20, tether: "s:" + f.to });
-      if (!f.to && f.from && !has(dst)) nodes.push({ id: dst, kind: "cloud", charge: -20, tether: "s:" + f.from });
-      const fe = `${src}>${dst}:${f.id}`, outside = !f.from || !f.to;
+      const col = FLOW_INK, v = "f:" + f.id, e = f.current || {};
+      // an end its counter names as a place (its from/to label) where discovery kept no stock is drawn
+      // as that place, named and unmeasured (``opts.place(value)``: {title, why}); only the counter's
+      // own outside ends (<start>, <end>) are clouds: one per stock and direction, named for the stock
+      // (flow ids change between discoveries; a stock's place outside does not), just outside the
+      // frame by its stock (tethered)
+      const cl = (f.counter && f.counter.labels) || {};
+      const placeEnd = (v) => (opts.place && v != null && !/^<.*>$/.test(String(v)) ? opts.place(String(v)) : null);
+      const pFrom = !f.from ? placeEnd(cl.from) : null, pTo = !f.to ? placeEnd(cl.to) : null;
+      const placeNode = (v, p) => { const id = "p:" + v; if (!has(id)) nodes.push({ id, kind: "box", place: v, label: p.title, lines: [p.title], caption: "not a stock",
+        sub: p.why ? shorten(p.why, 40) : " ", why: p.why, w: Math.max(160, p.title.length * 6.6 + 30), h: 62, dashed: true, color: "#64748b", fill: "#0e1118", charge: -600, textColor: "var(--text2)" }); return id; };
+      const src = f.from ? "s:" + f.from : pFrom ? placeNode(cl.from, pFrom) : "c:in:" + (f.to || f.id);
+      const dst = f.to ? "s:" + f.to : pTo ? placeNode(cl.to, pTo) : "c:out:" + (f.from || f.id);
+      if (!f.from && !pFrom && f.to && !has(src)) nodes.push({ id: src, kind: "cloud", charge: -20, tether: "s:" + f.to });
+      if (!f.to && !pTo && f.from && !has(dst)) nodes.push({ id: dst, kind: "cloud", charge: -20, tether: "s:" + f.from });
+      const fe = `${src}>${dst}:${f.id}`, outside = (!f.from && !pFrom) || (!f.to && !pTo);
       edges.push({ id: fe, source: src, target: dst, color: col, width: outside ? 2 : 3.4, distance: outside ? 60 : 230, strength: outside ? 0.05 : 0.6,
         cls: outside ? "ng-outside" : "", fid: f.id, flowPart: true, bend: outside ? 10 : 18, labelMuted: true,
         label: [shorten(eqText(m, f, true)), machineLabel(f, (id) => (byMachine[id] || {}).name || id)] });
@@ -317,13 +333,17 @@
         // an influence: a dashed link to the middle of the flow it drives (not a flow's plain dependence on its own source)
         const plain = !isInput && name === f.from && (e.form === "proportional" || (e.spec && e.spec.form === "proportional"));
         if (!plain && has(node)) edges.push({ id: `${node}>${fe}:info`, source: node, toEdge: fe, color: col, dashed: true, width: 1.4,
-          sign: sign < 0 ? "−" : sign > 0 ? "+" : "~", bend: 36, fid: f.id });
+          sign: (sign < 0 ? "−" : sign > 0 ? "+" : "~") + (correlational(m, f) ? " untested" : ""), bend: 36, fid: f.id });
       }
     }
     // stocks with flows from or to outside are drawn toward the frame's edge, so those stubs stay short
-    for (const n of nodes) if (n.sid) n.edgeward = flows.some((f) => (f.to === n.sid && !f.from) || (f.from === n.sid && !f.to));
-    return { nodes, edges, causal, flowEdge, flows, acc };
+    for (const n of nodes) if (n.sid) n.edgeward = edges.some((e) => e.flowPart && ((e.target === n.id && e.source.startsWith("c:")) || (e.source === n.id && e.target.startsWith("c:"))));
+    const places = nodes.filter((n) => n.place).map((n) => n.label);
+    const rare = m.flows.filter((f) => isRare(f) && !flows.includes(f) && !(f.current && f.current.quality && !f.current.quality.events));
+    return { nodes, edges, causal, flowEdge, flows, acc, rare, places };
   }
+  const FLOW_INK = "#a3adbd";
+  const byConstruction = (s) => !!(s.evidence && (s.evidence.by_construction || (s.evidence.trust && s.evidence.trust.kind === "by_construction")));
 
-  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, seriesName, sameAs, drawnApart, nice, num, correlational, machineLabel, UNTESTED };
+  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, seriesName, sameAs, drawnApart, nice, num, correlational, machineLabel, UNTESTED, FLOW_INK, byConstruction };
 });

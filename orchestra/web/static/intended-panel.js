@@ -137,14 +137,22 @@ const IntendedPanel = (() => {
     ORDER = rows.map(([k]) => k);
     const settledHere = rows.length - listed.length;
     // the header counts rows as drawn: a − and + of one counter are one change; ○ rows apart
-    const nExpected = x.changes.filter((ch) => ch.sign === "o").length, nChanges = listed.length - nExpected;
+    const nExpected = x.changes.filter((ch) => ch.sign === "o").length, nChanges = listed.length - nExpected + (x.reforms || []).length;
     const went = (x.came_and_went || []).map((w) => `<div class="im-chg"><span class="im-sign">·</span><div>${esc(w.part)} <span class="ty">${esc(w.key)}</span> <span class="muted">in ${esc(w.versions)} version${w.versions === 1 ? "" : "s"}${w.last ? `, last v${esc(w.last)}` : ""}</span></div><span></span></div>`).join("");
     const ign = (x.ignored || []).map((w) => `<div class="im-chg"><span class="im-sign">·</span><div>${esc(w.part)} <b>${esc(w.id ? (w.part === "stock" ? I().nameOf(w.id) : w.id) : w.key)}</b> <span class="muted">${w.present ? "present" : "not present"} · ignored by ${esc(I().who(w.provenance))}</span></div>
       <span></span></div>`).join("");
     const saved = x.since_saved_at ? `, saved ${I().agoText(x.since_saved_at)}` : "";
     const counts = `${nChanges} change${nChanges === 1 ? "" : "s"}${nExpected ? ` · ${nExpected} expected` : ""}${settledHere ? ` · ${settledHere} settled` : ""}`;
+    // the flows whose equation's form or inputs changed (what makes a version new), and on a refit the
+    // ones whose numbers moved most, each named and said before → after (sd/intended/view.py)
+    const eqOf = (r, which) => SDGraph.eqText(MODEL, { from: r.from, current: r[which] }, true);
+    const flowOf = (r) => { const f = MODEL.flows.find((g) => g.id === r.id); return f ? flowName(f) : r.key; };
+    const formWord = (e) => (e.spec && e.spec.form ? e.spec.form : e.form) + ((e.inputs || []).length ? ` in ${e.inputs.map((i) => SDGraph.readName(MODEL, i)).join(", ")}` : "");
+    const reformRows = (x.reforms || []).map((r) => `<div class="im-chg" data-key="reform:${esc(r.key)}"><span class="im-sign">~</span><div><b>${esc(flowOf(r))}</b>: ${esc(formWord(r.before))} → ${esc(formWord(r.after))}<div class="muted num">${esc(eqOf(r, "before"))} → ${esc(eqOf(r, "after"))}</div></div><span></span></div>`).join("");
+    const refitLine = (x.refits || []).length ? `<div class="muted" data-key="#refits" style="font-size:12px;margin:4px 0">refitted, moved most: ${x.refits.map((r) => `${esc(flowOf(r))}: ${esc(eqOf(r, "before"))} → ${esc(eqOf(r, "after"))}`).join("; ")}</div>` : "";
+    const nothing = reformRows || refitLine ? "" : `<div class="muted" data-key="#none">the same structure as v${esc(x.since)}, refitted</div>`;
     const html = `<div class="im-chead" data-key="#head"><h2 style="margin:0"><span>Changes since v${esc(x.since)}</span><span class="count">${counts}</span></h2><div class="muted im-against">Against version ${esc(x.since)}${esc(saved)}</div></div>
-      ${rows.map(([, h]) => h).join("") || '<div class="muted" data-key="#none">nothing changed</div>'}
+      ${rows.map(([, h]) => h).join("")}${reformRows}${refitLine}${rows.length ? "" : nothing}
       ${(x.came_and_went || []).length ? `<details class="im-fold" id="im-went" data-key="#went"><summary>came and went <span class="count">${x.came_and_went.length}</span> <span class="muted">· suggestions that left before they settled; one returns if its key comes back</span></summary>${went}</details>` : ""}
       ${(x.ignored || []).length ? `<details class="im-fold" id="im-ignored" data-key="#ignored"><summary>ignored <span class="count">${x.ignored.length}</span> <span class="muted">· ${esc(ask("list one again"))}</span></summary>${ign}</details>` : ""}
       <div class="muted im-foot" data-key="#foot">${x.settled ? `${x.settled} settled: in enough versions running, no longer marked new. ` : ""}Either answer settles a + row: <b>expect</b> keeps the part on the diagram whatever a later discovery finds (the row stays, marked expected ✓); <b>ignore</b> takes it off this list.${(x.missing || []).length ? ` <span class="stale">Not read in time: ${esc(x.missing.join(", "))}.</span>` : ""}</div>

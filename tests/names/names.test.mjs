@@ -49,9 +49,11 @@ test("a counter several flows share says so; two flows between the same ends are
 
 test("a flow's label names its machines as hypotheses: the leader with its confidence, a tie by names, none without one", () => {
   const f = (hs) => SDGraph.machineLabel({ machines: hs });
-  assert.equal(f([{ machine: "planner", confidence: 0.94 }, { machine: "worker", confidence: 0.38 }]), "planner 94%?");
-  assert.equal(f([{ machine: "reviewer", confidence: 1 }, { machine: "merge_gate", confidence: 0.99 }, { machine: "worker", confidence: 0.4 }]), "reviewer / merge_gate?");
-  assert.equal(f([{ machine: "a", confidence: 0.9 }, { machine: "b", confidence: 0.9 }, { machine: "c", confidence: 0.89 }]), "3 machines?");
+  // one name only when it beats the next by a clear margin, never with a percentage
+  assert.equal(f([{ machine: "planner", confidence: 0.94 }, { machine: "worker", confidence: 0.38 }]), "planner?");
+  assert.equal(f([{ machine: "reviewer", confidence: 1 }, { machine: "merge_gate", confidence: 0.99 }, { machine: "worker", confidence: 0.4 }]), "2 machines: timing cannot tell them apart");
+  assert.equal(f([{ machine: "a", confidence: 0.9 }, { machine: "b", confidence: 0.9 }, { machine: "c", confidence: 0.89 }]), "3 machines: timing cannot tell them apart");
+  assert.equal(f([{ machine: "a", confidence: 0.9, chance: 0.42 }]), "");           // chance alone would half make it: no name
   assert.equal(f([{ machine: "a", confidence: null }]), "");
   assert.equal(f([]), "");
 });

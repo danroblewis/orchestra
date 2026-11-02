@@ -18,7 +18,7 @@ from __future__ import annotations
 import time
 from collections import deque
 
-from .cadence import BEATS, BURST_S, active_within, gaps
+from .cadence import BEATS, BURST_S, MIN_BEATS, active_within, gaps
 from .events import (
     ANNOUNCEMENT,
     HOST,
@@ -30,7 +30,6 @@ from .events import (
 
 QUIET = "orchestra.machine.quiet"
 ANNOUNCE = ANNOUNCEMENT
-MIN_BEATS = 3                     # two gaps: a cadence of its own, not one interval
 AD_HOC = ("ad hoc",)
 
 

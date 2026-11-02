@@ -310,3 +310,13 @@ def test_on_the_bakery_a_faster_bottleneck_moves_its_stocks_as_a_reader_expects(
     assert rate["draft"] == pytest.approx(1.5 * rate["base"], rel=1e-3)
     weak = {x["id"]: x["why"] for x in r["not_trusted"] if x["kind"] == "flow"}
     assert any(w.startswith("declared") for w in weak["bakery_orders_assigned_total"]), "the new equation is an assumption"
+
+
+def test_equations_that_do_worse_than_holding_the_level_are_low_and_say_so():
+    from orchestra.sd.equations.heldout import record
+    # a small error against the spread, but holding the level did better still
+    r = record([(1.0, 0.3, 0.1), (2.0, 0.3, 0.1)], scale=1.0, horizon=2.0)
+    assert not r["beats_hold"] and r["level"] == "low"
+    assert any("the equations do worse than holding the level" in w for w in r["why"])
+    better = record([(1.0, 0.1, 0.3), (2.0, 0.1, 0.3)], scale=1.0, horizon=2.0)
+    assert better["beats_hold"] and better["level"] == "high"

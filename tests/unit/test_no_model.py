@@ -101,7 +101,7 @@ def test_the_read_raises_no_model_with_text_and_reason(project):
     assert e.value.answer() == {"ok": False, "error": "no model", "text": e.value.text, "reason": e.value.reason}
 
 
-def test_the_endpoint_and_the_web_api_answer_404_with_text_and_reason(project):
+def test_the_endpoint_answers_404_and_the_web_api_200_with_no_model_text_and_reason(project):
     from fastapi.testclient import TestClient
 
     from orchestra.endpoint.api import handle
@@ -115,7 +115,7 @@ def test_the_endpoint_and_the_web_api_answer_404_with_text_and_reason(project):
     c = TestClient(create_app(project), headers={"Authorization": f"Bearer {auth.token(project)}"})
     r = c.get("/api/dynamics/model")
     got = r.json()
-    assert r.status_code == 404 and got["error"] == "no model"
+    assert r.status_code == 200 and got["error"] == "no model" and got["model"] is None     # the page's state, not a missing resource
     assert got["text"] == out["text"] and got["reason"]["by_reason"] == out["reason"]["by_reason"]   # the same paragraph
     assert got["reason"]["headline"] == got["text"].split(" It left out")[0]
     assert "rediscover now" in got["hint"] and got["discovery"]["looked_at"] == 6

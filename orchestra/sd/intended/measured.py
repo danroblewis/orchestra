@@ -41,7 +41,7 @@ Series = tuple[str, dict, list]          # (name, labels, points): what recent()
 
 def window(points: list) -> float:
     """How long after its last point a series with these points is measured."""
-    return max(FLOOR_S, active_within(gaps(t for t, _ in points)))
+    return max(FLOOR_S, active_within(gaps((t for t, _ in points), least=2)))
 
 
 def read_own(metrics, project_key: str, att: dict, now: float | None = None) -> list[Series]:

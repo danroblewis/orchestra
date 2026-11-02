@@ -460,7 +460,8 @@ def test_intent_events_are_records_not_hand_offs(tmp_path, monkeypatch):
     Events(project.events_file, source="gate").publish("gate.landed", {}, subject="machine:fci")
     idx = MachineIndex(_ListBus(Events(project.events_file).read(0, 100)[0]))
     idx.update()
-    assert list(idx.handoffs) == [("fci", "work.requested", "gate")]
+    assert list(idx.handoffs) == [("fci", None, "gate")]                  # gate announced nothing: no type is credited
+    assert idx.after[("fci", "gate")] == {"work.requested": 1}
     assert idx.total["owner"]["orchestra.intent.requested"] == 1 and idx.total["orchestra-host"]["orchestra.intent.changed"] == 1
 
 

@@ -54,9 +54,22 @@ test("a publishes chip shows the all-time count, and a rate only when there is o
 
 test("a card's seen row says the state in words, with the rule it was judged by; the host's is the runtime record's", () => {
   const rows = Orchestra.machineCards.rows({ ...m, instances: [{ ...m.instances[0], cadence_s: 12 }] });
-  assert.match(rows, /in rhythm<\/span> <span class="muted">· usual gap 12s · last event 5s ago/);
-  assert.match(Orchestra.machineCards.rows({ ...m, active: false, instances: [] }), /quiet since \d\d:\d\d/);
-  assert.match(Orchestra.machineCards.rows({ ...m, first_seen: now - 20 }), /no cadence yet: judged by the 2-minute floor/);
+  assert.match(rows, /class="lv-live"[^>]*>active<\/span> <span class="muted">· about every 12s; last 5s ago/);
+  assert.match(Orchestra.machineCards.rows({ ...m, active: false, instances: [] }), />quiet<\/span> <span class="muted">· since \d\d:\d\d/);
+  // no cadence: no rhythm to be in, neutral, never "in rhythm"
+  const plain = Orchestra.liveness({ ...m, first_seen: now - 20 });
+  assert.equal(plain.word, "heard 5s ago"); assert.equal(plain.cls, "neutral");
+  assert.doesNotMatch(Orchestra.machineCards.rows({ ...m, first_seen: now - 20 }), /in rhythm/);
+  // past 2.5× its own cadence but inside the 2-minute floor: late, amber
+  const late = Orchestra.liveness({ ...m, last_seen: now - 60, instances: [{ ...m.instances[0], cadence_s: 12 }] });
+  assert.equal(late.word, "late by its own rhythm"); assert.equal(late.cls, "late"); assert.match(late.detail, /about every 12s; last 1m ago/);
+  // its only event is its own announcement
+  assert.equal(Orchestra.liveness({ ...m, publishes: [] }).word, "announced, nothing published yet");
+  // what it listens for arrives and it does not act: not answering, whatever its rhythm
+  const hung = Orchestra.liveness({ ...m, unanswered: { "order.assigned": { count: 3, since: now - 300 } } });
+  assert.equal(hung.cls, "late"); assert.match(hung.word, /^not answering: 3 order.assigned since \d\d:\d\d/);
+  assert.equal(Orchestra.liveness({ ...m, unanswered: { "order.assigned": { count: 1, since: now - 30 } } }).cls !== "late", true);   // inside the floor: not yet
+  assert.match(Orchestra.machineCards.rows({ ...m, unanswered: { "order.assigned": { count: 3, since: now - 300 } } }), /order.assigned<\/span> <span class="lv-late"[^>]*>3 since its last event</);
   // heard for longer than a burst and still no cadence: its events never stop; how often, on average,
   // never "continuously" (beside an announced "ad hoc" that read as a contradiction, R2)
   const busy = Orchestra.liveness({ ...m, first_seen: now - 3600, last_seen: now - 3, publishes: [{ type: "x", count: 201 }] });

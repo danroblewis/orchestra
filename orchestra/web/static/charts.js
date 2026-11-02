@@ -49,7 +49,8 @@ const Charts = (() => {
     if (t1 <= t0) { t0 -= 60; t1 += 60; }             // one instant: the point in the middle of two minutes
     let hi = Math.max(...pts.map((p) => p[1])), lo = Math.min(...pts.map((p) => p[1]));
     if (yMax != null && hi > yMax) hi = yMax;
-    if (tight) { const pad = (hi - lo) * 0.06 || Math.abs(hi) * 0.05 || 1; hi += pad; lo = lo >= 0 ? Math.max(0, lo - pad) : lo - pad; }   // never below zero for what never is else { hi = Math.max(0, hi); lo = Math.min(0, lo); }
+    if (tight) { const pad = (hi - lo) * 0.06 || Math.abs(hi) * 0.05 || 1; hi += pad; lo = lo >= 0 ? Math.max(0, lo - pad) : lo - pad; }   // never below zero for what never is
+    else { hi = Math.max(0, hi); lo = Math.min(0, lo); }  // not tight: the axis includes zero
     // the y axis ends on round numbers, so its ticks read as numbers a person would choose
     const stepY = niceStep(hi - lo || Math.abs(hi) || 1);
     lo = Math.floor(lo / stepY + 1e-9) * stepY; hi = Math.ceil(hi / stepY - 1e-9) * stepY; if (hi === lo) hi = lo + stepY;

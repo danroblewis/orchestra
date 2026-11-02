@@ -92,10 +92,15 @@ def record(pairs: list[tuple[float, float, float]], scale: float, horizon: float
     why = []
     if rel > 1:
         why.append(f"run forward from part-way through the window, it misses the measured level by {rel:.1f}× the level's spread")
-    if rel > rel_hold:
-        why.append(f"holding the level does better ({rel_hold:.2f} against {rel:.2f} of the spread)")
-    return {"score": round(score, 4), "level": next(n for bar, n in LEVELS if score >= bar), "error": round(rel, 4),
-            "hold_error": round(rel_hold, 4), "beats_hold": rel < rel_hold, "growth": growth, "z": round(z, 3),
+    beats_hold = rel < rel_hold
+    if not beats_hold:
+        why.append(f"the equations do worse than holding the level ({rel:.2f} against {rel_hold:.2f} of the spread)")
+    # equations that do no better than a flat line earn no more than low, whatever their own error
+    level = next(n for bar, n in LEVELS if score >= bar)
+    if not beats_hold and level in ("high", "medium"):
+        level = "low"
+    return {"score": round(score, 4), "level": level, "error": round(rel, 4),
+            "hold_error": round(rel_hold, 4), "beats_hold": beats_hold, "growth": growth, "z": round(z, 3),
             "horizon": round(horizon, 3), "pairs": len(pairs), "why": why}
 
 

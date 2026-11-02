@@ -139,6 +139,7 @@ const NetGraph = (() => {
     // fit in view: after a new layout settles (unless the viewer has zoomed), and on demand.
     // ``only``: node ids to fit instead of all (a machine and its neighbours), at no less than ``minK``
     // and no more than 1; ``all``: everything, at whatever scale it takes (the fit button)
+    let fittedAll = false;
     function fit(animate = true, only = null, minK = 0, center = null, { all = false } = {}) {
       const ns = only ? NODES.filter((n) => only.has(n.id)) : NODES;
       if (!ns.length || ns.some((n) => n.x === undefined)) return;
@@ -159,7 +160,8 @@ const NetGraph = (() => {
       }
       const room = H - TOP, mid = TOP + room / 2;       // the drawing's height below the controls, and its middle
       const kFit = Math.min(w / (x1 - x0), room / (y1 - y0), 1.4);
-      if (all || (!only && kFit >= DESK_K)) { apply(kFit, w / 2 - kFit * (x0 + x1) / 2, mid - kFit * (y0 + y1) / 2); return; }
+      // the first fit shows every node (never "N more · fit to see all" beside empty canvas)
+      if (all || (!only && (kFit >= DESK_K || !fittedAll))) { if (!settling) fittedAll = true; apply(kFit, w / 2 - kFit * (x0 + x1) / 2, mid - kFit * (y0 + y1) / 2); return; }
       if (!only) {                           // too spread to read whole: the largest connected part, centred, the rest said
         const part = NODES.filter((n) => largestPart().has(n.id)), [a0, b0, a1, b1] = bounds(part.length ? part : NODES);
         const k = Math.max(DESK_K, Math.min(w / (a1 - a0), room / (b1 - b0), 1.4)) || DESK_K;
@@ -322,7 +324,7 @@ const NetGraph = (() => {
       ALLEDGES = ALL;
       const structural = newSig !== sig;
       sig = newSig;
-      const edgeSel = gEdges.selectAll("g.ng-edge").data(ALL, (e) => e.id).join("g").attr("class", (e) => `ng-edge ${e.cls || ""}`).attr("data-id", (e) => e.id);
+      const edgeSel = gEdges.selectAll("g.ng-edge").data(ALL, (e) => e.id).join("g").attr("class", (e) => `ng-edge ${e.cls || ""}${e.warn ? " ng-warn" : ""}`).attr("data-id", (e) => e.id);
       edgeSel.each(function (e) {
         const g = d3.select(this); g.selectAll("*").remove();
         const col = e.color || "#4b5563";
@@ -333,16 +335,18 @@ const NetGraph = (() => {
         if (e.double) { g.classed("ng-double", true); g.append("path").attr("class", "ng-gap"); }
         g.append("path").attr("class", "ng-hit");
         if (e.rate) g.append("path").attr("class", "ng-flowdash").style("animation-duration", `${Math.max(0.25, Math.min(6, 8 / Math.sqrt(e.rate))).toFixed(2)}s`);
-        g.on("mouseenter", (ev) => showTip(tip && tip(e, "edge"), ev)).on("mousemove", moveTip).on("mouseleave", hideTip)
+        g.on("mouseenter", (ev) => { showTip(tip && tip(e, "edge"), ev); gLabels.selectAll("g.ng-label").filter((x) => x.id === e.id).classed("ng-lit", true); }).on("mousemove", moveTip)
+          .on("mouseleave", () => { hideTip(); gLabels.selectAll("g.ng-label").filter((x) => x.id === e.id).classed("ng-lit", false); })
           .on("click", (ev) => { hideTip(); onClick && onClick(e, "edge"); });
       });
       // a label is part of its edge: hovering it shows the edge's tip, clicking it does what clicking the edge does
-      const labelSel = gLabels.selectAll("g.ng-label").data(ALL.filter((e) => e.label || e.sign), (e) => e.id).join("g").attr("class", (e) => `${onClick ? "ng-label ng-clickable" : "ng-label"}${e.quiet ? " ng-quiet" : ""}`).attr("data-id", (e) => e.id)
+      const labelSel = gLabels.selectAll("g.ng-label").data(ALL.filter((e) => e.label || e.sign), (e) => e.id).join("g").attr("class", (e) => `${onClick ? "ng-label ng-clickable" : "ng-label"}${e.quiet ? " ng-quiet" : ""}${e.warn ? " ng-warn" : ""}`).attr("data-id", (e) => e.id)
         .on("mouseenter", (ev, e) => showTip(tip && tip(e, "edge"), ev)).on("mousemove", moveTip).on("mouseleave", hideTip)
         .on("click", (ev, e) => { hideTip(); onClick && onClick(e, "edge"); });
       // a flow's label is reachable from the keyboard: Enter or Space opens it as a click does
-      if (onClick) labelSel.attr("tabindex", (e) => (e.label && e.fid ? 0 : null)).attr("role", (e) => (e.label && e.fid ? "button" : null))
-        .attr("aria-label", (e) => (e.label ? (Array.isArray(e.label) ? e.label : [e.label]).filter(Boolean).join(", ") : null))
+      // (out of the Tab order: the nodes come first; a label is reached from its node's panel, or by the pointer)
+      if (onClick) labelSel.attr("tabindex", (e) => (e.label && e.fid ? -1 : null)).attr("role", (e) => (e.label && e.fid ? "button" : null))
+        .attr("aria-label", (e) => (e.label ? `${(e.source.lines || [e.source.label]).join(" ")} → ${(e.target.lines || [e.target.label]).join(" ")}: ${(Array.isArray(e.label) ? e.label : [e.label]).filter(Boolean).join(", ")}` : null))
         .on("keydown", (ev, e) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onClick(e, "edge"); } })
         .on("focus", (ev, e) => { const m = e._mid; if (m) panTo(m.x, m.y); });
       labelSel.each(function (e) { drawLabel(d3.select(this), e); });
@@ -413,8 +417,14 @@ const NetGraph = (() => {
           .map((id) => byId.get(id)).filter((m) => m && !m._new);
         const [x, y] = nb.length ? [nb.reduce((a, m) => a + m.x, 0) / nb.length, nb.reduce((a, m) => a + m.y, 0) / nb.length]
           : n.anchor ? [n.anchor[0] * w, n.anchor[1] * H] : [w / 2, H / 2];
-        n.x = x + (Math.random() - 0.5) * 80; n.y = y + (Math.random() - 0.5) * 80;
+        const [jx, jy] = jitter(n.id);                          // the same on every load: seeded by the node's id
+        n.x = x + jx * 80; n.y = y + jy * 80;
       }
+    }
+    // two numbers in [-0.5, 0.5) from a node's id (FNV-1a): a new node's offset, never random
+    function jitter(id) {
+      let h = 2166136261; for (const ch of String(id)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+      return [(h & 0xffff) / 0x10000 - 0.5, ((h >>> 16) & 0xffff) / 0x10000 - 0.5];
     }
     // run the forces on ``movable`` nodes only; every other node, and every node the viewer placed,
     // is held where it is
@@ -465,6 +475,31 @@ const NetGraph = (() => {
       const mids = Object.fromEntries(ALLEDGES.filter((e) => e._mid).map((e) => [e.id, e._mid]));
       LABEL_AT = placeLabels(NODES, ALLEDGES, mids);
       tick();
+      crowd();
+      // the Tab order is the layout's: top to bottom, left to right
+      gNodes.selectAll("g.ng-node").sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0));
+    }
+    // a label that still overlaps another (or a node's caption) where it was placed is hidden until
+    // its edge is hovered or it is focused (style.css .ng-crowded): the widest first keep their place
+    function crowd() {
+      const taken = NODES.filter((n) => n.x !== undefined && n.kind !== "cloud").map((n) => { const s = size(n), hw = s.r ? Math.max(s.r, String(n.label || "").length * 3.2) : s.w / 2, hh = s.r ? s.r : s.h / 2;
+        return [n.x - hw, n.y - hh, n.x + hw, n.y + hh + (s.r ? (n.sub ? 28 : 16) : 0)]; });
+      const hit = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+      const crowded = new Set();
+      for (const e of ALLEDGES.filter((x) => x._mid && x.label && labelSize(x)).sort((a, b) => labelSize(b).w - labelSize(a).w)) {
+        const [dx, dy] = LABEL_AT[e.id] || [0, 0], z = labelSize(e), cx = e._mid.x + dx, cy = e._mid.y + dy;
+        const box = [cx - z.w / 2, cy - z.h / 2, cx + z.w / 2, cy + z.h / 2];
+        if (taken.some((t) => hit(box, t))) crowded.add(e.id); else taken.push(box);
+      }
+      gLabels.selectAll("g.ng-label").classed("ng-crowded", (e) => crowded.has(e.id));
+    }
+    // how far a node's drawing reaches: its shape, and for a circle its name and sub-line under it and
+    // its tags above (text about 6 px a character), so captions never overprint each other
+    function reach(n) {
+      const s = size(n), base = (s.r || Math.max(s.w, s.h) / 2) + 24;
+      if (!s.r) return base;
+      const text = Math.max(String(n.label || "").length, String(n.sub || "").length, ...(n.tags || []).map((t) => String(t.text).length)) * 3.2 + 10;
+      return Math.max(base, text, s.r + 12 + (n.sub ? 28 : 16));
     }
     function settle(movable, alpha, again) {
       if (sim) sim.stop();
@@ -476,7 +511,7 @@ const NetGraph = (() => {
         .force("charge", d3.forceManyBody().strength((n) => n.charge ?? -480))
         .force("x", d3.forceX(ax).strength((n) => (n.anchor ? 0.15 : 0.04)))     // weak gravity; anchored nodes pulled to their spot
         .force("y", d3.forceY(ay).strength((n) => (n.anchor ? 0.15 : 0.04)))
-        .force("collide", d3.forceCollide((n) => { const s = size(n); return (s.r || Math.max(s.w, s.h) / 2) + 24; }))
+        .force("collide", d3.forceCollide(reach))
         .force("boundary", boundary ? keepOutside : null)
         .force("edge", boundary ? towardEdge : null)
         .alpha(alpha);
@@ -548,9 +583,9 @@ const NetGraph = (() => {
         const col = lit && lit.has(e.id) ? e.hoverColor : e.color || "#4b5563";
         d3.select(this).select(".ng-line").attr("stroke", col).attr("marker-end", e.arrow === false ? null : marker(col)).attr("marker-start", e.both ? marker(col, true) : null).classed("ng-hover", !!(lit && lit.has(e.id)));
       });
-      if (!id) { ns.classed("ng-dim", false); es.classed("ng-dim", false); ls.classed("ng-dim", false); paint(null); return; }
+      if (!id) { ns.classed("ng-dim", false); es.classed("ng-dim", false); ls.classed("ng-dim", false).classed("ng-lit", false); paint(null); return; }
       const { keep, lit } = neighbourhood(id);
-      ns.classed("ng-dim", (n) => !keep.has(n.id)); es.classed("ng-dim", (e) => !lit.has(e.id)); ls.classed("ng-dim", (e) => !lit.has(e.id));
+      ns.classed("ng-dim", (n) => !keep.has(n.id)); es.classed("ng-dim", (e) => !lit.has(e.id)); ls.classed("ng-dim", (e) => !lit.has(e.id)).classed("ng-lit", (e) => lit.has(e.id));
       paint(lit);
     }
     // a loop or any set: these nodes and edges in gold, everything else faded
@@ -589,14 +624,15 @@ const NetGraph = (() => {
     function refreshNodes(update) {
       gNodes.selectAll("g.ng-node").each(function (n) { const u = update(n); if (u) { Object.assign(n, u); drawNode(d3.select(this), n); } });
     }
-    // change edges' labels without a new layout: ``labelOf(e)`` -> {label, quiet} or null to leave one
+    // change edges' labels without a new layout: ``labelOf(e)`` -> {label, quiet, warn} or null to
+    // leave one; ``warn`` marks the edge and its label in the warning colour (style.css .ng-warn)
     function setLabels(labelOf) {
       let changed = false;
       for (const e of ALLEDGES) { const u = labelOf(e); if (!u) continue;
-        if (JSON.stringify(u.label) !== JSON.stringify(e.label) || !!u.quiet !== !!e.quiet) { e.label = u.label; e.quiet = !!u.quiet; changed = true; } }
+        if (JSON.stringify(u.label) !== JSON.stringify(e.label) || !!u.quiet !== !!e.quiet || !!u.warn !== !!e.warn) { e.label = u.label; e.quiet = !!u.quiet; e.warn = !!u.warn; changed = true; } }
       if (!changed) return;
-      gLabels.selectAll("g.ng-label").each(function (e) { drawLabel(d3.select(this), e); d3.select(this).classed("ng-quiet", !!e.quiet); });
-      gEdges.selectAll("g.ng-edge").classed("ng-quiet", (e) => !!e.quiet);
+      gLabels.selectAll("g.ng-label").each(function (e) { drawLabel(d3.select(this), e); d3.select(this).classed("ng-quiet", !!e.quiet).classed("ng-warn", !!e.warn); });
+      gEdges.selectAll("g.ng-edge").classed("ng-quiet", (e) => !!e.quiet).classed("ng-warn", (e) => !!e.warn);
       relabel();
     }
     function setRates(rateOf) {

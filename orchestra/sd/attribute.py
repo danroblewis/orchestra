@@ -28,7 +28,8 @@ its evidence and a ``confidence`` between 0 and 1), from one of:
      within ``RATIO`` of the counter's (the rest of the events may feed another flow; confidence:
      the share of the events that pair). Either is discounted for chance: the same events moved
      far away in time (``CHANCE_SHIFTS``) pair too, by coincidence, with a share that is subtracted
-     (confidence: ``(paired - chance) / (1 - chance)``), and a counter so busy that chance alone
+     (confidence: ``paired - chance``, so a match chance could half make is never near certain;
+     two-sided only when ``(paired - chance) / (1 - chance)`` is at least ``EQUAL_STEPS``), and a counter so busy that chance alone
      pairs more than ``MAX_CHANCE`` of it is never matched this way;
   3. *by correlation*: they correlate at least ``MIN_CORR`` at one of those lags with totals
      within ``RATIO`` of each other (confidence: the correlation times the smaller ratio of the
@@ -128,12 +129,19 @@ def _by_event(xc: dict[int, float], xe: dict[int, float], live: set[int], n: int
         test, share, base = "covers every increment", explained, chance / ty
     else:
         return None
-    confidence = (share - base) / (1 - base)
-    if test == "event by event" and confidence < EQUAL_STEPS:
+    if test == "event by event" and (share - base) / (1 - base) < EQUAL_STEPS:
         return None
+    confidence = discounted(share, base)
     return {"confidence": round(confidence, 4), "test": test, "paired": {"flow": round(covered, 4), "events": round(explained, 4)},
             "chance": round(chance / tx, 4), "lag_steps": max(by_offset, key=lambda d: (by_offset[d], -abs(d))),
             "counts": {"flow": round(tx, 3), "events": round(ty, 3)}, "steps": len(live)}
+
+
+def discounted(share: float, base: float) -> float:
+    """A share that paired, less what chance alone pairs: ``share - base``. Never certainty while
+    chance pairs anything (the owner's reviewers, 2026-11-02, saw a share of 1 with 42% by chance
+    shown as 100%: ``(share - base) / (1 - base)`` is 1 at a share of 1 whatever the base)."""
+    return max(0.0, share - base)
 
 
 def _by_step(xc: dict[int, float], xe: dict[int, float], live: set[int], n: int) -> dict | None:

@@ -16,6 +16,8 @@ const Live = (() => {
   // a whole number of items is said whole ("3", not "3.00"); a rate or a fraction keeps its decimals
   const fmt = (v) => (v == null ? "—" : Number.isInteger(v) ? v.toLocaleString() : Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2));
   const rateFmt = (v) => (v == null ? "—" : Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2));
+  // a rate (or any measured value said in passing) to two significant digits: "0.31", "29", "1,200"
+  const sig2 = (v) => (v == null || !isFinite(v) ? "—" : v === 0 ? "0" : Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : String(+(+v).toPrecision(2)));
   // counted traffic (orchestra.sources.traffic): what a series counts on another system's bus
   const trafficText = (t) => (t.direction === "backlog" ? `what waits in ${t.channel}` : `${t.direction === "out" ? "produced into" : "consumed from"} ${t.channel}`)
     + (t.machine ? ` by ${t.machine}` : t.direction === "backlog" ? "" : ", by no machine a source names (unattributed)") + "; a count, not events";
@@ -41,7 +43,7 @@ const Live = (() => {
   const spanText = (pts) => { if (!pts || !pts.length) return "no data yet"; const a = pts[0][0], b = pts[pts.length - 1][0], m = (b - a) / 60;
     return `since ${hm(a)} · ${m < 1 ? `${Math.round(b - a)} s` : m < 90 ? `${Math.round(m)} min` : `${(m / 60).toFixed(1)} h`} of data`; };
   // a flow's machines, as hypotheses with their confidence (none on a flow with too few events): never one name as if it were a fact
-  const machinesText = (f) => (f.machines || []).length ? f.machines.map((h) => `${h.machine}${Evidence.confidence(f, h)}`).join(", ") : "none associated yet";
+  const machinesText = (f) => (f.machines || []).length ? f.machines.map((h) => `${h.machine}${Evidence.confidence(f, h)}${Evidence.chance(f, h)}`).join(", ") : "none associated yet";
   // a stock's (or, by its SD Lab name, a measured input's) level at time t
   const levelAt = (sid, t) => { const h = stockHist(sid).length ? stockHist(sid) : inputHist(sid); let v = null; for (const [tt, x] of h) { if (tt > t) break; v = x; } return v; };
   // what the flow's fitted equation says its rate is, given the levels at time t
@@ -98,7 +100,7 @@ const Live = (() => {
   // the summary shown on hovering a stock
   function stockSummary(id) {
     const s = MODEL.stocks.find((x) => x.id === id), h = stockHist(id).map((p) => p[1]), v = now(id), io = flowsOf(id);
-    const rows = [...io.in.map((f) => ["+", f]), ...io.out.map((f) => ["−", f])].map(([sg, f]) => `<div class="tr"><span>${sg} ${esc(flowName(f))}</span><b>${rateFmt(recentRate(f.id))}${per()}</b></div>`).join("");
+    const rows = [...io.in.map((f) => ["+", f]), ...io.out.map((f) => ["−", f])].map(([sg, f]) => `<div class="tr"><span>${sg} ${esc(flowName(f))}</span><b>${sig2(recentRate(f.id))}${per()}</b></div>`).join("");
     const changers = [...new Set([...io.in, ...io.out].flatMap((f) => (f.machines || []).map((x) => x.machine)))];
     const ev = s.evidence || {};
     return `<div class="tt">${stockHead(s.id)}</div>${stockAbout(s.id)}<div class="tr"><span>now</span><b>${fmt(v)}</b></div>
@@ -131,10 +133,10 @@ const Live = (() => {
   }
   function flowSummary(fid) {
     const f = MODEL.flows.find((x) => x.id === fid); if (!f) return "";
-    const r = recentRate(f.id), pr = predicted(f, Date.now() / 1000);
+    const r = recentRate(f.id), pr = predicted(f, Date.now() / 1000), few = Evidence.tooFew(f);
     return `<div class="tt">${esc(flowName(f))}</div><div class="muted">${esc(f.from ? stockName(f.from) : "outside")} → ${esc(f.to ? stockName(f.to) : "outside")}</div>
-      <div class="tr"><span>observed, last ${Math.round(recentMinutes(f.id))} min</span><b>${rateFmt(r)}${per()}</b></div><div class="tr"><span>equation says now</span><b>${rateFmt(pr)}${per()}</b></div>
-      <div class="tr"><span>equation</span><b>${esc(eqText(f))}</b></div><div class="tr"><span>machines (hypotheses)</span><b>${esc(machinesText(f))}</b></div><div class="hint">click for history and fit</div>`;
+      <div class="tr"><span>observed, last ${Math.round(recentMinutes(f.id))} min</span><b>${sig2(r)}${per()}</b></div>${few ? `<div class="tr"><span>equation</span><b>${esc(Evidence.tooFewText(f))}</b></div>`
+      : `<div class="tr"><span>equation says now</span><b>${sig2(pr)}${per()}</b></div><div class="tr"><span>equation</span><b>${esc(eqText(f))}</b></div>`}<div class="tr"><span>machines (hypotheses)</span><b>${esc(machinesText(f))}</b></div><div class="hint">click for history and fit</div>`;
   }
   // the stock's drawer: what it is, its level measured and as the equations run it (since the era
   // began, and projected ahead), and the flows that fill and drain it
@@ -155,7 +157,7 @@ const Live = (() => {
   }
   // how far to trust the stock (sd/stocktrust.py): each measurement of its evidence, the weakest as its score
   function trustRows(t) {
-    if (Evidence.byConstruction(t)) return `<div>trust</div><div><b>by construction: no evidence (D33)</b>${(t.why || []).map((w) => `<br><span class="muted">${esc(w)}</span>`).join("")}</div>
+    if (Evidence.byConstruction(t)) return `<div>trust</div><div><b>${esc(Evidence.BY_CONSTRUCTION)}</b>${(t.why || []).map((w) => `<br><span class="muted">${esc(w)}</span>`).join("")}</div>
       ${t.behaviour ? behaviourRows(t.behaviour) : ""}`;
     const pct = (x) => (x == null ? "—" : (+x).toFixed(2));
     const parts = Object.entries(t.components || {}).map(([k, v]) => `${esc(k.replace("_", " "))} ${pct(v)}`).join(" · ");
@@ -169,21 +171,29 @@ const Live = (() => {
   // how far to trust the stock's projection (sd/equations/heldout.py): the model run forward from part-way through its window
   function behaviourRows(b) {
     const pct = (x) => (x == null ? "—" : (+x).toFixed(2));
-    return `<div>behaviour</div><div><b>${pct(b.score)}</b> ${esc(b.level)} <span class="muted">(its own runs from part-way through the window miss the level by ${pct(b.error)} × its spread; holding the level, ${pct(b.hold_error)})</span>
+    return `<div>behaviour</div><div><b>${pct(b.score)}</b> ${esc(b.level)} <span class="muted">(its own runs from part-way through the window miss the level by ${pct(b.error)} × its spread; holding the level, ${pct(b.hold_error)})</span>${b.beats_hold === false ? '<br><span class="stale">the equations do worse than holding the level</span>' : ""}
       ${(b.why || []).map((w) => `<br><span class="muted">${esc(w)}</span>`).join("")}</div>`;
   }
   // who wrote a series, as a link to the instrument when an instrument did
   const writerLink = (s, ev) => { const w = ev.written_by || ev.machine; if (!w) return "—";
     const inst = s.series && s.series.labels && s.series.labels.instrument;
     return inst && inst === w ? `<a href="/instruments#${encodeURIComponent(w)}" title="open it on the Instruments page">${esc(w)}</a>` : esc(w); };
+  // a balance's term by the flow its counter measures ("+ write → open_pr", a link that opens it),
+  // the series a muted second line; a counter no flow shows keeps its title or its key
+  function balanceTerm(b) {
+    const g = MODEL.flows.find((f) => f.counter && keyOf(f.counter) === b.series), sg = b.sign > 0 ? "+" : "−";
+    const title = ((MODEL.discovery || {}).titles || {})[b.series];
+    const head = g ? `<a href="#f:${encodeURIComponent(g.id)}" onclick="Live.openFlow('${esc(g.id)}');return false">${esc(flowName(g))}</a>` : esc(title || b.series);
+    return `<span class="bal-term">${sg} ${head}${g || title ? `<span class="muted num" style="display:block;font-size:11px">${esc(b.series)}</span>` : ""}</span>`;
+  }
   function openStock(id) {
     const s = MODEL.stocks.find((x) => x.id === id), io = flowsOf(id), ev = s.evidence || {};
-    const rate = (f) => `${rateFmt(recentRate(f.id))}${per()}`;
+    const rate = (f) => `${sig2(recentRate(f.id))}${per()} <span class="muted" style="font-weight:400">observed, last ${Math.round(recentMinutes(f.id))} min</span>`;
     // each flow that fills or drains it opens its own drawer
-    const flowRow = (f, sg) => `<div class="tr flowlink" tabindex="0" role="button" title="open this flow" onclick="Live.openFlow('${esc(f.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();Live.openFlow('${esc(f.id)}')}"><span>${sg} <span class="mdot" style="--c:${mcolor(f.machine)}"></span>${esc(flowName(f))} <span class="muted">${esc(sg === "+" ? "from " + (f.from ? stockName(f.from) : "outside") : "to " + (f.to ? stockName(f.to) : "outside"))}</span></span> <b style="margin-left:10px">${rate(f)}</b></div>`;
+    const flowRow = (f, sg) => `<div class="tr flowlink" tabindex="0" role="button" title="open this flow" onclick="Live.openFlow('${esc(f.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();Live.openFlow('${esc(f.id)}')}"><span>${sg} ${esc(flowName(f))} <span class="muted">${esc(sg === "+" ? "from " + (f.from ? stockName(f.from) : "outside") : "to " + (f.to ? stockName(f.to) : "outside"))}</span></span> <b style="margin-left:10px">${rate(f)}</b></div>`;
     // outflows are drawn below zero, so what fills and what drains it read apart at a glance
-    const lines = [...io.in.map((f) => ({ label: "in: " + flowName(f), points: flowHist(f.id), color: mcolor(f.machine) })),
-      ...io.out.map((f) => ({ label: "out: " + flowName(f), points: flowHist(f.id).map(([t, v]) => [t, -v]), color: mcolor(f.machine), dash: "5 3" }))].filter((l) => l.points.length);
+    const lines = [...io.in.map((f, i) => ({ label: "in: " + flowName(f), points: flowHist(f.id), color: STOCK_PAL[i % STOCK_PAL.length] })),
+      ...io.out.map((f, i) => ({ label: "out: " + flowName(f), points: flowHist(f.id).map(([t, v]) => [t, -v]), color: STOCK_PAL[(io.in.length + i) % STOCK_PAL.length], dash: "5 3" }))].filter((l) => l.points.length);
     const net = new Map();
     for (const l of lines) for (const [t, v] of l.points) net.set(t, (net.get(t) || 0) + v);
     if (lines.length > 1) lines.push({ label: "net (in − out)", points: [...net.entries()].sort((a, b) => a[0] - b[0]), color: "#e5e7eb" });
@@ -197,7 +207,7 @@ const Live = (() => {
       ${s.series && s.series.source && s.series.source !== "own" ? `<div>read from</div><div>source <b>${esc(s.series.source)}</b><div class="num" style="font-size:11.5px">${esc(s.series.query || "")}</div><div class="muted" style="font-size:11.5px">${esc((s.series.origin || []).join(" → "))}</div></div>` : ""}
       ${s.series && s.series.traffic ? `<div>counted</div><div>${esc(trafficText(s.series.traffic))}</div>` : ""}
       ${s.series && resOf(MODEL.discovery, keyOf(s.series)) ? `<div>resolution</div><div>${esc(resOf(MODEL.discovery, keyOf(s.series)))}</div>` : ""}
-      ${ev.balance ? `<div>balance</div><div class="num">Δ =${ev.balance.map((b) => `<span class="bal-term">${b.sign > 0 ? "+" : "−"} ${esc(b.series)}</span>`).join("")}<span class="muted">${ev.trust && ev.trust.kind === "passage" ? "a passage: judged on its raw points; R² not used" : ev.balance_r2 == null ? (ev.by_construction ? "by construction: a count of reporters and its own turnover, so no evidence" : "measured by no series: no fit to report") : `R² ${ev.balance_r2} · exact in ${Math.round(100 * ev.exact_steps)}% of steps`}${ev.balance_r2_level != null ? ` · judged on the traffic through it (R² on the level itself ${ev.balance_r2_level})` : ""}</span></div>` : ""}
+      ${ev.balance ? `<div>balance</div><div>Δ =${ev.balance.map((b) => balanceTerm(b)).join("")}<span class="muted">${ev.trust && ev.trust.kind === "passage" ? "a passage: judged on its raw points; R² not used" : ev.balance_r2 == null ? (ev.by_construction ? Evidence.BY_CONSTRUCTION : "measured by no series: no fit to report") : `R² ${ev.balance_r2} · exact in ${Math.round(100 * ev.exact_steps)}% of steps`}${ev.balance_r2_level != null ? ` · judged on the traffic through it (R² on the level itself ${ev.balance_r2_level})` : ""}</span></div>` : ""}
       ${ev.net_flow ? netFlowRows(s, ev, io) : ""}
       ${ev.quiet ? `<div>held</div><div>from v${esc(String(ev.quiet.version))}: ${esc(ev.quiet.why)}</div>` : ""}
       ${ev.trust ? trustRows(ev.trust) : ""}</div>
@@ -221,35 +231,51 @@ const Live = (() => {
     const hidden = ((MODEL.stocks.find((s) => s.id === id) || {}).evidence || {}).hidden;
     const measured = hidden ? null : { label: "measured", points: stockHist(id), color: stockColor(id) };
     if (!d.ok) { el.innerHTML = measured ? Charts.line([measured], { W: 700, H: 240 }) : '<div class="muted">nothing measured: a hidden stock</div>'; note.textContent = "Not simulated: " + d.error; return; }
-    const era = (d.era || {})[id] || [], proj = (d.projection || {})[id] || [];
+    const era = (d.era || {})[id] || [];
+    // no projection where the equations are already wrong now: a flow of this stock not moving as its
+    // equation says (and not replayed), or equations that do worse than holding the level
+    const st = MODEL.stocks.find((x) => x.id === id) || {}, beh = (((st.evidence || {}).trust) || {}).behaviour;
+    const io = flowsOf(id), replayedIds = new Set([...(d.replayed || []), ...(d.too_few || [])]);
+    const off = [...io.in, ...io.out].filter((f) => !replayedIds.has(f.id) && !Evidence.tooFew(f)).map((f) => ({ f, a: against(f) })).filter((x) => x.a.differs);
+    const noProj = off.length ? `no projection: ${off.map(({ f, a }) => `${flowName(f)} is not moving as its equation says (equation ${sig2(a.eq)}${per()}, observed ${sig2(a.obs)}${per()})`).join("; ")}`
+      : beh && beh.beats_hold === false ? "no projection: the equations do worse than holding the level" : "";
+    const proj = noProj ? [] : (d.projection || {})[id] || [];
     // the y axis spans what was measured and replayed; a projection running past it is cut, its end said
     const seen = [...(measured ? measured.points : []), ...era].map((p) => p[1]), end = proj.length ? proj[proj.length - 1] : null;
     const yMax = seen.length ? Math.max(...seen) * 1.5 + 1 : null;
-    const endText = end ? `+${horizon()} min: ${fmt(Math.round(end[1] * 100) / 100)}` : "";
+    const endText = end ? `+${horizon()} min: ${sig2(end[1])}` : "";
     el.innerHTML = Charts.line([...(measured ? [measured] : []),
       { label: `the equations, from ${Orchestra.when(d.start)}`, points: era, color: "#e5e7eb", dash: "6 4" },
-      { label: `projected, next ${horizon()} min${endText ? ` (${endText})` : ""}`, points: proj, color: stockColor(id), dash: "2 3" }],
+      ...(noProj ? [] : [{ label: `projected, next ${horizon()} min${endText ? ` (${endText})` : ""}`, points: proj, color: stockColor(id), dash: "2 3" }])],
       { W: 700, H: 240, now: d.now, yMax: yMax != null && end && end[1] > yMax ? yMax : null, notes: end ? [{ t: end[0], v: end[1], text: endText }] : [],
         marks: [{ t: d.now, label: "now" }, ...(era.length ? [{ t: d.start, label: "era began" }] : [])] });
-    const rep = (d.replayed || []).map((fid) => flowName(MODEL.flows.find((f) => f.id === fid)) || fid);
-    // where a flow of this stock is not moving as its equation says, the projection still assumes the equation
-    const io = flowsOf(id), warn = [...io.in, ...io.out].map((f) => ({ f, a: against(f) })).filter((x) => x.a.differs)
-      .map(({ f, a }) => `<div class="stale">${esc(flowName(f))}: the equation says ${rateFmt(a.eq)}${per()}; observed ${rateFmt(a.obs)}${per()} over the last ${Math.round(a.window)} min — the projection assumes the fitted rate</div>`).join("");
-    note.innerHTML = warn + `The equations start from the measured levels when the era began (the start of the window the model was fitted on, when every series was being written), and run with nothing else but the measured inputs. The projection starts from the levels now and runs the fitted equations: constant flows continue at their fitted rate; measured inputs are held at their last value. Nothing leaves a stock that is not there.`
-      + (rep.length ? ` <b>Replayed, not simulated</b> (no equation the simulator steps): ${rep.map(esc).join(", ")}: their observed rate, then their mean over the last 10 minutes.` : " Every flow was simulated from its equation.")
+    const nameOf = (fid) => flowName(MODEL.flows.find((f) => f.id === fid)) || fid;
+    const few = (d.too_few || []).map(nameOf), rep = (d.replayed || []).filter((fid) => !(d.too_few || []).includes(fid)).map(nameOf);
+    const replayedText = rep.length || few.length ? ` <b>Replayed, not simulated</b>: their observed rate, then their mean over the last 10 minutes: ${[...rep.map((n) => `${esc(n)} (no equation the simulator steps)`), ...few.map((n) => `${esc(n)} (too few events to fit)`)].join(", ")}.` : " Every flow was simulated from its equation.";
+    note.innerHTML = (noProj ? `<div class="stale">${esc(noProj)}</div>` : "") + `The equations start from the measured levels when the era began (the start of the window the model was fitted on, when every series was being written), and run with nothing else but the measured inputs.${noProj ? "" : " The projection starts from the levels now and runs the fitted equations: constant flows continue at their fitted rate; measured inputs are held at their last value. Nothing leaves a stock that is not there."}`
+      + replayedText
       + (yMax != null && end && end[1] > yMax ? ` The projection runs above the measured range: the chart is cut at ${fmt(Math.round(yMax))}, its end value is ${esc(endText)}.` : "")
       + (VERSION !== null ? " These are the latest discovery's equations, not this past version's." : "");
   }
+  // what an equation reads, by the name the page gives it: a stock's name, or a measured series' title
+  // (sd/titles.py, as the Instruments page names it), else its words
+  function driverName(x) {
+    const n = String(x).replace(/^input:/, ""), titles = (MODEL.discovery || {}).titles || {};
+    if (MODEL.stocks.some((s) => s.id === n)) return stockName(n);
+    const k = Object.keys(titles).find((key) => key === n || key.startsWith(n + "{") || key.replace(/[^a-z0-9]+/gi, "_").replace(/_+$/, "") === n);
+    return k ? titles[k] : readName(x);
+  }
   function openFlow(fid) {
     const f = MODEL.flows.find((x) => x.id === fid), e = f.current || {}, q = e.quality || {}, ev = f.evidence || {};
-    const obs = flowHist(fid), model = obs.map(([t]) => [t, predicted(f, t)]).filter((p) => p[1] != null);
+    const few = Evidence.tooFew(f);
+    const obs = flowHist(fid), model = few ? [] : obs.map(([t]) => [t, predicted(f, t)]).filter((p) => p[1] != null);
     // lower AIC is better; a form below the chosen one lost only because it did not beat the price of trying it
     const drv = ev.driver || {};
     // each form named as the page names what it reads; a better form was set aside for a reason, said
     const formName = (k) => { const rest = k.slice(4), form = ["proportional", "linear", "constant", "gap"].find((x) => rest === x || rest.startsWith(x + "_"));
       if (!form) return rest.replace(/_/g, " ");
       const what = rest.slice(form.length + 1);
-      return what ? `${form} in ${readName(what)}` : form; };
+      return what ? `${form} in ${driverName(what)}` : form; };
     const refutedOf = (k) => { const rest = k.slice(4), what = rest.replace(/^(proportional|linear|constant|gap)_?/, "");
       return (drv.refuted || []).find((r) => [r.driver, r.stock, r.input, r.name].filter(Boolean).some((x) => x === what || "input:" + x === what || x === what.replace(/^input:/, ""))); };
     const alts = Object.entries(q).filter(([k]) => k.startsWith("aic_")).map(([k, v]) => { const dv = v - q.aic;
@@ -271,8 +297,9 @@ const Live = (() => {
     const zeroEv = (q.events ?? 0) === 0 && f.current && (Object.values(e.params || {}).some((x) => x) || (e.spec && e.spec.value)) ? " · 0 increments seen in the window; the counter first appeared already above 0" : "";
     openDrawer(`<h3 data-drawer-key="f:${esc(fid)}">${esc(flowName(f))} <span class="tag">flow</span></h3>
       <div class="def"><div>moves</div><div>${esc(f.from ? stockName(f.from) : "outside")} → ${esc(f.to ? stockName(f.to) : "outside")}</div>
-      <div>equation</div><div class="num">${esc(eqText(f))}${SDGraph.correlational(MODEL, f) ? `<div class="muted" style="font-family:inherit">${esc(SDGraph.UNTESTED)}</div>` : ""}</div><div>machines</div><div>${(f.machines || []).length ? f.machines.map((h) => `<div><span class="mdot" style="--c:${mcolor(h.machine)}"></span><b><a href="/machines#${encodeURIComponent(h.machine)}" title="open it on the Machines page">${esc(h.machine)}</a></b>${Evidence.confidence(f, h) ? ` <span class="num">${Evidence.confidence(f, h).trim()}</span>` : ""} <span class="muted">${esc(h.why || h.origin || "")}</span></div>`).join("") + '<div class="muted" style="font-size:11.5px">hypotheses: a match in time, not a cause; they change no equation, and two similar flows between the same stocks may not be told apart</div>' + byLabel : `<span class="muted">${esc(f.association || "no machine associated yet")}</span>${byLabel}`}</div>
-      <div>fit</div><div class="num">${Evidence.tooFew(f) ? `<b>${esc(Evidence.tooFewText(f))}</b>: ` : ""}${esc(e.origin || "")} by ${esc(e.method || "")} · ${esc(e.form || "")} · ${q.events ?? 0} events${q.live_minutes ? ` over ${q.live_minutes} min` : ""}${q.dispersion != null ? ` · dispersion ${rateFmt(q.dispersion)}` : ""}${zeroEv ? `<div class="muted" style="font-family:inherit">${esc(zeroEv.slice(3))}</div>` : ""}</div>
+      <div>equation</div><div class="num">${few ? "—" : esc(eqText(f))}${SDGraph.correlational(MODEL, f) ? `<div class="muted" style="font-family:inherit">${esc(SDGraph.UNTESTED)}</div>` : ""}</div><div>machines</div><div>${(f.machines || []).length ? f.machines.map((h) => `<div><span class="mdot" style="--c:${mcolor(h.machine)}"></span><b><a href="/machines#${encodeURIComponent(h.machine)}" title="open it on the Machines page">${esc(h.machine)}</a></b>${Evidence.confidence(f, h) ? ` <span class="num">${Evidence.confidence(f, h).trim()}${esc(Evidence.chance(f, h))}</span>` : ""} <span class="muted">${esc(h.why || h.origin || "")}</span></div>`).join("") + (Evidence.untold(MODEL, f) ? `<div class="muted" style="font-size:11.5px">${esc(Evidence.untold(MODEL, f))}</div>` : "") + '<div class="muted" style="font-size:11.5px">hypotheses: a match in time, not a cause; they change no equation, and two similar flows between the same stocks may not be told apart</div>' + byLabel : `<span class="muted">${esc(f.association || "no machine associated yet")}</span>${byLabel}`}</div>
+      <div>fit</div><div class="num">${few ? `<b>${esc(Evidence.tooFewText(f))}</b>` : `${esc(e.origin || "")} by ${esc(e.method || "")} · ${esc(e.form || "")} · ${q.events ?? 0} events in the fit window${q.live_minutes ? ` (${q.live_minutes} min)` : ""}${q.dispersion != null ? ` · dispersion ${sig2(q.dispersion)}` : ""}`}${zeroEv ? `<div class="muted" style="font-family:inherit">${esc(zeroEv.slice(3))}</div>` : ""}</div>
+      <div>rate</div><div class="num">${sig2(recentRate(fid))}${per()} <span class="muted" style="font-family:inherit">observed, last ${Math.round(recentMinutes(fid))} min</span>${few ? "" : `<br>${sig2(predicted(f, Date.now() / 1000))}${per()} <span class="muted" style="font-family:inherit">the fitted equation, now</span>`}</div>
       ${(f.measured_by || []).length > 1 ? `<div>measured by</div><div class="num">${f.measured_by.map((c) => esc(c.name)).join(" + ")}</div>` : ""}
       ${SDGraph.sameAs(MODEL, f).length ? `<div>same events</div><div>as ${SDGraph.sameAs(MODEL, f).map(esc).join(", ")} <span class="muted">(another counter counts each of its events: one move, two names)</span></div>` : ""}
       <div>counter</div><div class="num">${esc(f.counter ? keyOf(f.counter) : "—")}${apart ? `<div class="muted" style="font-family:inherit">${esc(apart)}${through ? `, because it passes through ${esc(through)}` : ""}</div>` : ""}</div>
@@ -282,8 +309,8 @@ const Live = (() => {
       ${(f.counter && f.counter.traffic) ? `<div>counted</div><div>${esc(trafficText(f.counter.traffic))}</div>` : ""}
       ${(ev.co_flows || []).length ? `<div>co-flows</div><div>the same events also move ${ev.co_flows.map(flowLink).join(", ")}</div>` : ""}
       ${(ev.conflicts || []).map((c) => `<div>also claimed</div><div>its ${c.end === "src" ? "source" : "destination"} by ${c.others.map((o) => `${esc(stockName(o.stock))} (explains ${Math.round(100 * o.share)}% of its changes)`).join(", ")}; kept ${esc(stockName(c.kept))}</div>`).join("")}</div>
-      <h4>Rate (${per()}), ${esc(spanText(obs))}: observed and what the equation predicts from the levels</h4>
-      ${Charts.line([{ label: "observed", points: obs, color: mcolor(f.machine) }, { label: "equation", points: model, color: "#e5e7eb", dash: "6 4" }], { W: 700, H: 240, unit: per() })}
+      <h4>Rate (${per()}), ${esc(spanText(obs))}: ${few ? "observed (too few events for an equation)" : "observed and what the equation predicts from the levels"}</h4>
+      ${Charts.line([{ label: "observed", points: obs, color: SDGraph.FLOW_INK }, ...(few ? [] : [{ label: "equation", points: model, color: "#e5e7eb", dash: "6 4" }])], { W: 700, H: 240, unit: per() })}
       ${alts ? `<h4>Other forms considered (AIC; lower is better)</h4>${price}<table class="dt"><tr><th>form</th><th>AIC</th><th>against the chosen</th></tr><tr><td><b>${esc(e.form)}</b> (chosen)</td><td class="num">${rateFmt(q.aic)}</td><td></td></tr>${alts}</table>` : ""}`, { key: "f:" + fid });
     if (typeof IntendedDrawers !== "undefined") IntendedDrawers.expectSwitch("flow", fid);
   }
@@ -307,14 +334,15 @@ const Live = (() => {
   }
   function toggle(id) { HIDDEN = HIDDEN || new Set(); HIDDEN.has(id) ? HIDDEN.delete(id) : HIDDEN.add(id); try { localStorage.setItem("orchestra.dyn.hidden", JSON.stringify([...HIDDEN])); } catch (e) {} chart(); }
 
-  // a flow's label on the diagram: the equation, or, where the observed rate parts from it, the
-  // observed rate first ("0.00 now · eq 1.50 /min"); quiet when nothing moved over the recent window.
-  // A flow with too few events to fit has no rate to show: its label says so, never an "eq"
+  // a flow's label on the diagram: the observed rate first, then the equation's ("0.31 /min observed ·
+  // equation 1.5 /min"), and ``warn`` where they part by more than chance; quiet when nothing moved over
+  // the recent window. A flow with too few events to fit has no equation: its label says so
   function edgeLabel(e) {
     const f = MODEL && MODEL.flows.find((x) => x.id === e.fid); if (!f || !e.eqLabel) return null;
     const a = against(f), few = typeof Evidence !== "undefined" && Evidence.tooFew(f);
-    const first = few ? Evidence.tooFewText(f) : a.differs ? `${rateFmt(a.obs)} now · eq ${rateFmt(a.eq)} ${per()}` : e.eqLabel;
-    return { label: [first, ...(Array.isArray(e.label) ? e.label.slice(1) : [])], quiet: !!a.quiet && HISTORY != null };
+    const eq = a.eq != null ? `equation ${sig2(a.eq)} ${per()}` : `equation ${e.eqLabel}`;
+    const first = few ? Evidence.tooFewText(f) : a.obs != null ? `${sig2(a.obs)} ${per()} observed · ${eq}` : eq;
+    return { label: [first, ...(Array.isArray(e.label) ? e.label.slice(1) : [])], quiet: !!a.quiet && HISTORY != null, warn: !few && !!a.differs };
   }
   let GRAPH = null;
   async function refresh() {
@@ -326,8 +354,10 @@ const Live = (() => {
       GRAPH.setLabels((e) => (e.flowPart && e.fid ? edgeLabel(e) : null));
     }
     chart();
+    // the tables read the observed rates too (observed first, a missed equation said): redrawn when they changed
+    if (typeof MODEL !== "undefined" && MODEL && typeof tables === "function") { try { tables(); } catch (e) {} }
   }
   function drawn(graph) { GRAPH = graph; graph.setRates((e) => (e.flowPart ? recentRate(e.fid) : 0)); chart(); }
-  return { refresh, drawn, toggle, openStock, openFlow, decorateStock, decorateInput, stockSummary, flowSummary, edgeLabel };
+  return { refresh, drawn, toggle, openStock, openFlow, decorateStock, decorateInput, stockSummary, flowSummary, edgeLabel, against, now: (id) => now(id), sig2, per, recentMinutes, has: () => HISTORY != null };
 })();
 Live.refresh(); setInterval(Live.refresh, 15000);

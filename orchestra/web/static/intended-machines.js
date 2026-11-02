@@ -7,8 +7,10 @@
 //              (IntendedCore.machineWords); a declared one never heard is an outline with no halo; the latest change's links are marked
 //              "+ new link" or "− link removed" for ten minutes; while the panel is open the
 //              highlight rule shades everything by its distance from the machine.
-//   the panel  a column beside the map, every field read-only: the envelope's rows (kind, managed,
-//              engagement, receives, emits, reads), the opaque ``spec`` in the order it was
+//   the panel  a column beside the map: first what the bus shows (liveness, last event, what it
+//              listens for that arrived unanswered), then "declared by <author>": each declared value
+//              in plain text beside what is observed of it (kind, managed, engagement, listens for,
+//              publishes, reads), the opaque ``spec`` in the order it was
 //              declared, "a guess" on guessed items, the expected effect, P5's "Measured by". The
 //              only controls are requests (confirm, discard, the kind switch) to the machine that
 //              listens for them (IntendedCore, intended-core.js), POST /api/intended/request;
@@ -66,10 +68,13 @@ const IntendedMachines = (() => {
         if (!it) continue;
         const mode = (it.engagement || {}).mode, eng = mode === "scheduled" && it.engagement.at ? `scheduled · ${it.engagement.at}` : mode;
         if (it.state === "proposed") {
-          // the observed mode stays (machineSub, from /api/machines); a declared one that differs is tagged beside it (rule 2)
+          // the caption is the name and its instances (machineSub); who proposed it is in the card and
+          // the side panel; only a declared mode that differs from the observed one is said (rule 2).
+          // Heard: no badge (no badge means heard, everywhere)
           const w = IntendedCore.machineWords(m, d.machines, true);
-          n.cls = `${n.cls || ""} im-proposed`; n.sub = [w.by, n.sub || "", eng && mode !== m.mode ? `declared ${eng}` : "", it.managed === "external" ? "external" : ""].filter(Boolean).join(" · ");
-          n.tags = [{ text: w.text, cls: w.cls }];
+          if (!it.heard) n.cls = `${n.cls || ""} im-proposed`;
+          n.sub = [n.sub || "", eng && m.mode && mode !== m.mode ? `declared ${eng}` : ""].filter(Boolean).join(" · ");
+          n.tags = w.text ? [{ text: w.text, cls: w.cls }] : [];
         } else if (!it.heard) {
           n.cls = `${n.cls || ""} im-unheard`; n.halo = false; n.color = "transparent"; n.sub = IntendedCore.machineWords(m).text;
           const k = measuredCount(m), dn = Orchestra.downOf(m).length;
@@ -127,9 +132,10 @@ const IntendedMachines = (() => {
       card.classList.toggle("im-open", m.id === OPEN);
       if (!it) continue;
       const tag = stateTag(m);
-      card.classList.add(it.state === "proposed" ? "im-card" : "im-card-declared");
+      // dashed only while nothing is heard under it: dashed is "declared, not observed" on every page
+      if (!it.heard) card.classList.add(it.state === "proposed" ? "im-card" : "im-card-declared");
       const h3 = card.querySelector("h3");
-      if (h3 && !h3.querySelector(".im-tag")) h3.insertAdjacentHTML("beforeend", `<span class="im-tag ${tag.cls}">${tag.text}</span><span class="muted im-by">${byWhom(m)}</span>`);
+      if (h3 && !h3.querySelector(".im-by")) h3.insertAdjacentHTML("beforeend", `${tag.text ? `<span class="im-tag ${tag.cls}">${tag.text}</span>` : ""}<span class="muted im-by">${byWhom(m)}</span>`);
       const rows = [...card.querySelectorAll(".row")], row = (name) => rows.find((r) => r.firstElementChild && r.firstElementChild.dataset.k === name || (r.firstElementChild && r.firstElementChild.textContent === name));
       const seen = row("seen"), ms = measuredOf(m);
       if (seen && !it.heard) {
@@ -177,10 +183,11 @@ const IntendedMachines = (() => {
   const A = () => IntendedCore.asker(IntendedCore.listenersOf(list()));
   const guess = () => `<span class="im-tag im-t-ghost" title="${esc(`a guess by whoever declared it: ${A().ask("set or confirm it")}`)}">a guess</span>`;
   const field = (label, html, cls = "") => `<div class="im-f ${cls}"><div class="im-fl">${esc(label)}</div><div class="im-fv">${html}</div></div>`;
-  const ind = (opts, on, cls = "") => `<span class="im-ind ${cls}" title="${esc(`read-only: ${A().ask("change it")}`)}">${opts.map((o) => `<span class="${o === on ? "on" : ""}">${esc(o)}</span>`).join("")}</span>`;
   const box = (v, mono) => `<div class="im-ro ${mono ? "mono" : ""}">${esc(v)}</div>`;
   const inl = (v) => `<span class="im-ro mono inline">${esc(v)}</span>`;
-  const ask = (what = "") => `<span class="im-ask">${esc(A().ask(what))}</span>`;
+  // a request's line beside a field; when no machine listens, nothing is said beside each field: the
+  // panel says once that nothing will act on a change asked here
+  const ask = (what = "") => (A().some || !A().known ? `<span class="im-ask">${esc(A().ask(what))}</span>` : "");
   const h4 = (t, note = "", tag = "") => `<h4>${esc(t)}${note ? ` <span class="muted im-h4note">${note}</span>` : ""}${tag}</h4>`;
 
   // the opaque spec, as declared and in its order: every list numbered, text as a value, a table for
@@ -209,9 +216,12 @@ const IntendedMachines = (() => {
   }
   // what a Programmatic machine's declared engagement says, in words, and nothing of who runs it
   const MODE_NOTE = { "ad hoc": "declared as engaged ad hoc", continuous: "declared as engaged continuously", scheduled: "declared as engaged on a schedule" };
-  function engagementRow(it) {
+  // a declared value beside what is observed of it: "declared ad hoc · observed continuous", the
+  // mismatch marked once; plain text, never a switch nothing would act on
+  const versus = (declared, observedWord, observed) => `<span class="im-decl-val">declared <b>${esc(declared || "not set")}</b></span>${observed ? ` <span class="muted">· ${esc(observedWord)} ${esc(observed)}</span>${declared && String(observed).toLowerCase() !== String(declared).toLowerCase() ? ' <span class="im-tag im-t-diff" title="what was declared and what is observed differ">differs</span>' : ""}` : ""}`;
+  function engagementRow(it, m) {
     const e = it.engagement || {}, was = before(it).engagement;
-    let html = ind(["ad hoc", "continuous", "scheduled"], e.mode, it.kind === "programmatic" ? "tabs" : "");
+    let html = versus(e.mode, "observed", m && m.mode);
     if (e.mode === "scheduled") html += ` ${e.at ? inl(`daily at ${e.at}`) : ""}${e.tz ? inl(e.tz) : ""}${e.missed ? `<span class="muted"> · missed: ${esc(e.missed)}</span>` : ""}`;
     if (guessed(it, "engagement") || guessed(it, "engagement.at")) html += guess();
     if (was) html += `<span class="im-tag im-t-chg">changed just now</span><div class="muted im-was">was ${esc(was.mode || "not set")}${was.at ? ` at ${esc(was.at)}` : ""}${was.tz ? ` (${esc(was.tz)})` : ""}</div>`;
@@ -305,33 +315,48 @@ const IntendedMachines = (() => {
     const listeners = new Set(d.machines.flatMap((x) => [...(x.subscribes || []), ...((x.intent && x.intent.receives) || [])]));
     listeners.published = new Set(d.machines.filter((x) => x.id !== m.id).flatMap((x) => (x.publishes || []).map((p) => p.type)));
     const tag = stateTag(m), switching = (ASKED[m.id] || it.requested || {}).control === "switch_kind", canSwitch = it.state === "proposed" && !switching;
-    const kind = field("kind", (canSwitch ? `<span class="im-seg big">${["universal", "programmatic"].map((k) => `<button class="${it.kind === k ? "on" : ""}" ${it.kind === k ? "disabled" : `onclick="IntendedMachines.request('switch_kind','${esc(m.id)}')"`} title="${it.kind === k ? "its kind" : esc(A().title("switch it"))}">${k === "universal" ? "Universal" : "Programmatic"}</button>`).join("")}</span>` : ind(["Universal", "Programmatic"], prog ? "Programmatic" : "Universal"))
+    const announced = m.kind || Object.keys(m.kinds || {}).join(", ");
+    const kind = field("kind", (canSwitch ? `<span class="im-seg big">${["universal", "programmatic"].map((k) => `<button class="${it.kind === k ? "on" : ""}" ${it.kind === k ? "disabled" : `onclick="IntendedMachines.request('switch_kind','${esc(m.id)}')"`} title="${it.kind === k ? "its kind" : esc(A().title("switch it"))}">${k === "universal" ? "Universal" : "Programmatic"}</button>`).join("")}</span>` : versus(prog ? "Programmatic" : "Universal", "announces", announced))
       + `<div class="muted im-note">${prog ? "a program: a command and its interface" : "described by what it achieves"}${canSwitch ? ` · ${esc(A().some ? `switching asks ${A().who}` : A().ask("switch it"))}` : switching ? " · a switch was asked: waiting" : ""}</div>`);
     const byInstruments = !it.heard && (it.attachments || []).length;
     const known = byInstruments ? "the instruments attached to it (Measured by, below)" : "its events";
-    const managed = field("managed", ind(["orchestra", "external"], it.managed) + `<div class="muted im-note">${ext ? `runs elsewhere: known by ${known}` : "managed by orchestra"}</div>`);
+    const managed = field("managed", versus(it.managed, "", "") + `<div class="muted im-note">${ext ? `runs elsewhere: known by ${known}` : "managed by orchestra"}</div>`);
     const text = (f, label) => field(label, (it[f] ? box(it[f]) : '<span class="muted">none</span>') + (guessed(it, f) ? guess() : "") + (f in before(it) ? '<span class="im-tag im-t-chg">changed just now</span>' : ""));
     const tags = field("tags", (it.tags || []).map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">none</span>');
     const body = prog
-      ? `${engagementRow(it)}<div class="im-tabbody"><div class="muted im-tabnote">${cap(MODE_NOTE[(it.engagement || {}).mode] || "no engagement declared")}${ext ? "; it runs elsewhere" : ""}.</div>${spec(it, true) || '<span class="muted">nothing declared yet</span>'}</div>${text("title", "title")}${text("description", "description")}${tags}`
-      : `${engagementRow(it)}${text("title", "title")}${text("description", "description")}${tags}${spec(it, false)}`;
+      ? `${engagementRow(it, m)}<div class="im-tabbody"><div class="muted im-tabnote">${cap(MODE_NOTE[(it.engagement || {}).mode] || "no engagement declared")}${ext ? "; it runs elsewhere" : ""}.</div>${spec(it, true) || '<span class="muted">nothing declared yet</span>'}</div>${text("title", "title")}${text("description", "description")}${tags}`
+      : `${engagementRow(it, m)}${text("title", "title")}${text("description", "description")}${tags}${spec(it, false)}`;
     const heard = it.heard;
     const insts = heard ? "" : `${h4("Instances")}<div class="muted">none heard on the bus</div>`;
     const tail = heard ? "" : `${measuredBy(m, d)}${h4("Flows (hypotheses)")}<div class="muted">none hypothesised yet${measuredOf(m) && measuredOf(m).measured ? ": a machine that is only measured gets none; its route to the model is an expected effect" : ""}</div>${ext ? `${h4("Log")}<div class="muted">not readable: it runs outside the repository and the state directory</div>` : ""}`;
     const aliases = (it.alias_candidates || []).length ? `<div class="muted im-note">heard under another name? ${it.alias_candidates.map((a) => `<span class="ty">${esc(a)}</span>`).join("")} ${ask("join them")}</div>` : "";
-    return `<div class="im-head"><span class="dot im-dashdot" style="--rc:${mcolor(m.id)}"></span><b>${esc(it.title || m.id)}</b><span class="im-tag ${tag.cls}">${tag.text}</span><button class="ctl im-close" onclick="IntendedMachines.close()" title="close the panel (Esc)">×</button></div>
-      <div class="muted im-id">id and bus source <span class="ty">${esc(m.id)}</span>${heard ? ` <button class="ctl" onclick="openMachine('${esc(m.id)}',{dialog:true})">details and log</button>` : " · nothing has been heard under it"}</div>
-      ${status(m)}${downLine(m)}${why(it)}${aliases}${kind}${managed}${body}
-      ${h4("Receives")}${types(it, "receives", listeners)}
-      ${h4("Emits")}${types(it, "emits", listeners)}
+    return `<div class="im-head"><span class="dot ${it.heard ? "" : "im-dashdot"}" style="--rc:${mcolor(m.id)}"></span><b>${esc(it.title || m.id)}</b>${tag.text ? `<span class="im-tag ${tag.cls}">${tag.text}</span>` : ""}<button class="ctl im-close" onclick="IntendedMachines.close()" title="close the panel (Esc)">×</button></div>
+      <div class="muted im-id">id and bus source <span class="ty">${esc(m.id)}</span>${heard ? ` <button class="ctl" onclick="IntendedMachines.details('${esc(m.id)}')" title="close this panel and open its details and log">details and log</button>` : " · nothing has been heard under it"}</div>
+      ${heard ? observedFacts(m) : ""}
+      ${status(m)}${downLine(m)}${why(it)}${aliases}
+      <h4 class="im-declhead">${esc(IntendedCore.machineWords(m, list()).by)} <span class="muted im-h4note">what was declared of it, beside what is observed</span></h4>
+      ${A().known && !A().some ? `<div class="muted im-note im-noact">${esc(IntendedCore.NONE)}: nothing will act on a change asked here</div>` : ""}
+      ${kind}${managed}${body}
+      ${h4("Listens for")}${types(it, "receives", listeners)}
+      ${h4("Publishes")}${types(it, "emits", listeners)}
       ${h4("Reads")}${reads(it)}
       ${insts}${effect(it)}${tail}
-      <div class="muted im-foot">${byInstruments ? 'Measured, never heard: no "last seen", never "active". ' : ""}Every field is read-only: ${ask("change any of it")}.${it.state === "proposed" && A().some ? ` Confirm asks ${esc(A().who)}.` : ""}</div>`;
+      <div class="muted im-foot">${byInstruments ? 'Measured, never heard: no "last seen", never "active". ' : ""}${canSwitch && A().some ? "" : A().some ? `Every field is read-only: ${ask("change any of it")}.` : ""}${it.state === "proposed" && A().some ? ` Confirm asks ${esc(A().who)}.` : ""}</div>`;
   }
+  // what the bus shows of a heard machine, before anything declared of it: its liveness, its last
+  // event, and what it listens for that arrived unanswered
+  function observedFacts(m) {
+    const lv = Orchestra.liveness(m), t = now();
+    const un = Object.entries(m.unanswered || {}).filter(([, v]) => v.count);
+    return `<div class="im-obsfacts"><div>${Orchestra.livenessHtml(lv)}</div><div class="muted">${esc(seenText(m, t))}</div>
+      ${un.length ? `<div>${un.map(([ty, v]) => `<span class="ty">${esc(ty)}</span> <span class="${t - v.since > Orchestra.FLOOR_S ? "lv-late" : "muted"}">${v.count} since its last event</span>`).join(" ")}</div>` : ""}</div>`;
+  }
+  // "details and log": the dialog, with this panel closed, so one machine is never shown two ways at once
+  function details(id) { close(); openMachine(id, { dialog: true }); }
   // a machine nothing declared: what the bus observed of it, and its dialog for the rest
   function observedPanel(m) {
     return `<div class="im-head"><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span><b>${esc(m.name || m.id)}</b><span class="im-tag im-t-obs">observed</span><button class="ctl im-close" onclick="IntendedMachines.close()" title="close the panel (Esc)">×</button></div>
-      <div class="muted im-id">id and bus source <span class="ty">${esc(m.id)}</span> <button class="ctl" onclick="openMachine('${esc(m.id)}',{dialog:true})">details and log</button></div>
+      <div class="muted im-id">id and bus source <span class="ty">${esc(m.id)}</span> <button class="ctl" onclick="IntendedMachines.details('${esc(m.id)}')" title="close this panel and open its details and log">details and log</button></div>
       <div class="muted im-why">Nothing is declared of it: what follows is what the bus shows and what it announced.</div>
       <div class="im-obs">${Orchestra.machineCards.rows(m)}</div>
       ${m.bootstrap || m.active_by === "runtime" ? "" : `<div class="muted im-foot"><span class="im-ask">${esc(A().sentence("declare what it is for, what it should listen for or what effect it should have", "Declaring what it is for"))}</span></div>`}`;
@@ -414,6 +439,6 @@ const IntendedMachines = (() => {
     if (typeof render === "function") render();
   }
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && (OPEN || UNKNOWN) && !$("overlay").classList.contains("open")) close(); });
-  return { links, edgeStyle, decorate, focusSpec, sort, decorateCards, draw, open, close, unknown, request, opened: () => OPEN,
+  return { links, edgeStyle, decorate, focusSpec, sort, decorateCards, draw, open, close, unknown, request, details, opened: () => OPEN,
            added };
 })();

@@ -37,13 +37,13 @@ test("a machine's panel, closed and opened again, is drawn again", () => {
   assert.ok(row.classes.has("open"));
 });
 
-test("a proposed machine's map subtitle keeps the observed mode; a declared one that differs is tagged beside it", () => {
+test("a proposed machine's map caption carries no provenance and no badge when heard; a declared mode that differs is said beside it", () => {
   const sup = { id: "supervisor", mode: "continuous", intent: { state: "proposed", heard: true, engagement: { mode: "ad hoc" } } };
   const n = { machine: true, mid: "supervisor", sub: "continuous" };
   IntendedMachines.decorate({ machines: [sup] }, [n], []);
-  assert.equal(n.sub, "proposed by a plugin · continuous · declared ad hoc");
-  assert.deepEqual(n.tags, [{ text: "heard", cls: "im-t-unconf" }]);
+  assert.equal(n.sub, "continuous · declared ad hoc");
+  assert.deepEqual(n.tags, []);
   const same = { machine: true, mid: "supervisor", sub: "continuous" };
   IntendedMachines.decorate({ machines: [{ ...sup, intent: { ...sup.intent, engagement: { mode: "continuous" } } }] }, [same], []);
-  assert.equal(same.sub, "proposed by a plugin · continuous");
+  assert.equal(same.sub, "continuous");
 });

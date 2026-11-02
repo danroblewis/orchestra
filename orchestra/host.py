@@ -88,6 +88,20 @@ def pace(every: float, took: float) -> float:
     return max(every - took, LEAST_PAUSE * every)
 
 
+SOON_S = 60.0                   # with no model yet and series left out as too new: the next look this soon (at most)
+TOO_NEW = ("written for only", "too new", "live in only")     # the left-out reasons that a little more data mends
+
+
+def soon(model, wait: float) -> float:
+    """The pause before the next discovery when this one found no stocks and left series out as too
+    new: ``SOON_S`` at most, so a new system gets its first model as soon as its data allows rather
+    than a whole interval later; otherwise ``wait`` as it is."""
+    left = (model.discovery or {}).get("left_out") or {}
+    if model.stocks or not any(str(w).startswith(TOO_NEW) for w in left.values()):
+        return wait
+    return min(wait, SOON_S)
+
+
 def discovery_line(r, took: float, every: float) -> str:
     """The host's log line for one discovery: what it found, whether it was saved, how long it
     took, and, when the strategy was stopped at its deadline or the run outlasted the interval,
@@ -363,8 +377,9 @@ class Host:
                 r = rediscover(self.project, metrics_for(self.project), skip_if_busy=True, events=self.events,
                                collectors=self._collectors_run())
                 took = time.monotonic() - began
-                wait = pace(every, took)
+                wait = soon(r.model, pace(every, took))
                 self.log(discovery_line(r, took, every))
+                self._next_look(time.time() + wait)
                 if self._stop.is_set():               # stopping: announce, declare and judge nothing more
                     return
                 try:
@@ -388,6 +403,16 @@ class Host:
                 return
             except Exception as e:  # noqa: BLE001 - try again next interval
                 self.log(f"discovery: {type(e).__name__}: {e}")
+
+    def _next_look(self, at: float) -> None:
+        """Say in the runtime record when the next discovery starts (``discovery_next``), so the
+        Dynamics page can say when to look again."""
+        def put(data: dict) -> None:
+            data["discovery_next"] = {"at": round(at, 1), **runtime.me()}
+        try:
+            runtime.update(self.project, put)
+        except OSError as e:
+            self.log(f"discovery: could not record the next look ({e})")
 
     def _from_plugins(self) -> dict[str, tuple[list[Process], list[Collector]]]:
         """What the plugins ask to have run and collected, loaded again whenever orchestra.toml or

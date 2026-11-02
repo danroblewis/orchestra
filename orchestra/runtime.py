@@ -9,7 +9,9 @@ record whose pid the system has since given to another process is not mistaken f
 - ``hosts``: every running ``orchestra run``, by pid; each adds and removes only its own entry;
 - ``launcher``: the one host that launches the project's processes. It is taken under the lock
   only when nobody holds it or its holder is dead, and cleared only by its holder;
-- ``processes``: what that host launched (``orchestra.launcher``)."""
+- ``processes``: what that host launched (``orchestra.launcher``);
+- ``discovery_next``: when the discovering host starts its next discovery (``{"at", "pid", "since"}``),
+  so the Dynamics page can say when the model is looked for again."""
 
 from __future__ import annotations
 

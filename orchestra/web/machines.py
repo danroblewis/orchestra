@@ -49,6 +49,9 @@ Everything here is observed, or announced by the machine itself:
   that publishes rarely (a scheduled job run every hour, which announces itself and publishes a
   few events each run) is active between its runs by its own rhythm, and a machine that stops is
   quiet after a few of its own beats. A machine is active while any of its instances is;
+- **unanswered**: per type it announced it listens for, the events of it other machines
+  published after any listener of that type last acted (``{pattern: {count, since}}``), so a
+  machine that hears work nobody takes reads apart from one with nothing to hear;
 - **recent events**: the last ``RECENT`` events of each machine, by their envelope only (time,
   type, instance, subject, id; never the ``data``, which is the machines' own);
 - **logs**: where an instance says its log is (``data.log`` in its announcement). The web server
@@ -56,10 +59,10 @@ Everything here is observed, or announced by the machine itself:
 - **hand-offs**: when one machine acts on a subject (an event's ``subject``: an order, an issue)
   and then a different machine acts on the same subject, the work passed from the first to the
   second, following one of the first one's events about it (its type): the latest of its last
-  few that the second machine announced it listens for; when it announced nothing, the last one,
-  which the second machine is then inferred to listen for; when it announced a list and none of
-  them is in it, no type (the hand-off is counted, and the map draws no event edge for it: an
-  announcement is not overruled by a guess). Inferred from the envelope alone, so it shows how
+  few that the second machine announced it listens for (a family pattern, ``x.*``, takes its types);
+  when it announced none of them, or nothing, no type (the hand-off is counted, with the sender's
+  last type as ``after``, and the map draws it as a machine acting next, never as a type it
+  listens for: an announcement is not overruled by a guess, and silence is no announcement). Inferred from the envelope alone, so it shows how
   machines connect even when none announces what it listens for (a system brought in from
   outside, whose log says who changed what but never who reads). The last machine and its last
   ``TRAIL`` event types per subject are kept for the latest ``SUBJECTS``.
@@ -127,6 +130,8 @@ class MachineIndex:
         # a subject handed on through a machine: (from, via, through, its via, to) -> count; the page
         # draws the ones through a hub's protocol as the hand-off from the one to the other
         self.relays: Counter = Counter()
+        # (from, to) -> the sender's last event types before a hand-off credited to none (via None)
+        self.after: dict[tuple[str, str], Counter] = defaultdict(Counter)
         self.recent_relays: dict[tuple, deque] = defaultdict(deque)
         self._lock = threading.Lock()
 
@@ -191,9 +196,11 @@ class MachineIndex:
                 trail, came = [*prev[1][-(TRAIL - 1):], ev["type"]], prev[2]
             else:
                 if prev:
-                    subs = self.subs.get(machine)
-                    via = next((ty for ty in reversed(prev[1]) if ty in subs), None) if subs else prev[1][-1]
+                    subs = self.subs.get(machine) or ()
+                    via = next((ty for ty in reversed(prev[1]) if any(hears(p, ty) for p in subs)), None)
                     self.handoffs[(prev[0], via, machine)] += 1
+                    if via is None:
+                        self.after[(prev[0], machine)][prev[1][-1]] += 1
                     self.recent_handoffs[(prev[0], via, machine)].append(t)
                     came = (prev[0], via)
                     if prev[2] and prev[2][0] != machine:       # handed on through prev, from the one before it
@@ -229,6 +236,31 @@ class MachineIndex:
                          and isinstance(v, str | int | float | bool | type(None) | list)}
         if isinstance(d.get("log"), str) and d["log"]:
             self.logs[machine][instance or ""] = d["log"]
+
+    def _unanswered(self, machine: str, last: float | None) -> dict:
+        """Per type the machine announced it listens for: the events of it other machines published
+        after any machine that listens for that type (this one included, the publisher not) last
+        acted, in the last day, and when the oldest was: ``{pattern: {"count", "since"}}``, only the
+        ones with any. An event several machines listen for is answered when any of them acts after
+        it, so one listener idle while another takes the work is never said to be not answering.
+        Envelopes alone: type, source, time."""
+        lasts = {m: max((v["last"] for v in insts.values()), default=None) for m, insts in self.instances.items()}
+        out = {}
+        for pattern in sorted(self.subs.get(machine, ())):
+            n, since = 0, None
+            for (src, ty), q in self.recent.items():
+                if src == machine or not hears(pattern, ty):
+                    continue
+                heard = [lasts.get(x) for x, subs in self.subs.items() if x != src and any(hears(p, ty) for p in subs)]
+                after = max([t for t in heard if t is not None], default=last)
+                for t in reversed(q):
+                    if after is not None and t <= after:
+                        break
+                    n += 1
+                    since = t if since is None else min(since, t)
+            if n:
+                out[pattern] = {"count": n, "since": since}
+        return out
 
     def bus_since(self) -> float | None:
         """When the bus was first heard: the earliest any instance was first seen, or None."""
@@ -280,6 +312,7 @@ class MachineIndex:
                     insts.append({"id": i or m, "first_seen": v["first"], "last_seen": v["last"], "active": active,
                                   "cadence_s": cadence, "kind": self.kind[m].get(i), "mode": self.mode[m].get(i)})
                 last = max((v["last"] for v in self.instances[m].values()), default=None)
+                unanswered = self._unanswered(m, last)
                 kinds = Counter(self.kind[m].values())
                 n_inst = len(self.instances[m])
                 asker = bool(self.total[m]) and set(self.total[m]) == {REQUESTED} and not kinds
@@ -293,17 +326,25 @@ class MachineIndex:
                                  "subscribes": sorted(self.subs.get(m, ())), "flows": flows.get(m, []),
                                  "logs": sorted(i or m for i in self.logs.get(m, {})),
                                  "instances": [i for i in insts if i["id"] != m] if any(k for k in self.instances[m]) else [],
-                                 "first_seen": first, "last_seen": last, "active": alive})
+                                 "first_seen": first, "last_seen": last, "active": alive,
+                                 **({"unanswered": unanswered} if unanswered else {})})
             types = sorted({p["type"] for x in machines for p in x["publishes"]} | {t for x in machines for t in x["subscribes"]})
             edges = [{"from": x["id"], "to": p["type"], "kind": "publishes", "count": p["count"], "day": p["day"]}
                      for x in machines for p in x["publishes"]]
             edges += [{"from": t, "to": x["id"], "kind": "subscribes"} for x in machines for t in x["subscribes"]]
-            handoffs = [{"from": a, "via": ty, "to": b, "count": n, "day": len(self.recent_handoffs.get((a, ty, b), ()))}
+            handoffs = [{"from": a, "via": ty, "to": b, "count": n, "day": len(self.recent_handoffs.get((a, ty, b), ())),
+                         **({"after": self.after[(a, b)].most_common(1)[0][0]} if ty is None and self.after.get((a, b)) else {})}
                         for (a, ty, b), n in self.handoffs.most_common()]
             relays = [{"from": a, "via": ty, "through": h, "through_via": hv, "to": b, "count": n, "day": len(self.recent_relays.get((a, ty, h, hv, b), ()))}
                       for (a, ty, h, hv, b), n in self.relays.most_common()]
             return {"machines": machines, "types": types, "edges": edges, "handoffs": handoffs, "relays": relays,
                     "unattributed_events": self.unattributed}
+
+
+def hears(pattern: str, type_: str) -> bool:
+    """Whether a listened-for pattern takes an event type: the type itself, ``*``, or a family
+    (``x.*``), the rule the Machines page's map uses (machine-graph.js)."""
+    return pattern == type_ or pattern == "*" or (pattern.endswith(".*") and type_.startswith(pattern[:-1]))
 
 
 def of_instances(counts: Counter, instances: int | None = None) -> str | None:

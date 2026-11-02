@@ -19,7 +19,7 @@ import numpy as np
 
 from ..model import Model
 from .compile import Frame, compile_rate
-from .forms import Names, flow_text, measured_inputs
+from .forms import OBSERVED, Names, flow_text, measured_inputs, too_few
 from .language import parse
 
 
@@ -78,7 +78,8 @@ def compiled(model: Model, extra_inputs=()) -> list[Flow]:
     out = []
     for f in model.flows:
         try:
-            text, params = flow_text(f, names)
+            # a rate fitted from too few events is no equation to run: the flow's observed rate (as sd.simulate replays it)
+            text, params = (OBSERVED, {}) if too_few(f.current()) else flow_text(f, names)
             p = parse(text, stocks=names.stocks, inputs=names.inputs, params=params)
         except EquationError as e:
             raise EquationError(f"flow {f.id}: {e}") from None

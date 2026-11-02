@@ -15,6 +15,7 @@ comparisons with observed metrics, collectors and sub-models come later
 
 from __future__ import annotations
 
+from .. import runtime
 from ..sd import eras as era_record
 from ..sd import predictions as prediction_record
 from ..sd.no_model import NoModel, host_running, looked_at
@@ -33,7 +34,10 @@ def no_model(project, discovery: dict | None, as_of: float | None = None) -> dic
     looked at and why each was left out, and which sources were missing or refused."""
     running = host_running(project)
     e = NoModel(discovery, running)
-    out = {**e.answer(), "hint": PRESS[running], "as_of": as_of}
+    out = {**e.answer(), "hint": PRESS[running], "as_of": as_of, "model": None}
+    nxt = runtime.read(project).get("discovery_next")
+    if running and isinstance(nxt, dict) and runtime.holds(nxt):
+        out["next_at"] = nxt.get("at")              # when the host looks again (host.py, its schedule)
     if discovery is not None:
         d, left = discovery, discovery.get("left_out") or {}
         out["discovery"] = {**{k: d[k] for k in ("left_out", "series", "step", "start", "end", "min_r2", "sources", "not_saved",

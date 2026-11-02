@@ -948,7 +948,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         # change any counter explains, and the fit below cuts the same time
         steps = balance_steps(s, counters)
         if len(steps) < MIN_STEPS:
-            left_out[s.key] = f"live in only {len(steps)} of {n} steps while every counter was: too few to balance"
+            live_s = round(len(s.live if s.live is not None else range(n)) * step)
+            left_out[s.key] = (f"live in only {len(steps)} of the {n} steps in the window while every counter was "
+                               f"(written over {live_s} s so far): too new, or too broken, to balance")
             continue
         moved = sum(1 for i in steps if s.deltas[i])
         if not moved:
@@ -1305,8 +1307,18 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                                                    for p in pins.values()},
                                         **({"problems": pin_problems} if pin_problems else {})}}
                           if pins or pin_problems else {}),
-                       "left_out": dict(sorted(left_out.items()))}
+                       "left_out": dict(sorted(left_out.items())),
+                       # what the pages call a left-out series its instrument's places or its words name
+                       # (sd.titles): "items waiting at ci", never its raw key
+                       "titles": {x.key: t for x in series if x.key in left_out and (t := _left_title(x, places))}}
     return model
+
+
+def _left_title(s: Series, places: Places) -> str | None:
+    """A left-out series' title when its instrument's places or its own words give one, else None."""
+    if t := (places.move(s.labels, s.key) if s.counter else places.level(s.labels, s.key, s.name)):
+        return t
+    return _in_words(s)
 
 
 def structure(model: Model) -> list:

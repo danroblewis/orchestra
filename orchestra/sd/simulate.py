@@ -11,14 +11,16 @@ measured inputs, and no stock giving more than it holds):
   input held at its last value.
 
 A flow whose equation has no form the simulator steps (an SD Lab expression, or no equation) is
-replayed: its observed rate in the past, and its mean over the last ``HOLD_S`` in the future. The
-result says which flows were replayed. Hidden stocks start at 0."""
+replayed: its observed rate in the past, and its mean over the last ``HOLD_S`` in the future. So
+is a flow fitted from fewer than ``MIN_EVENTS`` events (``equations.forms.too_few``) (``too_few``): a rate on so few is no
+equation to step. The result says which flows were replayed. Hidden stocks start at 0."""
 
 from __future__ import annotations
 
 from itertools import pairwise
 
 from .discover import UNITS
+from .equations.forms import too_few
 from .model import Equation, Model
 from .rates import scale as _scale
 
@@ -63,9 +65,13 @@ def simulate(model: Model, history: dict, *, now: float, start: float, horizon_s
 
     g = step_s / UNITS[model.time_unit]                      # time units per step: rates become amounts per step
     ids = [s.id for s in model.stocks]
-    flows, replayed = [], []
+    flows, replayed, few_ids = [], [], []
     for f in model.flows:
-        rate = _rate(f.current(), f.src)
+        e = f.current()
+        few = too_few(e)
+        rate = None if few else _rate(e, f.src)
+        if few:
+            few_ids.append(f.id)
         if rate is not None:
             sp = _scale(rate, g)
             flows.append({"id": f.id, "from": f.src, "to": f.dst, "rate": sp, **({"effects": sp["effects"]} if sp.get("effects") else {})})
@@ -99,6 +105,6 @@ def simulate(model: Model, history: dict, *, now: float, start: float, horizon_s
     measured = history.get("stocks") or {}
     at_start = {i: _at(measured.get(i) or [], start) for i in ids}
     at_now = {i: _at(measured.get(i) or [], now) for i in ids}
-    return {"start": start, "now": now, "step": step_s, "replayed": replayed,
+    return {"start": start, "now": now, "step": step_s, "replayed": replayed, "too_few": few_ids,
             "era": run(start, now, at_start) if now > start else {},
             "projection": run(now, now + horizon_s, at_now)}

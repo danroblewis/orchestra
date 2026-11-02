@@ -19,7 +19,7 @@ thing fewer moves from outside than the one it leaves is "(sent back)" ("ci → 
 back)"); a value no place spells is said in its words ("<start>": "start → write"); two moves
 that would read alike are said by their places' own parts ("ci (waiting) → write (waiting)"). A
 state no series measures between such moves (a hidden passage, ``sd.passing``) is named by the
-places its moves name, in their own parts ("open_pr (waiting) … ci (waiting)"), or, when they
+places its moves name, in words ("items passing open_pr and ci"), or, when they
 enter and leave one place, by what sits there ("items waiting at sail"). Label values keep their spelling (``sail_check``, never "sail check"); "-" and "_" are
 alike inside a part (``code-review.waiting`` with ``step="code-review"``), and a place value with
 no letters in it (``stage="3"``) spells no words, so the series keeps its own name."""
@@ -235,5 +235,13 @@ class Places:
         a, b = list(dict.fromkeys(enter)), list(dict.fromkeys(leave))
         if a == b and len(a) == 1:
             return self._sits(pls[0])                    # one place, entered and left: what sits there
-        name = " or ".join(a) if a == b else f"{' or '.join(a)} … {' or '.join(b)}"
+        if a == b:
+            name = " or ".join(a)
+        else:
+            # in words: the things passed, with what is said of them only where the places differ in it
+            same = all(p.said == pls[0].said for p in pls)
+            word = lambda pl: pl.at if same else f"{pl.at} {' '.join(pl.said)}".strip()
+            ins_ = list(dict.fromkeys(word(p) for p in pls[:len(enter)]))
+            outs_ = list(dict.fromkeys(word(p) for p in pls[len(enter):]))
+            name = f"{pls[0].noun} passing {' or '.join(ins_)} and {' or '.join(outs_)}"
         return name + (self._scoped(pls[0]) if all(p.scope == pls[0].scope for p in pls) else "")

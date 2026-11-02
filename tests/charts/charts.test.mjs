@@ -30,3 +30,12 @@ test("a picked range keeps the axis, and the one-point note says what the caller
   assert.ok(cx > 600, `the dot sits at the end of the day, not the middle (${cx})`);
   assert.match(svg, /<text class="cnote" x="52" y="18" text-anchor="start">/);          // on the left, away from the dot
 });
+
+test("a chart not set tight includes zero on its y axis; a tight one fits its lines", () => {
+  const pts = [[1000, 2], [1060, 3], [1120, 4]];
+  const lowest = (svg) => Math.min(...[...svg.matchAll(/text-anchor="end">([-\d.]+)<\/text>/g)].map((m) => +m[1]));
+  assert.equal(lowest(Charts.line([{ label: "a", points: pts }])), 0);
+  const high = [[1000, 12], [1060, 13], [1120, 14]];      // tight ticks round down to a step, so 2–4 would reach 0 anyway
+  assert.equal(lowest(Charts.line([{ label: "a", points: high }])), 0);
+  assert.ok(lowest(Charts.line([{ label: "a", points: high }], { tight: true })) > 0);
+});

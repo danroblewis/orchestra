@@ -23,3 +23,12 @@ def test_the_log_line_says_how_long_and_what_was_cut():
     assert "took 312 s" in line and "stopped at its deadline of 240 s" in line and "longer than [discovery] every (300 s)" in line
     m.discovery = {}
     assert discovery_line(r, 30, 300).endswith("structure unchanged; took 30 s")
+
+
+def test_with_no_model_and_series_too_new_the_next_look_is_soon():
+    from orchestra.host import SOON_S, soon
+    from orchestra.sd.model import Model, Stock
+    young = Model("m", "m", discovery={"left_out": {"a": "written for only 3 of the 720 steps"}})
+    assert soon(young, 300.0) == SOON_S
+    assert soon(Model("m", "m", stocks=[Stock("q", "q")], discovery=young.discovery), 300.0) == 300.0     # a model: the usual pace
+    assert soon(Model("m", "m", discovery={"left_out": {"a": "a counter that did not move in the window"}}), 300.0) == 300.0

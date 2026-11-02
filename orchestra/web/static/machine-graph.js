@@ -66,7 +66,7 @@
     for (const m of d.machines) for (const p of m.publishes) day[p.type] = (day[p.type] || 0) + p.day;
     const evNode = (type) => { const id = "ev:" + type; evNodes[id] = evNodes[id] || { id, kind: "event", label: type, cnt: day[type] || 0 }; return id; };
     const link = (a, b, seen, inferred = false) => { const k = a + ">" + b;
-      links[k] = links[k] || { source: a, target: b, seen: 0, inferred, handoffs: 0, observed: 0, from: {} };
+      links[k] = links[k] || { source: a, target: b, seen: 0, inferred, handoffs: 0, observed: 0, from: {}, fromDay: {} };
       if (!inferred) { links[k].inferred = false; links[k].seen += seen || 0; } return links[k]; };
     for (const m of d.machines) {
       for (const p of m.publishes) link("m:" + m.id, evNode(p.type), p.day);
@@ -74,11 +74,18 @@
     }
     // hand-offs: a machine acted on a subject right after another machine's event about it. Through
     // a type it announced, that listener edge is observed; through one it did not, the edge is inferred
+    // A hand-off credited to no type (the receiver announced none it took: ``via`` null) is the
+    // receiver acting next on the subject, never a type it listens for: ``acts``, drawn machine to
+    // machine, with the sender's last type said (``after``)
+    const acts = [];
     for (const h of d.handoffs || []) {
+      if (!h.via && nodes["m:" + h.to] && nodes["m:" + h.from] && h.from !== h.to && !(h.after && opts.hidden && opts.hidden(h.after)))
+        acts.push({ source: "m:" + h.from, target: "m:" + h.to, after: h.after || null, count: h.count || 0, day: h.day || 0 });
       if (!nodes["m:" + h.to] || !h.via || (opts.hidden && opts.hidden(h.via))) continue;
       const l = link(evNode(h.via), "m:" + h.to, 0, true);
       l.handoffs += h.day; l.observed += h.count || 0;
       l.from["m:" + h.from] = (l.from["m:" + h.from] || 0) + (h.count || 0);   // who handed it on
+      l.fromDay["m:" + h.from] = (l.fromDay["m:" + h.from] || 0) + (h.day || 0);   // ... in the last 24 h
       if (l.inferred) l.seen += h.day;
     }
     // what a declaration says a machine listens for and emits: drawn even when nobody listens yet;
@@ -126,16 +133,17 @@
     if (Object.keys(alias).length) {
       const merged = {};
       for (const l of ls) { const a = alias[l.source] || l.source, b = alias[l.target] || l.target, k = a + ">" + b;
-        merged[k] = merged[k] || { ...l, source: a, target: b, seen: 0, handoffs: 0, observed: 0, from: {} };
+        merged[k] = merged[k] || { ...l, source: a, target: b, seen: 0, handoffs: 0, observed: 0, from: {}, fromDay: {} };
         const x = merged[k]; x.seen += l.seen; x.handoffs += l.handoffs || 0; x.observed += l.observed || 0;
         for (const [m, n] of Object.entries(l.from || {})) x.from[m] = (x.from[m] || 0) + n;
+        for (const [m, n] of Object.entries(l.fromDay || {})) x.fromDay[m] = (x.fromDay[m] || 0) + n;
         x.inferred = x.inferred && l.inferred; x.declared = x.declared && l.declared; x.gone = x.gone && l.gone; x.added = x.added || l.added;
         x.declaredListener = x.declaredListener && l.declaredListener; x.protocol = x.protocol && l.protocol; }
       ls = Object.values(merged);
     }
     const used = new Set(ls.flatMap((l) => [l.source, l.target]));
     // every machine is drawn, connected or not; events only when something links them
-    return { nodes: [...Object.values(nodes), ...Object.values(evNodes).filter((n) => used.has(n.id))], links: ls, protocol: proto };
+    return { nodes: [...Object.values(nodes), ...Object.values(evNodes).filter((n) => used.has(n.id))], links: ls, protocol: proto, acts };
   }
 
   // machine → machine, through an event type one publishes and the other listens for. ``observed``:
@@ -147,6 +155,7 @@
       for (const b of links) if (b.source === a.target && b.target.startsWith("m:") && !b.gone)
         out.push({ source: a.source, target: b.target, via: a.target, evIds: [id(a), id(b)], seen: Math.min(a.seen, b.seen),
                    inferred: b.inferred, observed: !!(b.from && b.from[a.source]), handoffs: (b.from && b.from[a.source]) || 0,
+                   day: (b.fromDay && b.fromDay[a.source]) || 0,
                    protocol: !!(a.protocol || b.protocol) });
     // a machine's edge to itself is drawn only when it handed something to itself and it is no hub's bookkeeping
     return out.filter((c) => c.source !== c.target || (c.observed && !c.protocol));
@@ -158,8 +167,8 @@
     const out = new Map();
     for (const r of d.relays || []) {
       if (r.from === r.to || !proto.hubs.has(r.through) || !proto.is(r.through, r.through_via || "", r.to)) continue;
-      const k = r.from + ">" + r.to + ">" + r.through, x = out.get(k) || { source: "m:" + r.from, target: "m:" + r.to, through: r.through, seen: 0, count: 0, observed: true };
-      x.seen += r.day || 0; x.count += r.count || 0; out.set(k, x);
+      const k = r.from + ">" + r.to + ">" + r.through, x = out.get(k) || { source: "m:" + r.from, target: "m:" + r.to, through: r.through, seen: 0, count: 0, observed: true, vias: [] };
+      x.seen += r.day || 0; x.count += r.count || 0; if (r.via && !x.vias.includes(r.via)) x.vias.push(r.via); out.set(k, x);
     }
     return [...out.values()];
   }

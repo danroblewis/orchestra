@@ -12,7 +12,7 @@ const kindWord = (kind) => kind || "machine";
 // a machine's dialog: what it is, its instances, what it publishes and listens for, its counted
 // traffic on another system's bus, its hypothesised flows, its last events and the tail of its log
 // (refreshed while open)
-let OPEN = null, OPEN_TIMER = null, LOG_INST = null;
+let OPEN = null, OPEN_TIMER = null, LOG_INST = null, EV_SHOWN = 15;
 function closeMachine() { OPEN = null; clearInterval(OPEN_TIMER); $("drawer").classList.remove("mdlg"); closeDrawer(); }
 // closed by the drawer's own × (app.js), Escape or Back: stop refreshing it
 document.addEventListener("orchestra:drawerclosed", () => { if (OPEN) { OPEN = null; clearInterval(OPEN_TIMER); $("drawer").classList.remove("mdlg"); } });
@@ -23,9 +23,9 @@ function openMachine(id, { dialog = false } = {}) {
   if (!dialog && !own && Orchestra.machinePanel && Orchestra.machinePanel(id)) return;
   const m = Orchestra.machineList().find((x) => x.id === id); if (!m) return;
   if (Orchestra.machineCards.open(m)) return;                     // its package draws its own dialog
-  OPEN = id; LOG_INST = (m.logs || [])[0] || null;
+  OPEN = id; LOG_INST = (m.logs || [])[0] || null; EV_SHOWN = 15;
   $("drawer").classList.add("mdlg");
-  openDrawer(`<h3 data-drawer-key="m:${esc(id)}"><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.id)} <span class="tag">${esc(kindWord(m.kind))}</span>${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}${m.mode ? ` <span class="tag k-${esc(m.mode.replace(/ /g, "_"))}">${esc(m.mode.replace("_", " "))}</span>` : ""}${m.package ? ` <span class="tag">package: ${esc(m.package)}</span>` : ""}</h3>
+  openDrawer(`<h3 data-drawer-key="m:${esc(id)}"><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.id)} <span class="mchip" title="its kind, as announced">${esc(kindWord(m.kind))}</span>${m.bootstrap ? ' <span class="mchip">bootstrap host</span>' : ""}${m.mode ? ` <span class="mchip" title="how it is engaged, as announced">${esc(m.mode.replace("_", " "))}</span>` : ""}${m.package ? ` <span class="mchip" title="the package it belongs to">${esc(m.package)}</span>` : ""}</h3>
     <div class="row" id="m-seen">${dlgSeen(m)}</div>
     ${Orchestra.aboutLines(m).length ? `<h4>Announced <span style="text-transform:none;letter-spacing:0;font-weight:400">(what it said of itself, as it said it)</span></h4><div class="about">${Orchestra.aboutHtml(m)}</div>` : ""}
     <div id="m-insts">${dlgInstances(m)}</div>
@@ -41,7 +41,7 @@ function openMachine(id, { dialog = false } = {}) {
 // the parts of the dialog that change while it is open, drawn again on every refresh
 function dlgSeen(m) {
   const lv = Orchestra.liveness(m);
-  return `<span class="muted">seen</span><span>${seenText(m)} · <span class="${lv.cls === "live" ? "lv-live" : "lv-quiet"}" title="${esc(lv.title)}">${esc(lv.word)}</span>${lv.detail ? ` <span class="muted">· ${esc(lv.detail)}</span>` : ""}</span>`;
+  return `<span class="muted">seen</span><span>${seenText(m)} · ${Orchestra.livenessHtml(lv)}</span>`;
 }
 function dlgInstances(m) {
   const insts = m.instances && m.instances.length ? m.instances : [], now = Date.now() / 1000;
@@ -66,7 +66,13 @@ async function machineDetail(refresh) {
   // the header, the instances and the publishes as the page's latest read says them now
   const live = Orchestra.machineList().find((x) => x.id === id);
   if (live) for (const [el, html] of [["m-seen", dlgSeen(live)], ["m-insts", dlgInstances(live)], ["m-pubs", dlgPublishes(live)]]) { const x = $(el); if (x && x.dataset.html !== html) { x.dataset.html = html; x.innerHTML = html; } }
-  if (ev) $("m-events").innerHTML = ev.events && ev.events.length ? `<table class="dt"><tr><th>when</th><th>type</th><th>instance</th><th>subject</th></tr>${ev.events.slice(0, 15).map((e) => `<tr><td class="muted">${e.t ? new Date(e.t * 1000).toLocaleTimeString() : ""}</td><td class="num">${esc(e.type)}</td><td class="num">${esc(e.instance || "")}</td><td class="num muted">${esc(e.subject || "")}</td></tr>`).join("")}</table>` : '<span class="muted">none since the web server started reading the bus</span>';
+  // each row opens to its whole envelope (the data stays the machine's own); "older" shows more of
+  // the last events the page keeps, which rows stay open kept across refreshes
+  if (ev) { const box = $("m-events"), open = new Set([...box.querySelectorAll("details[open]")].map((d) => d.dataset.id)), list = ev.events || [];
+    const row = (e) => `<details class="evrow" data-id="${esc(e.id || "")}" ${open.has(e.id || "") ? "open" : ""}><summary><span class="muted">${e.t ? new Date(e.t * 1000).toLocaleTimeString() : ""}</span> <span class="num">${esc(e.type)}</span> <span class="num muted">${esc(e.instance || "")}</span> <span class="num muted">${esc(e.subject || "")}</span></summary>
+      <div class="kv evenv"><span class="muted">id</span><span class="num">${esc(e.id || "—")}</span><span class="muted">source</span><span class="num">${esc(id + (e.instance ? "/" + e.instance : ""))}</span><span class="muted">time</span><span class="num">${e.t ? esc(new Date(e.t * 1000).toISOString()) : "—"}</span><span class="muted">subject</span><span class="num">${esc(e.subject || "—")}</span><span class="muted">data</span><span class="muted">the machine's own; not read by Orchestra</span></div></details>`;
+    box.innerHTML = list.length ? list.slice(0, EV_SHOWN).map(row).join("") + (list.length > EV_SHOWN ? `<button class="ctl" onclick="EV_SHOWN+=15;machineDetail(true)">older (${list.length - EV_SHOWN} more kept)</button>` : "")
+      : '<span class="muted">none since the web server started reading the bus</span>'; }
   $("m-loginst").innerHTML = (m.logs || []).length > 1 ? m.logs.map((i) => `<button class="${i === LOG_INST ? "on" : ""}" onclick="LOG_INST='${esc(i)}';machineDetail(true)">${esc(i)}</button>`).join("") : "";
   const box = $("m-log"), atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 8;
   // no terminal box under a log that cannot be read: only the reason

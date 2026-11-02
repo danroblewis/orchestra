@@ -13,7 +13,7 @@
   .itable td { padding:6px 8px; border-bottom:1px solid var(--border); vertical-align:top; overflow-wrap:anywhere } .itable tr.click { cursor:pointer } .itable tr.click:focus-visible { outline:2px solid var(--accent); outline-offset:-2px } .itable tr.click:hover td { background:var(--panel2) }
   .itable .num { font-family:var(--mono); font-size:11.5px } .bad { color:#f87171 } .scroll-x { overflow-x:auto }
   .itable td.kind { white-space:nowrap } .itable td.target { max-width:320px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
-  .itable .late { color:#fcd34d } #list.offline { opacity:.55; filter:grayscale(.6) }
+  .itable .late { color:#fcd34d } .itable tr.stale-row td { opacity:.5 } #list.offline { opacity:.55; filter:grayscale(.6) }
   /* on a phone each instrument is a card: its name, then each column as a labelled line */
   @media (max-width: 600px) {
     .itable, .itable tbody, .itable tr, .itable td { display:block; width:100% } .itable tr:first-child { display:none }
@@ -54,8 +54,14 @@ function hungOn(list) {
       <span class="muted">· ${esc(what)}</span>${tags.map((t) => ` <span class="tag">${esc(t)}</span>`).join("")}</div>`;
   }).join("");
 }
-// late: nothing written for more than three of its own periods
-const late = (x, now) => x.every_s != null && x.last_write && now - x.last_write > 3 * x.every_s;
+// late: nothing written for more than three of its own periods, plus how stale the record of a
+// write may be (the runner records at most every few seconds) and this page's own refresh
+const REFRESH_S = 10;
+let RECORD_S = 5;
+const late = (x, now) => x.every_s != null && x.last_write && now - x.last_write > 3 * x.every_s + RECORD_S + REFRESH_S;
+// a target as it is read in a cell: the interpreter's path left out, the middle cut, the tail kept
+const shortTarget = (t) => { let s = String(t || "").replace(/^\S*\/(python[\d.]*|node|bash|sh|uv)\s+/, "$1 ");
+  return s.length > 48 ? s.slice(0, 16) + "…" + s.slice(-30) : s; };
 async function load() {
   let d;
   try { d = await (await fetch("/api/instruments")).json(); Orchestra.conn(true); }
@@ -67,6 +73,7 @@ async function load() {
   }
   $("list").classList.remove("offline");
   const now = Date.now() / 1000;
+  if (d.record_every_s != null) RECORD_S = d.record_every_s;
   const nlate = d.instruments.filter((x) => late(x, now)).length;
   $("state").textContent = (d.host_running ? `${d.instruments.length} instruments` : `${d.instruments.length} instruments · no orchestra run is running, so the scripts and URLs are not being read`)
     + (nlate ? ` · ${nlate} late (nothing written for more than three of its periods)` : "") + ` · as of ${new Date().toTimeString().slice(0, 8)}`;
@@ -74,12 +81,12 @@ async function load() {
   $("list").innerHTML = `<tr><th>instrument</th><th>kind</th><th>last write</th><th>failures</th><th>last error</th><th>measures machine</th><th>target</th></tr>`
     + d.instruments.map((x) => `<tr class="${x.kind === "source" ? "" : "click"}" data-name="${esc(x.name)}"${x.kind === "source" ? "" : ` tabindex="0" role="button" aria-label="${esc(x.name)}: open its log"`}>
       <td><b>${esc(x.name)}</b>${x.owner && x.owner !== "project" ? ` <span class="muted">(${esc(x.owner)})</span>` : ""}${pills(x)}</td><td class="kind" data-l="kind">${esc(x.kind)}</td>
-      <td data-l="last write" class="${late(x, now) ? "late" : ""}">${x.last_write ? `${ago(now - x.last_write)} ago · ${x.points} point${x.points === 1 ? "" : "s"}${late(x, now) ? ` · <b>late</b>: every ${esc(every(x.every_s))}` : ` <span class="muted">· every ${esc(every(x.every_s))}</span>`}` : x.kind === "source" ? (x.status ? (x.status.ok === false ? "" : "read at the last discovery") : "not read yet") : `<span class="muted">none yet · every ${esc(every(x.every_s))}</span>`}</td>
+      <td data-l="last write" class="${late(x, now) ? "late" : ""}">${x.last_write ? `${ago(now - x.last_write)} ago · ${x.points} series written${late(x, now) ? ` · <b>late</b>: every ${esc(every(x.every_s))}` : ` <span class="muted">· every ${esc(every(x.every_s))}</span>`}` : x.kind === "source" ? (x.status ? (x.status.ok === false ? "" : "read at the last discovery") : "not read yet") : `<span class="muted">none yet · every ${esc(every(x.every_s))}</span>`}</td>
       <td data-l="failures" class="${x.failures ? "bad" : ""}">${x.failures || 0}</td>${x.last_error ? `<td class="bad err" data-l="last error">${esc(x.last_error)}${x.last_note ? `<div class="muted">last run said: ${esc(x.last_note)}</div>` : ""}</td>`
         : x.last_note ? `<td class="late err" data-l="last error" title="no error since start; the last line it printed to standard error${x.last_note_at ? ", " + ago(now - x.last_note_at) + " ago" : ""}">last run said: ${esc(x.last_note)}</td>`
         : '<td class="muted" data-l="last error" title="no error since start">—</td>'}
       ${(x.hung_on || []).length ? `<td data-l="measures machine">${hungOn(x.hung_on)}</td>` : '<td class="muted" data-l="measures machine" title="no declared machine has this instrument attached: attaching one says which machine its series measure (the intended model)">—</td>'}
-      <td class="num target" data-l="target" title="${esc(x.target)}">${esc(x.target)}</td></tr>`).join("");
+      <td class="num target" data-l="target" title="${esc(x.target)}">${esc(shortTarget(x.target))}</td></tr>`).join("");
   $("errors").innerHTML = (d.errors || []).map((e) => `<div>left out: ${esc(e)}</div>`).join("")
     + (d.hung_on_error ? `<div>attachments not shown: ${esc(d.hung_on_error)}</div>` : "");
   document.querySelectorAll("#list tr.click").forEach((tr) => { tr.onclick = () => openLog(tr.dataset.name);
@@ -106,9 +113,11 @@ function seriesTable(d, now, name) {
   if (!d.series.length) return `<div class="muted">no series written in the last ${Math.round(d.window_s / 60)} minutes</div>`;
   const refs = d.series.map((r) => ({ name: r.name, labels: r.labels, title: r.title }));
   const key = (r) => `${r.name}{${Object.entries(r.labels).map(([k, v]) => `${k}="${v}"`).join(",")}}`;
+  // a series not written within three of the instrument's periods is greyed, with when it last was
+  const stale = (r) => inst && inst.every_s != null && now - r.at > 3 * inst.every_s + RECORD_S;
   const row = (r, i) => { const n = SDGraph.seriesName(refs[i], views, name);
-    return `<tr title="${esc(key(r))}"><td><b>${esc(n.name)}</b>${n.family ? ` <span class="muted">${esc(n.family)}</span>` : ""}${n.about ? `<div class="muted about">${esc(n.about)}</div>` : ""}</td>
-      <td class="num" style="text-align:right">${esc(String(+r.value.toFixed(3)))}</td><td class="muted" style="white-space:nowrap">${ago(now - r.at)} ago</td></tr>`; };
+    return `<tr title="${esc(key(r))}" class="${stale(r) ? "stale-row" : ""}"><td><b>${esc(n.name)}</b>${n.family ? ` <span class="muted">${esc(n.family)}</span>` : ""}${n.about ? `<div class="muted about">${esc(n.about)}</div>` : ""}</td>
+      <td class="num" style="text-align:right">${esc(String(+r.value.toFixed(3)))}</td><td class="muted" style="white-space:nowrap">${stale(r) ? `not written since ${esc(Orchestra.when(r.at))}` : `${ago(now - r.at)} ago`}</td></tr>`; };
   // the series of one name that read 0 (the empty places), when there are FOLD of them or more: one line,
   // opened on a click: "12 × place items at 0"
   const FOLD = 3, zeros = {};
@@ -119,7 +128,7 @@ function seriesTable(d, now, name) {
     const is = zeros[r.name]; if (is[0] !== i) return "";
     return `<tr><td colspan="3"><details class="zeros"><summary class="muted">${is.length} × ${esc(r.name.replace(/_/g, " "))} at 0</summary><table class="itable">${is.map((j) => row(d.series[j], j)).join("")}</table></details></td></tr>`;
   }).join("");
-  return `<table class="itable series"><tr><th>series</th><th style="text-align:right">now</th><th>written</th></tr>${rows}</table>`
+  return `<table class="itable series"><tr><th>series</th><th style="text-align:right">latest</th><th>written</th></tr>${rows}</table>`
     + (d.more ? `<div class="muted">and ${d.more} more</div>` : "");
 }
 async function openLog(name) {

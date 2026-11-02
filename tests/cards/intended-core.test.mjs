@@ -39,12 +39,14 @@ test("declaredBy names who from the provenance, never how the call came", () => 
 test("a declared machine's tag says what is heard and who said what", () => {
   const w = (intent, extra = {}) => IntendedCore.machineWords({ id: "worker", package: "workflows", ...extra, intent });
   const plugin = { author: "workflows", provenance: { author: "workflows", source: "workflow delivery_sail" } };
-  assert.deepEqual(w({ state: "proposed", heard: true, ...plugin }), { text: "heard", cls: "im-t-unconf", by: "proposed by the workflows plugin (workflow delivery_sail)" });
+  // heard: no tag at all (no tag means heard, everywhere); who said what is the line under it
+  assert.deepEqual(w({ state: "proposed", heard: true, ...plugin }), { text: "", cls: "", by: "proposed by the workflows plugin (workflow delivery_sail)" });
+  assert.equal(w({ state: "proposed", heard: false, ...plugin }).cls, "im-t-ghost");
   assert.equal(w({ state: "proposed", heard: false, ...plugin }).text, "proposed, never heard");
-  assert.equal(w({ state: "declared", heard: true, author: "owner", provenance: { author: "owner", via: "page" } }).text, "declared");
+  assert.equal(w({ state: "declared", heard: true, author: "owner", provenance: { author: "owner", via: "page" } }).text, "");
   assert.equal(w({ state: "declared", heard: false, author: "owner", provenance: { author: "owner", via: "page" } }).text, "declared, never heard");
   const confirmed = w({ state: "declared", heard: true, ...plugin, confirmed: { by: "owner", via: "page" } });
-  assert.equal(confirmed.text, "confirmed by you");
+  assert.equal(confirmed.text, "");                   // heard: no tag; who confirmed it is the line under it
   assert.equal(confirmed.by, "proposed by the workflows plugin (workflow delivery_sail), confirmed by you");
   assert.equal(w({ state: "proposed", heard: true, author: "ops", provenance: { source: "integrator" } }).by, "proposed by the Integrator");
   // a machine of no package, proposed by a plugin another machine on the bus belongs to; brief on the map

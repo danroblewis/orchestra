@@ -228,8 +228,12 @@ announced: they are not machines.
 A machine is seen, and active, by its own events alone: its announcements, what it publishes and
 any heartbeat it sends (a plain event of its own type). Writing series does not count. It is
 active while its last event is within two and a half beats of its own cadence, and at least two
-minutes. The cadence is observed, never announced: the median gap between its recent beats, where
-events less than 48 s apart are one beat (a restart's announcements, one run's events). So a job
+minutes. The cadence is observed, never announced: the median gap between its recent beats (three
+beats at least, so one interval is no rhythm; a gap longer than the cadence before it allows, a hang,
+left out of it), where events less than 48 s apart are one beat (a restart's announcements, one
+run's events). Past two and a half beats but inside the two minutes it is late by its own rhythm;
+and when events of a type it listens for arrive after every listener of that type last acted, it is
+not answering, whatever its rhythm. So a job
 that runs every hour and publishes once a run is active between runs and quiet after a few missed
 ones (a cadence over a day counts as a day). A continuous machine that has nothing to publish for
 long stretches should send a heartbeat now and then, or it shows as quiet.

@@ -45,7 +45,7 @@
   .hk i { width:12px; height:3px; border-radius:2px } .hk b { font-family:var(--mono); font-weight:600; color:var(--text) } .hk.off { opacity:.4 } .hk.off i { background:var(--border2) !important }
   svg.chart { width:100%; height:auto; min-height:0; display:block } .chart .ax { stroke:var(--border2); stroke-width:1 } .chart text { fill:var(--muted); font-size:10px; font-family:var(--mono) } .chart path { fill:none; stroke-width:1.6 }
   .ckeys { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:11px; color:var(--text2); margin-top:4px } .ckeys i { display:inline-block; width:10px; height:3px; border-radius:2px; margin-right:4px; vertical-align:middle }
-  .charttip { display:none; position:fixed; z-index:70; pointer-events:none; background:var(--panel2); border:1px solid var(--border2); border-radius:8px; padding:6px 9px; font-size:11.5px; box-shadow:0 8px 24px #0008 }
+  .charttip { display:none; position:fixed; z-index:calc(var(--z-modal) + 10); pointer-events:none; background:var(--panel2); border:1px solid var(--border2); border-radius:8px; padding:6px 9px; font-size:11.5px; box-shadow:0 8px 24px #0008 }
   .charttip .tt { color:var(--muted); font-size:10.5px; margin-bottom:3px } .charttip .tr { display:flex; align-items:center; gap:6px; white-space:nowrap } .charttip .tr i { width:9px; height:3px; border-radius:2px } .charttip .tl { color:var(--text2); font-family:var(--mono); font-size:11px } .charttip .tr b { margin-left:auto; padding-left:12px; font-family:var(--mono) }
   svg .xh { stroke:var(--text2); stroke-width:1; stroke-dasharray:3 3; vector-effect:non-scaling-stroke }
   .drawer h4 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:14px 0 6px } .drawer .def { display:grid; grid-template-columns:110px minmax(0,1fr); gap:5px 12px; font-size:12.5px } .drawer .def > div:nth-child(odd) { color:var(--muted) }
@@ -60,13 +60,17 @@
   .erachg div { margin:2px 0 } .erachg .chg { color:#fcd34d } .erachg .gone { color:#fca5a5 } .erachg .new { color:#86efac }
   /* a phone: the heading, the version bar and the rediscover button each on its own line */
   @media (max-width:600px) { .dynhead { flex-direction:column; align-items:flex-start } .ver { flex-wrap:wrap } .dynhead .redisc { margin-left:0 } }
+  /* a phone: the model as a list (stocks with now and max, flows with their observed rate); the drawing behind a toggle */
+  .phone-list, .phone-only { display:none }
+  @media (max-width:760px) { .phone-list { display:block; font-size:12.5px } .phone-only { display:inline-block; margin:6px 0 } body:not(.diag-on) #diagram { display:none }
+    .phone-list .pl { display:flex; justify-content:space-between; gap:10px; padding:4px 0; border-bottom:1px solid var(--border) } .phone-list .pl b { font-weight:600 } .phone-list .pl span.num { white-space:nowrap } }
   .tables h3 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:12px 0 6px }
 </style>
 </head>
 <body>
 <nav id="nav"><a href="/">Dashboard</a><a href="/machines">Machines</a><a href="/instruments">Instruments</a><a href="/dynamics" class="on">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="dynwrap">
-  <div class="intro">The system's stocks and the flows between them, discovered from the metrics and kept as a new version each time they change. Machines are linked to flows only as hypotheses, from their events.<details class="more"><summary>more about this page</summary>There is one model. Stocks are measured quantities (each bound to a series in the metrics store), flows move material between them with equations fitted from the history, and machines (programs, AI agents and people, known by their events) are associated with flows only as hypotheses, from their events matching a flow's counter. A flow may have several, or none yet; the associations never change an equation. Every equation says whether it was fitted or only declared.</details></div>
+  <div class="intro">The system's stocks and the flows between them, discovered from the metrics and kept as a new version each time they change. Machines are linked to flows only as hypotheses, from their events.<details class="more"><summary>more about this page</summary>There is one model. Stocks are measured quantities (each bound to a series in the metrics store), or hidden ones whose level is what their counters imply; flows move material between them with equations fitted from the history, and machines (programs, AI agents and people, known by their events) are associated with flows only as hypotheses, from their events matching a flow's counter. A flow may have several, or none yet; the associations never change an equation. Every equation says whether it was fitted or only declared.</details></div>
   <div class="dynhead"><h1 id="mname">The system</h1><span class="ver" id="ver"></span><span class="sum" id="sum"></span>
     <span class="redisc" style="display:inline-flex;gap:8px;align-items:center"><span class="muted" id="redisc-note" style="font-size:11.5px"></span><button class="ctl" id="redisc" onclick="rediscover()" title="Discover the model again now, with the settings below">rediscover now</button></span></div>
   <div class="panel eras" id="eras" style="display:none"></div>
@@ -82,7 +86,10 @@
     </div></details>
   <div class="muted" id="sd-note" style="display:none;margin-bottom:6px"></div>
   <div class="panel stale" id="render-err" role="alert" style="display:none;margin-bottom:6px"></div>
+  <div class="phone-list panel" id="phone-list"></div>
+  <button class="ctl phone-only" id="show-diagram" onclick="document.body.classList.toggle('diag-on');this.textContent=document.body.classList.contains('diag-on')?'hide the diagram':'show the diagram';setTimeout(()=>GRAPH&&GRAPH.fit(),50)">show the diagram</button>
   <div class="diagram" id="diagram"></div>
+  <div class="muted" id="diagram-note" style="font-size:12px;margin-top:6px"></div>
   <div class="legend" id="legend"></div>
   <div class="ng-loops panel" id="loops" style="margin:0 0 10px"></div>
   <div class="panel histp" id="histp"><h2 style="margin-top:0"><span id="hist-title">Stocks</span><span class="hctl muted" style="font-size:11px">click a name to show or hide it</span></h2><div class="hkeys" id="hist-keys"></div><div id="hist"></div></div>
@@ -118,6 +125,8 @@
 <script>
 // (a machine's colour, mcolor, is app.js's: the same on every page)
 let MODEL = null, VERSION = null;   // null: follow the current version
+// the system's measured input and output (a level that only fills, a tally of what left) are drawn by default
+window.SHOW_ACC = window.SHOW_ACC ?? true;
 let ERA = new URLSearchParams(location.search).get("era");   // null: the current era; else a past era's id ("none": before any era); /dynamics?era= links here
 const nice = (s) => s || "outside";
 // stocks and flows by what tells them apart (SDGraph.names); the model's ``name`` is the full record
@@ -138,7 +147,9 @@ let GRAPH = null, GSIG = null, FLOWEDGE = {};
 // The colour follows the stock's series (its key, else its id), never its place in the list, so a
 // stock keeps its colour from one version to the next.
 const stockColor = (id) => { const s = MODEL && MODEL.stocks.find((x) => x.id === id); if (!s) return "#cbd5e1";
-  let h = 0; for (const ch of String(Intended.stockKey(s) || id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return Charts.PAL[h % (Charts.PAL.length - 1)]; };
+  let h = 0; for (const ch of String(Intended.stockKey(s) || id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return STOCK_PAL[h % STOCK_PAL.length]; };
+// the stocks' colours: no red, amber or orange, which the page keeps for warnings (a flow missing its equation)
+const STOCK_PAL = ["#60a5fa", "#22c55e", "#e879f9", "#38bdf8", "#a78bfa", "#2dd4bf", "#c084fc", "#86efac"];
 // The model as a network: stocks as boxes, each flow as one arrow from its source to its
 // destination (a cloud when either is outside), influences as dashed links from a stock to the
 // middle of the flow whose rate they drive. Feedback loops are cycles of the causal graph: a flow adds to its destination
@@ -150,7 +161,7 @@ const stockColor = (id) => { const s = MODEL && MODEL.stocks.find((x) => x.id ==
   async function loadKinds() {
     try { const d = await (await fetch("/api/machines?era=all")).json();
       for (const m of d.machines || []) MKINDS[m.id] = m.kind || "";
-      if (d.ok) MLIST = d.machines || [];
+      if (d.ok) { MLIST = d.machines || []; Orchestra.setMachines(MLIST); }
     } catch (e) {}
   }
   // as the Machines page says it: the kind announced (program, person, service, …, or mixed: "program ×1,
@@ -164,10 +175,10 @@ function draw() {
   // the intended model (intended-dynamics.js) adds its ghosts and marks to what discovery found
   // what is expected stays on the diagram: its stocks, its flows and their ends, whatever a filter would hide
   const ex = Intended.expectedIds();
-  const g = Intended.extend(SDGraph.build(m, { showAll: window.SHOW_ALL, showAcc: window.SHOW_ACC, keep: new Set([...Intended.nearIds(), ...ex.stocks]), keepFlows: ex.flows, mcolor, stockColor }));
-  const { nodes, edges, causal, flows, acc } = g;
+  const g = Intended.extend(SDGraph.build(m, { showAll: window.SHOW_ALL, showAcc: window.SHOW_ACC, keep: new Set([...Intended.nearIds(), ...ex.stocks]), keepFlows: ex.flows, rare: Evidence.tooFew, place: placeOf, stockColor }));
+  const { nodes, edges, causal, flows, acc, rare } = g;
   // a flow's label: the equation, or the observed rate first where it parts from it (dynamics-live.js)
-  for (const e of edges) if (e.flowPart && e.fid && Array.isArray(e.label)) { e.eqLabel = e.label[0]; const u = Live.edgeLabel(e); if (u) { e.label = u.label; e.quiet = u.quiet; } }
+  for (const e of edges) if (e.flowPart && e.fid && Array.isArray(e.label)) { e.eqLabel = e.label[0]; const u = Live.edgeLabel(e); if (u) { e.label = u.label; e.quiet = u.quiet; e.warn = u.warn; } }
   window.ACC_HIDDEN = window.SHOW_ACC ? 0 : acc.size;
   FLOWEDGE = g.flowEdge;
   for (const n of nodes) n.decorate = Intended.decorator(n, n.sid ? Live.decorateStock : n.input ? Live.decorateInput : undefined);
@@ -175,7 +186,7 @@ function draw() {
   if (!GRAPH || sig !== GSIG || !document.querySelector("#diagram svg")) {
     if (!GRAPH || !document.querySelector("#diagram svg")) GRAPH = NetGraph.create($("diagram"), { key: "dynamics.v2", height: 620,   // v2: layouts saved before ELK are not reused
       // one system: everything is inside but the clouds, the environment flows come from and go to
-      boundary: { inside: (n) => n.kind !== "cloud", label: "the system · outside: the environment (sources and sinks)" },
+      boundary: { inside: (n) => n.kind !== "cloud", label: "the system · clouds: where its counters start and end" },
       // laid out by ELK (sd-layout.js): the system in layers along its flows, clouds beside their stocks
       // then refined by springs, so nothing is left far from what it is connected to
       layout: window.ELK ? async (nodes, edges) => {
@@ -191,24 +202,40 @@ function draw() {
         w.onerror = (ev) => { reject(ev.message || ev); w.terminate(); };
         w.postMessage({ nodes, edges, at, fixed });
       }) : null,
-      tip: (x, kind) => Intended.tip(x) ?? (kind === "node" ? (x.sid ? Live.stockSummary(x.sid) : x.fid ? Live.flowSummary(x.fid) : "") : (x.fid ? Live.flowSummary(x.fid) : "")),
+      tip: (x, kind) => Intended.tip(x) ?? (kind === "node" ? (x.sid ? Live.stockSummary(x.sid) : x.place ? `<div class="tt">${esc(x.label)}</div><div class="muted">a place its counters name, kept as no stock${x.why ? `: ${esc(x.why)}` : ""}</div>` : x.fid ? Live.flowSummary(x.fid) : "") : (x.fid ? Live.flowSummary(x.fid) : "")),
       onClick: (x, kind) => { if (Intended.click(x)) return; if (x.sid) Live.openStock(x.sid); else if (x.fid) Live.openFlow(x.fid); } });
     GSIG = sig;
     GRAPH.render(nodes, edges);
-    loops(nodes, causal);
+    loops(nodes, causal, g.places);
   } else GRAPH.render(nodes, edges);
   Live.drawn(GRAPH);
-  // every machine any flow shown has as a hypothesis (a flow is drawn in its leader's colour)
+  // what is not drawn is said: the flows with too few events to fit (folded under "flows with no events")
+  const maxRare = rare.length ? Math.max(...rare.map((f) => ((f.current || {}).quality || {}).events || 0)) : 0;
+  $("diagram-note").innerHTML = [rare.length && !window.SHOW_ALL ? `${rare.length} rare flow${rare.length === 1 ? "" : "s"} (at most ${maxRare} event${maxRare === 1 ? "" : "s"} each) not drawn · <a href="#" onclick="window.SHOW_ALL=true;draw();return false">draw them</a>` : "",
+    namedEndsNote(m, flows)].filter(Boolean).join(" · ");
+  // the machines are hypotheses on the flows (in the tables and the flows' labels), never the flows' colour
   const used = [...new Set(flows.flatMap((f) => (f.machines || []).map((h) => h.machine)))];
-  $("legend").innerHTML = `<span class="muted" style="font-size:11px;align-self:center">machines (hypotheses):</span>` + used.map((id) => {
-    const mc = byMachine[id] || { name: id, kind: "" };
-    return `<span class="lg prog" style="--c:${mcolor(id)}" title="a flow is drawn in the colour of its most likely machine"><i></i>${esc(mc.name)} <span class="muted">${esc(kindWord(id, mc.kind))}</span></span>`; }).join("")
-    + (flows.some((f) => !(f.machines || []).length) ? `<span class="lg prog" style="--c:${mcolor("")}"><i></i>no machine associated yet</span>` : "")
-    + `<label class="lg" style="cursor:pointer"><input type="checkbox" ${window.SHOW_ALL ? "checked" : ""} onchange="window.SHOW_ALL=this.checked;draw()" style="margin:0"> flows with no events</label>`
+  $("legend").innerHTML = `<span class="lg"><i style="background:${SDGraph.FLOW_INK}"></i>a flow</span><span class="lg"><i style="background:#f59e0b"></i>a flow not moving as its equation says</span>`
+    + (m.stocks.some((s) => SDGraph.byConstruction(s)) ? `<span class="lg" title="${esc(Evidence.BY_CONSTRUCTION)}"><i style="height:9px;width:14px;background:none;border:1px dashed var(--muted);border-radius:2px"></i>tagged "by construction": its balance proves nothing</span>` : "")
+    + `<span class="muted" style="font-size:11px;align-self:center" title="machines whose events match a flow's counter in time: hypotheses, named on a flow only when one stands out">machines with flow hypotheses: ${used.map((id) => esc((byMachine[id] || { name: id }).name)).join(", ") || "none yet"}</span>`
+    + `<label class="lg" style="cursor:pointer"><input type="checkbox" ${window.SHOW_ALL ? "checked" : ""} onchange="window.SHOW_ALL=this.checked;draw()" style="margin:0"> flows with no events, or too few to fit</label>`
     + (m.stocks.some((s) => s.evidence && s.evidence.hidden) ? `<span class="lg" title="a stock no series measures: its level is what its counters imply"><i style="height:9px;width:14px;background:none;border:1.5px dashed var(--muted);border-radius:2px"></i>hidden: found from the levels, not measured</span>` : "")
     + (acc.size || window.SHOW_ACC ? `<label class="lg" style="cursor:pointer" title="stocks that only fill and that no flow shown feeds, such as the event bus's length"><input type="checkbox" ${window.SHOW_ACC ? "checked" : ""} onchange="showAcc(this.checked)" style="margin:0"> stocks that only fill, fed by nothing shown${acc.size ? ` (${acc.size})` : ""}</label>` : "")
     + Intended.legend()
     + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it, through rediscoveries; double-click to release) · tidy lays out the rest · reset starts over · scroll to zoom · hover or click a stock or a flow</span>`;
+}
+// a place a flow's counter names (its from or to label value) where discovery kept no stock: its
+// title and why it was left out, from the level series that measures it (a left-out series carrying
+// that value); the value itself when none does. Names come from the series' labels and titles only
+function placeOf(v) {
+  const d = MODEL.discovery || {}, lo = d.left_out || {}, titles = d.titles || {};
+  const k = Object.keys(lo).find((key) => key.includes(`="${v}"`) && !/_total\{/.test(key) && titles[key] && !/^age of /.test(titles[key]));
+  return k ? { title: titles[k], why: lo[k], series: k } : { title: v, why: "no series measures it" };
+}
+// under the diagram: how many levels were left out, and the places drawn that are not stocks
+function namedEndsNote(m, flows) {
+  const n = Object.keys((m.discovery || {}).left_out || {}).length;
+  return n ? `${n} levels and counters left out: see <a href="#found" onclick="document.getElementById('found').scrollIntoView({block:'start'});return false">How it was found</a>` : "";
 }
 // show or hide the stocks that only fill, then fit the view to what is drawn
 function showAcc(on) { window.SHOW_ACC = on; draw(); tables(); setTimeout(() => GRAPH && GRAPH.fit(), 1600); }
@@ -217,7 +244,7 @@ function showAcc(on) { window.SHOW_ACC = on; draw(); tables(); setTimeout(() => 
 // reinforcing (R). Its kind: items circulate when every link is material moving (a flow drawing
 // from the stock before it and filling the stock after it); otherwise it is information feedback
 // (a level steering a rate). A loop of one stock (its outflow depends on itself) is first order.
-function loops(nodes, causal) {
+function loops(nodes, causal, places = []) {
   const name = (id) => id.startsWith("s:") ? stockName(id.slice(2)) : id.startsWith("i:") ? id.slice(2).replace(/_/g, " ") : flowName(MODEL.flows.find((f) => "f:" + f.id === id)) || id;
   const flowOf = (id) => MODEL.flows.find((f) => "f:" + f.id === id);
   const ids = [...new Set(causal.flatMap((c) => [c.source, c.target]))];
@@ -250,7 +277,8 @@ function loops(nodes, causal) {
   GRAPH.highlight(null);
   $("loops").innerHTML = `<div class="head">Feedback loops · click one to highlight it · <span class="ng-pol B">B</span>balancing <span class="ng-pol R">R</span>reinforcing`
     + (multi.length ? ` · ${multi.length} feedback structure${multi.length === 1 ? "" : "s"}; the ${main.length} loop${main.length === 1 ? "" : "s"} shown ${main.length === 1 ? "is" : "are"} independent and make${main.length === 1 ? "s" : ""} up all ${cycles}${cycles >= 2000 ? "+" : ""} cycles through them` : "") + `</div><div id="looplist"></div>`
-    + (first ? `<div class="muted" style="margin-top:4px">and ${first} first-order loop${first === 1 ? "" : "s"}: a stock whose outflow depends on itself, which always balances it</div>` : "");
+    + (first ? `<div class="muted" style="margin-top:4px">and ${first} first-order loop${first === 1 ? "" : "s"}: a stock whose outflow depends on itself, which always balances it</div>` : "")
+    + (places.length ? `<div class="muted" style="margin-top:4px">loops may run through places that are not stocks: ${places.map(esc).join(", ")}</div>` : "");
   if (main.length) NetGraph.loopList($("looplist"), GRAPH, main); else $("looplist").innerHTML = '<span class="muted">No loops through more than one stock.</span>';
 }
 // what a discovery looked at, in the same numbers everywhere: every series sampled, of which some
@@ -319,14 +347,22 @@ function unnamedBucket(d, lo, m) {
 // the ones that didn't move in the window are collapsed
 function leftOut(lo) {
   const groups = {};
+  // like reasons read as one group: their particulars (how many events, which of Orchestra's own) stay on each row
+  const groupOf = (why) => (why.startsWith("no counters balance") ? "changed, but no counters balance it"
+    : why.startsWith("Orchestra's own") ? "Orchestra's own: what Orchestra did, not the system's work"
+    : /^a counter of only \d+ events?/.test(why) ? `a counter of fewer than ${Evidence.MIN_EVENTS} events: too few to carry a balance`
+    : /^a level that changed in only \d+ steps?/.test(why) ? `a level that changed in fewer than ${Evidence.MIN_EVENTS} steps: too few to tell a balance from coincidence`
+    : why.startsWith("live in only") ? "live in only some of the steps every counter was live in: too new, or too broken, to balance"
+    : why.startsWith("the same as ") ? "the same as another series (counts the same events)" : why);
+  const titles = ((MODEL && MODEL.discovery) || {}).titles || {};
   for (const [k, why] of Object.entries(lo)) {
-    const g = why.startsWith("no counters balance") ? "changed, but no counters balance it" : why;
+    const g = groupOf(why);
     (groups[g] = groups[g] || []).push([k, why]);
   }
   const order = Object.keys(groups).sort((a, b) => (a.startsWith("changed") ? -1 : b.startsWith("changed") ? 1 : groups[b].length - groups[a].length));
   return order.map((g) => {
     const res = (k) => resOf(MODEL && MODEL.discovery, k);
-    const rows = groups[g].map(([k, why]) => `<tr><td class="num">${esc(k)}${res(k) ? `<div class="muted" style="font-family:inherit">${esc(res(k))}</div>` : ""}</td>${g.startsWith("changed") ? `<td class="muted">${esc(why.replace(/^no counters balance it /, ""))}</td>` : ""}</tr>`).join("");
+    const rows = groups[g].map(([k, why]) => `<tr><td class="num">${titles[k] ? `<b style="font-family:var(--sans,inherit)">${esc(titles[k])}</b><div class="muted">${esc(k)}</div>` : esc(k)}${res(k) ? `<div class="muted" style="font-family:inherit">${esc(res(k))}</div>` : ""}</td>${g.startsWith("changed") ? `<td class="muted">${esc(why.replace(/^no counters balance it /, ""))}</td>` : why !== g ? `<td class="muted">${esc(why)}</td>` : ""}</tr>`).join("");
     return `<details ${g.startsWith("changed") ? "open" : ""}><summary>${esc(g)} <span class="count">${groups[g].length}</span></summary><table class="dt">${rows}</table></details>`;
   }).join("");
 }
@@ -354,22 +390,24 @@ const opens = (fn) => `tabindex="0" role="button" style="cursor:pointer" onclick
 let TABLES_SIG = null;
 function tables() {
   const m = MODEL, byMachine = Object.fromEntries(m.machines.map((x) => [x.id, x]));
-  const flowsHtml = `<tr><th>flow</th><th>equation</th><th>fit</th><th title="machines whose events match the flow's counter: hypotheses, with their confidence. Two similar flows between the same stocks may not be told apart, so a hypothesis may belong to a flow's twin.">machines (hypotheses)</th></tr>` + m.flows.map((f) => { const e = f.current, q = (e && e.quality) || {};
+  const sig2 = Live.sig2, per = Live.per();
+  const flowsHtml = `<tr><th>flow</th><th>observed · equation</th><th>fit</th><th title="machines whose events match the flow's counter: hypotheses, with their confidence. Two similar flows between the same stocks may not be told apart, so a hypothesis may belong to a flow's twin.">machines (hypotheses)</th></tr>` + m.flows.map((f) => { const e = f.current, q = (e && e.quality) || {};
     const end = (id) => (id ? stockName(id) : "outside");
     const same = SDGraph.sameAs(m, f);
     const zero = e && (q.events ?? 0) === 0 && (Object.values(e.params || {}).some((x) => x) || (e.spec && e.spec.value));
-    return `<tr data-fid="${esc(f.id)}" ${opens(`Live.openFlow('${esc(f.id)}')`)}><td>${esc(flowName(f))}<div class="muted" style="font-size:11px">${esc(end(f.from))} → ${esc(end(f.to))}${same.length ? ` · same events as ${same.map(esc).join(", ")}` : ""}${SDGraph.drawnApart(m, f) ? `<div>${esc(SDGraph.drawnApart(m, f))}</div>` : ""}</div></td><td class="num eq">${Evidence.tooFew(f) ? '<span class="muted">—</span>' : esc(eqText(f))}${!Evidence.tooFew(f) && e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}${SDGraph.correlational(m, f) ? `<div class="muted" style="font-family:inherit;font-size:11px">${esc(SDGraph.UNTESTED)}</div>` : ""}</td>
-      <td>${Evidence.tooFew(f) ? `<span class="muted num" title="fewer than ${Evidence.MIN_EVENTS} events in the window: no rate can be told from chance">${esc(Evidence.tooFewText(f))}</span>${eraNote(f)}` : e ? `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span> <span class="muted num" ${zero ? 'title="0 increments seen in the window; the counter first appeared already above 0"' : ""}>${esc(e.form)} · ${q.events ?? 0} ev${zero ? "*" : ""} · disp ${q.events && q.dispersion != null ? q.dispersion.toFixed(1) : "—"}</span>${e.prior && e.prior.weight != null && e.origin !== "prior" ? `<div class="muted" style="font-size:11px">${Math.round(100 * e.prior.weight)}% from the prior (era ${esc(e.prior.era || "before")})</div>` : ""}${eraNote(f)}` : '<span class="muted">—</span>'}</td>
-      <td class="mcell">${(f.machines || []).length ? f.machines.map((h) => `<div title="${esc(h.why || h.origin || "")}"><span class="mdot" style="--c:${mcolor(h.machine)}"></span><a href="/machines#${encodeURIComponent(h.machine)}" onclick="event.stopPropagation()">${esc((byMachine[h.machine] || {}).name || h.machine)}</a>${Evidence.confidence(f, h) ? ` <span class="muted num">${Evidence.confidence(f, h).trim()}</span>` : ""}${Evidence.matched(h) ? `<div class="muted" style="font-size:11px">${esc(Evidence.matched(h))}</div>` : ""}</div>`).join("") + (Evidence.untold(m, f) ? `<div class="muted" style="font-size:11px">${esc(Evidence.untold(m, f))}</div>` : "") : `<span class="muted" title="${esc(f.association || "")}">no machine associated yet</span>`}</td></tr>`; }).join("");
+    return `<tr data-fid="${esc(f.id)}" ${opens(`Live.openFlow('${esc(f.id)}')`)}><td>${esc(flowName(f))}<div class="muted" style="font-size:11px">${esc(end(f.from))} → ${esc(end(f.to))}${same.length ? ` · same events as ${same.map(esc).join(", ")}` : ""}${SDGraph.drawnApart(m, f) ? `<div>${esc(SDGraph.drawnApart(m, f))}</div>` : ""}</div></td><td class="num eq">${obsLine(f)}${Evidence.tooFew(f) ? '<span class="muted">—</span>' : esc(eqText(f))}${!Evidence.tooFew(f) && e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}${SDGraph.correlational(m, f) ? `<div class="muted" style="font-family:inherit;font-size:11px">${esc(SDGraph.UNTESTED)}</div>` : ""}</td>
+      <td>${Evidence.tooFew(f) ? `<span class="muted num" title="fewer than ${Evidence.MIN_EVENTS} events in the window: no rate can be told from chance">${esc(Evidence.tooFewText(f))}</span>${eraNote(f)}` : e ? `${misses(f) ? `<span class="stale num">${esc(misses(f))}</span>` : `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span>`} <span class="muted num" ${zero ? 'title="0 increments seen in the window; the counter first appeared already above 0"' : ""}>${esc(e.form)} · ${q.events ?? 0} events in the fit window${zero ? "*" : ""}${q.live_minutes ? ` (${q.live_minutes} min)` : ""} · dispersion ${q.events && q.dispersion != null ? sig2(q.dispersion) : "—"}</span>${e.prior && e.prior.weight != null && e.origin !== "prior" ? `<div class="muted" style="font-size:11px">${Math.round(100 * e.prior.weight)}% from the prior (era ${esc(e.prior.era || "before")})</div>` : ""}${eraNote(f)}` : '<span class="muted">—</span>'}</td>
+      <td class="mcell">${(f.machines || []).length ? f.machines.map((h) => `<div title="${esc(h.why || h.origin || "")}"><span class="mdot" style="--c:${mcolor(h.machine)}"></span><a href="/machines#${encodeURIComponent(h.machine)}" onclick="event.stopPropagation()">${esc((byMachine[h.machine] || {}).name || h.machine)}</a>${Evidence.confidence(f, h) ? ` <span class="muted num">${Evidence.confidence(f, h).trim()}${esc(Evidence.chance(f, h))}</span>` : ""}${Evidence.matched(h) ? `<div class="muted" style="font-size:11px">${esc(Evidence.matched(h))}</div>` : ""}</div>`).join("") + (Evidence.untold(m, f) ? `<div class="muted" style="font-size:11px">${esc(Evidence.untold(m, f))}</div>` : "") : `<span class="muted" title="${esc(f.association || "")}">no machine associated yet</span>`}</td></tr>`; }).join("");
   // how far to trust each stock, as its drawer says it
   const trustCell = Evidence.trustCell;
-  const stocksHtml = `<tr><th>stock</th><th>now</th><th>trust</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr data-sid="${esc(s.id)}" ${opens(`Live.openStock('${esc(s.id)}')`)}><td>${stockHead(s.id)}${stockAbout(s.id)}</td><td class="num">${m.levels[s.id] ? levelText(m.levels[s.id].v, s.unit) : "—"}</td><td>${trustCell(s)}</td>
+  const stocksHtml = `<tr><th>stock</th><th>now</th><th>trust</th><th>bound to series</th></tr>` + m.stocks.map((s) => `<tr data-sid="${esc(s.id)}" ${opens(`Live.openStock('${esc(s.id)}')`)}><td>${stockHead(s.id)}${stockAbout(s.id)}</td><td class="num" style="white-space:nowrap">${Live.now(s.id) != null ? levelText(Live.now(s.id), unitOf(s)) : "—"}</td><td>${trustCell(s)}</td>
       <td class="num muted bound">${s.series ? esc(keyOf(s.series)) + `<div style="font-family:inherit">${esc(resOf(m.discovery, keyOf(s.series)))}</div>` : "not measured"}</td></tr>`).join("");
   const hypm = m.machines.filter((x) => x.attributed.length), total = (window.MLIST || []).length;
   const machinesHtml = `<tr><th>machine</th><th>kind</th><th>flows (hypotheses)</th></tr>` + hypm.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span><a href="/machines#${encodeURIComponent(x.id)}">${esc(x.name)}</a>${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
       <td>${kindWord(x.id, x.kind)}</td><td class="num">${x.attributed.length}</td></tr>`).join("");
   // a poll that changes nothing redraws nothing: focus, a selection and the declared layer's marks stay
-  const sig = JSON.stringify([flowsHtml, stocksHtml, machinesHtml, m.discovery, m.intended, window.ACC_HIDDEN, total, m.stored, m.levels_error]);
+  const sig = JSON.stringify([flowsHtml, stocksHtml, machinesHtml, m.discovery, m.intended, window.ACC_HIDDEN, total, m.stored, m.levels_error, m.flows.map((f) => Live.has() && Live.against(f).differs)]);
+  phoneList(m);
   if (sig === TABLES_SIG) return;
   TABLES_SIG = sig;
   $("nflows").textContent = m.flows.length; $("nstocks").textContent = m.stocks.length; $("nmachines").textContent = `${hypm.length} of ${total || m.machines.length}`;
@@ -388,7 +426,36 @@ function tables() {
   // what is counted is said: stocks hidden from the diagram, machines with flow hypotheses out of all machines
   const hid = window.ACC_HIDDEN || 0;
   const hyp = new Set(m.flows.flatMap((f) => (f.machines || []).map((h) => h.machine))).size;
-  $("sum").innerHTML = `${m.stocks.length} stocks${hid ? ` (${hid} hidden: only fill · <a href="#" onclick="showAcc(true);return false">show</a>)` : ""} · ${m.flows.length} flows (${fitted} fitted) · ${hyp} machine${hyp === 1 ? "" : "s"} with flow hypotheses${total ? ` (of ${total})` : ""}${m.stored ? "" : ' · <span class="stale">not saved yet: a discovery saves a version once it finds stocks and every source answered; <code>orchestra sd discover</code> runs one now</span>'}${m.levels_error ? ` · <span class="stale">levels: ${esc(m.levels_error)}</span>` : ""}`;
+  // the stocks whose outflow parts from its equation, said where the eye starts
+  const diverging = m.stocks.map((s) => { const out = m.flows.filter((f) => f.from === s.id && !Evidence.tooFew(f)).map((f) => ({ f, a: Live.against(f) })).filter((x) => x.a.differs);
+    return out.length ? `<span class="stale">${esc(stockName(s.id))}: outflow ${out.map(({ a }) => `${sig2(a.obs)}${per}, equation ${sig2(a.eq)}${per}`).join("; ")}</span>` : ""; }).filter(Boolean);
+  $("sum").innerHTML = `${m.stocks.length} stock${m.stocks.length === 1 ? "" : "s"}${hid ? ` (${hid} hidden: only fill · <a href="#" onclick="showAcc(true);return false">show</a>)` : ""} · ${m.flows.length} flow${m.flows.length === 1 ? "" : "s"} (${fitted} fitted) · ${hyp} machine${hyp === 1 ? "" : "s"} with flow hypotheses${total ? ` (of ${total})` : ""}${m.stored ? "" : ' · <span class="stale">not saved yet: a discovery saves a version once it finds stocks and every source answered; <code>orchestra sd discover</code> runs one now</span>'}${m.levels_error ? ` · <span class="stale">levels: ${esc(m.levels_error)}</span>` : ""}${diverging.length ? ` · ${diverging.join(" · ")}` : ""}`;
+}
+// at phone width, the model as a list: each stock with its level now and its highest in the window,
+// each flow with its ends and its observed rate (the drawing is behind "show the diagram")
+function phoneList(m) {
+  const el = $("phone-list"); if (!el) return;
+  const rows = m.stocks.map((s) => { const n = Live.now(s.id); return `<div class="pl" ${opens(`Live.openStock('${esc(s.id)}')`)}><span><b>${esc(stockName(s.id))}</b></span><span class="num">${n == null ? "—" : levelText(n, unitOf(s))}</span></div>`; }).join("");
+  const flows = m.flows.filter((f) => !Evidence.tooFew(f)).map((f) => { const a = Live.has() ? Live.against(f) : {};
+    return `<div class="pl" ${opens(`Live.openFlow('${esc(f.id)}')`)}><span>${esc(flowName(f))} <span class="muted">${esc(f.from ? stockName(f.from) : "outside")} → ${esc(f.to ? stockName(f.to) : "outside")}</span></span><span class="num ${a.differs ? "stale" : ""}">${a.obs != null ? `${esc(Live.sig2(a.obs))} ${esc(Live.per())}` : "—"}</span></div>`; }).join("");
+  el.innerHTML = `<h3 style="margin-top:0">Stocks</h3>${rows || '<div class="muted">none</div>'}<h3>Flows, observed</h3>${flows || '<div class="muted">none with events enough</div>'}`;
+}
+// a flow's observed rate, said first (its equation after it): "0.31 /min observed"
+function obsLine(f) {
+  if (!Live.has()) return "";
+  const a = Live.against(f);
+  return a.obs == null ? "" : `<div>${esc(Live.sig2(a.obs))} ${esc(Live.per())} <span class="muted" style="font-family:inherit">observed, last ${Math.round(Live.recentMinutes(f.id))} min</span></div><span class="muted" style="font-family:inherit">equation </span>`;
+}
+// where the observed rate parts from the equation by more than chance: "equation misses observed: 1.5 vs 0.31 /min"
+function misses(f) {
+  if (!Live.has() || Evidence.tooFew(f)) return "";
+  const a = Live.against(f);
+  return a.differs ? `equation misses observed: ${Live.sig2(a.eq)} vs ${Live.sig2(a.obs)} ${Live.per()}` : "";
+}
+// a stock's unit: the noun its title says it counts ("items waiting at write": items), else none
+function unitOf(s) {
+  const n = SDGraph.names(MODEL).stocks[s.id];
+  return s.evidence && s.evidence.named && n ? n.name.split(" ")[0] : "";
 }
 // Eras (sd/eras.py): a new one begins when a machine changes the system; each is discovered from
 // its own data, with the era before as its prior. The timeline picks the era to show (a past
@@ -454,7 +521,7 @@ function versionBar() {
     const same = Intended.it() && Intended.it().shown != null;     // the latest discovery has the newest version's structure
     html = `<button onclick="step(-1)" title="${same ? `the version before: v${esc((vs[vs.length - 2] || vs[vs.length - 1]).version)}` : "saved versions"}">‹</button>
       <span><b>latest discovery</b> · ${m.as_of ? ago(Date.now() / 1000 - m.as_of) + " ago" : ""}</span>
-      <span class="muted">${same ? `same structure as v${esc(m.current ?? "—")}, refitted` : `a new structure, not saved yet (the newest saved is v${esc(m.current ?? "—")})`} · rediscovered by the host every few minutes; saved as a version when its structure changes${m.discovery && m.discovery.live_minutes != null ? ` · fitted over ${m.discovery.live_minutes} min when every series involved was being written` : ""}</span>`;
+      <span class="muted">${same && vs.length === 1 ? `first version, saved ${vs[0].saved_at ? ago(Date.now() / 1000 - vs[0].saved_at) + " ago" : ""}` : same ? `same structure as v${esc(m.current ?? "—")}, refitted` : `a new structure, not saved yet (the newest saved is v${esc(m.current ?? "—")})`} · rediscovered by the host every few minutes; saved as a version when its structure changes${m.discovery && m.discovery.live_minutes != null ? ` · fitted over ${m.discovery.live_minutes} min when every series involved was being written` : ""}</span>`;
   } else {
     const v = vs[i] || {}, past = m.version !== m.current;
     const when = v.saved_at ? Orchestra.when(v.saved_at, { date: true }) : "";
@@ -525,7 +592,7 @@ async function rediscover() {
 // with no model there is nothing to draw: the legend, loops, history and tables stay hidden
 // rather than empty
 function showModelParts(on) {
-  for (const id of ["legend", "loops", "histp", "tables"]) $(id).style.display = on ? "" : "none";   // not hidden: their classes set display
+  for (const id of ["legend", "loops", "histp", "tables", "phone-list", "show-diagram"]) $(id).style.display = on ? "" : "none";   // not hidden: their classes set display
   if (!on) { $("sum").innerHTML = ""; $("ver").innerHTML = ""; delete $("ver").dataset.html; TABLES_SIG = null; }
 }
 // the model's address: a past version or era, and the base its changes are marked against ("since")
@@ -578,7 +645,11 @@ async function load() {
       const waiting = await expectedWaiting();
       // no model (sd.no_model): its first sentence as the headline, then the rest of the paragraph and the button
       const head = (d.reason && d.reason.headline) || d.text || d.error, rest = d.text && d.text.startsWith(head) ? d.text.slice(head.length).trim() : "";
-      $("diagram").innerHTML = `<div class="empty"><b>${esc(head)}</b>${rest || d.hint ? `<div style="margin-top:4px">${esc([rest, d.hint].filter(Boolean).join(" "))}</div>` : ""}${windowNote(d, d.bus_since)}</div>` + waiting
+      // when this was judged and when it is judged again, before why (the host's schedule: next_at)
+      const now = Date.now() / 1000, data = d.bus_since && d.as_of ? ` (${ago(Math.max(0, d.as_of - d.bus_since))} of data)` : "";
+      const when = [d.as_of ? `as of the discovery at ${Orchestra.when(d.as_of)}${data}` : "", d.next_at ? `next look at about ${Orchestra.when(d.next_at)}${d.next_at > now ? ` (in ${ago(d.next_at - now)})` : ""}` : ""].filter(Boolean).join("; ");
+      $("diagram").innerHTML = `<div class="empty">${when ? `<div class="muted" style="margin-bottom:4px">${esc(when)}</div>` : ""}<b>${esc(head)}</b>${rest || d.hint ? `<div style="margin-top:4px;color:var(--text)">${esc([rest, d.hint].filter(Boolean).join(" "))}</div>` : ""}${windowNote(d, d.bus_since)}
+        <div class="muted" style="margin-top:6px">Until there is a model, what runs now is on the <a href="/">Dashboard</a> and the <a href="/machines">Machines</a> page.</div></div>` + waiting
         + (src ? `<div class="panel" style="margin-top:10px">${src}</div>` : "")
         + (lo && Object.keys(lo).length
         ? `<div class="panel" style="margin-top:10px">${leftOutHead(d.discovery, lo).replace("<h3>", '<h3 style="margin-top:0">')}`
@@ -586,9 +657,13 @@ async function load() {
       return;
     }
     MODEL = d.model; versionBar(); erasBar(); draw(); tables(); rendered();
-    if (!HASH_SEEN) { HASH_SEEN = true; fromHash(); }
+    if (!HASH_SEEN) { HASH_SEEN = true; fromHash(); setTimeout(reserved, 3000); }
   } catch (e) { renderError(e); }
 }
+// the diagram's box keeps the height it had when last drawn, so nothing below it jumps as it arrives
+const RESERVE = "orchestra.dyn.reserve";
+try { const r = JSON.parse(localStorage.getItem(RESERVE) || "null"); if (r) { $("diagram").style.minHeight = r.diagram + "px"; $("tables").style.minHeight = r.tables + "px"; } } catch (e) {}
+function reserved() { try { localStorage.setItem(RESERVE, JSON.stringify({ diagram: $("diagram").offsetHeight, tables: $("tables").offsetHeight })); } catch (e) {} $("diagram").style.minHeight = ""; $("tables").style.minHeight = ""; }
 load();
 // follow the current model (a fit makes a new version), unless a past one is being read
 setInterval(async () => {

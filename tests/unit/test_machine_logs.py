@@ -42,9 +42,12 @@ def test_hand_offs_are_inferred_from_events_about_the_same_subject():
     ev = lambda src, ty, subj: {"type": ty, "source": src, "subject": subj, "time": "2026-10-25T00:00:00Z"}
     evs = [ev("counter", "order.placed", "o1"), ev("baker/1", "order.baking", "o1"), ev("baker/1", "order.baked", "o1"),
            ev("packer/2", "order.boxed", "o1"), ev("counter", "order.placed", "o2"), ev("baker/3", "order.baking", "o2")]
-    h = {(x["from"], x["via"], x["to"]): x["count"] for x in machines_view(evs)["handoffs"]}
-    # the same machine twice in a row is no hand-off; each records the event the next machine followed
-    assert h == {("counter", "order.placed", "baker"): 2, ("baker", "order.baked", "packer"): 1}
+    hs = machines_view(evs)["handoffs"]
+    h = {(x["from"], x["via"], x["to"]): x["count"] for x in hs}
+    # the same machine twice in a row is no hand-off; with nothing announced, no type is credited,
+    # and the sender's last event before it is said apart (``after``)
+    assert h == {("counter", None, "baker"): 2, ("baker", None, "packer"): 1}
+    assert {(x["from"], x["after"]) for x in hs} == {("counter", "order.placed"), ("baker", "order.baked")}
 
 
 def test_a_subject_handed_on_through_a_machine_is_a_relay_from_the_one_before_it():
@@ -61,12 +64,37 @@ def test_a_subject_handed_on_through_a_machine_is_a_relay_from_the_one_before_it
 def test_a_hand_off_is_credited_to_an_event_the_receiver_listens_for():
     ev = lambda src, ty, subj: {"type": ty, "source": src, "subject": subj, "time": "2026-10-25T00:00:00Z"}
     # A publishes X then Y about the subject; B, which announced it listens for X, acts next: the
-    # hand-off went via X, whatever A said last. Without the announcement, via the last event.
+    # hand-off went via X, whatever A said last. Without the announcement, via none (A's last, Y, is ``after``).
     announced = [{"type": "orchestra.machine.started", "source": "b/1", "time": "2026-10-25T00:00:00Z", "data": {"listens_for": ["X"]}}]
     work = [ev("a", "X", "s1"), ev("a", "Y", "s1"), ev("b/1", "Z", "s1")]
     h = lambda evs: {(x["from"], x["via"], x["to"]) for x in machines_view(evs)["handoffs"]}
     assert h(announced + work) == {("a", "X", "b")}
-    assert h(work) == {("a", "Y", "b")}
+    assert h(work) == {("a", None, "b")} and machines_view(work)["handoffs"][0]["after"] == "Y"
+
+
+def test_a_hand_off_is_credited_to_a_type_a_family_pattern_takes():
+    ev = lambda src, ty, subj: {"type": ty, "source": src, "subject": subj, "time": "2026-10-25T00:00:00Z"}
+    announced = [{"type": "orchestra.machine.started", "source": "b/1", "time": "2026-10-25T00:00:00Z", "data": {"listens_for": ["x.*"]}}]
+    work = [ev("a", "x.made", "s1"), ev("a", "y.done", "s1"), ev("b/1", "z", "s1")]
+    assert {(x["from"], x["via"], x["to"]) for x in machines_view(announced + work)["handoffs"]} == {("a", "x.made", "b")}
+
+
+def test_listened_for_events_that_arrive_after_a_machines_last_event_are_unanswered():
+    t = lambda s: f"2026-10-25T00:{s // 60:02d}:{s % 60:02d}Z"
+    evs = [{"type": "orchestra.machine.started", "source": "b/1", "time": t(0), "data": {"listens_for": ["job.*", "other"]}},
+           {"type": "job.made", "source": "a", "time": t(10)}, {"type": "job.done", "source": "b/1", "time": t(20)},
+           {"type": "job.made", "source": "a", "time": t(30)}, {"type": "job.made", "source": "a", "time": t(40)},
+           {"type": "job.done", "source": "c", "time": t(50)}, {"type": "unrelated", "source": "a", "time": t(60)}]
+    [b] = [m for m in machines_view(evs, now=1_761_350_500.0)["machines"] if m["id"] == "b"]
+    from orchestra.events import event_time
+    assert b["unanswered"] == {"job.*": {"count": 3, "since": event_time(evs[3])}}       # its own job.done is no answer to wait for
+    [a] = [m for m in machines_view(evs)["machines"] if m["id"] == "a"]
+    assert "unanswered" not in a                                                       # listens for nothing
+    # another listener of job.* that acted after them answered them: b is not left holding them
+    other = [{"type": "orchestra.machine.started", "source": "d/1", "time": t(1), "data": {"listens_for": ["job.made"]}},
+             {"type": "job.taken", "source": "d/1", "time": t(70)}]
+    [b2] = [m for m in machines_view(evs + other, now=1_761_350_500.0)["machines"] if m["id"] == "b"]
+    assert b2["unanswered"]["job.*"]["count"] == 2      # only c's job.done and d's job.taken, which b alone listens for; d took the job.made
 
 
 def test_a_hand_off_to_a_machine_that_announced_it_listens_for_none_of_the_senders_events_has_no_type():

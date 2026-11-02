@@ -4,6 +4,7 @@
   --bg:#0b0d12; --panel:#12151c; --panel2:#181c25; --panel3:#1f2430; --border:#262b37; --border2:#333a49;
   --text:#e7eaf0; --text2:#aeb6c4; --muted:#6f7889; --accent:#6ea8fe;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --z-modal:1000;          /* a drawer or dialog: above everything a page draws, a grid's handles included */
 }
 * { box-sizing:border-box }
 body { margin:0; background:var(--bg); color:var(--text); font:13px/1.45 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif }
@@ -48,7 +49,7 @@ h2 .hctl { display:flex; gap:8px; align-items:center; text-transform:none; lette
 .lg-str { color:#a5d6ff } .lg-path { color:#ffa657 } .lg-key { color:#e3b341 } .lg-num { color:#f2cc60 }
 
 /* ---- drawers ---- */
-.overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:9 }
+.overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:var(--z-modal) }
 .overlay.open { display:flex } .drawer { width:min(940px,94vw); max-height:88vh; overflow:auto; background:var(--panel2); border:1px solid var(--border2); border-radius:12px; padding:18px 20px }
 .drawer h3 { margin:0 0 10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-right:34px }
 /* every drawer's close bar: a zero-height strip that sticks to the drawer's top, its × at the right */
@@ -72,6 +73,10 @@ nav #proj { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-
 /* narrow: the links wrap onto a second line rather than scroll out of sight, so a page a plugin
    adds is never cut off out of reach; nothing masks a page that is wider than the screen */
 @media (max-width: 900px) { nav { flex-wrap:wrap } nav a { flex:none } nav #proj { font-size:11px; min-width:80px } }
+/* a phone: the links in one row that scrolls sideways inside the nav (a plugin's page stays in it,
+   reachable by a swipe), never three rows of links and never a page wider than the screen */
+@media (max-width: 760px) { nav { flex-wrap:nowrap; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:none; gap:14px } nav::-webkit-scrollbar { display:none }
+  nav a { flex:none; white-space:nowrap } nav #proj { display:none } nav #conn { flex:none; white-space:nowrap; font-size:11px } nav form, nav #panels-menu { flex:none } }
 @media (max-width: 600px) { .meter .lbl { white-space:normal; flex-wrap:wrap; gap:0 6px } .meters { flex-wrap:wrap } .meter { min-width:140px } }
 /* range selectors in chart headers */
 select.range { background:var(--panel3); color:var(--text2); border:1px solid var(--border); border-radius:5px; font:inherit; font-size:10.5px; padding:1px 4px; margin-left:4px; text-transform:none; letter-spacing:0; cursor:pointer }
@@ -79,7 +84,7 @@ select.range { background:var(--panel3); color:var(--text2); border:1px solid va
 button.ctl { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:11px; padding:2px 8px; cursor:pointer; margin-left:6px }
 button.ctl:hover { color:var(--text); border-color:var(--accent) }
 /* chart hover */
-.tip { position:fixed; z-index:20; pointer-events:none; background:#0b0d12; border:1px solid var(--border2); border-radius:6px; padding:6px 9px; font-size:11.5px; color:var(--text2); box-shadow:0 4px 16px rgba(0,0,0,.5); font-family:var(--mono) } .tip b { color:var(--text) }
+.tip { position:fixed; z-index:calc(var(--z-modal) + 10); pointer-events:none; background:#0b0d12; border:1px solid var(--border2); border-radius:6px; padding:6px 9px; font-size:11.5px; color:var(--text2); box-shadow:0 4px 16px rgba(0,0,0,.5); font-family:var(--mono) } .tip b { color:var(--text) }
 
 /* core services */
 .core .chead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px }
@@ -108,8 +113,9 @@ g.ng-label:focus-visible .ng-elabel { fill:#fff; text-decoration:underline; stro
 .ng-caption { fill:var(--muted); font-size:9.5px; letter-spacing:.02em } .ng-boxtext.ng-named { font-size:13px }
 .ng-box { stroke-width:1.6 } .ng-boxtext { font-weight:600; font-size:11px } .ng-event .ng-boxtext { fill:#fcd34d; font-family:var(--mono); font-size:10px }
 .ng-cloud { fill:none; stroke:var(--muted); stroke-width:1.2; opacity:.7 } .ng-edge.ng-outside .ng-line { opacity:.5 } .ng-edge.ng-outside .ng-flowdash { opacity:.4 } .ng-grab { fill:transparent; pointer-events:all } .ng-cloud:hover, .ng-node:hover .ng-cloud { stroke:var(--text) }
-.ng-halo { fill:none; stroke:url(#ng-halo); stroke-width:4; stroke-dasharray:14 10; stroke-linecap:round; filter:drop-shadow(0 0 5px #60a5fa); animation:ng-halo 2.4s linear infinite; transform-box:fill-box; transform-origin:center }
-@keyframes ng-halo { to { transform:rotate(360deg) } }
+/* active: a solid glow that breathes, never dashed (dashed is "declared, not observed") */
+.ng-halo { fill:none; stroke:#4ade80; stroke-width:3; stroke-opacity:.55; filter:drop-shadow(0 0 5px #22c55e); animation:ng-halo 2.4s ease-in-out infinite alternate }
+@keyframes ng-halo { from { stroke-opacity:.25 } to { stroke-opacity:.7 } }
 .ng-line { fill:none; opacity:.85 } .ng-gap { fill:none; stroke:var(--panel2); stroke-width:1.8; pointer-events:none } .ng-double .ng-line, .ng-double .ng-line.ng-hover, .ng-hl.ng-double .ng-line { stroke-width:5 } .ng-hit { fill:none; stroke:transparent; stroke-width:12; cursor:pointer }
 .ng-flowdash { fill:none; stroke:#fff; stroke-width:2.2; stroke-dasharray:2 14; opacity:.7; pointer-events:none; animation:ng-flow linear infinite }
 @keyframes ng-flow { to { stroke-dashoffset:-32 } }
@@ -118,7 +124,7 @@ g.ng-label:focus-visible .ng-elabel { fill:#fff; text-decoration:underline; stro
 .ng-label.ng-clickable { cursor:pointer } .ng-label.ng-clickable .ng-elabel { pointer-events:all }
 .ng-sign { font-size:15px; font-weight:800; paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
 .ng-dim { opacity:.1; transition:opacity .15s } .ng-hl .ng-line { stroke:#fcd34d !important; stroke-width:2.6 } .ng-node.ng-hl .ng-box, .ng-node.ng-hl > circle:not(.ng-halo) { stroke:#fcd34d; stroke-width:3 }
-.ng-tip { display:none; position:fixed; z-index:60; pointer-events:none; background:var(--panel2); border:1px solid var(--border2); border-radius:8px; padding:7px 10px; font-size:12px; box-shadow:0 8px 24px #0008; max-width:440px }
+.ng-tip { display:none; position:fixed; z-index:calc(var(--z-modal) + 10); pointer-events:none; background:var(--panel2); border:1px solid var(--border2); border-radius:8px; padding:7px 10px; font-size:12px; box-shadow:0 8px 24px #0008; max-width:440px }
 .ng-tip .tt { font-weight:700; margin-bottom:3px } .ng-tip .tr { display:flex; gap:14px; justify-content:space-between; white-space:nowrap } .ng-tip .tr b { font-family:var(--mono); font-weight:600 } .ng-tip .hint { color:var(--muted); font-size:10.5px; margin-top:4px }
 .ng-loops { font-size:12px; color:var(--text2); margin-top:8px } .ng-loops .head { color:var(--muted); margin-bottom:4px }
 .ng-loop { padding:4px 8px; border:1px solid var(--border); border-radius:8px; margin:4px 0; cursor:pointer; background:var(--panel) } .ng-loop:hover { border-color:var(--border2) }
@@ -130,7 +136,11 @@ g.ng-label:focus-visible .ng-elabel { fill:#fff; text-decoration:underline; stro
 .ng-fit { position:absolute; top:8px; right:8px; z-index:2 }
 .ng-more { position:absolute; right:8px; top:50%; transform:translateY(-50%); z-index:2; background:var(--panel); border-color:var(--accent); color:var(--text); box-shadow:0 2px 10px #0008 }
 /* a flow nothing moved through lately: its line and label step back */
+.ng-label.ng-crowded { opacity:0 } .ng-label.ng-crowded:focus, .ng-label.ng-crowded:hover, .ng-label.ng-crowded.ng-lit { opacity:1 }
 .ng-edge.ng-quiet .ng-line { opacity:.35 } .ng-label.ng-quiet .ng-elabel { opacity:.65 }
+/* a flow whose observed rate parts from its equation: the line and the first line of its label in the warning colour */
+.ng-edge.ng-warn .ng-line { stroke:#f59e0b !important } .ng-label.ng-warn .ng-elabel tspan:first-child { fill:#fbbf24 }
+.ng-tag.ng-t-bc rect { fill:var(--panel2); stroke:var(--muted); stroke-dasharray:2 2 } .ng-tag.ng-t-bc text { fill:var(--text2); font-size:9.5px }
 .ng-edge.ev-seen .ng-line { opacity:.85 } .ng-edge.ev-unseen .ng-line { opacity:.55 } .ng-edge.ev-declared-listener .ng-line { opacity:.4 } .ng-edge .ng-line.ng-hover { stroke-width:2; opacity:1 }
 .ng-pol.X { background:#1f2937; color:#cbd5e1 } .ng-pol.L { background:#3b2f0b; color:#fcd34d }
 .ng-kind { display:inline-block; font-size:10.5px; border:1px solid var(--border2); border-radius:999px; padding:0 7px; margin-right:6px; color:var(--text2) } .ng-kind.mat { border-color:#14532d; color:#86efac }
@@ -152,3 +162,10 @@ g.ng-label:focus-visible .ng-elabel { fill:#fff; text-decoration:underline; stro
 /* no endless motion for a viewer who asked for less */
 @media (prefers-reduced-motion: reduce) { .ng-halo, .ng-flowdash { animation:none } }
 .about .about-line { overflow-wrap:anywhere } /* a machine's announced notes, key: value (Orchestra.aboutLines) */
+
+/* a machine's liveness (Orchestra.liveness): green only for active, amber for late or not answering */
+.lv-live { color:#86efac } .lv-late { color:#fcd34d } .lv-quiet, .lv-neutral { color:var(--text2) }
+.ng-tag.ng-t-late rect { fill:#2a1f05; stroke:#b45309 } .ng-tag.ng-t-late text { fill:#fcd34d }
+/* a machine's kind, engagement and package: one pill wherever they are shown (the Dashboard's rows, the dialog) */
+.mchip { display:inline-block; font-size:10.5px; font-weight:400; padding:0 7px; border-radius:999px; border:1px solid var(--border2); color:var(--text2); white-space:nowrap; vertical-align:middle; text-transform:none; letter-spacing:0 }
+.evrow summary { display:flex; gap:10px; font-size:12px; padding:2px 0; cursor:pointer } .evrow .evenv { margin:4px 0 8px 14px; font-size:11.5px }

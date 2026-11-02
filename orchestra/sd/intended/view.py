@@ -50,6 +50,43 @@ def _saved_structure(models, n: int):
     return _structures[ck]
 
 
+def _eq(e) -> dict | None:
+    """An equation as the pages render it (sd-graph.js eqText): its form, numbers and what it reads."""
+    return None if e is None else {"form": e.form, "params": dict(e.params), "inputs": list(e.inputs), "spec": dict(e.spec or {}), "origin": e.origin}
+
+
+REFIT_SHARE = 0.25      # a refit is listed when a flow's main number moved by at least this share
+REFITS = 3              # ... the ones that moved most
+
+
+def _reformed(model, shown, base_model, base) -> tuple[list, list]:
+    """Against the base version: the flows present in both whose equation's form or inputs changed
+    (``reforms``: what made the structure, and so the version, new), and of the rest the ones whose
+    equation's numbers moved most (``refits``: a refit over an anomaly is seen). Each with the flow's
+    id here, its ends, and both equations."""
+    if base_model is None or model is None:
+        return [], []
+    reforms, refits = [], []
+    for key, fid in shown.flows.items():
+        bid = base.flows.get(key)
+        f = next((x for x in model.flows if x.id == fid), None)
+        g = next((x for x in base_model.flows if x.id == bid), None) if bid else None
+        if f is None or g is None or f.current() is None or g.current() is None:
+            continue
+        a, b = g.current(), f.current()
+        row = {"key": key, "id": fid, "from": f.src, "to": f.dst, "before": _eq(a), "after": _eq(b)}
+        if (a.form, tuple(a.inputs)) != (b.form, tuple(b.inputs)):
+            reforms.append(row)
+            continue
+        pa, pb = a.params.get("k", a.params.get("c")), b.params.get("k", b.params.get("c"))
+        if isinstance(pa, int | float) and isinstance(pb, int | float) and max(abs(pa), abs(pb)) > 0:
+            moved = abs(pb - pa) / max(abs(pa), abs(pb))
+            if moved >= REFIT_SHARE:
+                refits.append({**row, "moved": round(moved, 3)})
+    refits.sort(key=lambda r: -r["moved"])
+    return reforms, refits[:REFITS]
+
+
 def unsettled_of(status: dict, shown: Keys, ignored: dict, expected: set) -> list[dict]:
     """The unsettled suggestions (§3.3): a key whose history makes it a suggestion, in the shown
     model, neither ignored nor expected; each with its id and the version its run began."""
@@ -179,6 +216,7 @@ def dynamics_block(intended, model=None, since=None, *, hold: int, version: int 
             obj = next((x for x in (model.stocks if part == "stock" else model.flows) if x.id == pid), None)
             if obj is not None and (obj.evidence or {}).get("simulated"):
                 put(part, pid, "simulated")
+    reforms, refits = _reformed(model, shown, base_model, base)
     went = [{"part": p, "key": k, "versions": s["versions"], "last": s.get("last")}
             for p in ("stock", "flow") for k, s in sorted(status[p].items()) if s["status"] == "came_and_went" and k not in ignored]
     ign = [{"part": mk["part"], "key": k, "id": shown.of(mk["part"]).get(k), "present": k in shown.of(mk["part"]),
@@ -190,6 +228,7 @@ def dynamics_block(intended, model=None, since=None, *, hold: int, version: int 
     return {"version": d, "shown": shown_n, "live": live, "since": base_n if base is not None else None,
             "since_saved_at": (saved.get(base_n) or {}).get("saved_at") if base is not None else None,
             "expected": entries, "marks": marks, "removed": removed, "changes": changes, "came_and_went": went,
+            "reforms": reforms, "refits": refits,
             "ignored": ign, "settled": sum(1 for p in ("stock", "flow") for k, s in status[p].items()
                                            if s["status"] == "settled" and k in shown.of(p)),
             "unsettled": len(suggestions), "stabilised": not suggestions, "suggestions": suggestions, "targets": targets,

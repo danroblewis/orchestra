@@ -11,7 +11,7 @@ import threading
 import time
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import runtime
@@ -220,8 +220,9 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
             out["bus_since"] = bg.index.bus_since()
         if not sd_installed():                      # conservation only: say what is missing, and how to have it
             out["sd_missing"] = needs_sd("behaviour trust, simulation and SD Lab's strategies")
-        # no model: 404, with why in one paragraph (text) and as facts (reason), from sd.no_model
-        return JSONResponse(out, status_code=404) if out.get("error") == "no model" else out
+        # no model: 200 with model null, and why in one paragraph (text) and as facts (reason), from
+        # sd.no_model: a model not discovered yet is a state of the page, not a missing resource
+        return out
 
     def attach_askers(out: dict) -> None:
         """Who the owner's requests reach (``model.intended.askers``), so the Dynamics page names

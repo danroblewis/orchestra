@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from .. import runtime
 from ..collect.kinds import instrument_kinds
+from ..collect.runner import RECORD_EVERY_S
 from ..collect.spec import from_toml
 from ..config import ConfigError
 
@@ -75,4 +76,5 @@ def instruments_view(project, discovery: dict | None = None) -> dict:
         else:
             collectors.append({**unflagged, **r, "kind": kind, **declared.get(name, {"name": name}), "running": False})
     sources, more = _sources(project, discovery)
-    return {"ok": True, "host_running": running, "instruments": collectors + sources, "errors": errors + more}
+    return {"ok": True, "host_running": running, "instruments": collectors + sources, "errors": errors + more,
+            "record_every_s": RECORD_EVERY_S}         # how stale the record of a write may be (collect/runner.py)

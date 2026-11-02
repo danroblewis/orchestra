@@ -100,7 +100,7 @@ def test_hidden_state_between_moves_that_name_places_is_named_by_them():
     prov = {series_key(n, lab): {"view": "count", "place": "pile"} for n, lab in items}
     prov.update({c.key: {"view": "moves", "starts": "to", "stops": "from"} for c in ins + outs + [same, nowhere]})
     places = Places([(n, lab, series_key(n, lab)) for n, lab in items], prov)
-    assert places.between(ins, outs) == "open_pr (waiting) … ci (waiting)"
+    assert places.between(ins, outs) == "items passing open_pr and ci"
     assert places.between(ins, [same]) == "items waiting at open_pr"
     assert places.between(ins, [nowhere]) is None      # by its neighbours, then
 

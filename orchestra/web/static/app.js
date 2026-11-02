@@ -9,12 +9,24 @@ const seenText = (m, now = Date.now() / 1000) => (m.first_seen ? `first ${ago(no
   : "no events yet");
 // one colour per machine, the same every time for the same id, on every page (the Machines page,
 // the Dashboard, Dynamics); no machine, or "none": grey
+// Colours are given in a stable order over the sorted ids of every machine the Machines API lists
+// (Orchestra.setMachines, kept in the browser so every page has the same list), so no two machines
+// share one while the palette lasts; a machine beyond it is grey, its name carrying who it is. Before
+// any list is known, a hash of the id.
 const MPAL = ["#60a5fa", "#f59e0b", "#e879f9", "#22c55e", "#f87171", "#38bdf8", "#facc15", "#a78bfa", "#fb923c", "#2dd4bf"];
-const mcolor = (id) => { if (!id || id === "none") return "#94a3b8"; let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return MPAL[h % MPAL.length]; };
+const MGREY = "#94a3b8";
+let MORDER = (() => { try { return JSON.parse(localStorage.getItem("orchestra.machine.order")) || null; } catch (e) { return null; } })();
+const mcolor = (id) => { if (!id || id === "none") return MGREY;
+  if (MORDER) { const i = MORDER.indexOf(String(id).split("/")[0]); if (i >= 0) return i < MPAL.length ? MPAL[i] : MGREY; }
+  let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return MPAL[h % MPAL.length]; };
 const ago = (sec) => (sec < 60 ? `${Math.round(sec)}s` : sec < 3600 ? `${Math.round(sec / 60)}m` : `${(sec / 3600).toFixed(1)}h`);
 const fmtBytes = (b) => (b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)} GB` : `${Math.round(b / (1 << 20))} MB`);
 
 window.Orchestra = window.Orchestra || {};
+// the machines /api/machines listed: their colours' order (mcolor), the same on every page
+Orchestra.setMachines = (ms) => { const ids = [...new Set((ms || []).map((m) => m.id))].sort();
+  if (MORDER && ids.length === MORDER.length && ids.every((x, i) => x === MORDER[i])) return;
+  MORDER = ids; try { localStorage.setItem("orchestra.machine.order", JSON.stringify(ids)); } catch (e) {} };
 // One time formatter, with the zone, for every page (a plugin's pages delegate to it):
 // "12:03 PST"; {seconds: true} "12:03:07 PST"; {date: true} "Nov 1, 12:03 PST".
 // ``t`` in seconds since the epoch; none reads "—"
@@ -23,29 +35,48 @@ Orchestra.when = (t, o = {}) => (t == null ? "—" : new Date(t * 1000).toLocale
   hourCycle: "h23", timeZoneName: "short" }));
 const hhmm = (t) => Orchestra.when(t);
 // Whether a machine is active, said the same way everywhere (the Dashboard's row, a card's seen row,
-// the map's tooltip, the dialog), with the rule the judgement used: heard within 2.5× its usual gap,
-// at least 2 minutes; with no cadence yet, the 2-minute floor alone. The host's flag is the runtime
-// record's (``active_by: "runtime"``): it publishes only when it starts and stops, so it has no
-// rhythm to be in. A machine whose events never stop long enough to make a beat (orchestra/cadence.py:
-// none more than BURST_S apart) has no cadence however long it is heard: it publishes continuously.
-// {word, cls ("live" or "quiet"), detail, title}
+// the map's tooltip, the dialog), in one word set: active / late / quiet / no evidence yet (and
+// "not answering" when what it listens for arrives and it does not act), with green only for
+// active. A cadence (orchestra/cadence.py: three beats at least) is its own rhythm: active while heard
+// within it, late past 2.5× it though inside the 2-minute floor. With no cadence there is no rhythm to
+// be in: "heard Ns ago", neutral. A machine whose events never stop long enough to make a beat (none
+// more than BURST_S apart) publishes continuously: active. The host's flag is the runtime record's
+// (``active_by: "runtime"``): "running". {word, cls ("live", "late", "neutral" or "quiet"), detail, title}
 Orchestra.BURST_S = 48;            // cadence.BURST_S: an event this soon after the last is the same burst
+Orchestra.FLOOR_S = 120;           // cadence.ACTIVE_FLOOR_S
+Orchestra.MARGIN = 2.5;            // cadence.ACTIVE_MARGIN
 Orchestra.continuous = (x) => !x.cadence_s && x.first_seen != null && x.last_seen != null && x.last_seen - x.first_seen > Orchestra.BURST_S;
+// what it listens for that arrived after its own last event, unanswered: {n, type, since} for the
+// oldest past the floor, or null (web/machines.py ``unanswered``)
+Orchestra.unanswered = (m, now = Date.now() / 1000) => {
+  const u = Object.entries((m && m.unanswered) || {}).filter(([, v]) => v.count > 0 && now - v.since > Orchestra.FLOOR_S).sort((a, b) => a[1].since - b[1].since);
+  return u.length ? { n: u.reduce((a, [, v]) => a + v.count, 0), type: u[0][0], since: u[0][1].since, types: u.map(([t]) => t) } : null;
+};
 Orchestra.liveness = (m, now = Date.now() / 1000) => {
   if (m.active_by === "runtime") return { word: m.active ? "running" : "not running", cls: m.active ? "live" : "quiet", detail: "",
     title: "by the runtime record: the host process is in it; it publishes only when it starts and stops" };
-  if (!m.last_seen) return { word: "never heard", cls: "quiet", detail: "", title: m.intent ? "declared: nothing on the bus under it" : "nothing on the bus under it yet" };
+  if (!m.last_seen) return { word: "no evidence yet", cls: "quiet", detail: "", title: m.intent ? "declared: nothing on the bus under it" : "nothing on the bus under it yet" };
+  const last = `last ${ago(now - m.last_seen)} ago`;
+  const un = Orchestra.unanswered(m, now);
+  if (un) return { word: `not answering: ${un.n} ${un.type} since ${hhmm(un.since)}`, cls: "late", detail: last,
+    title: `events it listens for (${un.types.join(", ")}) arrived after its own last event and it has not acted since` };
+  const n = (m.publishes || []).reduce((a, p) => a + (p.count || 0), 0);
+  if (!n && m.active) return { word: "announced, nothing published yet", cls: "neutral", detail: last, title: "its only event is its own announcement" };
   const cads = [m.cadence_s, ...(m.instances || []).map((i) => i.cadence_s)].filter((g) => g), g = cads.length ? Math.min(...cads) : null;
   // events too close together to make beats: how often, on average, never "continuously" (beside an
   // announced "ad hoc" that would read as a contradiction)
-  const n = (m.publishes || []).reduce((a, p) => a + (p.count || 0), 0), every = n > 1 ? (m.last_seen - m.first_seen) / (n - 1) : null;
+  const every = n > 1 ? (m.last_seen - m.first_seen) / (n - 1) : null;
   if (m.active && !g && Orchestra.continuous(m)) return { word: "active", cls: "live", detail: `${every ? `about every ${ago(every)} · ` : ""}last event ${ago(now - m.last_seen)} ago`,
     title: "heard within the last 2 minutes; its events come too close together to make a cadence of beats" };
-  const rule = g ? `usual gap ${ago(g)}` : "no cadence yet: judged by the 2-minute floor";
-  if (m.active) return { word: "in rhythm", cls: "live", detail: `${rule} · last event ${ago(now - m.last_seen)} ago`,
-    title: `heard within 2.5× its usual gap (at least 2 min): ${rule}` };
-  return { word: `quiet since ${hhmm(m.last_seen)}`, cls: "quiet", detail: g ? `usual gap ${ago(g)}` : "", title: `nothing heard within 2.5× its usual gap (at least 2 min)${g ? `: usual gap ${ago(g)}` : ""}` };
+  if (m.active && !g) return { word: `heard ${ago(now - m.last_seen)} ago`, cls: "neutral", detail: "no rhythm of its own yet (three beats make one)",
+    title: "heard within the 2-minute floor; with no cadence of its own there is no rhythm to be in" };
+  if (m.active && now - m.last_seen > Orchestra.MARGIN * g) return { word: "late by its own rhythm", cls: "late", detail: `about every ${ago(g)}; ${last}`,
+    title: `not heard within ${Orchestra.MARGIN}× its usual gap, though still within the 2-minute floor` };
+  if (m.active) return { word: "active", cls: "live", detail: `about every ${ago(g)}; ${last}`, title: `heard within ${Orchestra.MARGIN}× its usual gap (at least 2 min)` };
+  return { word: "quiet", cls: "quiet", detail: `since ${hhmm(m.last_seen)}${g ? `; about every ${ago(g)}` : ""}`, title: `nothing heard within ${Orchestra.MARGIN}× its usual gap (at least 2 min)${g ? `: usual gap ${ago(g)}` : ""}` };
 };
+// a liveness as a span: its word in its class's colour (lv-live green, lv-late amber, the rest grey)
+Orchestra.livenessHtml = (lv) => `<span class="lv-${lv.cls}" title="${esc(lv.title)}">${esc(lv.word)}</span>${lv.detail ? ` <span class="muted">· ${esc(lv.detail)}</span>` : ""}`;
 // The instances a declared machine's instruments measure that report themselves down: points
 // arrive, and their own "up" series (named up, or ending _up) reads 0. A report, never a verdict.
 // [{instance, series, instrument}]
@@ -118,9 +149,9 @@ Orchestra.machineCards = (() => {
     <div class="row"><span class="muted">package</span><span>${m.package ? esc(m.package) : '<span class="muted">no package</span>'}</span>${m.group ? `<span class="muted">group</span><span><span class="tag" title="the group it announced (a team): a label, not a separate system">${esc(m.group)}</span></span>` : ""}</div>
     ${m.instances && m.instances.length ? `<div class="row"><span class="muted">instances</span>${m.instances.map((i) => `<span class="ty" title="${i.kind ? `${esc(i.kind)}, ` : ""}last seen ${ago(now - i.last_seen)} ago"><span class="dot ${i.active ? "" : "off"}" style="--rc:${i.active ? "#22c55e" : "#64748b"};width:7px;height:7px"></span> ${esc(i.id)}</span>`).join("")}</div>` : ""}
     ${m.note ? `<div class="row"><span class="muted">what</span><span>${esc(m.note)}</span></div>` : ""}
-    <div class="row"><span class="muted">seen</span><span class="rv">${seenText(m, now)}${m.first_seen || m.active_by ? ` · <span class="${lv.cls === "live" ? "lv-live" : "lv-quiet"}" title="${esc(lv.title)}">${esc(lv.word)}</span>${lv.detail ? ` <span class="muted">· ${esc(lv.detail)}</span>` : ""}` : ""}</span></div>
+    <div class="row"><span class="muted">seen</span><span class="rv">${seenText(m, now)}${m.first_seen || m.active_by ? ` · ${Orchestra.livenessHtml(lv)}` : ""}</span></div>
     <div class="row"><span class="muted">publishes</span>${(m.publishes || []).map(chip).join("") || '<span class="muted">nothing</span>'}</div>
-    <div class="row"><span class="muted">listens for</span>${(m.subscribes || []).map((t) => `<span class="ty">${esc(t)}</span>`).join("") || '<span class="muted">nothing</span>'}</div>
+    <div class="row"><span class="muted">listens for</span>${(m.subscribes || []).map((t) => `<span class="ty">${esc(t)}</span>${unansweredText(m, t)}`).join("") || '<span class="muted">nothing</span>'}</div>
     ${(m.counted || []).length ? `<div class="row"><span class="muted">counted</span>${m.counted.map((t) => t.direction === "backlog"
       ? `<span class="ty" title="what waits for it in ${esc(t.channel)}">${esc(t.channel)} · ${Math.round(t.backlog ?? 0).toLocaleString()} waiting</span>`
       : `<span class="ty" title="${Math.round(t.window).toLocaleString()} in the last hour, counted on another system's bus">${t.direction === "out" ? "→" : "←"} ${esc(t.channel)} · ${t.per_min}/min</span>`).join("")}</div>` : ""}
@@ -137,6 +168,10 @@ Orchestra.machineCards = (() => {
   };
 })();
 
+// beside a type a machine listens for: how many arrived since its own last event (web/machines.py)
+const unansweredText = (m, t) => { const u = ((m && m.unanswered) || {})[t]; if (!u || !u.count) return "";
+  const old = Date.now() / 1000 - u.since > Orchestra.FLOOR_S;
+  return ` <span class="${old ? "lv-late" : "muted"}" title="published by other machines after this one's last event, the oldest at ${esc(hhmm(u.since))}">${u.count} since its last event</span>`; };
 // the window a publishes rate is over: the last ten minutes, or since the machine was first seen
 Orchestra.rateWindow = (p) => (p.window_s && p.window_s < 600 ? `${(p.window_s / 60).toFixed(1).replace(/\.0$/, "")} min (since first seen)` : "the last 10 min");
 // A hypothesised flow as Dynamics names it: its ends, then the counter's move, so two flows of one

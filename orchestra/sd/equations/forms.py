@@ -183,6 +183,13 @@ def flow_text(f: Flow, names: Names) -> tuple[str, dict[str, float]]:
     return text_of(f.current(), f.src, names)
 
 
+def too_few(e: Equation | None) -> bool:
+    """Whether an equation was fitted from fewer than ``MIN_EVENTS`` events: the pages show none, and
+    a run replays the flow's observed rate rather than step it (sd.simulate, equations.engine)."""
+    from ..balance import MIN_EVENTS
+    return e is not None and e.origin == "fitted" and (e.quality or {}).get("events", MIN_EVENTS) < MIN_EVENTS
+
+
 def _classic(parsed: Parsed) -> tuple[str, list[str]] | None:
     """The classic form a text is written in exactly (``c``, ``k * X``, ``c + k * X``), or None."""
     body, p = parsed.tree.body, set(parsed.params)

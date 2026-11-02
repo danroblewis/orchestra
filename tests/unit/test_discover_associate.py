@@ -147,3 +147,10 @@ def test_an_unrelated_machine_does_not_match_event_by_event():
     busy_counter = [i for i in range(200) if rng.random() < 0.4]
     busy = [i for i in range(200) if rng.random() < 0.6]
     assert match(cumulative(200, busy_counter), cumulative(200, busy)) is None
+
+
+def test_a_full_share_with_a_high_chance_base_is_not_certainty():
+    # every event pairs, but 42% would pair by chance alone: the confidence is what chance does not explain
+    from orchestra.sd.attribute import discounted
+    assert discounted(1.0, 0.42) < 1.0 and abs(discounted(1.0, 0.42) - 0.58) < 1e-9
+    assert discounted(1.0, 0.0) == 1.0 and discounted(0.3, 0.42) == 0.0

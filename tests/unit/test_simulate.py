@@ -52,3 +52,12 @@ def test_a_flow_with_no_form_to_step_is_replayed_then_held():
     assert r["replayed"] == ["out"]
     # 2 in, 1 out (replayed and then held): +1/min
     assert r["projection"]["q"][-1][1] == pytest.approx(10.0 + 20.0, abs=0.5)
+
+
+def test_a_flow_fitted_from_too_few_events_is_replayed_not_stepped():
+    m = queue(Equation("constant", {"c": 9.0}, "fitted", quality={"events": 2}))
+    h = history(10.0)
+    h["flows"]["out"] = [[0, 1.0], [600, 1.0]]
+    r = simulate(m, h, now=600, start=0, horizon_s=600, step_s=15)
+    assert r["replayed"] == ["out"] and r["too_few"] == ["out"]
+    assert r["projection"]["q"][-1][1] == pytest.approx(10.0 + 10.0, abs=0.5)     # 2 in, 1 out as observed: never the fitted 9
