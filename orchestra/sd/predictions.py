@@ -7,7 +7,7 @@ publishes ``orchestra.prediction.made`` before the change. It is Orchestra's own
 rule 3 forbids reading the data of other machines' event types; this one is Orchestra's
 contract, published by the machine that predicts, so its ``source`` says who). It goes on the bus
 rather than into a file so that one path serves every machine (in process through ``Predictions``,
-from any language through the events endpoint, and by the Supervisor's ``confirm`` of a declared
+from any language through the events endpoint, and by a machine's ``confirm`` of a declared
 expected effect) and the event log itself shows the prediction came before the change.
 ``data``:
 

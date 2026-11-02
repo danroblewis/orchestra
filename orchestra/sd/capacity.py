@@ -16,8 +16,8 @@ the series' own writes (never the grid, whose step would decide it):
 - its items leave as the stock's do: ``MATCHED`` of its outflows' events are, one to one, events
   of some of the stock's outflows within the tolerance, and their totals agree within ``SAME_TOTAL``;
 - the stock's own writer counts what fills it (the board counts the inspections started): another
-  machine's count of its own work (an agent's turns beside the tickets in review, UC-3's
-  ``agents_working``) is that machine's stock, however its events coincide with the stock's;
+  machine's count of its own work (a worker's busy level beside the items it
+  works on) is that machine's stock, however its events coincide with the stock's;
 - what fills it is no stock's flow (then its items arrive from a stock of the model: a shelf of 0
   and 1 the inspections passed fill, the state after a stock that its outflow fills): no counter
   another stock's balance takes, nor one counting the same events as such a flow, unless it
@@ -29,7 +29,7 @@ further apart than that are different instants. A writer whose events run later 
 interval (a chef who reports 8 s after the board on 5 s writes) is not resolved, and its level stays
 a stock. The level is left out, with why, and shown in the stock's evidence (``capacity_of``:
 capacity k, the share of time busy, the mean occupancy, its counters): a merged thing is shown,
-never dropped (AGENTS.md rule 7). A stock the operator declared or a pile its instrument built is
+never dropped (AGENTS.md rule 7). A stock the operator declared or a place its instrument built is
 never judged."""
 
 from __future__ import annotations
@@ -131,7 +131,7 @@ def view_of(entry: tuple, found: list, start: float, end: float, implied: frozen
             continue
         # the start of service is the stock's own record (the board counts the inspections it
         # starts): another machine's count of its own work that coincides with the stock's items
-        # (an agent's turns, beside the tickets in review) is that machine's stock, and which
+        # (a worker's busy level, beside the items it works on) is that machine's stock, and which
         # machine serves which flow is only ever a hypothesis (AGENTS.md rule 6)
         if writer_of(a) is None or not any(writer_of(c) == writer_of(a) for c in ins):
             continue

@@ -109,8 +109,8 @@ function seriesTable(d, now, name) {
   const row = (r, i) => { const n = SDGraph.seriesName(refs[i], views, name);
     return `<tr title="${esc(key(r))}"><td><b>${esc(n.name)}</b>${n.family ? ` <span class="muted">${esc(n.family)}</span>` : ""}${n.about ? `<div class="muted about">${esc(n.about)}</div>` : ""}</td>
       <td class="num" style="text-align:right">${esc(String(+r.value.toFixed(3)))}</td><td class="muted" style="white-space:nowrap">${ago(now - r.at)} ago</td></tr>`; };
-  // the series of one name that read 0 (the empty piles), when there are FOLD of them or more: one line,
-  // opened on a click: "12 × workflow pile items at 0"
+  // the series of one name that read 0 (the empty places), when there are FOLD of them or more: one line,
+  // opened on a click: "12 × place items at 0"
   const FOLD = 3, zeros = {};
   d.series.forEach((r, i) => { if (+r.value === 0) (zeros[r.name] = zeros[r.name] || []).push(i); });
   const folded = new Set(Object.values(zeros).filter((is) => is.length >= FOLD).flat());
