@@ -19,8 +19,11 @@ thing fewer moves from outside than the one it leaves is "(sent back)" ("ci → 
 back)"); a value no place spells is said in its words ("<start>": "start → write"); two moves
 that would read alike are said by their places' own parts ("ci (waiting) → write (waiting)"). A
 state no series measures between such moves (a hidden passage, ``sd.passing``) is named by the
-places its moves name, in words ("items passing open_pr and ci"), or, when they
-enter and leave one place, by what sits there ("items waiting at sail"). Label values keep their spelling (``sail_check``, never "sail check"); "-" and "_" are
+first and last things its items pass, in words ("deliveries between write and sail_check"; the
+places it spans, in order, listed beside it: ``spans``), never by joining their states (the owner,
+2026-11-01: "how are all of these considered one stock?"), or, when they enter and leave one
+place, by what sits there ("items waiting at sail"); by the one thing, when all are in it
+("items at write"). Label values keep their spelling (``sail_check``, never "sail check"); "-" and "_" are
 alike inside a part (``code-review.waiting`` with ``step="code-review"``), and a place value with
 no letters in it (``stage="3"``) spells no words, so the series keeps its own name."""
 
@@ -110,6 +113,11 @@ class Places:
             self.by_labels[tuple(sorted(labels.items()))] = self._sits(pl)
         moves = [(labels, key, m) for _, labels, key in items if (m := self._move(labels, key))]
         self.depth = self._depths(moves)
+        self.next: dict[str, set[str]] = {}            # place value -> the place values a move takes items to
+        for labels, _, (into, out_of, _) in moves:
+            a, b = labels.get(out_of), labels.get(into)
+            if a and b and self._place(a, labels) and self._place(b, labels):
+                self.next.setdefault(a, set()).add(b)
         short = [self._move_title(labels, key, full=False) for labels, key, _ in moves]
         self.clash = {t for t in short if t and short.count(t) > 1}
 
@@ -233,33 +241,75 @@ class Places:
         value, scope = next(iter(values))
         return next((k for pl, k in self.keys.get(value, []) if tuple(sorted(pl.scope.items())) == scope), None)
 
-    def between(self, ins: list, outs: list) -> str | None:
-        """A hidden state between moves (``ins``, ``outs``: Series), by the places its ins enter and
-        its outs leave; None unless every one of them names a place."""
-        enter, leave, pls = [], [], []
+    def _ends(self, ins: list, outs: list):
+        """The places a hidden state's ins enter and its outs leave, as (value, Place) lists; None
+        unless every one of them names a place."""
+        enter, leave = [], []
         for cs, end, into in ((ins, enter, True), (outs, leave, False)):
             for c in cs:
                 got = self._move(c.labels, c.key)
                 if not got:
                     return None
-                label = got[0] if into else got[1]
-                pl = self._place(c.labels.get(label) or "", c.labels)
+                v = c.labels.get(got[0] if into else got[1]) or ""
+                pl = self._place(v, c.labels)
                 if not pl:
                     return None
-                end.append(pl.full)
-                pls.append(pl)
-        if not enter or not leave:
+                end.append((v, pl))
+        return (enter, leave) if enter and leave else None
+
+    def spans(self, ins: list, outs: list) -> list[str]:
+        """The places a hidden state spans, in the order items pass them ("write (held)", "open_pr
+        (waiting)", …, "sail_check (waiting)"): those on a path of moves from a place its ins enter
+        to one its outs leave; the places entered and left alone when no such path is measured."""
+        got = self._ends(ins, outs)
+        if not got:
+            return []
+        enter, leave = got
+        starts, stops = [v for v, _ in enter], {v for v, _ in leave}
+        dist: dict[str, int] = {}
+        frontier, d = list(dict.fromkeys(starts)), 0
+        while frontier:
+            for v in frontier:
+                dist.setdefault(v, d)
+            d += 1
+            frontier = [w for v in frontier for w in sorted(self.next.get(v, ())) if w not in dist]
+        back: dict[str, set[str]] = {}
+        for a, bs in self.next.items():
+            for b in bs:
+                back.setdefault(b, set()).add(a)
+        reach, todo = set(stops), list(stops)
+        while todo:
+            for a in back.get(todo.pop(), ()):
+                if a not in reach:
+                    reach.add(a)
+                    todo.append(a)
+        on = [v for v in dist if v in reach] if stops & set(dist) else list(dict.fromkeys([*starts, *(v for v, _ in leave)]))
+        on.sort(key=lambda v: (dist.get(v, d), v))
+        pls = {v: pl for v, pl in enter + leave}
+        out = []
+        for v in on:
+            pl = pls.get(v) or next(iter(self.by_value.get(v, [])), None)
+            if pl is not None and pl.full not in out:
+                out.append(pl.full)
+        return out
+
+    def between(self, ins: list, outs: list) -> str | None:
+        """A hidden state between moves (``ins``, ``outs``: Series), by the first and last things
+        its items pass ("deliveries between write and sail_check"), never by joining their states;
+        what sits there when they enter and leave one place; None unless every one of them names
+        a place."""
+        got = self._ends(ins, outs)
+        if not got:
             return None
-        a, b = list(dict.fromkeys(enter)), list(dict.fromkeys(leave))
+        enter, leave = got
+        pls = [pl for _, pl in enter + leave]
+        a, b = list(dict.fromkeys(pl.full for _, pl in enter)), list(dict.fromkeys(pl.full for _, pl in leave))
         if a == b and len(a) == 1:
             return self._sits(pls[0])                    # one place, entered and left: what sits there
-        if a == b:
-            name = " or ".join(a)
+        first = list(dict.fromkeys(pl.at for _, pl in enter))
+        last = list(dict.fromkeys(pl.at for _, pl in leave))
+        if first == last:
+            name = f"{pls[0].noun} at {' or '.join(first)}"
         else:
-            # in words: the things passed, with what is said of them only where the places differ in it
-            same = all(p.said == pls[0].said for p in pls)
-            word = lambda pl: pl.at if same else f"{pl.at} {' '.join(pl.said)}".strip()
-            ins_ = list(dict.fromkeys(word(p) for p in pls[:len(enter)]))
-            outs_ = list(dict.fromkeys(word(p) for p in pls[len(enter):]))
-            name = f"{pls[0].noun} passing {' or '.join(ins_)} and {' or '.join(outs_)}"
+            name = f"{pls[0].noun} between {' or '.join(first)} and {' or '.join(last)}"
         return name + (self._scoped(pls[0]) if all(p.scope == pls[0].scope for p in pls) else "")

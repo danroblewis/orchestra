@@ -140,7 +140,8 @@ def removed_facts(block: dict, models) -> None:
     from the base's own record: how it got there (``origin``: a flow's current equation's,
     ``fitted``, ``discovered`` or ``declared``; a stock with evidence was discovered, one without
     declared), its series or counter, and a flow's name, so a removed part is named as the shown
-    ones are, never by its id."""
+    ones are, never by its id, and one the base named by its places or in words (``named``) by that
+    name, never by its series."""
     removed = (block or {}).get("removed") or {}
     if not (removed.get("stocks") or removed.get("flows")) or block.get("since") is None:
         return
@@ -155,12 +156,16 @@ def removed_facts(block: dict, models) -> None:
     for r in removed.get("stocks") or []:
         s = stocks.get(r.get("id"))
         if s is not None:
-            r.update(origin="discovered" if s.evidence else "declared", series=ref(s.series), full_name=s.name)
+            r.update(origin="discovered" if s.evidence else "declared", series=ref(s.series), full_name=s.name,
+                     named=bool((s.evidence or {}).get("named")))
     for r in removed.get("flows") or []:
         f = flows.get(r.get("id"))
         if f is not None:
             eq = f.current()
             r.update(origin=eq.origin if eq is not None else "declared", name=f.name, counter=ref(f.counter),
+                     named=bool((f.evidence or {}).get("named")),
+                     from_named=f.src in stocks and bool((stocks[f.src].evidence or {}).get("named")),
+                     to_named=f.dst in stocks and bool((stocks[f.dst].evidence or {}).get("named")),
                      measured_by=[ref(c) for c in f.measured_by],
                      from_name=stocks[f.src].name if f.src in stocks else None, to_name=stocks[f.dst].name if f.dst in stocks else None,
                      from_series=ref(stocks[f.src].series) if f.src in stocks else None,

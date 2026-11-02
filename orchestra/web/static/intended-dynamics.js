@@ -28,16 +28,16 @@ const Intended = (() => {
   const nameOf = (id) => (id && MODEL.stocks.some((s) => s.id === id) ? stockName(id) : nice(id));
   // a stock of the base version, named as the page names stocks: by this model when it has it, else
   // among this model's stocks from the base's own series (web/intended.py removed_facts)
-  function baseEnd(id, series, full) {
+  function baseEnd(id, series, full, named) {
     if (!id) return "outside";
     if (MODEL.stocks.some((s) => s.id === id)) return stockName(id);
-    if (!series) return full || nice(id);
+    if (!series || (named && full)) return full || nice(id);
     const m = { stocks: [...MODEL.stocks, { id: "\u0000base", name: full || id, series }], flows: [] };
     return SDGraph.stockName(m, "\u0000base");
   }
-  const removedStockName = (r) => baseEnd(r.id, r.series, r.full_name || r.name);
+  const removedStockName = (r) => baseEnd(r.id, r.series, r.full_name || r.name, r.named);
   // a removed flow by its counter, as the page names flows (its own family: its other labels said)
-  const removedFlowName = (r) => (r.counter ? SDGraph.flowName({ stocks: [], flows: [{ id: "g", from: r.from, to: r.to, counter: r.counter }] }, { id: "g" }) : r.name || r.key);
+  const removedFlowName = (r) => (r.named && r.name ? r.name : r.counter ? SDGraph.flowName({ stocks: [], flows: [{ id: "g", from: r.from, to: r.to, counter: r.counter }] }, { id: "g" }) : r.name || r.key);
   const who = (p) => { if (!p) return ""; if (p.author === "owner") return IntendedCore.owner(p); const w = p.source || p.author || ""; return w && `the ${w.charAt(0).toUpperCase() + w.slice(1)}`; };   // as byWhom on the Machines page
   // what a declared element's tag says: who put it there; "not in vN" only for a part an earlier
   // version had (a mark tracked by inference since a version), never for one never measured or
@@ -154,7 +154,7 @@ const Intended = (() => {
   }
   function tip(x) {
     if (x.ghost) return `<div class="tt">${esc(x.ghost.name || x.ghost.id)}</div><div class="muted">${esc(declTag(x.ghost).text)}${x.ghost.measured ? "" : " · not measured"}</div><div class="hint">click for how it is measured</div>`;
-    if (x.gone) return `<div class="tt"><s>${esc(x.gone.counter || x.gone.from !== undefined ? `${baseEnd(x.gone.from, x.gone.from_series, x.gone.from_name)} → ${baseEnd(x.gone.to, x.gone.to_series, x.gone.to_name)}` : removedStockName(x.gone))}</s></div><div class="muted">${x.gone.counter ? esc(removedFlowName(x.gone)) + " · " : ""}gone in ${esc(vlabel())}; was ${esc(x.gone.origin || "found")} in v${esc(x.gone.in)}</div>`;
+    if (x.gone) return `<div class="tt"><s>${esc(x.gone.counter || x.gone.from !== undefined ? `${baseEnd(x.gone.from, x.gone.from_series, x.gone.from_name, x.gone.from_named)} → ${baseEnd(x.gone.to, x.gone.to_series, x.gone.to_name, x.gone.to_named)}` : removedStockName(x.gone))}</s></div><div class="muted">${x.gone.counter ? esc(removedFlowName(x.gone)) + " · " : ""}gone in ${esc(vlabel())}; was ${esc(x.gone.origin || "found")} in v${esc(x.gone.in)}</div>`;
     if (x.ghostFlow) return `<div class="tt">${esc(x.ghostFlow.name)}</div><div class="muted">${esc(x.ghostFlow.why || "expected")}</div><div class="hint">click for details</div>`;
     if (x.predicted) return `<div class="tt">${esc(nameOf(x.predicted.from))} → ${esc(nameOf(x.predicted.to))}</div><div class="muted">predicted to appear by a machine's expected effect: a prediction, judged later, not an association</div>`
       + ((x.predicted.candidates || []).length ? `<div class="muted">suggested from labels: ${x.predicted.candidates.map((c) => esc(c.id || c.key)).join(", ")}</div>` : "");
@@ -230,7 +230,7 @@ const Intended = (() => {
         <td class="num muted">—</td><td><span class="origin declared">declared</span></td><td class="muted">${e.present ? `found as ${esc(e.found_id)}` : (e.candidates || []).length ? "suggested from labels: " + e.candidates.map((c) => esc(c.id)).join(", ") + " · " + esc(ask("link")) : "not found yet"}</td></tr>`);
     }
     for (const r of (x.removed || {}).flows || []) {
-      $("flows").insertAdjacentHTML("beforeend", `<tr class="im-gone"><td><s>${esc(baseEnd(r.from, r.from_series, r.from_name))} → ${esc(baseEnd(r.to, r.to_series, r.to_name))}</s> ${tag(`gone in ${vlabel()}`, "im-t-gone")}<div class="muted" style="font-size:11px" title="${esc(r.key)}">${esc(r.counter ? removedFlowName(r) : r.key)}</div></td>
+      $("flows").insertAdjacentHTML("beforeend", `<tr class="im-gone"><td><s>${esc(baseEnd(r.from, r.from_series, r.from_name, r.from_named))} → ${esc(baseEnd(r.to, r.to_series, r.to_name, r.to_named))}</s> ${tag(`gone in ${vlabel()}`, "im-t-gone")}<div class="muted" style="font-size:11px" title="${esc(r.key)}">${esc(r.counter ? removedFlowName(r) : r.key)}</div></td>
         <td class="num"><s>${esc(r.rate && r.origin === "fitted" ? r.rate : "—")}</s></td><td><span class="origin ${esc(r.origin || "")}">${esc(r.origin || "found")}</span> <span class="muted">in v${esc(r.in)}${r.from && r.to ? " · ghost shown" : ""}</span></td>
         <td class="muted">${(r.machines || []).map((m) => `${esc(m.machine)}${m.confidence != null ? " " + Math.round(100 * m.confidence) + "%" : ""}`).join(", ") || "no machine"} in v${esc(r.in)}</td></tr>`);
     }

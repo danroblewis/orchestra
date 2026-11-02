@@ -313,8 +313,10 @@ it; a move between places is named by the things it leaves and enters ("write �
 "write: waiting → held"), "(sent back)" when it goes to a thing fewer moves from outside than the
 one it leaves ("ci → write (sent back)"), a value no place spells in its words ("start → write"),
 and by the places' own parts when two moves would read alike ("ci (waiting) → write (waiting)"); a
-hidden state between such moves by the places its moves enter and leave ("open_pr (waiting) … ci
-(waiting)"), or by what sits there when they enter and leave one ("items waiting at sail"). No
+hidden state between such moves by the first and last things its items pass ("deliveries between
+write and sail_check"; never its places' states joined), with the places it spans listed in its
+evidence (`spans`) and its drawer, or by what sits there when they enter and leave one ("items
+waiting at sail"). No
 label's name is known to the core (rule 1), and label values keep their spelling (`sail_check`).
 Such a part's evidence says `named: "places"`. A series its own name and labels say in words is
 named so on the server too, with `named: "words"`: Orchestra's count of the bus by its type and

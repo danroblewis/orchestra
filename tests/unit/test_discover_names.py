@@ -100,9 +100,39 @@ def test_hidden_state_between_moves_that_name_places_is_named_by_them():
     prov = {series_key(n, lab): {"view": "count", "place": "pile"} for n, lab in items}
     prov.update({c.key: {"view": "moves", "starts": "to", "stops": "from"} for c in ins + outs + [same, nowhere]})
     places = Places([(n, lab, series_key(n, lab)) for n, lab in items], prov)
-    assert places.between(ins, outs) == "items passing open_pr and ci"
+    assert places.between(ins, outs) == "items between open_pr and ci"
     assert places.between(ins, [same]) == "items waiting at open_pr"
     assert places.between(ins, [nowhere]) is None      # by its neighbours, then
+
+
+def test_a_hidden_state_through_several_steps_is_named_by_its_first_and_last_and_lists_what_it_spans():
+    """The owner (2026-11-01, "how are all of these considered one stock?") read "deliveries
+    passing write held and sail_check waiting" as several things: a passage through several steps
+    is "<noun> between <first> and <last>", never its places' states joined; the places it spans
+    are listed beside it, in the order items pass them."""
+    from itertools import pairwise
+
+    from orchestra.sd.series import Series, series_key
+    from orchestra.sd.titles import Places
+
+    lab = {"instrument": "piles", "workflow": "delivery_sail"}
+    mv = lambda a, b: Series("workflow_pile_moves_total", {**lab, "from": a, "to": b}, [], [], True)
+    steps = [("write", "waiting"), ("write", "held"), ("open_pr", "waiting"), ("ci", "waiting"), ("review", "waiting"),
+             ("sail_check", "waiting")]
+    items = [("workflow_pile_items", {**lab, "pile": f"{a}.{b}", "step": a, "place": b}) for a, b in steps]
+    chain = [mv(f"{a}.{b}", f"{c}.{d}") for (a, b), (c, d) in pairwise(steps)] + [mv("sail_check.waiting", "<end>")]
+    prov = {series_key(n, x): {"view": "count", "place": "pile", "noun": "deliveries"} for n, x in items}
+    prov.update({c.key: {"view": "moves", "starts": "to", "stops": "from"} for c in chain})
+    rows = [(n, x, series_key(n, x)) for n, x in items] + [(c.name, c.labels, c.key) for c in chain]
+    places = Places(rows, prov)
+    ins, outs = [chain[0]], [chain[-1]]
+    name = places.between(ins, outs)
+    assert name == "deliveries between write and sail_check"
+    assert "passing" not in name and "held" not in name
+    assert places.spans(ins, outs) == ["write (held)", "open_pr (waiting)", "ci (waiting)", "review (waiting)",
+                                       "sail_check (waiting)"]
+    # entered and left at one place: what sits there
+    assert places.between([chain[0]], [chain[1]]) == "deliveries held at write"
 
 
 def test_a_series_of_the_age_view_is_the_age_of_its_place_never_its_name():
@@ -134,6 +164,7 @@ def test_a_place_value_with_no_words_keeps_the_series_name_and_dashes_spell_like
 
 
 def _pile_places(*workflows):
+
     from orchestra.sd.series import Series, series_key
     from orchestra.sd.titles import Places
 

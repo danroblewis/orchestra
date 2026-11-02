@@ -105,6 +105,8 @@ const Live = (() => {
     if (ev.passing) {
       const ends = (fs, end) => [...new Set(fs.map((f) => SDGraph.endName(MODEL, f, end)))].join(" or ");
       rows.push(`<div>why one stock</div><div>items leave ${esc(ends(io.in, "from"))} and reach ${esc(ends(io.out, "to"))} within one step of the grid, and the counters that move them count the same items (${ev.passing.ins.length + ev.passing.outs.length} counters, their totals agree): ${ev.hidden ? "no series measures the state between, so it is one stock whose level is what they imply" : "the level between is measured, and rises and falls with them"}.</div>`);
+      // a passage through several places is named by its first and last (sd/titles.py): the places it spans, in order
+      if ((ev.spans || []).length > 1) rows.push(`<div>the steps it spans</div><div>${ev.spans.map(esc).join(" → ")}</div>`);
     }
     if ((ev.twins || []).length) {
       rows.push(`<div>why one stock</div><div>one stock, measured ${ev.twins.length + 1} ways: ${esc(s.series ? keyOf(s.series) : s.id)} (kept)${ev.twins.map((t) => `, ${esc(t.series)} <span class="muted">(changes equal in ${Math.round(100 * (t.equal_steps || 0))}% of steps${t.change_correlation != null ? `, correlate by ${(+t.change_correlation).toFixed(2)}` : ""})</span>`).join("")}</div>`);

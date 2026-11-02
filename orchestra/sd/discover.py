@@ -225,20 +225,21 @@ def _words(v: str) -> list[str]:
     return [w for w in re.split(r"[\W_]+", v.lower()) if w]
 
 
-def _between_titles(found: list, passed: dict, places: Places | None = None) -> tuple[dict[str, str], set[str]]:
+def _between_titles(found: list, passed: dict, places: Places | None = None) -> tuple[dict[str, str], dict[str, list[str]]]:
     """A state no series measures (an unmeasured passage, ``sd.passing``) is named by the places
-    its moves name, when every one names one (``sd.titles``: "open_pr (waiting) … ci (waiting)");
+    its moves name, when every one names one (``sd.titles``: "deliveries between write and
+    sail_check", with the places it spans);
     otherwise by its neighbours: "between <what its ins drain> and <what its outs fill>", never
     after the counter that fills it (the owner, 2026-11-01: "after work item moves (write.held,
     open_pr.waiting, delivery_sail)" read as three things in one stock). Its id keeps the level
-    the counters imply. Returns the titles, and the keys of those named by places."""
-    out, named = {}, set()
+    the counters imply. Returns the titles, and, of those named by places, the places each spans."""
+    out, named = {}, {}
     for key, p in passed.items():
         if p.measured:
             continue
         if places is not None and (t := places.between(p.ins, p.outs)):
             out[key] = t
-            named.add(key)
+            named[key] = places.spans(p.ins, p.outs)
             continue
         ins, outs = {c.key for c in p.ins}, {c.key for c in p.outs}
         side = lambda keys, sign, key=key: list(dict.fromkeys(
@@ -1138,7 +1139,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         by_cons = s.key in constructed_
         unfit = by_cons or r2 is None           # no R² that is evidence: a balance by construction, or no series measures the level
         stocks.append(Stock(sid, between.get(s.key) or _title(s, places), "items", ref(s) if not p or p.measured else None,
-                            {**({"named": "places"} if s.key in between_named else {} if s.key in between else _named(s, places)),
+                            {**({"named": "places", **({"spans": between_named[s.key]} if between_named[s.key] else {})}
+                                if s.key in between_named else {} if s.key in between else _named(s, places)),
                              "balance_r2": None if unfit else round(r2, 4), "exact_steps": None if unfit else round(exact, 4),
                              "steps": n, "balance_steps": len(masks[s.key]),
                              **({"by_construction": True} if by_cons else {}),
