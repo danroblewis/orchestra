@@ -31,7 +31,7 @@
 const NetGraph = (() => {
   const NS = "http://www.w3.org/2000/svg";
   const POS_KEY = (k) => `orchestra.netgraph.${k}`;
-  const { size, edgePoint, onRender, frameOf, tetherPlaces, labelSize, placeLabels, isolatedRows, fitView, boundsOf, PAD, DESK_K } = NetGeometry;
+  const { size, edgePoint, onRender, frameOf, tetherPlaces, labelSize, placeLabels, isolatedRows, fitView, boundsOf, PAD } = NetGeometry;
 
   // ``boundary``: {inside: node => bool, label}: a frame around the nodes inside (the system),
   // with every other node kept outside it, so what crosses the frame is visibly what crosses the
@@ -41,9 +41,9 @@ const NetGraph = (() => {
   // ``polish``: an optional async function (nodes, edges, at) -> {id: [x, y]} run after it (in a
   // worker), whose result the nodes glide to unless the viewer has moved something meanwhile.
   // ``narrow``: below this width (a phone) the automatic fit fits the whole drawing, and the drawing's
-  // height follows the fitted content instead of a tall empty canvas; on a wider screen at no less than DESK_K, centred on the largest connected part. What that leaves out
-  // of view is said at the right edge ("N more → · fit to see all"); the fit button fits everything,
-  // at any scale.
+  // height follows the fitted content instead of a tall empty canvas; on a wider screen every node
+  // too, below DESK_K when it takes that. What a zoom leaves out of view is said at the right edge
+  // ("N more → · fit to see all"); the fit button fits everything, at any scale.
   // ``isolatedRow``: nodes linked to nothing are set in a row under the rest after the first layout,
   // rather than wherever the forces threw them.
   // ``resetOnStructure``: a drawing whose structure is new (the first one included) is laid out as
@@ -130,16 +130,6 @@ const NetGraph = (() => {
     // the nodes a transform leaves outside the view, and on which side
     const outside = (k, tx, ty) => NODES.filter((n) => n.x !== undefined && n.kind !== "cloud").map((n) => { const x = n.x * k + tx, y = n.y * k + ty;
       return { n, side: x > W() ? "r" : y > H ? "b" : x < 0 || y < 0 ? "o" : null }; }).filter((o) => o.side);
-    // the connected parts, largest first (by node count), over the drawn edges
-    function largestPart() {
-      const adj = new Map(NODES.map((n) => [n.id, []]));
-      for (const e of EDGES) { if (adj.has(e.source.id) && adj.has(e.target.id)) { adj.get(e.source.id).push(e.target.id); adj.get(e.target.id).push(e.source.id); } }
-      const seen = new Set(); let best = [];
-      for (const n of NODES) { if (seen.has(n.id)) continue; const part = [], q = [n.id]; seen.add(n.id);
-        while (q.length) { const a = q.pop(); part.push(a); for (const b of adj.get(a)) if (!seen.has(b)) { seen.add(b); q.push(b); } }
-        if (part.length > best.length) best = part; }
-      return new Set(best);
-    }
     const bounds = (ns) => boundsOf(ns);
     // fit in view: after a new layout settles (unless the viewer has zoomed), and on demand.
     // ``only``: node ids to fit instead of all (a machine and its neighbours), at no less than ``minK``
@@ -167,14 +157,10 @@ const NetGraph = (() => {
       }
       const room = H - TOP, mid = TOP + room / 2;       // the drawing's height below the controls, and its middle
       const kFit = Math.min(w / (x1 - x0), room / (y1 - y0), 1.4);
-      // the fit button shows everything at whatever scale; an automatic fit, every node at no less than DESK_K
-      if (all || (!only && kFit >= DESK_K)) { const v = fitView([x0, y0, x1, y1], { w, h: H, top: TOP, all: true }); apply(v.k, v.tx, v.ty); return; }
-      if (!only) {                           // too spread to read whole: the largest connected part, centred, the rest said
-        const part = NODES.filter((n) => largestPart().has(n.id)), [a0, b0, a1, b1] = bounds(part.length ? part : NODES);
-        const k = Math.max(DESK_K, Math.min(w / (a1 - a0), room / (b1 - b0), 1.4)) || DESK_K;
-        apply(k, w / 2 - k * (a0 + a1) / 2, mid - k * (b0 + b1) / 2);
-        return;
-      }
+      // the fit button, the first render and Reset show every node, below DESK_K when it takes that
+      // (the owner, 2026-11-02: "already be in the position it would be after hitting Reset"), so
+      // "N more · fit to see all" never shows on open; zoom in to read
+      if (all || !only) { const v = fitView([x0, y0, x1, y1], { w, h: H, top: TOP, all: true }); apply(Math.max(0.2, v.k), v.tx, v.ty); return; }
       const k = Math.min(1, Math.max(minK, kFit));
       // too spread to fit at a readable size: the view centres on the ``center`` node, its neighbours around it
       const c = kFit < minK && center ? NODES.find((n) => n.id === center) : null;
