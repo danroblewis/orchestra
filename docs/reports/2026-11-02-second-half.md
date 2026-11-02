@@ -867,3 +867,46 @@ moved the focus keying into the core, with stocks and flows offered as `{name, l
 **6. The overnight check.** The check is scheduled for 07:53 local on 3 November (15:53Z). It asks the
 standing demo's Supervisor "What changed since yesterday?" once and judges the answer by step
 16's rule (T2j; nothing that writes). It will be the first real morning-after.
+
+## Addendum 7, 2026-11-02 (the capacity fix, the work-laptop demo)
+
+**1. The capacity regression.** The T16 discovery rules dropped a role's capacity from the
+delivery model: the drain rule's empty-source tests rejected a form on another stock. The fix
+(core `6a9080f3`, merged `c3a98f56`) exempts such a form, since the simulator already stops a stock
+giving more than it holds; measured inputs, the constant and the source's own line are still
+tested. Gating on non-empty time was tried and rejected: it broke team_review's re-read loop. The
+task_loop, delivery_sail and team_review series are now core fixtures. Replay: 2 of 57 flows differ
+from the pre-T16 core, none constant. Core 1184 passed; workflows 596; agents 767. All three are
+relocked and pushed (core `5fdc61e5` and the log, workflows `6f8355c`, agents `fc6012f`), and all
+four demos run on them: the public demo (re-seeded), the standing demo (resumed, 0 open pull
+requests), the example and the Slack queues demo.
+
+**2. The work-laptop demo.** You asked for a repository with only programmatic machines plus the
+Supervisor, read-only against Jira, Slack, Chronosphere and GitHub, filtered to your team. It is
+`danroblewis/orchestra-work-demo` (private, `65d1411`): six collectors scaffolded from the kits
+(`jira_team`, `jira_epics`, `jira_uff`, `github_team`, `slack_channels`, `chronosphere`), a relator
+that links each pull request to its ticket by the key in its branch or title, a `place_ticket`
+program, and the `tracked_ticket`, `tracked_epic`, `tracked_uff` and `slack_threads` workflows. It
+runs on fakes first (`demo.sh`, a scripted week: 23 tickets done, 2 abandoned, 8 open at the end;
+65 tests, including a replay of the week that checks no text from any system reaches the bus) and
+on the real systems with `--real`, reading `work.toml`, which is never committed. The README's "On
+your work laptop" covers the proxy, the CA bundle, the hosts to allow, and the five sentences to
+tell the Supervisor: connect Jira Data Center read-only filtered to the sprint board's members,
+with Epics and UFFs as separate collectors; connect GitHub Enterprise for the team's logins across
+the organisation; connect Slack for three channels every 10 minutes with backoff on 429; connect
+Chronosphere for the team's namespace selectors only, capped at 200 series; start tracking.
+
+Polling at the defaults, per hour: Jira about 70 requests, GitHub about 210 (60 searches), Slack
+about 40, Chronosphere 36. Chronosphere is never asked for the full list of metric names: the
+promql kit's `schema` command uses `/api/v1/series` with a limit and refuses a selector that names
+nothing; the model reads only an allowlist of named PromQL queries. The bridges gained what the
+demo needed (main `911a611`, 134 passed): the bounded series lookup and `schema`, Jira team users
+and the sprint on each event, GitHub authors and organisation search with ticket keys, a
+multi-repository GitHub fake, Slack per-channel cadence with 429 backoff, and `issuetype not in`
+on the Jira fake.
+
+What it cannot yet do, and what is dispatched: the Supervisor scaffolds its own collectors beside
+shipped ones instead of adopting them, and cannot write the promql `queries` or the Slack
+`cadence` settings (T18, in progress). The Workflows plugin installs over ssh only, which a work
+proxy may block. No real system has been read: that needs your sprint board id and the Chronosphere
+team label values, which only exist at work.
