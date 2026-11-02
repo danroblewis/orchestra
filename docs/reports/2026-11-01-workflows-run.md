@@ -188,8 +188,23 @@ under the $30 cap.
 
 ## 8. Open findings and follow-ups
 
-<!-- PENDING: release gate (subtraction audit with contract drift, layered review per repository, final verifier; fixes on each repository's gate branch) -->
-Pending at the time of writing: the release gate, launched at about 12:47Z.
+**The release gate** (launched 12:47Z on 2026-11-01, finished 03:4xZ on 2026-11-02: 60 agents,
+15 hours). Subtraction audit: 186 findings over the four repositories, with a contract-drift
+auditor. Layered review, two rounds per repository: core 51 and 51 findings (29 and 29 fix
+commits), agents 50 and 43 (1 commit), workflows 57 and 45 (25 and 34 commits), bridges one round
+of its own gate. Every gate branch was merged into its main as it landed (core F3, agents
+30d09a1, workflows and bridges 69a4b43). The final verifier's verdict: agents, workflows and
+bridges ready to push; the core "no, the fixes are small": the seven layout JavaScript failures
+came from a `package.json` in the home directory (fixed on main the same day by pinning the
+plugin's and the core's scripts to CommonJS); plugin words in core code comments and one
+user-facing string ("the Supervisor's confirm", `pile`, `ticket`, `agent` in comments: fixed in
+the second half, branch T6-words); `discover.py` naming a series by its `step` and `place`
+labels, reported as a design question and left (SPEC's views mechanism and D33 cover it); the
+workflows README calling bridges and outbox private and never naming the agents (fixed); the
+`tasking` extra still in the core's `pyproject.toml` (left, on purpose, for the old loop's demo).
+Suites at the gate heads: core 1214 passed (+7 environment failures), agents 697, workflows 547,
+bridges 312; ruff clean on all four. The second half's report
+(`docs/reports/2026-11-02-second-half.md`) carries the rest.
 
 **Core.**
 - The loop finder misses cycles when a turn's end is fitted on the oldest item's age.
