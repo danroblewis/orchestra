@@ -127,3 +127,31 @@ def test_a_malformed_announcement_is_read_as_empty_and_the_events_after_it_count
         w.observe(ev("a/1", T + 600 * k), now=T + 600 * k)
     assert w.seen[("a", "1")]["mode"] is None and w.seen[("b", "1")]["mode"] is None
     assert len(w.seen[("a", "1")]["beats"]) == 5
+
+
+def test_no_stall_where_fewer_than_three_events_were_due_in_the_window():
+    """At 0.1 a minute over a 15-minute window 1.5 events were due: silence says nothing (T3 c O7)."""
+    now = T
+    slow = lambda t: 0.1 if t < now - 900 else 0.0
+    stalled, judged = find(model(), history(now, slow), now, 900, 0.1)
+    assert "flow:out" in judged and "flow:out" not in stalled and "stock:q" not in stalled
+    # at 0.2 a minute, 3 were due: it is announced
+    stalled, _ = find(model(), history(now, lambda t: 0.2 if t < now - 900 else 0.0), now, 900, 0.1)
+    assert {"flow:out", "stock:q"} <= set(stalled)
+
+
+def test_no_stall_from_a_flow_fitted_on_too_few_events():
+    from orchestra.sd.balance import MIN_EVENTS
+    from orchestra.sd.model import Equation
+
+    now = T
+    for events, said in ((MIN_EVENTS - 3, False), (MIN_EVENTS, True)):
+        m = model()
+        m.flows[1].equations.append(Equation("constant", {"c": 1.0}, "fitted", quality={"events": events}))
+        stalled, judged = find(m, history(now, drains_until(now - 900)), now, 900, 0.1)
+        assert "flow:out" in judged
+        assert ("flow:out" in stalled) is said and ("stock:q" in stalled) is said, events
+    # a declared equation is no fit: only the events due decide
+    m = model()
+    m.flows[1].equations.append(Equation("constant", {"c": 1.0}, "declared"))
+    assert "flow:out" in find(m, history(now, drains_until(now - 900)), now, 900, 0.1)[0]
