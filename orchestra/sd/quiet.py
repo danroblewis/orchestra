@@ -17,12 +17,12 @@ version's flows that reach it (whose other end is outside or in the discovery), 
 ``evidence["quiet"]``: the version they stand on and since when (the last time its series moved,
 else the window's start). Nothing is fitted or deleted: the held parts are the current version's,
 numbers and all, and a discovery whose structure is then the current version's saves no version
-(``rediscover``); the record says ``quiet since <time>: the model of v<N> stands``."""
+(``rediscover``); the record says so (``stands``, and ``quiet: the model of v<N> stands, nothing
+refitted``), its ``since`` a time the page says in the viewer's zone."""
 
 from __future__ import annotations
 
 import copy
-from datetime import UTC, datetime
 from itertools import pairwise
 
 from .balance import MIN_EVENTS
@@ -109,11 +109,10 @@ def hold(model: Model, current: Model | None, version: int | None, dump: list | 
 
 
 def stands(model: Model) -> str | None:
-    """What the discovery record says when the held model is the current version's."""
+    """What the discovery record says when the held model is the current version's. The time it
+    has been quiet since is the record's ``since``, a number the page says in the viewer's own
+    zone (``Orchestra.when``): never written here as a clock in one zone."""
     q = model.discovery.get("quiet")
     if not q:
         return None
-    if q.get("since") is None:
-        return f"quiet: the model of v{q['version']} stands"
-    at = datetime.fromtimestamp(q["since"], UTC).strftime("%Y-%m-%d %H:%M UTC")
-    return f"quiet since {at}: the model of v{q['version']} stands"
+    return f"quiet: the model of v{q['version']} stands, nothing refitted"

@@ -122,7 +122,9 @@ def test_a_quiet_hour_saves_no_version_and_the_current_one_stands(tmp_path, monk
     for now in (1_800_003_600.0, 1_800_007_200.0):          # a quiet hour (DONE found alone), then a silent one
         r = rd.rediscover(project, metrics, now=now)
         assert r.version is None and len(r.model.stocks) == len(STATES)
-        assert r.model.discovery["quiet"]["note"].startswith("quiet since ") and r.model.discovery["quiet"]["note"].endswith("the model of v1 stands")
+        q = r.model.discovery["quiet"]
+        assert q["stands"] and q["note"] == "quiet: the model of v1 stands, nothing refitted"
+        assert isinstance(q["since"], float | int) and "UTC" not in q["note"]      # the page says the time in the viewer's zone
     assert [v["version"] for v in store.versions()] == [1]
     assert store.latest_discovery()[1].stock("t_DONE") is not None
     since = store.latest_discovery()[1].discovery["quiet"]["since_by_stock"]

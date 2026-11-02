@@ -33,7 +33,7 @@ end of the window and moved fewer than five times in it (for a hidden stock, eve
 flows) is carried into the discovery from that version, with its flows, before the structures are
 compared: a window with too little motion is no evidence
 that a stock is gone, so it never saves a poorer version. When nothing else changed, no version
-is saved and the record says ``quiet since <time>: the model of v<N> stands``. An era younger than two
+is saved and the record says the model of v<N> stands (``stands``; quiet since ``since``). An era younger than two
 steps is not discovered: its model is its prior, carried whole. With no era (no change was ever
 announced) nothing of this applies, and discovery is exactly as before."""
 
@@ -183,7 +183,7 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
         m = quiet.hold(m, cur, vs[-1]["version"] if vs else None, reading.dump)
         changed = m.stocks and (cur is None or structure(cur) != structure(m) or cur.era != m.era)
         if m.discovery.get("quiet") and not changed:
-            m.discovery["quiet"]["note"] = quiet.stands(m)      # nothing but quiet: the current version stands
+            m.discovery["quiet"].update(stands=True, note=quiet.stands(m))      # nothing but quiet: the current version stands
         store.write_discovery(m, at=now)
         # nothing is saved from a reading with a source missing, or with simulated series whose
         # instruments are unknown because the plugins failed to load: the structure is not known

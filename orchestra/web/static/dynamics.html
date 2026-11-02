@@ -364,7 +364,7 @@ function sourcesNote(d) {
 function quietNote(d) {
   const q = d.quiet; if (!q) return "";
   const when = q.since != null ? Orchestra.when(q.since, { date: true }) : null;
-  return `<div class="stale" style="font-size:12px;margin-bottom:6px">${esc(q.note || `quiet${when ? " since " + when : ""}: ${q.stocks.length} stock${q.stocks.length === 1 ? "" : "s"} of v${q.version} held`)} <span class="muted">(${esc(q.stocks.join(", "))}: their series were written to the end of the window and hardly moved, so nothing says they are gone)</span></div>`;
+  return `<div class="stale" style="font-size:12px;margin-bottom:6px">${esc(`quiet${when ? " since " + when : ""}: ${q.stands ? `v${q.version} stands, nothing refitted` : `${q.stocks.length} stock${q.stocks.length === 1 ? "" : "s"} of v${q.version} held`}`)} <span class="muted">(${esc(q.stocks.join(", "))}: their series were written to the end of the window and hardly moved, so nothing says they are gone)</span></div>`;
 }
 // "Left out": its true count ("all 35" only when the model uses none and none was kept), and the
 // buckets add up to it: the series the record names, by why, then the rest it does not name
@@ -608,9 +608,11 @@ function versionBar() {
   if (!vs.length) html = "";
   else if (m.live && VERSION === null) {
     const same = Intended.it() && Intended.it().shown != null;     // the latest discovery has the newest version's structure
+    // a quiet window whose held model is the current version's (sd/quiet.py): nothing was refitted
+    const quiet = m.discovery && m.discovery.quiet && m.discovery.quiet.stands ? m.discovery.quiet : null;
     html = `<button onclick="step(-1)" title="${same ? `the version before: v${esc((vs[vs.length - 2] || vs[vs.length - 1]).version)}` : "saved versions"}">‹</button>
       <span><b>latest discovery</b> · ${m.as_of ? ago(Date.now() / 1000 - m.as_of) + " ago" : ""}</span>
-      <span class="muted">${same && vs.length === 1 ? `first version, saved ${vs[0].saved_at ? ago(Date.now() / 1000 - vs[0].saved_at) + " ago" : ""}` : same && savedNow(m, vs) ? savedNowText(m, vs) : same ? `same structure as v${esc(m.current ?? "—")}, refitted` : `a new structure, not saved yet (the newest saved is v${esc(m.current ?? "—")})`} · rediscovered by the host every few minutes; saved as a version when its structure changes${m.discovery && m.discovery.live_minutes != null ? ` · fitted over ${m.discovery.live_minutes} min when every series involved was being written` : ""}</span>`;
+      <span class="muted">${quiet ? `quiet${quiet.since != null ? " since " + esc(Orchestra.when(quiet.since, { date: true })) : ""}: v${esc(quiet.version)} stands, nothing refitted` : same && vs.length === 1 ? `first version, saved ${vs[0].saved_at ? ago(Date.now() / 1000 - vs[0].saved_at) + " ago" : ""}` : same && savedNow(m, vs) ? savedNowText(m, vs) : same ? `same structure as v${esc(m.current ?? "—")}, refitted` : `a new structure, not saved yet (the newest saved is v${esc(m.current ?? "—")})`} · rediscovered by the host every few minutes; saved as a version when its structure changes${!quiet && m.discovery && m.discovery.live_minutes ? ` · fitted over ${m.discovery.live_minutes} min when every series involved was being written` : ""}${m.discovery && m.discovery.end && m.discovery.start != null ? ` · read over the last ${ago(m.discovery.end - m.discovery.start)}` : ""}</span>`;
   } else {
     const v = vs[i] || {}, past = m.version !== m.current;
     const when = v.saved_at ? Orchestra.when(v.saved_at, { date: true }) : "";
