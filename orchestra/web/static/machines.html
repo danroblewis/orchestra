@@ -322,7 +322,8 @@ function eventMap(d0) {
   if (lsig === window.LOOPSIG) return;                  // unchanged: keep the selected one
   window.LOOPSIG = lsig; GRAPH.highlight(null);
   const st = r.structures[0];
-  const scope = `in the last 24 h; ${EV_PROTOCOL ? "with the protocol's event types shown" : "with the protocol folded (its hand-offs through a hub counted as relays)"}`;
+  // the protocol is said only where a hub has one (as its checkbox is shown only then)
+  const scope = `in the last 24 h${!proto.folds.length ? "" : EV_PROTOCOL ? "; with the protocol's event types shown" : "; with the protocol folded (its hand-offs through a hub counted as relays)"}`;
   const nLoops = r.structures.reduce((a, x) => a + x.loops.length, 0);
   // one line, the list behind it
   $("loops").innerHTML = items.length ? `<details id="cycles"${window.CYCLES_OPEN ? " open" : ""} ontoggle="window.CYCLES_OPEN=this.open"><summary class="head">Communication cycles: ${r.exchanges.length} exchange${r.exchanges.length === 1 ? "" : "s"} (two machines talking both ways)${st ? `, ${nLoops} loop${nLoops === 1 ? "" : "s"} of three or more machines` : ""} <span class="muted">· from hand-offs seen at least ${CYCLE_MIN} times ${scope} · click to list, then one to highlight it</span></summary>${st ? `<div class="muted" style="margin:2px 0 4px">the ${nLoops} loop${nLoops === 1 ? " is" : "s are"} independent and make${nLoops === 1 ? "s" : ""} up all ${r.structures.reduce((a, x) => a + x.cycles, 0)}${r.structures.some((x) => x.cycles >= 2000) ? "+" : ""} cycles between them</div>` : ""}<div id="looplist"></div></details>`
