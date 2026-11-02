@@ -114,3 +114,17 @@ def test_an_outflow_fitted_as_falling_while_its_stock_climbed_steadily_keeps_its
     assert forms[0]["form"] != "linear", (forms[0]["form"], forms[0]["driver"])
     line = next(f for f in forms if f["form"] == "linear")
     assert "trend in time" in line.get("refuted", "") or "rejected" in line, line
+
+
+def test_a_driver_read_away_that_gains_more_than_in_place_is_a_period_alias():
+    # R3 (:8096): a driver gained 81 read 15 min earlier against 24 in place, the median of its
+    # shifted reads under the bar. A read away that gains as much as in place refutes it
+    rng = random.Random(6)
+    a = switching(rng, 0.0, 1.0)
+    lagged = lambda t: a(t - 900) if t - 900 >= T0 else 0.0
+    events = events_at(rng, lambda t: 0.5 + 3.0 * a(t) + 6.0 * lagged(t))
+    forms = fit_flow(events, 60.0, {"input:a": gauge(a)}, None, {"input:a"})
+    ev = forms[0]["driver"]
+    assert forms[0]["inputs"] == [], ev
+    assert any(r["why"].startswith("read 15 min earlier it gains as much as in place") and "a period alias" in r["why"]
+               for r in ev.get("refuted", [])), ev

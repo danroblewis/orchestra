@@ -19,7 +19,8 @@ driver is kept only when it passes all of these, in this order:
   better than the own form and the trend fitted on that half, and its slope must keep its sign. A
   driver that wins a window by a coincidence of one stretch rarely carries to the other;
 - **the driver read a quarter of the window away** (earlier and later) must explain clearly less:
-  under ``SHIFTED`` of the gain it has in place. A cause explains the events it causes when they
+  under ``SHIFTED`` of the gain it has in place, at the median of the reads, and at none of them
+  as much as in place (a period alias). A cause explains the events it causes when they
   happen; a series that moves smoothly explains a smooth rate as well an hour off.
 
 - **an outflow's rate goes to zero when its source is empty**: a flow that drains a stock takes
@@ -204,11 +205,15 @@ def _shifted(w: Window, cand: dict, p: Path, own: dict, p_own: Path | None) -> t
     gains. It is read an eighth, a quarter and three eighths of the window earlier and later, and
     refuted when, at the median of those, it keeps ``SHIFTED`` of its gain in place: a series that
     only moves smoothly explains a smooth rate at any of them, while a cause (even one that
-    repeats, read half its period off) explains clearly less at most."""
+    repeats, read half its period off) explains clearly less at most. It is refuted too when any
+    one of them gains as much as the read in place with its slope the same way: a series that
+    repeats with the events, read a period off, explains them as well (a period alias; read half a
+    period off, a square wave explains them as well the other way round, which is no alias; :8096's driver gained 81 read 15 min
+    earlier against 24 in place, with the median under the bar)."""
     if not w.live:
         return "", {}
     span = w.live[-1][1] - w.live[0][0]
-    out, ratios = {}, []
+    out, ratios, alias = {}, [], None
     for s in [f * span for f in (1 / 8, 1 / 4, 3 / 8, -1 / 8, -1 / 4, -3 / 8)]:
         sub = intersect(w.live, [(p.times[0] - s, p.times[-1] - s)])
         ev, pp, t = w.on(sub, p)
@@ -218,10 +223,18 @@ def _shifted(w: Window, cand: dict, p: Path, own: dict, p_own: Path | None) -> t
         base = loglik(evo, po, _form(own), _fit(evo, po, _form(own), t), t)
         here = loglik(ev, pp, _form(cand), _fit(ev, pp, _form(cand), t), t) - base
         moved_path = Path.of([(x - s, v) for x, v in zip(p.times, p.values)], sub, w.unit_s)
-        moved = loglik(ev, moved_path, _form(cand), _fit(ev, moved_path, _form(cand), t), t) - base
+        fit_moved = _fit(ev, moved_path, _form(cand), t)
+        moved = loglik(ev, moved_path, _form(cand), fit_moved, t) - base
         out[f"{s / 60:+.3g} min"] = {"in_place": round(here, 2), "moved": round(moved, 2)}
         if here > 0:
             ratios.append(moved / here)
+            same_way = fit_moved is not None and fit_moved.get("k", 0.0) * cand["params"].get("k", 0.0) > 0
+            if moved >= here and same_way and alias is None:
+                alias = (s, moved, here)
+    if alias is not None:
+        s, moved, here = alias
+        return (f"read {abs(s) / 60:.3g} min {'later' if s > 0 else 'earlier'} it gains as much as in place ({moved:.1f} against "
+                f"{here:.1f}): a period alias, not a cause"), out
     if ratios:
         mid = sorted(ratios)[len(ratios) // 2]
         if mid >= SHIFTED:
