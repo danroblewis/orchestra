@@ -11,13 +11,14 @@ const seenText = (m, now = Date.now() / 1000) => (m.first_seen ? `first ${ago(no
 // the Dashboard, Dynamics); no machine, or "none": grey
 // Colours are given in a stable order over the sorted ids of every machine the Machines API lists
 // (Orchestra.setMachines, kept in the browser so every page has the same list), so no two machines
-// share one while the palette lasts; a machine beyond it is grey, its name carrying who it is. Before
-// any list is known, a hash of the id.
-const MPAL = ["#60a5fa", "#f59e0b", "#e879f9", "#22c55e", "#f87171", "#38bdf8", "#facc15", "#a78bfa", "#fb923c", "#2dd4bf"];
+// share one while the palette lasts (16); past it a hue comes round again, never the grey that means
+// "no machine". Before any list is known, a hash of the id.
+const MPAL = ["#60a5fa", "#f59e0b", "#e879f9", "#22c55e", "#f87171", "#38bdf8", "#facc15", "#a78bfa", "#fb923c", "#2dd4bf",
+  "#818cf8", "#f472b6", "#a3e635", "#c084fc", "#34d399", "#fda4af"];
 const MGREY = "#94a3b8";
 let MORDER = (() => { try { return JSON.parse(localStorage.getItem("orchestra.machine.order")) || null; } catch (e) { return null; } })();
 const mcolor = (id) => { if (!id || id === "none") return MGREY;
-  if (MORDER) { const i = MORDER.indexOf(String(id).split("/")[0]); if (i >= 0) return i < MPAL.length ? MPAL[i] : MGREY; }
+  if (MORDER) { const i = MORDER.indexOf(String(id).split("/")[0]); if (i >= 0) return MPAL[i % MPAL.length]; }
   let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return MPAL[h % MPAL.length]; };
 const ago = (sec) => (sec < 60 ? `${Math.round(sec)}s` : sec < 3600 ? `${Math.round(sec / 60)}m` : `${(sec / 3600).toFixed(1)}h`);
 const fmtBytes = (b) => (b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)} GB` : `${Math.round(b / (1 << 20))} MB`);
@@ -46,35 +47,57 @@ Orchestra.BURST_S = 48;            // cadence.BURST_S: an event this soon after 
 Orchestra.FLOOR_S = 120;           // cadence.ACTIVE_FLOOR_S
 Orchestra.MARGIN = 2.5;            // cadence.ACTIVE_MARGIN
 Orchestra.continuous = (x) => !x.cadence_s && x.first_seen != null && x.last_seen != null && x.last_seen - x.first_seen > Orchestra.BURST_S;
-// what it listens for that arrived after its own last event, unanswered: {n, type, since} for the
-// oldest past the floor, or null (web/machines.py ``unanswered``)
+// what it listens for that arrived after its own last event, unanswered: {n, type, since, types,
+// parts, text} for the ones past the floor, or null (web/machines.py ``unanswered``). ``text`` gives
+// each type its own count, the oldest first: "4 job.made, 4 job.dropped since 22:24"
 Orchestra.unanswered = (m, now = Date.now() / 1000) => {
   const u = Object.entries((m && m.unanswered) || {}).filter(([, v]) => v.count > 0 && now - v.since > Orchestra.FLOOR_S).sort((a, b) => a[1].since - b[1].since);
-  return u.length ? { n: u.reduce((a, [, v]) => a + v.count, 0), type: u[0][0], since: u[0][1].since, types: u.map(([t]) => t) } : null;
+  if (!u.length) return null;
+  const parts = u.map(([type, v]) => ({ type, count: v.count, since: v.since }));
+  return { n: parts.reduce((a, p) => a + p.count, 0), type: parts[0].type, since: parts[0].since, types: parts.map((p) => p.type), parts,
+           text: `${parts.map((p) => `${p.count} ${p.type}`).join(", ")} since ${hhmm(parts[0].since)}` };
 };
+// the types several machines listen for that none of them answered (web/machines.py
+// ``unanswered_types``), past the floor, each said once: "8 job.made since 22:24, answered by
+// none of its listeners: worker, nudger"
+Orchestra.unansweredTypes = (d, now = Date.now() / 1000) => ((d && d.unanswered_types) || []).filter((u) => u.count > 0 && now - u.since > Orchestra.FLOOR_S)
+  .map((u) => `${u.count} ${u.type} since ${hhmm(u.since)}, answered by none of its listeners: ${(u.listeners || []).join(", ")}`);
 Orchestra.liveness = (m, now = Date.now() / 1000) => {
   if (m.active_by === "runtime") return { word: m.active ? "running" : "not running", cls: m.active ? "live" : "quiet", detail: "",
     title: "by the runtime record: the host process is in it; it publishes only when it starts and stops" };
   if (!m.last_seen) return { word: "no evidence yet", cls: "quiet", detail: "", title: m.intent ? "declared: nothing on the bus under it" : "nothing on the bus under it yet" };
-  const last = `last ${ago(now - m.last_seen)} ago`;
+  const last = `last ${ago(now - m.last_seen)} ago`, since = now - m.last_seen;
   const un = Orchestra.unanswered(m, now);
-  if (un) return { word: `not answering: ${un.n} ${un.type} since ${hhmm(un.since)}`, cls: "late", detail: last,
+  if (un) return { word: `not answering: ${un.text}`, cls: "late", detail: last,
     title: `events it listens for (${un.types.join(", ")}) arrived after its own last event and it has not acted since` };
   const n = (m.publishes || []).reduce((a, p) => a + (p.count || 0), 0);
   if (!n && m.active) return { word: "announced, nothing published yet", cls: "neutral", detail: last, title: "its only event is its own announcement" };
-  const cads = [m.cadence_s, ...(m.instances || []).map((i) => i.cadence_s)].filter((g) => g), g = cads.length ? Math.min(...cads) : null;
+  // its rhythm is the machine's own (its instances' beats merged, web/machines.py), never one instance's
+  const g = m.cadence_s || null;
   // events too close together to make beats: how often, on average, never "continuously" (beside an
   // announced "ad hoc" that would read as a contradiction)
   const every = n > 1 ? (m.last_seen - m.first_seen) / (n - 1) : null;
-  if (m.active && !g && Orchestra.continuous(m)) return { word: "active", cls: "live", detail: `${every ? `about every ${ago(every)} · ` : ""}last event ${ago(now - m.last_seen)} ago`,
-    title: "heard within the last 2 minutes; its events come too close together to make a cadence of beats" };
-  if (m.active && !g) return { word: `heard ${ago(now - m.last_seen)} ago`, cls: "neutral", detail: "no rhythm of its own yet (three beats make one)",
+  // late, for a machine that listens for something, while nothing it listens for waits, is only quiet
+  const late = (lv) => ((m.subscribes || []).length ? { word: "quiet: nothing it listens for is waiting", cls: "quiet", detail: lv.detail,
+    title: `${lv.title}; nothing it listens for arrived since its last event, so there is nothing for it to do` } : lv);
+  if (m.active && !g && every != null && every < Orchestra.BURST_S && Orchestra.continuous(m)) {
+    // no cadence, but it publishes often: its average gap is its rhythm
+    const lv = { detail: `about every ${ago(every)} · last event ${ago(since)} ago` };
+    if (since <= Math.max(Orchestra.BURST_S, Orchestra.MARGIN * every)) return { ...lv, word: "active", cls: "live", title: "heard within its usual gap; its events come too close together to make a cadence of beats" };
+    if (since <= Math.max(Orchestra.FLOOR_S, Orchestra.MARGIN * every)) return late({ ...lv, word: "late by its own rhythm", cls: "late", title: `not heard within ${Orchestra.MARGIN}× its average gap (${ago(every)})` });
+    return { word: "quiet", cls: "quiet", detail: `since ${hhmm(m.last_seen)}; about every ${ago(every)}`, title: `nothing heard within ${Orchestra.MARGIN}× its average gap (at least 2 min)` };
+  }
+  if (m.active && !g) return { word: `heard ${ago(since)} ago`, cls: "neutral", detail: "no rhythm of its own yet (three beats make one)",
     title: "heard within the 2-minute floor; with no cadence of its own there is no rhythm to be in" };
-  if (m.active && now - m.last_seen > Orchestra.MARGIN * g) return { word: "late by its own rhythm", cls: "late", detail: `about every ${ago(g)}; ${last}`,
-    title: `not heard within ${Orchestra.MARGIN}× its usual gap, though still within the 2-minute floor` };
+  if (m.active && since > Orchestra.MARGIN * g) return late({ word: "late by its own rhythm", cls: "late", detail: `about every ${ago(g)}; ${last}`,
+    title: `not heard within ${Orchestra.MARGIN}× its usual gap, though still within the 2-minute floor` });
   if (m.active) return { word: "active", cls: "live", detail: `about every ${ago(g)}; ${last}`, title: `heard within ${Orchestra.MARGIN}× its usual gap (at least 2 min)` };
   return { word: "quiet", cls: "quiet", detail: `since ${hhmm(m.last_seen)}${g ? `; about every ${ago(g)}` : ""}`, title: `nothing heard within ${Orchestra.MARGIN}× its usual gap (at least 2 min)${g ? `: usual gap ${ago(g)}` : ""}` };
 };
+// the word a machine is counted under (the Dashboard's header and its rows and notes): active, not
+// answering, late, heard (no rhythm yet), quiet, or no evidence yet
+Orchestra.livenessGroup = (m, now = Date.now() / 1000) => { const lv = Orchestra.liveness(m, now);
+  return lv.cls === "late" ? (lv.word.startsWith("not answering") ? "not answering" : "late") : lv.cls === "live" ? "active" : lv.cls === "neutral" ? "heard, no rhythm yet" : m.last_seen ? "quiet" : "no evidence yet"; };
 // a liveness as a span: its word in its class's colour (lv-live green, lv-late amber, the rest grey)
 Orchestra.livenessHtml = (lv) => `<span class="lv-${lv.cls}" title="${esc(lv.title)}">${esc(lv.word)}</span>${lv.detail ? ` <span class="muted">· ${esc(lv.detail)}</span>` : ""}`;
 // The instances a declared machine's instruments measure that report themselves down: points
@@ -88,14 +111,16 @@ Orchestra.downOf = (m) => {
     return s ? { instance: i.value, series: s.name, instrument: a.instrument } : null; }).filter(Boolean));
 };
 // The Dashboard's Machines panel: every machine on the Machines page is a row or in a note, so the
-// rows and notes add up to the count in its header. Rows: the continuous machines and any other
-// while it is active; notes: the declared ones not heard (and the proposed ones never heard) and
-// the quiet ones that are not continuous.
-Orchestra.dashboardGroups = (ms) => {
-  const rows = ms.filter((m) => !m.unseen && (m.mode === "continuous" || m.active)), rest = ms.filter((m) => !rows.includes(m));
-  const unheard = rest.filter((m) => m.intent && !m.intent.heard);
-  return { rows, proposed: unheard.filter((m) => m.intent.state === "proposed"), declared: unheard.filter((m) => m.intent.state !== "proposed"),
-           quiet: rest.filter((m) => !unheard.includes(m)) };
+// rows and notes add up to the count in its header, grouped by the word the header counts it under
+// (Orchestra.livenessGroup): a machine late or not answering is always a row; the quiet note holds
+// exactly the header's quiet ones; the declared ones not heard (and the proposed ones never heard)
+// and the rest with no evidence yet are notes of their own.
+Orchestra.dashboardGroups = (ms, now = Date.now() / 1000) => {
+  const group = new Map(ms.map((m) => [m, Orchestra.livenessGroup(m, now)]));
+  const unheard = ms.filter((m) => group.get(m) === "no evidence yet" && m.intent && !m.intent.heard);
+  const quiet = ms.filter((m) => group.get(m) === "quiet"), unseen = ms.filter((m) => group.get(m) === "no evidence yet" && !unheard.includes(m));
+  return { rows: ms.filter((m) => !["quiet", "no evidence yet"].includes(group.get(m))), proposed: unheard.filter((m) => m.intent.state === "proposed"),
+           declared: unheard.filter((m) => m.intent.state !== "proposed"), quiet, unseen, group };
 };
 
 // Machine cards a package draws for its own machines (orchestra/plugins.py). A machine belongs to
@@ -126,8 +151,10 @@ Orchestra.machineCards = (() => {
     of(m) { return (m && m.package && by.get(m.package)) || null; },
     card(m, opts = {}) { const s = this.of(m); try { return s && s.card ? s.card(m, opts) : null; } catch (e) { return null; } },
     summary(m) { const s = this.of(m); try { return s && s.summary ? s.summary(m) : null; } catch (e) { return null; } },
+    // the frame carries the machine's colour (mcolor, the same on every page) in its corner, drawn by
+    // Orchestra whatever the package draws inside it
     wrap(m, html, extra = "") {
-      return `<div class="panel ${extra} ${m.unseen ? "unseen" : ""}" data-id="${esc(m.id)}" tabindex="0" role="button" aria-label="${esc(m.name || m.id)}: open its details" onclick="openMachine(this.dataset.id)" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openMachine(this.dataset.id)}">${html}</div>`;
+      return `<div class="panel mcard ${extra} ${m.unseen ? "unseen" : ""}" data-id="${esc(m.id)}" tabindex="0" role="button" aria-label="${esc(m.name || m.id)}: open its details" onclick="openMachine(this.dataset.id)" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openMachine(this.dataset.id)}"><span class="mcard-id" style="background:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}" title="its colour on every page"></span>${html}</div>`;
     },
     // What Orchestra observed of a machine, as the rows of its card, drawn under whatever its
     // package put there: the notes it announced (Orchestra.aboutLines), how it is engaged and what kind of thing it is (announced), its package,
@@ -150,12 +177,14 @@ Orchestra.machineCards = (() => {
     ${m.instances && m.instances.length ? `<div class="row"><span class="muted">instances</span>${m.instances.map((i) => `<span class="ty" title="${i.kind ? `${esc(i.kind)}, ` : ""}last seen ${ago(now - i.last_seen)} ago"><span class="dot ${i.active ? "" : "off"}" style="--rc:${i.active ? "#22c55e" : "#64748b"};width:7px;height:7px"></span> ${esc(i.id)}</span>`).join("")}</div>` : ""}
     ${m.note ? `<div class="row"><span class="muted">what</span><span>${esc(m.note)}</span></div>` : ""}
     <div class="row"><span class="muted">seen</span><span class="rv">${seenText(m, now)}${m.first_seen || m.active_by ? ` · ${Orchestra.livenessHtml(lv)}` : ""}</span></div>
+    ${Orchestra.restarted(m) ? `<div class="row"><span class="muted">started</span><span>${Orchestra.restarted(m)}</span></div>` : ""}
     <div class="row"><span class="muted">publishes</span>${(m.publishes || []).map(chip).join("") || '<span class="muted">nothing</span>'}</div>
     <div class="row"><span class="muted">listens for</span>${(m.subscribes || []).map((t) => `<span class="ty">${esc(t)}</span>${unansweredText(m, t)}`).join("") || '<span class="muted">nothing</span>'}</div>
     ${(m.counted || []).length ? `<div class="row"><span class="muted">counted</span>${m.counted.map((t) => t.direction === "backlog"
       ? `<span class="ty" title="what waits for it in ${esc(t.channel)}">${esc(t.channel)} · ${Math.round(t.backlog ?? 0).toLocaleString()} waiting</span>`
       : `<span class="ty" title="${Math.round(t.window).toLocaleString()} in the last hour, counted on another system's bus">${t.direction === "out" ? "→" : "←"} ${esc(t.channel)} · ${t.per_min}/min</span>`).join("")}</div>` : ""}
-    <div class="row"><span class="muted" title="flows of the model its events match in time: hypotheses, not causes">flows (hypotheses)</span>${(m.flows || []).map((f) => `<a class="ty fl" href="/dynamics#f:${encodeURIComponent(f.flow)}" onclick="event.stopPropagation()" title="${esc(f.why || "")} · open it on Dynamics">${esc(Orchestra.flowLabel(f))}${f.confidence != null ? ` · ${Math.round(100 * f.confidence)}%` : ""}</a>`).join("") || '<span class="muted">none hypothesised yet</span>'}</div>`;
+    <div class="row"><span class="muted" title="flows of the model its events match in time: hypotheses, not causes">flows (hypotheses)</span>${(m.flows || []).map((f) => { const h = Orchestra.hypothesis(m, f);
+      return `<a class="ty fl" href="/dynamics#f:${encodeURIComponent(f.flow)}" onclick="event.stopPropagation()" title="${esc([h.title, f.why].filter(Boolean).join(" · "))} · open it on Dynamics">${esc(Orchestra.flowLabel(f))}${h.text ? ` · ${esc(h.text)}` : ""}</a>`; }).join("") || '<span class="muted">none hypothesised yet</span>'}</div>`;
     },
     rank(m) { if (m.bootstrap) return 0; const s = this.of(m); try { return s && s.rank ? s.rank(m) : 50; } catch (e) { return 50; } },
     sort(ms) { return [...ms].sort((a, b) => this.rank(a) - this.rank(b) || a.id.localeCompare(b.id)); },
@@ -168,6 +197,25 @@ Orchestra.machineCards = (() => {
   };
 })();
 
+// a machine's hypothesis on a flow as Dynamics says it (evidence-text.js, over the flow's record from
+// /api/machines): its confidence and what chance alone would pair ("62%, 38% by chance"); no number
+// where timing cannot tell it from the flow's other machines, or the flow had too few events to fit,
+// or the flow's record is not known: {text, title}
+Orchestra.hypothesis = (m, f) => {
+  const E = window.Evidence, rec = f && f.record;
+  if (!E || !rec) return { text: "", title: "" };
+  const flow = { ...rec, machines: (rec.machines || []).length ? rec.machines : [{ machine: m.id, confidence: f.confidence, chance: f.chance }] };
+  const h = flow.machines.find((x) => x.machine === m.id) || { machine: m.id, confidence: f.confidence, chance: f.chance };
+  if (E.tooFew(flow)) return { text: "", title: E.tooFewText(flow) };
+  const others = flow.machines.length - 1;
+  if (E.untold(null, flow)) return { text: "", title: others ? `timing cannot tell it from ${others} other${others === 1 ? "" : "s"}` : E.untold(null, flow) };
+  return { text: `${E.confidence(flow, h).trim()}${E.chance(flow, h)}`, title: "" };
+};
+// a machine announced more than once by one of its instances (a restart): a tag on its card,
+// "announced again at 22:29 (3 times)" (web/machines.py ``announced``)
+Orchestra.restarted = (m) => { const again = (m.instances || []).filter((i) => i.announced > 1), n = again.length ? Math.max(...again.map((i) => i.announced)) : (m.announced || 0);
+  const at = again.length ? Math.max(...again.map((i) => i.announced_at || 0)) : m.announced_at;
+  return n > 1 && at ? `<span class="tag" title="an instance published orchestra.machine.started more than once: each is a start">announced again at ${esc(hhmm(at))} (${n} times)</span>` : ""; };
 // beside a type a machine listens for: how many arrived since its own last event (web/machines.py)
 const unansweredText = (m, t) => { const u = ((m && m.unanswered) || {})[t]; if (!u || !u.count) return "";
   const old = Date.now() / 1000 - u.since > Orchestra.FLOOR_S;
@@ -181,9 +229,9 @@ Orchestra.modelParts = null;
 Orchestra.flowLabel = (f) => {
   const mp = Orchestra.modelParts, G = window.SDGraph;
   if (!mp || !G) return f.name || f.flow;
-  const end = (id) => (id ? G.stockName(mp, id) : "outside"), rec = mp.flows.find((x) => x.id === f.flow);
+  const rec = mp.flows.find((x) => x.id === f.flow), end = (which) => (rec ? G.endName(mp, rec, which) : f[which] ? G.stockName(mp, f[which]) : "outside");
   const move = rec ? G.flowName(mp, rec) : f.name || f.flow;
-  return `${end(f.from)} → ${end(f.to)} · ${move}`;
+  return `${end("from")} → ${end("to")} · ${move}`;
 };
 
 // Dashboard panels (static/dashboard.js): Orchestra's own and any a package registers from its
@@ -214,6 +262,18 @@ const CORE_PAGES = [["/", "Dashboard"], ["/machines", "Machines"], ["/instrument
   }
 })();
 
+// A phone's nav is one row that scrolls: the current page is scrolled into view, and while links are
+// off the right edge the row fades out there (style.css nav.more-right)
+function navFit() {
+  const nav = $("nav"); if (!nav) return;
+  const on = nav.querySelector("a.on");
+  if (on && nav.scrollWidth > nav.clientWidth) { const l = on.offsetLeft - nav.offsetLeft, r = l + on.offsetWidth;
+    if (l < nav.scrollLeft || r > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = Math.max(0, r - nav.clientWidth + 24); }
+  nav.classList.toggle("more-right", nav.scrollWidth > nav.clientWidth + nav.scrollLeft + 2);
+}
+if ($("nav")) { $("nav").addEventListener("scroll", () => $("nav").classList.toggle("more-right", $("nav").scrollWidth > $("nav").clientWidth + $("nav").scrollLeft + 2), { passive: true });
+  addEventListener("resize", navFit); setTimeout(navFit, 0); }
+
 // The session (web/auth.py): a request this server refuses for want of a login goes to the login
 // page and back here after; a browser logged in with the cookie gets a "log out" button in the nav.
 (function session() {
@@ -231,7 +291,7 @@ const CORE_PAGES = [["/", "Dashboard"], ["/machines", "Machines"], ["/instrument
     const f = document.createElement("form");
     f.method = "post"; f.action = "/logout"; f.style.margin = "0";
     f.innerHTML = '<button class="ctl" type="submit" title="end this browser\'s session">log out</button>';
-    nav.appendChild(f);
+    nav.appendChild(f); navFit();
   }).catch(() => {});
 })();
 
@@ -247,12 +307,27 @@ fetch("/api/plugins").then((r) => r.json()).then((d) => {
     if (location.pathname === pg.path || location.pathname.startsWith(pg.path + "/")) a.className = "on";
     nav.insertBefore(a, at);
   }
+  navFit();
   // scripts a plugin runs on every page, after Orchestra's own (a page that already has one keeps it)
   for (const src of d.scripts || []) {
     if ([...document.scripts].some((s) => s.src && new URL(s.src).pathname === src)) continue;
     const s = document.createElement("script"); s.src = src; document.body.appendChild(s);
   }
 }).catch(() => {});
+
+// A redraw that replaces what has the keyboard focus gives it back: before ``render`` the focused
+// element's key is noted (data-id, data-name, data-item, data-fid, data-sid or data-key, on it or
+// the nearest element around it in ``container``), and after it the element with that key is focused.
+Orchestra.keepFocus = (container, render) => {
+  const a = document.activeElement, keys = ["id", "name", "item", "fid", "sid", "key"];
+  let key = null;
+  if (container && a && a !== container && container.contains(a))
+    for (let el = a; el && el !== container && !key; el = el.parentElement) { const k = keys.find((x) => el.dataset && el.dataset[x] != null); if (k) key = [k, el.dataset[k]]; }
+  const out = render();
+  if (key && container) { const el = container.querySelector(`[data-${key[0]}="${CSS.escape(key[1])}"]`);
+    if (el && el !== document.activeElement && el.focus) try { el.focus({ preventScroll: true }); } catch (e) {} }
+  return out;
+};
 
 // The drawer: every one opens with a close bar (×) that stays at its top while it scrolls, closes
 // on Escape, and on a phone, where it fills the screen, on Back (a history entry while it is open).
@@ -267,7 +342,9 @@ function openDrawer(html, opts = {}) {
   // openDrawer(html) and passes the html alone keeps it
   const key = opts.key != null ? String(opts.key) : ((/data-drawer-key="([^"]*)"/.exec(html) || [])[1] || ""), same = was && key !== "" && dr.dataset.key === key, top = dr.scrollTop;
   if (!was) { DRAWER_FROM = document.activeElement; const own = DRAWER_FROM && DRAWER_FROM.closest ? DRAWER_FROM.closest("[data-id]") : null; DRAWER_FROM_ID = own ? own.dataset.id : null; }
-  dr.innerHTML = '<div class="drawer-bar"><button class="ctl drawer-close" type="button" aria-label="close" title="close (Esc)" onclick="closeDrawer()">×</button></div>' + html;
+  // the same drawer redrawn keeps its focus (Orchestra.keepFocus); another opens on its close button
+  const draw = () => { dr.innerHTML = '<div class="drawer-bar"><button class="ctl drawer-close" type="button" aria-label="close" title="close (Esc)" onclick="closeDrawer()">×</button></div>' + html; };
+  if (same) Orchestra.keepFocus(dr, draw); else draw();
   dr.dataset.key = key;
   dr.setAttribute("role", "dialog"); dr.setAttribute("aria-modal", "true");
   const h = dr.querySelector("h3");
@@ -295,6 +372,16 @@ function closeDrawer() {
   if (history.state && history.state.drawer) { try { DRAWER_BACK = true; history.back(); } catch (e) { DRAWER_BACK = false; } }
 }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("overlay") && $("overlay").classList.contains("open")) closeDrawer(); });
+// Tab stays inside an open drawer: from its last control to its first, Shift+Tab the other way, never through the page behind
+document.addEventListener("keydown", (e) => {
+  const ov = $("overlay"), dr = $("drawer");
+  if (e.key !== "Tab" || !ov || !dr || !ov.classList.contains("open")) return;
+  const all = [...dr.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select, textarea, summary, [tabindex]:not([tabindex="-1"])')].filter((x) => x.offsetParent !== null);
+  if (!all.length) return;
+  const first = all[0], last = all[all.length - 1], at = document.activeElement;
+  if (e.shiftKey && (at === first || !dr.contains(at))) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && (at === last || !dr.contains(at))) { e.preventDefault(); first.focus(); }
+});
 if (typeof window.addEventListener === "function") window.addEventListener("popstate", () => { const ov = $("overlay");
   // the close's own back arrived: a drawer opened meanwhile gets its history entry now
   if (DRAWER_BACK) { DRAWER_BACK = false; if (ov && ov.classList.contains("open")) { try { history.pushState({ ...(history.state || {}), drawer: true }, ""); } catch (e) {} } return; } if (ov && ov.classList.contains("open")) { ov.classList.remove("open"); drawerClosed(); } });

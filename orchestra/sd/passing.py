@@ -15,7 +15,7 @@ but its total, and among dozens of busy counters some always add up. No in and o
 same events (a pair that cancels would let any two flows pass), and Orchestra's event counters,
 stand-ins for the machines' own, take no part. They count the same items:
 their totals agree, and the outs' running total is never ahead of the ins' nor more than a step
-behind them (each item left within a step), in all but ``CANCEL_STEPS`` of the steps any of
+behind them (what entered left within a step), in all but ``CANCEL_STEPS`` of the steps any of
 them moved (and in none, when a counter that counted fewer than ``MIN_EVENTS`` completes it).
 The fewest counters win, then the most of the first in's machine, then the fewest
 steps out of step.
@@ -64,15 +64,36 @@ class Passage:
     def terms(self) -> list[tuple[Series, int]]:
         return [(c, 1) for c in self.ins] + [(c, -1) for c in self.outs]
 
-    def evidence(self) -> dict:
-        """What the stock records of how it was found."""
+    def evidence(self, unread: dict | None = None) -> dict:
+        """What the stock records of how it was found. ``unread``: the level series written for its
+        place that was not read as its level (``unread``), with why."""
         how = ("its level, measured, rose at the ins' events and fell at the outs'" if self.measured else
+               f"{unread['level_note']}; the level is what the counters imply" if unread else
                "no level measures it: the level is what the counters imply, and an item spends almost no time in it")
         return {"passing": {"ins": [c.key for c in self.ins], "outs": [c.key for c in self.outs],
                             "out_of_step_steps": self.out_of_step, "moved_steps": self.moved,
                             **({"rises_at_ins": self.rises, "falls_at_outs": self.falls} if self.measured else {}),
+                            **({k: unread[k] for k in ("level_series", "level_title", "level_why")} if unread and not self.measured else {}),
                             "note": f"a state each item leaves within a step, so the grid sees it empty: {how}"},
                 **({} if self.measured else {"hidden": True})}
+
+
+def unread(level: Series, title: str | None) -> dict:
+    """A hidden state's own level series, when its instrument writes one for the place its moves
+    enter and leave (``sd.titles.Places.level_series``) and it was not the state between
+    (``sd.between``): kept beside the passage, with why it was not read as its level, so a page
+    never says no series measures a place one is written for. ``level_why`` says what the series
+    read on the grid: 0 at every step (what entered left within a step), or the steps it changed in."""
+    changed = sum(1 for d in level.deltas if d)
+    name = title or level.key
+    if not changed and not any(level.values):
+        why = "written, but reads 0 at every step it was sampled: what enters leaves within a step"
+    elif not changed:
+        why = "written, but did not change at any step it was sampled"
+    else:
+        why = f"written, but changed in only {changed} step{'s' if changed != 1 else ''}, not with the counters' rises and falls"
+    return {"level_series": level.key, "level_title": name, "level_why": why,
+            "level_note": f"its level series {name} is {why}"}
 
 
 def _claims(found: list) -> dict[str, set[tuple[str, int]]]:

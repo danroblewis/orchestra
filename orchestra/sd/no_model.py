@@ -127,8 +127,18 @@ def reason(discovery: dict | None, host: bool | None = None) -> dict:
                by_reason=dict(Counter(kind_of(w) for w in left.values()).most_common()),
                summary=no_model_reason(discovery, where="for the other reasons listed"),
                counter_events=discovery.get("counter_events"), missing_source=discovery.get("not_saved"),
-               too_young=bool(discovery.get("too_young")))
+               too_young=bool(discovery.get("too_young")),
+               window_s=(discovery["end"] - discovery["start"]) if discovery.get("end") is not None and discovery.get("start") is not None else None)
     return out
+
+
+def minutes_to_enough(most: float, needed: float, window_s: float | None) -> int | None:
+    """How many more minutes, at the busiest counter's rate over the window, until it has counted the
+    events a balance needs: None when it counted none (no rate) or the window is not known."""
+    if not window_s or most <= 0 or most >= needed:
+        return None
+    rate = most / (window_s / 60)                     # events a minute
+    return max(1, round((needed - most) / rate))
 
 
 def first_sentence(r: dict) -> str:
@@ -150,7 +160,9 @@ def text(r: dict) -> str:
     ce = r.get("counter_events") if r["discovered"] else None
     if ce and ce.get("counters"):
         most, needed = ce["most"], ce["needed"]
-        parts.append(f"Too few events: at most {_num(most)} per counter, {needed} needed." if most < needed
+        more = minutes_to_enough(most, needed, r.get("window_s"))
+        parts.append((f"Too few events: at most {_num(most)} per counter, {needed} needed"
+                      + (f"; about {more} more minute{'s' if more != 1 else ''} at the current rate." if more else ".")) if most < needed
                      else f"Events per counter: up to {_num(most)} ({needed} needed for a balance).")
     elif ce is not None:
         parts.append("No counter moved in the window, so nothing could balance a level.")

@@ -398,7 +398,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         """The tail of the log the machine (or one instance) announced; only a file within the
         project is read (machine_logs.py). Orchestra's own host: its log in the state directory."""
         from ..events import HOST
-        from .machine_logs import readable, tail
+        from .machine_logs import readable, tail, written
         lines = max(10, min(lines, 2000))
         if machine == HOST:
             return {"ok": True, **core.logs("host", lines)}
@@ -406,7 +406,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         path, why = readable(bg.index.log_path(machine, inst), [project.repo_root, project.state_dir])
         if path is None:
             return {"ok": False, "error": why}
-        return {"ok": True, "path": str(path), "lines": tail(path, lines)}
+        return {"ok": True, "path": str(path), "lines": tail(path, lines), "written": written(path)}
 
     install_system(app, project)
 

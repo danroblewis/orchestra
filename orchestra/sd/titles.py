@@ -94,11 +94,13 @@ class Places:
         self.provenance = provenance or {}
         self.by_value: dict[str, list[Place]] = {}
         self.by_labels: dict[tuple, str] = {}
+        self.keys: dict[str, list[tuple[Place, str]]] = {}     # place value -> (its place, the key of the count that spells it)
         spelled = []
         for name, labels, key in items:
             if got := self._spelled(name, labels, key):
                 spelled.append((labels, got))
                 self.by_value.setdefault(got[1], []).append(got[0])
+                self.keys.setdefault(got[1], []).append((got[0], key))
         # a thing two scopes share (two workflows with a step of one name): said with its scope
         scopes: dict[str, set] = {}
         for _, (pl, _) in spelled:
@@ -214,6 +216,21 @@ class Places:
         back)", "start → write"; "write: waiting → held" inside one); its places' own parts
         when two moves would read alike; None when neither end is a place."""
         return self._move_title(labels, key)
+
+    def level_series(self, ins: list, outs: list) -> str | None:
+        """The key of the count written for the one place a hidden state's moves all enter (``ins``)
+        and leave (``outs``), when they name one and its instrument counts it; None otherwise."""
+        values = set()
+        for cs, into in ((ins, True), (outs, False)):
+            for c in cs:
+                got = self._move(c.labels, c.key)
+                if not got or not (v := c.labels.get(got[0] if into else got[1])):
+                    return None
+                values.add((v, tuple(sorted((self._place(v, c.labels) or Place("", (), {}, "")).scope.items()))))
+        if len(values) != 1:
+            return None
+        value, scope = next(iter(values))
+        return next((k for pl, k in self.keys.get(value, []) if tuple(sorted(pl.scope.items())) == scope), None)
 
     def between(self, ins: list, outs: list) -> str | None:
         """A hidden state between moves (``ins``, ``outs``: Series), by the places its ins enter and

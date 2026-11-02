@@ -44,7 +44,9 @@ test("a match in time that cannot tell machines apart says so: hypotheses within
   const crowd = { id: "g", machines: [h("a", 0.9), h("b", 0.94), h("c", 0.86)] };
   assert.equal(Evidence.untold({ flows: [crowd] }, crowd), U);
   const lucky = { id: "l", machines: [h("a", 0.95, 0.42)] };
-  assert.equal(Evidence.untold({ flows: [lucky] }, lucky), U);
+  assert.equal(Evidence.untold({ flows: [lucky] }, lucky), "chance alone would pair 42%");   // one machine: chance, not "these machines"
+  const luckyTwo = { id: "l2", machines: [h("a", 0.95, 0.42), h("b", 0.5)] };
+  assert.equal(Evidence.untold({ flows: [luckyTwo] }, luckyTwo), U);
   const clear = { id: "x", machines: [h("a", 0.95, 0.1), h("b", 0.5)] };
   assert.equal(Evidence.untold({ flows: [clear] }, clear), "");
   assert.equal(Evidence.chance({ machines: [], current: { origin: "fitted", quality: { events: 40 } } }, h("a", 0.92, 0.41)), ", 41% by chance");

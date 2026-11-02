@@ -16,8 +16,6 @@
 
 /* tags beside a value on this page sit a little apart from it; on the map (netgraph's ``tags``) */
 .im-side .im-tag, .cards .im-tag { margin-left:4px }
-.ng-tag rect { fill:var(--panel2); stroke:var(--border2); stroke-width:1 }
-.ng-tag text { font-size:8.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; fill:var(--text2) }
 .ng-tag.im-t-unconf rect { fill:#1b1430; stroke:#7c3aed; stroke-dasharray:3 2 } .ng-tag.im-t-unconf text { fill:#ddd6fe }
 .ng-tag.im-t-ghost rect { stroke-dasharray:3 2 }
 .ng-tag.im-t-add rect { fill:#0f2a1a; stroke:#166534 } .ng-tag.im-t-add text { fill:var(--im-add) }

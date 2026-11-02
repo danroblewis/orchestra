@@ -39,3 +39,12 @@ test("a chart not set tight includes zero on its y axis; a tight one fits its li
   assert.equal(lowest(Charts.line([{ label: "a", points: high }])), 0);
   assert.ok(lowest(Charts.line([{ label: "a", points: high }], { tight: true })) > 0);
 });
+
+test("a count is drawn step-after on whole-number ticks: never a triangle between 0 and 1", () => {
+  const pts = [[1000, 0], [1015, 1], [1030, 0], [1045, 0]];
+  const svg = Charts.line([{ label: "items", points: pts, step: true }], { integer: true });
+  const d = svg.match(/<path data-i="0"[^>]* d="([^"]+)"/)[1];
+  assert.match(d, /^M[\d.]+,[\d.]+ H[\d.]+ V[\d.]+ H/);
+  const ticks = [...svg.matchAll(/x="42" y="[\d.]+" text-anchor="end">([^<]+)</g)].map((m) => m[1]);
+  assert.ok(ticks.every((t) => Number.isInteger(+t)), ticks.join(","));
+});

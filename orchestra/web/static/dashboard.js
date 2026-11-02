@@ -19,6 +19,26 @@
   }, board);
   const narrow = () => grid.getColumn() === 1;
   const els = new Map();                                 // panel id -> its grid item (mounted once)
+  // a phone: a list, not a board. Nothing drags or resizes; each panel is as tall as what it shows
+  // (style: .grid-stack.gs-list), and back to the board's handles on a wide screen
+  function mode() {
+    const one = narrow();
+    grid.enableMove(!one); grid.enableResize(!one);
+    board.classList.toggle("gs-list", one);
+    if (one) for (const el of els.values()) if (el.gridstackNode) fitRows(el);
+  }
+  // in the list, a panel's height in rows follows its content
+  function fitRows(el) {
+    const body = el.querySelector(".dbody"), head = el.querySelector(".dhead");
+    if (!body || !head) return;
+    // what the body holds, however tall the cell is now: its children's extent, plus its padding
+    const top = body.getBoundingClientRect().top, kids = [...body.children];
+    const content = kids.length ? Math.max(...kids.map((k) => k.getBoundingClientRect().bottom)) - top + 10 : body.scrollHeight;
+    const rows = Math.max(2, Math.ceil((head.offsetHeight + content + 8) / (grid.getCellHeight() || 40)));
+    if (el.gridstackNode && el.gridstackNode.h !== rows) grid.update(el, { h: rows });
+  }
+  if (window.ResizeObserver) new ResizeObserver(() => { if (narrow()) for (const el of els.values()) fitRows(el); }).observe(board);
+  addEventListener("resize", () => setTimeout(mode, 60));          // one column below 820 px: gridstack switches, we follow
 
   // the wide layout is the one kept: a phone's one column never overwrites it
   function remember() {
@@ -103,5 +123,7 @@
     grid.batchUpdate(false);
   }
   document.addEventListener("orchestra:panels", sync);
-  sync();
+  sync(); mode();
+  // a panel whose content grew (the machines list arriving) grows with it on a phone
+  setInterval(() => { if (narrow()) for (const el of els.values()) fitRows(el); }, 2000);
 })();

@@ -23,6 +23,8 @@ const NetGeometry = (() => {
 
   // the frame and the clouds
   const PAD = 34, GAP = 34;
+  // the least scale an automatic fit draws a wide screen's graph at (names stay readable)
+  const DESK_K = 0.85;
   // the box around the nodes ``inside`` the system, padded
   function frameOf(nodes, inside) {
     const ins = nodes.filter((n) => inside(n) && n.x !== undefined);
@@ -110,8 +112,16 @@ const NetGeometry = (() => {
   // where each label goes: the nearest spot to its line's middle (``mids``: {edge id: {x, y}})
   // where it covers no node and no label already placed; if there is none, where it covers least.
   // Longer labels are placed first. {edge id: [dx, dy]}
-  function placeLabels(nodes, edges, mids) {
-    const boxes = nodes.filter((n) => n.x !== undefined).map((n) => { const s = size(n), hw = (s.r || s.w / 2) + 2, hh = (s.r || s.h / 2) + 2; return [n.x - hw, n.y - hh, n.x + hw, n.y + hh]; });
+  // ``obstacles``: more boxes no label should cover ([x0, y0, x1, y1]: a node's tags, the frame's title).
+  // A node's tags stacked above (or below) it are covered by its box too
+  function tagBoxes(n) {
+    const s = size(n), hh = s.r || s.h / 2, out = [];
+    (n.tags || []).filter((t) => !t.below).forEach((t, i) => { const w = String(t.text).length * 5.6 + 10, y = n.y - hh - 18 - i * 15; out.push([n.x - w / 2, y, n.x + w / 2, y + 13]); });
+    (n.tags || []).filter((t) => t.below).forEach((t, i) => { const w = String(t.text).length * 5.6 + 10, y = n.y + hh + (s.r ? (n.sub ? 30 : 18) : 4) + i * 15; out.push([n.x - w / 2, y, n.x + w / 2, y + 13]); });
+    return out;
+  }
+  function placeLabels(nodes, edges, mids, obstacles = []) {
+    const boxes = [...nodes.filter((n) => n.x !== undefined).flatMap((n) => { const s = size(n), hw = (s.r || s.w / 2) + 2, hh = (s.r || s.h / 2) + 2; return [[n.x - hw, n.y - hh, n.x + hw, n.y + hh], ...tagBoxes(n)]; }), ...obstacles];
     const area = (a, b) => Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
     const out = {}, placed = [];
     const todo = edges.filter((e) => mids[e.id] && labelSize(e)).sort((a, b) => labelSize(b).w - labelSize(a).w);
@@ -130,6 +140,34 @@ const NetGeometry = (() => {
     return out;
   }
 
-  return { size, edgePoint, frameOf, tetherPlaces, labelSize, placeLabels, PAD, GAP };
+  // the nodes linked to nothing, set in rows directly under the rest (``rest``: the connected
+  // nodes), as wide at most as the rest (or ``minRow`` nodes), so the fit that shows the connected
+  // part shows them too: {id: [x, y]}
+  function isolatedRows(lone, rest, gap = 130, minRow = 4) {
+    if (!lone.length || !rest.length) return {};
+    let x0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const n of rest) { const s = size(n), hw = s.r || s.w / 2, hh = s.r || s.h / 2; x0 = Math.min(x0, n.x - hw); x1 = Math.max(x1, n.x + hw); y1 = Math.max(y1, n.y + hh); }
+    const per = Math.max(minRow, Math.floor((x1 - x0) / gap) + 1), cx = (x0 + x1) / 2, out = {};
+    [...lone].sort((a, b) => String(a.label).localeCompare(String(b.label))).forEach((n, i) => {
+      const row = Math.floor(i / per), inRow = Math.min(per, lone.length - row * per), j = i - row * per;
+      out[n.id] = [cx + (j - (inRow - 1) / 2) * gap, y1 + 56 + row * 70];
+    });
+    return out;
+  }
+  // the transform that fits the box [x0, y0, x1, y1] in a view ``w`` wide and ``h`` high, under a band
+  // ``top`` high, at no more than ``maxK``; an automatic fit (not ``all``) at no less than ``minK``,
+  // centred: {k, tx, ty}
+  function fitView([x0, y0, x1, y1], { w, h, top = 40, maxK = 1.4, minK = 0, all = false } = {}) {
+    const room = h - top, kFit = Math.min(w / (x1 - x0), room / (y1 - y0), maxK), k = all ? kFit : Math.max(minK, kFit);
+    return { k, kFit, tx: w / 2 - k * (x0 + x1) / 2, ty: top + room / 2 - k * (y0 + y1) / 2 };
+  }
+  // the box a set of nodes covers, with ``pad`` around each
+  function boundsOf(nodes, pad = 40) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const n of nodes) { const s = size(n), hw = (s.r || s.w / 2) + pad, hh = (s.r || s.h / 2) + pad; x0 = Math.min(x0, n.x - hw); x1 = Math.max(x1, n.x + hw); y0 = Math.min(y0, n.y - hh); y1 = Math.max(y1, n.y + hh); }
+    return [x0, y0, x1, y1];
+  }
+
+  return { size, edgePoint, frameOf, tetherPlaces, labelSize, placeLabels, tagBoxes, isolatedRows, fitView, boundsOf, PAD, GAP, DESK_K };
 })();
 if (typeof module === "object" && module.exports) module.exports = NetGeometry;

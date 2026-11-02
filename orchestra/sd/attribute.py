@@ -35,6 +35,13 @@ its evidence and a ``confidence`` between 0 and 1), from one of:
      within ``RATIO`` of each other (confidence: the correlation times the smaller ratio of the
      totals).
 
+  Step by step and by correlation are discounted for chance as event by event is: the events
+  moved ``CHANCE_SHIFTS`` steps around the live steps are measured the same way, and that share is
+  subtracted (a busy event type matches an unrelated counter step by step mostly by coincidence);
+  a hypothesis chance makes as well is dropped. An event type that feeds two ways out of one stock
+  (a subject ended one way or another) is hypothesised on each, in proportion to the events that
+  pair with its counter, when the events its counter did not take pair with the other exits'.
+
   Every machine that matches is a hypothesis.
 
 A counter of traffic on another system's bus (``orchestra.sources.traffic``) carries the
@@ -75,9 +82,12 @@ def _nonzero(s: Series) -> dict[int, float]:
     return cached[1]
 
 
-def match(counter: Series, events: Series) -> dict | None:
+def match(counter: Series, events: Series, siblings: list[Series] | tuple = ()) -> dict | None:
     """How well ``events`` (one machine's events of one type) explain the counter's increments, or
-    None when they do not. Worked on the steps either moved in: a long window is mostly quiet."""
+    None when they do not. Worked on the steps either moved in: a long window is mostly quiet.
+    ``siblings``: the counters of the other flows out of the same stock, which the same events may
+    feed (one event type ending a subject one way or another): its events are then shared between
+    them, each hypothesis in proportion to the events that pair with its own counter."""
     n = min(len(counter.deltas), len(events.deltas))
     xc, xe = _nonzero(counter), _nonzero(events)
     tc, te = sum(xc.values()), sum(xe.values())
@@ -89,15 +99,21 @@ def match(counter: Series, events: Series) -> dict | None:
     found = _by_step(xc, xe, live, n)
     if found is not None and found["test"] == "step by step":
         return found
-    return _by_event(xc, xe, live, n) or found
+    others: dict[int, float] = {}
+    for sib in siblings:
+        for i, v in _nonzero(sib).items():
+            others[i] = others.get(i, 0.0) + v
+    return _by_event(xc, xe, live, n, others) or found
 
 
-def _pair(x: dict[int, float], y: dict[int, float]) -> tuple[float, dict[int, float]]:
+def _pair(x: dict[int, float], y: dict[int, float], left: dict[int, float] | None = None) -> tuple[float, dict[int, float]]:
     """Pair the counter's increments ``x`` with events ``y`` no more than ``TOLERANCE`` steps away,
     each event used once: the amount paired, and how much of it at each offset. Taken in time
     order, each increment from the earliest unused events in reach, which pairs as much as any
-    pairing can when every increment reaches equally far."""
-    left = dict(y)
+    pairing can when every increment reaches equally far. ``left``, when given, is filled with
+    the events no increment took."""
+    left = left if left is not None else {}
+    left.update(y)
     paired, by_offset = 0.0, {}
     for i in sorted(x):
         need = x[i]
@@ -111,14 +127,17 @@ def _pair(x: dict[int, float], y: dict[int, float]) -> tuple[float, dict[int, fl
     return paired, by_offset
 
 
-def _by_event(xc: dict[int, float], xe: dict[int, float], live: set[int], n: int) -> dict | None:
-    """Event by event, within a step either way, discounted for chance (see the module's text)."""
+def _by_event(xc: dict[int, float], xe: dict[int, float], live: set[int], n: int, others: dict[int, float] | None = None) -> dict | None:
+    """Event by event, within a step either way, discounted for chance (see the module's text).
+    ``others``: the increments of the other exits of the same stock; events this counter did not
+    take that pair with them are this event type's other way out, not a miss (``shares its events``)."""
     x = {i: v for i, v in xc.items() if i in live}
     y = {j: v for j, v in xe.items() if j in live}
     tx, ty = sum(x.values()), sum(y.values())
     if len(x) < MIN_MOVES or tx <= 0 or ty <= 0:
         return None
-    paired, by_offset = _pair(x, y)
+    left: dict[int, float] = {}
+    paired, by_offset = _pair(x, y, left)
     chance = sum(_pair(x, {(j + s) % n: v for j, v in y.items() if (j + s) % n in live})[0] for s in CHANCE_SHIFTS) / len(CHANCE_SHIFTS)
     if chance / tx > MAX_CHANCE:
         return None
@@ -127,6 +146,10 @@ def _by_event(xc: dict[int, float], xe: dict[int, float], live: set[int], n: int
         test, share, base = "event by event", min(covered, explained), chance / max(tx, ty)
     elif covered >= 1 - 1e-9 and 1 <= ty / tx <= RATIO:
         test, share, base = "covers every increment", explained, chance / ty
+    elif others and covered >= EQUAL_STEPS and (paired + _pair({i: v for i, v in others.items() if i in live}, left)[0]) / ty >= EQUAL_STEPS:
+        # the events this counter did not take pair with the stock's other exits: one event type
+        # feeding two ways out, hypothesised on each in proportion to the events that pair with it
+        test, share, base = "shares its events with another exit", explained, chance / ty
     else:
         return None
     if test == "event by event" and (share - base) / (1 - base) < EQUAL_STEPS:
@@ -144,8 +167,24 @@ def discounted(share: float, base: float) -> float:
     return max(0.0, share - base)
 
 
+def _step_measures(x: dict[int, float], y: dict[int, float], k: int) -> tuple[float, float, int, int]:
+    """Step by step, of the counter's increments ``x`` and the events ``y`` over ``k`` steps: the share
+    of the steps either moved in where they are equal, their correlation, and how many moved and were equal."""
+    tx, ty = sum(x.values()), sum(y.values())
+    moved = x.keys() | y.keys()
+    same = sum(1 for i in moved if abs(x.get(i, 0.0) - y.get(i, 0.0)) < 1e-9)
+    sxy = sum(v * y[i] for i, v in x.items() if i in y) - tx * ty / k
+    sxx = sum(v * v for v in x.values()) - tx * tx / k
+    syy = sum(v * v for v in y.values()) - ty * ty / k
+    corr = sxy / math.sqrt(sxx * syy) if sxx > 0 and syy > 0 else 0.0
+    return (same / len(moved) if moved else 0.0), corr, len(moved), same
+
+
 def _by_step(xc: dict[int, float], xe: dict[int, float], live: set[int], n: int) -> dict | None:
-    """Step by step at one lag for the window, or by correlation (see the module's text)."""
+    """Step by step at one lag for the window, or by correlation (see the module's text), each
+    discounted for chance as event by event is: the same events moved ``CHANCE_SHIFTS`` steps
+    around the live steps match by coincidence too, and that share is subtracted (``chance``). A
+    hypothesis chance would make as well is dropped."""
     best = None
     for lag in LAGS:
         valid = {i for i in live if 0 <= i + lag < n}
@@ -156,23 +195,25 @@ def _by_step(xc: dict[int, float], xe: dict[int, float], live: set[int], n: int)
         tx, ty, k = sum(x.values()), sum(y.values()), len(valid)
         if len(x) < MIN_MOVES or tx <= 0 or ty <= 0:
             continue
-        moved = x.keys() | y.keys()
-        same = sum(1 for i in moved if abs(x.get(i, 0.0) - y.get(i, 0.0)) < 1e-9)
-        equal_moving = same / len(moved)
-        sxy = sum(v * y[i] for i, v in x.items() if i in y) - tx * ty / k
-        sxx = sum(v * v for v in x.values()) - tx * tx / k
-        syy = sum(v * v for v in y.values()) - ty * ty / k
-        corr = sxy / math.sqrt(sxx * syy) if sxx > 0 and syy > 0 else 0.0
+        equal_moving, corr, moved, same = _step_measures(x, y, k)
         ratio = ty / tx
         if equal_moving >= EQUAL_STEPS:
-            confidence, test = equal_moving, "step by step"
+            share, test = equal_moving, "step by step"
         elif corr >= MIN_CORR and 1 / RATIO <= ratio <= RATIO:
-            confidence, test = corr * min(ratio, 1 / ratio), "by correlation"
+            share, test = corr * min(ratio, 1 / ratio), "by correlation"
         else:
             continue
+        # chance: the events moved around the live steps, measured the same way
+        order = sorted(valid)
+        at = {i: p for p, i in enumerate(order)}
+        shifted = [_step_measures(x, {order[(at[j] + sh) % len(order)]: v for j, v in y.items()}, k) for sh in CHANCE_SHIFTS]
+        base = sum((m[0] if test == "step by step" else max(0.0, m[1]) * min(ratio, 1 / ratio)) for m in shifted) / len(shifted)
+        confidence = discounted(share, base)
+        if confidence <= 0:
+            continue
         if best is None or (test, confidence) > (best["test"], best["confidence"]):   # "step by step" first
-            best = {"confidence": round(confidence, 4), "test": test, "equal_steps": round((k - len(moved) + same) / k, 4),
-                    "equal_steps_moving": round(equal_moving, 4), "corr": round(corr, 4), "lag_steps": lag,
+            best = {"confidence": round(confidence, 4), "test": test, "equal_steps": round((k - moved + same) / k, 4),
+                    "equal_steps_moving": round(equal_moving, 4), "corr": round(corr, 4), "lag_steps": lag, "chance": round(base, 4),
                     "counts": {"flow": round(tx, 3), "events": round(ty, 3)}, "steps": k}
     return best
 
@@ -180,14 +221,17 @@ def _by_step(xc: dict[int, float], xe: dict[int, float], live: set[int], n: int)
 def _why(m: dict) -> str:
     """The evidence of a match, in words."""
     c = m["counts"]
+    by_chance = f", {round(100 * m['chance'])}% by chance" if m.get("chance") is not None else ""
     if m["test"] == "step by step":
-        return f"match its increments step by step: equal in {round(100 * m['equal_steps_moving'])}% of the steps either moved"
+        return f"match its increments step by step: equal in {round(100 * m['equal_steps_moving'])}% of the steps either moved{by_chance}"
     if m["test"] == "by correlation":
-        return f"correlate with its increments ({m['corr']:.2f}), {c['events']:g} events to {c['flow']:g}"
+        return f"correlate with its increments ({m['corr']:.2f}), {c['events']:g} events to {c['flow']:g}{by_chance}"
     pairs = (f"{round(100 * m['paired']['flow'])}% of its {c['flow']:g} increments pair with one of the {c['events']:g} events "
              f"within a step, {round(100 * m['chance'])}% by chance")
     if m["test"] == "covers every increment":
         return f"cover every increment: {pairs}; the other events may feed another flow"
+    if m["test"] == "shares its events with another exit":
+        return f"share their events with another way out of the same stock: {pairs}; the rest pair with the other exits' increments"
     return f"match its increments event by event: {pairs}"
 
 
@@ -197,9 +241,10 @@ def candidates(series: list[Series]) -> list[Series]:
             and not (s.labels.get("type") or "").startswith("orchestra.")]
 
 
-def associate(counter: Series | None, events: list[Series]) -> dict:
+def associate(counter: Series | None, events: list[Series], siblings: list[Series] | tuple = ()) -> dict:
     """The machines that may be associated with the flow ``counter`` measures, best first, and
-    why: ``flow.evidence["machines"]``."""
+    why: ``flow.evidence["machines"]``. ``siblings``: the counters of the other flows out of the
+    same stock (``match``)."""
     if counter is None:
         return {"hypotheses": [], "why": f"{UNSET}: no counter measures it, so no machine's events can be compared with it"}
     if counter.name == EVENT_COUNTER and (who := writer_of(counter)):
@@ -208,7 +253,7 @@ def associate(counter: Series | None, events: list[Series]) -> dict:
                                 "why": f"its counter counts {who}'s own events of type {counter.labels.get('type')}"}]}
     best: dict[str, dict] = {}
     for e in events:
-        if e is counter or (m := match(counter, e)) is None:
+        if e is counter or (m := match(counter, e, siblings)) is None:
             continue
         who = writer_of(e)
         if who not in best or m["confidence"] > best[who]["confidence"]:

@@ -78,15 +78,15 @@ async function load() {
   $("state").textContent = (d.host_running ? `${d.instruments.length} instruments` : `${d.instruments.length} instruments · no orchestra run is running, so the scripts and URLs are not being read`)
     + (nlate ? ` · ${nlate} late (nothing written for more than three of its periods)` : "") + ` · as of ${new Date().toTimeString().slice(0, 8)}`;
   // what an operator reads first (is it writing? is it failing?) before what it reads
-  $("list").innerHTML = `<tr><th>instrument</th><th>kind</th><th>last write</th><th>failures</th><th>last error</th><th>measures machine</th><th>target</th></tr>`
+  Orchestra.keepFocus($("list"), () => $("list").innerHTML = `<tr><th>instrument</th><th>kind</th><th>last write</th><th>failures</th><th>last error</th><th>measures machine</th><th>target</th></tr>`
     + d.instruments.map((x) => `<tr class="${x.kind === "source" ? "" : "click"}" data-name="${esc(x.name)}"${x.kind === "source" ? "" : ` tabindex="0" role="button" aria-label="${esc(x.name)}: open its log"`}>
       <td><b>${esc(x.name)}</b>${x.owner && x.owner !== "project" ? ` <span class="muted">(${esc(x.owner)})</span>` : ""}${pills(x)}</td><td class="kind" data-l="kind">${esc(x.kind)}</td>
-      <td data-l="last write" class="${late(x, now) ? "late" : ""}">${x.last_write ? `${ago(now - x.last_write)} ago · ${x.points} series written${late(x, now) ? ` · <b>late</b>: every ${esc(every(x.every_s))}` : ` <span class="muted">· every ${esc(every(x.every_s))}</span>`}` : x.kind === "source" ? (x.status ? (x.status.ok === false ? "" : "read at the last discovery") : "not read yet") : `<span class="muted">none yet · every ${esc(every(x.every_s))}</span>`}</td>
+      <td data-l="last write" class="${late(x, now) ? "late" : ""}">${x.last_write ? `${ago(now - x.last_write)} ago · ${x.points} series in its last write${late(x, now) ? ` · <b>late</b>: every ${esc(every(x.every_s))}` : ` <span class="muted">· every ${esc(every(x.every_s))}</span>`}` : x.kind === "source" ? (x.status ? (x.status.ok === false ? "" : "read at the last discovery") : "not read yet") : `<span class="muted">none yet · every ${esc(every(x.every_s))}</span>`}</td>
       <td data-l="failures" class="${x.failures ? "bad" : ""}">${x.failures || 0}</td>${x.last_error ? `<td class="bad err" data-l="last error">${esc(x.last_error)}${x.last_note ? `<div class="muted">last run said: ${esc(x.last_note)}</div>` : ""}</td>`
         : x.last_note ? `<td class="late err" data-l="last error" title="no error since start; the last line it printed to standard error${x.last_note_at ? ", " + ago(now - x.last_note_at) + " ago" : ""}">last run said: ${esc(x.last_note)}</td>`
         : '<td class="muted" data-l="last error" title="no error since start">—</td>'}
       ${(x.hung_on || []).length ? `<td data-l="measures machine">${hungOn(x.hung_on)}</td>` : '<td class="muted" data-l="measures machine" title="no declared machine has this instrument attached: attaching one says which machine its series measure (the intended model)">—</td>'}
-      <td class="num target" data-l="target" title="${esc(x.target)}">${esc(shortTarget(x.target))}</td></tr>`).join("");
+      <td class="num target" data-l="target" title="${esc(x.target)}">${esc(shortTarget(x.target))}</td></tr>`).join(""));
   $("errors").innerHTML = (d.errors || []).map((e) => `<div>left out: ${esc(e)}</div>`).join("")
     + (d.hung_on_error ? `<div>attachments not shown: ${esc(d.hung_on_error)}</div>` : "");
   document.querySelectorAll("#list tr.click").forEach((tr) => { tr.onclick = () => openLog(tr.dataset.name);
@@ -107,6 +107,17 @@ window.addEventListener("hashchange", fromHash);
 // an instrument's series, named as the Dynamics page names the stocks and flows they become
 // (SDGraph.seriesName: the title the server gave it, sd/titles.py, the sentence its view gives it under it), with the
 // latest value of each and how long ago it was written; the raw series key on hover
+// a value's unit, from its series' own name: seconds "s", bytes "B", else the plural noun it counts
+// ("queue_jobs": jobs; "orchestra_events_total": events), singular for one; "" when it names none
+const MEASURES = new Set(["seconds", "milliseconds", "bytes", "ratio", "total", "count", "current", "value", "size", "depth", "level"]);
+function unitOf(name, v) {
+  if (/_seconds$/.test(name)) return "s";
+  if (/_milliseconds$/.test(name)) return "ms";
+  if (/_bytes$/.test(name)) return "B";
+  const w = String(name).replace(/_total$/, "").split(/[\W_]+/).filter(Boolean).pop() || "";
+  if (w.length > 2 && w.endsWith("s") && !MEASURES.has(w)) return +v === 1 ? w.slice(0, -1) : w;
+  return "";
+}
 function seriesTable(d, now, name) {
   const inst = INSTRUMENTS.find((i) => i.name === name), views = inst && inst.views ? { [name]: inst.views } : null;
   if (!d.ok) return `<div class="muted">series not shown: ${esc(d.error)}</div>`;
@@ -117,7 +128,7 @@ function seriesTable(d, now, name) {
   const stale = (r) => inst && inst.every_s != null && now - r.at > 3 * inst.every_s + RECORD_S;
   const row = (r, i) => { const n = SDGraph.seriesName(refs[i], views, name);
     return `<tr title="${esc(key(r))}" class="${stale(r) ? "stale-row" : ""}"><td><b>${esc(n.name)}</b>${n.family ? ` <span class="muted">${esc(n.family)}</span>` : ""}${n.about ? `<div class="muted about">${esc(n.about)}</div>` : ""}</td>
-      <td class="num" style="text-align:right">${esc(String(+r.value.toFixed(3)))}</td><td class="muted" style="white-space:nowrap">${stale(r) ? `not written since ${esc(Orchestra.when(r.at))}` : `${ago(now - r.at)} ago`}</td></tr>`; };
+      <td class="num" style="text-align:right">${esc(String(+r.value.toFixed(3)))}${unitOf(r.name, r.value) ? ` <span class="muted">${esc(unitOf(r.name, r.value))}</span>` : ""}</td><td class="muted" style="white-space:nowrap">${stale(r) ? `not written since ${esc(Orchestra.when(r.at))}` : `${ago(now - r.at)} ago`}</td></tr>`; };
   // the series of one name that read 0 (the empty places), when there are FOLD of them or more: one line,
   // opened on a click: "12 × place items at 0"
   const FOLD = 3, zeros = {};
@@ -137,7 +148,7 @@ async function openLog(name) {
   [d, sr] = await Promise.all([get("log"), get("series")]);
   const now = Date.now() / 1000;
   openDrawer(`<h3 data-drawer-key="i:${esc(name)}">${esc(name)} <span class="tag">instrument</span></h3>`
-    + `<h4>Series <span class="muted">(${sr.ok ? sr.series.length + sr.more : "?"}, latest values)</span></h4>${seriesTable(sr, now, name)}<h4>Log</h4>`
+    + `<h4>Series <span class="muted">(${sr.ok ? `${sr.series.length + sr.more} written in the last ${Math.round(sr.window_s / 60)} min, kept` : "?"}; latest values)</span></h4>${seriesTable(sr, now, name)}<h4>Log</h4>`
     + (d.ok ? `<div class="muted" style="font-size:11.5px">${esc(d.path)}</div><div class="logs">${esc(d.lines.join("\n"))}</div>` : `<div class="muted">${esc(d.error)}</div>`), { key: "i:" + name });
   // a log opens at its newest line
   const box = document.querySelector("#drawer .logs"); if (box) box.scrollTop = box.scrollHeight;

@@ -30,7 +30,7 @@
 const NetGraph = (() => {
   const NS = "http://www.w3.org/2000/svg";
   const POS_KEY = (k) => `orchestra.netgraph.${k}`;
-  const { size, edgePoint, frameOf, tetherPlaces, labelSize, placeLabels, PAD } = NetGeometry;
+  const { size, edgePoint, frameOf, tetherPlaces, labelSize, placeLabels, isolatedRows, fitView, boundsOf, PAD, DESK_K } = NetGeometry;
 
   // ``boundary``: {inside: node => bool, label}: a frame around the nodes inside (the system),
   // with every other node kept outside it, so what crosses the frame is visibly what crosses the
@@ -47,7 +47,7 @@ const NetGraph = (() => {
   // rather than wherever the forces threw them.
   // ``TOP``: the band at the top of the drawing the controls (reset, tidy, fit) sit in: a fit keeps
   // every node below it
-  const NARROW = 600, DESK_K = 0.85, TOP = 40, REVEAL_ALPHA = 0.1;
+  const NARROW = 600, TOP = 40, REVEAL_ALPHA = 0.1;
   function create(container, { key, height = 600, isolateHops = 1, onClick, tip, boundary, layout, polish, isolatedRow = false } = {}) {
     container.innerHTML = "";
     const svgEl = document.createElementNS(NS, "svg");
@@ -105,8 +105,11 @@ const NetGraph = (() => {
       }
     }
     let userZoomed = false;
+    // names and captions keep a readable size on screen however far the view is zoomed out (style.css
+    // scales them by --ngs: 1 at full size, up to 1.6 below it)
+    const textScale = (k) => svgEl.style.setProperty("--ngs", String(Math.min(1.6, Math.max(1, 1 / (k || 1)))));
     const zoom = d3.zoom().scaleExtent([0.2, 4]).filter((ev) => ev.type === "wheel" || !ev.target.closest(".ng-node"))
-      .on("zoom", (ev) => { root.attr("transform", ev.transform); if (ev.sourceEvent) { userZoomed = true; hint(null); } });
+      .on("zoom", (ev) => { root.attr("transform", ev.transform); textScale(ev.transform.k); if (ev.sourceEvent) { userZoomed = true; hint(null); } });
     svg.call(zoom).on("dblclick.zoom", null);
     // what an automatic fit leaves out of view, said at the right edge: a press fits everything
     const hintEl = document.createElement("button");
@@ -133,16 +136,16 @@ const NetGraph = (() => {
         if (part.length > best.length) best = part; }
       return new Set(best);
     }
-    const bounds = (ns) => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-      for (const n of ns) { const s = size(n), hw = (s.r || s.w / 2) + 40, hh = (s.r || s.h / 2) + 40; x0 = Math.min(x0, n.x - hw); x1 = Math.max(x1, n.x + hw); y0 = Math.min(y0, n.y - hh); y1 = Math.max(y1, n.y + hh); }
-      return [x0, y0, x1, y1]; };
+    const bounds = (ns) => boundsOf(ns);
     // fit in view: after a new layout settles (unless the viewer has zoomed), and on demand.
     // ``only``: node ids to fit instead of all (a machine and its neighbours), at no less than ``minK``
     // and no more than 1; ``all``: everything, at whatever scale it takes (the fit button)
-    let fittedAll = false;
+    let autoFitted = false;
     function fit(animate = true, only = null, minK = 0, center = null, { all = false } = {}) {
       const ns = only ? NODES.filter((n) => only.has(n.id)) : NODES;
       if (!ns.length || ns.some((n) => n.x === undefined)) return;
+      // the nodes linked to nothing sit in rows directly under the rest, so the fit of the rest shows them
+      if (!only && isolatedRow) rowIsolated();
       let [x0, y0, x1, y1] = bounds(ns);
       const fb = only ? null : frameBox();
       if (fb) { x0 = Math.min(x0, fb.x0 - 16); x1 = Math.max(x1, fb.x1 + 16); y0 = Math.min(y0, fb.y0 - 16); y1 = Math.max(y1, fb.y1 + 16); }
@@ -160,8 +163,8 @@ const NetGraph = (() => {
       }
       const room = H - TOP, mid = TOP + room / 2;       // the drawing's height below the controls, and its middle
       const kFit = Math.min(w / (x1 - x0), room / (y1 - y0), 1.4);
-      // the first fit shows every node (never "N more · fit to see all" beside empty canvas)
-      if (all || (!only && (kFit >= DESK_K || !fittedAll))) { if (!settling) fittedAll = true; apply(kFit, w / 2 - kFit * (x0 + x1) / 2, mid - kFit * (y0 + y1) / 2); return; }
+      // the fit button shows everything at whatever scale; an automatic fit, every node at no less than DESK_K
+      if (all || (!only && kFit >= DESK_K)) { const v = fitView([x0, y0, x1, y1], { w, h: H, top: TOP, all: true }); apply(v.k, v.tx, v.ty); return; }
       if (!only) {                           // too spread to read whole: the largest connected part, centred, the rest said
         const part = NODES.filter((n) => largestPart().has(n.id)), [a0, b0, a1, b1] = bounds(part.length ? part : NODES);
         const k = Math.max(DESK_K, Math.min(w / (a1 - a0), room / (b1 - b0), 1.4)) || DESK_K;
@@ -270,20 +273,24 @@ const NetGraph = (() => {
       } else if (n.kind === "cloud") {
         g.append("circle").attr("class", "ng-grab").attr("r", 18);          // an outline alone is too thin to grab
         g.append("path").attr("class", "ng-cloud").attr("transform", "scale(.8)").attr("d", "M-10,6 a6,6 0 0 1 0,-12 a8,8 0 0 1 14,-3 a6,6 0 0 1 8,9 a5,5 0 0 1 -4,6 Z");
+        if (n.label) g.append("text").attr("class", "ng-sub").attr("x", 16).attr("dy", 4).text(n.label);   // where it is: "the start", "the end", beside it (clear of the frame's title)
       } else {
         g.append("rect").attr("class", "ng-box").attr("x", -s.w / 2).attr("y", -s.h / 2).attr("width", s.w).attr("height", s.h).attr("rx", n.rx ?? 5)
           .attr("stroke", n.color || "#6b5313").attr("fill", n.fill || "#0b0e14").attr("stroke-dasharray", n.dashed ? "6 4" : null);
         if (n.decorate) n.decorate(g, n, s);
         // a caption above the name: what kind of thing it is (a stock's family)
-        const lines = n.lines || [n.label], top = -s.h / 2 + (n.caption ? 28 : 15);
-        if (n.caption) g.append("text").attr("class", "ng-caption").attr("text-anchor", "middle").attr("y", -s.h / 2 + 13).text(n.caption);
+        // a caption of up to two lines (``caption``: a string, or its lines), the name under it
+        const caps = n.caption ? (Array.isArray(n.caption) ? n.caption : [n.caption]).slice(0, 2) : [];
+        const lines = n.lines || [n.label], top = -s.h / 2 + (caps.length ? 18 + 10 * caps.length : 15);
+        if (caps.length) g.append("text").attr("class", "ng-caption").attr("text-anchor", "middle").selectAll("tspan").data(caps).join("tspan").attr("x", 0).attr("y", (c, i) => -s.h / 2 + 13 + i * 10).text((c) => c);
         g.append("text").attr("class", "ng-boxtext" + (n.caption ? " ng-named" : "")).attr("text-anchor", "middle").attr("fill", n.textColor || "var(--text)")
           .selectAll("tspan").data(lines).join("tspan").attr("x", 0).attr("y", (l, i) => top + i * 14).text((l) => l);
         if (n.sub) g.append("text").attr("class", "ng-sub").attr("text-anchor", "middle").attr("y", top + lines.length * 14).text(n.sub);
       }
       if (n.tags) drawTags(g, n, s);
+      if (n.inert && n.why) g.append("title").text(`${(n.lines || [n.label]).join(" ")}: not a stock. ${n.why}`);
       // keyboard focus: a white ring outside a dark gap, shown only while focused (style.css)
-      if (n.kind !== "cloud") {
+      if (n.kind !== "cloud" && !n.inert) {
         if (s.r) { g.append("circle").attr("class", "ng-focusring gap").attr("r", s.r + 5); g.append("circle").attr("class", "ng-focusring ring").attr("r", s.r + 7); }
         else { g.append("rect").attr("class", "ng-focusring gap").attr("x", -s.w / 2 - 5).attr("y", -s.h / 2 - 5).attr("width", s.w + 10).attr("height", s.h + 10).attr("rx", 8);
                g.append("rect").attr("class", "ng-focusring ring").attr("x", -s.w / 2 - 7).attr("y", -s.h / 2 - 7).attr("width", s.w + 14).attr("height", s.h + 14).attr("rx", 9); }
@@ -299,7 +306,7 @@ const NetGraph = (() => {
         tg.append("text").attr("x", w / 2).attr("y", 9.5).attr("text-anchor", "middle").text(t.text);
       };
       up.forEach((t, i) => one(t, -hh - 18 - i * 15));
-      down.forEach((t, i) => one(t, hh + (n.sub ? 30 : 18) + i * 15));
+      down.forEach((t, i) => one(t, hh + (s.r ? (n.sub ? 30 : 18) : 4) + i * 15));      // under a circle's name; right under a box
     }
 
     function render(nodes, edges) {
@@ -350,10 +357,11 @@ const NetGraph = (() => {
         .on("keydown", (ev, e) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onClick(e, "edge"); } })
         .on("focus", (ev, e) => { const m = e._mid; if (m) panTo(m.x, m.y); });
       labelSel.each(function (e) { drawLabel(d3.select(this), e); });
-      const nodeSel = gNodes.selectAll("g.ng-node").data(NODES, (n) => n.id).join("g").attr("class", (n) => `ng-node ng-${n.kind} ${n.cls || ""}`).attr("data-id", (n) => n.id);
+      // an ``inert`` node opens nothing: no tab stop, no button, the default cursor (its tooltip says what it is)
+      const nodeSel = gNodes.selectAll("g.ng-node").data(NODES, (n) => n.id).join("g").attr("class", (n) => `ng-node ng-${n.kind} ${n.cls || ""}${n.inert ? " ng-inert" : ""}`).attr("data-id", (n) => n.id);
       // reachable from the keyboard: Tab to a node, Enter or Space opens it as a click does; a node
       // focused outside the view is brought into it
-      if (onClick) nodeSel.attr("tabindex", (n) => (n.kind === "cloud" ? null : 0)).attr("role", (n) => (n.kind === "cloud" ? null : "button"))
+      if (onClick) nodeSel.attr("tabindex", (n) => (n.kind === "cloud" || n.inert ? null : 0)).attr("role", (n) => (n.kind === "cloud" || n.inert ? null : "button"))
         .attr("aria-label", (n) => [(n.lines || [n.label]).join(" "), n.caption, typeof n.sub === "string" ? n.sub.trim() : ""].filter(Boolean).join(", "))
         .on("keydown", (ev, n) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onClick(n, "node"); } })
         .on("focus", (ev, n) => { isolate(n.id); panTo(n.x, n.y); }).on("blur", () => isolate(null));
@@ -389,7 +397,7 @@ const NetGraph = (() => {
       // the first drawing fits the view (a layout still settling fits when it is done)
       // (a whole new layout is shown when it is done: glide reveals it)
       if (!drawnOnce) { drawnOnce = true; const whole = layout && fresh.length === NODES.length;
-        if (!settling) requestAnimationFrame(() => { refit(false); if (!whole) reveal(); }); else if (layout && !whole) reveal(); }
+        if (!settling && !whole) requestAnimationFrame(() => { refit(false); autoFitted = true; reveal(); }); else if (layout && !whole) reveal(); }
       if (pinned) highlight(pinned.nodes, pinned.edges);
       else if (focused) applyFocus();
       else if (HOVER && byId.has(HOVER)) isolate(HOVER);           // the pointer is still on a node: keep its neighbourhood lit
@@ -400,6 +408,7 @@ const NetGraph = (() => {
     // a label's text: the lines of its edge, the first in full, the rest a quiet aside when ``labelMuted``
     function drawLabel(g, e) {
       g.selectAll("*").remove();
+      g.append("line").attr("class", "ng-leader");             // drawn when the label sits away from its line (tick)
       if (e.sign) g.append("text").attr("class", "ng-sign").attr("text-anchor", "middle").attr("fill", e.color || "var(--muted)").text(e.sign);
       if (e.label) { const t = g.append("text").attr("class", "ng-elabel").attr("text-anchor", "middle"); (Array.isArray(e.label) ? e.label : [e.label]).forEach((l, i) => t.append("tspan").attr("x", 0).attr("dy", i ? 12 : 0).attr("class", i && e.labelMuted ? "ng-muted" : null).attr("fill", i && !e.labelMuted ? (e.color || "var(--muted)") : null).text(l)); }
     }
@@ -464,7 +473,9 @@ const NetGraph = (() => {
           for (const m of moving) { m.n.x = m.x0 + (m.x1 - m.x0) * e; m.n.y = m.y0 + (m.y1 - m.y0) * e; }
           tick();
           if (k < 1) return requestAnimationFrame(frame);
-          save(); relabel(); if (!userZoomed) refit(ms > 0); reveal(); resolve();
+          save(); relabel();
+          if (!userZoomed && (!autoFitted || asked || outOfView())) { refit(ms > 0); autoFitted = true; }
+          asked = false; reveal(); resolve();
         };
         ms ? requestAnimationFrame(frame) : frame(t0 + 1);
       });
@@ -473,11 +484,17 @@ const NetGraph = (() => {
     let LABEL_AT = {};
     function relabel() {
       const mids = Object.fromEntries(ALLEDGES.filter((e) => e._mid).map((e) => [e.id, e._mid]));
-      LABEL_AT = placeLabels(NODES, ALLEDGES, mids);
+      const b = frameBox(), t = 6;
+      const obstacles = b ? [[b.x0 + 10, b.y0 - 18, b.x0 + 14 + String(boundary.label || "the system").length * 6.6, b.y0 + 2],
+        [b.x0 - t, b.y0 - t, b.x1 + t, b.y0 + t], [b.x0 - t, b.y1 - t, b.x1 + t, b.y1 + t], [b.x0 - t, b.y0, b.x0 + t, b.y1], [b.x1 - t, b.y0, b.x1 + t, b.y1]] : [];
+      LABEL_AT = placeLabels(NODES, ALLEDGES, mids, obstacles);
       tick();
       crowd();
       // the Tab order is the layout's: top to bottom, left to right
+      // (moving a focused node in the document drops its focus: it is given back)
+      const had = document.activeElement && svgEl.contains(document.activeElement) ? document.activeElement : null;
       gNodes.selectAll("g.ng-node").sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0));
+      if (had && document.activeElement !== had && had.isConnected) try { had.focus({ preventScroll: true }); } catch (e) {}
     }
     // a label that still overlaps another (or a node's caption) where it was placed is hidden until
     // its edge is hovered or it is focused (style.css .ng-crowded): the widest first keep their place
@@ -517,24 +534,33 @@ const NetGraph = (() => {
         .alpha(alpha);
       const whole = movable.size === NODES.length;
       // the first settling is shown fitted once most of its movement is done, not while it flies apart
-      sim.on("tick", () => { tick(); if (hidden() && !layout && sim.alpha() < REVEAL_ALPHA) { if (!userZoomed) refit(false); reveal(); } })
-        .on("end", () => { settling = null; for (const n of NODES) { n.fx = n.fy = null; n._new = false; }
+      // the first settling is shown once it has settled, fitted once; a later one (new data) keeps the
+      // viewer's view unless asked (tidy, reset) or something new would be out of view
+      if (hidden()) sim.alphaMin(REVEAL_ALPHA / 4);
+      sim.on("tick", tick)
+        .on("end", () => { settling = null; const added = NODES.some((n) => n._new); for (const n of NODES) { n.fx = n.fy = null; n._new = false; }
           if (isolatedRow && whole) rowIsolated();
-          save(); relabel(); if (again && !userZoomed) refit(!hidden()); reveal(); });
+          save(); relabel();
+          if (again && !userZoomed && (!autoFitted || asked || added || outOfView())) { refit(!hidden()); autoFitted = true; }
+          asked = false; reveal(); });
       tick();
     }
-    // the nodes linked to nothing (not placed by the viewer): in a row just under the rest
+    // the nodes linked to nothing (not placed by the viewer): in rows directly under the rest
+    // (netgraph-geometry.js isolatedRows), never left wherever the forces threw them
     function rowIsolated() {
       const linked = new Set(EDGES.flatMap((e) => [e.source.id, e.target.id]));
-      const lone = NODES.filter((n) => !linked.has(n.id) && !n.pin && !n.tether), rest = NODES.filter((n) => linked.has(n.id));
-      if (!lone.length || !rest.length) return;
-      const [x0, , x1, y1] = bounds(rest), gap = 130, cx = (x0 + x1) / 2;
-      lone.sort((a, b) => String(a.label).localeCompare(String(b.label))).forEach((n, i) => { n.x = cx + (i - (lone.length - 1) / 2) * gap; n.y = y1 + 30; });
+      const lone = NODES.filter((n) => !linked.has(n.id) && !n.pin && !n.tether && n.x !== undefined), rest = NODES.filter((n) => linked.has(n.id) && n.x !== undefined);
+      const at = isolatedRows(lone, rest);
+      for (const n of lone) if (at[n.id]) [n.x, n.y] = at[n.id];
       tick();
     }
+    // whether any node is out of the view as it is now
+    const outOfView = () => { const t = d3.zoomTransform(svgEl); return outside(t.k, t.x, t.y).length > 0; };
+    let asked = false;                                // tidy or reset: the next settling refits
     // lay it out again: around the viewer's placements, or (``reset``) from nothing
     function tidy(reset) {
       if (!NODES.length) return;
+      asked = true;
       if (layout) {                                              // the layout engine, not the forces
         if (reset) for (const n of NODES) { n.pin = false; delete saved[n.id]; }
         userZoomed = false;
@@ -569,6 +595,12 @@ const NetGraph = (() => {
         if (!e._mid) return null;
         const [dx, dy] = LABEL_AT[e.id] || [0, 0], s = labelSize(e) || { h: 16 };
         return `translate(${e._mid.x + dx},${e._mid.y + dy - s.h / 2 + (e.label ? 11 : 13)})`;
+      }).each(function (e) {
+        // a label set away from its line keeps a thin leader to the line's middle
+        const [dx, dy] = LABEL_AT[e.id] || [0, 0], s = labelSize(e) || { w: 12, h: 16 }, base = e.label ? 11 : 13, far = Math.hypot(dx, dy) > 24;
+        const mx = -dx, my = -dy + s.h / 2 - base, top = -base, bot = s.h - base;
+        d3.select(this).select("line.ng-leader").style("display", far && e._mid ? null : "none")
+          .attr("x1", mx).attr("y1", my).attr("x2", Math.max(-s.w / 2, Math.min(s.w / 2, mx))).attr("y2", Math.max(top, Math.min(bot, my)));
       });
       gNodes.selectAll("g.ng-node").attr("transform", (n) => (n.x === undefined ? null : `translate(${n.x},${n.y})`));
     }

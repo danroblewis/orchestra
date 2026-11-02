@@ -112,7 +112,7 @@ from .model import Equation, Flow, Machine, Model, SeriesRef, Stock
 from .netflow import stocks as net_flow_stocks
 from .netnull import measured as net_evidence
 from .parsimony import fewer_counters
-from .passing import passages
+from .passing import passages, unread
 from .path import Path
 from .path import by_level as _by_level
 from .path import nelder_mead as _nelder_mead
@@ -1119,6 +1119,14 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     stocks, sid_of, ids = [], {}, set()
     held: dict[str, dict] = {}       # the levels whose value was carried on their machine's word, and for how long
     between, between_named = _between_titles(found, passed, places)
+    # a level's age (an instrument's ``age`` view of the same place, its labels the same): pointed to
+    # from the stock, so a page can show how long the oldest has waited there. A measurement beside the
+    # stock, never a binding, never read by the fit (rule 7)
+    age_of = {tuple(sorted(x.labels.items())): x for x in series if (provenance.get(x.key) or {}).get("view") == "age"}
+    # a hidden state whose place has a count of its own that never read anything there: said, not "no series"
+    by_key = {x.key: x for x in series}
+    unread_of = {k: unread(lv, _left_title(lv, places)) for k, p in passed.items() if not p.measured
+                 and (lk := places.level_series(p.ins, p.outs)) and (lv := by_key.get(lk))}
     for s, terms, r2, exact in found:
         sid = unique_id(_slug(s), writer_of(s), ids)
         sid_of[s.key] = sid
@@ -1136,14 +1144,16 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                              **({"measured": False, "level": {"name": s.name, "labels": dict(s.labels)}}   # the level the counters imply: its name holds
                                 if p and not p.measured else {}),
                              **({"identification": identified[s.key].record()} if s.key in identified else {}),
-                             "trust": stock_trust(s, exact, identified, by_cons, p),
+                             "trust": stock_trust(s, exact, identified, by_cons, p, unread_of.get(s.key)),
                              "written_by": writer_of(s), "accumulator": all(sign > 0 for _, sign in terms) and _never_falls(s),
                              "balance": [{"series": c.key, "sign": sign} for c, sign in terms],
                              "held_minutes": round(carried / 60, 2),
                              **({"balance_r2_level": round(fit_of(s, terms, masks[s.key])[0], 4),
                                  "balance_on": "traffic: the balance's error against what went in"}
                                 if not unfit and s.traffic and s.traffic[0] == "backlog" and r2 > fit_of(s, terms, masks[s.key])[0] + 1e-6 else {}),
-                             **({"twins": twins[s.key]} if s.key in twins else {}), **(p.evidence() if p else {}),
+                             **({"twins": twins[s.key]} if s.key in twins else {}), **(p.evidence(unread_of.get(s.key)) if p else {}),
+                             **({"age_series": {"name": a.name, "labels": dict(a.labels)}}
+                                if (not p or p.measured) and (a := age_of.get(tuple(sorted(s.labels.items())))) else {}),
                              **({"capacity_of": views[s.key]} if s.key in views else {}),
                              **({"declared": pins[s.key].record()} if s.key in declared_keys else {}),
                              **({"balance_on": f"the stretches between the writes of its slowest series ({len(s.blocks)} in the window)"}
@@ -1181,7 +1191,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     net_flows: list[Flow] = []
     for st, made, was_input, lv in net_flow_stocks(series, [s for s, _, _, _ in found], sid_of, inputs, input_refs, left_out, step,
                                                    unit_s, (since, end), lambda x: (unique_id(_slug(x), writer_of(x), ids), _title(x, places)),
-                                                   ref, writer_of, measure=net_evidence, units=unit):
+                                                   ref, writer_of, measure=net_evidence, units=unit, counters=counters):
         st.evidence.update(_named(lv, places))
         stocks.append(st)
         net_flows += made
@@ -1269,7 +1279,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     by_machine: dict[str, list[str]] = defaultdict(list)
     events_of_machine: dict[str, list] = defaultdict(list)
     for fl in flows:
-        fl.evidence["machines"] = assoc = associate(measured.get(fl.id), on_bus)
+        # the other ways out of the same stock: one event type may end a subject either way (sd.attribute)
+        exits = [measured[g.id] for g in flows if g is not fl and fl.src and g.src == fl.src and g.id in measured and measured[g.id] is not measured.get(fl.id)]
+        fl.evidence["machines"] = assoc = associate(measured.get(fl.id), on_bus, exits)
         for h in assoc["hypotheses"]:
             by_machine[h["machine"]].append(fl.id)
             if ev := h.get("events"):

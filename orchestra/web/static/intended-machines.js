@@ -73,7 +73,8 @@ const IntendedMachines = (() => {
           // Heard: no badge (no badge means heard, everywhere)
           const w = IntendedCore.machineWords(m, d.machines, true);
           if (!it.heard) n.cls = `${n.cls || ""} im-proposed`;
-          n.sub = [n.sub || "", eng && m.mode && mode !== m.mode ? `declared ${eng}` : ""].filter(Boolean).join(" · ");
+          const seen = m.mode ? m.mode.replace(/_/g, " ") : "";
+          n.sub = [n.sub && n.sub !== seen ? n.sub : "", eng && m.mode && mode !== m.mode ? `${seen} · declared ${eng.replace(/_/g, " ")}` : n.sub === seen ? seen : ""].filter(Boolean).join(" · ");
           n.tags = w.text ? [{ text: w.text, cls: w.cls }] : [];
         } else if (!it.heard) {
           n.cls = `${n.cls || ""} im-unheard`; n.halo = false; n.color = "transparent"; n.sub = IntendedCore.machineWords(m).text;
@@ -286,7 +287,7 @@ const IntendedMachines = (() => {
     // confirm and discard wait while one of them was asked; a kind switch waiting leaves them
     const settling = asked && asked.control !== "switch_kind";
     const acts = (change) => settling && (!change || asked.change === change) ? waitText()
-      : !listeners.length ? `<span class="muted im-nolisten" title="confirming publishes ${REQ}; no machine announced it listens for it">no machine listens for requests here</span>`
+      : !listeners.length ? ""                    // said once, at the top of the declared part (.im-noact)
       : `<span class="im-acts"><button class="ctl im-primary" title="${esc(a.title(IntendedCore.CONFIRMS))}" onclick="IntendedMachines.request('confirm','${esc(m.id)}'${change ? `,'${esc(change)}'` : ""})">confirm</button><button class="ctl" title="${esc(a.title("discard it"))}" onclick="IntendedMachines.request('discard','${esc(m.id)}'${change ? `,'${esc(change)}'` : ""})">discard</button></span>`;
     let html = it.state === "proposed" ? `<div class="im-status"><span>${byWhom(m)}${when}</span>${acts(null)}</div>`
       : `<div class="im-status im-status-declared"><span>${byWhom(m)}${when}</span></div>`;
@@ -316,8 +317,13 @@ const IntendedMachines = (() => {
     listeners.published = new Set(d.machines.filter((x) => x.id !== m.id).flatMap((x) => (x.publishes || []).map((p) => p.type)));
     const tag = stateTag(m), switching = (ASKED[m.id] || it.requested || {}).control === "switch_kind", canSwitch = it.state === "proposed" && !switching;
     const announced = m.kind || Object.keys(m.kinds || {}).join(", ");
-    const kind = field("kind", (canSwitch ? `<span class="im-seg big">${["universal", "programmatic"].map((k) => `<button class="${it.kind === k ? "on" : ""}" ${it.kind === k ? "disabled" : `onclick="IntendedMachines.request('switch_kind','${esc(m.id)}')"`} title="${it.kind === k ? "its kind" : esc(A().title("switch it"))}">${k === "universal" ? "Universal" : "Programmatic"}</button>`).join("")}</span>` : versus(prog ? "Programmatic" : "Universal", "announces", announced))
-      + `<div class="muted im-note">${prog ? "a program: a command and its interface" : "described by what it achieves"}${canSwitch ? ` · ${esc(A().some ? `switching asks ${A().who}` : A().ask("switch it"))}` : switching ? " · a switch was asked: waiting" : ""}</div>`);
+    // the declared kind beside the announced one, always (as the engagement row is); the switch only
+    // where a machine listens for the request it publishes
+    const kindVs = () => { const dk = prog ? "Programmatic" : "Universal", same = { programmatic: ["program"], universal: ["agent"] }[prog ? "programmatic" : "universal"];
+      return `<span class="im-decl-val">declared <b>${dk}</b></span>${announced ? ` <span class="muted">· announces ${esc(announced)}</span>${!same.includes(String(announced).toLowerCase()) ? ' <span class="im-tag im-t-diff" title="what was declared and what it announces differ">differs</span>' : ""}` : ' <span class="muted">· announces no kind</span>'}`; };
+    const switchable = canSwitch && A().some;
+    const kind = field("kind", kindVs() + (switchable ? ` <span class="im-seg">${["universal", "programmatic"].map((k) => `<button class="${it.kind === k ? "on" : ""}" ${it.kind === k ? "disabled" : `onclick="IntendedMachines.request('switch_kind','${esc(m.id)}')"`} title="${it.kind === k ? "its declared kind" : esc(A().title("switch it"))}">${k === "universal" ? "Universal" : "Programmatic"}</button>`).join("")}</span>` : "")
+      + `<div class="muted im-note">${prog ? "a program: a command and its interface" : "an AI agent: described by what it achieves"}${switchable ? ` · switching asks ${esc(A().who)}` : switching ? " · a switch was asked: waiting" : ""}</div>`);
     const byInstruments = !it.heard && (it.attachments || []).length;
     const known = byInstruments ? "the instruments attached to it (Measured by, below)" : "its events";
     const managed = field("managed", versus(it.managed, "", "") + `<div class="muted im-note">${ext ? `runs elsewhere: known by ${known}` : "managed by orchestra"}</div>`);
@@ -335,7 +341,7 @@ const IntendedMachines = (() => {
       ${heard ? observedFacts(m) : ""}
       ${status(m)}${downLine(m)}${why(it)}${aliases}
       <h4 class="im-declhead">${esc(IntendedCore.machineWords(m, list()).by)} <span class="muted im-h4note">what was declared of it, beside what is observed</span></h4>
-      ${A().known && !A().some ? `<div class="muted im-note im-noact">${esc(IntendedCore.NONE)}: nothing will act on a change asked here</div>` : ""}
+      ${A().known && !A().some ? `<div class="muted im-note im-noact" title="a confirm, discard or kind switch publishes ${esc(IntendedCore.REQ)}; no machine announced it listens for it">${esc(IntendedCore.NONE)}: nothing will act on a change asked here</div>` : ""}
       ${kind}${managed}${body}
       ${h4("Listens for")}${types(it, "receives", listeners)}
       ${h4("Publishes")}${types(it, "emits", listeners)}

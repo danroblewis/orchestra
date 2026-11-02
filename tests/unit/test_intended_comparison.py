@@ -48,7 +48,8 @@ def test_an_unsettled_suggestion_stays_listed_and_ringed_until_it_settles(tmp_pa
     ms = saved(tmp_path, model([a]), model([a, s]), model([a, s]))
     b = block(ms)                                    # v3 against v2: s is not new, but has not settled
     assert plus(b) == [("s", "suggestion", 2, "new in v2", ["expect", "ignore"])]
-    assert b["marks"]["stocks"] == {"s": ["new"]} and b["unsettled"] == 1 and not b["stabilised"]
+    # ringed as unsettled, never NEW: it is in v2, the version it is compared with
+    assert b["marks"]["stocks"] == {"s": ["unsettled"]} and b["unsettled"] == 1 and not b["stabilised"]
     assert {"what": "unsettled suggestion", "part": "stock", "key": "s"} in ms.intended().design(hold=3)["open"]
     ms.save(model([a, s]))                           # in 3 consecutive versions: settled
     b = block(ms)

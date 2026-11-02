@@ -14,6 +14,7 @@ limit (``facts.py``)."""
 
 from __future__ import annotations
 
+from ..balance import MIN_EVENTS
 from ..discover import structure
 from . import diff as diffs
 from .expected import flow_entry, level_entry, mark_entry, target_of
@@ -62,8 +63,9 @@ REFITS = 3              # ... the ones that moved most
 def _reformed(model, shown, base_model, base) -> tuple[list, list]:
     """Against the base version: the flows present in both whose equation's form or inputs changed
     (``reforms``: what made the structure, and so the version, new), and of the rest the ones whose
-    equation's numbers moved most (``refits``: a refit over an anomaly is seen). Each with the flow's
-    id here, its ends, and both equations."""
+    equation's numbers moved most (``refits``: a refit over an anomaly is seen), never one fitted from
+    fewer than ``MIN_EVENTS`` events (its move is chance). Each with the flow's id here, its ends, and
+    both equations."""
     if base_model is None or model is None:
         return [], []
     reforms, refits = [], []
@@ -77,6 +79,10 @@ def _reformed(model, shown, base_model, base) -> tuple[list, list]:
         row = {"key": key, "id": fid, "from": f.src, "to": f.dst, "before": _eq(a), "after": _eq(b)}
         if (a.form, tuple(a.inputs)) != (b.form, tuple(b.inputs)):
             reforms.append(row)
+            continue
+        # a flow fitted from fewer events than a fit needs (the pages' Evidence.tooFew) has no number
+        # worth ranking: its refit is chance
+        if any(e.origin == "fitted" and (e.quality or {}).get("events", 0) < MIN_EVENTS for e in (a, b)):
             continue
         pa, pb = a.params.get("k", a.params.get("c")), b.params.get("k", b.params.get("c"))
         if isinstance(pa, int | float) and isinstance(pb, int | float) and max(abs(pa), abs(pb)) > 0:
@@ -189,8 +195,8 @@ def dynamics_block(intended, model=None, since=None, *, hold: int, version: int 
         for sg in suggestions:                   # unsettled, though not new against this base: listed until answered
             if sg["part"] != part or sg["key"] in rowed:
                 continue
-            if base is not None:
-                put(part, sg["id"], "new")
+            if base is not None:                 # NEW only when absent from the compared version; else ringed as unsettled
+                put(part, sg["id"], "new" if sg["key"] not in base.of(part) else "unsettled")
             changes.append({"sign": "+", "part": part, "key": sg["key"], "id": sg["id"], "status": "suggestion", "since": sg["since"],
                             "why": f"new in v{sg['since']}" if sg["since"] else f"new in {LATEST}", "controls": ["expect", "ignore"]})
     removed = {"stocks": [], "flows": []}

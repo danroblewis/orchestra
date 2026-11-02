@@ -21,6 +21,20 @@ const Evidence = (() => {
     if (byConstruction(t)) return `<span class="muted">${BY_CONSTRUCTION}</span>`;
     return `<span class="num">${fix(t.score)}</span> <span class="muted">${esc(t.level || "")}</span>`;
   }
+  // a stock by how far it can be trusted, in one word: "by construction" (its balance is its own
+  // moves), "hidden" (no series measures it), "evidenced" (medium or high trust), else "weakly evidenced"
+  function trustClass(s) {
+    const ev = (s || {}).evidence || {}, t = ev.trust || {};
+    if (byConstruction(t) || ev.by_construction) return "by construction";
+    if (ev.hidden || t.kind === "unmeasured") return "hidden";
+    return (t.score ?? 0) >= 0.5 ? "evidenced" : "weakly evidenced";
+  }
+  // "5 stocks: 0 evidenced, 3 by construction, 2 hidden" (evidenced always said, the rest when any)
+  function trustCounts(stocks) {
+    const by = {}; for (const s of stocks || []) { const c = trustClass(s); by[c] = (by[c] || 0) + 1; }
+    const n = (stocks || []).length, parts = ["evidenced", "weakly evidenced", "by construction", "hidden"].filter((c) => c === "evidenced" || by[c]).map((c) => `${by[c] || 0} ${c}`);
+    return { n, by, text: `${n} stock${n === 1 ? "" : "s"}: ${parts.join(", ")}`, none: !by.evidenced };
+  }
   // a flow "fitted" from fewer events than this has no fit to speak of
   const MIN_EVENTS = 5;
   const eventsOf = (f) => ((((f || {}).current || {}).quality || {}).events ?? 0);
@@ -47,12 +61,14 @@ const Evidence = (() => {
   const MARGIN = 0.15, CHANCE = 0.3;
   const UNTOLD = "timing cannot tell these machines apart";
   const ranked = (f) => ((f || {}).machines || []).filter((h) => h.machine && h.confidence != null).sort((a, b) => b.confidence - a.confidence);
+  // one machine listed whose match chance alone would half make: "chance alone would pair 48%"
   function untold(m, f) {
     const hs = ranked(f);
     if (!hs.length) return "";
     if (hs.length > 1 && hs[0].confidence - hs[1].confidence < MARGIN) return UNTOLD;
-    return (hs[0].chance ?? 0) > CHANCE ? UNTOLD : "";
+    if ((hs[0].chance ?? 0) <= CHANCE) return "";
+    return hs.length === 1 ? `chance alone would pair ${Math.round(100 * hs[0].chance)}%` : UNTOLD;
   }
-  return { trust, trustCell, byConstruction, tooFew, tooFewText, confidence, chance, matched, untold, ranked, MARGIN, MIN_EVENTS, BY_CONSTRUCTION };
+  return { trust, trustCell, trustClass, trustCounts, UNTOLD, byConstruction, tooFew, tooFewText, confidence, chance, matched, untold, ranked, MARGIN, MIN_EVENTS, BY_CONSTRUCTION };
 })();
 if (typeof module !== "undefined") module.exports = Evidence;

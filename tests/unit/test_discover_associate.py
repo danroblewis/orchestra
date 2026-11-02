@@ -57,7 +57,9 @@ def test_machines_whose_events_match_a_flow_are_hypotheses_with_evidence():
     hyps = {h["machine"]: h for h in done["hypotheses"]}
     worker = hyps["worker"]                                                         # its instances summed: one machine
     assert worker["origin"] == "inferred" and worker["by"] == "events on the bus" and worker["events"] == {"type": "job.done", "source": "worker"}
-    assert worker["confidence"] >= 0.9 and worker["counts"]["flow"] == worker["counts"]["events"] and "equal in" in worker["why"]
+    # equal in nearly every step, less what the same events moved in time match by chance
+    assert worker["equal_steps_moving"] >= 0.9 and 0.6 <= worker["confidence"] < worker["equal_steps_moving"] and worker["chance"] < 0.4
+    assert worker["counts"]["flow"] == worker["counts"]["events"] and "equal in" in worker["why"] and "by chance" in worker["why"]
     # the dispatcher acknowledges every job done too: a second hypothesis for one flow
     assert set(hyps) == {"worker", "dispatcher"} and hyps["dispatcher"]["events"]["type"] == "job.acked"
     mach = {mc.id: mc for mc in m.machines}
@@ -97,7 +99,8 @@ def counter(values, live=None):
 
 def test_match_needs_increments_that_agree_and_allows_a_step_of_lag():
     steps = [0, 1, 1, 3, 3, 4, 6, 6, 7, 9, 9, 10]
-    assert match(counter(steps), counter(steps))["confidence"] == 1.0
+    same = match(counter(steps), counter(steps))
+    assert same["test"] == "step by step" and same["equal_steps_moving"] == 1.0 and same["confidence"] == round(1.0 - same["chance"], 4) > 0.9
     late = counter([0, *steps[:-1]])                                                   # a step behind
     assert match(counter(steps), late)["lag_steps"] == 1
     assert match(counter(steps), counter([0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 5, 10])) is None
@@ -154,3 +157,42 @@ def test_a_full_share_with_a_high_chance_base_is_not_certainty():
     from orchestra.sd.attribute import discounted
     assert discounted(1.0, 0.42) < 1.0 and abs(discounted(1.0, 0.42) - 0.58) < 1e-9
     assert discounted(1.0, 0.0) == 1.0 and discounted(0.3, 0.42) == 0.0
+
+
+def _counter(name, labels, deltas):
+    vals = [0.0]
+    for d in deltas:
+        vals.append(vals[-1] + d)
+    return Series(name, labels, [(T0 + 5 * i, v) for i, v in enumerate(vals)], vals, True)
+
+
+def test_an_unrelated_busy_event_type_that_matches_step_by_step_by_coincidence_is_discounted_to_nothing():
+    rng = random.Random(9)
+    flow = _counter("moves_total", {"to": "x"}, [1.0 if rng.random() < 0.93 else 0.0 for _ in range(300)])
+    busy = _counter("orchestra_events_total", {"type": "tick", "source": "supervisor"}, [1.0 if rng.random() < 0.93 else 0.0 for _ in range(300)])
+    from orchestra.sd.attribute import _nonzero
+    # the raw step-by-step share is high: equal in most steps either moved
+    xs, ys = _nonzero(flow), _nonzero(busy)
+    moved = xs.keys() | ys.keys()
+    assert sum(1 for i in moved if xs.get(i) == ys.get(i)) / len(moved) > 0.85
+    m = match(flow, busy)
+    assert m is None or m["confidence"] < 0.1, m
+    assert m is None or m["chance"] > 0.8
+
+
+def test_one_event_type_that_ends_an_item_two_ways_is_hypothesised_on_both_exits_in_proportion():
+    rng = random.Random(5)
+    to_end, to_triage, checked = [], [], []
+    for _ in range(240):
+        ev = 1.0 if rng.random() < 0.15 else 0.0
+        end = ev and rng.random() < 0.7
+        to_end.append(ev if end else 0.0); to_triage.append(0.0 if end else ev); checked.append(ev)
+    end = _counter("moves_total", {"from": "check", "to": "<end>"}, to_end)
+    triage = _counter("moves_total", {"from": "check", "to": "triage"}, to_triage)
+    events = _counter("orchestra_events_total", {"type": "check.completed", "source": "sail"}, checked)
+    a, b = associate(end, [events], [triage]), associate(triage, [events], [end])
+    [ha], [hb] = a["hypotheses"], b["hypotheses"]
+    assert ha["machine"] == hb["machine"] == "sail"
+    assert ha["confidence"] > hb["confidence"] > 0                      # in proportion to the events each took
+    assert hb["test"] == "shares its events with another exit"
+    assert associate(triage, [events])["hypotheses"] == []              # alone, the busier event type is too many for it

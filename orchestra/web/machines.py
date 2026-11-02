@@ -37,6 +37,11 @@ Everything here is observed, or announced by the machine itself:
   (AGENTS.md rules 2 and 7): a write to a series labelled ``machine=<id>`` says nothing of whether
   the machine is there, and a series so labelled makes no machine and no instance. Never in the
   future: an event stamped ahead counts as seen when it was read;
+- **its announcements**, per instance: how many ``orchestra.machine.started`` it published and when the
+  latest was (``announced``, ``announced_at``; envelopes only), so a restart reads as one;
+- **its cadence** (``cadence_s``): the machine's own rhythm, from its instances' beats merged (a beat
+  of one instance within a burst of another's is one beat), so a busy instance and a rare one make
+  the machine's rhythm together, never the rare one's alone;
 - **whether it is active**: an instance is active while its last event is within ``ACTIVE_MARGIN``
   times the **cadence** of its events (a cadence over a day counts as a day), and never less than
   ``ACTIVE_FLOOR_S``. A cadence is observed, never taken from what a machine says of itself
@@ -51,7 +56,9 @@ Everything here is observed, or announced by the machine itself:
   quiet after a few of its own beats. A machine is active while any of its instances is;
 - **unanswered**: per type it announced it listens for, the events of it other machines
   published after any listener of that type last acted (``{pattern: {count, since}}``), so a
-  machine that hears work nobody takes reads apart from one with nothing to hear;
+  machine that hears work nobody takes reads apart from one with nothing to hear; charged only to
+  a listener that answered the type before (or its sole listener), the rest said once per type
+  (``unanswered_types``) with its listeners;
 - **recent events**: the last ``RECENT`` events of each machine, by their envelope only (time,
   type, instance, subject, id; never the ``data``, which is the machines' own);
 - **logs**: where an instance says its log is (``data.log`` in its announcement). The web server
@@ -102,6 +109,7 @@ RATE_S = 600         # a publication rate is over the last ten minutes, or over 
 RECENT = 60
 SUBJECTS = 50_000
 TRAIL = 4            # a machine's last event types about a subject, kept for crediting the hand-off
+ANSWER_SHARE = 0.25  # a listener is charged with a type's unanswered events when it took this share of them before
 
 
 class MachineIndex:
@@ -119,6 +127,7 @@ class MachineIndex:
         # latest announcement (opaque), in the order of the instances' latest announcements
         self.cards: dict[str, OrderedDict[str, dict]] = defaultdict(OrderedDict)
         self.instances: dict[str, dict[str, dict]] = defaultdict(dict)  # machine -> instance -> first/last seen
+        self.announced: dict[str, dict[str, list]] = defaultdict(dict)  # machine -> instance -> [how many announcements, the latest's time]
         self.logs: dict[str, dict[str, str]] = defaultdict(dict)        # machine -> instance -> announced log path
         self.latest: dict[str, deque] = defaultdict(lambda: deque(maxlen=RECENT))  # machine -> its last events' envelopes
         self.unattributed = 0
@@ -186,6 +195,8 @@ class MachineIndex:
         if not burst and (not beats or seen > beats[-1]):
             beats.append(seen)
         if ev.get("type") == ANNOUNCE:
+            a = self.announced[machine].setdefault(key, [0, None])
+            a[0], a[1] = a[0] + 1, t
             self._announced(ev, machine, instance)
             return
         subject = ev.get("subject")
@@ -237,30 +248,54 @@ class MachineIndex:
         if isinstance(d.get("log"), str) and d["log"]:
             self.logs[machine][instance or ""] = d["log"]
 
-    def _unanswered(self, machine: str, last: float | None) -> dict:
-        """Per type the machine announced it listens for: the events of it other machines published
-        after any machine that listens for that type (this one included, the publisher not) last
-        acted, in the last day, and when the oldest was: ``{pattern: {"count", "since"}}``, only the
-        ones with any. An event several machines listen for is answered when any of them acts after
+    def _unanswered(self) -> tuple[dict[str, dict], list[dict]]:
+        """What machines listen for that nobody answered: the events of each type other machines
+        published, in the last day, after every machine that listens for that type (the publisher
+        not) last acted. An event several machines listen for is answered when any of them acts after
         it, so one listener idle while another takes the work is never said to be not answering.
-        Envelopes alone: type, source, time."""
+
+        A listener is charged with a type's unanswered events only when it answered at least
+        ``ANSWER_SHARE`` of that publisher's events of the type before (hand-offs through the type
+        into it were observed), or is its sole listener: one hung
+        machine never marks every listener of the type. Returns, per machine, ``{pattern: {"count",
+        "since"}}`` for the types it is charged with, and, once, the unanswered types no listener is
+        charged with: ``[{"type", "count", "since", "listeners"}]``. Envelopes alone: type, source, time."""
         lasts = {m: max((v["last"] for v in insts.values()), default=None) for m, insts in self.instances.items()}
-        out = {}
-        for pattern in sorted(self.subs.get(machine, ())):
+        answered: Counter = Counter()                      # (publisher, type, listener) -> hand-offs through it into the listener
+        for (a, ty, b), n in self.handoffs.items():
+            if ty is not None and n > 0:
+                answered[(a, ty, b)] += n
+        per: dict[str, dict] = defaultdict(dict)
+        by_type: dict[str, dict] = {}
+        for (src, ty), q in self.recent.items():
+            listeners = sorted(x for x, subs in self.subs.items() if x != src and any(hears(p, ty) for p in subs))
+            if not listeners:
+                continue
+            after = max((t for t in (lasts.get(x) for x in listeners) if t is not None), default=None)
             n, since = 0, None
-            for (src, ty), q in self.recent.items():
-                if src == machine or not hears(pattern, ty):
-                    continue
-                heard = [lasts.get(x) for x, subs in self.subs.items() if x != src and any(hears(p, ty) for p in subs)]
-                after = max([t for t in heard if t is not None], default=last)
-                for t in reversed(q):
-                    if after is not None and t <= after:
-                        break
-                    n += 1
-                    since = t if since is None else min(since, t)
-            if n:
-                out[pattern] = {"count": n, "since": since}
-        return out
+            for t in reversed(q):
+                if after is not None and t <= after:
+                    break
+                n += 1
+                since = t if since is None else min(since, t)
+            if not n:
+                continue
+            # charged: the listeners that took at least ANSWER_SHARE of this publisher's events of the type
+            # before (the one it usually goes to), or the sole listener
+            took = {x: answered[(src, ty, x)] for x in listeners}
+            total = sum(took.values())
+            charged = ([x for x in listeners if took[x] >= ANSWER_SHARE * total] if total else []) or (listeners if len(listeners) == 1 else [])
+            for x in charged:
+                pattern = next(p for p in sorted(self.subs[x]) if hears(p, ty))
+                u = per[x].setdefault(pattern, {"count": 0, "since": since})
+                u["count"] += n
+                u["since"] = min(u["since"], since)
+            if not charged:
+                u = by_type.setdefault(ty, {"type": ty, "count": 0, "since": since, "listeners": listeners})
+                u["count"] += n
+                u["since"] = min(u["since"], since)
+                u["listeners"] = sorted(set(u["listeners"]) | set(listeners))
+        return dict(per), sorted(by_type.values(), key=lambda u: (u["since"], u["type"]))
 
     def bus_since(self) -> float | None:
         """When the bus was first heard: the earliest any instance was first seen, or None."""
@@ -292,6 +327,7 @@ class MachineIndex:
             seen = set(self.total) | set(self.instances) | ({HOST} if self.since is not None else set(self.subs) | {HOST})
             ids = sorted(seen, key=lambda m: (m != HOST, m))
             machines = []
+            unanswered_of, unanswered_types = self._unanswered()
             for m in ids:
                 pubs = []
                 first = min((v["first"] for v in self.instances[m].values()), default=None)
@@ -309,10 +345,17 @@ class MachineIndex:
                     cadence = gaps(self.beats[m].get(i, ()))
                     active = now - v["last"] < active_within(cadence)
                     alive = alive or active
+                    times, at = self.announced[m].get(i, [0, None])
                     insts.append({"id": i or m, "first_seen": v["first"], "last_seen": v["last"], "active": active,
-                                  "cadence_s": cadence, "kind": self.kind[m].get(i), "mode": self.mode[m].get(i)})
+                                  "cadence_s": cadence, "kind": self.kind[m].get(i), "mode": self.mode[m].get(i),
+                                  "announced": times, **({"announced_at": at} if times else {})})
                 last = max((v["last"] for v in self.instances[m].values()), default=None)
-                unanswered = self._unanswered(m, last)
+                # the machine's own rhythm: its instances' beats merged, a beat within a burst of another one beat
+                merged: list[float] = []
+                for t in sorted(t for q in self.beats[m].values() for t in q):
+                    if not merged or t - merged[-1] > BURST_S:
+                        merged.append(t)
+                unanswered = unanswered_of.get(m)
                 kinds = Counter(self.kind[m].values())
                 n_inst = len(self.instances[m])
                 asker = bool(self.total[m]) and set(self.total[m]) == {REQUESTED} and not kinds
@@ -326,7 +369,9 @@ class MachineIndex:
                                  "subscribes": sorted(self.subs.get(m, ())), "flows": flows.get(m, []),
                                  "logs": sorted(i or m for i in self.logs.get(m, {})),
                                  "instances": [i for i in insts if i["id"] != m] if any(k for k in self.instances[m]) else [],
-                                 "first_seen": first, "last_seen": last, "active": alive,
+                                 "first_seen": first, "last_seen": last, "active": alive, "cadence_s": gaps(merged),
+                                 "announced": sum(a[0] for a in self.announced[m].values()),
+                                 "announced_at": max((a[1] for a in self.announced[m].values() if a[1] is not None), default=None),
                                  **({"unanswered": unanswered} if unanswered else {})})
             types = sorted({p["type"] for x in machines for p in x["publishes"]} | {t for x in machines for t in x["subscribes"]})
             edges = [{"from": x["id"], "to": p["type"], "kind": "publishes", "count": p["count"], "day": p["day"]}
@@ -338,7 +383,7 @@ class MachineIndex:
             relays = [{"from": a, "via": ty, "through": h, "through_via": hv, "to": b, "count": n, "day": len(self.recent_relays.get((a, ty, h, hv, b), ()))}
                       for (a, ty, h, hv, b), n in self.relays.most_common()]
             return {"machines": machines, "types": types, "edges": edges, "handoffs": handoffs, "relays": relays,
-                    "unattributed_events": self.unattributed}
+                    "unanswered_types": unanswered_types, "unattributed_events": self.unattributed}
 
 
 def hears(pattern: str, type_: str) -> bool:
@@ -365,13 +410,19 @@ def model_parts(model) -> dict:
     """The latest model's stocks and flows as the pages name them (sd-graph.js names): ids, ends,
     and the series and counters their names come from. Nothing else of the model."""
     if model is None:
-        return {"stocks": [], "flows": []}
+        return {"stocks": [], "flows": [], "discovery": {"left_out": {}, "titles": {}}}
 
     def ref(r):
         return {"name": r.name, "labels": dict(r.labels)} if r is not None else None
     # ``named``: the part's name is the server's title (sd.titles), shown as it is
     keep = lambda ev, ks: {k: v for k, v in (ev or {}).items() if k in ks}
-    return {"stocks": [{"id": s.id, "name": s.name, "series": ref(s.series), "evidence": keep(s.evidence, ("named", "passing", "hidden"))}
+    # the places its flows' counters name, as Dynamics names them: the left-out series that carry
+    # one of those values, with their titles and why (sd-graph.js placeOf)
+    values = {v for f in model.flows if f.counter is not None for v in f.counter.labels.values()}
+    d = model.discovery or {}
+    near = {k: why for k, why in (d.get("left_out") or {}).items() if any(f'="{v}"' in k for v in values)}
+    return {"discovery": {"left_out": near, "titles": {k: t for k, t in (d.get("titles") or {}).items() if k in near}},
+            "stocks": [{"id": s.id, "name": s.name, "series": ref(s.series), "evidence": keep(s.evidence, ("named", "passing", "hidden"))}
                        for s in model.stocks],
             "flows": [{"id": f.id, "name": f.name, "from": f.src, "to": f.dst, "counter": ref(f.counter),
                        "measured_by": [ref(c) for c in f.measured_by], "evidence": keep(f.evidence, ("same_as", "named"))}
@@ -385,10 +436,15 @@ def flow_hypotheses(model) -> dict[str, list[dict]]:
     hypothesis, and gives none."""
     out: dict[str, list[dict]] = defaultdict(list)
     for f in (model.flows if model is not None else []):
-        for h in ((f.evidence or {}).get("machines") or {}).get("hypotheses") or []:
-            if h.get("machine"):
-                out[h["machine"]].append({"flow": f.id, "name": f.name, "from": f.src, "to": f.dst, "confidence": h.get("confidence"), "by": h.get("by"),
-                                          "events": h.get("events"), "why": h.get("why"), "hypothesis": True})
+        hs = [h for h in ((f.evidence or {}).get("machines") or {}).get("hypotheses") or [] if h.get("machine")]
+        # the flow as Dynamics judges its hypotheses (evidence-text.js): how it was fitted, on how many
+        # events, and every machine hypothesised on it, so a card says what Dynamics says
+        eq = f.current()
+        record = {"current": {"origin": eq.origin, "quality": {"events": (eq.quality or {}).get("events")}} if eq is not None else None,
+                  "machines": [{"machine": h["machine"], "confidence": h.get("confidence"), "chance": h.get("chance")} for h in hs]}
+        for h in hs:
+            out[h["machine"]].append({"flow": f.id, "name": f.name, "from": f.src, "to": f.dst, "confidence": h.get("confidence"), "chance": h.get("chance"),
+                                      "by": h.get("by"), "events": h.get("events"), "why": h.get("why"), "hypothesis": True, "record": record})
     return {m: sorted(hs, key=lambda h: (-(h["confidence"] or 0), h["flow"])) for m, hs in out.items()}
 
 

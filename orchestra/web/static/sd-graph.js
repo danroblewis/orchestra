@@ -192,6 +192,13 @@
       const seen = new Map(); for (const v of Object.values(group)) seen.set(v.name, (seen.get(v.name) || 0) + 1);
       for (const v of Object.values(group)) v.label = v.family && seen.get(v.name) > 1 ? `${v.name} · ${v.family}` : v.name;
     }
+    // two flows of one name are told apart by where each goes ("sail_check → end · into commits on
+    // main"), then where each comes from: the one name used everywhere a flow is named
+    const end = (id, fallback) => (id ? (stocks[id] ? stocks[id].label : nice(id)) : fallback);
+    for (const [how, of] of [["into", (f) => end(f.to, "the end")], ["from", (f) => end(f.from, "the start")]]) {
+      const seen = new Map(); for (const f of m.flows || []) { const l = flows[f.id] && flows[f.id].label; if (l) seen.set(l, (seen.get(l) || 0) + 1); }
+      for (const f of m.flows || []) { const v = flows[f.id]; if (v && seen.get(v.label) > 1) v.label = `${v.label} · ${how} ${of(f)}`; }
+    }
     const out = { stocks, flows }; NAMES.set(m, out); return out;
   }
   const stockName = (m, id) => { const n = names(m).stocks[id]; return n ? n.label : nice(id); };
@@ -225,10 +232,21 @@
   // a flow into or out of a stock no counters balance, whose rate reads another series: its driver
   // was found by fitting the level's changes, a correlation that no experiment has tested
   const UNTESTED = "fitted from correlation; untested: no experiment has moved its driver";
-  function correlational(m, f) {
-    const e = f && f.current; if (!e || !(e.inputs || []).some((x) => x !== f.from && x !== f.to)) return false;
-    const net = (id) => id && m.stocks.some((s) => s.id === id && s.evidence && s.evidence.net_flow);
-    return !!((f.evidence && f.evidence.net_flow_of) || net(f.from) || net(f.to));
+  // what a flow's current equation reads other than its own ends: its drivers by correlation
+  function drivers(f) {
+    const e = f && f.current; if (!e) return [];
+    const sp = e.spec && e.spec.form ? e.spec : null;
+    const reads = [...(e.inputs || []), ...(sp ? [sp.stock, ...(sp.terms || []).map((t) => t.stock), ...(sp.effects || []).map((x) => x.stock)] : [])].filter(Boolean)
+      .map((x) => String(x).replace(/^input:/, ""));
+    return [...new Set(reads)].filter((x) => x !== f.from && x !== f.to);
+  }
+  // a flow whose rate reads anything but its own source and destination was fitted from a correlation
+  // no experiment has tested, however its stocks were found
+  function correlational(m, f) { return drivers(f).length > 0; }
+  // the caveat, naming the driver: "reads jobs waiting at review, not its source: fitted from correlation; untested"
+  function untestedText(m, f) {
+    const ds = drivers(f); if (!ds.length) return "";
+    return `reads ${ds.map((x) => readName(m, x)).join(" and ")}, not its source: fitted from correlation; untested`;
   }
 
   // the sign of each thing a rate reads: + more of it, more flow; − more of it, less flow; ~ unknown
@@ -249,6 +267,18 @@
   }
 
   const shorten = (t, n = 44) => (t.length > n ? t.slice(0, n - 2) + "…" : t);
+  // a caption in at most two lines of ``n`` characters, cut only after the second, at a word: [line, line?]
+  function wrap(text, n) {
+    const words = String(text).split(/\s+/).filter(Boolean), out = [""];
+    for (const w of words) {
+      const cur = out[out.length - 1], next = cur ? cur + " " + w : w;
+      if (next.length <= n || !cur) out[out.length - 1] = next;
+      else if (out.length < 2) out.push(w);
+      else { out[1] = out[1] + "…"; return out; }
+    }
+    if (out[out.length - 1].length > n) out[out.length - 1] = out[out.length - 1].slice(0, n - 1).trimEnd() + "…";
+    return out[0] ? (out.length > 1 ? out : out[0]) : "";
+  }
   // the machines a flow's label names: one, only when its hypothesis beats the next by a clear
   // MARGIN and chance alone would not half make it ("worker?"); hypotheses within the margin of each
   // other: "3 machines: timing cannot tell them apart"; otherwise, and on a flow with too few events
@@ -274,7 +304,10 @@
     const byMachine = Object.fromEntries((m.machines || []).map((x) => [x.id, x]));
     // ``keepFlows``: flow ids drawn whatever their events (expected ones: an expectation stays on the diagram)
     const isRare = (f) => !!(opts.rare && opts.rare(f));
-    const shown = (f) => ((f.current && f.current.quality && f.current.quality.events > 0) && !isRare(f)) || opts.showAll || !!(opts.keepFlows && opts.keepFlows.has(f.id));
+    // a rare flow that moves now (``opts.moving``) and feeds or drains a stock is drawn, dashed and
+    // unfitted: the main input, running now, is never hidden for having few events in the fit window
+    const movingRare = (f) => isRare(f) && !!(opts.moving && opts.moving(f)) && !!(f.from || f.to);
+    const shown = (f) => ((f.current && f.current.quality && f.current.quality.events > 0) && (!isRare(f) || movingRare(f))) || opts.showAll || !!(opts.keepFlows && opts.keepFlows.has(f.id));
     // a stock that only fills is where another stock's material ends up (the orders delivered) when a
     // flow shown drains a stock into it: drawn. One that no such flow feeds (the event bus's
     // length, a tally) starts hidden, with its flows; ``acc`` is those.
@@ -289,15 +322,16 @@
     const nm = names(m).stocks;
     for (const s of m.stocks.filter((s) => !hiddenStock(s.id))) { const { name, family, about } = nm[s.id] || { name: s.name, family: "" };
       // a stepped stock's caption is its sentence, cut to the box (the drawer and the hover say it all)
-      const fit = Math.max(180, s.name.length * 7 + 30) / 6.2 - 2, cap = family || (about && about.length > fit ? about.slice(0, fit - 1).trimEnd() + "…" : about || "");
+      const fit = Math.max(180, s.name.length * 7 + 30) / 6.2 - 2, cap = family || wrap(about || "", fit);
       nodes.push({ id: "s:" + s.id, kind: "box", sid: s.id, label: name, lines: [name], caption: cap,
       // sized by the full name, as before the short names: the layout search is sensitive to box
       // sizes (narrower boxes break the layout tests' fixtures), which is its own open problem
-      w: Math.max(180, s.name.length * 7 + 30), h: 92, dashed: !!(s.evidence && s.evidence.hidden), color: stockColor(s.id),
+      w: Math.max(180, s.name.length * 7 + 30), h: Array.isArray(cap) && cap.length > 1 ? 102 : 92, dashed: !!(s.evidence && s.evidence.hidden), color: stockColor(s.id),
       fill: "#0b0e14", charge: -1600, sub: " ",
       // a stock that holds by construction (its level is the count of its own moves): tagged, so it
       // never reads as trusted as one the evidence balances
-      ...(byConstruction(s) ? { tags: [{ text: "by construction", cls: "ng-t-bc" }] } : {}) }); }
+      // (under the box: above it is where a version's marks go)
+      ...(byConstruction(s) ? { tags: [{ text: "by construction", cls: "ng-t-bc", below: true }] } : {}) }); }
     for (const f of flows) {
       // in the causal graph used for loops, a flow is a node between its ends ("f:<id>")
       const col = FLOW_INK, v = "f:" + f.id, e = f.current || {};
@@ -307,18 +341,25 @@
       // (flow ids change between discoveries; a stock's place outside does not), just outside the
       // frame by its stock (tethered)
       const cl = (f.counter && f.counter.labels) || {};
-      const placeEnd = (v) => (opts.place && v != null && !/^<.*>$/.test(String(v)) ? opts.place(String(v)) : null);
-      const pFrom = !f.from ? placeEnd(cl.from) : null, pTo = !f.to ? placeEnd(cl.to) : null;
-      const placeNode = (v, p) => { const id = "p:" + v; if (!has(id)) nodes.push({ id, kind: "box", place: v, label: p.title, lines: [p.title], caption: "not a stock",
-        sub: p.why ? shorten(p.why, 40) : " ", why: p.why, w: Math.max(160, p.title.length * 6.6 + 30), h: 62, dashed: true, color: "#64748b", fill: "#0e1118", charge: -600, textColor: "var(--text2)" }); return id; };
-      const src = f.from ? "s:" + f.from : pFrom ? placeNode(cl.from, pFrom) : "c:in:" + (f.to || f.id);
-      const dst = f.to ? "s:" + f.to : pTo ? placeNode(cl.to, pTo) : "c:out:" + (f.from || f.id);
-      if (!f.from && !pFrom && f.to && !has(src)) nodes.push({ id: src, kind: "cloud", charge: -20, tether: "s:" + f.to });
-      if (!f.to && !pTo && f.from && !has(dst)) nodes.push({ id: dst, kind: "cloud", charge: -20, tether: "s:" + f.from });
-      const fe = `${src}>${dst}:${f.id}`, outside = (!f.from && !pFrom) || (!f.to && !pTo);
-      edges.push({ id: fe, source: src, target: dst, color: col, width: outside ? 2 : 3.4, distance: outside ? 60 : 230, strength: outside ? 0.05 : 0.6,
-        cls: outside ? "ng-outside" : "", fid: f.id, flowPart: true, bend: outside ? 10 : 18, labelMuted: true,
-        label: [shorten(eqText(m, f, true)), machineLabel(f, (id) => (byMachine[id] || {}).name || id)] });
+      const placeEnd = (v) => (v != null && !/^<.*>$/.test(String(v)) ? (opts.place || ((x) => placeOf(m, x)))(String(v)) : null);
+      // a place a drawn stock's own series measures is that stock: drawn as one box, never twice
+      const stockAt = (v) => { const st = v != null && m.stocks.find((x) => !hiddenStock(x.id) && x.series && Object.values(x.series.labels || {}).includes(String(v))); return st ? "s:" + st.id : null; };
+      const sFrom = !f.from ? stockAt(cl.from) : null, sTo = !f.to ? stockAt(cl.to) : null;
+      const pFrom = !f.from && !sFrom ? placeEnd(cl.from) : null, pTo = !f.to && !sTo ? placeEnd(cl.to) : null;
+      // named as a stock of it would be (its level series' title), else its value in words ("sail_check (waiting)");
+      // ``inert``: no drawer of its own, so it is no tab stop (its tooltip says why it is no stock)
+      const placeNode = (v, p) => { const id = "p:" + v, title = placeTitle(v, p); if (!has(id)) nodes.push({ id, kind: "box", place: v, label: title, lines: [title], caption: "not a stock",
+        sub: p.why ? shorten(p.why, 40) : " ", why: p.why, series: p.series, inert: true, w: Math.max(160, title.length * 6.6 + 30), h: 62, dashed: true, color: "#64748b", fill: "#0e1118", charge: -600, textColor: "var(--text2)" }); return id; };
+      const outsideName = (v) => (/^<(.*)>$/.test(String(v || "")) ? "the " + String(v).slice(1, -1) : "");
+      const src = f.from ? "s:" + f.from : sFrom || (pFrom ? placeNode(cl.from, pFrom) : "c:in:" + (f.to || f.id));
+      const dst = f.to ? "s:" + f.to : sTo || (pTo ? placeNode(cl.to, pTo) : "c:out:" + (f.from || f.id));
+      if (!f.from && !sFrom && !pFrom && f.to && !has(src)) nodes.push({ id: src, kind: "cloud", charge: -20, tether: "s:" + f.to, label: outsideName(cl.from) });
+      if (!f.to && !sTo && !pTo && f.from && !has(dst)) nodes.push({ id: dst, kind: "cloud", charge: -20, tether: "s:" + f.from, label: outsideName(cl.to) });
+      const fe = `${src}>${dst}:${f.id}`, outside = src.startsWith("c:") || dst.startsWith("c:"), few = isRare(f);
+      // a flow with too few events to fit, drawn because it feeds or drains a drawn stock: dashed, no equation
+      edges.push({ id: fe, source: src, target: dst, color: col, width: few ? 1.4 : outside ? 2 : 3.4, distance: outside ? 60 : 230, strength: outside ? 0.05 : 0.6,
+        cls: (outside ? "ng-outside" : "") + (few ? " ng-unfitted" : ""), fid: f.id, flowPart: true, bend: outside ? 10 : 18, labelMuted: true, ...(few ? { dash: "4 4" } : {}),
+        label: few ? ["too few events to fit"] : [shorten(eqText(m, f, true)), machineLabel(f, (id) => (byMachine[id] || {}).name || id)] });
       flowEdge[v] = fe;
       if (f.to) causal.push({ source: v, target: "s:" + f.to, sign: 1 });
       if (f.from) causal.push({ source: v, target: "s:" + f.from, sign: -1 });
@@ -345,5 +386,32 @@
   const FLOW_INK = "#a3adbd";
   const byConstruction = (s) => !!(s.evidence && (s.evidence.by_construction || (s.evidence.trust && s.evidence.trust.kind === "by_construction")));
 
-  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, seriesName, sameAs, drawnApart, nice, num, correlational, machineLabel, UNTESTED, FLOW_INK, byConstruction };
+  // a place a flow's counter names (its from or to label value) where discovery kept no stock: its
+  // title and why it was left out, from the level series that measures it (a left-out series carrying
+  // that value); the value itself when none does. Names come from the series' labels and titles only
+  function placeOf(m, v) {
+    const d = (m && m.discovery) || {}, lo = d.left_out || {}, titles = d.titles || {};
+    const k = Object.keys(lo).find((key) => key.includes(`="${v}"`) && !/_total\{/.test(key) && titles[key] && !/^age of /.test(titles[key]));
+    return k ? { title: titles[k], why: lo[k], series: k } : { title: v, why: "no series measures it" };
+  }
+  // where a flow comes from or goes (``which``: "from" or "to"), as the diagram draws it: its stock; a
+  // stock whose series measures the place its counter names; that place, "(not a stock)"; or, only
+  // where the arrow ends at a cloud, "outside"
+  function endName(m, f, which) {
+    if (!f) return "outside";
+    if (f[which]) return stockName(m, f[which]);
+    const v = ((f.counter || {}).labels || {})[which];
+    if (v == null || /^<.*>$/.test(String(v))) return "outside";
+    const st = (m.stocks || []).find((x) => x.series && Object.values(x.series.labels || {}).includes(String(v)));
+    if (st) return stockName(m, st.id);
+    return `${placeTitle(v, placeOf(m, String(v)))} (not a stock)`;
+  }
+  // a place's name, as a stock of it is named: its level series' title, else its value in words
+  // ("sail_check.waiting": "sail_check (waiting)"), never the raw value
+  function placeTitle(v, p) {
+    if (p && p.title && p.title !== v) return p.title;
+    const parts = String(v).split(".").filter(Boolean);
+    return parts.length > 1 ? `${parts[0]} (${parts.slice(1).join(", ")})` : String(v);
+  }
+  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, seriesName, sameAs, drawnApart, nice, num, correlational, untestedText, drivers, machineLabel, placeTitle, placeOf, endName, wrap, UNTESTED, FLOW_INK, byConstruction };
 });

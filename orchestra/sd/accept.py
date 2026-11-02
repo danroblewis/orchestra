@@ -117,12 +117,15 @@ def accepted(found: list, counters: list, barred: dict, masks: dict, provenance:
     return out, identified, built, refused
 
 
-def stock_trust(s, exact: float | None, identified: dict, by_construction: bool, passage) -> dict:
-    """The trust record of a conservation stock (``sd.stocktrust``)."""
+def stock_trust(s, exact: float | None, identified: dict, by_construction: bool, passage, unread: dict | None = None) -> dict:
+    """The trust record of a conservation stock (``sd.stocktrust``). ``unread``: a hidden state's
+    own level series that never read anything there (``sd.passing.unread``), said instead of "no series"."""
     if by_construction:
         return stocktrust.by_construction()
     if passage is not None:
-        return stocktrust.passage(passage) if passage.measured else stocktrust.unmeasured()
+        if passage.measured:
+            return stocktrust.passage(passage)
+        return stocktrust.unmeasured(unread["level_note"] + ": its level is what the counters imply") if unread else stocktrust.unmeasured()
     if s.key in identified:
         return stocktrust.conservation(identified[s.key], exact or 0.0)
     return stocktrust.unmeasured("found as a step between two others (sd.hops): judged on the counters, not on a balance of its own")

@@ -85,7 +85,7 @@ def test_the_machines_answer_keeps_the_fixture_shape_and_adds_intent(tmp_path, m
     host = next(x for x in got["machines"] if x["bootstrap"])
     assert host["active_by"] == "runtime"
     assert all("active_by" not in x for x in got["machines"] if not x["bootstrap"])
-    assert set(got["model_parts"]) == {"stocks", "flows"}
+    assert set(got["model_parts"]) == {"stocks", "flows", "discovery"}       # discovery: the places its flows name (sd-graph.js placeOf)
 
 
 def test_the_intended_read_endpoints(tmp_path, monkeypatch):

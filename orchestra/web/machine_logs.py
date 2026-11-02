@@ -25,6 +25,14 @@ def readable(path: str | None, roots: list[Path]) -> tuple[Path | None, str | No
     return real, None
 
 
+def written(path: Path) -> float | None:
+    """When the log was last written (its modification time), or None when it cannot be read."""
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
 def tail(path: Path, lines: int) -> list[str]:
     with path.open("rb") as f:
         f.seek(0, 2)

@@ -202,6 +202,21 @@ def _judged(base: Model, net: set[str], sd_flows: list[dict], parts: list, coars
     return sd_flows
 
 
+def merged_title(names: list[str]) -> str:
+    """A flow merged from several counters, by its members' plain names: "into write (4 sources)" when
+    they all enter one thing, "out of review (2 destinations)" when they all leave one, else the
+    names joined ("a → b + c → d"). A member's "(sent back)" and the like are said of it, not of the merge."""
+    plain = [re.sub(r"\s*\([^)]*\)$", "", n) for n in names]
+    ends = [[p.strip() for p in n.split("→", 1)] if "→" in n else None for n in plain]
+    if all(ends) and len(names) > 1:
+        dst, src = {e[1] for e in ends}, {e[0] for e in ends}
+        if len(dst) == 1:
+            return f"into {dst.pop()} ({len(names)} sources)"
+        if len(src) == 1:
+            return f"out of {src.pop()} ({len(names)} destinations)"
+    return " + ".join(names)
+
+
 HIDDEN = ("a stock no series measures, found from how the measured levels change: something in the system "
           "is not measured or not understood yet")
 
@@ -351,7 +366,7 @@ def _discover_with(dump, *, start: float, end: float, step: float, strategy: str
         if len(matched) == 1:
             fid, name, counter = matched[0].id, matched[0].name, matched[0].counter
         elif matched:
-            fid, name, counter = "+".join(m.id for m in matched), " + ".join(m.name for m in matched), None
+            fid, name, counter = "+".join(m.id for m in matched), merged_title([m.name for m in matched]), None
         else:
             fid = f"unmeasured:{src or 'outside'}>{dst or 'outside'}"
             name, counter = f"{(src or 'outside').replace('_', ' ')} → {(dst or 'outside').replace('_', ' ')} (unmeasured)", None
@@ -361,7 +376,8 @@ def _discover_with(dump, *, start: float, end: float, step: float, strategy: str
              **({"judged_scale": float(sfs[0]["judged_scale"])} if len(sfs) == 1 and "judged_scale" in sfs[0] else {})}
         eq = Equation(rate.get("form", "unknown"), numbers(rate), "discovered", f"sdlab:{strategy}", (fit_start, fit_start + n * coarse),
                       None, q, [ref(x) for x in reads(rate)], rate)
-        ev = matched[0].evidence if len(matched) == 1 else {}
+        # merged from several named moves: named as they are, so the pages never fall back to a counter's raw labels
+        ev = matched[0].evidence if len(matched) == 1 else ({"named": "places"} if all((m.evidence or {}).get("named") for m in matched) else {})
         if "machines" not in ev:
             ev = {**ev, "machines": _associated(matched)}
         flows.append(Flow(fid, name, src, dst, counter, [eq], [m.counter for m in matched if m.counter], ev))

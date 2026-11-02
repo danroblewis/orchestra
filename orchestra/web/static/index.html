@@ -20,6 +20,8 @@
   .dbody > .panel { background:none; border:0; border-bottom:1px solid var(--border); border-radius:0; padding:4px 0 8px; margin:0 0 8px } .dbody > .panel:last-child { border-bottom:0; margin:0 }
   .grid-stack-placeholder > .placeholder-content { background:rgba(110,168,254,.08); border:1px dashed var(--accent); border-radius:3px }
   .grid-stack > .grid-stack-item > .ui-resizable-se { filter:invert(1); opacity:.35 }
+  /* a phone: a list; no handles, nothing to drag */
+  .gs-list .ui-resizable-handle { display:none !important } .gs-list .dhead { cursor:default } .gs-list .dbody { overflow:visible }
   #panels-menu { position:relative; margin-left:auto } #panels-menu + #conn { margin-left:12px !important }
   .pmenu[hidden] { display:none } .pmenu { position:absolute; right:0; top:28px; z-index:30; background:var(--panel2); border:1px solid var(--border2); border-radius:8px; padding:6px; display:grid; gap:4px; min-width:200px; box-shadow:0 8px 24px rgba(0,0,0,.4) }
   .pmenu button { text-align:left; background:var(--panel3); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:5px 8px; font:inherit; font-size:12px; cursor:pointer } .pmenu button:hover { border-color:var(--accent) }
@@ -28,11 +30,12 @@
   .mline .d { width:8px; height:8px; border-radius:50% } .mline b { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
   .mline > span:nth-child(3) { display:flex; gap:4px; flex-wrap:nowrap } .mline .k { font-size:10px; padding:0 6px; border-radius:999px; border:1px solid var(--border2); color:var(--text2); white-space:nowrap }
   .mline .r { text-align:right; color:var(--muted); font-size:11.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-  .mline .r .live { color:#86efac } .mline .r .quiet, .mline .r .neutral { color:var(--text2) } .mline .r .late { color:#fcd34d } .mnote { font-size:11.5px; color:var(--muted); padding:4px 8px 6px }
+  .mline .r .live { color:#86efac } .mline .r .quiet, .mline .r .neutral { color:var(--text2) } .mline .r .late { color:#fcd34d } .mnote.lv-late { color:#fcd34d } .mnote { font-size:11.5px; color:var(--muted); padding:4px 8px 6px }
   .mline:focus-visible { outline:2px solid var(--accent); outline-offset:-2px }
+  .mmore { position:sticky; bottom:-8px; background:var(--panel); color:var(--accent); font-size:11.5px; padding:3px 8px; border-top:1px solid var(--border) }
   .mstat { display:block; padding:6px 8px; font-size:12.5px; color:var(--text); text-decoration:none } .mstat:hover { background:var(--panel3); border-radius:8px }
   /* the server is not answering: nothing on the panel reads as live */
-  .dbody.stale .mline .d { background:#64748b !important } .dbody.stale .mline .k, .dbody.stale .mline b { opacity:.55 } .dbody.stale .mline .r .live { color:var(--muted) }
+  .dbody.stale .mline .d { background:#64748b !important; box-shadow:none !important } .dbody.stale .mline .k, .dbody.stale .mline b { opacity:.55 } .dbody.stale .mline .r .live { color:var(--muted) }
   /* a phone: a row wraps, its words under its name */
   @media (max-width:600px) { .mline { display:flex; flex-wrap:wrap; gap:4px 8px } .mline > span:nth-child(3) { flex-wrap:wrap } .mline .r { flex-basis:100%; text-align:left; white-space:normal } }
 </style>
@@ -44,7 +47,9 @@
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeMachine()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
 <script src="/static/machine-dialog.js?v={{v}}"></script>
+<script src="/static/evidence-text.js?v={{v}}"></script>
 <script src="/static/sd-graph.js?v={{v}}"></script>
+<script src="/static/flow-check.js?v={{v}}"></script>
 <script>
 // Orchestra's own panels: the machines running now, and the host. A package adds its own
 // (Orchestra.panels.register, from its every-page script); dashboard.js lays them all out.
@@ -55,7 +60,7 @@ Orchestra.machineList = () => (MACHINES && MACHINES.machines) || [];
 // opens the machine's dialog. Every machine is on the Machines page. Whether a machine is active is
 // the bus's (its events within its own rhythm), the one predicate the headline and the rows share:
 // a continuous machine is one that said so when it started, never "running" on that word alone.
-Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 9 }, mount(body, ui) {
+Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 11 }, mount(body, ui) {
   async function refresh() {
     try {
       MACHINES = await (await fetch("/api/machines?era=all")).json();
@@ -67,24 +72,31 @@ Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 
       // every machine is a row or in a note below them: the rows and notes add up to the header's count
       const all = MACHINES.machines, G = Orchestra.dashboardGroups(all), run = G.rows;
       // one count, split by the one word set (Orchestra.liveness): "11 machines: 1 active, 2 not answering, 8 quiet"
-      const by = {}; for (const m of all) { const lv = Orchestra.liveness(m), w = lv.cls === "late" ? (lv.word.startsWith("not answering") ? "not answering" : "late") : lv.cls === "live" ? "active" : lv.cls === "neutral" ? "heard, no rhythm yet" : m.last_seen ? "quiet" : "no evidence yet"; by[w] = (by[w] || 0) + 1; }
+      const by = {}; for (const m of all) { const w = G.group.get(m); by[w] = (by[w] || 0) + 1; }
       ui.setSub(`${all.length} machines: ${["active", "not answering", "late", "heard, no rhythm yet", "quiet", "no evidence yet"].filter((w) => by[w]).map((w) => `${by[w]} ${w}`).join(", ")}`);
       const link = (m, extra = "") => `<a href="/machines#${encodeURIComponent(m.id)}">${esc(m.id)}</a>${extra}`;
       // the bus's word for it, always shown, even beside a package's own summary (the host's: the runtime record's)
       const live = (m) => { const lv = Orchestra.liveness(m); return `<span class="lw ${lv.cls}" title="${esc(lv.title)}">${esc(lv.word)}</span>`; };
       const down = (m) => { const n = Orchestra.downOf(m).length; return n ? ` <span class="stale" title="points arrive and its up series reads 0: a report, not a verdict">(${n} instance${n === 1 ? "" : "s"} report${n === 1 ? "s" : ""} down)</span>` : ""; };
       const note = (ms, what) => (ms.length ? `<div class="mnote">· ${ms.length} ${what}: ${ms.map((m) => link(m, what.startsWith("declared") ? down(m) : what.startsWith("quiet") ? ` <span class="muted">(${m.mode ? esc(m.mode) + ", " : ""}${m.last_seen ? "since " + hhmm(m.last_seen) : "never heard"})</span>` : "")).join(", ")}</div>` : "");
-      const notes = note(G.declared, "declared, not heard") + note(G.proposed, "proposed, never heard") + note(G.quiet, "quiet, not continuous");
-      body.innerHTML = (run.length ? Orchestra.machineCards.sort(run).map((m) => {
+      // heard, but with no rhythm of its own yet: one line, not a row each, so no machine is cut off below
+      const young = run.filter((m) => G.group.get(m) === "heard, no rhythm yet"), rows = run.filter((m) => !young.includes(m));
+      const notes = note(young, "heard, no rhythm yet") + note(G.declared, "declared, not heard") + note(G.proposed, "proposed, never heard") + note(G.unseen, "no evidence yet") + note(G.quiet, "quiet");
+      // a type several machines listen for that none of them answered: said once, above the rows
+      const waiting = Orchestra.unansweredTypes(MACHINES).map((t) => `<div class="mnote lv-late">${esc(t)}</div>`).join("");
+      Orchestra.keepFocus(body, () => { body.innerHTML = waiting + (rows.length ? Orchestra.machineCards.sort(rows).map((m) => {
         const kind = m.kind || "";
         const own = Orchestra.machineCards.summary(m), lv = Orchestra.liveness(m);
         // a package's own summary is its own element beside the bus's word, never joined by a dot to it
         const right = own != null ? `${live(m)} <span class="own">${own}</span>` : [live(m), lv.detail ? esc(lv.detail) : ""].filter(Boolean).join(" · ");
         return `<div class="mline" data-id="${esc(m.id)}" data-lv="${esc(lv.cls)}" tabindex="0" role="button" aria-label="${esc(m.id)}: open its details" onclick="openMachine(this.dataset.id)" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openMachine(this.dataset.id)}" title="click for its details">
-          <span class="d" style="background:${lv.cls === "live" ? "#22c55e" : lv.cls === "late" ? "#f59e0b" : "#64748b"}"></span><b>${esc(m.id)}</b>
+          <span class="d" style="background:${m.bootstrap ? "#fbbf24" : mcolor(m.id)};box-shadow:${lv.cls === "live" ? "0 0 0 2px #22c55e" : lv.cls === "late" ? "0 0 0 2px #f59e0b" : "none"}" title="its colour on every page${lv.cls === "live" || lv.cls === "late" ? `; the ring: ${esc(lv.word)}` : ""}"></span><b>${esc(m.id)}</b>
           <span>${kind ? `<span class="k">${esc(kind)}</span> ` : ""}${m.mode ? `<span class="k">${esc(m.mode)}</span>` : ""}${m.package ? `<span class="k" title="the package this machine belongs to">${esc(m.package)}</span>` : ""}</span>
           <span class="r">${right}</span></div>`;
-      }).join("") : `<div class="empty">Nothing is active: no machine has been heard within its own rhythm, and none said it runs continuously.</div>`) + notes;
+      }).join("") : `<div class="empty">Nothing is active: no machine has been heard within its own rhythm.</div>`) + notes; });
+      // what the panel's height cuts off is said, never hidden: "+N more below"
+      const cut = [...body.querySelectorAll(".mline, .mnote")].filter((el) => el.offsetTop + el.offsetHeight > body.clientHeight + body.scrollTop + 2).length;
+      if (cut) body.insertAdjacentHTML("beforeend", `<div class="mmore">+${cut} more below · scroll</div>`);
     } catch (e) {
       // the server stopped answering: every row greys, and says when it was last read
       Orchestra.conn(false);
@@ -98,7 +110,7 @@ Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 
 } });
 
 // The Model panel: whether there is a model, and when it was found or will be looked for again
-Orchestra.panels.register({ id: "model", title: "Model", size: { w: 5, h: 3 }, mount(body, ui) {
+Orchestra.panels.register({ id: "model", title: "Model", size: { w: 5, h: 4 }, mount(body, ui) {
   async function refresh() {
     try {
       const d = await (await fetch("/api/dynamics/model")).json();
@@ -106,9 +118,24 @@ Orchestra.panels.register({ id: "model", title: "Model", size: { w: 5, h: 3 }, m
       if (!m) { const next = d.next_at ? `next look about ${hhmm(d.next_at)}` : d.reason && d.reason.host_running === false ? "no host is running to look again" : "looked for every few minutes";
         body.innerHTML = `<a class="mstat" href="/dynamics"><b>no model yet</b> · ${esc(next)}</a><div class="mnote">${esc((d.reason && d.reason.headline) || "")}</div>`; ui.setSub("none yet"); return; }
       const v = m.version != null ? `v${m.version}` : "latest discovery";
-      body.innerHTML = `<a class="mstat" href="/dynamics"><b>${esc(v)}</b>, discovered ${esc(m.as_of ? hhmm(m.as_of) : "—")}: ${m.stocks.length} stock${m.stocks.length === 1 ? "" : "s"}, ${m.flows.length} flow${m.flows.length === 1 ? "" : "s"}</a>`;
+      // how far its stocks can be trusted, and whether its flows move as their equations say: as Dynamics says it
+      const tc = Evidence.trustCounts(m.stocks), off = await missing(m);
+      body.innerHTML = `<a class="mstat" href="/dynamics"><b>${esc(v)}</b>, discovered ${esc(m.as_of ? hhmm(m.as_of) : "—")}: ${m.flows.length} flow${m.flows.length === 1 ? "" : "s"} · open Dynamics →</a>
+        <div class="mnote ${tc.none ? "lv-late" : ""}" title="how far each stock can be trusted (Dynamics says why)">${esc(tc.text)}</div>
+        ${off.length ? `<div class="mnote lv-late">${off.length} flow${off.length === 1 ? "" : "s"} not moving as ${off.length === 1 ? "its equation says" : "their equations say"}: ${off.map((f) => esc(SDGraph.flowName(m, f))).join(", ")}</div>` : ""}`;
       ui.setSub(v);
     } catch (e) { body.innerHTML = '<div class="muted">not read: the server did not answer</div>'; }
+  }
+  // the flows whose observed rate parts from their equation's over the same buckets (flow-check.js), as Dynamics' summary line says
+  async function missing(m) {
+    let h; try { h = await (await fetch("/api/dynamics/history")).json(); } catch (e) { return []; }
+    if (!h || !h.ok) return [];
+    const levels = (id) => (h.stocks || {})[id] || (h.inputs || {})[id] || [];
+    const levelAt = (id, t) => { let v = null; for (const [tt, x] of levels(id)) { if (tt > t) break; v = x; } return v; };
+    return m.flows.filter((f) => !Evidence.tooFew(f) && (h.flows || {})[f.id]).filter((f) => {
+      const pts = h.flows[f.id], last = pts.slice(-4), minutes = last.length > 1 ? Math.max(0.5, (last[last.length - 1][0] - last[0][0]) / 60 * last.length / (last.length - 1)) : 2;
+      const samplesIn = (a, b) => FlowCheck.reads(f).flatMap((id) => levels(id).map((p) => p[0]).filter((t) => t > a && t <= b));
+      return FlowCheck.against(f, pts, { step: h.flow_step || 30, levelAt, samplesIn, minutes }).differs; });
   }
   refresh(); setInterval(refresh, 30000);
 } });
@@ -173,9 +200,14 @@ async function refreshSystem() {
 function renderGpu(d) {
   if (!d.gpu) { $("gpu-lbl").textContent = "not available on this host"; return; }
   const h = d.gpu_history, W = 300, H = 64, win = d.gpu_window || 240, now = d.now;
-  const pts = h.map((s) => [W * (1 - (now - s.t) / win), H - (H - 2) * s.u / 100]).filter((p) => p[0] >= -5);
-  const line = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
-  $("gpu-line").setAttribute("d", line); $("gpu-area").setAttribute("d", pts.length ? line + ` L${W},${H} L${pts[0][0].toFixed(1)},${H} Z` : "");
+  // a gap in the samples (more than twice the poll interval between two) breaks the line: nothing was measured there
+  const kept = h.filter((s) => W * (1 - (now - s.t) / win) >= -5), gapS = 2 * SYSTEM_POLL_MS / 1000;
+  const pts = kept.map((s, i) => [W * (1 - (now - s.t) / win), H - (H - 2) * s.u / 100, i > 0 && s.t - kept[i - 1].t > gapS]);
+  const line = pts.map((p, i) => (!i || p[2] ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
+  // the area under each unbroken run
+  const runs = []; for (const p of pts) { if (!runs.length || p[2]) runs.push([]); runs[runs.length - 1].push(p); }
+  const area = runs.filter((r) => r.length > 1).map((r) => r.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ") + ` L${r[r.length - 1][0].toFixed(1)},${H} L${r[0][0].toFixed(1)},${H} Z`).join(" ");
+  $("gpu-line").setAttribute("d", line); $("gpu-area").setAttribute("d", area);
   const last = pts[pts.length - 1]; if (last) { $("gpu-cursor").setAttribute("x1", last[0]); $("gpu-cursor").setAttribute("x2", last[0]); }
   $("gpu-lbl").textContent = `${d.gpu.utilization}% · ${fmtBytes(d.gpu.memory_used)} in use`;
   $("gpu").setAttribute("title", `GPU utilization, last ${win >= 3600 ? win / 3600 + "h" : win / 60 + "m"}`);

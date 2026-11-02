@@ -76,3 +76,21 @@ for (const file of fs.readdirSync(FIXTURES).filter((f) => f.endsWith(".json"))) 
     assert.ok(score.emptiness <= (known.emptiness || 5.5), `the system's frame is ${score.emptiness}× the area of what is in it`);
   });
 }
+
+// The Machines map at rest (netgraph.js fit): a node linked to nothing (the host, alone) is set in a
+// row under the connected part, so the automatic fit of a 1330×600 view keeps every name readable
+// (at DESK_K or more) instead of shrinking everything to reach a node the forces threw far away.
+test("ten connected machines and one alone fit a 1330×600 view at no less than DESK_K", () => {
+  const { isolatedRows, fitView, boundsOf, DESK_K } = require(path.join(STATIC, "netgraph-geometry.js"));
+  const ring = Array.from({ length: 10 }, (_, i) => ({ id: "m:" + i, kind: "circle", label: "machine " + i, x: 200 + 260 * Math.cos(i * Math.PI / 5), y: 220 + 170 * Math.sin(i * Math.PI / 5) }));
+  const host = { id: "m:host", kind: "circle", label: "orchestra-host", x: 2600, y: -900 };
+  const before = fitView(boundsOf([...ring, host]), { w: 1330, h: 600, top: 40, all: true });
+  assert.ok(before.k < DESK_K, `the lone node far away would shrink the view (${before.k})`);
+  const at = isolatedRows([host], ring);
+  Object.assign(host, { x: at[host.id][0], y: at[host.id][1] });
+  const after = fitView(boundsOf([...ring, host]), { w: 1330, h: 600, top: 40, minK: DESK_K });
+  assert.ok(after.kFit >= DESK_K && after.k >= DESK_K, `scale ${after.kFit}`);
+  // and the lone node is in view under the ring
+  const sx = host.x * after.k + after.tx, sy = host.y * after.k + after.ty;
+  assert.ok(sx > 0 && sx < 1330 && sy > 40 && sy < 600, `host at ${sx}, ${sy}`);
+});

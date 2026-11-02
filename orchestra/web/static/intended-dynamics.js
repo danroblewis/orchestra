@@ -71,6 +71,7 @@ const Intended = (() => {
       if (!e.flowPart) continue;
       const mk = marksOf("flow", e.fid), extra = [];
       if (mk.includes("new")) { e.cls = (e.cls || "") + " im-new-edge"; e.color = "#6ea8fe"; extra.push(`new in ${vlabel()}`); }
+      if (mk.includes("unsettled")) { e.cls = (e.cls || "") + " im-new-edge"; extra.push(unsettledText("flow", e.fid)); }
       if (mk.includes("expected")) extra.push("⌖ expected");
       if (mk.includes("simulated")) { e.dash = "2 4"; e.cls = (e.cls || "") + " im-sim-edge"; extra.push("simulated"); }
       if (extra.length) e.label = [e.label[0], [e.label[1], ...extra].filter(Boolean).join(" · ")];
@@ -132,7 +133,9 @@ const Intended = (() => {
       const mk = node.im || [];
       if (mk.includes("simulated")) { hatch(g, s); svgTag(g, -s.w / 2, s.h / 2 + 14, "simulated", "im-t-sim"); }
       if (mk.includes("new")) { svgRing(g, s); svgTag(g, -s.w / 2, -s.h / 2 - 16, `new in ${vlabel()}`, "im-t-new"); }
-      if (mk.includes("expected")) svgPin(g, mk.includes("new") ? s.w / 2 - 70 : -s.w / 2 + 6, -s.h / 2 - 12, "expected");
+      // in the compared version too, not settled yet: ringed, said with the version it first came in
+      if (mk.includes("unsettled")) { svgRing(g, s); svgTag(g, -s.w / 2, -s.h / 2 - 16, unsettledText("stock", node.sid), "im-t-new"); }
+      if (mk.includes("expected")) svgPin(g, mk.includes("new") || mk.includes("unsettled") ? s.w / 2 - 70 : -s.w / 2 + 6, -s.h / 2 - 12, "expected");
     };
   }
   function ghost(g, x, s) {
@@ -214,10 +217,10 @@ const Intended = (() => {
     if (rows.length) head.insertAdjacentHTML("afterend", `<tr class="im-group"><td colspan="4">Expected <span class="count">${rows.length}</span> <span class="muted">· always shown, found or not</span></td></tr>${rows.join("")}
       <tr class="im-group"><td colspan="4">Found by discovery <span class="count">${found}</span></td></tr>`);
     if (rows.length) $("nstocks").textContent = `${MODEL.stocks.length} found · ${rows.length} expected`;
-    for (const r of st.querySelectorAll("tr[data-sid]")) markRow(r, marksOf("stock", r.dataset.sid));
+    for (const r of st.querySelectorAll("tr[data-sid]")) markRow(r, marksOf("stock", r.dataset.sid), "stock", r.dataset.sid);
     for (const r of $("flows").querySelectorAll("tr[data-fid]")) {
       const mk = marksOf("flow", r.dataset.fid);
-      markRow(r, mk);
+      markRow(r, mk, "flow", r.dataset.fid);
       if (mk.includes("expected")) r.cells[0].insertAdjacentHTML("afterbegin", '<span class="im-pinchip" title="expected: always shown">⌖</span>');
     }
     for (const r of (x.removed || {}).stocks || []) st.insertAdjacentHTML("beforeend", `<tr class="im-gone"><td><s>${esc(removedStockName(r))}</s> ${tag(`gone in ${vlabel()}`, "im-t-gone")}</td><td class="num">—</td><td></td><td class="muted">${r.origin ? `${esc(r.origin)} ` : ""}in v${esc(r.in)}</td></tr>`);
@@ -233,8 +236,14 @@ const Intended = (() => {
     }
     IntendedPanel.render(x);
   }
-  function markRow(r, mk) {
+  // an unsettled suggestion's mark: "new in v2 · not settled" (the version its run began)
+  function unsettledText(part, id) {
+    const c = ((it() || {}).changes || []).find((x) => x.part === part && x.id === id && x.status === "suggestion");
+    return c && c.since ? `new in v${c.since} · not settled` : "not settled";
+  }
+  function markRow(r, mk, part, id) {
     if (mk.includes("new")) r.cells[0].insertAdjacentHTML("beforeend", " " + tag(`new in ${vlabel()}`, "im-t-new"));
+    if (mk.includes("unsettled")) r.cells[0].insertAdjacentHTML("beforeend", " " + tag(unsettledText(part, id), "im-t-new"));
     if (mk.includes("simulated")) r.cells[0].insertAdjacentHTML("beforeend", " " + tag("simulated", "im-t-sim"));
   }
 

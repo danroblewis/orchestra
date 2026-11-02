@@ -33,7 +33,7 @@ def test_the_paragraph_says_what_was_looked_at_left_out_and_the_events_per_count
     t = text(r)
     assert t.startswith("There is no model yet: the last discovery found no stocks among the 6 series it looked at (nothing balances yet).")
     assert "It left out 6 of them: 2 too new to measure; 2 that no counters balance; 2 levels that changed too few times." in t
-    assert "Too few events: at most 3 per counter, 5 needed." in t
+    assert "Too few events: at most 3 per counter, 5 needed" in t
     assert t.endswith("No orchestra run is running, so discovery will not run again until it starts.")
     enough = text(reason({**D, "counter_events": {"counters": 2, "most": 40.0, "needed": 5}}, host=True))
     assert "Events per counter: up to 40 (5 needed for a balance)." in enough and enough.endswith("It looks again every few minutes.")
@@ -96,7 +96,7 @@ def test_the_read_raises_no_model_with_text_and_reason(project):
     with pytest.raises(NoModel) as e:
         ModelReads(project).model()
     assert isinstance(e.value, ReadError) and e.value.status == 404       # callers catching ReadError still do
-    assert "Too few events: at most 3 per counter, 5 needed." in e.value.text and str(e.value) == e.value.text
+    assert "Too few events: at most 3 per counter, 5 needed" in e.value.text and str(e.value) == e.value.text
     assert e.value.reason["counter_events"] == D["counter_events"]
     assert e.value.answer() == {"ok": False, "error": "no model", "text": e.value.text, "reason": e.value.reason}
 
@@ -130,3 +130,12 @@ def test_the_discovery_records_the_events_per_counter():
     m = discover(dump, start=1000.0, end=1590.0, step=10.0)
     assert m.discovery["counter_events"] == {"counters": 1, "most": 2.0, "needed": 5}
     assert "at most 2 per counter, 5 needed" in NoModel(m.discovery).text
+
+
+def test_the_notice_says_how_long_until_a_counter_has_counted_enough_at_the_current_rate():
+    from orchestra.sd.no_model import minutes_to_enough, reason, text
+    assert minutes_to_enough(1, 5, 600) == 40                # 1 event in 10 min: 4 more take 40 min
+    assert minutes_to_enough(0, 5, 600) is None and minutes_to_enough(5, 5, 600) is None and minutes_to_enough(2, 5, None) is None
+    d = {"left_out": {"moves_total": "a counter of only 1 event: fewer than 5"}, "series": 1, "start": 1000.0, "end": 1600.0,
+         "counter_events": {"counters": 1, "most": 1, "needed": 5}}
+    assert "Too few events: at most 1 per counter, 5 needed; about 40 more minutes at the current rate." in text(reason(d, True))

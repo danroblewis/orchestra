@@ -46,12 +46,14 @@
   <button class="ctl phone-only" id="show-map" onclick="document.body.classList.toggle('map-on');this.textContent=document.body.classList.contains('map-on')?'hide the map':'show the map'">show the map</button>
   <div id="im-row" class="im-row"><div id="evmap-host"></div><aside id="im-side" class="panel im-side" aria-label="the machine's details"></aside></div>
   <h2>Machines <span class="count" id="nm"></span></h2>
+  <div id="unanswered-types" class="lv-late" style="font-size:12px;margin:0 0 8px"></div>
   <div class="cards" id="cards"></div>
   <div class="note" id="note"></div>
 </div>
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeMachine()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
 <script src="/static/machine-dialog.js?v={{v}}"></script>
+<script src="/static/evidence-text.js?v={{v}}"></script>
 <script src="/static/netgraph-geometry.js?v={{v}}"></script>
 <script src="/static/netgraph.js?v={{v}}"></script>
 <script src="/static/sd-graph.js?v={{v}}"></script>
@@ -159,7 +161,7 @@ function eventMap(d0) {
   const anchors = groupAnchors(d0.machines);
   const nodes = g.nodes.map((n) => n.kind === "event"
     ? { id: n.id, kind: "box", cls: "ng-event", label: n.label, lines: n.labels || [n.label], sub: n.cnt ? n.cnt + "/24h" : "", color: "#6b5313", hop: true, cnt: n.cnt, labels: n.labels }
-    : { id: n.id, kind: "circle", label: n.label, mid: n.mid, machine: true, active: n.active, halo: n.active, color: n.bootstrap ? "var(--panel3)" : mcolor(n.mid || n.label),
+    : { id: n.id, kind: "circle", label: n.label, mid: n.mid, machine: true, active: n.active, halo: !!byMid(n.mid) && Orchestra.liveness(byMid(n.mid)).cls === "live", color: n.bootstrap ? "var(--panel3)" : mcolor(n.mid || n.label),
         stroke: n.bootstrap ? "#fbbf24" : null, strokeWidth: n.bootstrap ? 2 : null, sub: machineSub(n), anchor: anchors[n.group] });
   // an edge takes the colour of its machine (the publisher's, or the listener's: dashed), toned
   // down so the machines stand out (edge-color.js); unseen in 24 h: near-grey and fainter
@@ -175,7 +177,7 @@ function eventMap(d0) {
     return { id: l.source + ">" + l.target, source: l.source, target: l.target, seen: l.seen, inferred: l.inferred, observed: l.observed, from: l.from, declaredListener: dl, protocol: l.protocol,
              dash: l.inferred ? "1 5" : dl ? "5 4" : undefined, vias,
              color: edgeColor(base, l.seen && !dl ? (listen ? "listen" : "publish") : "unseen"), hoverColor: base,
-             width: l.inferred ? 1.4 + Math.min(2.5, Math.log10(1 + l.seen)) : dl ? 1 : l.seen ? 1.5 : 1, cls,
+             width: dl ? 1 : l.seen ? edgeWidth(l.seen) : 1, cls,
              gone: l.gone, declared: l.declared, ...withCls(IntendedMachines.edgeStyle(l), cls) };
   });
   IntendedMachines.decorate(d, nodes, g.links.filter((l) => l.declared || l.gone || l.added).map((l) => ({ ...l, ev: l.source.startsWith("ev:") ? l.source : l.target })));
@@ -198,7 +200,7 @@ function eventMap(d0) {
   let drawNodes = nodes, drawEdges = evEdges;
   if (EV_MODE !== "machines") for (const a of g.acts) {
     const id = `act:${a.source}>${a.target}`, base = nodeColor(a.source);
-    drawEdges = [...drawEdges, { id, source: a.source, target: a.target, dash: "1 5", width: 1.2 + Math.min(2, Math.log10(1 + a.day)), color: edgeColor(base, a.day ? "publish" : "unseen"), hoverColor: base, cls: "ev-handoff", acted: true,
+    drawEdges = [...drawEdges, { id, source: a.source, target: a.target, dash: "1 5", width: edgeWidth(a.day), color: edgeColor(base, a.day ? "publish" : "unseen"), hoverColor: base, cls: "ev-handoff" + (a.day < CYCLE_MIN ? " ev-rare" : ""), acted: true,
       vias: [`${a.target.slice(2)} acted next on the same subject after ${a.source.slice(2)}'s ${a.after || "event"}, ${a.count} time${a.count === 1 ? "" : "s"}`] }];
     chains.push({ source: a.source, target: a.target, via: null, observed: true, inferred: true, seen: a.day, day: a.day, evIds: [id], acted: true });
   }
@@ -251,10 +253,13 @@ function eventMap(d0) {
       return { ...p, color: decl ? "#a78bfa" : edgeColor(base, p.seen && !dl ? "publish" : "unseen"), hoverColor: decl ? "#c4b5fd" : base, bend: p.both ? 0 : 22,
                dash: decl ? "5 4" : p.relayed ? RELAY_DASH : p.inferred ? "1 5" : dl ? "5 4" : undefined,
                vias: [...(dl ? [...p.vias, "declared only: the other announced it listens for this, but nothing was handed on between them"] : p.vias), ...(p.notes || [])],
-               width: dl ? 1 : 1.2 + Math.min(3, Math.log10(1 + p.seen)), cls: decl ? "im-decl-edge" : (p.seen && !dl ? "ev-seen" : "ev-unseen") + (p.inferred ? " ev-handoff" : "") + (dl ? " ev-declared-listener" : ""), distance: 190,
-               // a hand-off is labelled by what was handed on (or the hub it went through)
+               // every kind of line weighs what it carries (the log of how often it was seen): a one-off guess
+               // is thin and faint, a hand-off seen 25 times thick; how often is written on the busier ones
+               width: dl ? 1 : edgeWidth(p.seen), cls: decl ? "im-decl-edge" : (p.seen && !dl ? "ev-seen" : "ev-unseen") + (p.inferred ? " ev-handoff" : "") + (dl ? " ev-declared-listener" : "") + (p.acted && p.seen < CYCLE_MIN ? " ev-rare" : ""), distance: 190,
+               // a hand-off is labelled by what was handed on, and how often when that is often
                // (a relay is said by its line and its hover, never written on it: one hub would label many lines alike)
-               ...(p.observed && p.vias.length && !p.relayed ? { label: handoffLabel(p.vias) } : {}) }; });
+               ...(p.observed && p.vias.length && !p.relayed ? { label: handoffLabel(p.vias) + (p.seen >= COUNT_LABEL ? ` ×${p.seen}` : "") }
+                 : p.observed && p.seen >= COUNT_LABEL ? { label: `×${p.seen}` } : {}) }; });
     drawEdges.push(...foldEdges);
     for (const a of g.acts) if (!chains.some((c) => c.source === a.source && c.target === a.target && c.observed)) chains.push({ source: a.source, target: a.target, via: null, observed: true, inferred: true, seen: a.day, day: a.day, acted: true });
     const aliasOf = new Map(drawEdges.filter((e) => e.alias).map((e) => [e.alias, e.id]));
@@ -275,7 +280,15 @@ function eventMap(d0) {
   // the rest is shown as its feedback structures and their independent loops, not every cycle
   const name = (id) => { const n = nodes.find((x) => x.id === id); return n ? (n.lines ? n.lines.join("/") : n.label) : id; };
   // communication: observed in the last 24 h (the edges' window), in a fixed order so the count is the same on every load
-  const mm = chains.filter((c) => c.observed && (c.day ?? c.seen ?? 0) > 0).sort((a, b) => (a.source + ">" + a.target + ">" + (a.via || a.through || "")).localeCompare(b.source + ">" + b.target + ">" + (b.via || b.through || "")));
+  // a link counts toward a cycle when seen at least CYCLE_MIN times and at least a tenth of the busiest
+  // link into the same machine: a one-off guess makes no cycle
+  const times = (c) => c.day ?? c.seen ?? 0, busiest = new Map();
+  for (const c of chains) if (c.observed) busiest.set(c.target, Math.max(busiest.get(c.target) || 0, times(c)));
+  const mm = chains.filter((c) => c.observed && times(c) >= CYCLE_MIN && times(c) >= 0.1 * (busiest.get(c.target) || 0))
+    .sort((a, b) => (a.source + ">" + a.target + ">" + (a.via || a.through || "")).localeCompare(b.source + ">" + b.target + ">" + (b.via || b.through || "")));
+  // each cycle's weakest link (how often its rarest hand-off was seen) and whether it rests on inferred links
+  const strength = (ls) => { const w = Math.min(...ls.map(times)), inf = ls.some((l) => l.acted || l.inferred);
+    return ` <span class="muted">· weakest link ${w}×${inf ? " · includes acted-next links (inferred, not announced)" : ""}</span>`; };
   const machineIds = nodes.filter((n) => n.machine).map((n) => n.id);
   const r = Loops.analyse(machineIds, mm, { exchanges: true });
   const vias = (ls) => (EV_MODE === "machines" ? [] : [...new Set(ls.map((l) => l.via).filter(Boolean))]);
@@ -288,24 +301,30 @@ function eventMap(d0) {
     ...new Set(ls.filter((l) => l.through).map((l) => '<span class="muted">through</span> ' + esc(l.through)))].join(", ");
   const items = [];
   for (const x of r.exchanges) items.push({ nodes: [...x.nodes, ...vias(x.there), ...vias(x.back)], edges: [...x.there, ...x.back].flatMap((l) => l.ids),
-    html: `<span class="ng-pol X" title="an exchange: each handed something on to the other">⇄</span><b>${esc(name(x.nodes[0]))} ⇄ ${esc(name(x.nodes[1]))}</b>: <span class="muted">→</span> ${viaOf(x.there)} <span class="muted">←</span> ${viaOf(x.back)}` });
+    html: `<span class="ng-pol X" title="an exchange: each handed something on to the other">⇄</span><b>${esc(name(x.nodes[0]))} ⇄ ${esc(name(x.nodes[1]))}</b>: <span class="muted">→</span> ${viaOf(x.there)} <span class="muted">←</span> ${viaOf(x.back)}${strength([...x.there, ...x.back])}` });
   for (const st of r.structures) for (const l of st.loops) {
     const links = l.links.flat();
     items.push({ nodes: [...l.nodes, ...vias(links)], edges: links.flatMap((x) => x.ids),
       html: `<span class="ng-pol L" title="a loop of at least three machines">↻</span><b>${l.nodes.map((id) => esc(name(id))).join(" → ")} → ${esc(name(l.nodes[0]))}</b>${l.routes.length > 1 ? ` <span class="muted">(${l.routes.length} routes)</span>` : ""}: `
-        + l.links.map((ls, j) => `${esc(name(l.nodes[j]))} ${viaOf(ls)}`).join(" · ") });
+        + l.links.map((ls, j) => `${esc(name(l.nodes[j]))} ${viaOf(ls)}`).join(" · ") + strength(l.links.flat()) });
   }
   const lsig = JSON.stringify(items.map((l) => l.nodes));
   if (lsig === window.LOOPSIG) return;                  // unchanged: keep the selected one
   window.LOOPSIG = lsig; GRAPH.highlight(null);
   const st = r.structures[0];
   const scope = `in the last 24 h; ${EV_PROTOCOL ? "with the protocol's event types shown" : "with the protocol folded (its hand-offs through a hub counted as relays)"}`;
-  $("loops").innerHTML = items.length ? `<div class="head">Communication cycles, ${scope} · click one to highlight it · ${r.exchanges.length} exchange${r.exchanges.length === 1 ? "" : "s"} (two machines talking both ways)${st ? ` · ${r.structures.reduce((a, x) => a + x.loops.length, 0)} independent loop${r.structures.reduce((a, x) => a + x.loops.length, 0) === 1 ? "" : "s"} of three or more machines, which make up all ${r.structures.reduce((a, x) => a + x.cycles, 0)}${r.structures.some((x) => x.cycles >= 2000) ? "+" : ""} cycles between them` : ""}</div><div id="looplist"></div>`
-    : `<span class='muted'>No communication cycles ${scope}: nothing any machine handed on reached a machine that handed something back to it.</span>`;
+  const nLoops = r.structures.reduce((a, x) => a + x.loops.length, 0);
+  // one line, the list behind it
+  $("loops").innerHTML = items.length ? `<details id="cycles"${window.CYCLES_OPEN ? " open" : ""} ontoggle="window.CYCLES_OPEN=this.open"><summary class="head">Communication cycles: ${r.exchanges.length} exchange${r.exchanges.length === 1 ? "" : "s"} (two machines talking both ways)${st ? `, ${nLoops} loop${nLoops === 1 ? "" : "s"} of three or more machines` : ""} <span class="muted">· from hand-offs seen at least ${CYCLE_MIN} times ${scope} · click to list, then one to highlight it</span></summary>${st ? `<div class="muted" style="margin:2px 0 4px">the ${nLoops} loop${nLoops === 1 ? " is" : "s are"} independent and make${nLoops === 1 ? "s" : ""} up all ${r.structures.reduce((a, x) => a + x.cycles, 0)}${r.structures.some((x) => x.cycles >= 2000) ? "+" : ""} cycles between them</div>` : ""}<div id="looplist"></div></details>`
+    : `<span class='muted'>No communication cycles from hand-offs seen at least ${CYCLE_MIN} times ${scope}: nothing any machine handed on reached a machine that handed something back to it.</span>`;
   if (items.length) NetGraph.loopList($("looplist"), GRAPH, items);
 }
 // the key, for the line styles drawn now and nothing else, unfolded
 const RELAY_DASH = "10 3 2 3";
+const CYCLE_MIN = 3;          // a hand-off seen fewer times than this makes no communication cycle (and an acted-next line is faint)
+const COUNT_LABEL = 5;        // a line seen at least this often in 24 h says how often
+// a line's width by how often it was seen in 24 h: 1 time 1.6 px, 5 times 3 px, 25 times and more 5 px
+const edgeWidth = (n) => Math.min(5, 0.8 + 0.8 * Math.log2(1 + (n || 0)));
 function legendOf(edges, nodes, d0) {
   const has = (f) => edges.some(f), sw = (style) => `<i style="display:inline-block;width:22px;vertical-align:middle;border-top:${style}"></i>`;
   const items = [
@@ -325,6 +344,8 @@ function legendOf(edges, nodes, d0) {
 }
 function cards() {
   $("nm").textContent = DATA.machines.length;
+  // a type several machines listen for that none of them answered: once, above the cards (web/machines.py)
+  $("unanswered-types").innerHTML = Orchestra.unansweredTypes(DATA).map((t) => `<div>${esc(t)}</div>`).join("");
   // a package draws the inside of its own machines' cards; what Orchestra observed is under it on every card.
   // Each card is replaced only when what it says changed, so focus and a selection survive the refresh
   const host = $("cards"), have = new Map([...host.children].map((el) => [el.dataset.id, el]));
@@ -337,7 +358,7 @@ function cards() {
     if (!el || el.dataset.html !== html) {
       const t = document.createElement("template"); t.innerHTML = html.trim();
       const fresh = t.content.firstElementChild; fresh.dataset.html = html;
-      if (el) { const had = document.activeElement === el; el.replaceWith(fresh); if (had) fresh.focus(); }
+      if (el) Orchestra.keepFocus(host, () => el.replaceWith(fresh));
       el = fresh;
     }
     const at = prev ? prev.nextElementSibling : host.firstElementChild;
@@ -349,16 +370,26 @@ function cards() {
   $("note").textContent = [DATA.unattributed_events ? `${DATA.unattributed_events.toLocaleString()} older events carry no source (they predate the event envelope) and are not attributed to any machine.` : "",
     ...Object.entries(DATA.counted_failed || {}).map(([k, v]) => `Counted traffic from ${k} could not be read: ${v}`)].filter(Boolean).join(" ");
 }
-// at phone width: each hand-off as a line, "a → b · via x, N times" (relays through a hub said so)
+// at phone width: what the map draws, as lines in three groups, each with its own count and the
+// map's words: hand-offs observed ("via <type>"), machines acting next after another's event
+// (inferred, not announced), and work relayed through a hub ("via <hub>": the relays the map draws,
+// with the protocol folded); never a relay count added to a hand-off's
 function phoneList(d) {
   const el = $("phone-list"); if (!el) return;
-  const rows = new Map();
-  for (const h of d.handoffs || []) { if (h.from === h.to) continue; const k = h.from + ">" + h.to, r = rows.get(k) || { from: h.from, to: h.to, n: 0, via: new Set() };
-    r.n += h.count || 0; if (h.via) r.via.add(h.via); else if (h.after) r.via.add(`after ${h.after}`); rows.set(k, r); }
-  for (const x of d.relays || []) { const k = x.from + ">" + x.to, r = rows.get(k) || { from: x.from, to: x.to, n: 0, via: new Set() };
-    r.n += x.count || 0; r.via.add(`through ${x.through}`); rows.set(k, r); }
-  const list = [...rows.values()].sort((a, b) => a.from.localeCompare(b.from) || b.n - a.n);
-  el.innerHTML = `<h3 style="margin-top:0">Who hands work to whom</h3>${list.map((r) => `<div class="pl"><b>${esc(r.from)}</b> → <b>${esc(r.to)}</b> <span class="muted">· ${esc([...r.via].join(", ") || "acted next")} · ${r.n} time${r.n === 1 ? "" : "s"}</span></div>`).join("") || '<div class="muted">no hand-offs observed yet</div>'}`;
+  const proto = machineGraph(d).protocol, folded = !EV_PROTOCOL && proto.folds.length > 0;
+  const add = (map, from, to, n, what) => { const k = from + ">" + to, r = map.get(k) || { from, to, n: 0, what: new Set() }; r.n += n || 0; if (what) r.what.add(what); map.set(k, r); };
+  const handed = new Map(), acted = new Map(), relayed = new Map();
+  for (const h of d.handoffs || []) {
+    if (h.from === h.to || EV_HIDDEN.has(family(h.via || h.after || ""))) continue;
+    if (h.via) { if (!(folded && proto.is(h.from, h.via, h.to))) add(handed, h.from, h.to, h.count, `via ${h.via}`); }
+    else add(acted, h.from, h.to, h.count, h.after ? `acted next after ${h.after}` : "acted next");
+  }
+  if (folded) for (const r of MachineGraph.relays(d, proto)) add(relayed, r.source.slice(2), r.target.slice(2), r.count, `via ${r.through}`);
+  const line = (r) => `<div class="pl"><b>${esc(r.from)}</b> → <b>${esc(r.to)}</b> <span class="muted">· ${esc([...r.what].join(", "))} · ${r.n} time${r.n === 1 ? "" : "s"}</span></div>`;
+  const group = (title, map) => { const rs = [...map.values()].sort((a, b) => b.n - a.n || a.from.localeCompare(b.from));
+    return rs.length ? `<h4 style="margin:8px 0 2px">${esc(title)} <span class="count">${rs.length}</span></h4>${rs.map(line).join("")}` : ""; };
+  const html = group("hand-offs observed", handed) + group("acted next (inferred, not announced)", acted) + group("relayed through a hub", relayed);
+  el.innerHTML = `<h3 style="margin-top:0">Who hands work to whom</h3>${html || '<div class="muted">no hand-offs observed yet</div>'}`;
 }
 function render() { if (DATA) { IntendedMachines.draw(DATA); eventMap(DATA); cards(); phoneList(DATA); } }
 // a style from the declared layer over an edge's own: its class added to the page's

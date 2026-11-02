@@ -1,6 +1,6 @@
 // The rows Orchestra draws on every machine's card (Orchestra.machineCards.rows in app.js): what
 // it observed and what the machine announced, under whatever the machine's package drew.
-import test from "node:test"; import assert from "node:assert/strict"; import path from "node:path"; import fs from "node:fs"; import vm from "node:vm";
+import test from "node:test"; import assert from "node:assert/strict"; import path from "node:path"; import fs from "node:fs"; import vm from "node:vm"; import { createRequire } from "node:module";
 
 // app.js and machine-dialog.js are page scripts: give them the little of the browser they touch at load
 globalThis.window = globalThis;
@@ -20,7 +20,7 @@ test("every card names the package and what the machine listens for, whoever dre
   assert.match(rows, /listens for<\/span><span class="ty">order.assigned<\/span>/);
   assert.match(rows, /instances<\/span>.*> 1<\/span>/);
   // a machine's part in the model is a hypothesis, with its confidence; a series is never its own
-  assert.match(rows, /flows \(hypotheses\)<\/span><a class="ty fl" href="\/dynamics#f:loaves_baked"[^>]*title="baker's order.baked events match its increments · open it on Dynamics">loaves &lt;baked&gt; · 92%</);
+  assert.match(rows, /flows \(hypotheses\)<\/span><a class="ty fl" href="\/dynamics#f:loaves_baked"[^>]*title="baker's order.baked events match its increments · open it on Dynamics">loaves &lt;baked&gt;</);   // no flow record: no number
   assert.doesNotMatch(rows, /metrics|labelled machine/);
   const wrapped = Orchestra.machineCards.wrap(m, "<h3>the package's head</h3>" + rows);
   assert.ok(wrapped.startsWith('<div class="panel') && wrapped.includes("the package's head") && wrapped.includes("bakery"));
@@ -53,7 +53,7 @@ test("a publishes chip shows the all-time count, and a rate only when there is o
 });
 
 test("a card's seen row says the state in words, with the rule it was judged by; the host's is the runtime record's", () => {
-  const rows = Orchestra.machineCards.rows({ ...m, instances: [{ ...m.instances[0], cadence_s: 12 }] });
+  const rows = Orchestra.machineCards.rows({ ...m, cadence_s: 12 });
   assert.match(rows, /class="lv-live"[^>]*>active<\/span> <span class="muted">· about every 12s; last 5s ago/);
   assert.match(Orchestra.machineCards.rows({ ...m, active: false, instances: [] }), />quiet<\/span> <span class="muted">· since \d\d:\d\d/);
   // no cadence: no rhythm to be in, neutral, never "in rhythm"
@@ -61,7 +61,7 @@ test("a card's seen row says the state in words, with the rule it was judged by;
   assert.equal(plain.word, "heard 5s ago"); assert.equal(plain.cls, "neutral");
   assert.doesNotMatch(Orchestra.machineCards.rows({ ...m, first_seen: now - 20 }), /in rhythm/);
   // past 2.5× its own cadence but inside the 2-minute floor: late, amber
-  const late = Orchestra.liveness({ ...m, last_seen: now - 60, instances: [{ ...m.instances[0], cadence_s: 12 }] });
+  const late = Orchestra.liveness({ ...m, subscribes: [], last_seen: now - 60, cadence_s: 12 });
   assert.equal(late.word, "late by its own rhythm"); assert.equal(late.cls, "late"); assert.match(late.detail, /about every 12s; last 1m ago/);
   // its only event is its own announcement
   assert.equal(Orchestra.liveness({ ...m, publishes: [] }).word, "announced, nothing published yet");
@@ -82,13 +82,63 @@ test("a card's seen row says the state in words, with the rule it was judged by;
   assert.doesNotMatch(host.word + host.detail, /rhythm/);
 });
 
-test("the Dashboard's rows and notes add up to every machine on the Machines page", () => {
-  const ms = [{ id: "a", mode: "continuous", active: true }, { id: "b", mode: "ad hoc", active: true }, { id: "c", mode: "ad hoc", active: false, last_seen: now - 900 },
+test("the Dashboard's rows and notes add up to every machine on the Machines page, grouped by the header's words", () => {
+  const seen = (id, x) => ({ id, publishes: [{ type: "t", count: 5 }], first_seen: now - 900, ...x });
+  const ms = [seen("a", { mode: "continuous", active: true, last_seen: now - 5, cadence_s: 30 }), seen("b", { mode: "ad hoc", active: true, last_seen: now - 5 }),
+              seen("c", { mode: "ad hoc", active: false, last_seen: now - 900 }), seen("q", { mode: "continuous", active: false, last_seen: now - 900 }),
+              seen("hung", { mode: "ad hoc", active: false, last_seen: now - 900, subscribes: ["x"], unanswered: { x: { count: 4, since: now - 600 } } }),
               { id: "d", unseen: true }, { id: "sail", unseen: true, intent: { state: "declared", heard: false } },
-              { id: "fci", unseen: true, intent: { state: "proposed", heard: false } }, { id: "e", mode: "scheduled", active: false, intent: { state: "declared", heard: true } }];
+              { id: "fci", unseen: true, intent: { state: "proposed", heard: false } }, seen("e", { mode: "scheduled", active: false, last_seen: now - 900, intent: { state: "declared", heard: true } })];
   const g = Orchestra.dashboardGroups(ms);
-  assert.equal(g.rows.length + g.declared.length + g.proposed.length + g.quiet.length, ms.length);
-  assert.deepEqual([g.rows, g.declared, g.proposed, g.quiet].map((x) => x.map((y) => y.id)), [["a", "b"], ["sail"], ["fci"], ["c", "d", "e"]]);
+  assert.equal(g.rows.length + g.declared.length + g.proposed.length + g.quiet.length + g.unseen.length, ms.length);
+  assert.deepEqual([g.rows, g.declared, g.proposed, g.quiet, g.unseen].map((x) => x.map((y) => y.id)), [["a", "b", "hung"], ["sail"], ["fci"], ["c", "q", "e"], ["d"]]);
+  // the quiet note is exactly the header's quiet ones; a machine not answering is a row, never folded into quiet
+  assert.equal(g.quiet.length, ms.filter((x) => Orchestra.livenessGroup(x) === "quiet").length);
+  assert.equal(Orchestra.livenessGroup(ms[4]), "not answering");
+});
+
+test("a machine's rhythm is its merged beats, never its least-used or busiest instance's", () => {
+  // worker/1 rare, worker/2 busy: the machine's own beats say about every 5 min; heard 100 s ago is active
+  const w = { id: "worker", publishes: [{ type: "t", count: 50 }], subscribes: [], first_seen: now - 7200, last_seen: now - 100, active: true, cadence_s: 300,
+              instances: [{ id: "worker/1", cadence_s: 900, active: true }, { id: "worker/2", cadence_s: 20, active: true }] };
+  const lv = Orchestra.liveness(w);
+  assert.equal(lv.word, "active"); assert.match(lv.detail, /about every 5m/);
+});
+
+test("idle after a run with nothing it listens for waiting is quiet, not late", () => {
+  const w = { id: "worker", publishes: [{ type: "t", count: 50 }], subscribes: ["work.offered"], first_seen: now - 7200, last_seen: now - 60, active: true, cadence_s: 12 };
+  const lv = Orchestra.liveness(w);
+  assert.equal(lv.word, "quiet: nothing it listens for is waiting"); assert.equal(lv.cls, "quiet");
+});
+
+test("a continuous machine with no cadence, silent six times its average gap, is late by its own rhythm", () => {
+  // 361 events over an hour: one every 10 s; silent 60 s
+  const w = { id: "pump", publishes: [{ type: "t", count: 361 }], subscribes: [], first_seen: now - 3660, last_seen: now - 60, active: true };
+  const lv = Orchestra.liveness(w);
+  assert.equal(lv.word, "late by its own rhythm"); assert.equal(lv.cls, "late");
+  assert.equal(Orchestra.liveness({ ...w, last_seen: now - 5 }).word, "active");
+});
+
+test("each unanswered type has its own count, and a type no listener answered is said once with its listeners", () => {
+  const u = Orchestra.unanswered({ unanswered: { "offer.made": { count: 4, since: now - 600 }, "offer.withdrawn": { count: 4, since: now - 500 } } });
+  assert.match(u.text, /^4 offer.made, 4 offer.withdrawn since \d\d:\d\d/);
+  const lines = Orchestra.unansweredTypes({ unanswered_types: [{ type: "work.offered", count: 8, since: now - 600, listeners: ["nudger", "worker"] }, { type: "fresh", count: 1, since: now - 10, listeners: ["a", "b"] }] });
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^8 work.offered since \d\d:\d\d[^,]*, answered by none of its listeners: nudger, worker$/);
+});
+
+test("a card's flow chip says the hypothesis as Dynamics does: confidence and chance, no number when timing cannot tell", () => {
+  globalThis.Evidence = createRequire(import.meta.url)("../../orchestra/web/static/evidence-text.js");
+  const rec = (hs) => ({ current: { origin: "fitted", quality: { events: 40 } }, machines: hs });
+  const one = { flow: "f", name: "f", confidence: 0.62, chance: 0.1, record: rec([{ machine: "baker", confidence: 0.62, chance: 0.1 }]) };
+  assert.match(Orchestra.machineCards.rows({ ...m, flows: [one] }), />loaves &lt;baked&gt;|· 62%, 10% by chance</);
+  const crowd = { ...one, record: rec([{ machine: "baker", confidence: 0.62 }, { machine: "a", confidence: 0.6 }, { machine: "b", confidence: 0.58 }]) };
+  const rows = Orchestra.machineCards.rows({ ...m, flows: [crowd] });
+  assert.doesNotMatch(rows, /62%/);
+  assert.match(rows, /title="timing cannot tell it from 2 others/);
+  const few = { ...one, record: { ...rec(one.record.machines), current: { origin: "fitted", quality: { events: 2 } } } };
+  assert.doesNotMatch(Orchestra.machineCards.rows({ ...m, flows: [few] }), /62%/);
+  delete globalThis.Evidence;
 });
 
 test("an instance whose own up series reads 0 is reported down, and one reading 1 is not", () => {

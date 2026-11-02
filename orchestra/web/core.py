@@ -76,15 +76,30 @@ def _ts(ev: dict) -> float | None:
     return event_time(ev)
 
 
+def paused(status: str | None) -> str | None:
+    """A process's state beyond alive, as the system says it: a stopped one (SIGSTOP, a debugger,
+    Ctrl-Z) is "stopped (paused)": alive, holding its pid, doing nothing. None otherwise."""
+    return "stopped (paused)" if status == psutil.STATUS_STOPPED else None
+
+
 def _proc(pid) -> dict:
     try:
         p = psutil.Process(int(pid))
-        if p.status() == psutil.STATUS_ZOMBIE:
+        status = p.status()
+        if status == psutil.STATUS_ZOMBIE:
             return {"pid": pid, "alive": False}
         return {"pid": pid, "alive": True, "since": p.create_time(), "rss": p.memory_info().rss,
-                "cpu": p.cpu_percent(interval=None), "threads": p.num_threads()}
+                "cpu": p.cpu_percent(interval=None), "threads": p.num_threads(), **({"paused": paused(status)} if paused(status) else {})}
     except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError, TypeError):
         return {"pid": pid, "alive": False}
+
+
+def _written(path: Path) -> float | None:
+    """When a file was last written, or None."""
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
 
 
 def _tail(path: Path, lines: int) -> list[str]:
@@ -178,7 +193,8 @@ class CoreProbe:
             out.append({"name": name, "state": r.get("state"), "owner": r.get("owner"), "restarts": r.get("restarts", 0),
                         "code": r.get("code"), "command": r.get("command") or [],
                         **(_proc(r["pid"]) if r.get("pid") else {"alive": False}), "since": r.get("since"),
-                        "log_error": process_logs.hint(name, self.project.logs_dir, self._roots())})
+                        "log_error": process_logs.hint(name, self.project.logs_dir, self._roots()),
+                        "log_written": _written(process_logs.directory(self.project.logs_dir) / f"{name}.log")})
         return out
 
     def _roots(self) -> list[Path]:

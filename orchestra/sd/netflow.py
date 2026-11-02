@@ -334,10 +334,28 @@ def _refuted(f: Fit, rows: list[list[float]], y: list[float], simpler: list[list
     return ""
 
 
-def fit(level, drivers: list[Driver], step: float, unit_s: float, defer: frozenset | set = frozenset()) -> tuple[Fit | None, str]:
+FOLLOWS = 0.5      # the R² at which a counter the level changes with is said beside a level too rarely changed to fit
+
+
+def _follows(counters, starts: list[int], y: list[float], k: int) -> str:
+    """The counter whose counts over the same stretches explain most of a level's changes, when it
+    explains at least ``FOLLOWS`` of them: "; follows <key>, R² 0.70, not fitted yet"; else ""."""
+    best = None
+    for c in counters or ():
+        x = [max(0.0, c.values[a + k] - c.values[a]) for a in starts]
+        if not any(x):
+            continue
+        r2 = _r2_alone(x, y)
+        if r2 >= FOLLOWS and (best is None or r2 > best[0]):
+            best = (r2, c.key)
+    return f"; follows {best[1]}, R² {best[0]:.2f}, not fitted yet" if best else ""
+
+
+def fit(level, drivers: list[Driver], step: float, unit_s: float, defer: frozenset | set = frozenset(), counters=None) -> tuple[Fit | None, str]:
     """The level's net flow, or None and why it stays an input (said after conservation's reason).
     ``defer``: drivers that are the level measured again but give way to it (``stocks``): passed
-    over, not a reason to keep the level an input."""
+    over, not a reason to keep the level an input. ``counters``: the window's counters, one of which
+    a level that changed too rarely to fit may be said to follow (``_follows``)."""
     n = len(level.values) - 1
     live = set(range(n)) if level.live is None else set(level.live)
     k0 = steps_of(level.resolution.seconds if level.resolution else None, step)
@@ -389,11 +407,11 @@ def fit(level, drivers: list[Driver], step: float, unit_s: float, defer: frozens
         cands.append((Fit(params, driver, own, k * step, len(y), changes, 1 - rss / sst, aic, aic0, t_own, m,
                           sum(inflow) / len(inflow), coef, w), rows, y, simpler, starts, k))
 
-    _, y0, changes0 = on(k0)
+    starts0, y0, changes0 = on(k0)
     if changes0 < EVENTS_PER_PARAM * 2:
         said = (f"only {changes0} of its {len(y0)} stretches" if changes0 < len(y0) else f"{changes0} stretches")
-        return None, (f"and it changed in {said} of {k0 * step:g} s; fitting a net flow needs at least "
-                      f"{EVENTS_PER_PARAM * 2}, so it looks like an input")
+        return None, (f"and it changed in {said} of {k0 * step:g} s; at least {EVENTS_PER_PARAM * 2} are needed "
+                      f"to fit a net flow{_follows(counters, starts0, y0, k0) if changes0 else ''}")
     consider(k0, None, True)
     for d in drivers:
         k = max(k0, steps_of(d.resolution_s, step))
@@ -488,7 +506,7 @@ def first(s) -> tuple:
 
 def stocks(series: list, counted: list, sid_of: dict[str, str], inputs: dict[str, list[float]], input_refs: dict[str, dict],
            left_out: dict[str, str], step: float, unit_s: float, window: tuple[float, float], name_of, ref_of, writer_of,
-           measure=None, units: dict[str, str] | None = None) -> list:
+           measure=None, units: dict[str, str] | None = None, counters: list | None = None) -> list:
     """The levels conservation left out because no counters balance them that are stocks by their
     fitted net flow, as (stock, its flows, the input name it had, its series). The others get their
     reason in ``left_out``. ``counted``: conservation's stocks' series; ``name_of(series)``: a new
@@ -516,7 +534,7 @@ def stocks(series: list, counted: list, sid_of: dict[str, str], inputs: dict[str
                                 "of the running process, set by its work, not an accumulation, so no net flow is fitted to it")
             continue
         mine = [d for d in drivers if d.name != s.name]
-        got, why = fit(s, mine, step, unit_s, after[s.key] | no_stock - {s.key})
+        got, why = fit(s, mine, step, unit_s, after[s.key] | no_stock - {s.key}, counters=counters)
         if got is not None and (twin := copy_of(s, [lv for lv, _ in accepted], max(1, round(got.block_s / step)))):
             got, why = None, (f"and its changes move with {twin.key}'s, a stock already: the same quantity measured again, "
                               "so an input, not a second stock")

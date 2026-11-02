@@ -61,5 +61,14 @@ def history(model, raw, end: float, stock_step: float = STOCK_STEP_S, span_s: fl
         pts = raw(SeriesRef(ref["name"], ref["labels"], source=ref.get("source")), start - 300, end)
         t0 = start - start % stock_step
         inputs[name] = [[round(t), v] for t, v in step_sample(pts, t0, end, stock_step)]
+    # how long the oldest has waited in a stock's place (its ``age_series``, an instrument's age view):
+    # the last value written, with when; a measurement shown beside the stock, never part of it
+    ages = {}
+    for s in model.stocks:
+        a = (s.evidence or {}).get("age_series")
+        if a:
+            pts = raw(SeriesRef(a["name"], a.get("labels") or {}), start - 300, end)
+            if pts:
+                ages[s.id] = [round(pts[-1][0]), pts[-1][1]]
     return {"at": end, "start": start, "stock_step": stock_step, "flow_step": fstep,
-            "time_unit": model.time_unit, "stocks": stocks, "flows": flows, "inputs": inputs}
+            "time_unit": model.time_unit, "stocks": stocks, "flows": flows, "inputs": inputs, "ages": ages}

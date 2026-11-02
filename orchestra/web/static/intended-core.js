@@ -71,5 +71,5 @@ const IntendedCore = (() => {
   }
   // what confirming does, said on the control (rule 9: a request, changing nothing until acted on)
   const CONFIRMS = "adopt this proposal as a declaration; it changes nothing observed";
-  return { REQ, hears, listenersOf, asker, declaredBy, owner, author, machineWords, CONFIRMS };
+  return { REQ, NONE, hears, listenersOf, asker, declaredBy, owner, author, machineWords, CONFIRMS };
 })();

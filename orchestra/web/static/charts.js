@@ -38,8 +38,10 @@ const Charts = (() => {
   // value), at the edge when the point is past it. ``range``: [t0, t1], the x axis's span whatever
   // the points cover (the range the viewer picked); ``onePoint``: what is said when every line has
   // one point, placed away from the dot
+  // A line marked ``step`` is drawn step-after (a count holds its value until it changes: never a
+  // triangle between 0 and 1); ``integer`` puts the y axis's ticks on whole numbers (a count's axis)
   function line(lines, { unit = "", H = 200, W = 720, marks = [], tight = false, now = null, yMax = null, notes = [],
-    range = null, onePoint: onePointText = "one point so far" } = {}) {
+    range = null, onePoint: onePointText = "one point so far", integer = false } = {}) {
     const pts = lines.flatMap((l) => [...l.points, ...(l.band || []).flatMap(([t, a, b]) => [[t, a], [t, b]])]);
     if (!pts.length) return `<div class="empty">no points in this range</div>`;
     W = Math.max(320, Math.round(W));
@@ -52,7 +54,7 @@ const Charts = (() => {
     if (tight) { const pad = (hi - lo) * 0.06 || Math.abs(hi) * 0.05 || 1; hi += pad; lo = lo >= 0 ? Math.max(0, lo - pad) : lo - pad; }   // never below zero for what never is
     else { hi = Math.max(0, hi); lo = Math.min(0, lo); }  // not tight: the axis includes zero
     // the y axis ends on round numbers, so its ticks read as numbers a person would choose
-    const stepY = niceStep(hi - lo || Math.abs(hi) || 1);
+    const stepY = integer ? Math.max(1, Math.round(niceStep(hi - lo || Math.abs(hi) || 1))) : niceStep(hi - lo || Math.abs(hi) || 1);
     lo = Math.floor(lo / stepY + 1e-9) * stepY; hi = Math.ceil(hi / stepY - 1e-9) * stepY; if (hi === lo) hi = lo + stepY;
     const span = hi - lo || 1;
     const x = (t) => L + (W - L - R) * (t - t0) / Math.max(1, t1 - t0), y = (v) => T + (H - T - B) * (1 - (v - lo) / span);
@@ -68,7 +70,7 @@ const Charts = (() => {
     // a line of one point is a dot, since a path through one point draws nothing
     const paths = lines.map((l, i) => l.points.length === 1
       ? `<circle data-i="${i}" cx="${x(l.points[0][0]).toFixed(1)}" cy="${y(l.points[0][1]).toFixed(1)}" r="3.5" style="fill:${colorOf(l, i)}"/>`
-      : `<path data-i="${i}" style="stroke:${colorOf(l, i)}"${l.dash ? ` stroke-dasharray="${l.dash}"` : ""} d="${l.points.map(([t, v], j) => (j ? "L" : "M") + x(t).toFixed(1) + "," + y(v).toFixed(1)).join(" ")}"/>`).join("");
+      : `<path data-i="${i}" style="stroke:${colorOf(l, i)}"${l.dash ? ` stroke-dasharray="${l.dash}"` : ""} d="${pathOf(l.points, x, y, l.step)}"/>`).join("");
     const dotX = Math.max(...lines.filter((l) => l.points.length).map((l) => x(l.points[0][0])));
     const left = dotX > (L + W - R) / 2;              // the note on the side away from the dot
     const onePoint = lines.every((l) => l.points.length <= 1)
@@ -77,6 +79,10 @@ const Charts = (() => {
       <div class="ckeys" data-for="${id}">${lines.map((l, i) => `<span data-i="${i}"><i style="${l.dash ? `background:none;border-top:2px dashed ${colorOf(l, i)};height:0` : `background:${colorOf(l, i)}`}${l.band ? `;box-shadow:0 0 0 3px color-mix(in srgb, ${colorOf(l, i)} 25%, transparent)` : ""}"></i>${esc(l.label)}</span>`).join("")}${unit ? `<span class="muted">${esc(unit)}</span>` : ""}</div>`;
   }
 
+  // a line's path: point to point, or step-after (``step``: each value held until the next point)
+  function pathOf(points, x, y, step = false) {
+    return points.map(([t, v], j) => (j ? (step ? `H${x(t).toFixed(1)} V${y(v).toFixed(1)}` : `L${x(t).toFixed(1)},${y(v).toFixed(1)}`) : `M${x(t).toFixed(1)},${y(v).toFixed(1)}`)).join(" ");
+  }
   function spark(points, { unit = "", w = 300, h = 34, cls = "", note = null, label = "" } = {}) {
     if (!points || points.length < 2) return `<div class="spark empty">collecting…</div>`;
     const t0 = points[0][0], t1 = points[points.length - 1][0] || t0 + 1;
@@ -140,5 +146,5 @@ const Charts = (() => {
     svg.classList.add("focus");
     svg.querySelector(`path[data-i="${k.dataset.i}"]`)?.classList.add("on");
   });
-  return { line, spark, PAL, num };
+  return { line, spark, pathOf, PAL, num };
 })();

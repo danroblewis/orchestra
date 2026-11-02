@@ -44,7 +44,8 @@ test("a counter several flows share says so; two flows between the same ends are
   const twin = (id, from, to) => flow(id, from, to, "t_total", { by: "w", from: "A", to: "B" });
   const m = { stocks: [], flows: [twin("x", "o", null), twin("y", null, "p"), flow("z", "o", null, "t_total", { by: "w", from: "A", to: "C" })] };
   const n = m.flows.map((x) => SDGraph.flowName(m, x));
-  assert.deepEqual(n, ["t · w: A → B (one counter, 2 flows)", "t · w: A → B (one counter, 2 flows)", "t · w: A → C"]);
+  // two flows of one name are told apart by where each goes, everywhere a flow is named
+  assert.deepEqual(n, ["t · w: A → B (one counter, 2 flows) · into the end", "t · w: A → B (one counter, 2 flows) · into p", "t · w: A → C"]);
 });
 
 test("a flow's label names its machines as hypotheses: the leader with its confidence, a tie by names, none without one", () => {
@@ -119,7 +120,7 @@ test("a flow alone in its family says the labels that narrow its counter, and a 
   const twin = (id, a, b) => flow(id, a, b, "tasks_ticket_transitions_total", { by: "merge_gate", from: "APPROVED", to: "MERGING", state: "read" });
   const m = { stocks: [], flows: [gate, twin("t1", null, "m"), twin("t2", "r", null)] };
   assert.equal(SDGraph.flowName(m, gate), "tasks gate runs · kind gate, status landed");
-  assert.equal(SDGraph.flowName(m, m.flows[1]), "tasks ticket transitions · merge_gate: APPROVED → MERGING, state read (one counter, 2 flows)");
+  assert.equal(SDGraph.flowName(m, m.flows[1]), "tasks ticket transitions · merge_gate: APPROVED → MERGING, state read (one counter, 2 flows) · into m");
 });
 
 test("an expected flow is drawn with no events, and its stock that only fills with it", () => {
@@ -196,4 +197,42 @@ test("a flow drawn between other ends than its counter names says why, in words"
   const start = { ...move("s", null, "wh", "<start>", "write.waiting") };
   assert.equal(SDGraph.drawnApart({ stocks: [wh], flows: [start] }, start), "");
   assert.equal(SDGraph.drawnApart(model, model.flows[0]), "");          // OPEN → IN_PROGRESS drawn between them
+});
+
+test("two flows whose short names collide are qualified by their destination, then their source", () => {
+  const named = (id, from, to, name) => ({ id, name, from, to, evidence: { named: "places" }, counter: { name: "moves_total", labels: { from: "sail_check.waiting", to: "<end>" } } });
+  const m = { stocks: [{ id: "c", name: "commits on main", evidence: { named: "places" }, series: { name: "commits", labels: {} } }],
+    flows: [named("f", "s", null, "sail_check → end"), named("g", "s", "c", "sail_check → end")] };
+  const [a, b] = m.flows.map((f) => SDGraph.flowName(m, f));
+  assert.notEqual(a, b);
+  assert.equal(a, "sail_check → end · into the end");
+  assert.equal(b, "sail_check → end · into commits on main");
+  const twice = { stocks: [], flows: [named("h", "x", null, "a → b"), named("i", "y", null, "a → b")] };
+  assert.deepEqual(twice.flows.map((f) => SDGraph.flowName(twice, f)), ["a → b · into the end · from x", "a → b · into the end · from y"]);
+});
+
+test("a flow whose rate reads anything but its own ends is fitted from correlation, its driver named", () => {
+  const s = (id, name) => ({ id, name, evidence: { named: "places" }, series: { name: "items", labels: { pile: id } } });
+  const m = { stocks: [s("w", "items waiting at write"), s("r", "items waiting at review")], flows: [] };
+  const own = { id: "a", from: "w", to: "r", current: { form: "proportional", inputs: ["w"], params: { k: 1 } } };
+  const other = { id: "b", from: "w", to: null, current: { form: "proportional", inputs: ["r"], params: { k: 1 } } };
+  const spec = { id: "c", from: "w", to: null, current: { spec: { form: "linear", terms: [{ stock: "w", k: 1 }, { stock: "r", k: 2 }] } } };
+  assert.equal(SDGraph.correlational(m, own), false);
+  assert.equal(SDGraph.correlational(m, other), true);                 // no net flow anywhere: still a correlation
+  assert.equal(SDGraph.untestedText(m, other), "reads items waiting at review, not its source: fitted from correlation; untested");
+  assert.equal(SDGraph.correlational(m, spec), true);
+});
+
+test("a place a stock's own series measures is drawn as that stock, one box; another is named in words, inert", () => {
+  const m = { stocks: [{ id: "sc", name: "items waiting at sail_check", evidence: { named: "places" }, series: { name: "items", labels: { pile: "sail_check.waiting" } } }],
+    flows: [{ id: "f", from: null, to: "sc", counter: { name: "moves_total", labels: { from: "review.waiting", to: "sail_check.waiting" } }, current: { origin: "fitted", form: "constant", params: { c: 1 }, quality: { events: 9 } } },
+            { id: "g", from: "sc", to: null, counter: { name: "moves_total", labels: { from: "sail_check.waiting", to: "write.held" } }, current: { origin: "fitted", form: "constant", params: { c: 1 }, quality: { events: 9 } } }] };
+  const g = SDGraph.build(m);
+  const places = g.nodes.filter((n) => n.place);
+  assert.deepEqual(places.map((n) => [n.label, n.inert]), [["review (waiting)", true], ["write (held)", true]]);
+  assert.equal(SDGraph.endName(m, m.flows[1], "to"), "write (held) (not a stock)");
+  assert.equal(SDGraph.endName(m, { ...m.flows[1], counter: { name: "moves_total", labels: { from: "sail_check.waiting", to: "<end>" } } }, "to"), "outside");
+  // the flow into sail_check's place, counted as ending outside, is drawn into the stock itself
+  const h = { ...m, flows: [{ ...m.flows[1], id: "h", from: "x", to: null, counter: { name: "moves_total", labels: { from: "a", to: "sail_check.waiting" } } }] };
+  assert.ok(SDGraph.build(h).edges.some((e) => e.target === "s:sc"));
 });
