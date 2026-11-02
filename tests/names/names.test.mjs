@@ -236,3 +236,15 @@ test("a place a stock's own series measures is drawn as that stock, one box; ano
   const h = { ...m, flows: [{ ...m.flows[1], id: "h", from: "x", to: null, counter: { name: "moves_total", labels: { from: "a", to: "sail_check.waiting" } } }] };
   assert.ok(SDGraph.build(h).edges.some((e) => e.target === "s:sc"));
 });
+
+test("a pile that holds items and is no stock is drawn with its level, reached by a flow or not (R3: 5 threads at unchecked went unshown)", () => {
+  const key = (pile) => `workflow_pile_items{pile="${pile}",workflow="slack_queues"}`;
+  const m = { stocks: [{ id: "ac", name: "threads waiting at awaiting_check", evidence: { named: "places" }, series: { name: "workflow_pile_items", labels: { pile: "awaiting_check.waiting" } } }],
+    flows: [{ id: "u", from: "ac", to: null, counter: { name: "moves_total", labels: { from: "awaiting_check.waiting", to: "unchecked.waiting" } }, current: { origin: "fitted", form: "constant", params: { c: 1 }, quality: { events: 9 } } }],
+    discovery: { left_out: { [key("unchecked.waiting")]: "a level that did not change in the window while it was live", [key("overdue.waiting")]: "a level that did not change in the window while it was live" },
+      titles: { [key("unchecked.waiting")]: "threads waiting at unchecked", [key("overdue.waiting")]: "threads waiting at overdue" },
+      held_levels: { [key("unchecked.waiting")]: { level: 5, place: "unchecked.waiting" }, [key("overdue.waiting")]: { level: 2, place: "overdue.waiting" } } } };
+  const places = SDGraph.build(m).nodes.filter((n) => n.place);
+  assert.deepEqual(places.map((n) => [n.label, n.caption]), [["threads waiting at unchecked", "5 now · not a stock"], ["threads waiting at overdue", "2 now · not a stock"]]);
+  assert.equal(SDGraph.endName(m, m.flows[0], "to"), "threads waiting at unchecked (5 now, not a stock)");
+});

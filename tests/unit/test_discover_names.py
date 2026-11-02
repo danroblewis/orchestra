@@ -81,6 +81,31 @@ def test_a_place_its_count_view_names_is_named_by_the_labels_that_spell_it():
     assert names["write.held"] == ("start → write", "places")
 
 
+def test_a_left_out_pile_that_holds_items_says_its_level_and_place():
+    """R3 (:8606): 5 threads sat at unchecked, a level that never changed, and the diagram showed
+    none of them. A left-out count of a place that holds items is recorded with its level."""
+    rng = random.Random(4)
+    lab = {"instrument": "piles", "workflow": "w", "pile": "write.held", "step": "write", "place": "held"}
+    stuck = {**lab, "pile": "unchecked.waiting", "step": "unchecked", "place": "waiting"}
+    empty = {**lab, "pile": "late.waiting", "step": "late", "place": "waiting"}
+    level, ins, outs = [0], [0], [0]
+    for _ in range(240):
+        a, b = rng.randint(0, 3), rng.randint(0, 2) if level[-1] > 2 else 0
+        ins.append(ins[-1] + a)
+        outs.append(outs[-1] + b)
+        level.append(level[-1] + a - b)
+    pts = lambda vs: [(T0 + 60 * i, float(v)) for i, v in enumerate(vs)]
+    move = {"instrument": "piles", "workflow": "w"}
+    dump = [("workflow_pile_items", lab, pts(level)), ("workflow_pile_items", stuck, pts([5] * 241)),
+            ("workflow_pile_items", empty, pts([0] * 241)),
+            ("workflow_pile_moves_total", {**move, "from": "<start>", "to": "write.held"}, pts(ins)),
+            ("workflow_pile_moves_total", {**move, "from": "write.held", "to": "<end>"}, pts(outs))]
+    m = discover(dump, start=T0, end=T0 + 240 * 60, step=60.0, provenance=_prov(dump))
+    held = m.discovery["held_levels"]
+    assert [(v["place"], v["level"]) for v in held.values()] == [("unchecked.waiting", 5.0)]
+    assert m.discovery["titles"][next(iter(held))] == "items waiting at unchecked"
+
+
 def test_without_its_instruments_views_a_pile_is_named_by_its_series():
     m = _piles(views=False)
     [st] = [s for s in m.stocks if s.series is not None]

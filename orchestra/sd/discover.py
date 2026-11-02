@@ -1325,8 +1325,25 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                        "left_out": dict(sorted(left_out.items())),
                        # what the pages call a left-out series its instrument's places or its words name
                        # (sd.titles): "items waiting at ci", never its raw key
-                       "titles": {x.key: t for x in series if x.key in left_out and (t := _left_title(x, places))}}
+                       "titles": {x.key: t for x in series if x.key in left_out and (t := _left_title(x, places))},
+                       # a left-out count of a place that holds items now: its level and its place, so a page
+                       # draws or captions it (never a count that silently leaves something out)
+                       "held_levels": _held_levels(series, left_out, provenance)}
     return model
+
+
+def _held_levels(series: list[Series], left_out: dict, provenance: dict) -> dict:
+    """The left-out counts of things in a place (an instrument's ``count`` view) that hold items at
+    the end of the window: by key, their last value and the place value they count."""
+    out = {}
+    for x in series:
+        rec = provenance.get(x.key) or {}
+        if x.counter or x.key not in left_out or rec.get("view") != "count" or not x.points:
+            continue
+        v, at = x.points[-1][1], x.labels.get(rec.get("place") or "")
+        if v and v > 0 and at:
+            out[x.key] = {"level": v, "place": at}
+    return out
 
 
 def _left_title(s: Series, places: Places) -> str | None:

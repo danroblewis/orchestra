@@ -11,6 +11,7 @@
   else root.SDGraph = factory();
 })(typeof self !== "undefined" ? self : this, function () {
   const nice = (s) => s || "outside";
+  const count = (v) => (Number.isInteger(+v) ? String(+v) : (+v).toFixed(1));     // a level of things: "5", "2.5"
   const num = (v, short) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(short ? 2 : 3));
   // What to call each stock and flow. A series' name says what kind of thing it counts ("beads
   // issues"); its labels say which ones ("status: in_progress"). So a stock is named by the label
@@ -332,6 +333,11 @@
       // never reads as trusted as one the evidence balances
       // (under the box: above it is where a version's marks go)
       ...(byConstruction(s) ? { tags: [{ text: "by construction", cls: "ng-t-bc", below: true }] } : {}) }); }
+    // a place no stock was kept for, drawn named and unmeasured: with its level when its count holds
+    // items now (``discovery.held_levels``), so the diagram never leaves out what a pile holds
+    const placeBox = (v, p) => { const id = "p:" + v, title = placeTitle(v, p), lv = p.level != null ? `${count(p.level)} now · ` : "";
+      if (!has(id)) nodes.push({ id, kind: "box", place: v, label: title, lines: [title], caption: lv ? `${count(p.level)} now · not a stock` : "not a stock",
+        sub: p.why ? shorten(p.why, 40) : " ", why: (lv ? `holds ${count(p.level)} now; ` : "") + (p.why || ""), series: p.series, level: p.level, inert: true, w: Math.max(160, title.length * 6.6 + 30), h: 62, dashed: true, color: "#64748b", fill: "#0e1118", charge: -600, textColor: "var(--text2)" }); return id; };
     for (const f of flows) {
       // in the causal graph used for loops, a flow is a node between its ends ("f:<id>")
       const col = FLOW_INK, v = "f:" + f.id, e = f.current || {};
@@ -348,8 +354,7 @@
       const pFrom = !f.from && !sFrom ? placeEnd(cl.from) : null, pTo = !f.to && !sTo ? placeEnd(cl.to) : null;
       // named as a stock of it would be (its level series' title), else its value in words ("sail_check (waiting)");
       // ``inert``: no drawer of its own, so it is no tab stop (its tooltip says why it is no stock)
-      const placeNode = (v, p) => { const id = "p:" + v, title = placeTitle(v, p); if (!has(id)) nodes.push({ id, kind: "box", place: v, label: title, lines: [title], caption: "not a stock",
-        sub: p.why ? shorten(p.why, 40) : " ", why: p.why, series: p.series, inert: true, w: Math.max(160, title.length * 6.6 + 30), h: 62, dashed: true, color: "#64748b", fill: "#0e1118", charge: -600, textColor: "var(--text2)" }); return id; };
+      const placeNode = (v, p) => placeBox(v, p);
       const outsideName = (v) => (/^<(.*)>$/.test(String(v || "")) ? "the " + String(v).slice(1, -1) : "");
       const src = f.from ? "s:" + f.from : sFrom || (pFrom ? placeNode(cl.from, pFrom) : "c:in:" + (f.to || f.id));
       const dst = f.to ? "s:" + f.to : sTo || (pTo ? placeNode(cl.to, pTo) : "c:out:" + (f.from || f.id));
@@ -377,6 +382,11 @@
           sign: (sign < 0 ? "−" : sign > 0 ? "+" : "~") + (correlational(m, f) ? " untested" : ""), bend: 36, fid: f.id });
       }
     }
+    // a pile that holds items and is no stock, which no drawn flow reaches: drawn as its place all the same
+    for (const [k, h] of Object.entries(((m.discovery || {}).held_levels) || {})) {
+      if (!h || h.place == null || has("p:" + h.place) || m.stocks.some((x) => x.series && Object.values(x.series.labels || {}).includes(String(h.place)))) continue;
+      const p = placeOf(m, String(h.place)); placeBox(String(h.place), p.series === k ? p : { ...p, level: h.level });
+    }
     // stocks with flows from or to outside are drawn toward the frame's edge, so those stubs stay short
     for (const n of nodes) if (n.sid) n.edgeward = edges.some((e) => e.flowPart && ((e.target === n.id && e.source.startsWith("c:")) || (e.source === n.id && e.target.startsWith("c:"))));
     const places = nodes.filter((n) => n.place).map((n) => n.label);
@@ -392,7 +402,8 @@
   function placeOf(m, v) {
     const d = (m && m.discovery) || {}, lo = d.left_out || {}, titles = d.titles || {};
     const k = Object.keys(lo).find((key) => key.includes(`="${v}"`) && !/_total\{/.test(key) && titles[key] && !/^age of /.test(titles[key]));
-    return k ? { title: titles[k], why: lo[k], series: k } : { title: v, why: "no series measures it" };
+    const held = k && (d.held_levels || {})[k];
+    return k ? { title: titles[k], why: lo[k], series: k, ...(held ? { level: held.level } : {}) } : { title: v, why: "no series measures it" };
   }
   // where a flow comes from or goes (``which``: "from" or "to"), as the diagram draws it: its stock; a
   // stock whose series measures the place its counter names; that place, "(not a stock)"; or, only
@@ -404,7 +415,8 @@
     if (v == null || /^<.*>$/.test(String(v))) return "outside";
     const st = (m.stocks || []).find((x) => x.series && Object.values(x.series.labels || {}).includes(String(v)));
     if (st) return stockName(m, st.id);
-    return `${placeTitle(v, placeOf(m, String(v)))} (not a stock)`;
+    const p = placeOf(m, String(v));
+    return `${placeTitle(v, p)} (${p.level != null ? `${count(p.level)} now, ` : ""}not a stock)`;
   }
   // a place's name, as a stock of it is named: its level series' title, else its value in words
   // ("sail_check.waiting": "sail_check (waiting)"), never the raw value
