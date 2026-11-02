@@ -316,7 +316,7 @@ demo on core `8059aa62` and agents `5db0f07` at 01:54Z. Login links are in `~/ur
 This run: $0.83. Both runs: about $7.48, under the $30 cap. L1 spent nothing on AI. T2-prep's
 spend is not recorded. Agent time is not recorded as a total; the log gives only durations: T2
 took 1 h 35 min, and T2-prep's live run was polling for at least 45 minutes.
-The log records no live model run in T4; its spend is not recorded.
+T4: $0. No Supervisor or agent harness ran a model during T4; its implementors and reviewers are the run's Opus subagents, outside the live-spend cap.
 [T2b: spend pending; filled by the coordinator]
 
 ## 8. Suite results
@@ -327,7 +327,7 @@ scan 0 at each push.
 | repository | commit | result |
 |---|---|---|
 | core | `3ae3e39f` (T4) | 1093 passed, 2 skipped, rc=0 |
-| core | `12be615d` (T4 stall rule) | rc=0; the count is not given |
+| core | `12be615d` (T4 stall rule) | 1102 passed, 2 skipped, rc=0 |
 | core | R2 implementor's branch | screenshots 7, by the agent |
 | agents | `ac51fb3` (T4) | 663 passed, rc=0 |
 | agents | `c77915a` (T4 relock) | 666 passed, rc=0 |
