@@ -32,7 +32,7 @@ def test_no_versions_and_no_model_say_why(project, capsys):
     assert main(["--repo", repo, "sd", "show"]) == 0
     out = capsys.readouterr().out
     assert "There is no model yet: the last discovery found no stocks among the 2 series it looked at (none could be judged yet: all 2 series are newer than one step)." in out
-    assert "It left out 2 of them: too new (2)." in out
+    assert "It left out 2 of them: 2 too new to measure." in out
     assert main(["--repo", repo, "sd", "show", "--version", "4"]) == 1
     assert "there is no version 4" in capsys.readouterr().out
 

@@ -44,11 +44,52 @@ def kind_of(why: str) -> str:
     early = next((e for e in EARLY if why.startswith(e)), None)
     if early:
         return early
-    if why.startswith("the same as "):
+    if why.startswith("the same as ") or (why.startswith("with ") and " in the balance of " in why):
         return "the same as another series"
+    if why.startswith(("the same items as ", "the start of ", "the end of ")):
+        return "the capacity of another stock"
+    if why.startswith("a count of reporters split by "):
+        return "a count of reporters split by a label"
     head = re.split(r": | \(|; |, ", why, maxsplit=1)[0]
     head = re.sub(r"\b1 (event|step|time|point|value)\b", r"1 \1s", head)     # "1 event" counts with "3 events"
     return re.sub(r"\d+(\.\d+)?", "n", head).strip()
+
+
+# each kind of reason as a fragment the count leads: (the kind's start, said of one, said of several)
+SAID = (
+    ("Orchestra's own", "of Orchestra's own", "of Orchestra's own"),
+    ("named orchestra_", "named with Orchestra's prefix orchestra_", "named with Orchestra's prefix orchestra_"),
+    ("no longer written", "no longer written", "no longer written"),
+    ("not written", "not written in the window", "not written in the window"),
+    ("too new", "too new to measure", "too new to measure"),
+    ("the same as another series", "the same as another series", "the same as other series"),
+    ("the capacity of another stock", "the capacity of another stock", "the capacities of other stocks"),
+    ("live in only", "live in only some of the steps that every counter was live in",
+     "live in only some of the steps that every counter was live in"),
+    ("a counter that did not move", "counter that did not move in the window", "counters that did not move in the window"),
+    ("a counter of only", "counter with too few events", "counters with too few events"),
+    ("a counter no stock's balance needed", "counter no stock's balance needed", "counters no stock's balance needed"),
+    ("a level that did not change", "level that did not change in the window", "levels that did not change in the window"),
+    ("a level that changed", "level that changed too few times", "levels that changed too few times"),
+    ("a flag", "flag (only ever 0 or 1)", "flags (only ever 0 or 1)"),
+    ("its instrument says it is an aggregate", "that its instrument says is an aggregate", "that their instrument says are aggregates"),
+    ("its instrument says it is an age", "that its instrument says is an age", "that their instrument says are ages"),
+    ("a statistic", "statistic (a maximum, a mean or a percentile)", "statistics (maxima, means or percentiles)"),
+    ("written for only", "written for too little of the window", "written for too little of the window"),
+    ("no counters of its own balance it", "that no counters of its own balance", "that no counters of their own balance"),
+    ("no counters balance it", "that no counters balance", "that no counters balance"),
+    ("only an accumulator", "only an accumulator of other stocks' flows", "only accumulators of other stocks' flows"),
+    ("a count of reporters split by a label", "count of reporters split by a label", "counts of reporters split by a label"),
+)
+
+
+def said(kind: str, k: int) -> str:
+    """A group of left-out series as a fragment the count leads ("6 counters with too few events"),
+    never a kind's raw key: a kind not in ``SAID`` is said as left out for it, its numbers as "some"."""
+    one, many = next(((o, m) for start, o, m in SAID if kind.startswith(start)), (None, None))
+    if one is None:
+        return f"{k} left out as {re.sub(r'\bn\b', 'some', kind)}"
+    return f"{k} {one if k == 1 else many}"
 
 
 def no_model_reason(d: dict, where: str = "below") -> str:
@@ -104,7 +145,7 @@ def text(r: dict) -> str:
     """The paragraph, from ``reason``."""
     parts = [first_sentence(r)]
     if r["discovered"] and r.get("left_out"):
-        groups = "; ".join(f"{kind} ({k})" for kind, k in r["by_reason"].items())
+        groups = "; ".join(said(kind, k) for kind, k in r["by_reason"].items())
         parts.append(f"It left out {r['left_out']} of them: {groups}.")
     ce = r.get("counter_events") if r["discovered"] else None
     if ce and ce.get("counters"):

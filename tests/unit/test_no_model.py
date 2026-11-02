@@ -7,7 +7,7 @@ import pytest
 
 from orchestra.config import init_project
 from orchestra.sd.model import Model
-from orchestra.sd.no_model import NoModel, kind_of, reason, text
+from orchestra.sd.no_model import NoModel, kind_of, reason, said, text
 from orchestra.sd.reads import ModelReads, ReadError
 from orchestra.sd.store import ModelStore
 
@@ -32,7 +32,7 @@ def test_the_paragraph_says_what_was_looked_at_left_out_and_the_events_per_count
     assert r["by_reason"] == {"too new": 2, "no counters balance it": 2, "a level that changed in only n steps": 2}
     t = text(r)
     assert t.startswith("There is no model yet: the last discovery found no stocks among the 6 series it looked at (nothing balances yet).")
-    assert "It left out 6 of them: too new (2); no counters balance it (2); a level that changed in only n steps (2)." in t
+    assert "It left out 6 of them: 2 too new to measure; 2 that no counters balance; 2 levels that changed too few times." in t
     assert "Too few events: at most 3 per counter, 5 needed." in t
     assert t.endswith("No orchestra run is running, so discovery will not run again until it starts.")
     enough = text(reason({**D, "counter_events": {"counters": 2, "most": 40.0, "needed": 5}}, host=True))
@@ -45,6 +45,44 @@ def test_like_reasons_count_together():
     assert kind_of("Orchestra's own: not a measure") == "Orchestra's own"
     assert kind_of("live in only 3 of 40 steps while every counter was: too few") == "live in only n of n steps while every counter was"
     assert kind_of("a counter of only 1 event") == kind_of("a counter of only 3 events") == "a counter of only n events"
+
+
+LIVE = {"sampled": 70, "series": 2, "counter_events": {"counters": 3, "most": 2.0, "needed": 5},
+        "left_out": {**{f"l{i}": f"live in only {i % 7 + 1} of 40 steps while every counter was: too few to balance" for i in range(21)},
+                     **{f"g{i}": "its instrument says it is an aggregate (places that overlap): never a stock" for i in range(16)},
+                     **{f"q{i}": "a counter that did not move in the window" for i in range(12)},
+                     **{f"o{i}": "Orchestra's own (the host's and the Core page's plumbing), not a measure of the system" for i in range(10)},
+                     **{f"r{i}": f"a counter of only {i % 3 + 1} event{'s' if i % 3 else ''}: fewer than 5, too few to carry a balance" for i in range(6)},
+                     "a1": "its instrument says it is an age (how long the oldest has waited): never a stock",
+                     "a2": "its instrument says it is an age (how long the oldest has waited): never a stock",
+                     "x": "the same as y_total (counts the same events)"}}
+
+
+def test_each_group_is_said_plainly_with_its_count_first_and_no_bare_n():
+    t = text(reason(LIVE, host=True))
+    assert ("It left out 68 of them: 21 live in only some of the steps that every counter was live in; 16 that their instrument "
+            "says are aggregates; 12 counters that did not move in the window; 10 of Orchestra's own; 6 counters with too few "
+            "events; 2 that their instrument says are ages; 1 the same as another series.") in t
+    assert t.endswith("Too few events: at most 2 per counter, 5 needed. It looks again every few minutes.")
+    assert " n " not in t and "(" not in t.split("It left out")[1].split(".")[0]
+
+
+def test_every_reason_discovery_gives_is_said_without_a_bare_n():
+    reasons = ["named orchestra_*: the orchestra_ prefix is Orchestra's own", "no longer written: nothing in the last 5 min",
+               "not written in the window: its last point is 9 min before the end", NEW,
+               "a level that did not change in the window", "a level that changed only 1 time, between two values (0, 3)",
+               "a flag (it only ever takes 0 and 1, and no counters balance it exactly), not a quantity that accumulates",
+               "a statistic of what it measures (a maximum, a mean): a summary", "written for only 4 min of the 60 min the window",
+               "no counters balance it (best R² 0.31 with a_total)", "no counters of its own balance it (best R² 0.20); the others",
+               "only an accumulator of other stocks' flows (R² 0.99 with counters of its own)", "a counter no stock's balance needed",
+               "with a_total and b_total in the balance of q, the same as c_total, which counts their sum itself",
+               "the same items as q: its capacity of 3", "the start of p, the capacity of q: it moves items within",
+               "a count of reporters split by outcome, balanced by its own turnover"]
+    for why in reasons:
+        for k in (1, 3):
+            got = said(kind_of(why), k)
+            assert got.startswith(f"{k} ") and "left out as" not in got and " n " not in f"{got} ", got
+    assert said(kind_of("something new at 3 of 7 steps"), 2) == "2 left out as something new at some of some steps"
 
 
 def test_no_discovery_says_so():
