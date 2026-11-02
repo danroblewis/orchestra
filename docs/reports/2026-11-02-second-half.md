@@ -3,8 +3,8 @@
 The unattended run of [GOAL-2026-11-02-second-half.md](../roadmap/GOAL-2026-11-02-second-half.md),
 run by [COORDINATOR.md](../roadmap/COORDINATOR.md), with product decisions taken by the owner proxy
 ([OWNER-PROXY.md](../roadmap/OWNER-PROXY.md)). Its first timed log line is 2026-11-01T17:08Z. This
-draft was written at 2026-11-02T00:27Z and brought up to date for T4 at about 01:55Z. The goal's progress log is the source
-of truth. Where this draft and the log disagree, the log wins.
+draft was written at 2026-11-02T00:27Z and brought up to date with the log through 04:02Z (T6).
+The goal's progress log is the source of truth. Where this draft and the log disagree, the log wins.
 
 In short: the live delivery example ran the owner's day on the real SCRUM board and the private
 repository three times (L1, T2-prep, T2), with every outside write in the approved scope. The
@@ -13,8 +13,10 @@ Supervisor passed the design scenario on the live example on Haiku (L3). The Mon
 failures are mostly in the Supervisor's answers and the pages' account of who must act, not in the
 delivery itself. T4 implemented the T3 judge's work list (47 rows: 19 must, 28 should) in core,
 agents, workflows and outbox; every T4 repository was on origin by 01:53Z. The walkthrough re-run
-on T4's code (T2b) passed 12 of 16 steps, with 2 misleading and 2 failed; T2 had 7, 2 and 6. Fixes
-for T2b's findings are in progress as T6.
+on T4's code (T2b) passed 12 of 16 steps, with 2 misleading and 2 failed; T2 had 7, 2 and 6. T6
+fixed what T2b found and was on origin by 04:02Z, but the walkthrough has not been run a third
+time, so T6 is not verified live. The release gate's verifier found agents, workflows and bridges
+ready, and the core's fixes small: P1 was already fixed, and P2 and P4 were fixed in T6.
 
 ## 1. Questions for the owner
 
@@ -142,8 +144,8 @@ state. Evidence in the scratchpad under `reviews/T2/`: `run.md`, `answers.md`, `
 `events.jsonl` (redacted), `raw/`, and 62 screenshots in `shots/`. The script is
 [WALKTHROUGH-2026-11-02.md](../roadmap/WALKTHROUGH-2026-11-02.md). "T4 changes" lists the T3
 judge's rows for each step; the log records them merged (core 00:49Z and 00:57Z, agents 00:58Z
-and 01:41Z, workflows 01:31Z and 01:42Z, outbox 00:28Z). Whether they fix the step is for the
-re-run.
+and 01:41Z, workflows 01:31Z and 01:42Z, outbox 00:28Z). The last column is T2b's verdict on T4's
+code.
 
 | # | step | T2 | what the proxy found | what T4 changes | T2b |
 |---|---|---|---|---|---|
@@ -209,7 +211,19 @@ New breaks it found:
 - `logs/web.log` prints the login token in clear.
 - A `coordinator` placeholder card stays on Machines when tasking is not installed.
 
-[T6, the fixes for T2b's findings (core, agents, workflows): outcome pending; filled by the coordinator]
+### T6, the fixes for T2b's findings
+
+All merged and pushed by 04:02Z: core `fcea86e6`, agents `4cc1af6`, workflows `fb2b107`.
+
+| repository | commits | what the log says landed |
+|---|---|---|
+| core | `1dfd2355` (T6-words, pushed as `f4a753f0`) | the gate's P2: plugin words out of core comments and one user-facing string |
+| core | `e1895e87`, `3d0951da` (pushed as `fcea86e6`) | the `inf` came from `fit_flow`'s proportional form scoring −∞ when an event arrived while the stock read zero; it is now "not fitted" with its reason, and `orchestra/finite.py` turns any non-finite number into null for the store, the API and the events endpoint. The web banner's token is shown only on a terminal, with a redacting filter on the loggers |
+| workflows | `27c14d4`, `8e27b9d` (pushed as `2281dd6`; relock `fb2b107`) | `--supervisor` gives `design,observe,model,events,workflows,work` by default, `--tools` changes it, and it refuses to start with `orchestra-tasking` importable unless `--allow-tasking`; the gate's P4: the README says bridges and outbox are public and names orchestra-agents |
+| agents | `b1cb6f2`, `d23f95e`, `7dc18d9`, `e227f93`, `e66bab5` (pushed as `4cc1af6`) | no quiet flag or restart advice unless the host marked the machine gone quiet; the owner's named phrases matched to heard event types; `at`/`tz` on `every`; items waiting outside, per step; "what changed since" lists every event class and names what the read missed; `read_model` says "could not be read"; no `coordinator` placeholder without tasking |
+
+Both demos were restarted on T6: the example as run16 (03:57Z, the no-model 404 as expected on a
+fresh run). The live demo was restarting when the log's last line was written (04:02Z).
 
 ## 4. What does not work, and why
 
@@ -228,18 +242,25 @@ workflows 7/12, outbox 0/2, bridges none, coordinator 2/2. The musts, in short:
   URLs are hard-coded (Data Center and GHE need settings).
 - **Coordinator.** The walk's venv had the task system installed; the start ran `--via mcp`.
 
-T4 merged all of these (section 3). The re-run will show whether they work.
+T4 merged all of these (section 3). T2b showed most of them working: steps 1, 7, 9 and 11 went
+from fail or misleading to pass. Its remaining failures and new breaks went to T6.
 
 **Follow-ups after T4** (from the log, 01:31Z to 01:54Z):
 - The no-model paragraph prints its grouped reasons with the numbers collapsed into raw keys
   ("live in only n of n steps while every counter was (21)", "a counter of only n events (6)").
   Each group needs a sentence.
-- `delivery_sail` and two other examples still print the login token.
+- `delivery_sail` and two other examples still print the login token (still so at 03:57Z; the run
+  logs are kept mode 600).
 - A Data Center PAT is read from the file named `jira-cloud-token`.
 - The workflows `dev` extra does not list `orchestra_bridges`, so 41 `delivery_live` tests skip in
-  the main checkout. It should list it, as the agents' extra does.
+  the main checkout. It should list it, as the agents' extra does. Dispatched as `T5-dev-bridges`
+  (01:56Z), with `T5-nomodel-text` for the item above, both to merge after T2b; their merge is not
+  in the log.
 - The main demo's link in `~/url` once carried a stale token (401). It was rewritten from
   `LOGIN.txt` and verified (01:54Z).
+- At T2b's step 16 the Supervisor never called `read_model`, so T6's `read_model` fix rests on a
+  new prompt line (the implementor's caveat).
+- The walkthrough has not been run a third time, so T6 is not verified live.
 
 Known gaps the script names and does not pretend are solved: the review is a stand-in (one
 GitHub account); no 09:00 schedule (the nudger runs at 00:00 UTC); each reminder waits for
@@ -281,8 +302,8 @@ The final verifier says agents, workflows and bridges are ready to push. For the
 - P5. The tasking extra in the core's `pyproject.toml`.
 
 Suites at the gate heads: core 1214 passed (plus 7 environment failures, P1), agents 697,
-workflows 547, bridges 312. P2 is being fixed on core branch `T6-words` and P4 on `T6-workflows`;
-their outcome is in the T6 placeholder (section 3).
+workflows 547, bridges 312. P2 and P4 were fixed in T6 (section 3). P3 stays a design question,
+and P5 (the tasking extra) is not recorded as changed.
 
 ## 5. Decisions taken, and by whom
 
@@ -350,17 +371,18 @@ waits for you on the Outbox page. The harness flags (`--hold-review`, `--release
 
 **The walkthrough with the Supervisor.** Today it starts from the agents' launcher
 `tests/live/delivery_live_run.py` with the role's tools `design,observe,model,events,workflows,work`,
-`--via bash`, in a venv without `orchestra-tasking`; see the script's "The fresh state". T4
-added `demo.sh --supervisor` (workflows `35b2b9c`), which starts the Supervisor from the example,
-so you no longer need the agents' launcher.
+`--via bash`, in a venv without `orchestra-tasking`; see the script's "The fresh state". T4 added
+`demo.sh --supervisor` (workflows `35b2b9c`), but T2b found it gave no `request_work`. Since T6
+(`2281dd6`) its default role includes `work`, `--tools` changes it, and it refuses to start when
+tasking is installed unless `--allow-tasking`. It has not yet carried a walkthrough.
 
 **Integrations.** `docs/INTEGRATING.md` and QUICKSTART in the core. `~/orchestra-bridges` is now
 the library (B11): kits, fakes, templates and scaffold. `integrate_system` writes a collector into
 your repository at `.orchestra/machines/<name>/`.
 
 **The demos.** The core demo on :8096 and the delivery_sail example on :8101 ran every merged
-change as of 21:29Z. Both were restarted on T4's code: the example as run15 at 01:47Z, the live
-demo on core `8059aa62` and agents `5db0f07` at 01:54Z. Login links are in `~/url` (mode 600).
+change as of 21:29Z. The example was restarted on T6 as run16 (03:57Z); the live demo, last up on
+T4's code (core `8059aa62`, agents `5db0f07`, 01:54Z), was restarting on T6 at 04:02Z. Login links are in `~/url` (mode 600).
 
 ## 7. Live model spend
 
@@ -374,11 +396,12 @@ demo on core `8059aa62` and agents `5db0f07` at 01:54Z. Login links are in `~/ur
 | T2 | Haiku, 11 invocations | $0.37 |
 | T2b | Haiku, 10 invocations | $0.42 |
 
-This run: $1.25. Both runs: about $7.9 (the log's figure), under the $30 cap. L1 spent nothing on AI. T2-prep's
-spend is not recorded. Agent time is not recorded as a total; the log gives only durations: T2
-took 1 h 35 min, and T2-prep's live run was polling for at least 45 minutes.
-T4: $0. No Supervisor or agent harness ran a model during T4; its implementors and reviewers are the run's Opus subagents, outside the live-spend cap.
-T2b: $0.42 over 10 Haiku calls (9 owner turns and 1 unasked wake), under its $5 cap.
+This run: $1.25. Both runs: about $7.9 (the log's figure), under the $30 cap. T2b's $0.42 covers
+9 owner turns and 1 unasked wake, under its $5 cap. T4 spent $0: no Supervisor or agent harness ran
+a model; its implementors and reviewers are the run's Opus subagents, outside the live-spend cap.
+L1 spent nothing on AI. T2-prep's and T6's spend are not recorded. Agent time is not recorded as a
+total. The log gives durations only: T2 took 1 h 35 min, T2b 1 h 39 min (01:59Z to 03:38Z), and
+the release gate 15 h over 60 agents.
 
 ## 8. Suite results
 
@@ -387,15 +410,20 @@ scan 0 at each push.
 
 | repository | commit | result |
 |---|---|---|
-| core | `3ae3e39f` (T4) | 1093 passed, 2 skipped, rc=0 |
-| core | `12be615d` (T4 stall rule) | 1102 passed, 2 skipped, rc=0 |
+| core | `12be615d` (T4) | 1102 passed, 2 skipped, rc=0 |
+| core | `f4a753f0` (T6-words) | 1104 passed, 2 skipped, rc=0 |
+| core | `fcea86e6` (T6) | rc=0; the count is not logged (1110 passed on the branch) |
 | core | R2 implementor's branch | screenshots 7, by the agent |
-| agents | `ac51fb3` (T4) | 663 passed, rc=0 |
-| agents | `c77915a` (T4 relock) | 666 passed, rc=0 |
+| agents | `c77915a` (T4) | 666 passed, rc=0 |
+| agents | `4cc1af6` (T6) | 681 passed, rc=0 |
 | workflows | `35b2b9c` (T4) | unit 477 passed rc=0; e2e 87 passed rc=0 (10.5 min) |
-| workflows | `0166e5d` (T4 relock) | 436 passed, 4 skipped, rc=0 in the main checkout; the 41 `delivery_live` tests skip without `orchestra_bridges` (section 4) |
-| bridges | `14119cf` | 172 passed, rc=0 (no T4 rows) |
+| workflows | `2281dd6` (T6) | rc=0 (474 passed on the branch) |
+| workflows | `fb2b107` (T6 relock) | 474 passed, 4 skipped, rc=0 |
+| bridges | `14119cf` | 172 passed, rc=0 (no T4 or T6 rows) |
 | outbox | `a53a70a` (T4) | 99 passed, rc=0 |
+
+At the gate heads (the verifier, 03:43Z): core 1214 passed with 7 environment failures, agents
+697, workflows 547, bridges 312.
 
 One red result was caught before a push: the plugin's re-lock to core `bbe7255a` failed 2 tests
 on the `NetGeometry` split (20:02Z); the Items graph fix merged first.
