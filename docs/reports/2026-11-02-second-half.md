@@ -11,8 +11,11 @@ repository four times (L1, T2-prep, T2, T2b), every outside write in the approve
 Supervisor passed the design scenario on the live example on Haiku (L3). The Monday walkthrough
 went from 7 pass, 2 misleading, 6 fail (T2) to 12, 2 and 2 (T2b, after T4). Its failures were
 mostly the Supervisor's answers and the pages' account of who must act, not the delivery. T6 fixed
-what T2b found and was on origin by 04:02Z; it is not yet verified live. The release gate's verifier found agents, workflows and bridges
-ready, and the core's fixes small: P1 was already fixed, and P2 and P4 were fixed in T6.
+what T2b found and was on origin by 04:02Z. The release gate's verifier found agents, workflows and
+bridges ready, and the core's fixes small: P1 was already fixed, and P2 and P4 were fixed in T6.
+After eight more fix rounds, the ninth walkthrough (T2i) passed all 16 steps, on Haiku over bash
+from the example's own start (Addendum 5). Two standing public demos now run: the delivery example
+on the real SCRUM board, and the Slack queues example on fakes (Addendum 4).
 
 ## 1. Questions for the owner
 
@@ -729,3 +732,44 @@ keeps failing. Two things are structural. The walkthrough has
 never run overnight: step 16 has always been asked after a short quiet period, not the next morning. And the
 answer that passed step 16 is text the tool rendered, not Haiku's own synthesis. The small model
 relays a digest well, but on this evidence it cannot yet be trusted to summarise a day by itself.
+
+## Addendum 5, 2026-11-02 (the walkthrough at 16 of 16)
+
+**1. The series.**
+
+| run | pass / misleading / fail | fixed before it | what it found | spend |
+|---|---|---|---|---|
+| T2 | 7 / 2 / 6 | none | section 3 | $0.37 |
+| T2b | 12 / 2 / 2 | T4 | the model API's 500 on an `inf`, the token in `web.log`, the coordinator card | $0.42 |
+| T2c | 12 / 2 / 2 | T6 | machines that "don't run", receives never heard, the eras bar | $0.47 |
+| T2d | 12 / 0 / 4 | T8 | the gated tools "unknown" (T8's regression) | $0.63 |
+| T2e | 13 / 1 / 2 | T9, T10 | the re-proposal wiping the owner's refinement; "runs on the schedule" | $0.74 |
+| T2f | 15 / 0 / 1 | T11 | `tz` never reaching the declared machine; step 16's three misses | $0.63 |
+| T2g | 15 / 0 / 1 | T12 | Haiku's synthesis misstating step 16's facts | $0.64 |
+| T2h | 15 / 0 / 1 | T13 | the git-ignored repository copy refused (step 10) | $0.71 |
+| T2i | 16 / 0 / 0 | T14 | two small gaps outside the pass rules (below) | $0.60 |
+
+The run's live model spend is about $12.2, under the $30 cap.
+
+**2. T14 and what is left.** T14 writes a git-ignored repository copy, or one with no git, and
+says so (workflows `3f6ad34`). A tracked, clean copy is written too. An edited or untracked copy is
+still refused, with the one thing to do named. In the agents (`cc7afc5`), a numbered choice list
+counts as a question, open until the owner names a choice or its subject. In T2i, step 10 wrote
+the git-ignored copy and said so. It asked the zone, wrote America/Los_Angeles, and passed
+`check_nudger` twice. The scheduled run started at 17:00Z, which is 09:00 PST. Step 11 passed on
+the first call. Step 16 was the digest verbatim (3,825 characters), and every fact matched the
+bus, GitHub, Jira and model v3. There were no guessed causes, no token in the logs, and the model
+API always answered 200.
+
+Open follow-ups, both outside the pass rules:
+- Step 10's answer no longer says that reminders wait for approval. Step 11's answer does.
+- The declared machine shows 09:00 without the zone. The zone lives only in the definition, and
+  no revision is pending.
+
+**3. What the series proved, and what it did not.** It proved that every step of the owner's day
+passes on Haiku, over bash, from the example's own start (`--supervisor`, first attempt), on the
+real SCRUM board and the private repository. It did not prove the morning after. No walkthrough has
+run overnight: T2i's step 16 came after 22 minutes alone. Step 16 also passes because the tool
+writes the answer and Haiku relays it, not because Haiku summarises the day. The standing delivery
+demo is the overnight run. The next check is one question to its Supervisor the next morning:
+"What changed since yesterday?"
