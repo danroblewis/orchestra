@@ -137,3 +137,11 @@ test("roles that pass the hub's own type to each other are its members, not hubs
   assert.equal(p.is("W", "x.made", "V"), false, "W hands work to V");
   assert.equal(p.is("C", "x.made", "W"), true);
 });
+
+test("the server's hubs, when served, are the page's: one answer for the page and the Supervisor (web/hubs.py)", () => {
+  const MG = require(path.resolve(import.meta.dirname, "../../orchestra/web/static/machine-graph.js"));
+  const d = { machines: [{ id: "p", publishes: [{ type: "x.made" }], subscribes: ["x.done"] }, { id: "a", publishes: [{ type: "x.done" }], subscribes: ["x.made"] },
+    { id: "b", publishes: [{ type: "x.done" }], subscribes: ["x.made"] }] };
+  assert.deepEqual([...MG.protocol(d).hubs.keys()], ["p"]);
+  assert.deepEqual([...MG.protocol({ ...d, hubs: [] }).hubs.keys()], [], "none served: none drawn");
+});

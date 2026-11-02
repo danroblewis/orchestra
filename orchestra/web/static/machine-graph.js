@@ -27,7 +27,8 @@
 })(typeof self !== "undefined" ? self : this, function () {
   const hears = (pattern, type) => pattern === type || pattern === "*" || (pattern.endsWith(".*") && type.startsWith(pattern.slice(0, -1)));
   const family = (type) => type.split(".")[0] + ".*";
-  // the hubs and their members, and whether a type from one machine to another is a hub's protocol.
+  // the hubs and their members (the API's ``hubs`` when served, else found here by the same rule), and
+  // whether a type from one machine to another is a hub's protocol.
   // d: the API's answer; intended: the declared layer's links ({machine, kind: "publishes"|"listens", type})
   function protocol(d, intended = []) {
     const pub = new Map(), sub = new Map(), add = (m, id, t) => { if (!m.has(id)) m.set(id, new Set()); m.get(id).add(t); };
@@ -40,7 +41,9 @@
     // to each other are its members, and what they hand each other stays drawn)
     const cands = ids.map((h) => [h, new Set(ids.filter((m) => m !== h && sends(h, m).length && sends(m, h).length))])
       .filter(([, ms]) => ms.size >= 2).sort((a, b) => b[1].size - a[1].size || a[0].localeCompare(b[0]));
-    for (const [h, members] of cands) if (![...hubs.values()].some((ms) => ms.has(h))) hubs.set(h, members);
+    // the server's hubs when it serves them (web/hubs.py: one answer for this page and the Supervisor)
+    if (Array.isArray(d.hubs)) for (const x of d.hubs) hubs.set(x.hub, new Set(x.members || []));
+    else for (const [h, members] of cands) if (![...hubs.values()].some((ms) => ms.has(h))) hubs.set(h, members);
     // a type from ``a`` that ``b`` receives is protocol: between a hub and its member, or a hub's own
     const is = (a, type, b) => (a === b ? hubs.has(a) && listens(a, type)
       : (hubs.has(a) && hubs.get(a).has(b)) || (hubs.has(b) && hubs.get(b).has(a)));

@@ -92,6 +92,7 @@ from collections import Counter, OrderedDict, defaultdict, deque
 
 from ..cadence import BEATS, BURST_S, DAY, active_within, gaps
 from ..events import HOST, announcement, event_time, for_an_instrument, machine_and_instance
+from .hubs import Hubs
 
 ANNOUNCE = "orchestra.machine.started"
 PAGE = 10_000                     # events folded per read
@@ -382,7 +383,9 @@ class MachineIndex:
                         for (a, ty, b), n in self.handoffs.most_common()]
             relays = [{"from": a, "via": ty, "through": h, "through_via": hv, "to": b, "count": n, "day": len(self.recent_relays.get((a, ty, h, hv, b), ()))}
                       for (a, ty, h, hv, b), n in self.relays.most_common()]
-            return {"machines": machines, "types": types, "edges": edges, "handoffs": handoffs, "relays": relays,
+            # the hubs, found here once (web/hubs.py), and only the relays through one: the page and the Supervisor read one answer
+            hubs = Hubs({x["id"]: {p["type"] for p in x["publishes"]} for x in machines}, {x["id"]: set(x["subscribes"]) for x in machines})
+            return {"machines": machines, "types": types, "edges": edges, "handoffs": handoffs, "relays": hubs.through(relays), "hubs": hubs.record(),
                     "unanswered_types": unanswered_types, "unattributed_events": self.unattributed}
 
 

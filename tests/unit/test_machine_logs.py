@@ -56,9 +56,17 @@ def test_a_subject_handed_on_through_a_machine_is_a_relay_from_the_one_before_it
     # the subject from the worker to the reviewer (the Machines page draws worker → reviewer through it)
     evs = [ev("planner", "x.made", "i1"), ev("worker/1", "x.done", "i1"), ev("planner", "x.made", "i1"), ev("reviewer/1", "x.done", "i1"),
            ev("planner", "x.made", "i1"), ev("worker/2", "x.done", "i1")]
-    r = {(x["from"], x["through"], x["to"]): x["count"] for x in machines_view(evs)["relays"]}
+    # the planner is a hub when it and the others exchange types both ways (web/hubs.py): only then is
+    # what it hands on a relay the API serves (one answer for the page and the Supervisor)
+    said = lambda src, listens: {"type": "orchestra.machine.started", "source": src, "time": "2026-10-25T00:00:00Z", "data": {"listens_for": listens}}
+    hub = [said("planner", ["x.done"]), said("worker/1", ["x.made"]), said("reviewer/1", ["x.made"])]
+    view = machines_view(hub + evs)
+    r = {(x["from"], x["through"], x["to"]): x["count"] for x in view["relays"]}
     # back to the machine it came from (planner → worker → planner) is no relay
     assert r == {("worker", "planner", "reviewer"): 1, ("reviewer", "planner", "worker"): 1}
+    assert view["hubs"] == [{"hub": "planner", "members": ["reviewer", "worker"]}]
+    # with nothing announced there is no hub, and nothing it relayed is served
+    assert machines_view(evs)["relays"] == [] and machines_view(evs)["hubs"] == []
 
 
 def test_a_hand_off_is_credited_to_an_event_the_receiver_listens_for():
