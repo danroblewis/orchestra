@@ -23,6 +23,7 @@ from .background import Refresher
 from .core import CoreProbe
 from .core_explore import Explorer
 from .dynamics import era_eras, model_view, predictions_view
+from .finite_response import FiniteJSONResponse
 from .intended import attach_dynamics, attach_machines
 from .intended import install as install_intended
 from .machines import model_parts
@@ -49,7 +50,7 @@ async def _lifespan(app: FastAPI):
 def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     """The app, as served on ``host``: whether it asks for the token follows ``[web] auth`` and
     whether ``host`` is a loopback address (web/auth.py)."""
-    app = FastAPI(title="Orchestra", lifespan=_lifespan)
+    app = FastAPI(title="Orchestra", lifespan=_lifespan, default_response_class=FiniteJSONResponse)
     auth_on = enabled(project, host)
     events = Events.for_project(project)
     core = CoreProbe(project, events)

@@ -408,6 +408,11 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
         cands.append(cand)
     for cand in cands:
         cand["aic"] = 2 * cand["k"] - 2 * cand["loglik"] if math.isfinite(cand["loglik"]) else math.inf
+        if not math.isfinite(cand["aic"]) and "rejected" not in cand:
+            # an event came where the form's rate is nothing (a stock read empty): it cannot have
+            # produced the data, so it is not fitted, and says why rather than carrying an infinite AIC
+            on = cand["inputs"][0] if cand["inputs"] else "time"
+            cand["rejected"] = f"not fitted: an event came while its rate in {on} was zero, so the form cannot produce the data"
     plain = min((c for c in cands if c["k"] == 1 and c["inputs"] in ([], [src])), key=lambda c: c["aic"])
     # a line in the source, or another series, must earn its place (another series against the size
     # of the search too) and survive the refutations (sd.driverchoice); what was found is kept either way
@@ -1209,8 +1214,10 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                                {mv.dst for mv in mvs if mv.dst}, near)
         best["dispersion"] = dispersion(events, live, best, paths, unit_s)
         other = lambda x, src=src: f"_{x['inputs'][0]}" if x["inputs"] and x["inputs"] != [src] else ""   # a form in another stock says which
-        alt = {f"aic_{x['form']}{other(x)}": round(x["aic"], 2) for x in rest[:4]}
-        alt.update({f"proportional_k{other(x)}": round(x["params"]["k"], 6) for x in [best, *rest] if x["form"] == "proportional"})
+        # a form that could not be fitted (no finite AIC) is named only among the rejected, with its reason
+        alt = {f"aic_{x['form']}{other(x)}": round(x["aic"], 2) for x in rest[:4] if math.isfinite(x["aic"])}
+        alt.update({f"proportional_k{other(x)}": round(x["params"]["k"], 6) for x in [best, *rest]
+                    if x["form"] == "proportional" and math.isfinite(x["aic"])})
         if rejected := {f"{x['form']}_{x['inputs'][0]}": x["rejected"] for x in rest if "rejected" in x}:
             alt["rejected"] = rejected
         q = {"events": float(sum(y)), "loglik": round(best["loglik"], 3), "aic": round(best["aic"], 3),

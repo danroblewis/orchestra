@@ -26,6 +26,7 @@ from urllib.parse import parse_qs, urlsplit
 from .. import runtime
 from ..config import Project
 from ..events import Events
+from ..finite import finite
 from . import RECORD_KEY, api
 from .validate import MAX_BODY, Invalid, check, number, parse, types_filter
 
@@ -157,7 +158,7 @@ def _handler(ep: EventsEndpoint) -> type[BaseHTTPRequestHandler]:
             pass
 
         def _send(self, status: int, body: dict, headers: dict | None = None) -> None:
-            raw = json.dumps(body).encode()
+            raw = json.dumps(finite(body), allow_nan=False).encode()     # strict JSON: a non-finite number is null
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(raw)))

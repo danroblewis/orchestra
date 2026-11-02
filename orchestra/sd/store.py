@@ -32,6 +32,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from ..finite import finite
 from .model import Model
 
 NAME = re.compile(r"^v(\d{4,})\.json$")
@@ -64,7 +65,7 @@ class ModelStore:
         errs = model.check()
         if errs:
             raise ValueError("; ".join(errs))
-        body = model.to_json()
+        body = finite(model.to_json(), "model")      # a version is strict JSON: no infinity, no NaN
         with self.locked("versions"):            # two writers never pick the same number
             nums = self._numbers()
             if nums and (cur := self._read(nums[-1])) and cur["model"] == body:
@@ -135,7 +136,7 @@ class ModelStore:
         self.dir.mkdir(parents=True, exist_ok=True)
         p = self.dir / f"{name}.json"
         tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(record) + "\n", encoding="utf-8")
+        tmp.write_text(json.dumps(finite(record, name)) + "\n", encoding="utf-8")
         tmp.replace(p)
 
     @contextmanager
@@ -153,7 +154,7 @@ class ModelStore:
         self.dir.mkdir(parents=True, exist_ok=True)
         p = self.dir / "discovered.json"
         tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"at": at or time.time(), "model": model.to_json()}) + "\n", encoding="utf-8")
+        tmp.write_text(json.dumps({"at": at or time.time(), "model": finite(model.to_json(), "discovered.model")}) + "\n", encoding="utf-8")
         tmp.replace(p)
 
     def latest_discovery(self) -> tuple[float, Model] | None:
