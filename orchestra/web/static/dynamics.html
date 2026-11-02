@@ -576,7 +576,9 @@ async function load() {
       const lo = d.discovery && d.discovery.left_out;       // no model yet: what discovery saw, and why each series was left out
       const src = d.discovery ? sourcesNote(d.discovery) : "";   // ... and the sources that were missing or refused
       const waiting = await expectedWaiting();
-      $("diagram").innerHTML = `<div class="empty">${esc(d.error)}${windowNote(d, d.bus_since)}</div>` + waiting
+      // no model (sd.no_model): its first sentence as the headline, then the rest of the paragraph and the button
+      const head = (d.reason && d.reason.headline) || d.text || d.error, rest = d.text && d.text.startsWith(head) ? d.text.slice(head.length).trim() : "";
+      $("diagram").innerHTML = `<div class="empty"><b>${esc(head)}</b>${rest || d.hint ? `<div style="margin-top:4px">${esc([rest, d.hint].filter(Boolean).join(" "))}</div>` : ""}${windowNote(d, d.bus_since)}</div>` + waiting
         + (src ? `<div class="panel" style="margin-top:10px">${src}</div>` : "")
         + (lo && Object.keys(lo).length
         ? `<div class="panel" style="margin-top:10px">${leftOutHead(d.discovery, lo).replace("<h3>", '<h3 style="margin-top:0">')}`

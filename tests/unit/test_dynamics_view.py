@@ -18,11 +18,11 @@ def test_no_model_yet_comes_with_the_left_out_list(tmp_path, monkeypatch):
                                                  "gaps": []})
     ModelStore.for_state(project.state_dir).write_discovery(found)
     out = model_view(project)
-    assert not out["ok"] and out["error"].startswith("There is no model yet")
+    assert not out["ok"] and out["error"] == "no model" and out["text"].startswith("There is no model yet")
     assert out["discovery"] == {"left_out": {"disk_free_bytes{machine=\"telemetry\"}": "no counters balance it"},
                                 "series": 1, "step": 5.0, "start": 100.0, "end": 3700.0, "min_r2": 0.9, "looked_at": 1, "kept": []}
     # the page points at its own button, not a command, and says when the host last looked
-    assert "rediscover now" in out["error"] and "orchestra sd discover" not in out["error"] and out["as_of"] is not None
+    assert "rediscover now" in out["hint"] and "orchestra sd discover" not in out["text"] and out["as_of"] is not None
 
 
 def test_the_counts_agree_with_each_other(tmp_path, monkeypatch):
@@ -46,7 +46,7 @@ def test_the_counts_agree_with_each_other(tmp_path, monkeypatch):
     assert len(d["left_out"]) == looked_at(d) == 3
     ModelStore.for_state(project.state_dir).write_discovery(m)
     out = model_view(project)
-    assert "among the 3 series it looked at" in out["error"] and out["discovery"]["looked_at"] == 3
+    assert "among the 3 series it looked at" in out["text"] and out["discovery"]["looked_at"] == 3
     old = {k: v for k, v in d.items() if k != "sampled"}       # a discovery from before "sampled" was recorded
     assert looked_at(old) == 3
 
@@ -62,7 +62,7 @@ def test_no_model_yet_says_which_source_was_missing(tmp_path, monkeypatch):
                                                  "since_last_s": 7200})
     ModelStore.for_state(project.state_dir).write_discovery(found)
     out = model_view(project)
-    assert not out["ok"] and "a source was missing" in out["error"] and "nothing balances yet" not in out["error"]
+    assert not out["ok"] and "a source was missing" in out["text"] and "nothing balances yet" not in out["text"]
     assert out["discovery"]["sources"] == sources and out["discovery"]["since_last_s"] == 7200
     assert out["discovery"]["not_saved"].startswith("missing rig")
 
@@ -80,7 +80,7 @@ def test_no_model_says_none_could_be_judged_when_every_series_is_too_new(tmp_pat
     found = Model("m", "nothing yet", discovery={"left_out": {"a": new, "b": new, "c": new}, "sampled": 3, "series": 0,
                                                  "step": 5.0, "start": 100.0, "end": 3700.0, "min_r2": 0.9})
     ModelStore.for_state(project.state_dir).write_discovery(found)
-    err = model_view(project)["error"]
+    err = model_view(project)["text"]
     assert "none could be judged yet: all 3 series are newer than one step" in err and "nothing balances" not in err
     # no orchestra run: no promise that it looks again by itself
     assert "No orchestra run is running, so discovery will not run again until it starts" in err
@@ -96,15 +96,15 @@ def test_no_model_says_it_looks_again_only_while_a_host_runs(tmp_path, monkeypat
                                                  "step": 5.0, "start": 100.0, "end": 3700.0, "min_r2": 0.9})
     ModelStore.for_state(project.state_dir).write_discovery(found)
     monkeypatch.setattr(dynamics, "host_running", lambda p: True)
-    err = model_view(project)["error"]
+    err = model_view(project)["text"]
     assert "(nothing balances yet)" in err and "It looks again every few minutes" in err
     monkeypatch.setattr(dynamics, "host_running", lambda p: False)
-    assert "No orchestra run is running" in model_view(project)["error"]
+    assert "No orchestra run is running" in model_view(project)["text"]
     # nothing discovered at all: the second message says the same
     ModelStore.for_state(project.state_dir).dir.joinpath("discovered.json").unlink()
-    assert model_view(project)["error"].startswith("There is no model yet. No orchestra run is running")
+    assert model_view(project)["text"].startswith("There is no model yet: no discovery has run yet. No orchestra run is running")
     monkeypatch.setattr(dynamics, "host_running", lambda p: True)
-    assert "discovers it from the metrics store every few minutes" in model_view(project)["error"]
+    assert "It looks again every few minutes" in model_view(project)["text"]
     # the runtime record decides it for real: this process registered as a host
     monkeypatch.undo()
     monkeypatch.setenv("ORCHESTRATOR_HOME", str(tmp_path / "home"))

@@ -46,7 +46,9 @@ def base_model(store: ModelStore, version: int | None = None):
         return cached[1], {"version": None, "latest_discovery_at": cached[0], "current_version": store.current_version()}
     m = store.load()
     if m is None:
-        raise ReadError("there is no model yet: the host discovers it from the metrics (orchestra run)", 404)
+        from .no_model import NoModel
+
+        raise NoModel(cached[1].discovery if cached else None)
     return m, {"version": store.current_version()}
 
 
@@ -208,7 +210,10 @@ class ModelReads:
         return {"ok": True, "language": reference()}
 
     def model(self, version: int | None = None, raw: bool = False) -> dict:
-        return model(self.models, self._metrics_or_none(), version, raw)
+        from .no_model import for_project
+
+        with for_project(self.project):
+            return model(self.models, self._metrics_or_none(), version, raw)
 
     def versions(self) -> dict:
         return versions(self.models)
@@ -217,7 +222,10 @@ class ModelReads:
         return eras(self.models)
 
     def observability(self, version: int | None = None) -> dict:
-        return observability(self.models, self.history, version)
+        from .no_model import for_project
+
+        with for_project(self.project):
+            return observability(self.models, self.history, version)
 
     def series(self, ids, **kw) -> dict:
         return series(self.models, self.history, ids, **kw)

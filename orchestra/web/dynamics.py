@@ -15,58 +15,32 @@ comparisons with observed metrics, collectors and sub-models come later
 
 from __future__ import annotations
 
-from collections import Counter
-
-from .. import runtime
 from ..sd import eras as era_record
 from ..sd import predictions as prediction_record
+from ..sd.no_model import NoModel, host_running, looked_at
 from ..sd.store import ModelStore
 
 NONE = "no machine associated yet"
-EARLY = ("Orchestra's own", "named orchestra_", "no longer written", "not written", "too new")   # the reasons a series is left out before it is considered (sd.discover)
 
 
-def looked_at(discovery: dict) -> int:
-    """How many series a discovery looked at: every one sampled (``sampled``), of which ``series``
-    were considered and the rest left out at once (Orchestra's own, or not being written).
-    Discoveries before 2026-10-26 recorded only ``series``: the ones left out at once are counted
-    from their reasons."""
-    if "sampled" in discovery:
-        return int(discovery["sampled"])
-    early = sum(1 for why in (discovery.get("left_out") or {}).values() if why.startswith(EARLY))
-    return int(discovery.get("series") or 0) + early
+# what the page says after the paragraph (sd.no_model): its own button
+PRESS = {True: "Press \u201crediscover now\u201d to look at once.", False: "Press \u201crediscover now\u201d to look once."}
 
 
-def no_model_reason(d: dict, where: str = "below") -> str:
-    """Why a discovery found no stocks, from what it left out: a missing source; none of the
-    series could be judged (every one left out before it was considered: the commonest reason,
-    'newer than one step' when that is it); or some were judged and nothing balances yet.
-    ``where`` says where the rest of the reasons are: "below" on the page, a pointer elsewhere
-    from the CLI."""
-    if d.get("not_saved"):
-        return f"a source was missing ({d['not_saved']})"
-    left = d.get("left_out") or {}
-    if left and not d.get("series"):
-        n = looked_at(d)
-        kinds = Counter(next((e for e in EARLY if why.startswith(e)), why.split(":")[0]) for why in left.values())
-        kind, k = kinds.most_common(1)[0]
-        if kind == "too new":
-            return (f"none could be judged yet: all {n} series are newer than one step" if k == n
-                    else f"none could be judged yet: {k} of the {n} series are newer than one step, the rest left out {where}")
-        return f"none could be judged yet: {k} of the {n} series were left out as {kind}" + ("" if k == n else f", the rest {where}")
-    return "nothing balances yet"
-
-
-def host_running(project) -> bool:
-    """Whether an ``orchestra run`` is running for the project, by the runtime record (as the
-    Instruments page judges it): only then does discovery run again by itself."""
-    record = runtime.read(project)
-    return runtime.launcher(record) is not None or bool(runtime.hosts(record))
-
-
-AGAIN = "It looks again every few minutes; press \u201crediscover now\u201d to look at once."
-NO_HOST = ("No orchestra run is running, so discovery will not run again until it starts; press "
-           "\u201crediscover now\u201d to look once.")
+def no_model(project, discovery: dict | None, as_of: float | None = None) -> dict:
+    """The answer with no model: ``sd.no_model``'s paragraph (``text``) and its facts (``reason``),
+    the page's button (``hint``), and the discovery's block so the page can list which series it
+    looked at and why each was left out, and which sources were missing or refused."""
+    running = host_running(project)
+    e = NoModel(discovery, running)
+    out = {**e.answer(), "hint": PRESS[running], "as_of": as_of}
+    if discovery is not None:
+        d, left = discovery, discovery.get("left_out") or {}
+        out["discovery"] = {**{k: d[k] for k in ("left_out", "series", "step", "start", "end", "min_r2", "sources", "not_saved",
+                                                 "since_last_s", "window_s", "summed") if k in d}, "looked_at": looked_at(d),
+                            # the series considered and not left out: so "left out N of M" accounts for every one
+                            "kept": sorted(k for k in (d.get("resolution") or {}) if k not in left)}
+    return out
 
 
 def era_eras(project) -> list:
@@ -108,27 +82,14 @@ def model_view(project, version: int | None = None, levels: dict | None = None, 
             return {"ok": False, "error": f"there is no version {version}"}
     else:
         if cached and not cached[1].stocks and not versions:
-            d = cached[1].discovery
-            n = looked_at(d)
-            left = d.get("left_out") or {}
-            return {"ok": False, "error": f"There is no model yet: the host's last discovery found no stocks among the "
-                                          f"{n} series it looked at ({no_model_reason(d)}). "
-                                          + (AGAIN if host_running(project) else NO_HOST),
-                    "as_of": cached[0],
-                    "discovery": {**{k: d[k] for k in ("left_out", "series", "step", "start", "end", "min_r2", "sources", "not_saved",
-                                                       "since_last_s", "window_s", "summed") if k in d}, "looked_at": n,
-                                  # the series considered and not left out: so "left out N of M" accounts for every one
-                                  "kept": sorted(k for k in (d.get("resolution") or {}) if k not in left)}}
+            return no_model(project, cached[1].discovery, cached[0])
         if cached:
             as_of, model = cached
             live = True
         else:
             model = store.load()
     if model is None:
-        if not host_running(project):
-            return {"ok": False, "error": "There is no model yet. " + NO_HOST}
-        return {"ok": False, "error": "There is no model yet. The bootstrap host (`orchestra run`) discovers it from the "
-                                      "metrics store every few minutes; press \u201crediscover now\u201d to discover it at once."}
+        return no_model(project, None)
     out = model.to_json()
     out["stored"] = bool(versions)
     out["version"] = version or current

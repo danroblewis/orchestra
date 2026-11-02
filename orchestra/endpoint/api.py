@@ -63,6 +63,7 @@ class _Bad(ValueError):
 
 def handle(project, method: str, path: str, query: str, body: bytes, metrics=None) -> tuple[int, dict]:
     """One request: its status and its JSON answer."""
+    from ..sd.no_model import NoModel
     from ..sd.reads import ModelReads, ReadError
 
     route = next(((name, rx.match(path)) for m, rx, name in COMPILED if m == method and rx.match(path)), None)
@@ -84,7 +85,7 @@ def handle(project, method: str, path: str, query: str, body: bytes, metrics=Non
     try:
         return 200, _call(ModelReads(project, metrics=metrics), name, match.groups(), q, data)
     except ReadError as e:
-        return e.status, {"ok": False, "error": str(e)}
+        return e.status, (e.answer() if isinstance(e, NoModel) else {"ok": False, "error": str(e)})   # no model: its text and reason
     except _Bad as e:
         return 400, {"ok": False, "error": str(e)}
 

@@ -867,6 +867,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         same_as[twin.key].append({"name": c.name, "labels": c.labels})
         copies[twin.key].append(c)
     counters = kept_counters
+    moved_events = [sum(c.deltas) for c in counters if any(c.deltas)]   # each moving counter's events: why there may be no model (sd.no_model)
     for s in series:
         if s.counter and not any(s.deltas):
             left_out[s.key] = "a counter that did not move in the window"
@@ -1268,6 +1269,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                        "stocks": sum(1 for st in stocks if not st.evidence.get("by_construction")), "flows": len(flows), "min_r2": MIN_R2,
                        "by_construction": sorted(sid_of[k] for k in constructed_ if k in sid_of),
                        "refused": refused,
+                       "counter_events": {"counters": len(moved_events), "most": round(max(moved_events, default=0.0), 3), "needed": MIN_EVENTS},
                        **({"declared": {"stocks": {p.name: {"level": p.level, **p.record(),
                                                             "outcome": "a stock" if p.level in declared_keys and p.level in sid_of
                                                             else left_out.get(p.level) or pin_tried.get(p.level) or "not a stock"}

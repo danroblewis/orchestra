@@ -54,8 +54,10 @@ def test_the_host_is_a_machine_on_the_bus():
 
 
 def test_an_empty_orchestra_has_no_model_yet():
-    d = get_json("/api/dynamics/model")
-    assert d["ok"] is False and "discover" in d["error"]
+    with pytest.raises(urllib.error.HTTPError) as e:
+        get("/api/dynamics/model")
+    d = json.loads(e.value.read().decode())
+    assert e.value.code == 404 and d["ok"] is False and d["error"] == "no model" and "discover" in d["text"]
 
 
 def test_without_the_token_nothing_but_health_is_served():
