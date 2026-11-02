@@ -7,15 +7,11 @@ draft was written at 2026-11-02T00:27Z and brought up to date with the log throu
 The goal's progress log is the source of truth. Where this draft and the log disagree, the log wins.
 
 In short: the live delivery example ran the owner's day on the real SCRUM board and the private
-repository three times (L1, T2-prep, T2), with every outside write in the approved scope. The
+repository four times (L1, T2-prep, T2, T2b), every outside write in the approved scope. The
 Supervisor passed the design scenario on the live example on Haiku (L3). The Monday walkthrough
-(T2) passed 7 of 16 steps outright. 2 more met their rule but misled the owner, and 6 failed. The
-failures are mostly in the Supervisor's answers and the pages' account of who must act, not in the
-delivery itself. T4 implemented the T3 judge's work list (47 rows: 19 must, 28 should) in core,
-agents, workflows and outbox; every T4 repository was on origin by 01:53Z. The walkthrough re-run
-on T4's code (T2b) passed 12 of 16 steps, with 2 misleading and 2 failed; T2 had 7, 2 and 6. T6
-fixed what T2b found and was on origin by 04:02Z, but the walkthrough has not been run a third
-time, so T6 is not verified live. The release gate's verifier found agents, workflows and bridges
+went from 7 pass, 2 misleading, 6 fail (T2) to 12, 2 and 2 (T2b, after T4). Its failures were
+mostly the Supervisor's answers and the pages' account of who must act, not the delivery. T6 fixed
+what T2b found and was on origin by 04:02Z; it is not yet verified live. The release gate's verifier found agents, workflows and bridges
 ready, and the core's fixes small: P1 was already fixed, and P2 and P4 were fixed in T6.
 
 ## 1. Questions for the owner
@@ -111,12 +107,9 @@ series, the Review Nudger declared, scheduled and confirmed with a prediction, a
 answered with the real ticket keys and pull request numbers. Its weakness: discovery found no
 model in 20 minutes of two tickets, so the prediction's flow is an event type.
 
-**T2's passing steps.** Two tickets assigned with no replay of Done tickets (2). Pull requests
-opened through the Outbox with no history replayed (3). CI relayed with each item's commit (4).
-The stand-in review moved A and held B (5). SAIL sent only through the Outbox (6). Work started
-from the chat: `request_work` opened SCRUM-19 through the Outbox, then pull request #17, merged
-and Done (13). "What needs me before I go?" was accurate against the bus in 7 seconds (15). Step
-12 passed on Jira and GitHub; its page gaps are in section 3.
+**The walkthrough's passing steps** are in section 3. In T2 the delivery steps (2 to 6, 12, 13)
+passed on the real systems, including work started from the chat: `request_work` opened SCRUM-19
+through the Outbox, then pull request #17, merged and Done.
 
 **Model acceptance (S4).** At 1 s sampling, UC-2 scored 9/10 (was 8) on core `fa4e8acd`, and UC-3
 9/10 (was 6) on `281922c0`. U1 scored UC-1 8/10 on `e9472164` with a snapshot whose replay
@@ -143,9 +136,7 @@ T2 ran 22:26Z to 00:02Z on the real Supervisor (Haiku, $0.37, 11 invocations), f
 state. Evidence in the scratchpad under `reviews/T2/`: `run.md`, `answers.md`, `notes.md`,
 `events.jsonl` (redacted), `raw/`, and 62 screenshots in `shots/`. The script is
 [WALKTHROUGH-2026-11-02.md](../roadmap/WALKTHROUGH-2026-11-02.md). "T4 changes" lists the T3
-judge's rows for each step; the log records them merged (core 00:49Z and 00:57Z, agents 00:58Z
-and 01:41Z, workflows 01:31Z and 01:42Z, outbox 00:28Z). The last column is T2b's verdict on T4's
-code.
+judge's rows for each step; the last column is T2b's verdict on T4's code.
 
 | # | step | T2 | what the proxy found | what T4 changes | T2b |
 |---|---|---|---|---|---|
@@ -177,10 +168,7 @@ code.
 | agents | `ff0a590` (row 9), `c77915a` (relock) | the wake text without the guard key; `list_items` and `explain_item` show `entered_on` and `ends_on` from the wait's `for`; `item.closed` in the contract copy; relocked to core `12be615d` and workflows `35b2b9c`, where `declare_workflow` gained the plugin's new `about` key (the one drift the relock found) |
 | workflows | `35b2b9c`, relock `0166e5d` | `item.closed`; one who-must-act; `for` and `entered_on`; reworked; example settings including Data Center; `[outbox] owner`; `--supervisor`; notes on the card; title first; the timeline in words; `every` with `at`/`tz`; `about`; first free port; the login link in a mode-600 file; README credentials and proxy; the fake bridges exit with their parent |
 
-The coordinator's T3 rows went into the script at 00:24Z (9fbcce41): a venv without
-`orchestra-tasking`, `--via bash`, step 11 naming the PR, and steps 10 and 16 saying what the run
-can show. Both demos were restarted on T4: the example as run15 (01:47Z), the live demo on core
-`8059aa62` and agents `5db0f07` (01:54Z).
+The coordinator's T3 rows went into the script at 00:24Z (9fbcce41).
 
 ### T2b, the walkthrough on T4's code
 
@@ -223,39 +211,27 @@ All merged and pushed by 04:02Z: core `fcea86e6`, agents `4cc1af6`, workflows `f
 | agents | `b1cb6f2`, `d23f95e`, `7dc18d9`, `e227f93`, `e66bab5` (pushed as `4cc1af6`) | no quiet flag or restart advice unless the host marked the machine gone quiet; the owner's named phrases matched to heard event types; `at`/`tz` on `every`; items waiting outside, per step; "what changed since" lists every event class and names what the read missed; `read_model` says "could not be read"; no `coordinator` placeholder without tasking |
 
 Both demos were restarted on T6: the example as run16 (03:57Z, the no-model 404 as expected on a
-fresh run). The live demo was restarting when the log's last line was written (04:02Z).
+fresh run); the live demo on core `a8752494` and agents `7ecdcf3` (04:04Z), with the main demo's
+line in `~/url` rewritten and verified.
 
 ## 4. What does not work, and why
 
-The T3 judge (00:24Z) found 47 rows: 19 must and 28 should. By repository: core 2/4, agents 8/8,
-workflows 7/12, outbox 0/2, bridges none, coordinator 2/2. The musts, in short:
+The T3 judge (00:24Z) found 47 rows, 19 must and 28 should (core 2/4, agents 8/8, workflows 7/12,
+outbox 0/2, coordinator 2/2), summarised per step in section 3. Beyond the steps: the example's
+repository, Jira project and URLs were hard-coded (Data Center and GHE need settings), and
+`agents working (supervisor)` showed "trust 0.83 high" from a balance that holds by construction.
+T4 merged all of them. T2b showed most working (steps 1, 7, 9 and 11 to pass); what it still found
+went to T6. What remains:
 
-- **Core.** No-model reads give a bare "there is no model yet", so the Supervisor told the owner
-  "no metrics are collected". The Machines cards drop a machine's announced notes (`disabled`,
-  `fake`), which the delivery README promises.
-- **Agents.** Task-system tools on a run with no task system. A machine asked for in one turn
-  cannot be declared in the next. `read_events` matches exact types, newest first, so it missed
-  the rejection. No tool returns a machine's notes. `agents working (supervisor)` showed "trust
-  0.83 high" from a balance that holds by construction.
-- **Workflows.** No `item.closed` reaches the bus. Three answers to "who must act". A wait does not
-  say what ends it. The example has no `--supervisor` option, and its repository, Jira project and
-  URLs are hard-coded (Data Center and GHE need settings).
-- **Coordinator.** The walk's venv had the task system installed; the start ran `--via mcp`.
-
-T4 merged all of these (section 3). T2b showed most of them working: steps 1, 7, 9 and 11 went
-from fail or misleading to pass. Its remaining failures and new breaks went to T6.
-
-**Follow-ups after T4** (from the log, 01:31Z to 01:54Z):
-- The no-model paragraph prints its grouped reasons with the numbers collapsed into raw keys
-  ("live in only n of n steps while every counter was (21)", "a counter of only n events (6)").
-  Each group needs a sentence.
+**Open follow-ups** (from the log):
+- Fixed in T5: the no-model paragraph printed its grouped reasons as raw keys ("live in only n of
+  n steps while every counter was (21)"); core `c9235fb6` puts the groups in words (02:08Z).
 - `delivery_sail` and two other examples still print the login token (still so at 03:57Z; the run
   logs are kept mode 600).
 - A Data Center PAT is read from the file named `jira-cloud-token`.
-- The workflows `dev` extra does not list `orchestra_bridges`, so 41 `delivery_live` tests skip in
-  the main checkout. It should list it, as the agents' extra does. Dispatched as `T5-dev-bridges`
-  (01:56Z), with `T5-nomodel-text` for the item above, both to merge after T2b; their merge is not
-  in the log.
+- Fixed in T5: the workflows `dev` extra did not list `orchestra-bridges`, so 41 `delivery_live`
+  tests skipped in the main checkout; plugin `6028710` adds it (02:07Z; 473 passed, 4 skipped
+  without `orchestra_outbox`).
 - The main demo's link in `~/url` once carried a stale token (401). It was rewritten from
   `LOGIN.txt` and verified (01:54Z).
 - At T2b's step 16 the Supervisor never called `read_model`, so T6's `read_model` fix rests on a
@@ -304,6 +280,10 @@ The final verifier says agents, workflows and bridges are ready to push. For the
 Suites at the gate heads: core 1214 passed (plus 7 environment failures, P1), agents 697,
 workflows 547, bridges 312. P2 and P4 were fixed in T6 (section 3). P3 stays a design question,
 and P5 (the tasking extra) is not recorded as changed.
+
+**What is next.** A third walkthrough (T2c) on T6 is running, and the live demo's move to the
+Workflows `task_loop` example without tasking is being built on agents branch `demo-task-loop`;
+their results will be an addendum.
 
 ## 5. Decisions taken, and by whom
 
@@ -381,8 +361,8 @@ the library (B11): kits, fakes, templates and scaffold. `integrate_system` write
 your repository at `.orchestra/machines/<name>/`.
 
 **The demos.** The core demo on :8096 and the delivery_sail example on :8101 ran every merged
-change as of 21:29Z. The example was restarted on T6 as run16 (03:57Z); the live demo, last up on
-T4's code (core `8059aa62`, agents `5db0f07`, 01:54Z), was restarting on T6 at 04:02Z. Login links are in `~/url` (mode 600).
+change as of 21:29Z. Both now run T6: the example as run16 (03:57Z), the live demo on core
+`a8752494` and agents `7ecdcf3` (04:04Z). Login links are in `~/url` (mode 600).
 
 ## 7. Live model spend
 
@@ -396,10 +376,9 @@ T4's code (core `8059aa62`, agents `5db0f07`, 01:54Z), was restarting on T6 at 0
 | T2 | Haiku, 11 invocations | $0.37 |
 | T2b | Haiku, 10 invocations | $0.42 |
 
-This run: $1.25. Both runs: about $7.9 (the log's figure), under the $30 cap. T2b's $0.42 covers
-9 owner turns and 1 unasked wake, under its $5 cap. T4 spent $0: no Supervisor or agent harness ran
+This run: $1.25. Both runs: about $7.9 (the log's figure), under the $30 cap. T4 spent $0: no Supervisor or agent harness ran
 a model; its implementors and reviewers are the run's Opus subagents, outside the live-spend cap.
-L1 spent nothing on AI. T2-prep's and T6's spend are not recorded. Agent time is not recorded as a
+T6 spent $0 too (no Supervisor ran). L1 spent nothing on AI. T2-prep's spend is not recorded. Agent time is not recorded as a
 total. The log gives durations only: T2 took 1 h 35 min, T2b 1 h 39 min (01:59Z to 03:38Z), and
 the release gate 15 h over 60 agents.
 
@@ -412,7 +391,7 @@ scan 0 at each push.
 |---|---|---|
 | core | `12be615d` (T4) | 1102 passed, 2 skipped, rc=0 |
 | core | `f4a753f0` (T6-words) | 1104 passed, 2 skipped, rc=0 |
-| core | `fcea86e6` (T6) | rc=0; the count is not logged (1110 passed on the branch) |
+| core | `fcea86e6` (T6) | 1111 passed, 2 skipped, rc=0 |
 | core | R2 implementor's branch | screenshots 7, by the agent |
 | agents | `c77915a` (T4) | 666 passed, rc=0 |
 | agents | `4cc1af6` (T6) | 681 passed, rc=0 |
