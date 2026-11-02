@@ -1,8 +1,5 @@
 """Adversarial cases for the stall guards (sd.stall.due): events due at the usual rate, and a fit's
-minimum of events. The xfail(strict) cases are where the rule, as committed, does what its own
-docstring says it should not."""
-
-import pytest
+minimum of events; and that a flow still silent is never announced resumed."""
 
 from orchestra.sd.balance import MIN_EVENTS
 from orchestra.sd.model import Equation, Flow, Model, Stock
@@ -17,7 +14,7 @@ def model(fit_events=None, c=None) -> Model:
               flows=[Flow("in", "arrivals", None, "q"), Flow("out", "done", "q", None)])
     if fit_events is not None:
         m.flows[1].equations.append(Equation("constant", {"c": c if c is not None else 1.0}, "fitted",
-                                             quality={"events": float(fit_events)}))
+                                             quality={"events": float(fit_events), "live_minutes": 60.0}))
     return m
 
 
@@ -36,7 +33,7 @@ def test_one_a_minute_silent_for_ten_minutes_in_a_ten_minute_window_stalls():
 def test_fitted_on_four_events_does_not_stall():
     now = T
     stalled, judged = find(model(fit_events=4), history(now, lambda t: 1.0 if t < now - 900 else 0.0), now, 900, 0.1)
-    assert "flow:out" in judged and "flow:out" not in stalled and "stock:q" not in stalled
+    assert "flow:out" not in stalled and "stock:q" not in stalled and "flow:out" not in judged
     assert MIN_EVENTS == 5
 
 
@@ -44,11 +41,9 @@ def test_one_an_hour_in_a_thirty_minute_window_does_not_stall():
     now = T
     one = lambda t: 1.0 if int(now - 3000) <= t < int(now - 3000) + STEP else 0.0     # one event, 50 min ago
     stalled, judged = find(model(), history(now, one), now, 1800, 0.1)
-    assert "flow:out" in judged and "flow:out" not in stalled
+    assert "flow:out" not in stalled and "flow:out" not in judged
 
 
-@pytest.mark.xfail(strict=True, reason="usual is the pre-window mean, not the fitted rate: 10 events in one burst "
-                                       "40 min ago read as 3.3 due in 15 min though the fit (10/h) says 2.5")
 def test_a_burst_then_silence_is_not_a_stall_where_the_fit_says_too_few_were_due():
     now = T
     burst = lambda t: 10.0 if int(now - 2400) <= t < int(now - 2400) + STEP else 0.0
@@ -56,8 +51,6 @@ def test_a_burst_then_silence_is_not_a_stall_where_the_fit_says_too_few_were_due
     assert "flow:out" not in stalled
 
 
-@pytest.mark.xfail(strict=True, reason="UC-1 bakery orders_cancelled_inspecting: fitted c=0.1/min (1.5 due), "
-                                       "usual from the shorter pre-window history 0.235/min (3.5 due): announced")
 def test_usual_from_a_window_shorter_than_the_fit_does_not_override_the_fit():
     now = T
     # the history holds only the last 41 minutes (the store's points begin there); the fit saw 6 events
@@ -69,14 +62,23 @@ def test_usual_from_a_window_shorter_than_the_fit_does_not_override_the_fit():
     assert "flow:out" not in stalled
 
 
-@pytest.mark.xfail(strict=True, reason="a stall whose usual rate decays below MIN_EXPECTED/window while still silent "
-                                       "is announced resumed (at 35 min of silence; before the change, at 60)")
 def test_a_still_silent_flow_is_not_announced_resumed():
     stop = T
     rate = lambda t: 0.3 if t < stop else 0.0
     state, resumed = {}, []
     for k in range(15, 60, 5):
         now = stop + k * 60
-        state, went, came = step(state, model(fit_events=20), history(now, rate), now, 900, 0.1)
+        state, _, came = step(state, model(fit_events=20), history(now, rate), now, 900, 0.1)
         resumed += [(k, c["id"]) for c in came if c["kind"] == "flow"]
     assert resumed == []
+
+
+def test_a_stall_silent_past_the_history_is_not_resumed_and_is_once_it_moves():
+    stop = T
+    state, said = {}, []
+    for k, moving in ((15, False), (45, False), (75, False), (120, False), (125, True)):
+        now = stop + k * 60
+        rate = (lambda t, now=now: 1.0 if t < stop or t >= now - 300 else 0.0) if moving else (lambda t: 1.0 if t < stop else 0.0)
+        state, went, came = step(state, model(fit_events=60), history(now, rate), now, 900, 0.1)
+        said += [(k, "stalled", w["id"]) for w in went if w["kind"] == "flow"] + [(k, "resumed", c["id"]) for c in came if c["kind"] == "flow"]
+    assert said == [(15, "stalled", "out"), (125, "resumed", "out")]

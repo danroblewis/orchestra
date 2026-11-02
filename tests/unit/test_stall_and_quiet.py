@@ -134,7 +134,7 @@ def test_no_stall_where_fewer_than_three_events_were_due_in_the_window():
     now = T
     slow = lambda t: 0.1 if t < now - 900 else 0.0
     stalled, judged = find(model(), history(now, slow), now, 900, 0.1)
-    assert "flow:out" in judged and "flow:out" not in stalled and "stock:q" not in stalled
+    assert "flow:out" not in judged and "flow:out" not in stalled and "stock:q" not in stalled     # silent, not due: as it was
     # at 0.2 a minute, 3 were due: it is announced
     stalled, _ = find(model(), history(now, lambda t: 0.2 if t < now - 900 else 0.0), now, 900, 0.1)
     assert {"flow:out", "stock:q"} <= set(stalled)
@@ -149,7 +149,7 @@ def test_no_stall_from_a_flow_fitted_on_too_few_events():
         m = model()
         m.flows[1].equations.append(Equation("constant", {"c": 1.0}, "fitted", quality={"events": events}))
         stalled, judged = find(m, history(now, drains_until(now - 900)), now, 900, 0.1)
-        assert "flow:out" in judged
+        assert ("flow:out" in judged) is said         # silent and not due: left as it was
         assert ("flow:out" in stalled) is said and ("stock:q" in stalled) is said, events
     # a declared equation is no fit: only the events due decide
     m = model()
