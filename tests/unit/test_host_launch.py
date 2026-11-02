@@ -25,28 +25,22 @@ def project(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def hosts(project, tmp_path):
+def hosts(project, tmp_path, spawn):
     """Start `orchestra run` processes for the project; every one, and every `sleep` they leave,
-    is killed at the end."""
-    started: list[subprocess.Popen] = []
+    is stopped at the end, however the test ends (``spawn``)."""
     n = random.randint(100_000, 999_999)                  # the `sleep <n>` this test's machine runs
     (project.repo_root / "orchestra.toml").write_text(
         f'[discovery]\nevery = "1h"\n\n[[machines]]\nname = "nap"\ncommand = "sleep {n}"\n')
 
     def start(name: str) -> subprocess.Popen:
         out = (tmp_path / f"{name}.out").open("w")
-        p = subprocess.Popen([sys.executable, "-m", "orchestra", "--repo", str(project.repo_root), "run"],
-                             stdout=out, stderr=subprocess.STDOUT, env={**os.environ})
+        p = spawn([sys.executable, "-m", "orchestra", "--repo", str(project.repo_root), "run"],
+                  stdout=out, stderr=subprocess.STDOUT, env={**os.environ})
         p.out = tmp_path / f"{name}.out"
-        started.append(p)
         return p
 
     start.n = n
     yield start
-    for p in started:
-        if p.poll() is None:
-            p.kill()
-            p.wait()
     for s in sleeps(n):
         s.kill()
 

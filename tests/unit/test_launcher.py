@@ -158,10 +158,12 @@ def test_stopping_stops_what_a_process_started(project):
             f"open({str(child)!r}, 'w').write(str(p.pid)); time.sleep(60)")
     declare(project, ("parent", code, "always"))
     la, _, _ = launcher(project)
-    until(lambda: child.exists() and child.read_text(), la)
-    pid = int(child.read_text())
-    assert runtime.alive(pid)
-    la.stop_all()
+    try:
+        until(lambda: child.exists() and child.read_text(), la)
+        pid = int(child.read_text())
+        assert runtime.alive(pid)
+    finally:
+        la.stop_all()
     until(lambda: not runtime.alive(pid))
 
 
@@ -302,16 +304,23 @@ def test_each_process_has_its_own_stop_grace(project):
         f'[[machines]]\nname = "quick"\ncommand = {_toml_list([PY, "-c", STUBBORN])}\nstop_grace = 0.3\n\n'
         f'[[machines]]\nname = "slow"\ncommand = {_toml_list([PY, "-c", STUBBORN])}\n')
     la, _, _ = launcher(project)                                   # the launcher's own grace: 2 s
-    until(lambda: all(n in la.runs and la.runs[n].state == "running" for n in ("quick", "slow")), la)
-    time.sleep(0.3)
-    quick, slow = la.runs["quick"].popen, la.runs["slow"].popen
-    assert runtime.read(project)["processes"]["quick"]["stop_grace_s"] == 0.3
-    t0 = time.time()
-    threading.Thread(target=la.stop_all).start()
-    quick.wait(timeout=1.5)
-    assert time.time() - t0 < 1.5 and slow.poll() is None          # killed at its own grace, the other still waits
-    slow.wait(timeout=5)
-    assert time.time() - t0 >= 1.9
+    stopping = threading.Thread(target=la.stop_all)
+    try:
+        until(lambda: all(n in la.runs and la.runs[n].state == "running" for n in ("quick", "slow")), la)
+        time.sleep(0.3)
+        quick, slow = la.runs["quick"].popen, la.runs["slow"].popen
+        assert runtime.read(project)["processes"]["quick"]["stop_grace_s"] == 0.3
+        t0 = time.time()
+        stopping.start()
+        quick.wait(timeout=1.5)
+        assert time.time() - t0 < 1.5 and slow.poll() is None      # killed at its own grace, the other still waits
+        slow.wait(timeout=5)
+        assert time.time() - t0 >= 1.9
+    finally:
+        if stopping.is_alive() or stopping.ident is not None:
+            stopping.join(10)
+        else:
+            la.stop_all()                                          # the processes ignore SIGTERM: never leave them
     assert check(Process("x", "true", stop_grace_s="soon")) and check(Process("x", "true", stop_grace_s=-1))
     assert from_toml({"machines": [{"name": "x", "command": "true", "stop_grace": 30}]})[0].stop_grace_s == 30
 
@@ -428,10 +437,12 @@ def test_a_bus_that_fails_neither_leaves_a_process_running_nor_skips_the_record(
     def down(type_, data):
         raise ConnectionError("bus down")
     la = Launcher(project, down, lines.append, backoff=0.05, stable_s=5.0, give_up_after=3, grace=2.0)
-    until(lambda: all(r.popen is not None for r in la.runs.values()) and len(la.runs) == 2, la)
-    pids = [r.popen.pid for r in la.runs.values()]
-    assert runtime.read(project)["processes"]
-    la.stop_all()
+    try:
+        until(lambda: all(r.popen is not None for r in la.runs.values()) and len(la.runs) == 2, la)
+        pids = [r.popen.pid for r in la.runs.values()]
+        assert runtime.read(project)["processes"]
+    finally:
+        la.stop_all()
     assert not any(runtime.alive(p) for p in pids)
     assert "processes" not in runtime.read(project)
     assert sum("orchestra.process.exited for" in ln and "not published" in ln for ln in lines) == 2

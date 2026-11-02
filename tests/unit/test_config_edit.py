@@ -233,10 +233,10 @@ print(done)
 """
 
 
-def test_two_processes_changing_the_configuration_lose_nothing(project):
+def test_two_processes_changing_the_configuration_lose_nothing(project, spawn):
     import sys
     env = {**os.environ}
-    procs = [subprocess.Popen([sys.executable, "-c", WRITER, str(project.repo_root), who], env=env,
+    procs = [spawn([sys.executable, "-c", WRITER, str(project.repo_root), who], env=env,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for who in ("alpha", "beta")]
     outs = [p.communicate(timeout=120) for p in procs]
     assert all(p.returncode == 0 for p in procs), outs

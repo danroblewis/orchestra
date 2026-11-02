@@ -43,10 +43,10 @@ def project(tmp_path, monkeypatch):
     return p
 
 
-def test_a_detector_is_an_instrument_not_a_machine(project, tmp_path):
+def test_a_detector_is_an_instrument_not_a_machine(project, tmp_path, spawn):
     out = (tmp_path / "host.out").open("w")
-    host = subprocess.Popen([sys.executable, "-c", WITHOUT_PLUGINS, "--repo", str(project.repo_root), "run"],
-                            stdout=out, stderr=subprocess.STDOUT)
+    host = spawn([sys.executable, "-c", WITHOUT_PLUGINS, "--repo", str(project.repo_root), "run"],
+                 stdout=out, stderr=subprocess.STDOUT)
     web = TestClient(create_app(project), headers=bearer(project))
     try:
         store = for_project(project)
