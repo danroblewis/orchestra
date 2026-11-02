@@ -73,7 +73,7 @@ Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 
       const all = MACHINES.machines, G = Orchestra.dashboardGroups(all), run = G.rows;
       // one count, split by the one word set (Orchestra.liveness): "11 machines: 1 active, 2 not answering, 8 quiet"
       const by = {}; for (const m of all) { const w = G.group.get(m); by[w] = (by[w] || 0) + 1; }
-      ui.setSub(`${all.length} machines: ${["active", "not answering", "late", "heard, no rhythm yet", "quiet", "no evidence yet"].filter((w) => by[w]).map((w) => `${by[w]} ${w}`).join(", ")}`);
+      ui.setSub(`${all.length} machines: ${["active", "not answering", "late", "heard, no rhythm yet", "disabled", "quiet", "no evidence yet"].filter((w) => by[w]).map((w) => `${by[w]} ${w}`).join(", ")}`);
       const link = (m, extra = "") => `<a href="/machines#${encodeURIComponent(m.id)}">${esc(m.id)}</a>${extra}`;
       // the bus's word for it, always shown, even beside a package's own summary (the host's: the runtime record's)
       const live = (m) => { const lv = Orchestra.liveness(m); return `<span class="lw ${lv.cls}" title="${esc(lv.title)}">${esc(lv.word)}</span>`; };

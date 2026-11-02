@@ -165,3 +165,19 @@ test("what a machine announced beyond what Orchestra reads is printed as key: va
   assert.match(Orchestra.aboutHtml({ about: { disabled: "<b>x</b>" } }), /disabled: &lt;b&gt;x&lt;\/b&gt;/);
   assert.doesNotMatch(Orchestra.machineCards.rows({ ...m, about: {} }), /announced</);
 });
+
+test("a machine that announced it is disabled reads disabled, with its reason, ahead of not answering, late and quiet", () => {
+  const off = { ...m, about: { disabled: "no bot token" } };
+  const hung = Orchestra.liveness({ ...off, unanswered: { "order.assigned": { count: 6, since: now - 300 } } });
+  assert.equal(hung.word, "disabled: no bot token");
+  assert.notEqual(hung.cls, "late");
+  assert.equal(Orchestra.liveness({ ...off, subscribes: [], last_seen: now - 60, cadence_s: 12 }).word, "disabled: no bot token");   // not "late"
+  assert.equal(Orchestra.liveness({ ...off, active: false, last_seen: now - 7200 }).word, "disabled: no bot token");                 // not "quiet"
+  assert.equal(Orchestra.liveness({ ...m, about: { disabled: true } }).word, "disabled");
+  assert.equal(Orchestra.liveness({ ...m, about: { disabled: false } }).word !== "disabled", true);
+  assert.equal(Orchestra.livenessGroup({ ...off, unanswered: { "order.assigned": { count: 6, since: now - 300 } } }), "disabled");
+  assert.equal(Orchestra.livenessGroup({ ...off, last_seen: undefined }), "no evidence yet");
+  const g = Orchestra.dashboardGroups([off]);
+  assert.deepEqual(g.rows, [off]);                                      // a row of its own, saying why it is off
+  assert.match(Orchestra.livenessHtml(Orchestra.liveness(off)), /disabled: no bot token/);
+});

@@ -185,7 +185,8 @@ function eventMap(d0) {
   IntendedMachines.decorate(d, nodes, g.links.filter((l) => l.declared || l.gone || l.added).map((l) => ({ ...l, ev: l.source.startsWith("ev:") ? l.source : l.target })));
   // a machine late by its own rhythm, or not answering what it listens for, is marked on the map as on its card
   for (const n of nodes) { if (!n.machine) continue; const m = byMid(n.mid); if (!m) continue; const lv = Orchestra.liveness(m);
-    if (lv.cls === "late") { n.tags = [...(n.tags || []), { text: lv.word.startsWith("not answering") ? `not answering · ${Orchestra.unanswered(m).n}` : "late", cls: "ng-t-late", below: true }]; n.halo = false; } }
+    if (Orchestra.livenessGroup(m) === "disabled") { n.tags = [...(n.tags || []), { text: "disabled", cls: "ng-t-off", below: true }]; n.halo = false; }
+    else if (lv.cls === "late") { n.tags = [...(n.tags || []), { text: lv.word.startsWith("not answering") ? `not answering · ${Orchestra.unanswered(m).n}` : "late", cls: "ng-t-late", below: true }]; n.halo = false; } }
   // machine → machine, through an event type one publishes and the other listens for; observed when
   // a hand-off from the one through it to the other was seen (machine-graph.js)
   // declared: one of its two edges is the declared layer's, not observed

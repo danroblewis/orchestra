@@ -62,11 +62,19 @@ Orchestra.unanswered = (m, now = Date.now() / 1000) => {
 // none of its listeners: worker, nudger"
 Orchestra.unansweredTypes = (d, now = Date.now() / 1000) => ((d && d.unanswered_types) || []).filter((u) => u.count > 0 && now - u.since > Orchestra.FLOOR_S)
   .map((u) => `${u.count} ${u.type} since ${hhmm(u.since)}, answered by none of its listeners: ${(u.listeners || []).join(", ")}`);
+// the reason a machine announced it is off (about.disabled), "" when it gave none, null when it is not
+Orchestra.disabledOf = (m) => { const v = ((m && m.about) || {}).disabled;
+  return v == null || v === false ? null : v === true ? "" : Array.isArray(v) ? v.map(String).join(", ") : String(v); };
 Orchestra.liveness = (m, now = Date.now() / 1000) => {
   if (m.active_by === "runtime") return { word: m.active ? "running" : "not running", cls: m.active ? "live" : "quiet", detail: "",
     title: "by the runtime record: the host process is in it; it publishes only when it starts and stops" };
   if (!m.last_seen) return { word: "no evidence yet", cls: "quiet", detail: "", title: m.intent ? "declared: nothing on the bus under it" : "nothing on the bus under it yet" };
   const last = `last ${ago(now - m.last_seen)} ago`, since = now - m.last_seen;
+  // a machine that announced it is off, and why (about.disabled: the Slack notifier with no bot
+  // token), is said so: never "not answering", "late" or "quiet" for what it said it will not do
+  const off = Orchestra.disabledOf(m);
+  if (off != null) return { word: off ? `disabled: ${off}` : "disabled", cls: "quiet", detail: last,
+    title: "its announcement says it is disabled: it will not act on what it listens for until it is started again" };
   const un = Orchestra.unanswered(m, now);
   if (un) return { word: `not answering: ${un.text}`, cls: "late", detail: last,
     title: `events it listens for (${un.types.join(", ")}) arrived after its own last event and it has not acted since` };
@@ -95,9 +103,9 @@ Orchestra.liveness = (m, now = Date.now() / 1000) => {
   return { word: "quiet", cls: "quiet", detail: `since ${hhmm(m.last_seen)}${g ? `; about every ${ago(g)}` : ""}`, title: `nothing heard within ${Orchestra.MARGIN}× its usual gap (at least 2 min)${g ? `: usual gap ${ago(g)}` : ""}` };
 };
 // the word a machine is counted under (the Dashboard's header and its rows and notes): active, not
-// answering, late, heard (no rhythm yet), quiet, or no evidence yet
+// answering, late, heard (no rhythm yet), disabled, quiet, or no evidence yet
 Orchestra.livenessGroup = (m, now = Date.now() / 1000) => { const lv = Orchestra.liveness(m, now);
-  return lv.cls === "late" ? (lv.word.startsWith("not answering") ? "not answering" : "late") : lv.cls === "live" ? "active" : lv.cls === "neutral" ? "heard, no rhythm yet" : m.last_seen ? "quiet" : "no evidence yet"; };
+  return m.last_seen && m.active_by !== "runtime" && Orchestra.disabledOf(m) != null ? "disabled" : lv.cls === "late" ? (lv.word.startsWith("not answering") ? "not answering" : "late") : lv.cls === "live" ? "active" : lv.cls === "neutral" ? "heard, no rhythm yet" : m.last_seen ? "quiet" : "no evidence yet"; };
 // a liveness as a span: its word in its class's colour (lv-live green, lv-late amber, the rest grey)
 Orchestra.livenessHtml = (lv) => `<span class="lv-${lv.cls}" title="${esc(lv.title)}">${esc(lv.word)}</span>${lv.detail ? ` <span class="muted">· ${esc(lv.detail)}</span>` : ""}`;
 // The instances a declared machine's instruments measure that report themselves down: points
