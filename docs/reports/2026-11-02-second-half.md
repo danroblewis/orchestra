@@ -18,10 +18,19 @@ ready, and the core's fixes small: P1 was already fixed, and P2 and P4 were fixe
 
 Each is answerable in one sentence. Until you answer, the run uses the default in brackets.
 
-Answer these three first; the addenda raised them. How much traffic may the SCRUM board take from
-the standing live demo? [not started] Will you give a Slack bot token (`xoxb-`)? This is question
-9 below. [Slack disabled] Should the built-in worktree resource kind move out of the Workflows
-plugin's own code, so the item system carries no code-work concept? [it stays; see Addendum 2]
+The addenda raised these; the first two are answered.
+
+- Answered: how much traffic may the SCRUM board take from the standing live demo? "the sprint
+  board itself is low traffic" (Addendum 3).
+- Answered: will you give a Slack bot token? "we will get a slack bot token, we wont post
+  initially" (Addendum 3; question 9 below).
+- Should the built-in worktree resource kind move out of the Workflows plugin's own code, so the
+  item system carries no code-work concept? [it stays; see Addenda 2 and 3]
+- Which stack provider first: GitHub PR stacks or git-spice? [none chosen]
+- Where do the private company pull request templates live: the private overlay, the state
+  directory, or `~/work-desk`? [none chosen]
+- May a provider push an item's own branches from a program step, or does every push go through
+  the Outbox? [every push through the Outbox]
 
 ### The goal's own questions
 
@@ -590,3 +599,72 @@ report.
 retracts and re-proposes it; the item noun; the guide. Agents: a request runs now, and the
 schedule is the daily run; the zone answer sets `tz`; the since answer carries the prediction's
 state and the Outbox's running state, with the model line last. [outcome pending]
+
+## Addendum 3, 2026-11-02 (the owner's answers, Slack queues, the focus, six walkthroughs)
+
+**1. The sixth walkthrough (T2f).**
+
+| run | pass / misleading / fail | fixed before it | spend |
+|---|---|---|---|
+| T2e | 13 / 1 / 2 | T9, T10 | $0.74 |
+| T2f | 15 / 0 / 1 | T11 | $0.63 |
+
+T11 fixed three things. Step 10 now holds the six event types, the 09:00 and the confirm, with no
+retract and re-propose. The zone is taken ("09:00 America/Los_Angeles"). Step 11 says "running
+now" and posts one comment on #29 after the page approval. Stocks now carry the definition's noun:
+"deliveries waiting at review". Step 16 now gives the prediction's state and the right Outbox
+state, but three things are still wrong: it leaves out what waits on you, it credits the model
+change to the declaration instead of discovery, and it does not end on the model line. T2f also
+found that `tz` never reaches the declared machine, because the repository's copy overrides the
+one `declare_workflow` writes. The run's live spend is about $10.3, under the $30 cap.
+
+**2. Your four answers (10:36Z), and what each started.**
+
+*Board traffic.* "the sprint board itself is low traffic, but there are very many jira tickets i
+need to track, like Production Readiness Review tickets for meetings I conduct and User Filed Bug
+tickets … I am SRE, so it's good to track a lot of stuff." The standing `delivery_live` demo is
+starting now, at one test ticket every 4 h and at most 6 a day, on :8105, with a public tunnel.
+
+*Slack.* "we will get a slack bot token, we wont post initially, we will do a lot of work with
+reading things in slack threads … I have to monitor about 5 channels every day and make sure they
+have a little green checkmark on them … That is a very important thing I want to measure, our
+effective secondary task queues in Slack."
+- The bridges' Slack kit (`aff4dec`) relays threads as `slack.thread.started`, `replied`,
+  `checked` and `unchecked`, with per-channel cursors. Its scopes are exactly `channels:history`
+  and `channels:read` (plus `groups:*` for private channels). Nothing posts.
+- The `slack_queues` example (workflows `33192ba`) makes threads into items across five channels,
+  with response policies as settings. Its Dynamics page shows three stocks: threads waiting at
+  `awaiting_reply`, at `late` and at `awaiting_check`. The scripted day ended with 5 late, 5
+  unchecked and 20 closed.
+
+*Worktrees.* "the worktrees may be part of an SCM or VCS library, but i dont know where it should
+go or what interface it should have … I know we need either github pr stacks or git-spice for
+pull requests." `docs/proposals/scm-providers.md` (core `739b729f`, 2,352 words) proposes an
+orchestra-scm library shaped like bridges. It has providers for a plain branch and pull request,
+GitHub PR stacks, git-spice and trunk, a provider interface as bus events, company PR templates,
+and a migration from `needs: worktree`. Its three questions are now at the top of the owner's
+list.
+
+*Workflows on the pages.* "the proper solution is to show a sub-graph of the event graph or
+system dynamics model -- the parts that refer to the workflow … They are like feedback loops,
+they deserve to be shown on their own, but they are inherently interconnected to the whole
+system." The core's `Orchestra.focus` (core `1da9e43c`) shows a sub-graph of the one model, with
+named stubs at its edge, chips above both diagrams, and the focus kept in the URL hash. The Event
+Map is taller: it fills 600 to 1100 px. Each workflow definition offers its machines, event types
+and pile stocks as a chip (workflows `8178151`).
+
+At 10:40Z you added: "I will hit Reset every time." Both diagrams now open in the Reset state.
+They re-run Reset when the structure changes, but never mid-drag or on a plain refresh.
+
+**3. Three contract drifts found only by relocks.**
+- The plugin's new `about` key was missing from the agents' `declare_workflow` schema (01:53Z).
+- So was the `items` key (10:03Z).
+- The agents edited `machine.toml` in a scaffolded kit, while the bridges' scaffold has written
+  `poller.toml` since `368ff7d`. 24 tests in `test_integrate.py` failed. The agents now use the
+  bridges' `machinefile.locate`, with a test pinning both layouts (agents `ea52a35`).
+
+The coordinator's rule since 10:03Z: a plugin agent that changes a contract names the change, and
+the other side's row goes in the same round.
+
+**4. T12.** Agents: step 16's three misses. Workflows: the `at`/`tz` edit lands in the copy that
+wins. [outcome pending]
