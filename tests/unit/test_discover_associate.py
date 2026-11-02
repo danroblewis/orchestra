@@ -196,3 +196,21 @@ def test_one_event_type_that_ends_an_item_two_ways_is_hypothesised_on_both_exits
     assert ha["confidence"] > hb["confidence"] > 0                      # in proportion to the events each took
     assert hb["test"] == "shares its events with another exit"
     assert associate(triage, [events])["hypotheses"] == []              # alone, the busier event type is too many for it
+
+
+def test_machines_that_tie_on_every_test_are_one_group_and_few_events_cap_the_confidence():
+    """R3 (:8606): five machines at 1.0 from the same few events. Machines whose events match a
+    counter alike form one group sharing the confidence; under discovery's minimum of events
+    the confidence is scaled down, never near certain."""
+    steps = 60
+    at = (5, 17, 33, 48)                                    # four events, fewer than the five discovery needs
+    cum = lambda: [float(sum(1 for a in at if a <= i)) for i in range(steps)]
+    counter = Series("moves_total", {"instrument": "piles"}, [], cum(), True)
+    events = [Series("orchestra_events_total", {"type": "thread.moved", "source": who}, [], cum(), True) for who in ("b", "a", "c")]
+    got = associate(counter, events)
+    hs = got["hypotheses"]
+    assert [h["machine"] for h in hs] == ["a", "b", "c"]
+    assert len({h["confidence"] for h in hs}) == 1 and hs[0]["confidence"] <= 0.8
+    assert all("fewer than the 5 discovery needs" in h["capped"] for h in hs)
+    assert got["tied"] == [{"machines": ["a", "b", "c"], "confidence": hs[0]["confidence"],
+                            "why": "3 machines: timing cannot tell them apart"}]

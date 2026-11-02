@@ -232,7 +232,7 @@ function draw() {
   const maxRare = rare.length ? Math.max(...rare.map((f) => ((f.current || {}).quality || {}).events || 0)) : 0;
   const winMin = (m.discovery || {}).live_minutes != null ? Math.round(m.discovery.live_minutes) : (m.discovery && m.discovery.end ? Math.round((m.discovery.end - m.discovery.start) / 60) : null);
   $("diagram-note").innerHTML = [rare.length && !window.SHOW_ALL ? `${rare.length} flow${rare.length === 1 ? "" : "s"} with too few events in the ${winMin != null ? `${winMin} min ` : ""}fit window (at most ${maxRare} each) not drawn · <a href="#" onclick="window.SHOW_ALL=true;draw();return false">draw them</a>` : "",
-    namedEndsNote(m, flows)].filter(Boolean).join(" · ") + leftOutChanged(m);
+    namedEndsNote(m, flows), untoldNote(flows, byMachine)].filter(Boolean).join(" · ") + leftOutChanged(m);
   // the machines are hypotheses on the flows (in the tables and the flows' labels), never the flows' colour
   const used = [...new Set(flows.flatMap((f) => (f.machines || []).map((h) => h.machine)))];
   $("legend").innerHTML = `<span class="lg"><i style="background:${SDGraph.FLOW_INK}"></i>a flow</span><span class="lg"><i style="background:#f59e0b"></i>a flow not moving as its equation says</span>`
@@ -359,6 +359,10 @@ function sourcesNote(d) {
     return `<div class="bal"><b>${esc(k)}</b> ${s.ok ? `<span class="muted">${esc(s.where || "")} · ${s.series ?? 0} series, ${s.points ?? 0} points in ${s.seconds ?? "?"} s${(s.gaps || []).length ? ` · nothing returned in ${s.gaps.length} stretch${s.gaps.length === 1 ? "" : "es"} of the window` : ""}</span>` : `<span class="stale">missing: ${esc(s.error || "")}</span>`}</div>`; };
   return `<h3>Sources</h3>` + names.map(line).join("") + (d.not_saved ? `<div class="stale" style="font-size:12px">Not saved as a version: ${esc(d.not_saved)}</div>` : "")
     + (d.since_last_s ? `<div class="muted" style="font-size:12px">The discovery before this one was ${ago(d.since_last_s)} earlier; this one read its whole window again.</div>` : "");
+}
+// the machines timing cannot tell apart, said once for the flows they share (their labels say "3 machines?")
+function untoldNote(flows, byMachine) {
+  return SDGraph.untoldGroups(flows).map((g) => `${g.machines.length} machines (${g.machines.map((id) => esc((byMachine[id] || { name: id }).name)).join(", ")}): timing cannot tell them apart, on ${g.flows.length} flow${g.flows.length === 1 ? "" : "s"} labelled "${g.machines.length} machines?"`).join(" · ");
 }
 // a quiet window (sd/quiet.py): the stocks whose series did not move, held from the current version
 function quietNote(d) {

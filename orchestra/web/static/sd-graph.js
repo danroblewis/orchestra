@@ -282,16 +282,32 @@
   }
   // the machines a flow's label names: one, only when its hypothesis beats the next by a clear
   // MARGIN and chance alone would not half make it ("worker?"); hypotheses within the margin of each
-  // other: "3 machines: timing cannot tell them apart"; otherwise, and on a flow with too few events
-  // to fit, nothing. Never a percentage on the diagram, and never one name as a fact.
+  // other: "3 machines?", said once under the diagram for every flow they share (``untoldGroups``:
+  // "3 machines: timing cannot tell them apart"); otherwise, and on a flow with too few events to
+  // fit, nothing. Never a percentage on the diagram, and never one name as a fact.
   const MARGIN = 0.15, CHANCE = 0.3;
   function machineLabel(f, nameOf = (id) => id) {
     const hs = (f.machines || []).filter((h) => h.machine && h.confidence != null).sort((a, b) => b.confidence - a.confidence);
     if (!hs.length) return "";
     if (typeof Evidence !== "undefined" && Evidence.tooFew(f)) return "";     // too few events to fit: no machine either (evidence-text.js)
-    const near = hs.filter((h) => hs[0].confidence - h.confidence < MARGIN);
-    if (near.length > 1) return `${near.length} machines: timing cannot tell them apart`;
+    const near = untoldOf(f);
+    if (near.length > 1) return `${near.length} machines?`;
     return (hs[0].chance ?? 0) > CHANCE ? "" : `${nameOf(hs[0].machine)}?`;
+  }
+  // the machines within the margin of a flow's best hypothesis, when more than one: [] otherwise
+  function untoldOf(f) {
+    const hs = (f.machines || []).filter((h) => h.machine && h.confidence != null).sort((a, b) => b.confidence - a.confidence);
+    if (!hs.length || (typeof Evidence !== "undefined" && Evidence.tooFew(f))) return [];
+    const near = hs.filter((h) => hs[0].confidence - h.confidence < MARGIN).map((h) => h.machine);
+    return near.length > 1 ? near : [];
+  }
+  // the groups of machines timing cannot tell apart on the flows drawn, each once with its flows:
+  // [{machines, flows}] (the diagram's labels say only "3 machines?")
+  function untoldGroups(flows) {
+    const by = new Map();
+    for (const f of flows) { const ms = untoldOf(f); if (!ms.length) continue; const k = [...ms].sort().join("\u0000");
+      by.set(k, { machines: [...ms].sort(), flows: [...((by.get(k) || {}).flows || []), f.id] }); }
+    return [...by.values()];
   }
 
   // the graph: {nodes, edges, causal, flowEdge, flows, acc, rare}. ``opts``: showAll (flows with no
@@ -425,5 +441,5 @@
     const parts = String(v).split(".").filter(Boolean);
     return parts.length > 1 ? `${parts[0]} (${parts.slice(1).join(", ")})` : String(v);
   }
-  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, seriesName, sameAs, drawnApart, nice, num, correlational, untestedText, drivers, machineLabel, placeTitle, placeOf, endName, wrap, UNTESTED, FLOW_INK, byConstruction };
+  return { build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, seriesName, sameAs, drawnApart, nice, num, correlational, untestedText, drivers, machineLabel, untoldGroups, placeTitle, placeOf, endName, wrap, UNTESTED, FLOW_INK, byConstruction };
 });

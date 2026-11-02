@@ -52,8 +52,12 @@ test("a flow's label names its machines as hypotheses: the leader with its confi
   const f = (hs) => SDGraph.machineLabel({ machines: hs });
   // one name only when it beats the next by a clear margin, never with a percentage
   assert.equal(f([{ machine: "planner", confidence: 0.94 }, { machine: "worker", confidence: 0.38 }]), "planner?");
-  assert.equal(f([{ machine: "reviewer", confidence: 1 }, { machine: "merge_gate", confidence: 0.99 }, { machine: "worker", confidence: 0.4 }]), "2 machines: timing cannot tell them apart");
-  assert.equal(f([{ machine: "a", confidence: 0.9 }, { machine: "b", confidence: 0.9 }, { machine: "c", confidence: 0.89 }]), "3 machines: timing cannot tell them apart");
+  assert.equal(f([{ machine: "reviewer", confidence: 1 }, { machine: "merge_gate", confidence: 0.99 }, { machine: "worker", confidence: 0.4 }]), "2 machines?");
+  assert.equal(f([{ machine: "a", confidence: 0.9 }, { machine: "b", confidence: 0.9 }, { machine: "c", confidence: 0.89 }]), "3 machines?");
+  // said once under the diagram, for every flow the same machines share
+  const tie = [{ machine: "b", confidence: 1 }, { machine: "a", confidence: 1 }];
+  assert.deepEqual(SDGraph.untoldGroups([{ id: "x", machines: tie }, { id: "y", machines: tie }, { id: "z", machines: [{ machine: "a", confidence: 1 }] }]),
+    [{ machines: ["a", "b"], flows: ["x", "y"] }]);
   assert.equal(f([{ machine: "a", confidence: 0.9, chance: 0.42 }]), "");           // chance alone would half make it: no name
   assert.equal(f([{ machine: "a", confidence: null }]), "");
   assert.equal(f([]), "");

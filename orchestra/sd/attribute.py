@@ -42,7 +42,10 @@ its evidence and a ``confidence`` between 0 and 1), from one of:
   (a subject ended one way or another) is hypothesised on each, in proportion to the events that
   pair with its counter, when the events its counter did not take pair with the other exits'.
 
-  Every machine that matches is a hypothesis.
+  Every machine that matches is a hypothesis. Machines that tie on every test form one group
+  (``tied``) that shares the confidence: timing cannot tell them apart. While the counter has fewer
+  than discovery's ``MIN_EVENTS`` events, each confidence is scaled by its share of them
+  (``capped``): a few events coincide by chance.
 
 A counter of traffic on another system's bus (``orchestra.sources.traffic``) carries the
 producer or consumer its definition names in its ``machine`` label; that is a label (or, with
@@ -59,6 +62,7 @@ from __future__ import annotations
 
 import math
 
+from .balance import MIN_EVENTS
 from .series import EVENT_COUNTER, Series, writer_of
 
 EQUAL_STEPS = 0.9        # increments equal in this share of the steps both were live
@@ -241,6 +245,24 @@ def candidates(series: list[Series]) -> list[Series]:
             and not (s.labels.get("type") or "").startswith("orchestra.")]
 
 
+def tied(found: list[dict]) -> list[dict]:
+    """The machines that tie on every test (the same confidence, by the same comparison, on the same
+    counts): one group, sharing that confidence, since timing cannot tell them apart (five machines
+    reacting to the same five events). Each is marked with its group's index (``tie``)."""
+    key = lambda h: (round(h["confidence"], 6), h.get("by"), h.get("method"), repr(h.get("counts")), repr(h.get("paired")))
+    groups: dict = {}
+    for h in found:
+        groups.setdefault(key(h), []).append(h)
+    out = []
+    for hs in groups.values():
+        if len(hs) > 1:
+            for h in hs:
+                h["tie"] = len(out)
+            out.append({"machines": [h["machine"] for h in hs], "confidence": hs[0]["confidence"],
+                        "why": f"{len(hs)} machines: timing cannot tell them apart"})
+    return out
+
+
 def associate(counter: Series | None, events: list[Series], siblings: list[Series] | tuple = ()) -> dict:
     """The machines that may be associated with the flow ``counter`` measures, best first, and
     why: ``flow.evidence["machines"]``. ``siblings``: the counters of the other flows out of the
@@ -260,7 +282,13 @@ def associate(counter: Series | None, events: list[Series], siblings: list[Serie
             best[who] = {"machine": who, "origin": "inferred", "by": "events on the bus",
                          "events": {"type": e.labels.get("type"), "source": who}, **m,
                          "why": f"{who}'s {e.labels.get('type')} events {_why(m)}"}
+    events_n = sum(counter.deltas)
+    if events_n < MIN_EVENTS:
+        for h in best.values():           # too few events to tell a machine from chance: never near certain
+            h["confidence"] = round(h["confidence"] * events_n / MIN_EVENTS, 3)
+            h["capped"] = (f"only {events_n:g} event{'' if events_n == 1 else 's'} in the window, fewer than the {MIN_EVENTS} discovery "
+                           f"needs: its confidence scaled by {events_n:g}/{MIN_EVENTS}")
     found = sorted(best.values(), key=lambda h: (-h["confidence"], h["machine"]))[:MAX_HYPOTHESES]
     if found:
-        return {"hypotheses": found}
+        return {"hypotheses": found, **({"tied": t} if (t := tied(found)) else {})}
     return {"hypotheses": [], "why": f"{UNSET}: no machine's events on the bus match its counter"}
