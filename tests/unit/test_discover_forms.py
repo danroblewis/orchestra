@@ -54,7 +54,9 @@ def test_a_line_below_zero_where_the_stock_barely_was_is_rejected():
     forms = fit_flow(events, 60.0, {"s": stock}, None, {"s"})
     linear = next(f for f in forms if f["form"] == "linear")
     assert linear["params"]["k"] < 0 and "below zero from level 1" in linear["rejected"], linear
-    assert forms[0]["form"] == "constant" and forms[-1] is linear
+    # rejected forms come last: the line, then the proportional form, which an event at level 0 leaves not fitted
+    assert forms[0]["form"] == "constant" and all("rejected" in f for f in forms[forms.index(linear):])
+    assert forms[-1]["form"] == "proportional" and forms[-1]["rejected"].startswith("not fitted")
 
 
 def test_a_line_below_zero_where_the_stock_stayed_long_is_a_measured_floor():
