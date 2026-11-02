@@ -653,6 +653,13 @@ const NetGraph = (() => {
       if (!pinned) applyFocus();
     }
     // redraw the decorations of the given nodes (live data) without touching the layout
+    // a new height for the drawing (a desktop page fills the viewport with it): the view is refitted
+    // unless the viewer zoomed
+    function setHeight(h) {
+      if (!h || Math.abs(h - H) < 2 || W() < NARROW) return;
+      H = h; svg.attr("viewBox", `0 0 ${W()} ${H}`).style("height", H + "px");
+      if (!userZoomed && NODES.length) refit(false);
+    }
     function refreshNodes(update) {
       gNodes.selectAll("g.ng-node").each(function (n) { const u = update(n); if (u) { Object.assign(n, u); drawNode(d3.select(this), n); } });
     }
@@ -673,7 +680,7 @@ const NetGraph = (() => {
         if (r && r > 0.01) g.append("path").attr("class", "ng-flowdash").attr("d", g.select(".ng-line").attr("d")).style("animation-duration", `${Math.max(0.25, Math.min(6, 8 / Math.sqrt(r))).toFixed(2)}s`);
       });
     }
-    return { render, highlight, focus, refreshNodes, setRates, setLabels, fit, fitAround, tidy, zoomed: () => userZoomed, edgesBetween: (ids) => EDGES.filter((e) => ids.includes(e.source.id) && ids.includes(e.target.id)) };
+    return { render, highlight, focus, refreshNodes, setHeight, height: () => H, setRates, setLabels, fit, fitAround, tidy, zoomed: () => userZoomed, edgesBetween: (ids) => EDGES.filter((e) => ids.includes(e.source.id) && ids.includes(e.target.id)) };
   }
 
   // a clickable list of loops under a graph: clicking one highlights it; clicking it again clears

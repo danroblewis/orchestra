@@ -168,6 +168,13 @@ const NetGeometry = (() => {
     return [x0, y0, x1, y1];
   }
 
-  return { size, edgePoint, frameOf, tetherPlaces, labelSize, placeLabels, tagBoxes, isolatedRows, fitView, boundsOf, PAD, GAP, DESK_K };
+  // a desktop drawing's height: the viewport's, less what must stay on screen with it (the page's
+  // header, the drawing's own bar and legend), at least ``min`` and at most ``max``
+  const VIEW_MIN = 600, VIEW_MAX = 1100;
+  function viewHeight(viewport, used, { min = VIEW_MIN, max = VIEW_MAX } = {}) {
+    return Math.round(Math.max(min, Math.min(max, (viewport || 0) - (used || 0))));
+  }
+
+  return { size, edgePoint, frameOf, tetherPlaces, labelSize, placeLabels, tagBoxes, isolatedRows, fitView, boundsOf, viewHeight, PAD, GAP, DESK_K, VIEW_MIN, VIEW_MAX };
 })();
 if (typeof module === "object" && module.exports) module.exports = NetGeometry;

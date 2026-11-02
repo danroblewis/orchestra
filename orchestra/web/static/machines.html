@@ -267,6 +267,7 @@ function eventMap(d0) {
   }
   for (const c of chains) c.ids = EV_MODE === "machines" ? [c.machineId] : c.evIds || [];
   $("ev-legend").innerHTML = legendOf(drawEdges, drawNodes, d0);
+  fillHeight();
   const counted = countedGraph(d0, nodeColor);
   GRAPH.render([...drawNodes, ...counted.nodes], [...drawEdges, ...counted.edges]);
   // the panel open on a machine: the highlight rule (intended-machines.js)
@@ -319,6 +320,17 @@ function eventMap(d0) {
     : `<span class='muted'>No communication cycles from hand-offs seen at least ${CYCLE_MIN} times ${scope}: nothing any machine handed on reached a machine that handed something back to it.</span>`;
   if (items.length) NetGraph.loopList($("looplist"), GRAPH, items);
 }
+// on a desktop the map's frame fills the viewport under the page's header: the drawing is as tall as
+// the viewport less the header and the frame's own bar, legend and cycles line (600 to 1100 px,
+// NetGeometry.viewHeight); a phone keeps the drawing's own height (netgraph.js fits it to its content)
+function fillHeight() {
+  const frame = document.querySelector("#evmap-host .evmap"), host = $("evsvg-host");
+  if (!GRAPH || !frame || !host || innerWidth <= 760) return;
+  const chrome = frame.offsetHeight - host.offsetHeight, header = $("nav") ? $("nav").offsetHeight : 0;
+  GRAPH.setHeight(NetGeometry.viewHeight(innerHeight, header + chrome + 16));
+}
+let RESIZE_T = null;
+addEventListener("resize", () => { clearTimeout(RESIZE_T); RESIZE_T = setTimeout(fillHeight, 150); });
 // the key, for the line styles drawn now and nothing else, unfolded
 const RELAY_DASH = "10 3 2 3";
 const CYCLE_MIN = 3;          // a hand-off seen fewer times than this makes no communication cycle (and an acted-next line is faint)

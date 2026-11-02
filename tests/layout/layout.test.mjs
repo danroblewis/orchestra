@@ -94,3 +94,23 @@ test("ten connected machines and one alone fit a 1330×600 view at no less than 
   const sx = host.x * after.k + after.tx, sy = host.y * after.k + after.ty;
   assert.ok(sx > 0 && sx < 1330 && sy > 40 && sy < 600, `host at ${sx}, ${sy}`);
 });
+
+// The Machines map and the Dynamics diagram on a desktop fill the viewport under the header
+// (NetGeometry.viewHeight, 600 to 1100 px): on a 1440×1000 screen with 160 px of header, bar and
+// legend the drawing is 840 px tall, and the same eleven machines fit it whole, larger than at 600.
+test("a desktop drawing as tall as the viewport allows fits the map larger, every node in view", () => {
+  const { viewHeight, fitView, boundsOf, isolatedRows, DESK_K } = require(path.join(STATIC, "netgraph-geometry.js"));
+  assert.equal(viewHeight(1000, 160), 840);
+  assert.equal(viewHeight(700, 160), 600, "never shorter than 600");
+  assert.equal(viewHeight(1600, 160), 1100, "never taller than 1100");
+  const ring = Array.from({ length: 10 }, (_, i) => ({ id: "m:" + i, kind: "circle", label: "machine " + i, x: 200 + 260 * Math.cos(i * Math.PI / 5), y: 220 + 260 * Math.sin(i * Math.PI / 5) }));
+  const host = { id: "m:host", kind: "circle", label: "orchestra-host", x: 0, y: 0 };
+  Object.assign(host, { x: isolatedRows([host], ring)[host.id][0], y: isolatedRows([host], ring)[host.id][1] });
+  const box = boundsOf([...ring, host]), h = viewHeight(1000, 160);
+  const short = fitView(box, { w: 1330, h: 600, top: 40, all: true }), tall = fitView(box, { w: 1330, h, top: 40, all: true });
+  assert.ok(short.k < DESK_K && tall.k > short.k, `600 px: ${short.k.toFixed(2)}, ${h} px: ${tall.k.toFixed(2)}`);
+  for (const n of [...ring, host]) {
+    const sx = n.x * tall.k + tall.tx, sy = n.y * tall.k + tall.ty;
+    assert.ok(sx > 0 && sx < 1330 && sy > 40 && sy < h, `${n.id} at ${sx.toFixed(0)}, ${sy.toFixed(0)}`);
+  }
+});

@@ -234,7 +234,17 @@ function draw() {
     + (acc.size || window.SHOW_ACC ? `<label class="lg" style="cursor:pointer" title="stocks that only fill and that no flow shown feeds, such as the event bus's length"><input type="checkbox" ${window.SHOW_ACC ? "checked" : ""} onchange="showAcc(this.checked)" style="margin:0"> stocks that only fill, fed by nothing shown${acc.size ? ` (${acc.size})` : ""}</label>` : "")
     + Intended.legend()
     + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it, through rediscoveries; double-click to release) · tidy lays out the rest · reset starts over · scroll to zoom · hover or click a stock or a flow</span>`;
+  fillHeight();
 }
+// on a desktop the diagram fills the viewport under the page's header, less the note and the legend
+// under it (600 to 1100 px, NetGeometry.viewHeight); a phone keeps its own height
+function fillHeight() {
+  if (!GRAPH || innerWidth <= 760 || !document.querySelector("#diagram svg")) return;
+  const header = $("nav") ? $("nav").offsetHeight : 0, under = $("diagram-note").offsetHeight + $("legend").offsetHeight + 24;
+  GRAPH.setHeight(NetGeometry.viewHeight(innerHeight, header + under + 16));
+}
+let RESIZE_T = null;
+addEventListener("resize", () => { clearTimeout(RESIZE_T); RESIZE_T = setTimeout(fillHeight, 150); });
 // a place a flow's counter names where discovery kept no stock (sd-graph.js placeOf)
 const placeOf = (v) => SDGraph.placeOf(MODEL, v);
 // a flow's end as the diagram draws it: its stock, the place it names "(not a stock)", or outside at a cloud
