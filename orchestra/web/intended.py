@@ -129,10 +129,21 @@ def attach_dynamics(project, out: dict, since, metrics) -> None:
                                                   version=None if live else m.get("version"), live=live, stamp=m.get("as_of"),
                                                   metrics=metrics, hold=project.config.announce_hold)
         removed_facts(out["model"]["intended"], project.intended.models)
+        lend_names(m, out["model"]["intended"])
     except IntentError as e:
         out["model"]["intended"] = {"error": str(e)}
     except Exception as e:  # noqa: BLE001 - the model is shown without its declared layer
         out["model"]["intended"] = {"error": f"{type(e).__name__}: {e}"}
+
+
+def lend_names(m: dict, block: dict) -> None:
+    """Each stock and flow a declaration names (``block["names"]``, ``sd.intended.display``) carries
+    it as ``declared_name``: the pages show it as the part's name, the generated one beneath it."""
+    names = (block or {}).get("names") or {}
+    for group in ("stocks", "flows"):
+        for x in m.get(group) or []:
+            if (n := (names.get(group) or {}).get(x.get("id"))) is not None:
+                x["declared_name"] = n
 
 
 def removed_facts(block: dict, models) -> None:
@@ -141,7 +152,7 @@ def removed_facts(block: dict, models) -> None:
     ``fitted``, ``discovered`` or ``declared``; a stock with evidence was discovered, one without
     declared), its series or counter, and a flow's name, so a removed part is named as the shown
     ones are, never by its id, and one the base named by its places or in words (``named``) by that
-    name, never by its series."""
+    name, never by its series, with its tags (sd.titles)."""
     removed = (block or {}).get("removed") or {}
     if not (removed.get("stocks") or removed.get("flows")) or block.get("since") is None:
         return
@@ -157,13 +168,13 @@ def removed_facts(block: dict, models) -> None:
         s = stocks.get(r.get("id"))
         if s is not None:
             r.update(origin="discovered" if s.evidence else "declared", series=ref(s.series), full_name=s.name,
-                     named=bool((s.evidence or {}).get("named")))
+                     named=bool((s.evidence or {}).get("named")), tags=list((s.evidence or {}).get("tags") or []))
     for r in removed.get("flows") or []:
         f = flows.get(r.get("id"))
         if f is not None:
             eq = f.current()
             r.update(origin=eq.origin if eq is not None else "declared", name=f.name, counter=ref(f.counter),
-                     named=bool((f.evidence or {}).get("named")),
+                     named=bool((f.evidence or {}).get("named")), tags=list((f.evidence or {}).get("tags") or []),
                      from_named=f.src in stocks and bool((stocks[f.src].evidence or {}).get("named")),
                      to_named=f.dst in stocks and bool((stocks[f.dst].evidence or {}).get("named")),
                      measured_by=[ref(c) for c in f.measured_by],

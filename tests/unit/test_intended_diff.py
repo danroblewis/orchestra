@@ -322,16 +322,17 @@ def test_a_removed_part_says_its_origin_name_and_counter_from_the_base_version(t
 
 
 def test_a_removed_part_the_base_named_by_its_places_keeps_that_name(tmp_path):
-    """A gone stock or flow the base version named by its instrument's places ("deliveries held at
-    write", "late → awaiting_check") is shown by that name, never by its series ("workflow pile
-    items"; R3, the owner 2026-11-01: "the names of the stocks are weird")."""
+    """A gone stock or flow the base version named by its instrument's places ("held at write",
+    "late → awaiting_check") is shown by that name, never by its series ("workflow pile items"; R3,
+    the owner 2026-11-01: "the names of the stocks are weird"), with its tags."""
     from orchestra.web.intended import removed_facts
     gone = fl("f", "a", "c", "moved_total")
-    gone.evidence = {"named": "places"}
+    gone.evidence = {"named": "places", "tags": ["workflow=w"]}
     a, b, c = st("a"), st("b"), st("c")
-    c.evidence = {"named": "places", "balance": []}
+    c.evidence = {"named": "places", "balance": [], "tags": ["workflow=w", "deliveries"]}
     ms = saved(tmp_path, model([a, b, c], [gone]), model([a, b]))
     out = block(ms)
     removed_facts(out, ms)
     f, s = out["removed"]["flows"][0], out["removed"]["stocks"][0]
     assert (f["named"], f["from_named"], f["to_named"], s["named"]) == (True, False, True, True)
+    assert (f["tags"], s["tags"]) == (["workflow=w"], ["workflow=w", "deliveries"])

@@ -29,7 +29,7 @@ def test_no_store_says_so():
     assert instrument_series(None, "x", T0) == {"ok": False, "error": "the metrics store could not be opened"}
 
 
-def test_each_series_its_views_name_carries_the_title_its_part_gets(tmp_path):
+def test_each_series_its_views_name_carries_the_title_and_tags_its_part_gets(tmp_path):
     from orchestra.collect.views import parse
 
     m = FileMetrics(tmp_path / "m.jsonl")
@@ -41,6 +41,7 @@ def test_each_series_its_views_name_carries_the_title_its_part_gets(tmp_path):
     views = parse({"workflow_pile_items": {"view": "count", "place": "pile"}, "workflow_pile_oldest_seconds": {"view": "age"},
                    "workflow_pile_moves_total": {"view": "moves", "starts": "to", "stops": "from"}})
     got = instrument_series(m, "workflows.piles", T0 + 1, views=views)
-    assert sorted(r.get("title") for r in got["series"]) == [
-        "age of items held at write", "items held at write", "items waiting at ci", "write → ci"]
+    assert sorted(r.get("title") for r in got["series"]) == ["age at write (held)", "held at write", "waiting at ci", "write → ci"]
+    # what the place does not spell is a tag beside the title, as on the Dynamics page
+    assert all(r["tags"] == ["workflow=delivery_sail"] for r in got["series"])
     assert all("title" not in r for r in instrument_series(m, "workflows.piles", T0 + 1)["series"])

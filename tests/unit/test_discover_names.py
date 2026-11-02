@@ -73,12 +73,15 @@ def test_a_place_its_count_view_names_is_named_by_the_labels_that_spell_it():
     the order they spell it, then what they do not spell; no label's name is known to the core."""
     m = _piles()
     [st] = [s for s in m.stocks if s.series is not None]
-    assert (st.id, st.name, st.evidence.get("named")) == ("workflow_pile_items_write_held_delivery_sail", "items held at write", "places")
+    assert (st.id, st.name, st.evidence.get("named")) == ("workflow_pile_items_write_held_delivery_sail", "held at write", "places")
+    # what its place does not spell is a tag beside the name, never in it (the owner, 2026-11-02)
+    assert st.evidence["tags"] == ["workflow=delivery_sail"]
     # a move is named by the places it leaves and enters, a stock or not ("sail_check (waiting)", never
     # sail_check.waiting nor "sail check"); a value no place spells is said as it is
     names = {f.counter.labels["to"]: (f.name, f.evidence.get("named")) for f in m.flows if f.counter}
     assert names["sail_check.waiting"] == ("write → sail_check", "places")
     assert names["write.held"] == ("outside → write", "places")      # "<start>" is outside: one word for one idea
+    assert all(f.evidence["tags"] == ["workflow=delivery_sail"] for f in m.flows if f.counter)
 
 
 def test_a_left_out_pile_that_holds_items_says_its_level_and_place():
@@ -103,7 +106,8 @@ def test_a_left_out_pile_that_holds_items_says_its_level_and_place():
     m = discover(dump, start=T0, end=T0 + 240 * 60, step=60.0, provenance=_prov(dump))
     held = m.discovery["held_levels"]
     assert [(v["place"], v["level"]) for v in held.values()] == [("unchecked.waiting", 5.0)]
-    assert m.discovery["titles"][next(iter(held))] == "items waiting at unchecked"
+    assert m.discovery["titles"][next(iter(held))] == "waiting at unchecked"
+    assert m.discovery["title_tags"][next(iter(held))] == ["workflow=w"]
 
 
 def test_without_its_instruments_views_a_pile_is_named_by_its_series():
@@ -125,16 +129,18 @@ def test_hidden_state_between_moves_that_name_places_is_named_by_them():
     prov = {series_key(n, lab): {"view": "count", "place": "pile"} for n, lab in items}
     prov.update({c.key: {"view": "moves", "starts": "to", "stops": "from"} for c in ins + outs + [same, nowhere]})
     places = Places([(n, lab, series_key(n, lab)) for n, lab in items], prov)
-    assert places.between(ins, outs) == "items between open_pr and ci"
-    assert places.between(ins, [same]) == "items waiting at open_pr"
+    assert places.between(ins, outs) == "between open_pr and ci"
+    assert places.between_tags(ins, outs) == ["workflow=delivery_sail"]
+    assert places.between(ins, [same]) == "waiting at open_pr"
     assert places.between(ins, [nowhere]) is None      # by its neighbours, then
 
 
 def test_a_hidden_state_through_several_steps_is_named_by_its_first_and_last_and_lists_what_it_spans():
     """The owner (2026-11-01, "how are all of these considered one stock?") read "deliveries
     passing write held and sail_check waiting" as several things: a passage through several steps
-    is "<noun> between <first> and <last>", never its places' states joined; the places it spans
-    are listed beside it, in the order items pass them."""
+    is "between <first> and <last>", never its places' states joined; the places it spans are
+    listed beside it, in the order items pass them; its noun is a tag (the owner, 2026-11-02: "I
+    don't know what 'deliveries' means")."""
     from itertools import pairwise
 
     from orchestra.sd.series import Series, series_key
@@ -152,12 +158,13 @@ def test_a_hidden_state_through_several_steps_is_named_by_its_first_and_last_and
     places = Places(rows, prov)
     ins, outs = [chain[0]], [chain[-1]]
     name = places.between(ins, outs)
-    assert name == "deliveries between write and sail_check"
+    assert name == "between write and sail_check"
+    assert places.between_tags(ins, outs) == ["workflow=delivery_sail", "deliveries"]
     assert "passing" not in name and "held" not in name
     assert places.spans(ins, outs) == ["write (held)", "open_pr (waiting)", "ci (waiting)", "review (waiting)",
                                        "sail_check (waiting)"]
     # entered and left at one place: what sits there
-    assert places.between([chain[0]], [chain[1]]) == "deliveries held at write"
+    assert places.between([chain[0]], [chain[1]]) == "held at write"
 
 
 def test_a_series_of_the_age_view_is_the_age_of_its_place_never_its_name():
@@ -170,8 +177,9 @@ def test_a_series_of_the_age_view_is_the_age_of_its_place_never_its_name():
     prov = {pile.key: {"source": "own", "instrument": "piles", "view": "count", "place": "pile"},
             age.key: {"source": "own", "instrument": "piles", "view": "age"}}
     places = Places([(x.name, x.labels, x.key) for x in (pile, age)], prov)
-    assert _title(pile, places) == "items held at write"
-    assert _title(age, places) == "age of items held at write"
+    assert _title(pile, places) == "held at write"
+    assert _title(age, places) == "age at write (held)"
+    assert places.level_tags(age.labels, age.key, age.name) == ["workflow=delivery_sail"]
 
 
 def test_a_place_value_with_no_words_keeps_the_series_name_and_dashes_spell_like_underscores():
@@ -185,7 +193,7 @@ def test_a_place_value_with_no_words_keeps_the_series_name_and_dashes_spell_like
     prov = {x.key: {"view": "count", "place": "pile"} for x in (num, dash)}
     places = Places([(x.name, x.labels, x.key) for x in (num, dash)], prov)
     assert _title(num, places).startswith("queue depth")
-    assert _title(dash, places) == "items waiting at code-review"
+    assert _title(dash, places) == "waiting at code-review"
 
 
 def _pile_places(*workflows):
@@ -209,14 +217,14 @@ def _pile_places(*workflows):
 
 def test_a_stock_is_what_sits_in_its_place_and_a_flow_is_the_move_in_words():
     """The owner (2026-11-01): "the names of all the system dynamics stocks are weird". A stock is
-    what sits there, the noun its series counts, what is said of it there and where ("items held at
-    review"), with no workflow when one is on the model; a move is between the things it leaves and
-    enters, "sent back" when it goes nearer the start, and from outside in words."""
+    what is said of what sits there and where ("held at review"), its workflow a tag; a move is
+    between the things it leaves and enters, "sent back" when it goes nearer the start, and from
+    outside in words."""
     from orchestra.sd.series import series_key
 
     places, items, moves = _pile_places("delivery_sail")
     level = {lab["pile"]: places.level(lab, series_key(n, lab), n) for n, lab in items}
-    assert (level["write.waiting"], level["review.held"], level["ci.waiting"]) == ("items waiting at write", "items held at review", "items waiting at ci")
+    assert (level["write.waiting"], level["review.held"], level["ci.waiting"]) == ("waiting at write", "held at review", "waiting at ci")
     move = {(c.labels["from"], c.labels["to"]): places.move(c.labels, c.key) for c in moves}
     assert move[("write.held", "ci.waiting")] == "write → ci"
     assert move[("ci.waiting", "review.waiting")] == "ci → review"
@@ -225,14 +233,34 @@ def test_a_stock_is_what_sits_in_its_place_and_a_flow_is_the_move_in_words():
     assert move[("write.waiting", "write.held")] == "write: waiting → held"
 
 
-def test_two_workflows_with_a_step_of_one_name_say_whose_it_is():
+def test_two_workflows_with_a_step_of_one_name_are_told_apart_by_their_tags():
+    """Two parts whose place-only names read alike stay distinct: by a tag shown, never a
+    parenthesis in the name; the moves of two scopes are not mistaken for one move said twice."""
     from orchestra.sd.series import series_key
 
     places, items, moves = _pile_places("delivery_sail", "hotfix")
-    n, lab = next((n, lab) for n, lab in items if lab["workflow"] == "hotfix" and lab["pile"] == "write.held")
-    assert places.level(lab, series_key(n, lab), n) == "items held at write (hotfix)"
-    c = next(c for c in moves if c.labels["workflow"] == "hotfix" and c.labels["from"] == "write.held")
-    assert places.move(c.labels, c.key) == "write → ci (hotfix)"
+    held = [(n, lab) for n, lab in items if lab["pile"] == "write.held"]
+    said = {lab["workflow"]: (places.level(lab, series_key(n, lab), n), places.level_tags(lab, series_key(n, lab), n)) for n, lab in held}
+    assert said == {"hotfix": ("held at write", ["workflow=hotfix"]), "delivery_sail": ("held at write", ["workflow=delivery_sail"])}
+    out = [c for c in moves if c.labels["from"] == "write.held"]
+    got = {(places.move(c.labels, c.key), tuple(places.move_tags(c.labels, c.key))) for c in out}
+    assert got == {("write → ci", ("workflow=hotfix",)), ("write → ci", ("workflow=delivery_sail",))}
+
+
+def test_two_moves_that_read_alike_with_the_same_tags_are_said_by_their_places_parts():
+    from orchestra.sd.series import Series, series_key
+    from orchestra.sd.titles import Places
+
+    lab = {"workflow": "w"}
+    items = [("workflow_pile_items", {**lab, "pile": f"{a}.{b}", "step": a, "place": b}) for a in ("ci", "write") for b in ("waiting", "held")]
+    moves = [Series("workflow_pile_moves_total", {**lab, "from": f, "to": t}, [], [], True)
+             for f, t in (("<start>", "write.waiting"), ("write.waiting", "ci.waiting"), ("ci.waiting", "write.waiting"),
+                          ("ci.held", "write.held"))]
+    prov = {series_key(n, x): {"view": "count", "place": "pile"} for n, x in items}
+    prov.update({c.key: {"view": "moves", "starts": "to", "stops": "from"} for c in moves})
+    places = Places([*[(n, x, series_key(n, x)) for n, x in items], *[(c.name, c.labels, c.key) for c in moves]], prov)
+    said = {places.move(c.labels, c.key) for c in moves[2:]}
+    assert said == {"ci (waiting) → write (waiting) (sent back)", "ci (held) → write (held) (sent back)"}
 
 
 def test_a_series_its_name_and_labels_say_in_words():

@@ -137,7 +137,17 @@ let ERA = new URLSearchParams(location.search).get("era");   // null: the curren
 const nice = (s) => s || "outside";
 // stocks and flows by what tells them apart (SDGraph.names); the model's ``name`` is the full record
 const stockName = (id) => SDGraph.stockName(MODEL, id), flowName = (f) => SDGraph.flowName(MODEL, f);
-const stockHead = (id) => { const n = SDGraph.names(MODEL).stocks[id]; return n ? esc(n.name) + (n.family ? ` <span class="muted">${esc(n.family)}</span>` : "") : esc(nice(id)); };
+// a part's key (sd/intended/keys.py), its identifier across versions: said on hover and in its drawer, never as its name
+const partKey = (group, id) => (((MODEL && MODEL.intended) || {}).keys || {})[group]?.[id] || "";
+// a part's head: its name (a declaration's, else the server's title), its tags as chips beside it
+// (sd/titles.py), and under a declared name the name it would have had and who named it
+const partHead = (n, key, fallback) => {
+  if (!n) return esc(fallback);
+  const head = `<span title="${esc(key ? "key: " + key : "")}">${esc(n.name)}</span>` + (n.family && !n.declared && !n.byTags ? ` <span class="muted">${esc(n.family)}</span>` : "") + SDGraph.tagsHtml(n.tags, esc);
+  return head + (n.declared ? `<span class="pnamed">${esc(n.generated)} · named by ${esc(n.namedBy)}</span>` : "");
+};
+const stockHead = (id) => partHead(SDGraph.names(MODEL).stocks[id], partKey("stocks", id), nice(id));
+const flowHead = (f) => partHead(SDGraph.names(MODEL).flows[f.id] && { ...SDGraph.names(MODEL).flows[f.id], name: flowName(f) }, partKey("flows", f.id), flowName(f));
 // a stock's own sentence (its series' ``describes`` label), said under its name; "" when it has none
 const stockAbout = (id) => { const n = SDGraph.names(MODEL).stocks[id]; return n && n.about ? `<div class="muted about">${esc(n.about)}</div>` : ""; };
 const num = (v, short) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(short ? 2 : 3));
@@ -447,7 +457,7 @@ function tables() {
     const end = (which) => endOf(f, which);
     const same = SDGraph.sameAs(m, f);
     const zero = e && (q.events ?? 0) === 0 && (Object.values(e.params || {}).some((x) => x) || (e.spec && e.spec.value));
-    return `<tr data-fid="${esc(f.id)}" ${opens(`Live.openFlow('${esc(f.id)}')`)}><td>${esc(flowName(f))}<div class="muted" style="font-size:11px">${esc(end("from"))} → ${esc(end("to"))}${same.length ? ` · same events as ${same.map(esc).join(", ")}` : ""}</div></td><td class="num eq">${obsLine(f)}${Evidence.tooFew(f) ? '<span class="muted">—</span>' : esc(eqText(f))}${!Evidence.tooFew(f) && e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}${SDGraph.correlational(m, f) ? `<div class="muted" style="font-family:inherit;font-size:11px">${esc(SDGraph.untestedText(m, f))}</div>` : ""}</td>
+    return `<tr data-fid="${esc(f.id)}" ${opens(`Live.openFlow('${esc(f.id)}')`)}><td>${flowHead(f)}<div class="muted" style="font-size:11px">${esc(end("from"))} → ${esc(end("to"))}${same.length ? ` · same events as ${same.map(esc).join(", ")}` : ""}</div></td><td class="num eq">${obsLine(f)}${Evidence.tooFew(f) ? '<span class="muted">—</span>' : esc(eqText(f))}${!Evidence.tooFew(f) && e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}${SDGraph.correlational(m, f) ? `<div class="muted" style="font-family:inherit;font-size:11px">${esc(SDGraph.untestedText(m, f))}</div>` : ""}</td>
       <td>${Evidence.tooFew(f) ? `<span class="muted num" title="fewer than ${Evidence.MIN_EVENTS} events in the window: no rate can be told from chance">${esc(Evidence.tooFewText(f))}</span>${eraNote(f)}` : e ? `${misses(f) ? `<span class="stale num">${esc(misses(f))}</span>` : `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span>`} <span class="muted num" ${zero ? 'title="0 increments seen in the window; the counter first appeared already above 0"' : ""}>${esc(e.form)} · ${q.events ?? 0} events in the fit window${zero ? "*" : ""}${q.live_minutes ? ` (${q.live_minutes} min)` : ""} · dispersion ${q.events && q.dispersion != null ? sig2(q.dispersion) : "—"}</span>${e.prior && e.prior.weight != null && e.origin !== "prior" ? `<div class="muted" style="font-size:11px">${Math.round(100 * e.prior.weight)}% from the prior (era ${esc(e.prior.era || "before")})</div>` : ""}${eraNote(f)}` : '<span class="muted">—</span>'}</td>
       <td class="mcell">${machinesCell(m, f, byMachine)}</td></tr>`; }).join("");
   // how far to trust each stock, as its drawer says it
@@ -533,12 +543,12 @@ function machinesCell(m, f, byMachine) {
   return row(hs[0]) + (rest.length ? `<details class="more-h" onclick="event.stopPropagation()"><summary>+${rest.length}</summary>${rest.map(row).join("")}</details>` : "")
     + (untold && (!apart || hs.length > 1) ? `<div class="muted" style="font-size:11px">${esc(untold)}</div>` : "");
 }
-// a stock's unit: the noun its instrument declared ("release candidates"), else the one its title
-// says it counts ("items waiting at write": items), else none
+// a stock's unit: the noun its instrument declared ("release candidates"), else, for a stock its
+// places name ("waiting at write"), the model's unit (items), else none
 function unitOf(s) {
   const n = SDGraph.names(MODEL).stocks[s.id];
   if (s.evidence && s.evidence.noun) return s.evidence.noun;
-  return s.evidence && s.evidence.named && n ? n.name.split(" ")[0] : "";
+  return s.evidence && s.evidence.named && n ? s.unit || "" : "";
 }
 // Eras (sd/eras.py): a new one begins when a machine changes the system; each is discovered from
 // its own data, with the era before as its prior. The timeline picks the era to show (a past

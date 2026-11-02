@@ -122,12 +122,12 @@ function seriesTable(d, now, name) {
   const inst = INSTRUMENTS.find((i) => i.name === name), views = inst && inst.views ? { [name]: inst.views } : null;
   if (!d.ok) return `<div class="muted">series not shown: ${esc(d.error)}</div>`;
   if (!d.series.length) return `<div class="muted">no series written in the last ${Math.round(d.window_s / 60)} minutes</div>`;
-  const refs = d.series.map((r) => ({ name: r.name, labels: r.labels, title: r.title }));
+  const refs = d.series.map((r) => ({ name: r.name, labels: r.labels, title: r.title, tags: r.tags }));
   const key = (r) => `${r.name}{${Object.entries(r.labels).map(([k, v]) => `${k}="${v}"`).join(",")}}`;
   // a series not written within three of the instrument's periods is greyed, with when it last was
   const stale = (r) => inst && inst.every_s != null && now - r.at > 3 * inst.every_s + RECORD_S;
   const row = (r, i) => { const n = SDGraph.seriesName(refs[i], views, name);
-    return `<tr title="${esc(key(r))}" class="${stale(r) ? "stale-row" : ""}"><td><b>${esc(n.name)}</b>${n.family ? ` <span class="muted">${esc(n.family)}</span>` : ""}${n.about ? `<div class="muted about">${esc(n.about)}</div>` : ""}</td>
+    return `<tr title="${esc(key(r))}" class="${stale(r) ? "stale-row" : ""}"><td><b>${esc(n.name)}</b>${SDGraph.tagsHtml(n.tags, esc)}${n.family ? ` <span class="muted">${esc(n.family)}</span>` : ""}${n.about ? `<div class="muted about">${esc(n.about)}</div>` : ""}</td>
       <td class="num" style="text-align:right">${esc(String(+r.value.toFixed(3)))}${unitOf(r.name, r.value) ? ` <span class="muted">${esc(unitOf(r.name, r.value))}</span>` : ""}</td><td class="muted" style="white-space:nowrap">${stale(r) ? `not written since ${esc(Orchestra.when(r.at))}` : `${ago(now - r.at)} ago`}</td></tr>`; };
   // the series of one name that read 0 (the empty places), when there are FOLD of them or more: one line,
   // opened on a click: "12 × place items at 0"

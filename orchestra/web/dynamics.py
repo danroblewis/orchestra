@@ -110,6 +110,9 @@ def model_view(project, version: int | None = None, levels: dict | None = None, 
     for m in model.machines:
         for fid in m.attributed:
             owners.setdefault(fid, []).append(m.id)
+    for x in out["stocks"] + out["flows"]:
+        # what narrows its name, said beside it (sd.titles: ``label=value``, or a view's noun, bare)
+        x["tags"] = list((x.get("evidence") or {}).get("tags") or [])
     for f in out["flows"]:
         # the machines associated with it, as hypotheses (sd.attribute); a version saved before
         # 2026-10-27 has only the machine its counter's label named

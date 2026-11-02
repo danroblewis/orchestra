@@ -383,10 +383,20 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         for m in out["machines"]:
             if m["bootstrap"]:
                 m["active"], m["active_by"] = up, "runtime"
-        out["model_parts"] = model_parts(bg.model())   # what the cards' flow chips are named by (sd-graph.js), as on Dynamics
+        out["model_parts"] = model_parts(bg.model(), lent_names(bg.model()))   # what the cards' flow chips are named by (sd-graph.js), as on Dynamics
         if bg.errors:
             out["errors"] = dict(bg.errors)
         return out
+
+    def lent_names(model) -> dict | None:
+        """The names declarations lend the model's parts (sd/intended/display.py); None when the
+        declared layer cannot be read (the parts keep their titles)."""
+        from ..sd.intended.display import declared_names
+        from ..sd.intended.keys import Keys
+        try:
+            return declared_names(bg.models.intended().read()["layer"], Keys(model)) if model is not None else None
+        except Exception:  # noqa: BLE001 - the cards are named by their titles
+            return None
 
     @app.get("/api/machines/{machine}/events")
     def machine_events(machine: str) -> dict:

@@ -1,32 +1,40 @@
 """What the model calls a part named by its instrument's places, named once, here: every page
-shows the title (the Dynamics, Machines and Instruments pages, and the diff between versions).
+shows the title (the Dynamics, Machines and Instruments pages, and the diff between versions),
+with its tags beside it.
+
+A title says the place and the state only (the owner, 2026-11-02: "I don't know what 'deliveries'
+means"); what narrows it is said as **tags**, a list of short strings beside the name, never in
+it: each label of the series the place's value does not spell, as ``label=value``
+(``workflow=delivery_sail``), then the noun its instrument's view declares, bare (``deliveries``).
+The noun a series' own name ends in (``workflow_pile_items``: items) is its unit, said by neither.
 
 An instrument that counts the things in each place says which label names the place (its
 ``count`` view's ``place``, ``collect.views``; ``sd.construction`` reads the same). When other
 labels of the series spell that label's value, part by part, they are the place in words, in
 the order they spell it: ``pile="write.held"`` with ``step="write"`` and ``place="held"`` is the
-thing ``write`` and what is said of it there, ``held``. A stock is what sits there: the noun its
-series counts (the last word of its name when that is a plural noun: ``workflow_pile_items``,
-items), what is said of it, and where: "items held at write". The labels the value does not
-spell (``workflow``) are its scope, said only when two scopes share a thing of one name ("items
-held at write (hotfix)"). The convention is the labels' own: no label's name is known here
-(AGENTS.md rule 1). A series of the ``age`` view with the same labels is "age of" that place.
+thing ``write`` and what is said of it there, ``held``. A stock is what is said of what sits
+there, and where: "held at write" ("at write" when nothing is said of it). The labels the value
+does not spell (``workflow``) are its scope, its tags: two scopes that share a thing of one name
+read alike ("held at write") and are told apart by them (``workflow=hotfix``). The convention is
+the labels' own: no label's name is known here (AGENTS.md rule 1). A series of the ``age`` view
+with the same labels is the "age at" that place ("age at write (held)").
 
 A move between two places (a ``moves`` view: its ``starts`` and ``stops`` labels hold the
 places' values) is named by the things it leaves and enters, whether or not either is a stock:
 "write → open_pr"; inside one thing, by what is said of it: "write: waiting → held"; a move to a
 thing fewer moves from outside than the one it leaves is "(sent back)" ("ci → write (sent
 back)"); a value in angle brackets is outside ("<start>": "outside → write"), any other value no
-place spells is said in its words; two moves
-that would read alike are said by their places' own parts ("ci (waiting) → write (waiting)"). A
-state no series measures between such moves (a hidden passage, ``sd.passing``) is named by the
-first and last things its items pass, in words ("deliveries between write and sail_check"; the
+place spells is said in its words; the move's other labels are its tags; two moves that would
+read alike with the same tags are said by their places' own parts ("ci (waiting) → write
+(waiting)"). A state no series measures between such moves (a hidden passage, ``sd.passing``) is
+named by the first and last things its items pass, in words ("between write and sail_check"; the
 places it spans, in order, listed beside it: ``spans``), never by joining their states (the owner,
 2026-11-01: "how are all of these considered one stock?"), or, when they enter and leave one
-place, by what sits there ("items waiting at sail"); by the one thing, when all are in it
-("items at write"). Label values keep their spelling (``sail_check``, never "sail check"); "-" and "_" are
-alike inside a part (``code-review.waiting`` with ``step="code-review"``), and a place value with
-no letters in it (``stage="3"``) spells no words, so the series keeps its own name."""
+place, by what sits there ("waiting at sail"); by the one thing, when all are in it ("at
+write"); its tags are its places' scope and noun. Label values keep their spelling
+(``sail_check``, never "sail check"); "-" and "_" are alike inside a part (``code-review.waiting``
+with ``step="code-review"``), and a place value with no letters in it (``stage="3"``) spells no
+words, so the series keeps its own name."""
 
 from __future__ import annotations
 
@@ -49,8 +57,8 @@ def _same(a: str, b: str) -> bool:
 @dataclass(frozen=True)
 class Place:
     """A place a count spells: its first part (the thing it is at: ``write``), the parts after it
-    (what is said of it there: ``held``), the labels it does not spell (``scope``) and the noun of
-    what its series counts (``items``)."""
+    (what is said of it there: ``held``), the labels it does not spell (``scope``) and the noun its
+    instrument's view declares of what it counts (``deliveries``; "" when none)."""
 
     at: str
     said: tuple[str, ...]
@@ -64,25 +72,27 @@ class Place:
 
     @property
     def sits(self) -> str:
-        """What sits there: "items held at write"."""
-        return " ".join([self.noun, *self.said, "at", self.at])
+        """What is said of what sits there, and where: "held at write"; "at write"."""
+        return " ".join([*self.said, "at", self.at])
+
+    @property
+    def tags(self) -> list[str]:
+        """What narrows it, said beside its name: its scope's labels (``workflow=hotfix``), then its noun."""
+        return [f"{k}={v}" for k, v in self.scope.items()] + ([self.noun] if self.noun else [])
 
 
-# the last word of a series' name that is a measure, not the noun of what it counts
+def merge_tags(*lists) -> list[str]:
+    """Tags of several parts, each once, in the order first said."""
+    return list(dict.fromkeys(t for ts in lists for t in ts or ()))
+
+
+# the last word of a series' name that is a measure, not the noun of what it counts (``plural``)
 MEASURES = {"seconds", "milliseconds", "bytes", "ratio", "total", "count", "current", "value", "size", "depth", "level"}
 
 
 def plural(word: str) -> bool:
     """Whether a word of a series' name is the noun of things it counts (items, commits)."""
     return len(word) > 2 and word.endswith("s") and word not in MEASURES
-
-
-def noun_of(name: str) -> str:
-    """What a count of things in places counts, from its series' name: its last word when that
-    is a plural noun (``workflow_pile_items``: items), else the name in words."""
-    words = [w for w in re.split(r"[\W_]+", name) if w]
-    last = words[-1] if words else ""
-    return last if plural(last) else " ".join(words)
 
 
 def _outside(value: str) -> str:
@@ -100,7 +110,7 @@ class Places:
     def __init__(self, items, provenance: dict):
         self.provenance = provenance or {}
         self.by_value: dict[str, list[Place]] = {}
-        self.by_labels: dict[tuple, str] = {}
+        self.by_labels: dict[tuple, Place] = {}
         self.keys: dict[str, list[tuple[Place, str]]] = {}     # place value -> (its place, the key of the count that spells it)
         spelled = []
         for name, labels, key in items:
@@ -108,13 +118,8 @@ class Places:
                 spelled.append((labels, got))
                 self.by_value.setdefault(got[1], []).append(got[0])
                 self.keys.setdefault(got[1], []).append((got[0], key))
-        # a thing two scopes share (two workflows with a step of one name): said with its scope
-        scopes: dict[str, set] = {}
-        for _, (pl, _) in spelled:
-            scopes.setdefault(pl.at, set()).add(tuple(sorted(pl.scope.items())))
-        self.shared = {at for at, ss in scopes.items() if len(ss) > 1}
         for labels, (pl, _) in spelled:
-            self.by_labels[tuple(sorted(labels.items()))] = self._sits(pl)
+            self.by_labels[tuple(sorted(labels.items()))] = pl
         moves = [(labels, key, m) for _, labels, key in items if (m := self._move(labels, key))]
         self.depth = self._depths(moves)
         self.next: dict[str, set[str]] = {}            # place value -> the place values a move takes items to
@@ -122,8 +127,9 @@ class Places:
             a, b = labels.get(out_of), labels.get(into)
             if a and b and self._place(a, labels) and self._place(b, labels):
                 self.next.setdefault(a, set()).add(b)
-        short = [self._move_title(labels, key, full=False) for labels, key, _ in moves]
-        self.clash = {t for t in short if t and short.count(t) > 1}
+        # two moves that read alike with the same tags (two scopes' moves differ by their tags)
+        short = [(t, tuple(self.move_tags(labels, key))) for labels, key, _ in moves if (t := self._move_title(labels, key, full=False))]
+        self.clash = {t for t in short if short.count(t) > 1}
 
     def _spelled(self, name: str, labels: dict, key: str):
         rec = self.provenance.get(key) or {}
@@ -141,14 +147,8 @@ class Places:
         if not spell:
             return None
         pl = Place(own[spell[0]], tuple(own[k] for k in spell[1:]), {k: v for k, v in own.items() if k not in spell},
-                   rec.get("noun") or noun_of(name))
+                   rec.get("noun") or "")
         return pl, value
-
-    def _sits(self, pl: Place) -> str:
-        return pl.sits + self._scoped(pl)
-
-    def _scoped(self, pl: Place) -> str:
-        return f" ({', '.join(pl.scope.values())})" if pl.scope and pl.at in self.shared else ""
 
     def _place(self, value: str, labels: dict) -> Place | None:
         for pl in self.by_value.get(value, []):
@@ -162,15 +162,26 @@ class Places:
         pl = self._place(value, labels)
         return pl.full if pl else None
 
-    def level(self, labels: dict, key: str, name: str = "") -> str | None:
-        """A level's title: what sits in a place its count spells ("items held at write"), or the
-        age of them; None otherwise."""
+    def _level_place(self, labels: dict, key: str, name: str) -> tuple[Place, bool] | None:
         if got := self._spelled(name, labels, key):
-            t = self.by_labels.get(tuple(sorted(labels.items())))
-            return t or self._sits(got[0])
+            return got[0], False
         age = (self.provenance.get(key) or {}).get("view") == "age"
-        t = self.by_labels.get(tuple(sorted(labels.items()))) if age else None
-        return "age of " + t if t else None
+        pl = self.by_labels.get(tuple(sorted(labels.items()))) if age else None
+        return (pl, True) if pl else None
+
+    def level(self, labels: dict, key: str, name: str = "") -> str | None:
+        """A level's title: what is said of what sits in a place its count spells, and where ("held
+        at write"), or the age at that place ("age at write (held)"); None otherwise."""
+        got = self._level_place(labels, key, name)
+        if not got:
+            return None
+        pl, age = got
+        return "age at " + pl.full if age else pl.sits
+
+    def level_tags(self, labels: dict, key: str, name: str = "") -> list[str]:
+        """A level's tags: its place's scope and noun ([] when its places do not name it)."""
+        got = self._level_place(labels, key, name)
+        return got[0].tags if got else []
 
     def _move(self, labels: dict, key: str):
         rec = self.provenance.get(key) or {}
@@ -203,7 +214,7 @@ class Places:
         got = self._move(labels, key)
         if not got:
             return None
-        into, out_of, rest = got
+        into, out_of, _ = got
         src, dst = labels.get(out_of), labels.get(into)
         a = self._place(src, labels) if src else None
         b = self._place(dst, labels) if dst else None
@@ -214,21 +225,30 @@ class Places:
             title = f"{a.at}: {', '.join(a.said)} → {', '.join(b.said)}"
         else:
             if full is None:
-                full = self._move_title(labels, key, full=False) in self.clash
+                full = (self._move_title(labels, key, full=False), tuple(self.move_tags(labels, key))) in self.clash
             title = f"{end(a, src)} → {end(b, dst)}"
             sc = tuple(sorted((b or a).scope.items()))
             if a and b and a.at != b.at and self.depth.get((sc, b.at), 0) < self.depth.get((sc, a.at), 0):
                 title += " (sent back)"
-        known = {**(a.scope if a else {}), **(b.scope if b else {})}
-        shared = any(pl and pl.at in self.shared for pl in (a, b))
-        kept = {k: v for k, v in rest.items() if shared or known.get(k) != v}
-        return title + (f" ({', '.join(kept.values())})" if kept else "")
+        return title
 
     def move(self, labels: dict, key: str) -> str | None:
         """A move's title, by the things it leaves and enters ("write → open_pr", "ci → write (sent
-        back)", "start → write"; "write: waiting → held" inside one); its places' own parts
-        when two moves would read alike; None when neither end is a place."""
+        back)", "outside → write"; "write: waiting → held" inside one); its places' own parts
+        when two moves with the same tags would read alike; None when neither end is a place."""
         return self._move_title(labels, key)
+
+    def move_tags(self, labels: dict, key: str) -> list[str]:
+        """A move's tags: its labels other than its places' (``workflow=hotfix``), then its places'
+        noun; [] when neither end is a place."""
+        got = self._move(labels, key)
+        if not got:
+            return []
+        into, out_of, rest = got
+        ends = [pl for v in (labels.get(out_of), labels.get(into)) if v and (pl := self._place(v, labels))]
+        if not ends:
+            return []
+        return merge_tags([f"{k}={v}" for k, v in rest.items()], [pl.noun for pl in ends if pl.noun])
 
     def level_series(self, ins: list, outs: list) -> str | None:
         """The key of the count written for the one place a hidden state's moves all enter (``ins``)
@@ -299,9 +319,9 @@ class Places:
 
     def between(self, ins: list, outs: list) -> str | None:
         """A hidden state between moves (``ins``, ``outs``: Series), by the first and last things
-        its items pass ("deliveries between write and sail_check"), never by joining their states;
-        what sits there when they enter and leave one place; None unless every one of them names
-        a place."""
+        its items pass ("between write and sail_check"), never by joining their states; what is
+        said of what sits there when they enter and leave one place ("waiting at sail"); None
+        unless every one of them names a place."""
         got = self._ends(ins, outs)
         if not got:
             return None
@@ -309,11 +329,14 @@ class Places:
         pls = [pl for _, pl in enter + leave]
         a, b = list(dict.fromkeys(pl.full for _, pl in enter)), list(dict.fromkeys(pl.full for _, pl in leave))
         if a == b and len(a) == 1:
-            return self._sits(pls[0])                    # one place, entered and left: what sits there
+            return pls[0].sits                           # one place, entered and left: what sits there
         first = list(dict.fromkeys(pl.at for _, pl in enter))
         last = list(dict.fromkeys(pl.at for _, pl in leave))
         if first == last:
-            name = f"{pls[0].noun} at {' or '.join(first)}"
-        else:
-            name = f"{pls[0].noun} between {' or '.join(first)} and {' or '.join(last)}"
-        return name + (self._scoped(pls[0]) if all(p.scope == pls[0].scope for p in pls) else "")
+            return f"at {' or '.join(first)}"
+        return f"between {' or '.join(first)} and {' or '.join(last)}"
+
+    def between_tags(self, ins: list, outs: list) -> list[str]:
+        """A hidden state's tags: its places' scopes and nouns, each once ([] unless its places name it)."""
+        got = self._ends(ins, outs)
+        return merge_tags(*(pl.tags for _, pl in got[0] + got[1])) if got else []

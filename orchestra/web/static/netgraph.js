@@ -292,16 +292,21 @@ const NetGraph = (() => {
       }
     }
     // ``tags``: small labelled boxes stacked above a node (or below, ``below: true``), each
-    // {text, cls}: what the page wants said of it on the map ("heard", "+ new link")
+    // {text, cls}: what the page wants said of it on the map ("heard", "+ new link"); the ones
+    // with ``row: true`` (a part's tags, sd/titles.py) side by side in one line under the rest
     function drawTags(g, n, s) {
-      const hh = s.r || s.h / 2, up = n.tags.filter((t) => !t.below), down = n.tags.filter((t) => t.below);
-      const one = (t, y) => {
-        const w = String(t.text).length * 5.6 + 10, tg = g.append("g").attr("class", "ng-tag " + (t.cls || "")).attr("transform", `translate(${-w / 2},${y})`);
+      const hh = s.r || s.h / 2, up = n.tags.filter((t) => !t.below), down = n.tags.filter((t) => t.below && !t.row), row = n.tags.filter((t) => t.below && t.row);
+      const width = (t) => String(t.text).length * 5.6 + 10;
+      const one = (t, y, x = null) => {
+        const w = width(t), tg = g.append("g").attr("class", "ng-tag " + (t.cls || "")).attr("transform", `translate(${x == null ? -w / 2 : x},${y})`);
         tg.append("rect").attr("width", w).attr("height", 13).attr("rx", 3);
         tg.append("text").attr("x", w / 2).attr("y", 9.5).attr("text-anchor", "middle").text(t.text);
       };
+      const below = hh + (s.r ? (n.sub ? 30 : 18) : 4);      // under a circle's name; right under a box
       up.forEach((t, i) => one(t, -hh - 18 - i * 15));
-      down.forEach((t, i) => one(t, hh + (s.r ? (n.sub ? 30 : 18) : 4) + i * 15));      // under a circle's name; right under a box
+      down.forEach((t, i) => one(t, below + i * 15));
+      let x = -(row.reduce((a, t) => a + width(t), 0) + 4 * Math.max(0, row.length - 1)) / 2;
+      for (const t of row) { one(t, below + down.length * 15, x); x += width(t) + 4; }
     }
 
     function render(nodes, edges) {

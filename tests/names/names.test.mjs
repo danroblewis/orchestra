@@ -185,6 +185,52 @@ test("an instrument's series are shown by the server's title, else by their labe
   assert.deepEqual(SDGraph.seriesName({ name: "git_branch_commits", labels: {} }), { name: "git branch commits", family: "", about: "" });
 });
 
+// the owner, 2026-11-02: "I don't know what 'deliveries' means … we could also have tags or labels".
+// A place-only name, its tags (sd/titles.py) beside it; a declared name, linked, over the generated one
+const placed = (id, name, tags, extra = {}) => ({ ...pile(id, "write", "held", extra), name, tags, evidence: { named: "places", tags } });
+
+test("a part's tags are carried beside its name, never in it, and an instrument's series keeps the tags it was given", () => {
+  const m = { stocks: [placed("wh", "held at write", ["workflow=delivery_sail", "deliveries"])], flows: [] };
+  const n = SDGraph.names(m).stocks.wh;
+  assert.deepEqual([n.name, n.label, n.tags], ["held at write", "held at write", ["workflow=delivery_sail", "deliveries"]]);
+  const r = { name: "workflow_pile_items", labels: {}, title: "held at write", tags: ["workflow=delivery_sail"] };
+  assert.deepEqual(SDGraph.seriesName(r).tags, ["workflow=delivery_sail"]);
+  // chips, escaped
+  assert.equal(SDGraph.tagsHtml(["a<b"], (x) => String(x).replace(/</g, "&lt;")).includes("a&lt;b"), true);
+  // drawn under its box as chips, one row
+  const g = SDGraph.build(m, { showAll: true });
+  assert.deepEqual(g.nodes.find((x) => x.sid === "wh").tags.map((t) => [t.text, t.row]), [["workflow=delivery_sail", true], ["deliveries", true]]);
+});
+
+test("two parts whose place-only names read alike stay distinct: by the tags they do not share", () => {
+  const m = { stocks: [placed("a", "held at write", ["workflow=delivery_sail"]), placed("b", "held at write", ["workflow=hotfix"], { workflow: "hotfix" })],
+              flows: [{ ...move("f", "a", null, "write.held", "ci.waiting"), name: "write → ci", tags: ["workflow=delivery_sail"], evidence: { named: "places" } },
+                      { ...move("g", "b", null, "write.held", "ci.waiting", { workflow: "hotfix" }), name: "write → ci", tags: ["workflow=hotfix"], evidence: { named: "places" } }] };
+  const n = SDGraph.names(m);
+  assert.deepEqual([n.stocks.a.name, n.stocks.b.name], ["held at write", "held at write"]);
+  assert.deepEqual([SDGraph.stockName(m, "a"), SDGraph.stockName(m, "b")], ["held at write · workflow=delivery_sail", "held at write · workflow=hotfix"]);
+  assert.equal(n.stocks.a.byTags, true);
+  assert.notEqual(SDGraph.flowName(m, m.flows[0]), SDGraph.flowName(m, m.flows[1]));
+  assert.equal(SDGraph.flowName(m, m.flows[1]).startsWith("write → ci · workflow=hotfix"), true);
+  // on the diagram the box says only its name; the chips tell them apart
+  const g = SDGraph.build(m, { showAll: true });
+  assert.deepEqual(g.nodes.filter((x) => x.sid).map((x) => [x.label, x.tags.map((t) => t.text).join()]), [["held at write", "workflow=delivery_sail"], ["held at write", "workflow=hotfix"]]);
+});
+
+test("a declared name lent to a part is its name, the generated one kept beneath as its identifier, with who named it", () => {
+  const prov = { author: "owner", via: "plugin", source: "supervisor", quote: "call it the review queue" };
+  const s = { ...placed("wh", "held at write", ["workflow=delivery_sail"]), declared_name: { name: "review queue", part: "stock", id: "review_queue", provenance: prov } };
+  const m = { stocks: [s, placed("o", "waiting at ci", [])], flows: [] };
+  const n = SDGraph.names(m).stocks.wh;
+  assert.deepEqual([n.name, n.label, n.generated, n.namedBy], ["review queue", "review queue", "held at write", "the owner (quoted), per supervisor"]);
+  assert.equal(SDGraph.stockName(m, "wh"), "review queue");
+  assert.equal(SDGraph.names(m).stocks.o.declared, undefined);         // no declaration: its own name
+  const node = SDGraph.build(m, { showAll: true }).nodes.find((x) => x.sid === "wh");
+  assert.deepEqual([node.label, node.caption], ["review queue", "held at write"]);
+  assert.equal(SDGraph.namedBy({ author: "owner", via: "page" }), "you");
+  assert.equal(SDGraph.namedBy({ author: "integrator", source: "integrator/1" }), "integrator/1");
+});
+
 test("a hidden stock a strategy found is named by its neighbours; two named series of one name by their families", () => {
   const hid = { id: "x_hidden", name: "x hidden", series: null, evidence: { hidden: true, strategy: "kalman_lna" } };
   const m = { stocks: [pile("wh", "write", "held"), hid], flows: [{ id: "u", name: "u", from: "x_hidden", to: "wh" }, { id: "v", name: "v", from: null, to: "x_hidden" }], views: VIEWS };

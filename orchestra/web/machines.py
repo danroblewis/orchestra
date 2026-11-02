@@ -409,9 +409,10 @@ def of_instances(counts: Counter, instances: int | None = None) -> str | None:
     return said + (f", {quiet} unannounced" if quiet else "")
 
 
-def model_parts(model) -> dict:
+def model_parts(model, names: dict | None = None) -> dict:
     """The latest model's stocks and flows as the pages name them (sd-graph.js names): ids, ends,
-    and the series and counters their names come from. Nothing else of the model."""
+    the series and counters their names come from, their tags (sd.titles), and the name a
+    declaration lends one (``names``: sd.intended.display, as ``declared_name``). Nothing else of the model."""
     if model is None:
         return {"stocks": [], "flows": [], "discovery": {"left_out": {}, "titles": {}}}
 
@@ -419,16 +420,19 @@ def model_parts(model) -> dict:
         return {"name": r.name, "labels": dict(r.labels)} if r is not None else None
     # ``named``: the part's name is the server's title (sd.titles), shown as it is
     keep = lambda ev, ks: {k: v for k, v in (ev or {}).items() if k in ks}
+    lent = lambda group, pid: {"declared_name": n} if (n := ((names or {}).get(group) or {}).get(pid)) else {}
     # the places its flows' counters name, as Dynamics names them: the left-out series that carry
     # one of those values, with their titles and why (sd-graph.js placeOf)
     values = {v for f in model.flows if f.counter is not None for v in f.counter.labels.values()}
     d = model.discovery or {}
     near = {k: why for k, why in (d.get("left_out") or {}).items() if any(f'="{v}"' in k for v in values)}
     return {"discovery": {"left_out": near, "titles": {k: t for k, t in (d.get("titles") or {}).items() if k in near}},
-            "stocks": [{"id": s.id, "name": s.name, "series": ref(s.series), "evidence": keep(s.evidence, ("named", "passing", "hidden"))}
+            "stocks": [{"id": s.id, "name": s.name, "series": ref(s.series), "evidence": keep(s.evidence, ("named", "passing", "hidden")),
+                        "tags": list((s.evidence or {}).get("tags") or []), **lent("stocks", s.id)}
                        for s in model.stocks],
             "flows": [{"id": f.id, "name": f.name, "from": f.src, "to": f.dst, "counter": ref(f.counter),
-                       "measured_by": [ref(c) for c in f.measured_by], "evidence": keep(f.evidence, ("same_as", "named"))}
+                       "measured_by": [ref(c) for c in f.measured_by], "evidence": keep(f.evidence, ("same_as", "named")),
+                       "tags": list((f.evidence or {}).get("tags") or []), **lent("flows", f.id)}
                       for f in model.flows]}
 
 

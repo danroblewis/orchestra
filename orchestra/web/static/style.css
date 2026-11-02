@@ -161,6 +161,10 @@ g.ng-label:focus-visible .ng-elabel { fill:#fff; text-decoration:underline; stro
 /* a flow whose observed rate parts from its equation: the line and the first line of its label in the warning colour */
 .ng-edge.ng-warn .ng-line { stroke:#f59e0b !important } .ng-label.ng-warn .ng-elabel tspan:first-child { fill:#fbbf24 }
 .ng-tag.ng-t-bc rect { fill:var(--panel2); stroke:var(--muted); stroke-dasharray:2 2 } .ng-tag.ng-t-bc text { fill:var(--text2); font-size:9.5px }
+/* a part's tags (sd/titles.py: "workflow=delivery_sail", a view's noun), beside its name: in their own spelling */
+.ng-tag.ng-t-tag rect { fill:var(--panel); stroke:var(--border2) } .ng-tag.ng-t-tag text { text-transform:none; letter-spacing:0; font-weight:500; font-size:9px; fill:var(--text2) }
+.ptag { display:inline-block; font-size:10.5px; line-height:15px; border:1px solid var(--border2); border-radius:4px; padding:0 5px; margin-left:5px; color:var(--text2); background:var(--panel2); font-weight:400; vertical-align:1px; white-space:nowrap }
+.pnamed { display:block; font-size:11px; color:var(--muted); font-weight:400 }
 .ng-edge.ev-seen .ng-line { opacity:.85 } .ng-edge.ev-unseen .ng-line { opacity:.55 } .ng-edge.ev-declared-listener .ng-line { opacity:.4 } .ng-edge .ng-line.ng-hover { stroke-width:2; opacity:1 }
 .ng-pol.X { background:#1f2937; color:#cbd5e1 } .ng-pol.L { background:#3b2f0b; color:#fcd34d }
 .ng-kind { display:inline-block; font-size:10.5px; border:1px solid var(--border2); border-radius:999px; padding:0 7px; margin-right:6px; color:var(--text2) } .ng-kind.mat { border-color:#14532d; color:#86efac }
