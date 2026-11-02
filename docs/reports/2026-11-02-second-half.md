@@ -18,9 +18,10 @@ ready, and the core's fixes small: P1 was already fixed, and P2 and P4 were fixe
 
 Each is answerable in one sentence. Until you answer, the run uses the default in brackets.
 
-Answer these two first; your return raised them (see the addendum). How much traffic may the SCRUM
-board take from the standing live demo? [not started] Will you give a Slack bot token (`xoxb-`)?
-This is question 9 below. [Slack disabled]
+Answer these three first; the addenda raised them. How much traffic may the SCRUM board take from
+the standing live demo? [not started] Will you give a Slack bot token (`xoxb-`)? This is question
+9 below. [Slack disabled] Should the built-in worktree resource kind move out of the Workflows
+plugin's own code, so the item system carries no code-work concept? [it stays; see Addendum 2]
 
 ### The goal's own questions
 
@@ -510,3 +511,82 @@ never runs when pytest is killed. `test_host_collect`, `test_endpoint_e2e`, `tes
 three launcher tests leaked on timeouts. A spawn fixture with a reaper (`tests/unit/reap.py`) now
 stops the process group. Merged and pushed as core `ff3876c7`: 1111 passed, 2 skipped, rc=0, and
 no orphan after the suite.
+
+## Addendum 2, 2026-11-02 (the UX round, four more walkthroughs)
+
+**1. The walkthrough series.**
+
+| run | pass / misleading / fail | fixed before it | what it found | spend |
+|---|---|---|---|---|
+| T2 | 7 / 2 / 6 | none | section 3 | $0.37 |
+| T2b | 12 / 2 / 2 | T4 | the model API's 500, the token in `web.log`, the coordinator card | $0.42 |
+| T2c | 12 / 2 / 2 | T6 | machines that "don't run", receives never heard, the eras bar | $0.47 |
+| T2d | 12 / 0 / 4 | T8 | the T8 regression (steps 11 and 13); `offer.withdrawn` kept in receives (10); no model state (16) | $0.63 |
+| T2e | 13 / 1 / 2 | T9, T10 | the re-proposal that wiped the owner's refinement (10); "runs on the schedule" (11); the prediction's state missing (16) | $0.74 |
+
+The run's live model spend is now about $9.7, under the $30 cap. T2e passed steps 1 to 9 and 12
+to 15. Step 11 misled: the reminder draft waited, was approved on the page and posted once on PR
+#26, but the Supervisor said it "runs on the workflow's schedule, not right away" (it ran 2 s
+later). Step 10 failed in a new way. Once `declare_workflow` succeeded, the Workflows plugin
+retracted `review_nudger` and proposed it again 25 s later, wiping the owner's receives and the
+09:00. The confirm then confirmed the bare proposal.
+
+**The T8 regression.** Over bash, `declare_workflow`, `request_work`, `integrate_system`,
+`add_instrument`, `switch_kind` and `read_transcript` answered "unknown tool". `tools_for()`
+returned copied tool definitions, and `Caller.tool()` tested membership by object equality. No
+unit test called a gated tool over bash, so the suite passed. T9 (agents `c20c75f`) finds a tool
+by name and tests the six tools over bash and MCP. It also found that MCP calls had been broken
+too; only the listing worked. So T2c's passing steps 10 to 13 ran before T8, and T8 was first
+exercised live in T2d.
+
+**2. The UX round (UX2).** A two-round ux-review on the example: 18 agents, 3.7 h. Round 1 fixed
+"honest Dynamics and Machines pages" (`8dcd3ff4`). Round 2 brought like-for-like flow checks,
+honest hidden stocks, one hung machine marking only itself, liveness by the machine's rhythm, the
+phone's hand-off list, the map's fit and the kind control (`48b77b93`). It was not clean after
+round 2: the last triage had 51 rows, and the implementor applied its musts and more. The rest of
+the core shoulds are follow-ups.
+
+UX2's merge conflicted with T8-eras in `dynamics.html`. An agent merged in the UX2 worktree,
+keeping both sides (1143 passed, 2 skipped, rc=0; Node 95/95). It is in main as `f9d3be5a`.
+
+**What the coordinator got wrong.** A log commit ran while that merge sat conflicted in the main
+checkout, and `git commit -am` captured the conflict markers as `33c2bddc` (never pushed). The
+coordinator reset main to origin. That also dropped every unpushed log line since the T8 core
+push. It restored the log file from the dropped tip, found in the reflog, so no line was lost.
+From then on, merges run only in worktrees.
+
+The plugin's UX rows (UX2-plugin, 6 commits, plugin `c4b9ab8`):
+- An outside system is declared as its bot and never lists what it publishes as received.
+- Unclaimed offers show under who must act ("offered N×, unclaimed since …").
+- A role's proposed kind and mode come from its machines.
+- Step actors are named as the map names them.
+- The Items page has a favicon and wider fields.
+
+One row was skipped: per-role `listens_for`, because it would change the bus contract.
+
+**3. The demos now.** The example runs as run19, with the UX2-plugin rows. The public demo runs
+task_loop on core demo-live `5d6a3a4c` and agents demo-live `64998bf`.
+
+**4. Your second question.** At 09:41Z you asked: "'item' is a generic idea, a 'task' is a type
+of 'item'. These are being described as if all items are going to be tasks … Most types of
+'items' I can think of won't have pull requests or continuous integration. We had set out to build
+an abstract item system, and make tasks a subtype of it. Did we accomplish that, or are they
+improperly entangled?"
+
+What the check found:
+- The steps `write`, `open_pr` and `ci` are delivery_sail's own. The plugin's vocabulary has no
+  task concept. on_call (analyse → decide → runbook), staged_rollout (canary → ten → fifty →
+  hundred) and rc_verification (cut → checks → release) are items with no pull request.
+- It is entangled in three places. The built-in worktree resource kind sits in the plugin's own
+  code (about 55 mentions). The scripted reference worker uses worktrees. `guide.md`'s examples
+  lead with tickets and pull requests.
+- A definition cannot say what its items are (no noun), so every stock reads "items".
+
+T11 adds a noun per definition and makes the guide's examples lead with a workflow that is not
+code. Moving the worktree kind is your call: it is now the third question at the top of this
+report.
+
+**5. T11.** Workflows: a re-proposal merges into a declaration the owner refined, and never
+retracts and re-proposes it; the item noun; the guide. Agents: a request runs now, and the
+schedule is the daily run; the zone answer sets `tz`; the since answer carries the prediction's
+state and the Outbox's running state, with the model line last. [outcome pending]
