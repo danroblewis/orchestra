@@ -12,8 +12,9 @@ Supervisor passed the design scenario on the live example on Haiku (L3). The Mon
 (T2) passed 7 of 16 steps outright. 2 more met their rule but misled the owner, and 6 failed. The
 failures are mostly in the Supervisor's answers and the pages' account of who must act, not in the
 delivery itself. T4 implemented the T3 judge's work list (47 rows: 19 must, 28 should) in core,
-agents, workflows and outbox; every T4 repository was on origin by 01:53Z. The walkthrough has not
-yet been re-run on T4's code.
+agents, workflows and outbox; every T4 repository was on origin by 01:53Z. The walkthrough re-run
+on T4's code (T2b) passed 12 of 16 steps, with 2 misleading and 2 failed; T2 had 7, 2 and 6. Fixes
+for T2b's findings are in progress as T6.
 
 ## 1. Questions for the owner
 
@@ -144,24 +145,24 @@ judge's rows for each step; the log records them merged (core 00:49Z and 00:57Z,
 and 01:41Z, workflows 01:31Z and 01:42Z, outbox 00:28Z). Whether they fix the step is for the
 re-run.
 
-| # | step | result | what the proxy found | what T4 changes |
-|---|---|---|---|---|
-| 1 | First look, "What needs me?" | fail | Slack's disabled reason and the fakes are announced but not on the cards; the answer is silent on Slack; a task-system tool times out in every answer | core cards print announced notes; agents `list_machines` with notes; task-system parts gated on tasking; the walk's venv without tasking |
-| 2 | Two tickets assigned | pass | rows show no ticket summary | the title before the fields |
-| 3 | Branch and pull request | pass | none | none |
-| 4 | CI | pass | none | none |
-| 5 | Stand-in review | pass | none | none |
-| 6 | SAIL through the Outbox | pass, notes | the Outbox says "auto", not "approved by configuration"; approvals not under the owner's person id | Outbox wording and trail; `[outbox] owner` written |
-| 7 | Rejection, triage, rework | pass, misleading | every drawer time "Invalid Date"; reworked 0; label names missing | Invalid Date fixed already (b154435); reworked counts any return; labels on the timeline |
-| 8 | "What is stuck, and why?" | pass, misleading | the held review called a workflow bug; A's rejection left out | each wait names its exits (`for`); `read_events` by prefix and `since` |
-| 9 | Stale review reaches the owner | fail | the Dashboard names GitHub as who must act; the Supervisor woke and told the owner to approve a PR GitHub refuses | one answer to "who must act"; wait exits; the guard key out of the wake text |
-| 10 | Review Nudger and ×1.2 | fail | nothing declared; "no metrics collected" with 152 series; the owner asked to restate | the core's no-model reason through `read_model`; the owner's earlier ask carried forward; the expectation recorded as waiting |
-| 11 | Nudge on B | fail | "which is B's?": the script's label | the reminder prompt; the script now names the PR (9fbcce41) |
-| 12 | SAILED, merged, Done | pass on Jira/GitHub | closed items under "no workflow", no outcome; Slack's reason not on its card | the floor publishes `item.closed`; cards print notes |
-| 13 | Delivery from the chat | pass | the closed item still holds a live review position | `item.closed` |
-| 14 | An incident | fail | the incident not named; merged tickets listed as waiting | `pagerduty.` prefix reads and a prompt line; state from this turn's tools only |
-| 15 | "Before I go?" | pass | none | none |
-| 16 | "What changed since yesterday?" | fail | the rejection told wrongly; the 11 Outbox sends missing; UTC | `since`, oldest first; an Outbox read; times in the pages' zone; envelope times normalised |
+| # | step | T2 | what the proxy found | what T4 changes | T2b |
+|---|---|---|---|---|---|
+| 1 | First look, "What needs me?" | fail | Slack's disabled reason and the fakes are announced but not on the cards; the answer is silent on Slack; a task-system tool times out in every answer | core cards print announced notes; agents `list_machines` with notes; task-system parts gated on tasking; the walk's venv without tasking | pass |
+| 2 | Two tickets assigned | pass | rows show no ticket summary | the title before the fields | pass |
+| 3 | Branch and pull request | pass | none | none | pass |
+| 4 | CI | pass | none | none | pass |
+| 5 | Stand-in review | pass | none | none | pass |
+| 6 | SAIL through the Outbox | pass, notes | the Outbox says "auto", not "approved by configuration"; approvals not under the owner's person id | Outbox wording and trail; `[outbox] owner` written | pass |
+| 7 | Rejection, triage, rework | pass, misleading | every drawer time "Invalid Date"; reworked 0; label names missing | Invalid Date fixed already (b154435); reworked counts any return; labels on the timeline | pass |
+| 8 | "What is stuck, and why?" | pass, misleading | the held review called a workflow bug; A's rejection left out | each wait names its exits (`for`); `read_events` by prefix and `since` | misleading |
+| 9 | Stale review reaches the owner | fail | the Dashboard names GitHub as who must act; the Supervisor woke and told the owner to approve a PR GitHub refuses | one answer to "who must act"; wait exits; the guard key out of the wake text | pass |
+| 10 | Review Nudger and ×1.2 | fail | nothing declared; "no metrics collected" with 152 series; the owner asked to restate | the core's no-model reason through `read_model`; the owner's earlier ask carried forward; the expectation recorded as waiting | fail |
+| 11 | Nudge on B | fail | "which is B's?": the script's label | the reminder prompt; the script now names the PR (9fbcce41) | pass |
+| 12 | SAILED, merged, Done | pass on Jira/GitHub | closed items under "no workflow", no outcome; Slack's reason not on its card | the floor publishes `item.closed`; cards print notes | pass |
+| 13 | Delivery from the chat | pass | the closed item still holds a live review position | `item.closed` | pass |
+| 14 | An incident | fail | the incident not named; merged tickets listed as waiting | `pagerduty.` prefix reads and a prompt line; state from this turn's tools only | misleading |
+| 15 | "Before I go?" | pass | none | none | pass |
+| 16 | "What changed since yesterday?" | fail | the rejection told wrongly; the 11 Outbox sends missing; UTC | `since`, oldest first; an Outbox read; times in the pages' zone; envelope times normalised | fail |
 
 ### What T4 landed
 
@@ -179,7 +180,36 @@ The coordinator's T3 rows went into the script at 00:24Z (9fbcce41): a venv with
 can show. Both demos were restarted on T4: the example as run15 (01:47Z), the live demo on core
 `8059aa62` and agents `5db0f07` (01:54Z).
 
-[T2b, the walkthrough re-run on T4's code, and its T3 judgement: outcome pending; filled by the coordinator]
+### T2b, the walkthrough on T4's code
+
+T2b ran 01:59Z to 03:38Z on core `12be615d`, agents `c77915a`, workflows `0166e5d`, bridges
+`14119cf` and outbox `a53a70a`, with `orchestra-tasking` not installed and tools over bash.
+Evidence in the scratchpad under `reviews/T2b/`. It passed 12 steps (1 to 7, 9, 11 to 13, 15).
+Two misled (8, 14) and two failed (10, 16). SCRUM-20 to 22 are Done and pull requests #18 to #20
+merged.
+
+The example's `--supervisor` starts, but it writes a role without `work` and has no option to
+add it, so `request_work` (steps 11 and 13) would be missing. The run used the agents' launcher
+`tests/live/delivery_live_run.py --via bash` instead.
+
+What was still wrong:
+- **8, misleading.** The Supervisor called `reviewer_stand_in` "quiet, needs restarting" while
+  the harness held the review.
+- **14, misleading.** It named the incident and called it fake. It also said delivery was not
+  affected, though PSVC003 is SAIL's service and an item waited at SAIL.
+- **10, fail.** The Review Nudger was declared and confirmed and ×1.2 published, all in one turn.
+  But SAIL check results were left out of what the nudger listens for, and the Supervisor said it
+  "runs at 09:00 PST" when it runs every 24 hours.
+- **16, fail.** The rejection and the triage were left out. The Supervisor said "no stocks yet"
+  while discovery had three.
+
+New breaks it found:
+- `/api/dynamics/model` returns 500 once a model exists, because an `inf` in the model is not
+  JSON. Dynamics then shows "server is not answering", and step 16's model answer was wrong.
+- `logs/web.log` prints the login token in clear.
+- A `coordinator` placeholder card stays on Machines when tasking is not installed.
+
+[T6, the fixes for T2b's findings (core, agents, workflows): outcome pending; filled by the coordinator]
 
 ## 4. What does not work, and why
 
@@ -312,12 +342,13 @@ demo on core `8059aa62` and agents `5db0f07` at 01:54Z. Login links are in `~/ur
 | L2 | Haiku, two runs | $0.25 |
 | L3 | Haiku, three runs | $0.21 |
 | T2 | Haiku, 11 invocations | $0.37 |
+| T2b | Haiku, 10 invocations | $0.42 |
 
-This run: $0.83. Both runs: about $7.48, under the $30 cap. L1 spent nothing on AI. T2-prep's
+This run: $1.25. Both runs: about $7.9 (the log's figure), under the $30 cap. L1 spent nothing on AI. T2-prep's
 spend is not recorded. Agent time is not recorded as a total; the log gives only durations: T2
 took 1 h 35 min, and T2-prep's live run was polling for at least 45 minutes.
 T4: $0. No Supervisor or agent harness ran a model during T4; its implementors and reviewers are the run's Opus subagents, outside the live-spend cap.
-[T2b: spend pending; filled by the coordinator]
+T2b: $0.42 over 10 Haiku calls (9 owner turns and 1 unasked wake), under its $5 cap.
 
 ## 8. Suite results
 
