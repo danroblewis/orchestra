@@ -773,3 +773,97 @@ run overnight: T2i's step 16 came after 22 minutes alone. Step 16 also passes be
 writes the answer and Haiku relays it, not because Haiku summarises the day. The standing delivery
 demo is the overnight run. The next check is one question to its Supervisor the next morning:
 "What changed since yesterday?"
+
+## Addendum 6, 2026-11-02 (the R3 proxy round, a live incident, the discovery rules)
+
+**1. The R3 round.** Seven seats reviewed the current state: the four demos, the walkthrough series
+and the UX2 logs. They asked the standing Supervisor at most three reading questions and wrote
+nothing. The judge (17:44Z) kept 54 rows, 19 must and 35 should:
+
+| repository | must / should |
+|---|---|
+| core | 5 / 15 |
+| agents | 4 / 4 |
+| workflows | 8 / 13 |
+| bridges | 1 / 2 |
+| coordinator | 1 / 1 |
+
+It dropped 23 rows and escalated R1 to R10, each with a default:
+- The protocol checkbox is kept.
+- The demo watches the sprint board only, until you say to read PRR and bug tickets.
+- Late #oncall threads are yours.
+- The hidden delivery stock and overdue threads need names.
+- slack_notify is listed as disabled.
+- The state copy stays as built.
+- At work: a bot token, a PAT as Bearer, and https.
+
+The architect added two escalations (`scm.change.*`; the shared machines folder). E3 and X9
+still stand.
+
+T16 applied the rows in all four repositories:
+- **Core.** No joined stock names. The discovery window and the "refitted" header told truly.
+  Measured piles drawn. INTEGRATING §7 corrected. No intercept on a drain.
+- **Agents** (`6855bd0`). `within` accepts its real value shapes. The digest leads with anomalies.
+  Data Center and GHE are in the guide. Never ask the owner to commit.
+- **Workflows** (`675c958`). The planner is `supervisor`. Proposals are matched to heard sources.
+  Who must act is named on outside steps. Conditions are in words. A Done ticket is abandoned. A
+  real Slack mode. https for bridges.
+- **Bridges** (`0fc4a2f`). No `bot.slack` actor. The policy lives in one place.
+
+The core implementor hung: its transcript stopped mid tool call at 18:42Z, after 17 commits. It
+was stopped, and a narrower agent verified its two branches (1156 and 1164 passed). 14 of 20 rows
+were in full, 3 in part, and 3 not applied. T16-core was merged and pushed as `21df06dc`.
+
+**2. A live incident.** At 17:33Z the SRE seat found the standing demo misbehaving after its
+17:22Z resume. It had replayed stale Jira events and started work again on the Done tickets
+SCRUM-42 and 43, opening pull requests #47 and #48. The fake SAIL had also put REJECTED back on
+the merged #45. The coordinator paused the demo, closed #47 and #48 with the example's own
+`--cleanup` (0 tickets touched), and removed the stray label.
+
+The cause: the cursors worked as designed. The resume relayed every change made during the pause
+once, with its original time, and nothing marked it old. T16a fixed four things:
+- A Done ticket never starts work.
+- Events older than the run's start are marked `replayed`, and starts refuse them.
+- The fake SAIL ignores labels from before its start and never touches a merged or closed pull
+  request.
+- A delivery ends `closed_unmerged` when its pull request closes unmerged.
+
+T16a is in bridges `4e0ac6e` and workflows `131f2b1`. The demo resumed at 18:10Z with no stale
+pull request opened.
+
+**3. The discovery rules.** T16's three discovery changes were all refuted in one round (19:35Z).
+- **The drain rule.** A refused driver fell back to a constant that drained an empty source
+  faster: 11 of 57 replayed flows changed, all to constants.
+- **Widening.** A board that moved once in 2 h never widened: 4 of 12 slow boards with at least 5
+  adds got no model.
+- **The alias rule.** A cause acting 15 min later was refused as an alias, so the lagged drivers
+  kept fell from 11 to 3 of 120.
+
+After the refuter's fixes:
+- The drain replay changed 2 flows, none to a constant.
+- 10 of 12 slow boards get a model.
+- An alias is refused only when the shift gains both ways.
+- A fix for quiet stocks: a held stock keeps its move end. 19 stocks were held, and no ends
+  changed in 7 pairs.
+
+Suite 1180 passed, rc=0. The rules are in core main as `0298f821`.
+
+**4. The demos.** Both public examples now loop. `delivery_sail --items 0` keeps a steady pace,
+and `slack_queues --loop` replays a fresh day every 30 minutes. The standing demo was paused, then
+resumed from its worktree once that worktree moved to plugin main. It was restarted at 19:32Z at
+`f46c264`, with 0 open pull requests after 45 s. The Slack kit's `bot.slack` is gone. The plugins'
+public dependencies (bridges, tasking) are now fetched over https. All four demos are being
+restarted on the discovery rules.
+
+**5. T17, and what is open.** T17 fixed the delivery_sail hand-off-labels test: relayed people
+listen for nothing on the bus, so the test now expects that, with the hand-off still drawn. It
+moved the focus keying into the core, with stocks and flows offered as `{name, labels}`
+(workflows `b241645`). An announced `disabled` now wins over "not answering" (core `c92559d0`). The
+`ends.py` row turned out to be the quiet-stock fix above. Still open:
+- The `passing.py` row, dropped because it needs `discover.py`.
+- Your three SCM questions.
+- The Slack bot token.
+
+**6. The overnight check.** The check is scheduled for 07:53 local on 3 November (15:53Z). It asks the
+standing demo's Supervisor "What changed since yesterday?" once and judges the answer by step
+16's rule (T2j; nothing that writes). It will be the first real morning-after.
