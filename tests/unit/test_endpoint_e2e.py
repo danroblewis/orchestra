@@ -90,10 +90,10 @@ def until(cond, timeout=40.0, why=""):
 
 
 @pytest.mark.skipif(not shutil.which("curl"), reason="the shell machine needs curl")
-def test_machines_publish_and_read_events_over_http_without_the_library(project, tmp_path):
+def test_machines_publish_and_read_events_over_http_without_the_library(project, tmp_path, spawn):
     out = tmp_path / "host.out"
-    host = subprocess.Popen([sys.executable, "-m", "orchestra", "--repo", str(project.repo_root), "run"],
-                            stdout=out.open("w"), stderr=subprocess.STDOUT, env={**os.environ})
+    host = spawn([sys.executable, "-m", "orchestra", "--repo", str(project.repo_root), "run"],
+                 stdout=out.open("w"), stderr=subprocess.STDOUT, env={**os.environ})
     bus = Events.for_project(project)
     logs = project.logs_dir / "machines"
 
