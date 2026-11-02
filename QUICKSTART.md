@@ -15,7 +15,13 @@ You need:
 
 - macOS or Linux, `git`, and [uv](https://docs.astral.sh/uv/);
 - [Claude Code](https://docs.claude.com/en/docs/claude-code), installed and logged in (`claude --version`): the agents run on it;
-- a git repository with tests.
+- a git repository with tests;
+- an https route to your Git host (GitHub, or GitHub Enterprise through your proxy): installing
+  over `git+https://` needs it, and the live examples push and read pull requests over it;
+- for the live examples (`delivery_live`), [`gh`](https://cli.github.com/), logged in
+  (`gh auth status`), and the sibling clones they install from: `~/orchestra-bridges` and
+  `~/orchestra-outbox` (or `ORCHESTRA_BRIDGES`, `ORCHESTRA_OUTBOX`); with `--supervisor`, also
+  `~/orchestra-agents`, installed beside them (`uv pip install -e ~/orchestra-agents`).
 
 ## 1. Install
 

@@ -165,8 +165,7 @@ into scaffolded examples: do not configure them for a new integration.
     `SSL_CERT_FILE`, or `UV_NATIVE_TLS=1` to use the system's store. The hosts to allow: `github.com`
     (installing Orchestra and its plugins), `pypi.org` and `files.pythonhosted.org` (their
     dependencies), `api.anthropic.com` (only if an AI agent machine runs here), and each system you
-    integrate or store you read, by the host its URL names. The browser showing the web UI also
-    loads its drawing libraries from `cdnjs.cloudflare.com` and `cdn.jsdelivr.net`.
+    integrate or store you read, by the host its URL names.
 
 ## 4. The kits (`orchestra_bridges.kits`, in the bridges plugin)
 
