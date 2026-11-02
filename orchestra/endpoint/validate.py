@@ -18,10 +18,10 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
-from ..events import ANNOUNCED_TEXT, HOST
+from ..events import ANNOUNCED_TEXT, HOST, utc_time
 
 MAX_BODY = 1_000_000            # bytes of one request's body
 MAX_TYPE = 256
@@ -84,7 +84,7 @@ def _time(raw: str) -> str:
         raise Invalid(f"time {raw!r} is not RFC 3339 (2026-10-27T18:58:31.043Z)") from None
     if t.tzinfo is None:
         raise Invalid(f"time {raw!r} has no timezone: end it with Z or an offset")
-    return t.astimezone(UTC).isoformat(timespec="milliseconds")
+    return utc_time(t)
 
 
 def _announcement(data: Any) -> None:

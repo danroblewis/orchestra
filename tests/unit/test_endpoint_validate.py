@@ -26,8 +26,8 @@ def test_every_field_is_passed_on_and_time_is_normalised_to_utc_milliseconds():
                  "time": "2026-10-27T20:58:31.5+02:00", "id": "inv-42"})
     assert out == {"type": "invoice.sent", "source": "billing", "data": {"order": 42, "x": [1, None]},
                    "subject": "order-42", "correlationid": "checkout-7", "causationid": "abc",
-                   "time": "2026-10-27T18:58:31.500+00:00", "id": "inv-42"}
-    assert check({"type": "a", "source": "b", "time": "2026-10-27T18:58:31Z"})["time"] == "2026-10-27T18:58:31.000+00:00"
+                   "time": "2026-10-27T18:58:31.500Z", "id": "inv-42"}
+    assert check({"type": "a", "source": "b", "time": "2026-10-27T18:58:31Z"})["time"] == "2026-10-27T18:58:31.000Z"
 
 
 def test_a_structured_mode_cloudevent_is_accepted():

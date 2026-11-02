@@ -31,17 +31,39 @@ if TYPE_CHECKING:
 HOST = "orchestra-host"
 
 
+def utc_time(t: datetime | str | float) -> str:
+    """An envelope's ``time`` in its one format: UTC, to the millisecond, ending in ``Z``
+    (``2026-10-27T18:58:31.043Z``), whatever it was given: a datetime, an ISO 8601 string with an
+    offset, ``Z`` or ``+00:00``, or Unix seconds. A datetime or string with no zone is taken as UTC."""
+    if isinstance(t, bool):
+        raise TypeError("time: a datetime, an ISO 8601 string or Unix seconds")
+    if isinstance(t, int | float):
+        d = datetime.fromtimestamp(t, UTC)
+    elif isinstance(t, datetime):
+        d = t
+    elif isinstance(t, str):
+        try:
+            d = datetime.fromisoformat(t.strip())
+        except ValueError:
+            raise ValueError(f"time {t!r} is not ISO 8601 (2026-10-27T18:58:31.043Z)") from None
+    else:
+        raise TypeError("time: a datetime, an ISO 8601 string or Unix seconds")
+    d = d.replace(tzinfo=UTC) if d.tzinfo is None else d.astimezone(UTC)
+    return d.strftime("%Y-%m-%dT%H:%M:%S.") + f"{d.microsecond // 1000:03d}Z"
+
+
 def now() -> str:
-    return datetime.now(UTC).isoformat(timespec="milliseconds")
+    return utc_time(datetime.now(UTC))
 
 
 def envelope(type: str, source: str, data: Any = None, *, subject: str | None = None,
              correlationid: str | None = None, causationid: str | None = None,
-             time: str | None = None, id: str | None = None) -> dict:
+             time: datetime | str | float | None = None, id: str | None = None) -> dict:
     """A CloudEvents 1.0 event, as a dict. ``time`` and ``id`` are for an event brought in from
     another system (a sync): it keeps the time it happened there, and an id stable across
-    re-imports; otherwise now and a fresh id."""
-    ev: dict[str, Any] = {"specversion": "1.0", "id": id or uuid.uuid4().hex, "type": type, "source": source, "time": time or now()}
+    re-imports; otherwise now and a fresh id. Every ``time`` is written in one format, UTC ending
+    in ``Z`` (``utc_time``), whatever the caller passed."""
+    ev: dict[str, Any] = {"specversion": "1.0", "id": id or uuid.uuid4().hex, "type": type, "source": source, "time": now() if time is None else utc_time(time)}
     if subject is not None:
         ev["subject"] = subject
     if correlationid is not None:
