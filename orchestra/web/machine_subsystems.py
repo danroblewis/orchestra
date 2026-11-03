@@ -143,23 +143,17 @@ def from_announcements(field: str, label: str, out: dict, on: dict, announced: d
     return carry({"label": label, "source": "announced", "by": field}, values, where, span, out, on)
 
 
-def boxed(p: dict) -> int:
-    """How many machines a partition puts in a box."""
-    return sum(len(g["machines"]) for g in p["groups"])
-
-
 def default_of(parts: list[dict], model_default: str | None) -> str | None:
-    """Where the map starts: a declared partition; else the model's default when it puts a machine
-    in a box; else the partition the map's hand-offs separate best (the most pairs handed on inside
-    a box, the fewest crossing, the most machines boxed, then by label) among those that box one;
-    else the model's default (nothing boxed: the map is drawn without boxes)."""
-    by = {p["label"]: p for p in parts}
-    if model_default in by and (by[model_default].get("source") == "declared" or boxed(by[model_default])):
+    """Where the map starts: the declared partition when there is one, else the model's own default
+    (the one the Dynamics page opens on), whatever it boxes: the page starts with boxes off when it
+    boxes no machine, and says why. With no model partition, the announced partition the hand-offs
+    separate best (the most pairs handed on inside a box, the fewest crossing, then by label)."""
+    if any(p.get("source") == "declared" for p in parts):
+        return next(p["label"] for p in parts if p.get("source") == "declared")
+    if model_default is not None:
         return model_default
-    some = [p for p in parts if boxed(p)]
-    if not some:
-        return model_default
-    return min(some, key=lambda p: (-p["joined"], p["crossed"], -boxed(p), p["label"]))["label"]
+    said = [p for p in parts if p.get("source") == "announced"]
+    return min(said, key=lambda p: (-p["joined"], p["crossed"], p["label"]))["label"] if said else None
 
 
 def subsystems(out: dict, model_subs: dict | None, announced: dict[str, dict[str, list[str]]]) -> dict:

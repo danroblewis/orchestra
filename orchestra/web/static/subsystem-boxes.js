@@ -36,7 +36,12 @@
   // a partition as the control names it: "workflow · 2 boxes · 3 crossing"
   // (on the event map, a group no machine is in draws no box, so it is not counted)
   const drawable = (p) => p.groups.filter((g) => !g.events || (g.machines || []).length || ((g.ghosts || {}).machines || []).length).length;
-  const nameOf = (p) => `${p.label} · ${plural(drawable(p), "box", "boxes")} · ${p.crossed} crossing${p.crossed_simulated ? ` (${p.crossed_simulated} simulated)` : ""}`;
+  const isMap = (p) => p.groups.some((g) => g.events);
+  // how many machines a map partition puts in a box
+  const boxedMachines = (p) => p.groups.reduce((a, g) => a + (g.machines || []).length, 0);
+  // the control's name: "workflow · 2 boxes · 1 crossing"; on the map "place · 1 box · 5 machines"
+  const nameOf = (p) => (isMap(p) ? `${p.label} · ${plural(drawable(p), "box", "boxes")} · ${plural(boxedMachines(p), "machine", "machines")}${p.crossed ? ` · ${p.crossed} crossing` : ""}`
+    : `${p.label} · ${plural(drawable(p), "box", "boxes")} · ${p.crossed} crossing${p.crossed_simulated ? ` (${p.crossed_simulated} simulated)` : ""}`);
   // the control's entries: each partition the API reports, the default first, then the offered
   // (``offered``: partitions made from a page extension's offer), then off
   function choices(subs, offered = []) {
@@ -53,6 +58,25 @@
     const parts = [...((subs && subs.partitions) || []), ...offered];
     if (wanted === "off") return null;
     return parts.find((p) => p.label === wanted) || parts.find((p) => p.label === (subs && subs.default)) || null;
+  }
+  // The map's partition: what the viewer chose, else the API's default (the declared, else the model's
+  // own, the one the Dynamics page opens on), whatever it boxes. Opened by default on a partition that
+  // boxes no machine, the map starts with boxes off and says why (``empty``: that partition).
+  // -> {partition, empty}
+  function mapChoice(subs, wanted, offered = []) {
+    const p = choose(subs, wanted, offered);
+    if (wanted == null && p && p.source !== "declared" && !boxedMachines(p)) return { partition: null, empty: p };
+    return { partition: p, empty: null };
+  }
+  // why no box holds a machine, in the owner's terms: "6 machines act in both workflows (delivery_sail,
+  // pr_watch): no box holds one"
+  function emptyNote(p) {
+    if (!p) return "";
+    const by = new Map();
+    for (const s of p.spanning || []) { const k = s.groups.join("|"); by.set(k, [...(by.get(k) || []), s.machine]); }
+    const said = [...by].map(([k, ms]) => { const gs = k.split("|");
+      return `${plural(ms.length, "machine acts", "machines act")} in ${gs.length === 2 ? "both" : gs.length} ${p.label}s (${gs.join(", ")})`; });
+    return `${said.length ? said.join("; ") : `no machine's hypotheses lie in one ${p.label}`}: no box holds one`;
   }
   // a group's title: a declared subsystem's name, else its value
   const titleOf = (g) => (g && g.name) || (g && g.value);
@@ -218,5 +242,5 @@
   // the layout key of a partition: each keeps its own saved layout (B12)
   const layoutKey = (base, partition) => (partition ? `${base}|boxes=${partition.label}` : base);
 
-  return { choices, choose, apply, applyMap, anchors, offers, sections, pairText, spanText, nameOf, titleOf, titles, namedBy, hintOf, fromHash, hashWith, layoutKey };
+  return { choices, choose, mapChoice, emptyNote, boxedMachines, apply, applyMap, anchors, offers, sections, pairText, spanText, nameOf, titleOf, titles, namedBy, hintOf, fromHash, hashWith, layoutKey };
 });

@@ -151,7 +151,10 @@ function familyBar(d) {
 let BOXES_WANTED = SubsystemBoxes.fromHash(location.hash), MAP_PAIRS = [], MAP_P = null, MAP_BOX_OFFERS = { sig: null, titles: [] };
 let MAP_TITLE = (v) => v;
 const mapOffered = (d) => Orchestra.subsystems.offers().map((o) => SubsystemOffers.eventMap(o, d));
-function mapPartition(d) { MAP_P = SubsystemBoxes.choose(d.subsystems, BOXES_WANTED, mapOffered(d)); MAP_TITLE = SubsystemBoxes.titles(MAP_P); return MAP_P; }
+// opened on a partition that boxes no machine, boxes start off and the note under the map says why
+let MAP_EMPTY = null;
+function mapPartition(d) { const c = SubsystemBoxes.mapChoice(d.subsystems, BOXES_WANTED, mapOffered(d)); MAP_P = c.partition; MAP_EMPTY = c.empty;
+  MAP_TITLE = SubsystemBoxes.titles(MAP_P); return MAP_P; }
 // the core's own focus offers, one per box (its title is the chip); withdrawn when the boxes change
 function offerMapBoxes(P) {
   const sig = P ? JSON.stringify([P.label, P.groups]) : "";
@@ -190,6 +193,7 @@ function eventMap(d0) {
   if (!$("evsvg-host") || window.EV_DRAWN_MODE !== gkey) {
     window.EV_DRAWN_MODE = gkey; window.LOOPSIG = null;
     $("evmap-host").innerHTML = `<div class="evmap"><div class="evbar" id="ev-bar"></div><div id="evsvg-host"></div>
+      <div class="muted" id="ev-boxnote" style="font-size:12px"></div>
       <div class="legend" id="ev-legend"></div>
       <div class="ng-loops" id="loops"></div></div>`;
     GRAPH = NetGraph.create($("evsvg-host"), { key: gkey, height: 600,
@@ -331,6 +335,7 @@ function eventMap(d0) {
   else Orchestra.focus.mount($("focus-row"), null);
   GRAPH.render(allNodes, allEdges);
   mapBoxesControl(d0, P);
+  $("ev-boxnote").textContent = MAP_EMPTY ? `boxes off: ${SubsystemBoxes.emptyNote(MAP_EMPTY)} · the boxes control lists every partition` : "";
   // the panel open on a machine: the highlight rule (intended-machines.js)
   const open = IntendedMachines.opened();
   GRAPH.focus(open ? IntendedMachines.focusSpec(open, drawNodes, drawEdges, EV_MODE) : null);

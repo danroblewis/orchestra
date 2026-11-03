@@ -71,10 +71,10 @@ test("a hand-off between two boxes is drawn across, and each pair's count writte
   assert.match(edge("m:writer>m:reviewer").cls, /ng-box-cross/);
   assert.equal(edge("m:planner>m:writer").cross, undefined, "inside one box");
   assert.deepEqual(r.pairs.map((p) => [p.between, p.text, p.short]), [[["a", "b"], "1 hand-off between a and b · 3 subjects", "1 hand-off"]]);
-  assert.deepEqual(Boxes.choices(SUBS).map((c) => c.text), ["group · 2 boxes · 1 crossing", "declared · 1 box · 0 crossing", "off"]);
+  assert.deepEqual(Boxes.choices(SUBS).map((c) => c.text), ["group · 2 boxes · 4 machines · 1 crossing", "declared · 1 box · 1 machine", "off"]);
   // a group no machine is in draws no box on the map, and is not counted
   const one = { ...GROUP, groups: [GROUP.groups[0], { value: "c", machines: [], events: [] }] };
-  assert.equal(Boxes.nameOf(one), "group · 1 box · 1 crossing");
+  assert.equal(Boxes.nameOf(one), "group · 1 box · 2 machines · 1 crossing");
 });
 
 test("a declared subsystem titles its box by its name, says who named it, and draws a gathered machine not on the map as a ghost", () => {
@@ -162,4 +162,21 @@ test("an offered partition is listed after the API's, drawn on both pages, and s
     assert.deepEqual(Orchestra.subsystems.offers(), []);
     assert.deepEqual(b.touched, [], "no storage, no request: display only, stored nowhere");
   } finally { b.done(); }
+});
+
+test("the map opens on the API's default whatever it boxes; boxing no machine, boxes start off and the note says why", () => {
+  const WF = { label: "workflow", source: "labels", groups: [{ value: "delivery_sail", machines: [], events: [] }, { value: "pr_watch", machines: [], events: [] }],
+    unassigned: { machines: ["orchestra-host"], events: [] }, between: [], crossing: [], joined: 0, crossed: 0, crossed_simulated: 0,
+    spanning: ["a", "b", "c", "d", "e", "f"].map((m) => ({ machine: m, groups: ["delivery_sail", "pr_watch"] })) };
+  const PLACE = { label: "place", source: "labels", groups: [{ value: "held", machines: [], events: [] }, { value: "waiting", machines: ["a", "b", "c", "d", "e"], events: [] }],
+    unassigned: { machines: [], events: [] }, between: [], crossing: [], spanning: [], joined: 0, crossed: 0, crossed_simulated: 0 };
+  const subs = { default: "workflow", partitions: [WF, PLACE] };
+  const c = Boxes.mapChoice(subs, null);
+  assert.equal(c.partition, null, "boxes start off: never a state such as place chosen instead");
+  assert.equal(c.empty.label, "workflow");
+  assert.equal(Boxes.emptyNote(c.empty), "6 machines act in both workflows (delivery_sail, pr_watch): no box holds one");
+  assert.deepEqual(Boxes.choices(subs).map((x) => x.text), ["workflow · 0 boxes · 0 machines", "place · 1 box · 5 machines", "off"], "every partition listed, with how many machines it boxes");
+  assert.equal(Boxes.mapChoice(subs, "place").partition.label, "place", "the owner can turn one on");
+  assert.equal(Boxes.mapChoice({ default: "group", partitions: [GROUP] }, null).partition.label, "group", "a default that boxes machines is drawn");
+  assert.equal(Boxes.mapChoice({ default: "declared", partitions: [{ ...DECLARED, groups: [{ ...DECLARED.groups[0], machines: [] }] }] }, null).partition.label, "declared", "the declared is drawn whatever it boxes");
 });

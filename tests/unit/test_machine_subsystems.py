@@ -112,14 +112,13 @@ def test_a_machine_in_two_groups_by_its_hypotheses_is_outside_every_box():
     assert "work.done" in wf["unassigned"]["events"]
 
 
-def test_the_maps_default_is_the_models_unless_it_boxes_no_machine():
-    """Every machine's hypotheses in both workflows: the model's default boxes none, so the map
-    starts with the partition that does (the groups the machines announced)."""
+def test_the_maps_default_is_the_models_whatever_it_boxes():
+    """Every machine's hypotheses in both workflows: the model's default boxes none, and it stays
+    the map's default (the page starts with boxes off and says why); a state is never chosen instead."""
     hyp = lambda *ms: {"machines": {"hypotheses": [{"machine": m} for m in ms]}}
     m = model()
     for f in m.flows:
         f.evidence = hyp("writer", "reviewer", "worker")
     _, subs = view(bus(), m)
-    assert [p["label"] for p in subs["partitions"]] == ["workflow", "group"] and subs["default"] == "group"
-    _, subs = view(bus(), model())
-    assert subs["default"] == "workflow"
+    assert [p["label"] for p in subs["partitions"]] == ["workflow", "group"] and subs["default"] == "workflow"
+    assert sum(len(g["machines"]) for g in subs["partitions"][0]["groups"]) == 0

@@ -1845,9 +1845,11 @@ default at open; each group is a box around its machines and its event types, pu
 spot (replacing the announced groups' ring anchors while on) and kept apart from the others and
 from what is not its own; a hand-off between boxes is drawn across, each pair's count written
 between them ("1 hand-off between a and b · 3 subjects"); spanning and unassigned machines sit
-outside every box; a box title is a focus chip; the map starts with a declared partition, else
-the model's default when it boxes a machine, else the partition the hand-offs separate best among
-those that box one; a change of boxes is laid out as reset lays it out,
+outside every box; a box title is a focus chip; the map starts with the declared partition, else
+the model's own default (the one the Dynamics page opens on) whatever it boxes; when that boxes no
+machine, boxes start off and the note under the map says why ("6 machines act in both workflows
+(delivery_sail, pr_watch): no box holds one"), and the control lists every partition with how many
+machines it boxes ("place · 1 box · 5 machines"); a change of boxes is laid out as reset lays it out,
 each partition with its own layout (`machines.<view>|boxes=<label>`) and `#boxes=` in the hash; at
 phone width the list has a heading per group, then "between subsystems", then "outside every
 subsystem". The diagram on a desktop is as tall as
