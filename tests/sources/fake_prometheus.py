@@ -5,7 +5,7 @@ Injectable: a required bearer token (or an ``API-Token`` header, or basic auth w
 the password), the API under a path prefix (``/data/metrics``, as Chronosphere serves it), mTLS, latency, failures (an HTTP
 status for every request, or for the next N), refusals queued as a managed store sends them (a 429
 or 503 with ``Retry-After``, an HTML body), a per-query series limit (422), endpoints that are
-missing (404), NaN samples, and metadata. It records every query it was asked, so tests can check what went out."""
+missing (404), NaN samples, metadata, and ``increase``/``rate`` extrapolated as Prometheus' are (``extrapolate``). It records every query it was asked, so tests can check what went out."""
 
 from __future__ import annotations
 
@@ -16,7 +16,10 @@ import ssl
 import threading
 import time
 import urllib.parse
+from bisect import bisect_right
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from itertools import pairwise
+from unittest import mock
 
 from orchestra.metrics import promql
 
@@ -34,6 +37,30 @@ def unwrap(q: str, fn: str = "histogram_count") -> str:
                 break
         q = q[:i] + q[i + len(fn) + 1:j] + q[j + 1:]
     return q
+
+
+EXTRAPOLATING = threading.Lock()
+_exact_window = promql._window
+
+
+def prometheus_window(fn: str, ts, vs, t, d):
+    """``rate``/``increase`` as Prometheus computes them (``extrapolatedRate``): the samples in
+    (t − d, t], at least two, their increase (resets counted) extrapolated towards the window's
+    edges by up to half a sample interval, or to where the counter would have been 0."""
+    if fn not in ("rate", "increase"):
+        return _exact_window(fn, ts, vs, t, d)
+    lo, hi = bisect_right(ts, t - d), bisect_right(ts, t)
+    if hi - lo < 2:
+        return None
+    w, ws = vs[lo:hi], ts[lo:hi]
+    result = w[-1] - w[0] + sum(a for a, b in pairwise(w) if b < a)
+    to_start, to_end, sampled = ws[0] - (t - d), t - ws[-1], ws[-1] - ws[0]
+    avg = sampled / (len(w) - 1)
+    if result > 0 and w[0] >= 0:
+        to_start = min(to_start, sampled * (w[0] / result))
+    span = sampled + (to_start if to_start < avg * 1.1 else avg / 2) + (to_end if to_end < avg * 1.1 else avg / 2)
+    result *= span / sampled
+    return result / d if fn == "rate" else result
 
 
 class TooMany(Exception):
@@ -68,6 +95,7 @@ class FakePrometheus:
         self.refusals = 0                         # reads refused for their size (422)
         self.queries: list[str] = []
         self.requests = 0
+        self.extrapolate = False                  # increase/rate as Prometheus computes them: extrapolated to the window's edges
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
         if tls is not None:                     # (server cert, server key, CA of the clients it accepts): mTLS
             ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=str(tls[2]))
@@ -108,6 +136,9 @@ class FakePrometheus:
             self.queries.append(q)
             self.ranges.append((float(one("start")), float(one("end"))))
             self._touched(q, float(one("start")), float(one("end")))
+            if self.extrapolate:
+                with EXTRAPOLATING, mock.patch.object(promql, "_window", prometheus_window):
+                    return self._matrix(promql.query_range(self.dump, unwrap(q), float(one("start")), float(one("end")), float(one("step"))))
             return self._matrix(promql.query_range(self.dump, unwrap(q), float(one("start")), float(one("end")), float(one("step"))))
         if endpoint == "query":
             q, at = one("query"), float(one("time", time.time()))

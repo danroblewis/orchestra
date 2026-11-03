@@ -18,7 +18,12 @@ A name over the store's per-query limit across an HA pair's replicas but under i
 A family any phase could not read is not guessed at: it keeps the last round's verdict
 (``known``: kind, interval, label roles, the value read of a duplicated label), noted, or else is
 ``unknown`` (read as neither level nor flow, and said so). A type judged in an earlier round
-changes only when this round's samples decide it (``behaviour.decides``)."""
+changes only when this round's samples decide it (``behaviour.decides``).
+
+A gauge whose sampled series take only 0 and 1, and every series of which stays within [0, 1] over
+the window with a 0 seen (``indicator``), is an **indicator**; its **states** are the grouping labels
+one reporter has several values of at once (``states``: a pod's ``phase``). Its views sum it per
+state, never count its reporters (``views.py``)."""
 
 from __future__ import annotations
 
@@ -55,7 +60,7 @@ def span(pts: list) -> float:
 def known_record(f: Family) -> dict:
     """What a later round keeps of a family it cannot read (``Inference.families``)."""
     return {"kind": f.kind, "resolution_s": f.resolution_s, "retyped": f.retyped, "where": dict(f.where),
-            "constants": dict(f.constants), "counter_form": f.counter_form,
+            "constants": dict(f.constants), "counter_form": f.counter_form, "indicator": f.indicator, "states": list(f.states),
             "labels": {c: {"real": i.real, "cardinality": i.cardinality, "churn": i.churn, "role": i.role} for c, i in f.labels.items()},
             "rule_resolution": {r["metric"]: r.get("resolution_s") for r in f.rollups.values()}}
 
@@ -66,6 +71,7 @@ def _restore(fam: Family, k: dict | None, why: str) -> None:
         return
     fam.kind, fam.resolution_s, fam.retyped = k["kind"], k.get("resolution_s"), k.get("retyped")
     fam.where, fam.constants, fam.counter_form = dict(k.get("where") or {}), dict(k.get("constants") or {}), k.get("counter_form", "")
+    fam.indicator, fam.states = bool(k.get("indicator")), list(k.get("states") or [])
     fam.labels = {c: LabelInfo(i["real"], i["cardinality"], i["churn"], i["role"]) for c, i in (k.get("labels") or {}).items()}
     for r in fam.rollups.values():
         r["resolution_s"] = (k.get("rule_resolution") or {}).get(r["metric"], r.get("resolution_s"))
@@ -88,6 +94,29 @@ def _at(sel: str, where: dict[str, str]) -> str:
     if sel.endswith("}"):
         return sel[:-1] + ("" if sel.endswith("{}") else ",") + m + "}"
     return f"{sel}{{{m}}}"
+
+
+def indicator(raw: list, low: float | None, high: float | None) -> bool:
+    """Whether a gauge is a 0/1 indicator: its sampled series take only 0 and 1 and every series'
+    least and largest value in the window are within [0, 1], a 0 seen (all 1 is an info metric)."""
+    return (low is not None and high is not None and 0.0 <= low <= high <= 1.0 and low == 0.0
+            and all(v in (0.0, 1.0) for p in raw for _, v in p))
+
+
+def states(fam: Family, sets: list) -> list[str]:
+    """The grouping labels of which one reporter (its identity labels' values) has several values
+    in the listing: a state it is in or not (a pod's ``phase``), not a place that holds it."""
+    ids = [fam.labels[c].real for c in fam.role("identity")]
+    if not ids:
+        return []
+    out = []
+    for c in fam.role("grouping"):
+        real, seen = fam.labels[c].real, {}
+        for lab in sets:
+            seen.setdefault(tuple(lab.get(i) for i in ids), set()).add(lab.get(real))
+        if any(len(v) > 1 for v in seen.values()):
+            out.append(c)
+    return out
 
 
 def _metadata(source: Source, names: list[str]) -> dict:
@@ -167,7 +196,7 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
             typ = (meta.get(fam.first_metric()) or {}).get("type")
             window[fam.name] = (typ, raw[fam.name])
     ones = {n: families_by[n].selector() for n, (_, r) in window.items()
-            if all(v == 1.0 for p in r for _, v in p)}
+            if all(v in (0.0, 1.0) for p in r for _, v in p)}     # all 1: an info metric; 0 and 1: an indicator, if every series is
     ext, bad = census.extremes(source, {n: (sel, families_by[n].series) for n, sel in ones.items()}, start, end, until, conc) if ones else ({}, {})
     for n, why in bad.items():
         failed[n] = f"its extremes: {why}"
@@ -200,6 +229,8 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
             fam.kind, fam.retyped = new, why
             if kind == "delta":
                 fam.counter_form = "delta"
+        if fam.kind == "gauge" and n in ext and indicator(r, *ext[n]):
+            fam.indicator = True
 
     # 4. label roles
     asks: dict[str, tuple] = {}
@@ -241,6 +272,14 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
             values = {lab[info.real] for lab in sets_of[n] if info.real in lab}
             if role == "constant" and len(values) == 1:
                 fam.constants[c] = next(iter(values))
+
+    for fam in families:                   # an indicator's states: the labels one reporter is split across at once
+        if fam.indicator:
+            fam.states = states(fam, sets_of[fam.name])
+            if fam.states:
+                fam.notes.append(f"an indicator (every sample 0 or 1 in the window), split by {', '.join(fam.states)}: summed per "
+                                 f"{', '.join(fam.states)} (the {fam.role('identity')[0] if fam.role('identity') else 'series'}s in each), "
+                                 "never a count of reporters, which every one of them is in every state")
 
     # 5. duplicates
     dups = {f.name: [c for c, i in f.labels.items() if i.role == "grouping" and 2 <= i.cardinality <= 4 and i.real in COLLECTION_LABELS]

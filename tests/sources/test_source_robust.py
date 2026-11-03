@@ -15,7 +15,7 @@ from itertools import pairwise
 import pytest
 from fake_prometheus import Busy, FakePrometheus
 
-from orchestra.sources import SourceError
+from orchestra.sources import SourceError, fetch
 from orchestra.sources.batch import Part, run
 from orchestra.sources.cache import attempt, cached, definitions
 from orchestra.sources.fetch import increments, read_many
@@ -173,7 +173,7 @@ def _counter_defn(by: list[str]) -> Definition:
                       query="jobs_total", inner="jobs_total", agg="increase", group_by=by, by_real=by, resolution_s=15.0)
 
 
-def test_a_counter_read_server_side_matches_the_raw_computation_across_resets_and_gaps(made, tmp_path):
+def test_a_counter_read_server_side_matches_the_raw_computation_across_resets_and_gaps(made, tmp_path, monkeypatch):
     def worker(rate, reset_at, gap):
         pts, v = [], 1000.0
         for t, _ in every(15, lambda s: 0):
@@ -188,10 +188,15 @@ def test_a_counter_read_server_side_matches_the_raw_computation_across_resets_an
     f = made(dump)
     src = quick(spec_for(f, tmp_path))
     d = _counter_defn(["queue"])
+    raw = {lab["queue"]: pts for lab, pts in increments(src.select("jobs_total", T0 + 300 - 15, NOW), ["queue"], T0 + 300)}
+    got, errors = read_many(src, [d], "lab", None, T0 + 300, NOW, 30.0)        # from its raw samples, at the grid
+    assert not errors and f.queries[-1].startswith("jobs_total[")
+    for q, pts in {lab["queue"]: pts for _, lab, pts, _ in got["c0"]}.items():
+        assert pts[0][1] == 0.0 and pts[-1][1] == pytest.approx(raw[q][-1][1], abs=1e-9)   # every event, exactly
+    monkeypatch.setattr(fetch, "RAW_SAMPLES", 0)                                    # a store that cannot give them: increase()
     got, errors = read_many(src, [d], "lab", None, T0 + 300, NOW, 30.0)
     assert not errors and "increase(jobs_total[30s])" in f.queries[-1]
     server = {lab["queue"]: pts for _, lab, pts, _ in got["c0"]}
-    raw = {lab["queue"]: pts for lab, pts in increments(src.select("jobs_total", T0 + 300 - 15, NOW), ["queue"], T0 + 300)}
     for q in ("a", "b"):
         assert server[q][0][1] == 0.0
         assert server[q][-1][1] == pytest.approx(raw[q][-1][1], rel=0.01)        # the same events over the window
