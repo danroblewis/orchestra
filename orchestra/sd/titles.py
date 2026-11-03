@@ -13,11 +13,15 @@ An instrument that counts the things in each place says which label names the pl
 labels of the series spell that label's value, part by part, they are the place in words, in
 the order they spell it: ``pile="write.held"`` with ``step="write"`` and ``place="held"`` is the
 thing ``write`` and what is said of it there, ``held``. A stock is what is said of what sits
-there, and where: "held at write" ("at write" when nothing is said of it). The labels the value
-does not spell (``workflow``) are its scope, its tags: two scopes that share a thing of one name
-read alike ("held at write") and are told apart by them (``workflow=hotfix``). The convention is
-the labels' own: no label's name is known here (AGENTS.md rule 1). A series of the ``age`` view
-with the same labels is the "age at" that place ("age at write (held)").
+there, and where: "held at write". A value of one part (``step="review"``, spelled by another
+label or by none) is the thing itself, a state, not a place: what sits there is "in" it ("in review", the owner, 2026-11-02: "it is in
+the PR review state"), never "at review". The labels the value does not spell (``workflow``,
+and whatever else narrows it: held or waiting, when a plugin says it so) are its scope, its tags:
+two scopes that share a thing of one name read alike ("held at write") and are told apart by
+them (``workflow=hotfix``); a move that does not carry a scope label (held or waiting) names
+the thing all the same. The convention is the labels' own: no label's name is known here
+(AGENTS.md rule 1). A series of the ``age`` view with the same labels is the age of what sits
+there, in the stock's wording ("age at write (held)"; "age in review").
 
 A move between two places (a ``moves`` view: its ``starts`` and ``stops`` labels hold the
 places' values) is named by the things it leaves and enters, whether or not either is a stock:
@@ -30,11 +34,11 @@ read alike with the same tags are said by their places' own parts ("ci (waiting)
 named by the first and last things its items pass, in words ("between write and sail_check"; the
 places it spans, in order, listed beside it: ``spans``), never by joining their states (the owner,
 2026-11-01: "how are all of these considered one stock?"), or, when they enter and leave one
-place, by what sits there ("waiting at sail"); by the one thing, when all are in it ("at
-write"); its tags are its places' scope and noun. Label values keep their spelling
-(``sail_check``, never "sail check"); "-" and "_" are alike inside a part (``code-review.waiting``
-with ``step="code-review"``), and a place value with no letters in it (``stage="3"``) spells no
-words, so the series keeps its own name."""
+place, by what sits there ("waiting at sail"; "in sail" for a one-part place); by the one
+thing, when its places are its states ("at write"); its tags are its places' scope and noun.
+Label values keep their spelling (``sail_check``, never "sail check"); "-" and "_" are alike
+inside a part (``code-review.waiting`` with ``step="code-review"``), and a place value with no
+letters in it (``stage="3"``) spells no words, so the series keeps its own name."""
 
 from __future__ import annotations
 
@@ -72,8 +76,14 @@ class Place:
 
     @property
     def sits(self) -> str:
-        """What is said of what sits there, and where: "held at write"; "at write"."""
-        return " ".join([*self.said, "at", self.at])
+        """What is said of what sits there, and where: "held at write"; "in review" when nothing is
+        said of it (the thing is the state)."""
+        return " ".join([*self.said, "at", self.at]) if self.said else f"in {self.at}"
+
+    @property
+    def age(self) -> str:
+        """The age of what sits there, in the stock's wording: "age at write (held)"; "age in review"."""
+        return ("age at " if self.said else "age in ") + self.full
 
     @property
     def tags(self) -> list[str]:
@@ -138,22 +148,33 @@ class Places:
         if not value or not re.search(r"[^\W\d_]", value):
             return None                                  # a value that spells no words (stage="3"): named by its series
         own = {k: v for k, v in sorted(labels.items()) if k != place and k not in WRITERS}
+        parts = _parts(value)
         spell: list[str] = []
-        for part in _parts(value):
+        for part in parts:
             k = next((k for k, v in own.items() if _same(v, part) and k not in spell), None)
             if k is None:
-                return None
+                spell = []
+                break
             spell.append(k)
-        if not spell:
+        if spell:
+            at, said = own[spell[0]], tuple(own[k] for k in spell[1:])
+        elif len(parts) == 1:
+            at, said = value, ()                         # one part no other label spells: the thing itself
+        else:
             return None
-        pl = Place(own[spell[0]], tuple(own[k] for k in spell[1:]), {k: v for k, v in own.items() if k not in spell},
-                   rec.get("noun") or "")
+        pl = Place(at, said, {k: v for k, v in own.items() if k not in spell}, rec.get("noun") or "")
         return pl, value
 
     def _place(self, value: str, labels: dict) -> Place | None:
+        """The place a value names among those whose scope the labels carry; else, among those
+        whose scope agrees on the labels carried (a move that does not say what the count's
+        other labels say: held or waiting), that place within the labels' own scope."""
         for pl in self.by_value.get(value, []):
             if all(labels.get(k) == v for k, v in pl.scope.items()):
                 return pl
+        for pl in self.by_value.get(value, []):
+            if all(labels.get(k) == v for k, v in pl.scope.items() if k in labels):
+                return Place(pl.at, pl.said, {k: v for k, v in pl.scope.items() if k in labels}, pl.noun)
         return None
 
     def place(self, value: str, labels: dict) -> str | None:
@@ -171,12 +192,13 @@ class Places:
 
     def level(self, labels: dict, key: str, name: str = "") -> str | None:
         """A level's title: what is said of what sits in a place its count spells, and where ("held
-        at write"), or the age at that place ("age at write (held)"); None otherwise."""
+        at write"; "in review" when nothing is said), or the age of it in the same wording ("age at
+        write (held)"; "age in review"); None otherwise."""
         got = self._level_place(labels, key, name)
         if not got:
             return None
         pl, age = got
-        return "age at " + pl.full if age else pl.sits
+        return pl.age if age else pl.sits
 
     def level_tags(self, labels: dict, key: str, name: str = "") -> list[str]:
         """A level's tags: its place's scope and noun ([] when its places do not name it)."""

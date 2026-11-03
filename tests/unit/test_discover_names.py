@@ -272,3 +272,38 @@ def test_a_series_its_name_and_labels_say_in_words():
     assert (_title(commits), _named(commits, None)) == ("commits on main", {"named": "words"})
     assert (_title(closed), _named(closed, None)) == ("item.closed events (supervisor)", {"named": "words"})
     assert _title(Series("queue_depth", {"queue": "orders"}, [], [], False)) == "queue depth (orders)"
+
+
+def test_a_place_of_one_part_is_a_state_its_stock_is_in_it_and_its_moves_name_it():
+    """The owner (2026-11-02): "It's not 'waiting at pr', it is in the PR review state." A count
+    whose place value is the thing itself (one part) names a stock "in" it, its other labels
+    (held or waiting, however a plugin says it) tags; the age follows; moves that do not say
+    those labels still name the things; a said part keeps "at"."""
+    from orchestra.sd.discover import _title
+    from orchestra.sd.series import Series, series_key
+    from orchestra.sd.titles import Places
+
+    items = [("workflow_pile_items", {"workflow": "w", "step": st, "offer": of}) for st in ("write", "review", "approvals")
+             for of in ("held", "waiting")]
+    age = Series("workflow_pile_oldest_seconds", {"workflow": "w", "step": "review", "offer": "held"}, [], [], False)
+    moves = [Series("workflow_pile_moves_total", {"workflow": "w", "from": a, "to": b}, [], [], True)
+             for a, b in (("<start>", "write"), ("write", "review"), ("review", "approvals"), ("approvals", "write"))]
+    prov = {series_key(n, lab): {"view": "count", "place": "step", "noun": "pull requests"} for n, lab in items}
+    prov[age.key] = {"view": "age"}
+    prov.update({c.key: {"view": "moves", "starts": "to", "stops": "from"} for c in moves})
+    places = Places([*[(n, lab, series_key(n, lab)) for n, lab in items], (age.name, age.labels, age.key),
+                     *[(c.name, c.labels, c.key) for c in moves]], prov)
+    n, lab = items[2]
+    assert places.level(lab, series_key(n, lab), n) == "in review"
+    assert places.level_tags(lab, series_key(n, lab), n) == ["offer=held", "workflow=w", "pull requests"]
+    assert _title(age, places) == "age in review"
+    move = {(c.labels["from"], c.labels["to"]): (places.move(c.labels, c.key), places.move_tags(c.labels, c.key)) for c in moves}
+    assert move[("write", "review")] == ("write → review", ["workflow=w", "pull requests"])
+    assert move[("<start>", "write")][0] == "outside → write"
+    assert move[("approvals", "write")][0] == "approvals → write (sent back)"
+    # the hidden state entered and left at one such place is in it
+    assert places.between([moves[1]], [moves[2]]) == "in review"
+    # a place with no letters still keeps the series' own name
+    num = Series("queue_depth", {"stage": "3"}, [], [], False)
+    p2 = Places([(num.name, num.labels, num.key)], {num.key: {"view": "count", "place": "stage"}})
+    assert _title(num, p2).startswith("queue depth")

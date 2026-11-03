@@ -310,16 +310,18 @@ page shows that title (the Dynamics, Machines and Instruments pages, the diff be
 where a count's other labels spell its place label's value part by part, they are the place in
 words, in the order they spell it (`pile="write.held"`, `step="write"`, `place="held"`). A title
 says the place and the state only (the owner, 2026-11-02: "I don't know what 'deliveries'
-means"): a stock is what is said of what sits there, and where ("held at write"; "at write" when
-nothing is said of it); an `age` series of the same labels is the "age at" it ("age at write
-(held)"); a move between places is named by the things it leaves and enters ("write → ci"; inside
+means"): a stock is what is said of what sits there, and where ("held at write"); a place value
+of one part (`step="review"`, spelled by another label or by none) is the thing itself, a state,
+and what sits there is "in" it ("in review", never "at review"; the owner, 2026-11-02: "it is in
+the PR review state"), its other labels (held or waiting) tags; an `age` series of the same
+labels is the age of it in the stock's wording ("age at write (held)"; "age in review"); a move between places is named by the things it leaves and enters ("write → ci"; inside
 one, "write: waiting → held"), "(sent back)" when it goes to a thing fewer moves from outside than
 the one it leaves ("ci → write (sent back)"), a value in angle brackets as outside ("outside →
 write"; one word for one idea, never "the start"), any other value no place spells in its words;
 a hidden state between such moves by the first and last things its items pass ("between write and
 sail_check"; never its places' states joined), with the places it spans listed in its evidence
 (`spans`) and its drawer, or by what is said of what sits there when they enter and leave one
-("waiting at sail"). What narrows a title is said beside it as **tags**, never in it: a list of
+("waiting at sail"; "in sail" for a one-part place). What narrows a title is said beside it as **tags**, never in it: a list of
 short strings, on the part's evidence (`tags`) and as `tags` on every stock and flow of
 `/api/dynamics/model` (`[]` when none), on `/api/machines`' `model_parts`, on an instrument's
 series (`/api/instruments/…/series`, beside its `title`) and on a removed part of the diff. Each
