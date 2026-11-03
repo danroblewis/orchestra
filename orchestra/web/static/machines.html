@@ -17,6 +17,10 @@
   .mwrap { max-width:1400px; margin:0 auto; padding:16px 20px }
   .mwrap .intro { font-size:12.5px; color:var(--text2); margin-bottom:12px; max-width:1050px }
   .mwrap h2 { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:18px 0 8px; display:flex; gap:8px; align-items:center }
+  /* nothing wider than the screen (SPEC §10): a control's long option (an era's sentence) ellipsizes
+     inside the width it is given, chips and controls wrap, a name breaks rather than push the page */
+  .mwrap h2 { flex-wrap:wrap; min-width:0 } .mwrap select.ctl { max-width:100%; min-width:0; text-overflow:ellipsis }
+  #era { flex:0 1 auto; width:auto } .cards h3 .mname { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap } .cards h3 > :not(.mname) { flex:none } .phone-list .pl, .phone-list h3 { overflow-wrap:anywhere }
   .evmap { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:6px }
   .evmap svg { display:block; width:100%; height:600px; font-size:11px }
   .evmap .legend { color:var(--muted); font-size:10.5px; margin-top:6px; display:flex; gap:14px; flex-wrap:wrap; align-items:baseline }
@@ -435,7 +439,7 @@ function cards() {
   let prev = null;
   for (const m of IntendedMachines.sort(Orchestra.machineCards.sort(shown))) {
     const own = Orchestra.machineCards.card(m);
-    const head = own != null ? own : `<h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span>${esc(m.name || m.id)}${m.name ? ` <span class="muted" style="font-size:12px">${esc(m.id)}</span>` : ""}${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}${m.counted ? ' <span class="tag" title="known by counts a source read from another system\'s bus">counted</span>' : ""}</h3>`;
+    const head = own != null ? own : `<h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span><span class="mname" title="${esc(m.name || m.id)}">${esc(m.name || m.id)}</span>${m.name ? ` <span class="mname muted" style="font-size:12px" title="${esc(m.id)}">${esc(m.id)}</span>` : ""}${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}${m.counted ? ' <span class="tag" title="known by counts a source read from another system\'s bus">counted</span>' : ""}</h3>`;
     const html = Orchestra.machineCards.wrap(m, head + Orchestra.machineCards.rows(m));
     let el = have.get(m.id);
     if (!el || el.dataset.html !== html) {

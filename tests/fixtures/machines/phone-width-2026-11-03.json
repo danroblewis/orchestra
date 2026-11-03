@@ -1,0 +1,2373 @@
+{
+ "_about": "The Machines page's /api/machines at the overnight check of 2026-11-03 (delivery_live, era e4; people's ids replaced, one name lengthened), where the page was 483 px wide at 390 px: tests/screenshots/machines-width.test.mjs",
+ "ok": true,
+ "machines": [
+  {
+   "id": "orchestra-host",
+   "bootstrap": true,
+   "mode": "continuous",
+   "kind": "program",
+   "kinds": {},
+   "package": null,
+   "name": null,
+   "group": null,
+   "about": {},
+   "publishes": [
+    {
+     "type": "orchestra.machine.quiet",
+     "count": 14,
+     "day": 14,
+     "n_10m": 0,
+     "window_s": 600,
+     "per_min_10m": 0.0
+    },
+    {
+     "type": "orchestra.era.started",
+     "count": 1,
+     "day": 1,
+     "n_10m": 0,
+     "window_s": 600,
+     "per_min_10m": 0.0
+    }
+   ],
+   "subscribes": [],
+   "flows": [],
+   "logs": [],
+   "processes": [],
+   "instances": [],
+   "first_seen": 1793701810.496,
+   "last_seen": 1793711287.962,
+   "active": true,
+   "cadence_s": 193.41800022125244,
+   "announced": 0,
+   "announced_at": null,
+   "intent": null,
+   "comparison": null,
+   "measured": null,
+   "active_by": "runtime"
+  },
+  {
+   "id": "bot.github.github-actions",
+   "bootstrap": false,
+   "mode": "ad hoc",
+   "kind": "program",
+   "kinds": {
+    "program": 1
+   },
+   "package": "bridges",
+   "name": null,
+   "group": null,
+   "about": {},
+   "publishes": [
+    {
+     "type": "github.checks.completed",
+     "count": 3,
+     "day": 3,
+     "n_10m": 1,
+     "window_s": 600,
+     "per_min_10m": 0.1
+    }
+   ],
+   "subscribes": [],
+   "flows": [],
+   "logs": [],
+   "processes": [],
+   "instances": [],
+   "first_seen": 1793706566.0,
+   "last_seen": 1793720997.0,
+   "active": true,
+   "cadence_s": 935.0,
+   "announced": 0,
+   "announced_at": null,
+   "intent": {
+    "state": "proposed",
+    "author": "workflows",
+    "heard": true,
+    "title": "bot.github",
+    "description": "Named by workflow delivery_live (deliveries): the outside system github, heard as bot.github; the people its bridge relays (person.github.<login>) are their own machines, and the events that end its steps may come from them.",
+    "tags": [
+     "outside system",
+     "delivery_live"
+    ],
+    "kind": "programmatic",
+    "managed": "external",
+    "engagement": {
+     "mode": "ad hoc"
+    },
+    "receives": [
+     "offer.finished",
+     "outbox.sent"
+    ],
+    "emits": [
+     "github.checks.completed",
+     "github.pr.closed",
+     "jira.issue.transitioned",
+     "github.pr.approved",
+     "github.pr.changes_requested",
+     "github.pr.commented",
+     "github.pr.labeled"
+    ],
+    "reads": [],
+    "spec": {
+     "steps": [
+      "delivery_live \u00b7 ci: outside github; done when the checks' result with head sha the item's commit; success \u2192 review, failure \u2192 write; on the pull request closed unmerged \u2192 the end, closed_unmerged; on the ticket going Done \u2192 the end, abandoned; guard within 30 min, then attention",
+      "delivery_live \u00b7 review: outside github; done when an approval on the pull request; done \u2192 sail; on changes asked for on the pull request \u2192 write; on a comment on the pull request with state as the setting stand_in_review says \u2192 sail; on the pull request closed unmerged \u2192 the end, closed_unmerged; on the ticket going Done \u2192 the end, abandoned; guard within 30 min, then attention",
+      "delivery_live \u00b7 sail_check: outside github; done when the label SAILED on the pull request; done \u2192 close_ticket; on the label REJECTED on the pull request \u2192 triage; on the pull request closed unmerged \u2192 the end, closed_unmerged; on the ticket going Done \u2192 the end, abandoned; guard at most 3 rounds, then attention"
+     ],
+     "source": "bot.github (relayed by its bridge)"
+    },
+    "guessed": [],
+    "pending": [],
+    "requested": null,
+    "aliases": [
+     "bot.github",
+     "github",
+     "bot.github.github-actions"
+    ],
+    "expected_effect": null,
+    "provenance": {
+     "author": "workflows",
+     "source": "workflow delivery_live",
+     "reason": "the definition of workflow delivery_live, as the Machines page draws it: who acts at each step and which events move the item on",
+     "via": "endpoint",
+     "at": 1793649123.421939
+    },
+    "latest": null,
+    "change": "c7.1",
+    "confirmed": null,
+    "attachments": []
+   },
+   "comparison": "heard",
+   "measured": {
+    "attachments": [],
+    "measured": false,
+    "last_measured": null,
+    "instances": 0,
+    "instruments": [],
+    "unknown": false
+   }
+  },
+  {
+   "id": "has_ticket",
+   "bootstrap": false,
+   "mode": "ad hoc",
+   "kind": "program",
+   "kinds": {
+    "program": 1
+   },
+   "package": "workflows",
+   "name": "a_machine_name_much_longer_than_a_phone_is_wide_with_no_place_to_break",
+   "group": null,
+   "about": {
+    "roles": [
+     "has_ticket"
+    ]
+   },
+   "publishes": [
+    {
+     "type": "offer.claimed",
+     "count": 2,
+     "day": 2,
+     "n_10m": 1,
+     "window_s": 600,
+     "per_min_10m": 0.1
+    },
+    {
+     "type": "offer.finished",
+     "count": 2,
+     "day": 2,
+     "n_10m": 1,
+     "window_s": 600,
+     "per_min_10m": 0.1
+    }
+   ],
+   "subscribes": [
+    "offer.made",
+    "offer.withdrawn"
+   ],
+   "flows": [],
+   "logs": [],
+   "processes": [],
+   "instances": [
+    {
+     "id": "1",
+     "first_seen": 1793706542.976,
+     "last_seen": 1793720966.179,
+     "active": false,
+     "cadence_s": null,
+     "kind": "program",
+     "mode": "ad hoc",
+     "process": null,
+     "announced": 0
+    }
+   ],
+   "first_seen": 1793706542.976,
+   "last_seen": 1793720966.179,
+   "active": false,
+   "cadence_s": null,
+   "announced": 0,
+   "announced_at": null,
+   "intent": {
+    "state": "proposed",
+    "author": "workflows",
+    "heard": true,
+    "title": "has_ticket",
+    "description": "Named by workflow delivery_live (deliveries): the program has_ticket.",
+    "tags": [
+     "program",
+     "delivery_live"
+    ],
+    "kind": "programmatic",
+    "managed": "orchestra",
+    "engagement": {
+     "mode": "ad hoc"
+    },
+    "receives": [
+     "offer.made",
+     "offer.withdrawn"
+    ],
+    "emits": [
+     "offer.finished"
+    ],
+    "reads": [],
+    "spec": {
+     "steps": [
+      "delivery_live \u00b7 ticket: program has_ticket; done when its turn finishes; exists \u2192 write, none \u2192 create_ticket; on the ticket going Done \u2192 the end, abandoned"
+     ]
+    },
+    "guessed": [],
+    "pending": [],
+    "requested": null,
+    "aliases": [],
+    "expected_effect": null,
+    "provenance": {
+     "author": "workflows",
+     "source": "workflow delivery_live",
+     "reason": "the definition of workflow delivery_live, as the Machines page draws it: who acts at each step and which events move the item on",
+     "via": "endpoint",
+     "at": 1793647918.275753
+    },
+    "latest": null,
+    "change": "c5.1",
+    "confirmed": null,
+    "attachments": []
+   },
+   "comparison": "heard",
+   "measured": {
+    "attachments": [],
+    "measured": false,
+    "last_measured": null,
+    "instances": 0,
+    "instruments": [],
+    "unknown": false
+   }
+  },
+  {
+   "id": "outbox",
+   "bootstrap": false,
+   "mode": "continuous",
+   "kind": "program",
+   "kinds": {
+    "program": 1
+   },
+   "package": "outbox",
+   "name": null,
+   "group": null,
+   "about": {},
+   "publishes": [
+    {
+     "type": "outbox.sent",
+     "count": 6,
+     "day": 6,
+     "n_10m": 1,
+     "window_s": 600,
+     "per_min_10m": 0.1
+    },
+    {
+     "type": "outbox.draft.approved",
+     "count": 5,
+     "day": 5,
+     "n_10m": 1,
+     "window_s": 600,
+     "per_min_10m": 0.1
+    }
+   ],
+   "subscribes": [],
+   "flows": [],
+   "logs": [
+    "outbox"
+   ],
+   "processes": [],
+   "instances": [],
+   "first_seen": 1793701810.674,
+   "last_seen": 1793720975.831,
+   "active": true,
+   "cadence_s": 909.1124999523163,
+   "announced": 0,
+   "announced_at": null,
+   "intent": {
+    "state": "proposed",
+    "author": "workflows",
+    "heard": true,
+    "title": "owner",
+    "description": "Named by workflows delivery_live (deliveries), review_nudger (items): the person owner, through the outbox.",
+    "tags": [
+     "person",
+     "delivery_live",
+     "review_nudger"
+    ],
+    "kind": "universal",
+    "managed": "external",
+    "engagement": {
+     "mode": "ad hoc"
+    },
+    "receives": [
+     "outbox.draft.created"
+    ],
+    "emits": [
+     "outbox.draft.approved",
+     "outbox.draft.rejected",
+     "jira.issue.transitioned"
+    ],
+    "reads": [],
+    "spec": {
+     "steps": [
+      "delivery_live \u00b7 create_ticket: outbox owner; done when the outbox has sent its live.create_ticket draft (outbox.sent), after approval; sent \u2192 write; on the ticket going Done \u2192 the end, abandoned; guard within 20 min, then attention",
+      "delivery_live \u00b7 open_pr: outbox owner; done when the outbox has sent its live.pr_open draft (outbox.sent), after approval; sent \u2192 link; on the ticket going Done \u2192 the end, abandoned; guard within 20 min, then attention",
+      "delivery_live \u00b7 sail: outbox owner; done when the outbox has sent its live.sail draft (outbox.sent), after approval; sent \u2192 sail_check; on the ticket going Done \u2192 the end, abandoned; guard within 20 min, then attention",
+      "delivery_live \u00b7 close_ticket: outbox owner; done when the outbox has sent its live.close_ticket draft (outbox.sent), after approval; sent \u2192 the end",
+      "review_nudger \u00b7 remind: outbox owner; done when the outbox has sent its live.nudge draft (outbox.sent), after approval; sent \u2192 the end, rejected \u2192 the end"
+     ]
+    },
+    "guessed": [],
+    "pending": [],
+    "requested": null,
+    "aliases": [
+     "person.jira.owner",
+     "outbox"
+    ],
+    "expected_effect": null,
+    "provenance": {
+     "author": "workflows",
+     "source": "workflow delivery_live",
+     "reason": "the definition of workflow delivery_live, as the Machines page draws it: who acts at each step and which events move the item on",
+     "via": "endpoint",
+     "at": 1793648831.5438569
+    },
+    "latest": null,
+    "change": "c6.1",
+    "confirmed": null,
+    "attachments": []
+   },
+   "comparison": "heard",
+   "measured": {
+    "attachments": [],
+    "measured": false,
+    "last_measured": null,
+    "instances": 0,
+    "instruments": [],
+    "unknown": false
+   }
+  },
+  {
+   "id": "person.github.octo-owner",
+   "bootstrap": false,
+   "mode": "ad hoc",
+   "kind": "person",
+   "kinds": {
+    "person": 1
+   },
+   "package": "bridges",
+   "name": null,
+   "group": null,
+   "about": {},
+   "publishes": [
+    {
+     "type": "github.pr.labeled",
+     "count": 4,
+     "day": 4,
+     "n_10m": 0,
+     "window_s": 600,
+     "per_min_10m": 0.0
+    },
+    {
+     "type": "github.pr.unlabeled",
+     "count": 3,
+     "day": 3,
+     "n_10m": 0,
+     "window_s": 600,
+     "per_min_10m": 0.0
+    },
+    {
+     "type": "github.pr.opened",
+     "count": 2,
+     "day": 2,
+     "n_10m": 1,
+     "window_s": 600,
+     "per_min_10m": 0.1
+    },
+    {
+     "type": "github.pr.commented",
+     "count": 2,
+     "day": 2,
+     "n_10m": 0,
+     "window_s": 600,
+     "per_min_10m": 0.0
+    },
+    {
+     "type": "github.pr.synchronize",
+     "count": 1,
+     "day": 1,
+     "n_10m": 0,
+     "window_s": 600,
+     "per_min_10m": 0.0
+    },
+    {
+     "type": "github.pr.merged",
+     "count": 1,
+     "day": 1,
+     "n_10m": 0,
+     "window_s": 600,
+     "per_min_10m": 0.0
+    }
+   ],
+   "subscribes": [],
+   "flows": [],
+   "logs": [],
+   "processes": [],
+   "instances": [],
+   "first_seen": 1793706551.0,
+   "last_seen": 1793720974.0,
+   "active": true,
+   "cadence_s": 305.6340000629425,
+   "announced": 0,
+   "announced_at": null,
+   "intent": null,
+   "comparison": null,
+   "measured": null
+  },
+  {
+   "id": "person.jira.557058-00000000-0000-0000-0000-000000000000",
+   "bootstrap": false,
+   "mode": "ad hoc",
+   "kind": "person",
+   "kinds": {
+    "person": 1
+   },
+   "package": "bridges",
+   "name": null,
+   "group": null,
+   "about": {},
+   "publishes": [
+    {
+     "type": "jira.issue.created",
+     "count": 2,
+     "day": 2,
+     "n_10m": 1,
+     "window_s": 600,
+     "per_min_10m": 0.1
+    },
+    {
+     "type": "jira.issue.assigned",
+     "count": 2,
+     "day": 2,
+     "n_10m": 1,
+     "window_s": 600,
+     "per_min_10m": 0.1
+    },
+    {
+     "type": "jira.issue.transitioned",
+     "count": 1,
+     "day": 1,
+     "n_10m": 0,
+     "window_s": 600,
+     "per_min_10m": 0.0
+    }
+   ],
+   "subscribes": [],
+   "flows": [],
+   "logs": [],
+   "processes": [],
+   "instances": [],
+   "first_seen": 1793706420.423,
+   "last_seen": 1793720838.89,
+   "active": true,
+   "cadence_s": 2274.286999940872,
+   "announced": 0,
+   "announced_at": null,
+   "intent": null,
+   "comparison": null,
+   "measured": null
+  },
+  {
+   "id": "sail",
+   "bootstrap": false,
+   "mode": "continuous",
+   "kind": "program",
+   "kinds": {
+    "program": 1
+   },
+   "package": "delivery_live",
+   "name": null,
+   "group": null,
+   "about": {
+    "fake": "FAKE: SAIL, played by this example",
+    "writes": "labels SAILED or REJECTED on the pull request, merges it"
+   },
+   "publishes": [
+    {
+     "type": "sail.check.completed",
+     "count": 2,
+     "day": 2,
+     "n_10m": 0,
+     "window_s": 600,
+     "per_min_10m": 0.0
+    }
+   ],
+   "subscribes": [
+    "github.pr.labeled"
+   ],
+   "flows": [],
+   "logs": [
+    "sail"
+   ],
+   "processes": [],
+   "instances": [],
+   "first_seen": 1793707177.897,
+   "last_seen": 1793708394.781,
+   "active": false,
+   "cadence_s": null,
+   "announced": 0,
+   "announced_at": null,
+   "intent": null,
+   "comparison": null,
+   "measured": null
+  },
+  {
+   "id": "sail_triage",
+   "bootstrap": false,
+   "mode": "ad hoc",
+   "kind": "program",
+   "kinds": {
+    "program": 1
+   },
+   "package": "workflows",
+   "name": null,
+   "group": null,
+   "about": {
+    "roles": [
+     "sail_triage"
+    ]
+   },
+   "publishes": [
+    {
+     "type": "offer.claimed",
+     "count": 1,
+     "day": 1,
+     "n_10m": 0,
+     "window_s": 600,
+     "per_min_10m": 0.0
+    },
+    {
+     "type": "offer.finished",
+     "count": 1,
+     "day": 1,
+     "n_10m": 0,
+     "window_s": 600,
+     "per_min_10m": 0.0
+    }
+   ],
+   "subscribes": [
+    "offer.made",
+    "offer.withdrawn"
+   ],
+   "flows": [],
+   "logs": [],
+   "processes": [],
+   "instances": [
+    {
+     "id": "1",
+     "first_seen": 1793707479.545,
+     "last_seen": 1793707479.653,
+     "active": false,
+     "cadence_s": null,
+     "kind": "program",
+     "mode": "ad hoc",
+     "process": null,
+     "announced": 0
+    }
+   ],
+   "first_seen": 1793707479.545,
+   "last_seen": 1793707479.653,
+   "active": false,
+   "cadence_s": null,
+   "announced": 0,
+   "announced_at": null,
+   "intent": {
+    "state": "proposed",
+    "author": "workflows",
+    "heard": true,
+    "title": "sail_triage",
+    "description": "Named by workflow delivery_live (deliveries): the program sail_triage.",
+    "tags": [
+     "program",
+     "delivery_live"
+    ],
+    "kind": "programmatic",
+    "managed": "orchestra",
+    "engagement": {
+     "mode": "ad hoc"
+    },
+    "receives": [
+     "offer.made",
+     "offer.withdrawn"
+    ],
+    "emits": [
+     "offer.finished"
+    ],
+    "reads": [],
+    "spec": {
+     "steps": [
+      "delivery_live \u00b7 triage: program sail_triage; done when its turn finishes; company_wide \u2192 sail, local \u2192 write; on the ticket going Done \u2192 the end, abandoned"
+     ]
+    },
+    "guessed": [],
+    "pending": [],
+    "requested": null,
+    "aliases": [],
+    "expected_effect": null,
+    "provenance": {
+     "author": "workflows",
+     "source": "workflow delivery_live",
+     "reason": "the definition of workflow delivery_live, as the Machines page draws it: who acts at each step and which events move the item on",
+     "via": "endpoint",
+     "at": 1793647918.275753
+    },
+    "latest": null,
+    "change": "c5.12",
+    "confirmed": null,
+    "attachments": []
+   },
+   "comparison": "heard",
+   "measured": {
+    "attachments": [],
+    "measured": false,
+    "last_measured": null,
+    "instances": 0,
+    "instruments": [],
+    "unknown": false
+   }
+  },
+  {
+   "id": "supervisor",
+   "bootstrap": false,
+   "mode": "continuous",
+   "kind": "agent \u00d71, 1 unannounced",
+   "kinds": {
+    "agent": 1
+   },
+   "package": "agents",
+   "name": null,
+   "group": null,
+   "about": {
+    "role": "supervisor"
+   },
+   "publishes": [
+    {
+     "type": "offer.made",
+     "count": 8,
+     "day": 8,
+     "n_10m": 3,
+     "window_s": 600,
+     "per_min_10m": 0.3
+    },
+    {
+     "type": "outbox.draft.created",
+     "count": 5,
+     "day": 5,
+     "n_10m": 1,
+     "window_s": 600,
+     "per_min_10m": 0.1
+    },
+    {
+     "type": "config.changed",
+     "count": 1,
+     "day": 1,
+     "n_10m": 0,
+     "window_s": 600,
+     "per_min_10m": 0.0
+    },
+    {
+     "type": "session.settled",
+     "count": 1,
+     "day": 1,
+     "n_10m": 0,
+     "window_s": 600,
+     "per_min_10m": 0.0
+    },
+    {
+     "type": "agent.said",
+     "count": 1,
+     "day": 1,
+     "n_10m": 0,
+     "window_s": 600,
+     "per_min_10m": 0.0
+    },
+    {
+     "type": "item.closed",
+     "count": 1,
+     "day": 1,
+     "n_10m": 0,
+     "window_s": 600,
+     "per_min_10m": 0.0
+    }
+   ],
+   "subscribes": [
+    "attention.needed",
+    "item.archived",
+    "item.closed",
+    "item.deleted",
+    "item.requested",
+    "offer.alive",
+    "offer.claimed",
+    "offer.finished",
+    "offer.withdraw_requested",
+    "orchestra.intent.requested",
+    "orchestra.process.gave_up",
+    "outbox.draft.rejected",
+    "outbox.send_failed",
+    "outbox.sent",
+    "task.attention_needed"
+   ],
+   "flows": [],
+   "logs": [],
+   "processes": [
+    "agents.host"
+   ],
+   "instances": [
+    {
+     "id": "dispatch",
+     "first_seen": 1793706542.683,
+     "last_seen": 1793720978.132,
+     "active": true,
+     "cadence_s": 606.0640000104904,
+     "kind": null,
+     "mode": "continuous",
+     "process": null,
+     "announced": 0
+    }
+   ],
+   "first_seen": 1793701809.128,
+   "last_seen": 1793720978.132,
+   "active": true,
+   "cadence_s": 606.079999923706,
+   "announced": 0,
+   "announced_at": null,
+   "unanswered": {
+    "offer.claimed": {
+     "count": 1,
+     "since": 1793720978.144
+    },
+    "offer.finished": {
+     "count": 1,
+     "since": 1793720979.598
+    }
+   },
+   "intent": {
+    "state": "proposed",
+    "author": "workflows",
+    "heard": true,
+    "title": "supervisor",
+    "description": "Named by workflows delivery_live (deliveries), review_nudger (items): plans delivery_live, review_nudger: its dispatch offers the steps, and it is told when a guard passes.",
+    "tags": [
+     "planner",
+     "delivery_live",
+     "review_nudger"
+    ],
+    "kind": "universal",
+    "managed": "orchestra",
+    "engagement": {
+     "mode": "continuous"
+    },
+    "receives": [
+     "jira.issue.assigned",
+     "item.requested",
+     "offer.finished",
+     "outbox.sent",
+     "outbox.draft.rejected",
+     "outbox.send_failed",
+     "github.checks.completed",
+     "github.pr.changes_requested",
+     "github.pr.approved",
+     "github.pr.commented",
+     "github.pr.labeled",
+     "attention.needed"
+    ],
+    "emits": [
+     "offer.made",
+     "offer.withdrawn",
+     "outbox.draft.created",
+     "attention.needed",
+     "item.requested"
+    ],
+    "reads": [],
+    "spec": {
+     "steps": [
+      "delivery_live: offers its steps to has_ticket, worker, sail_triage; drafts create_ticket, open_pr, sail, close_ticket for the outbox; told when a guard passes at create_ticket, open_pr, ci, review, sail, sail_check",
+      "review_nudger: offers its steps to review_nudger; drafts remind for the outbox"
+     ]
+    },
+    "guessed": [
+     "kind"
+    ],
+    "pending": [],
+    "requested": null,
+    "aliases": [],
+    "expected_effect": null,
+    "provenance": {
+     "author": "workflows",
+     "source": "workflow delivery_live",
+     "reason": "the definition of workflow delivery_live, as the Machines page draws it: who acts at each step and which events move the item on",
+     "via": "endpoint",
+     "at": 1793619921.270592
+    },
+    "latest": null,
+    "change": "c1.0",
+    "confirmed": null,
+    "attachments": []
+   },
+   "comparison": "heard",
+   "measured": {
+    "attachments": [],
+    "measured": false,
+    "last_measured": null,
+    "instances": 0,
+    "instruments": [],
+    "unknown": false
+   }
+  },
+  {
+   "id": "worker",
+   "bootstrap": false,
+   "mode": "continuous",
+   "kind": "program",
+   "kinds": {
+    "program": 2
+   },
+   "package": "workflows",
+   "name": null,
+   "group": null,
+   "about": {
+    "roles": [
+     "worker"
+    ]
+   },
+   "publishes": [
+    {
+     "type": "offer.claimed",
+     "count": 5,
+     "day": 5,
+     "n_10m": 2,
+     "window_s": 600,
+     "per_min_10m": 0.2
+    },
+    {
+     "type": "offer.finished",
+     "count": 5,
+     "day": 5,
+     "n_10m": 2,
+     "window_s": 600,
+     "per_min_10m": 0.2
+    }
+   ],
+   "subscribes": [
+    "offer.made",
+    "offer.withdrawn"
+   ],
+   "flows": [],
+   "logs": [
+    "1",
+    "2"
+   ],
+   "processes": [],
+   "instances": [
+    {
+     "id": "1",
+     "first_seen": 1793706546.733,
+     "last_seen": 1793720979.598,
+     "active": true,
+     "cadence_s": 936.7130000591278,
+     "kind": "program",
+     "mode": "continuous",
+     "process": null,
+     "announced": 0
+    },
+    {
+     "id": "2",
+     "first_seen": 1793706556.866,
+     "last_seen": 1793706558.221,
+     "active": false,
+     "cadence_s": null,
+     "kind": "program",
+     "mode": "continuous",
+     "process": null,
+     "announced": 0
+    }
+   ],
+   "first_seen": 1793706546.733,
+   "last_seen": 1793720979.598,
+   "active": true,
+   "cadence_s": 936.7130000591278,
+   "announced": 0,
+   "announced_at": null,
+   "intent": {
+    "state": "proposed",
+    "author": "workflows",
+    "heard": true,
+    "title": "worker",
+    "description": "Named by workflow delivery_live (deliveries): fills the role worker.",
+    "tags": [
+     "role",
+     "delivery_live"
+    ],
+    "kind": "programmatic",
+    "managed": "orchestra",
+    "engagement": {
+     "mode": "continuous"
+    },
+    "receives": [
+     "offer.made",
+     "offer.withdrawn"
+    ],
+    "emits": [
+     "offer.finished"
+    ],
+    "reads": [],
+    "spec": {
+     "steps": [
+      "delivery_live \u00b7 write: role worker; done when its turn finishes; ready \u2192 open_pr, pushed \u2192 ci; on the ticket going Done \u2192 the end, abandoned",
+      "delivery_live \u00b7 link: role worker; done when its turn finishes; done \u2192 ci; on the ticket going Done \u2192 the end, abandoned"
+     ]
+    },
+    "guessed": [],
+    "pending": [],
+    "requested": null,
+    "aliases": [],
+    "expected_effect": null,
+    "provenance": {
+     "author": "workflows",
+     "source": "workflow delivery_live",
+     "reason": "the definition of workflow delivery_live, as the Machines page draws it: who acts at each step and which events move the item on",
+     "via": "endpoint",
+     "at": 1793647918.275753
+    },
+    "latest": null,
+    "change": "c5.6",
+    "confirmed": null,
+    "attachments": []
+   },
+   "comparison": "heard",
+   "measured": {
+    "attachments": [],
+    "measured": false,
+    "last_measured": null,
+    "instances": 0,
+    "instruments": [],
+    "unknown": false
+   }
+  },
+  {
+   "id": "review_nudger",
+   "bootstrap": false,
+   "mode": "ad hoc",
+   "kind": "programmatic",
+   "package": "workflows",
+   "about": {},
+   "unseen": true,
+   "publishes": [],
+   "subscribes": [
+    "offer.made",
+    "offer.withdrawn"
+   ],
+   "flows": [],
+   "logs": [],
+   "instances": [],
+   "first_seen": null,
+   "last_seen": null,
+   "active": false,
+   "intent": {
+    "state": "proposed",
+    "author": "workflows",
+    "heard": false,
+    "title": "review_nudger",
+    "description": "Named by workflow review_nudger (items): the program review_nudger.",
+    "tags": [
+     "program",
+     "review_nudger"
+    ],
+    "kind": "programmatic",
+    "managed": "orchestra",
+    "engagement": {
+     "mode": "scheduled",
+     "at": "every 1 d, or when asked"
+    },
+    "receives": [
+     "offer.made",
+     "offer.withdrawn"
+    ],
+    "emits": [
+     "offer.finished"
+    ],
+    "reads": [],
+    "spec": {
+     "steps": [
+      "review_nudger \u00b7 find: program review_nudger; done when its turn finishes; found \u2192 remind, none \u2192 the end"
+     ]
+    },
+    "guessed": [],
+    "pending": [],
+    "requested": null,
+    "aliases": [],
+    "expected_effect": null,
+    "provenance": {
+     "author": "workflows",
+     "source": "workflow review_nudger",
+     "reason": "the definition of workflow review_nudger, as the Machines page draws it: who acts at each step and which events move the item on",
+     "via": "endpoint",
+     "at": 1793642976.785289
+    },
+    "latest": null,
+    "change": "c4.1",
+    "confirmed": null,
+    "attachments": [],
+    "alias_candidates": []
+   },
+   "comparison": "declared, neither heard nor measured",
+   "measured": {
+    "attachments": [],
+    "measured": false,
+    "last_measured": null,
+    "instances": 0,
+    "instruments": [],
+    "unknown": false
+   }
+  }
+ ],
+ "types": [
+  "agent.said",
+  "attention.needed",
+  "config.changed",
+  "github.checks.completed",
+  "github.pr.commented",
+  "github.pr.labeled",
+  "github.pr.merged",
+  "github.pr.opened",
+  "github.pr.synchronize",
+  "github.pr.unlabeled",
+  "item.archived",
+  "item.closed",
+  "item.deleted",
+  "item.requested",
+  "jira.issue.assigned",
+  "jira.issue.created",
+  "jira.issue.transitioned",
+  "offer.alive",
+  "offer.claimed",
+  "offer.finished",
+  "offer.made",
+  "offer.withdraw_requested",
+  "offer.withdrawn",
+  "orchestra.era.started",
+  "orchestra.intent.requested",
+  "orchestra.machine.quiet",
+  "orchestra.process.gave_up",
+  "outbox.draft.approved",
+  "outbox.draft.created",
+  "outbox.draft.rejected",
+  "outbox.send_failed",
+  "outbox.sent",
+  "sail.check.completed",
+  "session.settled",
+  "task.attention_needed"
+ ],
+ "edges": [
+  {
+   "from": "orchestra-host",
+   "to": "orchestra.machine.quiet",
+   "kind": "publishes",
+   "count": 14,
+   "day": 14
+  },
+  {
+   "from": "orchestra-host",
+   "to": "orchestra.era.started",
+   "kind": "publishes",
+   "count": 1,
+   "day": 1
+  },
+  {
+   "from": "bot.github.github-actions",
+   "to": "github.checks.completed",
+   "kind": "publishes",
+   "count": 3,
+   "day": 3
+  },
+  {
+   "from": "has_ticket",
+   "to": "offer.claimed",
+   "kind": "publishes",
+   "count": 2,
+   "day": 2
+  },
+  {
+   "from": "has_ticket",
+   "to": "offer.finished",
+   "kind": "publishes",
+   "count": 2,
+   "day": 2
+  },
+  {
+   "from": "outbox",
+   "to": "outbox.sent",
+   "kind": "publishes",
+   "count": 6,
+   "day": 6
+  },
+  {
+   "from": "outbox",
+   "to": "outbox.draft.approved",
+   "kind": "publishes",
+   "count": 5,
+   "day": 5
+  },
+  {
+   "from": "person.github.octo-owner",
+   "to": "github.pr.labeled",
+   "kind": "publishes",
+   "count": 4,
+   "day": 4
+  },
+  {
+   "from": "person.github.octo-owner",
+   "to": "github.pr.unlabeled",
+   "kind": "publishes",
+   "count": 3,
+   "day": 3
+  },
+  {
+   "from": "person.github.octo-owner",
+   "to": "github.pr.opened",
+   "kind": "publishes",
+   "count": 2,
+   "day": 2
+  },
+  {
+   "from": "person.github.octo-owner",
+   "to": "github.pr.commented",
+   "kind": "publishes",
+   "count": 2,
+   "day": 2
+  },
+  {
+   "from": "person.github.octo-owner",
+   "to": "github.pr.synchronize",
+   "kind": "publishes",
+   "count": 1,
+   "day": 1
+  },
+  {
+   "from": "person.github.octo-owner",
+   "to": "github.pr.merged",
+   "kind": "publishes",
+   "count": 1,
+   "day": 1
+  },
+  {
+   "from": "person.jira.557058-00000000-0000-0000-0000-000000000000",
+   "to": "jira.issue.created",
+   "kind": "publishes",
+   "count": 2,
+   "day": 2
+  },
+  {
+   "from": "person.jira.557058-00000000-0000-0000-0000-000000000000",
+   "to": "jira.issue.assigned",
+   "kind": "publishes",
+   "count": 2,
+   "day": 2
+  },
+  {
+   "from": "person.jira.557058-00000000-0000-0000-0000-000000000000",
+   "to": "jira.issue.transitioned",
+   "kind": "publishes",
+   "count": 1,
+   "day": 1
+  },
+  {
+   "from": "sail",
+   "to": "sail.check.completed",
+   "kind": "publishes",
+   "count": 2,
+   "day": 2
+  },
+  {
+   "from": "sail_triage",
+   "to": "offer.claimed",
+   "kind": "publishes",
+   "count": 1,
+   "day": 1
+  },
+  {
+   "from": "sail_triage",
+   "to": "offer.finished",
+   "kind": "publishes",
+   "count": 1,
+   "day": 1
+  },
+  {
+   "from": "supervisor",
+   "to": "offer.made",
+   "kind": "publishes",
+   "count": 8,
+   "day": 8
+  },
+  {
+   "from": "supervisor",
+   "to": "outbox.draft.created",
+   "kind": "publishes",
+   "count": 5,
+   "day": 5
+  },
+  {
+   "from": "supervisor",
+   "to": "config.changed",
+   "kind": "publishes",
+   "count": 1,
+   "day": 1
+  },
+  {
+   "from": "supervisor",
+   "to": "session.settled",
+   "kind": "publishes",
+   "count": 1,
+   "day": 1
+  },
+  {
+   "from": "supervisor",
+   "to": "agent.said",
+   "kind": "publishes",
+   "count": 1,
+   "day": 1
+  },
+  {
+   "from": "supervisor",
+   "to": "item.closed",
+   "kind": "publishes",
+   "count": 1,
+   "day": 1
+  },
+  {
+   "from": "worker",
+   "to": "offer.claimed",
+   "kind": "publishes",
+   "count": 5,
+   "day": 5
+  },
+  {
+   "from": "worker",
+   "to": "offer.finished",
+   "kind": "publishes",
+   "count": 5,
+   "day": 5
+  },
+  {
+   "from": "offer.made",
+   "to": "has_ticket",
+   "kind": "subscribes"
+  },
+  {
+   "from": "offer.withdrawn",
+   "to": "has_ticket",
+   "kind": "subscribes"
+  },
+  {
+   "from": "github.pr.labeled",
+   "to": "sail",
+   "kind": "subscribes"
+  },
+  {
+   "from": "offer.made",
+   "to": "sail_triage",
+   "kind": "subscribes"
+  },
+  {
+   "from": "offer.withdrawn",
+   "to": "sail_triage",
+   "kind": "subscribes"
+  },
+  {
+   "from": "attention.needed",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "item.archived",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "item.closed",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "item.deleted",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "item.requested",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "offer.alive",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "offer.claimed",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "offer.finished",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "offer.withdraw_requested",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "orchestra.intent.requested",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "orchestra.process.gave_up",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "outbox.draft.rejected",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "outbox.send_failed",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "outbox.sent",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "task.attention_needed",
+   "to": "supervisor",
+   "kind": "subscribes"
+  },
+  {
+   "from": "offer.made",
+   "to": "worker",
+   "kind": "subscribes"
+  },
+  {
+   "from": "offer.withdrawn",
+   "to": "worker",
+   "kind": "subscribes"
+  }
+ ],
+ "handoffs": [
+  {
+   "from": "supervisor",
+   "via": "offer.made",
+   "to": "worker",
+   "count": 5,
+   "day": 5
+  },
+  {
+   "from": "supervisor",
+   "via": null,
+   "to": "outbox",
+   "count": 5,
+   "day": 5,
+   "after": "outbox.draft.created"
+  },
+  {
+   "from": "worker",
+   "via": null,
+   "to": "person.github.octo-owner",
+   "count": 3,
+   "day": 3,
+   "after": "offer.finished"
+  },
+  {
+   "from": "person.github.octo-owner",
+   "via": null,
+   "to": "bot.github.github-actions",
+   "count": 3,
+   "day": 3,
+   "after": "github.pr.opened"
+  },
+  {
+   "from": "person.jira.557058-00000000-0000-0000-0000-000000000000",
+   "via": null,
+   "to": "supervisor",
+   "count": 2,
+   "day": 2,
+   "after": "jira.issue.assigned"
+  },
+  {
+   "from": "supervisor",
+   "via": "offer.made",
+   "to": "has_ticket",
+   "count": 2,
+   "day": 2
+  },
+  {
+   "from": "has_ticket",
+   "via": "offer.finished",
+   "to": "supervisor",
+   "count": 2,
+   "day": 2
+  },
+  {
+   "from": "worker",
+   "via": "offer.finished",
+   "to": "supervisor",
+   "count": 2,
+   "day": 2
+  },
+  {
+   "from": "bot.github.github-actions",
+   "via": null,
+   "to": "person.github.octo-owner",
+   "count": 2,
+   "day": 2,
+   "after": "github.checks.completed"
+  },
+  {
+   "from": "person.github.octo-owner",
+   "via": "github.pr.labeled",
+   "to": "sail",
+   "count": 2,
+   "day": 2
+  },
+  {
+   "from": "sail",
+   "via": null,
+   "to": "person.github.octo-owner",
+   "count": 2,
+   "day": 2,
+   "after": "sail.check.completed"
+  },
+  {
+   "from": "person.github.octo-owner",
+   "via": null,
+   "to": "supervisor",
+   "count": 2,
+   "day": 2,
+   "after": "github.pr.labeled"
+  },
+  {
+   "from": "supervisor",
+   "via": null,
+   "to": "orchestra-host",
+   "count": 1,
+   "day": 1,
+   "after": "agent.said"
+  },
+  {
+   "from": "supervisor",
+   "via": "offer.made",
+   "to": "sail_triage",
+   "count": 1,
+   "day": 1
+  },
+  {
+   "from": "sail_triage",
+   "via": "offer.finished",
+   "to": "supervisor",
+   "count": 1,
+   "day": 1
+  },
+  {
+   "from": "supervisor",
+   "via": null,
+   "to": "person.jira.557058-00000000-0000-0000-0000-000000000000",
+   "count": 1,
+   "day": 1,
+   "after": "item.closed"
+  }
+ ],
+ "relays": [
+  {
+   "from": "person.jira.557058-00000000-0000-0000-0000-000000000000",
+   "via": null,
+   "through": "supervisor",
+   "through_via": "offer.made",
+   "to": "has_ticket",
+   "count": 2,
+   "day": 2
+  },
+  {
+   "from": "has_ticket",
+   "via": "offer.finished",
+   "through": "supervisor",
+   "through_via": "offer.made",
+   "to": "worker",
+   "count": 2,
+   "day": 2
+  },
+  {
+   "from": "person.github.octo-owner",
+   "via": null,
+   "through": "supervisor",
+   "through_via": "offer.made",
+   "to": "sail_triage",
+   "count": 1,
+   "day": 1
+  },
+  {
+   "from": "sail_triage",
+   "via": "offer.finished",
+   "through": "supervisor",
+   "through_via": "offer.made",
+   "to": "worker",
+   "count": 1,
+   "day": 1
+  }
+ ],
+ "hubs": [
+  {
+   "hub": "supervisor",
+   "members": [
+    "has_ticket",
+    "sail_triage",
+    "worker"
+   ]
+  }
+ ],
+ "unanswered_types": [],
+ "unattributed_events": 0,
+ "era": "e4",
+ "current_era": "e4",
+ "eras": [
+  {
+   "id": "e1",
+   "start": 1793693606.238,
+   "label": "config.changed from supervisor",
+   "cause": "d682849c8e004c05ae0ec4c61eb4f743",
+   "type": "config.changed",
+   "source": "supervisor",
+   "subject": null
+  },
+  {
+   "id": "e2",
+   "start": 1793693612.275,
+   "label": "config.changed from supervisor",
+   "cause": "97d34d5211984569b4d76ae9158d9b0f",
+   "type": "config.changed",
+   "source": "supervisor",
+   "subject": null
+  },
+  {
+   "id": "e3",
+   "start": 1793701760.719,
+   "label": "config.changed from supervisor",
+   "cause": "66f61fb3dd6740409a7bd4813452627d",
+   "type": "config.changed",
+   "source": "supervisor",
+   "subject": null
+  },
+  {
+   "id": "e4",
+   "start": 1793701809.128,
+   "label": "config.changed from supervisor",
+   "cause": "3de55e08407148538c9f77939766f673",
+   "type": "config.changed",
+   "source": "supervisor",
+   "subject": null
+  }
+ ],
+ "channels": [],
+ "counted": [],
+ "intended_edges": [
+  {
+   "from": "jira.issue.assigned",
+   "to": "supervisor",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "item.requested",
+   "to": "supervisor",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "offer.finished",
+   "to": "supervisor",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "outbox.sent",
+   "to": "supervisor",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "outbox.draft.rejected",
+   "to": "supervisor",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "outbox.send_failed",
+   "to": "supervisor",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "github.checks.completed",
+   "to": "supervisor",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "github.pr.changes_requested",
+   "to": "supervisor",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "github.pr.approved",
+   "to": "supervisor",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "github.pr.commented",
+   "to": "supervisor",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "github.pr.labeled",
+   "to": "supervisor",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "attention.needed",
+   "to": "supervisor",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "supervisor",
+   "to": "offer.made",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "supervisor",
+   "to": "offer.withdrawn",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "supervisor",
+   "to": "outbox.draft.created",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "supervisor",
+   "to": "attention.needed",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "supervisor",
+   "to": "item.requested",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "offer.made",
+   "to": "review_nudger",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "offer.withdrawn",
+   "to": "review_nudger",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "review_nudger",
+   "to": "offer.finished",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "offer.made",
+   "to": "has_ticket",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "offer.withdrawn",
+   "to": "has_ticket",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "has_ticket",
+   "to": "offer.finished",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "offer.made",
+   "to": "worker",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "offer.withdrawn",
+   "to": "worker",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "worker",
+   "to": "offer.finished",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "offer.made",
+   "to": "sail_triage",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "offer.withdrawn",
+   "to": "sail_triage",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "sail_triage",
+   "to": "offer.finished",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "outbox.draft.created",
+   "to": "outbox",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "outbox",
+   "to": "outbox.draft.approved",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "outbox",
+   "to": "outbox.draft.rejected",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "outbox",
+   "to": "jira.issue.transitioned",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "offer.finished",
+   "to": "bot.github.github-actions",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "outbox.sent",
+   "to": "bot.github.github-actions",
+   "kind": "subscribes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "bot.github.github-actions",
+   "to": "github.checks.completed",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": true,
+   "gone": false
+  },
+  {
+   "from": "bot.github.github-actions",
+   "to": "github.pr.closed",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "bot.github.github-actions",
+   "to": "jira.issue.transitioned",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "bot.github.github-actions",
+   "to": "github.pr.approved",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "bot.github.github-actions",
+   "to": "github.pr.changes_requested",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "bot.github.github-actions",
+   "to": "github.pr.commented",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  },
+  {
+   "from": "bot.github.github-actions",
+   "to": "github.pr.labeled",
+   "kind": "publishes",
+   "state": "proposed",
+   "observed": false,
+   "gone": false
+  }
+ ],
+ "intended_types": [
+  {
+   "type": "attention.needed",
+   "description": "a guard passed: the planner is told, and the item moves on when the guard says where; a guard of delivery_live passed",
+   "implicit": false
+  },
+  {
+   "type": "github.checks.completed",
+   "description": "ends delivery_live \u00b7 ci",
+   "implicit": false
+  },
+  {
+   "type": "github.pr.approved",
+   "description": "ends delivery_live \u00b7 review",
+   "implicit": false
+  },
+  {
+   "type": "github.pr.changes_requested",
+   "description": "moves delivery_live \u00b7 review to write",
+   "implicit": false
+  },
+  {
+   "type": "github.pr.closed",
+   "description": "moves delivery_live \u00b7 ci to the end; moves delivery_live \u00b7 review to the end; moves delivery_live \u00b7 sail_check to the end",
+   "implicit": false
+  },
+  {
+   "type": "github.pr.commented",
+   "description": "moves delivery_live \u00b7 review to sail",
+   "implicit": false
+  },
+  {
+   "type": "github.pr.labeled",
+   "description": "ends delivery_live \u00b7 sail_check; moves delivery_live \u00b7 sail_check to triage",
+   "implicit": false
+  },
+  {
+   "type": "item.requested",
+   "description": "an item asked for, of a workflow or for a role; starts delivery_live; starts review_nudger",
+   "implicit": false
+  },
+  {
+   "type": "jira.issue.assigned",
+   "description": "starts delivery_live (jira.issue.assigned with assignee = setting owner, status = none of \"Done\", \"Closed\", category = none of \"done\", replayed = none of true)",
+   "implicit": false
+  },
+  {
+   "type": "jira.issue.transitioned",
+   "description": "moves delivery_live \u00b7 ticket to the end; moves delivery_live \u00b7 create_ticket to the end; moves delivery_live \u00b7 write to the end; moves delivery_live \u00b7 open_pr to the end; moves delivery_live \u00b7 link to the end; moves delivery_live \u00b7 ci to the end; moves delivery_live \u00b7 review to the end; moves delivery_live \u00b7 sail to the end; moves delivery_live \u00b7 sail_check to the end; moves delivery_live \u00b7 triage to the end",
+   "implicit": false
+  },
+  {
+   "type": "offer.finished",
+   "description": "a holder's turn at a step ends, with its outcome; ends delivery_live \u00b7 ticket; ends delivery_live \u00b7 write; ends delivery_live \u00b7 link; ends delivery_live \u00b7 triage; ends review_nudger \u00b7 find",
+   "implicit": false
+  },
+  {
+   "type": "offer.made",
+   "description": "the planner's dispatch offers a step of an item to a role; offers delivery_live's steps; offers review_nudger's steps",
+   "implicit": false
+  },
+  {
+   "type": "offer.withdrawn",
+   "description": "an offer taken back (unclaimed, returned, or the item closed); takes back delivery_live's offers; takes back review_nudger's offers",
+   "implicit": false
+  },
+  {
+   "type": "outbox.draft.approved",
+   "description": null,
+   "implicit": true
+  },
+  {
+   "type": "outbox.draft.created",
+   "description": "drafts delivery_live \u00b7 create_ticket for the outbox; drafts delivery_live \u00b7 open_pr for the outbox; drafts delivery_live \u00b7 sail for the outbox; drafts delivery_live \u00b7 close_ticket for the outbox; drafts review_nudger \u00b7 remind for the outbox",
+   "implicit": false
+  },
+  {
+   "type": "outbox.draft.rejected",
+   "description": null,
+   "implicit": true
+  },
+  {
+   "type": "outbox.send_failed",
+   "description": null,
+   "implicit": true
+  },
+  {
+   "type": "outbox.sent",
+   "description": "ends delivery_live \u00b7 create_ticket; ends delivery_live \u00b7 open_pr; ends delivery_live \u00b7 sail; ends delivery_live \u00b7 close_ticket; ends review_nudger \u00b7 remind",
+   "implicit": false
+  }
+ ],
+ "intended_version": 7,
+ "measured_at": 1793721218.8757398,
+ "subsystems": {
+  "default": "package",
+  "partitions": [
+   {
+    "label": "package",
+    "source": "announced",
+    "by": "package",
+    "groups": [
+     {
+      "value": "agents",
+      "machines": [
+       "supervisor"
+      ],
+      "events": [
+       "agent.said",
+       "attention.needed",
+       "config.changed",
+       "item.archived",
+       "item.closed",
+       "item.deleted",
+       "item.requested",
+       "offer.alive",
+       "offer.withdraw_requested",
+       "orchestra.intent.requested",
+       "orchestra.process.gave_up",
+       "outbox.send_failed",
+       "session.settled",
+       "task.attention_needed"
+      ]
+     },
+     {
+      "value": "bridges",
+      "machines": [
+       "bot.github.github-actions",
+       "person.github.octo-owner",
+       "person.jira.557058-00000000-0000-0000-0000-000000000000"
+      ],
+      "events": [
+       "github.pr.closed",
+       "github.pr.merged",
+       "github.pr.opened",
+       "github.pr.synchronize",
+       "github.pr.unlabeled",
+       "jira.issue.created"
+      ]
+     },
+     {
+      "value": "delivery_live",
+      "machines": [
+       "sail"
+      ],
+      "events": [
+       "sail.check.completed"
+      ]
+     },
+     {
+      "value": "outbox",
+      "machines": [
+       "outbox"
+      ],
+      "events": [
+       "outbox.draft.approved"
+      ]
+     },
+     {
+      "value": "workflows",
+      "machines": [
+       "has_ticket",
+       "sail_triage",
+       "worker",
+       "review_nudger"
+      ],
+      "events": []
+     }
+    ],
+    "unassigned": {
+     "machines": [
+      "orchestra-host"
+     ],
+     "events": [
+      "orchestra.era.started",
+      "orchestra.machine.quiet"
+     ]
+    },
+    "between": [
+     {
+      "type": "github.checks.completed",
+      "groups": [
+       "agents",
+       "bridges"
+      ]
+     },
+     {
+      "type": "github.pr.approved",
+      "groups": [
+       "agents",
+       "bridges"
+      ]
+     },
+     {
+      "type": "github.pr.changes_requested",
+      "groups": [
+       "agents",
+       "bridges"
+      ]
+     },
+     {
+      "type": "github.pr.commented",
+      "groups": [
+       "agents",
+       "bridges"
+      ]
+     },
+     {
+      "type": "github.pr.labeled",
+      "groups": [
+       "agents",
+       "bridges",
+       "delivery_live"
+      ]
+     },
+     {
+      "type": "jira.issue.assigned",
+      "groups": [
+       "agents",
+       "bridges"
+      ]
+     },
+     {
+      "type": "jira.issue.transitioned",
+      "groups": [
+       "bridges",
+       "outbox"
+      ]
+     },
+     {
+      "type": "offer.claimed",
+      "groups": [
+       "agents",
+       "workflows"
+      ]
+     },
+     {
+      "type": "offer.finished",
+      "groups": [
+       "agents",
+       "bridges",
+       "workflows"
+      ]
+     },
+     {
+      "type": "offer.made",
+      "groups": [
+       "agents",
+       "workflows"
+      ]
+     },
+     {
+      "type": "offer.withdrawn",
+      "groups": [
+       "agents",
+       "workflows"
+      ]
+     },
+     {
+      "type": "outbox.draft.created",
+      "groups": [
+       "agents",
+       "outbox"
+      ]
+     },
+     {
+      "type": "outbox.draft.rejected",
+      "groups": [
+       "agents",
+       "outbox"
+      ]
+     },
+     {
+      "type": "outbox.sent",
+      "groups": [
+       "agents",
+       "bridges",
+       "outbox"
+      ]
+     }
+    ],
+    "crossing": [
+     {
+      "between": [
+       "agents",
+       "workflows"
+      ],
+      "handoffs": [
+       {
+        "from": "supervisor",
+        "via": "offer.made",
+        "to": "worker",
+        "count": 5
+       },
+       {
+        "from": "supervisor",
+        "via": "offer.made",
+        "to": "has_ticket",
+        "count": 2
+       },
+       {
+        "from": "has_ticket",
+        "via": "offer.finished",
+        "to": "supervisor",
+        "count": 2
+       },
+       {
+        "from": "worker",
+        "via": "offer.finished",
+        "to": "supervisor",
+        "count": 2
+       },
+       {
+        "from": "supervisor",
+        "via": "offer.made",
+        "to": "sail_triage",
+        "count": 1
+       },
+       {
+        "from": "sail_triage",
+        "via": "offer.finished",
+        "to": "supervisor",
+        "count": 1
+       }
+      ],
+      "count": 6,
+      "subjects": 13
+     },
+     {
+      "between": [
+       "agents",
+       "bridges"
+      ],
+      "handoffs": [
+       {
+        "from": "person.jira.557058-00000000-0000-0000-0000-000000000000",
+        "via": null,
+        "to": "supervisor",
+        "count": 2
+       },
+       {
+        "from": "person.github.octo-owner",
+        "via": null,
+        "to": "supervisor",
+        "count": 2
+       },
+       {
+        "from": "supervisor",
+        "via": null,
+        "to": "person.jira.557058-00000000-0000-0000-0000-000000000000",
+        "count": 1
+       }
+      ],
+      "count": 3,
+      "subjects": 5
+     },
+     {
+      "between": [
+       "bridges",
+       "delivery_live"
+      ],
+      "handoffs": [
+       {
+        "from": "person.github.octo-owner",
+        "via": "github.pr.labeled",
+        "to": "sail",
+        "count": 2
+       },
+       {
+        "from": "sail",
+        "via": null,
+        "to": "person.github.octo-owner",
+        "count": 2
+       }
+      ],
+      "count": 2,
+      "subjects": 4
+     },
+     {
+      "between": [
+       "agents",
+       "outbox"
+      ],
+      "handoffs": [
+       {
+        "from": "supervisor",
+        "via": null,
+        "to": "outbox",
+        "count": 5
+       }
+      ],
+      "count": 1,
+      "subjects": 5
+     },
+     {
+      "between": [
+       "bridges",
+       "workflows"
+      ],
+      "handoffs": [
+       {
+        "from": "worker",
+        "via": null,
+        "to": "person.github.octo-owner",
+        "count": 3
+       }
+      ],
+      "count": 1,
+      "subjects": 3
+     }
+    ],
+    "spanning": [],
+    "joined": 2,
+    "crossed": 13,
+    "crossed_simulated": 0
+   }
+  ]
+ },
+ "model_parts": {
+  "stocks": [],
+  "flows": [],
+  "discovery": {
+   "left_out": {},
+   "titles": {}
+  }
+ }
+}
