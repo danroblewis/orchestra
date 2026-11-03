@@ -19,7 +19,11 @@ stocks and churn versions with every outage. A run long after the previous one (
 slept) reads the whole window again like any other and records the gap.
 
 **Eras** (``sd.eras``, ``sd.prior``). The window never reaches back past the start of the current
-era: after a machine changed the system, what came before is not evidence for it. Given the bus
+era for what the era's change could have altered: after a machine changed the system, what came
+before is not evidence for it. A change of the project's configuration (``config.changed``) alters
+nothing another system's store measures, so a source's series keep their history through it: the
+window reaches back to the last era begun otherwise, and the own store's series are read from the
+current era's start (``cuts``; ``discovery["sources_kept"]``). Given the bus
 (``events``: the host, ``orchestra sd discover``), the eras are brought up to date from it first
 and each new one is announced (``orchestra.era.started``); otherwise (the web page's button) the
 eras the host recorded are used. When the era is new since the last discovery, that discovery
@@ -31,7 +35,7 @@ saved as a version when its structure changed or it is the era's first.
 **The sources' history** (``sources.held``). With the configured window (no window or step asked
 for), a source's first read finds how far back it holds, up to its ``history`` (7 days), and the
 window is the longer of ``[discovery] window`` and that, up to ``MAX_WINDOW`` but no longer than the
-current era, in whole multiples of the window with the step scaled alike (``held_window``: the grid
+era that cuts the sources (``cuts``), in whole multiples of the window with the step scaled alike (``held_window``: the grid
 keeps its number of steps); ``discovery["history"]`` says so. A source added with a week behind it
 gives a model from its first discovery, not an hour later.
 
@@ -63,6 +67,7 @@ from pathlib import Path
 
 from ..metrics import MetricsStore
 from ..sources.catalogue import Catalogue
+from ..sources.spec import for_project
 from . import eras as era_record
 from . import persistence, quiet, simulated
 from . import snapshot as snap
@@ -176,6 +181,21 @@ def era_window(start: float, end: float, step: float, era_start: float | None) -
     return min(end, math.ceil(era_start / step) * step)
 
 
+def cuts(project, eras: list, now: float) -> tuple[float | None, float | None]:
+    """Where the current era cuts what discovery reads: (the own store's series from, the window
+    from). The era cuts the window only for the series its change could have altered: a source's
+    series (another system's store, read in place) only from the last era that could change what
+    that system measures (``eras.sources_era``: not a ``config.changed``), so a change of the
+    project's own configuration never throws a source's history away (bootstrap run 5: a week read,
+    then the fit cut to 58 minutes by an era its setup began)."""
+    era = era_record.current(eras, now)
+    own = era.start if era else None
+    if not for_project(project).sources:
+        return own, own
+    src = era_record.sources_era(eras, now)
+    return own, src.start if src else None
+
+
 def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, options: dict | None = None,
                window_s: float | None = None, step_s: float | None = None,
                note: str = "discovered: the structure changed", skip_if_busy: bool = False,
@@ -199,19 +219,22 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
             eras = era_record.recorded(store)
         now = time.time() if now is None else now
         era = era_record.current(eras, now)
+        own_from, cut = cuts(project, eras, now)
         held: dict[str, float] = {}
         if not asked:                         # the configured window: as long as the sources hold, within the era
             catalogue = Catalogue(project, metrics)
             a0, e0 = aligned(now - window_s, now, step_s)    # inferred over the window discovery would read without it
-            held = catalogue.held(now, era_window(a0, e0, step_s, era.start if era else None), e0) if catalogue.specs.sources else {}
-            window_s, step_s = held_window(window_s, step_s, max(held.values(), default=0.0), era.start if era else None, now)
+            held = catalogue.held(now, era_window(a0, e0, step_s, cut), e0) if catalogue.specs.sources else {}
+            window_s, step_s = held_window(window_s, step_s, max(held.values(), default=0.0), cut, now)
         lengthened = window_s > cfg.discovery_window and bool(held)    # inferred over the configured window still
         start, end = aligned(now - window_s, now, step_s)
-        start = era_window(start, end, step_s, era.start if era else None)
+        start = era_window(start, end, step_s, cut)
+        own_from = own_from if own_from is not None and own_from > start else None    # the own series are cut further than the window
         if era is None or end - start >= 2 * step_s:
             base_s, tried = window_s, []
             while True:
-                reading = Catalogue(project, metrics).read(start, end, step_s, infer_s=cfg.discovery_window if lengthened and not tried else None)
+                reading = Catalogue(project, metrics).read(start, end, step_s, infer_s=cfg.discovery_window if lengthened and not tried else None,
+                                                           own_from=own_from)
                 allowed = None
                 if snapshot is not None:
                     sim = snap.simulated_allowed(project, reading, collectors)
@@ -222,13 +245,14 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
                                          options=options, deadline=DEADLINE_SHARE * cfg.discovery_every, provenance=reading.provenance,
                                          allowed=allowed)
                 annotate(m, reading.provenance)
-                wider = widen(m, window_s, step_s, now, era.start if era else None, oldest(reading))
+                wider = widen(m, window_s, step_s, now, cut, oldest(reading))
                 if wider is None:
                     break
                 tried.append(window_s)
                 window_s, step_s = wider
                 start, end = aligned(now - window_s, now, step_s)
-                start = era_window(start, end, step_s, era.start if era else None)
+                start = era_window(start, end, step_s, cut)
+                own_from = own_from if own_from is not None and own_from > start else None
             if tried:
                 m.discovery["widened"] = {"from_s": base_s, "tried_s": tried, "window_s": window_s, "step_s": step_s,
                                           "why": f"the {window_words(base_s)} window held too few events for any counter "
@@ -255,6 +279,12 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
                 m = merge(m, prior, age_s=now - era.start, keep_s=cfg.prior_for or window_s)
                 m.discovery["era_comparison"] = compare(prior, m)
             m.discovery["era_start"] = era.start
+            if own_from is not None:
+                m.discovery["sources_kept"] = {"from": start, "own_from": own_from,
+                                               "why": f"era {era.id} began with a change of the project's configuration "
+                                                      f"({era.subject or era.type}), which changes nothing another system's store "
+                                                      "measures: the sources' series keep their history, the own store's are read "
+                                                      "from the era's start"}
         if reading is None:
             store.write_discovery(m, at=now)
             cur = store.load()
@@ -292,10 +322,11 @@ def snapshot(project, metrics: MetricsStore, directory: Path | str, *, strategy:
     window_s = window_s or cfg.discovery_window
     step_s = step_s or cfg.discovery_step
     now = time.time() if now is None else now
-    era = era_record.current(era_record.recorded(ModelStore.for_state(project.state_dir)), now)
+    own_from, cut = cuts(project, era_record.recorded(ModelStore.for_state(project.state_dir)), now)
     start, end = aligned(now - window_s, now, step_s)
-    start = era_window(start, end, step_s, era.start if era else None)
-    reading = Catalogue(project, metrics).read(start, end, step_s, keep=False)
+    start = era_window(start, end, step_s, cut)
+    reading = Catalogue(project, metrics).read(start, end, step_s, keep=False,
+                                               own_from=own_from if own_from is not None and own_from > start else None)
     return snap.write(directory, reading, start=start, end=end, step=step_s, strategy=strategy or configured_strategy(project),
                       options=cfg.discovery_options, deadline=DEADLINE_SHARE * cfg.discovery_every, window_s=window_s,
                       project=project, simulated=snap.simulated_allowed(project, reading, collectors))

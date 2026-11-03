@@ -199,6 +199,8 @@ def _title(s: Series, places: Places | None = None) -> str:
     pages show this title (sd-graph.js)."""
     if places is not None and (t := places.level(s.labels, s.key, s.name) if not s.counter else places.move(s.labels, s.key)):
         return t
+    if places is not None and (t := places.sourced(s.name, s.labels, s.key)):
+        return t
     if t := _in_words(s):
         return t
     base = re.sub(r"_total$", "", s.name).replace("_", " ")
@@ -213,6 +215,8 @@ def _named(s: Series, places: Places | None) -> dict:
         noun = None if s.counter else (places.provenance.get(s.key) or {}).get("noun")
         tags = places.move_tags(s.labels, s.key) if s.counter else places.level_tags(s.labels, s.key, s.name)
         return {"named": "places", **({"noun": noun} if noun else {}), **({"tags": tags} if tags else {})}
+    if places is not None and places.sourced(s.name, s.labels, s.key):
+        return {"named": "words", "tags": places.sourced_tags(s.name, s.labels, s.key)}
     return {"named": "words"} if _in_words(s) else {}
 
 
@@ -1353,14 +1357,16 @@ def _held_levels(series: list[Series], left_out: dict, provenance: dict) -> dict
 
 def _left_tags(s: Series, places: Places) -> list[str]:
     """A left-out series' tags, when its instrument's places name it (``sd.titles``)."""
-    return places.move_tags(s.labels, s.key) if s.counter else places.level_tags(s.labels, s.key, s.name)
+    if tags := (places.move_tags(s.labels, s.key) if s.counter else places.level_tags(s.labels, s.key, s.name)):
+        return tags
+    return places.sourced_tags(s.name, s.labels, s.key)
 
 
 def _left_title(s: Series, places: Places) -> str | None:
     """A left-out series' title when its instrument's places or its own words give one, else None."""
     if t := (places.move(s.labels, s.key) if s.counter else places.level(s.labels, s.key, s.name)):
         return t
-    return _in_words(s)
+    return places.sourced(s.name, s.labels, s.key) or _in_words(s)
 
 
 def structure(model: Model) -> list:

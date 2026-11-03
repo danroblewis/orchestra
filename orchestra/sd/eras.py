@@ -3,8 +3,9 @@
 An era is the time the model is discovered in. After a machine changes how the system works (a
 machine's spec, its model or its duties edited, a definition the machines work by changed, a
 declared effect confirmed, a deploy) it is a different system, and what was measured before is not
-evidence for it: discovery reads only the current era (``sd.rediscover``), and the previous era's
-model is its prior (``sd.prior``). Measuring more, or otherwise, is not such a change: an era begun
+evidence for it: discovery reads only the current era (``sd.rediscover``) for what the change
+could have altered (a source's series keep their history through an era a ``config.changed``
+began: ``sources_era``), and the previous era's model is its prior (``sd.prior``). Measuring more, or otherwise, is not such a change: an era begun
 by it would throw away the history a new source brings.
 
 **Which events begin an era.** Orchestra knows no domain (AGENTS.md rule 1), so it is told, by the
@@ -27,6 +28,15 @@ Of those, the ``subject`` decides (``begins``):
   ``scrape:``, ``source:``, ``series:``, ``setting:``, ``MEASURES``) never begins one;
 - a change a prediction is about (an ``orchestra.prediction.made`` whose ``change`` is its id: a
   declared effect confirmed, a machine's predicted fix) always does: it says it changes the system;
+- a ``machine:<name>`` subject whose name is an instrument's is a measurement change too, and never
+  begins one, whatever the subject says (bootstrap run 5: a GitHub poller, a ``[[machines]]`` entry
+  with a ``[[collect]]`` twin, removed as ``machine:github_plugins_poller``, began the run's one
+  era and cut a week of a source's history to 58 minutes). A name is an instrument's when the
+  configuration gives an instrument that name (a ``[[collect]]`` or ``[[scrape]]`` entry, a
+  plugin's collector in the runtime record, a ``[[sources]]`` entry: ``instrument_names``) or the
+  bus has named it as one (a subject ``instrument:``, ``collector:``, ``collect:`` or ``scrape:``
+  with that name, read before it); the names are kept in the record (``instruments``), so an
+  instrument removed from the configuration is still known as one when its removal is read;
 - a subject naming a part that behaves (``machine:<name>``: its spec, its model or its duties;
   ``definition:<name>``: a definition machines work by; ``override:<name>``: code loaded over a
   package's, ``BEHAVES``) does;
@@ -75,6 +85,8 @@ PREDICTION = "orchestra.prediction.made"
 RECORD = "eras"
 BEHAVES = ("machine:", "definition:", "override:")      # subjects naming a part that behaves
 MEASURES = ("instrument:", "collector:", "collect:", "scrape:", "source:", "series:", "setting:")   # what is measured, or a setting
+NAMES_INSTRUMENT = ("instrument:", "collector:", "collect:", "scrape:")   # subjects that name an instrument by its name
+MACHINE = "machine:"
 FRESH_S = 300.0              # a config.changed read within this of its time is judged a no-op or not
 
 
@@ -121,21 +133,54 @@ def named(ev: dict, entries: list[str]) -> bool:
     return False
 
 
-def begins(ev: dict, entries: list[str], predicted: set[str] | frozenset[str] = frozenset()) -> bool:
+def _names(subject: str, prefixes: tuple[str, ...]) -> list[str]:
+    """The names a subject with one of ``prefixes`` names (``collector:a`` -> [a]; ``machine:a,b``
+    -> [a, b]); [] for any other subject."""
+    if not subject.startswith(prefixes):
+        return []
+    return [n.strip() for n in subject.partition(":")[2].split(",") if n.strip()]
+
+
+def of_instrument(subject: str, instruments: set[str] | frozenset[str]) -> bool:
+    """Whether a ``machine:<name>`` subject names only instruments' processes: a measurement change."""
+    names = _names(subject, (MACHINE,))
+    return bool(names) and all(n in instruments for n in names)
+
+
+def begins(ev: dict, entries: list[str], predicted: set[str] | frozenset[str] = frozenset(),
+           instruments: set[str] | frozenset[str] = frozenset()) -> bool:
     """Whether the event is a change of how the system behaves, and so begins an era (unless it
     comes too soon after the current era's start, ``sync``): named by ``system.changed`` or a
     filter, and then decided by its subject (the module's docstring). ``predicted``: the ids of
-    the changes predictions are about."""
+    the changes predictions are about; ``instruments``: the names known as instruments', whose
+    ``machine:`` changes are measurement changes."""
     if not named(ev, entries):
         return False
     subject = str(ev.get("subject") or "")
-    if subject.startswith(MEASURES):
+    if subject.startswith(MEASURES) or of_instrument(subject, instruments):
         return False
     if ev.get("id") and ev["id"] in predicted:
         return True
     if subject.startswith(BEHAVES):
         return True
     return ev.get("type") != CONFIG
+
+
+def instrument_names(project) -> set[str]:
+    """The names the configuration gives instruments now: its ``[[collect]]``, ``[[scrape]]`` and
+    ``[[sources]]`` entries, and the plugins' collectors the host runs (its runtime record). What
+    cannot be read gives nothing."""
+    out: set[str] = set()
+    try:
+        raw = getattr(project.config, "raw", None) or {}
+        for section in ("collect", "scrape", "sources"):
+            out |= {str(e["name"]) for e in raw.get(section) or [] if isinstance(e, dict) and e.get("name")}
+    except (AttributeError, TypeError):
+        pass
+    if getattr(project, "runtime_file", None) is not None:      # no runtime record (no host yet): the configuration's alone
+        from .. import runtime
+        out |= {str(n) for n in (runtime.read(project).get("instruments") or {})}
+    return out
 
 
 def config_key(raw: dict) -> str:
@@ -166,25 +211,32 @@ def _predicted(store: ModelStore) -> set[str]:
 
 def sync(store: ModelStore, events, entries: list[str], publish=None, *, min_s: float = 0.0,
          config: Callable[[], str] | None = None, noted: list | None = None,
-         clock: Callable[[], float] = time.time) -> tuple[list[Era], list[Era]]:
+         clock: Callable[[], float] = time.time,
+         instruments: Callable[[], set[str]] | None = None) -> tuple[list[Era], list[Era]]:
     """Read what is new on the bus and record the eras it begins; returns every era (by start)
     and the new ones. ``publish(type, data, **ext)``, when given, announces each new era as
     ``orchestra.era.started``: only the process that recorded it does. ``min_s``: the shortest
     era; a change within it of the current era's start is kept in that era (and appended to
     ``noted``, when given). ``config``: the configuration's key now (``config_key``), asked only
-    when a fresh ``config.changed`` is read, so a no-op begins nothing."""
+    when a fresh ``config.changed`` is read, so a no-op begins nothing. ``instruments``: the names
+    the configuration gives instruments now (``instrument_names``), kept in the record with those
+    the bus named, so a ``machine:`` change of an instrument's process begins nothing."""
     with store.locked(RECORD):
         rec = store.read_record(RECORD) or {}
         if rec.get("filters") != list(entries) or rec.get("offset", 0) > events.end():
             # the filters changed, or the bus was replaced: read again from its start
-            rec = {"filters": list(entries), "offset": 0, "eras": [], **({"config": rec["config"]} if rec.get("config") else {})}
+            rec = {"filters": list(entries), "offset": 0, "eras": [],
+                   **{k: rec[k] for k in ("config", "instruments") if rec.get(k)}}
         evs, offset = events.after(rec["offset"])
+        known = set(rec.get("instruments") or []) | (set(instruments()) if instruments is not None else set())
         seen = {e.get("cause") for e in rec["eras"]} | {c.get("id") for e in rec["eras"] for c in e.get("changes") or []}
         predicted = _predicted(store) | {str(ev["data"]["change"]) for ev in evs
                                          if ev.get("type") == PREDICTION and isinstance(ev.get("data"), dict) and ev["data"].get("change")}
         now_key: list[str] = []
         new = []
         for ev in evs:
+            if not str(ev.get("type") or "").startswith(OWN):
+                known |= set(_names(str(ev.get("subject") or ""), NAMES_INSTRUMENT))    # the bus names an instrument
             if ev.get("type") == CONFIG and config is not None and named(ev, entries):
                 t = event_time(ev)
                 if t is not None and clock() - t <= FRESH_S:
@@ -194,7 +246,7 @@ def sync(store: ModelStore, events, entries: list[str], publish=None, *, min_s: 
                     rec["config"] = now_key[0]
                     if same:
                         continue                # the configuration is what it was: nothing changed
-            if not begins(ev, entries, predicted) or ev.get("id") in seen:
+            if not begins(ev, entries, predicted, known) or ev.get("id") in seen:
                 continue
             cur = rec["eras"][-1] if rec["eras"] else None
             t = event_time(ev)
@@ -212,6 +264,7 @@ def sync(store: ModelStore, events, entries: list[str], publish=None, *, min_s: 
                 seen.add(era.cause)
                 new.append(era)
         rec["offset"] = offset
+        rec["instruments"] = sorted(known)
         store.write_record(RECORD, rec)
     if publish is not None:
         for era in new:
@@ -234,7 +287,8 @@ def follow(store: ModelStore, events, project, publish=None, noted: list | None 
     def key() -> str:
         read = getattr(project, "read_config", None)
         return config_key(getattr(read() if read else project.config, "raw", None) or {})
-    return sync(store, events, project.config.eras_from, publish, min_s=shortest(project.config), config=key, noted=noted)
+    return sync(store, events, project.config.eras_from, publish, min_s=shortest(project.config), config=key, noted=noted,
+                instruments=lambda: instrument_names(project))
 
 
 def of_change(eras: list[Era], change: str | None) -> Era | None:
@@ -259,6 +313,16 @@ def by_change(eras: list[Era]) -> dict[str, Era]:
 def current(eras: list[Era], at: float) -> Era | None:
     """The era in force at ``at``: the last to begin at or before it."""
     return next((e for e in sorted(eras, key=lambda e: e.start, reverse=True) if e.start <= at), None)
+
+
+def sources_era(eras: list[Era], at: float) -> Era | None:
+    """The era a source's series are discovered in (``sd.rediscover``): the last to begin at or
+    before ``at`` whose cause could have changed what another system's store measures. A
+    ``config.changed`` changes the project's own configuration (a machine's spec, a definition,
+    code loaded over a package's), not the system a source reads in place, so it cuts the own
+    store's series only; ``system.changed`` and the other types a filter names (a deploy) cut
+    every series."""
+    return next((e for e in sorted(eras, key=lambda e: e.start, reverse=True) if e.start <= at and e.type != CONFIG), None)
 
 
 def previous(eras: list[Era], era: Era | None) -> Era | None:

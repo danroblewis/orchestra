@@ -258,3 +258,80 @@ def test_every_planned_query_and_every_request_carries_the_match(tmp_path, monke
     reading = cat.read(NOW - 3600, NOW, 30.0)
     depth = [pts for name, lab, pts in reading.dump if name == "prom:queue_depth"]
     assert depth and max(v for pts in depth for _, v in pts) <= 16, "the other namespace's queue (15 to 21) is not summed in"
+
+
+# --- the first read covers levels and counters, and an era of the project's own keeps it (bootstrap run 5)
+
+
+def _inferred(tmp_path, monkeypatch):
+    """The project with its source inferred (no declared series): levels and counters as found."""
+    p = project(tmp_path, monkeypatch)
+    toml = (p.repo_root / "orchestra.toml").read_text().replace("infer = false\n", "")
+    (p.repo_root / "orchestra.toml").write_text(toml[:toml.index("[[series]]")])
+    return load_project(p.repo_root)
+
+
+def test_the_first_read_reaches_back_for_levels_as_well_as_counters(tmp_path, monkeypatch, store):
+    store["store"] = Store(week(10, step=60.0))
+    p = _inferred(tmp_path, monkeypatch)
+    cat = Catalogue(p, None)
+    n = len(store["store"].forms)
+    cat.held(NOW, NOW - 3600, NOW)
+    pages = [f["query"][0] for path, f in store["store"].forms[n:] if path.endswith("query_range") and float(f["start"][0]) < NOW - DAY]
+    assert pages, "pages before the last day were read"
+    assert any("queue_depth" in q for q in pages) and any("jobs_arrived_total" in q for q in pages), pages
+
+
+def _bus(tmp_path, *evs):
+    from orchestra.events import Events
+    events = Events(tmp_path / "events.jsonl")
+    for ev in evs:
+        events.bus.append(ev)
+    return events
+
+
+def _at(t: float) -> str:
+    from datetime import UTC, datetime
+    return datetime.fromtimestamp(t, UTC).isoformat()
+
+
+def test_an_era_the_projects_configuration_began_keeps_the_sources_history_and_cuts_the_own_series(tmp_path, monkeypatch, store):
+    """Run 5: an era begun by a ``config.changed`` 30 minutes before (a machine's spec changed) cut
+    a source's week of history to the era. The source's series keep the week; the own store's are
+    read from the era's start only."""
+    from orchestra.events import envelope
+    from orchestra.metrics import Point
+
+    store["store"] = Store(week(10, step=300.0))
+    p = _inferred(tmp_path, monkeypatch)
+    own = FileMetrics(tmp_path / "m.jsonl")
+    own.write([Point("own_queue", float(i % 5), NOW - 2 * DAY + 60 * i, {"project": p.key, "machine": "w"}) for i in range(2 * 1440)])
+    era_at = NOW - 1800
+    events = _bus(tmp_path, envelope("config.changed", "supervisor", subject="machine:worker", time=_at(era_at), id="c1"))
+    seen = []
+    read = Catalogue.read
+
+    def spy(self, start, end, step, **kw):
+        r = read(self, start, end, step, **kw)
+        seen.append((start, kw.get("own_from"), [pts for name, _, pts in r.dump if name == "own_queue"]))
+        return r
+    monkeypatch.setattr(Catalogue, "read", spy)
+    m = rediscover(p, own, now=NOW, events=events).model
+    d = m.discovery
+    assert m.era == "e1" and d["era_start"] == era_at
+    assert d["window_s"] == 7 * DAY and d["start"] <= NOW - 7 * DAY + d["step_s"], "the source's week is kept"
+    assert d["sources_kept"]["own_from"] == era_at and "machine:worker" in d["sources_kept"]["why"]
+    _, own_from, pts = seen[0]
+    assert own_from == era_at and pts and min(t for t, _ in pts[0]) >= era_at, "the own series from the era's start"
+
+
+def test_an_era_another_system_changed_in_cuts_the_sources_history_too(tmp_path, monkeypatch, store):
+    """A ``system.changed`` (a deploy) may change what the source measures: every series from it."""
+    from orchestra.events import envelope
+
+    store["store"] = Store(week(10, step=300.0))
+    p = _inferred(tmp_path, monkeypatch)
+    era_at = NOW - 3 * 3600
+    events = _bus(tmp_path, envelope("system.changed", "deployer", subject="machine:api", time=_at(era_at), id="d1"))
+    d = rediscover(p, FileMetrics(tmp_path / "m.jsonl"), now=NOW, events=events).model.discovery
+    assert d["window_s"] == 3 * 3600.0 and d["start"] >= era_at and "sources_kept" not in d

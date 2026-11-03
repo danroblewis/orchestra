@@ -103,7 +103,7 @@ def summary(d: Definition) -> bool:
 
 
 def provenance(spec: SourceSpec, d: Definition, traffic: dict | None = None, resolution_s: float | None = None) -> dict:
-    return {"source": spec.name, "query": d.query, "kind": d.kind, "origin": list(d.origin),
+    return {"source": spec.name, **({"machine_label": spec.machine} if spec.machine else {}), "query": d.query, "kind": d.kind, "origin": list(d.origin),
             "resolution_s": d.resolution_s if resolution_s is None else resolution_s,
             "unit": d.unit, **({"unit_label": d.unit_label} if d.unit_label else {}), "view": d.view, "family": d.family, "flags": list(d.flags), **({"traffic": traffic} if traffic else {}),
             **({"stock": dict(d.stock)} if d.stock else {})}
@@ -340,15 +340,21 @@ class Catalogue:
         out = [{"name": n, "labels": labels, "points": pts} for d in defs for n, labels, pts, _ in results.get(d.id, [])]
         return out, (_failures(errors, {d.id: d.name for d in defs}, len(defs), spec.deadline) if errors else None)
 
-    def read(self, start: float, end: float, step: float, *, keep: bool = True, infer_s: float | None = None) -> Reading:
+    def read(self, start: float, end: float, step: float, *, keep: bool = True, infer_s: float | None = None,
+             own_from: float | None = None) -> Reading:
         """Every series for the window (see the module's docstring). ``keep``: the reads are kept
         for the next discovery and the project's other readers (``readcache.py``); False for a
         read of another window (the judge's halves), which reads from the cache but keeps nothing.
         ``infer_s``: an inference this read starts looks at the window's last ``infer_s`` only (a
-        window as long as a source's history is read with what the last hour defines)."""
+        window as long as a source's history is read with what the last hour defines).
+        ``own_from``: the own store's series only from then (the current era's start, when a
+        source's history reaches further back: ``sd.rediscover``); a series with nothing since is
+        left out."""
         out = Reading()
         if self.own is not None:
             out.dump = list(self.own.dump())
+            if own_from is not None:
+                out.dump = [(n, lab, kept) for n, lab, pts in out.dump if (kept := [p for p in pts if p[0] >= own_from])]
             out.status[OWN] = {"ok": True, "series": len(out.dump)}
             # what the project's instruments say of the series they print (collect.views): a place's level and its own moves
             out.provenance.update(instrument_views(out.dump, declared_views(self.project), series_key))

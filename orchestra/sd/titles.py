@@ -38,7 +38,19 @@ place, by what sits there ("waiting at sail"; "in sail" for a one-part place); b
 thing, when its places are its states ("at write"); its tags are its places' scope and noun.
 Label values keep their spelling (``sail_check``, never "sail check"); "-" and "_" are alike
 inside a part (``code-review.waiting`` with ``step="code-review"``), and a place value with no
-letters in it (``stage="3"``) spells no words, so the series keeps its own name."""
+letters in it (``stage="3"``) spells no words, so the series keeps its own name.
+
+**A series read from another system's store** (``orchestra.sources``: its provenance names its
+``source``) has no count view, so it keeps its own name, said in words (``sourced``): the metric's
+name without the source's prefix (``hackriff_prom:queue_depth``: ``queue_depth``), ``_`` and ``:``
+as spaces, the unit dropped when it is a suffix the series' type says (a counter's ``_total``; a
+level's ``_<unit>`` when its source says that unit, a named one, not a count), and the values of
+the labels that differ among its sibling series (the series of the same name) as the said part,
+each value once: "queue depth (hk-api)", "queue depth (writes, hk-store)". The source and the
+labels that say which series it is are its tags, ``source=hackriff_prom`` first, then each label
+as ``label=value``, a value two labels carry said once (by the label the source names its
+machines by, when one of them is: its ``machine_label``). No label's name is known here (rule 1);
+the source's own words never stand in its name ("hackriff prom:queue depth", bootstrap run 5)."""
 
 from __future__ import annotations
 
@@ -113,12 +125,51 @@ def _outside(value: str) -> str:
     return " ".join(w for w in re.split(r"[^\w-]+", value) if w) or value
 
 
+NOT_SAID = WRITERS | {"simulated", "draft"}     # who wrote a series, never which one it is
+OWN = "own"                                    # the own store's provenance source (orchestra.sources.own.OWN)
+
+
+def remote(rec: dict) -> bool:
+    """Whether a series' provenance says it was read from another system's store (a ``[[sources]]``
+    entry), not the own store."""
+    return rec.get("source") not in (None, "", OWN)
+
+
+def _said_values(labels: dict, keys) -> list[str]:
+    """The values of ``keys`` in ``labels``, by label, each once, and none whose words another
+    value already says (a queue ``analytics.clicks`` says ``analytics``)."""
+    vals = list(dict.fromkeys(v for k, v in sorted(labels.items()) if k in keys and re.sub(r"\W+", "", v)))
+    words = [set(filter(None, re.split(r"\W+", v))) for v in vals]
+    return [v for i, v in enumerate(vals) if not any(j != i and words[i] < words[j] for j in range(len(vals)))]
+
+
+def sourced_words(name: str, rec: dict) -> str:
+    """A source-fed series' metric name in words: without the source's prefix, ``_`` and ``:`` as
+    spaces, the unit its type says dropped (a counter's ``_total``, a level's named unit)."""
+    base = name.partition(":")[2] if ":" in name else name
+    if rec.get("kind") in ("counter", "rate"):
+        base = re.sub(r"_total$", "", base)
+    elif (unit := str(rec.get("unit") or "")) and unit not in ("count", "items", "1") and base.endswith("_" + unit) and base != "_" + unit:
+        base = base[: -len(unit) - 1]
+    return " ".join(w for w in re.split(r"[_:]+", base) if w) or name
+
+
 class Places:
     """The places an instrument's count views spell, from every series of the window (``items``:
     name, labels, key), whether or not it became a stock."""
 
     def __init__(self, items, provenance: dict):
         self.provenance = provenance or {}
+        # a source-fed series' siblings (the series of its name): the labels whose values differ among them
+        values: dict[str, dict[str, set]] = {}
+        keys_of: dict[str, set[str]] = {}
+        sourced = [(name, labels) for name, labels, key in items if remote(self.provenance.get(key) or {})]
+        for name, labels in sourced:
+            keys_of.setdefault(name, set()).update(k for k in labels if k not in NOT_SAID)
+        for name, labels in sourced:
+            for k in keys_of[name]:
+                values.setdefault(name, {}).setdefault(k, set()).add(labels.get(k))
+        self.varying = {name: {k for k, vs in by.items() if len(vs) > 1} for name, by in values.items()}
         self.by_value: dict[str, list[Place]] = {}
         self.by_labels: dict[tuple, Place] = {}
         self.keys: dict[str, list[tuple[Place, str]]] = {}     # place value -> (its place, the key of the count that spells it)
@@ -164,6 +215,31 @@ class Places:
             return None
         pl = Place(at, said, {k: v for k, v in own.items() if k not in spell}, rec.get("noun") or "")
         return pl, value
+
+    def sourced(self, name: str, labels: dict, key: str) -> str | None:
+        """A source-fed series' title (the module's docstring): its metric's words and the values of
+        the labels that differ among its siblings; None for a series of the own store."""
+        rec = self.provenance.get(key) or {}
+        if not remote(rec):
+            return None
+        said = _said_values(labels, self.varying.get(name, set()))
+        return sourced_words(name, rec) + (f" ({', '.join(said)})" if said else "")
+
+    def sourced_tags(self, name: str, labels: dict, key: str) -> list[str]:
+        """A source-fed series' tags: ``source=<name>``, then the labels that say which series it
+        is, a value two labels carry once (by the source's machine label, when one is); []
+        for a series of the own store."""
+        rec = self.provenance.get(key) or {}
+        if not remote(rec):
+            return []
+        own = {k: v for k, v in sorted(labels.items()) if k not in NOT_SAID and v}
+        first = rec.get("machine_label")
+        order = sorted(own, key=lambda k: (k != first, k))
+        by_value: dict[str, str] = {}
+        for k in order:
+            by_value.setdefault(own[k], k)
+        kept = set(by_value.values())
+        return [f"source={rec['source']}"] + [f"{k}={own[k]}" for k in sorted(own) if k in kept]
 
     def _place(self, value: str, labels: dict) -> Place | None:
         """The place a value names among those whose scope the labels carry; else, among those

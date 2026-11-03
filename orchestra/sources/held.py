@@ -14,7 +14,9 @@ back the pages reached (``through``) and whether they are done (``complete``).
 
 Discovery's window is then the longer of ``[discovery] window`` and what the sources hold, up to
 ``history`` (``sd.rediscover``): read at a step that keeps the grid's number of steps, through the
-read cache like any window, and within the current era. Only the host's discovery and the CLI make
+read cache like any window, and within the last era that could change what the source measures
+(``sd.rediscover.cuts``: an era the project's configuration began keeps it). Every definition is
+read in the pages, levels as well as counters. Only the host's discovery and the CLI make
 a first read; every other reader uses what is kept."""
 
 from __future__ import annotations

@@ -339,7 +339,16 @@ Such a part's evidence says `named: "places"`. A series its own name and labels 
 named so on the server too, with `named: "words"`: Orchestra's count of the bus by its type and
 source ("item.closed events (supervisor)"), and a series whose one label is a word of its name
 followed by a plural noun by that noun on the label's value (`git_branch_commits{branch="main"}`:
-"commits on main").
+"commits on main"). A series read from another system's store (§4.4) has no count view, so it keeps its own
+name, said in words, `named: "words"` (`sd/titles.py`, `sourced`; bootstrap run 5 showed
+"hackriff prom:queue depth (hk-api)"): the metric's name without the source's prefix, `_` and `:`
+as spaces, the unit dropped when it is a suffix the series' type says (a counter's `_total`; a
+level's `_<unit>` when its source says that named unit), and, as the said part, the values of the
+labels that differ among its sibling series (those of the same name), each once: "queue depth
+(hk-api)", "queue depth (writes, hk-store)", "queue jobs enqueued". Its tags are `source=<name>`
+first, then each label that says which series it is as `label=value`, a value two labels carry
+said once (by the label the source names its machines by, its `machine`, when one of them is):
+`source=hackriff_prom`, `service=hk-api`. Its id stays the series'.
 
 ### 4.3 The model
 
@@ -791,7 +800,13 @@ such a change: an era begun by it would throw away the history a new source brin
   prediction is about (an `orchestra.prediction.made` whose `change` is its id) always does; one
   naming a part that behaves (`machine:<name>`: its spec, its model or its duties;
   `definition:<name>`: a definition machines work by; `override:<name>`: code loaded over a
-  package's) does; otherwise `config.changed` does not (it says the configuration changed, not
+  package's) does, except a `machine:<name>` whose names are all instruments' (a `[[collect]]`,
+  `[[scrape]]` or `[[sources]]` entry's, a plugin's collector in the runtime record, or a name the
+  bus has given an instrument, `instrument:`, `collector:`, `collect:` or `scrape:`, before it;
+  kept in `eras.json`'s `instruments`, so a removed one is still known): an instrument's process is
+  a measurement change and never begins one, whatever the subject says (bootstrap run 5: a GitHub
+  poller with a `[[collect]]` twin removed as `machine:github_plugins_poller` began the run's one
+  era); otherwise `config.changed` does not (it says the configuration changed, not
   that the behaviour did: the configuration holds the instruments, the sources and the plugins'
   settings too), and `system.changed` and every other named type do. A `config.changed` read
   within 5 minutes of its time while the configuration (`orchestra.toml` and the overlay, hashed)
@@ -808,9 +823,15 @@ such a change: an era begun by it would throw away the history a new source brin
   soon after its start for an era of their own", each with its type, source, subject and time.
   Changes every few minutes (a merge taken for a release) give one era per half hour.
 - **Discovery within the era.** The window is `[discovery] window`, or what the sources hold
-  (§4.4, "History"), but never reaching back past the current era's start: what came before is
-  not evidence for the new system. An era younger than two steps is not discovered; its model is
-  its prior.
+  (§4.4, "History"), but never reaching back past the current era's start for a series the
+  era's change could have altered: what came before is not evidence for the new system. An era
+  begun by a `config.changed` (the project's own configuration: a machine's spec, a definition, an
+  override) cannot alter what another system's store measures, so a source's series keep their
+  history through it (`sd/rediscover.py` `cuts`, `eras.sources_era`): the window reaches back to
+  the last era begun otherwise (`system.changed`, a deploy, another type a filter names), and the
+  own store's series are read from the current era's start (`discovery.sources_kept` says so).
+  Bootstrap run 5: a week read, then the fit cut to the era's 58 minutes. An era younger than two
+  steps, with nothing older to read, is not discovered; its model is its prior.
 - **The prior** (decision D4). The previous era's model is the new era's prior: its last
   discovery is saved as a version when the era begins (so it stays readable), and what the era
   discovers is merged with it (`sd/prior.py`). A flow in both, in the same form, keeps the era's
@@ -1096,11 +1117,12 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   `match` or `history` changed, looks back from now in pages of a day (48 points a series), until
   a page returns nothing or the data begins inside one (the store holds no more), `history`
   (default 7 days) is reached, or its budget is spent (`max_requests` by `deadline`, under the
-  store's rate and daily cap); a read stopped by its budget is taken up by the next discovery
+  store's rate and daily cap). Every definition is read in its pages, levels as well as counters
+  (one batched request a page); a read stopped by its budget is taken up by the next discovery
   where it stopped. `<state>/sources/<name>.held.json` keeps the oldest point returned, how far
   back the pages reached and whether they are done. Discovery's window is then the longer of
   `[discovery] window` and what the sources hold, up to `history` and 7 days, no longer than the
-  current era, in whole multiples of the window with the step scaled alike (`sd/rediscover.py`
+  current era (one that could change what the source measures, §4.3), in whole multiples of the window with the step scaled alike (`sd/rediscover.py`
   `held_window`: the grid keeps its number of steps; `discovery.history` says so), read through
   the read cache like any window. A source added with a week behind it gives a model at its first
   discovery. Only the host's discovery and the CLI make a first read; a window or step asked for

@@ -307,3 +307,76 @@ def test_a_place_of_one_part_is_a_state_its_stock_is_in_it_and_its_moves_name_it
     num = Series("queue_depth", {"stage": "3"}, [], [], False)
     p2 = Places([(num.name, num.labels, num.key)], {num.key: {"view": "count", "place": "stage"}})
     assert _title(num, p2).startswith("queue depth")
+
+
+# --- a series read from another store keeps its own name, in words, its source a tag (bootstrap run 5)
+
+RUN5 = [  # run 5's five stocks: the series as hackriff_prom's inference named and labelled them
+    ("hackriff_prom:queue_depth", {}),
+    ("hackriff_prom:queue_depth", {"job": "hk-api", "service": "hk-api", "machine": "hackriff_prom.hk-api"}),
+    ("hackriff_prom:queue_depth", {"job": "hk-store", "service": "hk-store", "machine": "hackriff_prom.hk-store"}),
+    ("hackriff_prom:queue_depth", {"job": "hk-stream", "service": "hk-stream", "machine": "hackriff_prom.hk-stream"}),
+    ("hackriff_prom:queue_depth", {"service": "hk-store", "queue": "writes", "machine": "hackriff_prom.hk-store"}),
+]
+
+
+def _source_prov(items, **extra):
+    from orchestra.sd.series import series_key
+    return {series_key(n, lab): {"source": "hackriff_prom", "machine_label": "service", "kind": extra.get("kind", "level"),
+                                 "unit": extra.get("unit", "count")} for n, lab in items}
+
+
+def test_run_5s_stocks_read_by_what_they_measure_with_the_source_as_a_tag():
+    from orchestra.sd.series import series_key
+    from orchestra.sd.titles import Places
+    pl = Places([(n, lab, series_key(n, lab)) for n, lab in RUN5], _source_prov(RUN5))
+    got = [(pl.sourced(n, lab, series_key(n, lab)), pl.sourced_tags(n, lab, series_key(n, lab))) for n, lab in RUN5]
+    assert got == [
+        ("queue depth", ["source=hackriff_prom"]),
+        ("queue depth (hk-api)", ["source=hackriff_prom", "service=hk-api"]),
+        ("queue depth (hk-store)", ["source=hackriff_prom", "service=hk-store"]),
+        ("queue depth (hk-stream)", ["source=hackriff_prom", "service=hk-stream"]),
+        ("queue depth (writes, hk-store)", ["source=hackriff_prom", "queue=writes", "service=hk-store"]),
+    ]
+
+
+def test_a_source_fed_counter_drops_the_suffix_its_type_says_and_a_level_its_unit():
+    from orchestra.sd.series import series_key
+    from orchestra.sd.titles import Places, sourced_words
+    flows = [("hackriff_prom:queue_jobs_enqueued_total", {}), ("hackriff_prom:queue_jobs_enqueued_total", {"service": "hk-api"})]
+    pl = Places([(n, lab, series_key(n, lab)) for n, lab in flows], _source_prov(flows, kind="counter"))
+    assert [pl.sourced(n, lab, series_key(n, lab)) for n, lab in flows] == ["queue jobs enqueued", "queue jobs enqueued (hk-api)"]
+    assert sourced_words("prom:memory_used_bytes", {"kind": "level", "unit": "bytes"}) == "memory used"
+    assert sourced_words("prom:http_request_duration_seconds_count", {"kind": "level", "unit": "count"}) == \
+        "http request duration seconds count", "a count is not a unit its name ends in"
+    assert sourced_words("prom:job:errors:rate5m", {"kind": "rate"}) == "job errors rate5m"
+
+
+def test_an_own_series_is_never_named_as_a_source_fed_one():
+    from orchestra.sd.titles import Places
+    pl = Places([("queue_depth", {"service": "a"}, "k")], {"k": {"source": "own", "instrument": "x"}})
+    assert pl.sourced("queue_depth", {"service": "a"}, "k") is None and pl.sourced_tags("queue_depth", {"service": "a"}, "k") == []
+
+
+def test_a_source_fed_stock_is_named_in_words_with_its_tags_in_the_model():
+    from orchestra.sd.series import series_key
+    rng = random.Random(5)
+    lab = {"job": "hk-api", "service": "hk-api", "machine": "hackriff_prom.hk-api"}
+    level, ins, outs = [0], [0], [0]
+    for _ in range(240):
+        a, b = rng.randint(0, 3), rng.randint(0, 2) if level[-1] > 2 else 0
+        ins.append(ins[-1] + a)
+        outs.append(outs[-1] + b)
+        level.append(level[-1] + a - b)
+    pts = lambda vs: [(T0 + 60 * i, float(v)) for i, v in enumerate(vs)]
+    dump = [("hackriff_prom:queue_depth", lab, pts(level)), ("hackriff_prom:queue_jobs_enqueued_total", lab, pts(ins)),
+            ("hackriff_prom:queue_jobs_processed_total", lab, pts(outs))]
+    prov = {series_key(n, lb): {"source": "hackriff_prom", "machine_label": "service", "kind": "counter" if n.endswith("_total") else "level",
+                                "unit": "count"} for n, lb, _ in dump}
+    m = discover(dump, start=T0, end=T0 + 240 * 60, step=60.0, provenance=prov)
+    [s] = m.stocks
+    assert s.id == "hackriff_prom:queue_depth_hk_api", "the id stays the series'"
+    assert s.name == "queue depth" and s.evidence["named"] == "words", "alone in its family: nothing differs among its siblings"
+    assert s.evidence["tags"] == ["source=hackriff_prom", "service=hk-api"]
+    assert sorted(f.name for f in m.flows) == ["queue jobs enqueued", "queue jobs processed"]
+    assert all(f.evidence["tags"][0] == "source=hackriff_prom" for f in m.flows)
