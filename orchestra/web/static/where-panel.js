@@ -4,8 +4,8 @@
 // (sd/predictions.py, /api/dynamics/predictions); and the flows not moving as their equations say
 // (flow-check.js). Each part is read on its own and fails on its own: no model, or a simulation
 // that does not run, is said in the panel and the rest of the Dashboard stands (AGENTS.md rule 8's
-// spirit). ``Where.render`` is pure, for the Node tests.
-const Where = (() => {
+// spirit). ``WherePanel.render`` is pure, for the Node tests.
+const WherePanel = (() => {
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const PAL = ["#60a5fa", "#f59e0b", "#22c55e", "#e879f9", "#f87171", "#38bdf8"];
   const sig2 = (v) => (v == null || !isFinite(v) ? "—" : v === 0 ? "0" : Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : String(+(+v).toPrecision(2)));
@@ -79,10 +79,10 @@ if (typeof Orchestra !== "undefined" && Orchestra.panels) Orchestra.panels.regis
     // one simulate, only when there is something fitted to run
     const sim = m && Projection.fitted(m).length ? (await get(`/api/dynamics/simulate?horizon_min=${h}`)) || { ok: false, error: "the server did not answer" } : null;
     try {
-      body.innerHTML = Where.render({ model: m, modelError: md ? (md.reason && md.reason.headline) || null : "the server did not answer", history, sim, preds, now: Date.now() / 1000, when: (t) => Orchestra.when(t), horizon: h });
+      body.innerHTML = WherePanel.render({ model: m, modelError: md ? (md.reason && md.reason.headline) || null : "the server did not answer", history, sim, preds, now: Date.now() / 1000, when: (t) => Orchestra.when(t), horizon: h });
       ui.setSub(m ? (sim && sim.ok ? `the model's projection, next ${h} min` : "projection unavailable") : "no model yet");
     } catch (e) { body.innerHTML = `<div class="wline muted">projection unavailable: ${String(e)}</div>`; }
   }
   refresh(); setInterval(refresh, 30000);
 } });
-if (typeof module !== "undefined") module.exports = Where;
+if (typeof module !== "undefined") module.exports = WherePanel;

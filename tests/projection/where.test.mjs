@@ -10,7 +10,7 @@ const registered = [];
 for (const f of ["app.js", "evidence-text.js", "sd-graph.js", "flow-check.js", "projection.js", "predictions.js"])
   vm.runInThisContext(fs.readFileSync(path.resolve(import.meta.dirname, "../../orchestra/web/static", f), "utf8"), { filename: f });
 const reg = Orchestra.panels.register; Orchestra.panels.register = (p) => { registered.push(p); return reg.call(Orchestra.panels, p); };
-vm.runInThisContext(fs.readFileSync(path.resolve(import.meta.dirname, "../../orchestra/web/static/where-panel.js"), "utf8") + "\nglobalThis.Where = Where;", { filename: "where-panel.js" });
+vm.runInThisContext(fs.readFileSync(path.resolve(import.meta.dirname, "../../orchestra/web/static/where-panel.js"), "utf8") + "\nglobalThis.WherePanel = WherePanel;", { filename: "where-panel.js" });
 
 const fix = (f) => JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../fixtures/projection", f), "utf8"));
 const model = fix("model.json"), sim = fix("simulate.json"), history = fix("history.json");
@@ -28,7 +28,7 @@ test("the panel is registered with the Dashboard, and goes above the Host on a p
 });
 
 test("with a model: the top three moves with a sparkline each, the predictions, the misses", () => {
-  const html = Where.render({ model, history, sim, preds, now, when, horizon: 30 });
+  const html = WherePanel.render({ model, history, sim, preds, now, when, horizon: 30 });
   const moves = [...html.matchAll(/<div class="wmove">/g)];
   assert.equal(moves.length, 3);
   assert.equal((html.match(/<svg class="pspark"/g) || []).length, 3);
@@ -46,19 +46,19 @@ test("with a model: the top three moves with a sparkline each, the predictions, 
 
 test("a flow not moving as its equation says is named by its ends", () => {
   const h = structuredClone(history); h.flows.sailed_out = h.flows.sailed_out.map(([t]) => [t, 3]);
-  const t = text(Where.render({ model, history: h, sim, preds, now, when, horizon: 30 }));
+  const t = text(WherePanel.render({ model, history: h, sim, preds, now, when, horizon: 30 }));
   assert.match(t, /in review → sailed is not moving as its equation says \(equation 0\.1\/min, observed 3\/min\)/);
 });
 
 test("no model: 'no model yet', and the predictions still shown", () => {
-  const t = text(Where.render({ model: null, modelError: "nothing balances yet", history: null, sim: null, preds, now, when, horizon: 30 }));
+  const t = text(WherePanel.render({ model: null, modelError: "nothing balances yet", history: null, sim: null, preds, now, when, horizon: 30 }));
   assert.match(t, /no model yet: nothing balances yet/);
   assert.match(t, /supervisor predicted/);
   assert.doesNotMatch(t, /Equation misses/);
 });
 
 test("the simulation fails: 'projection unavailable' with its error, and the rest stands", () => {
-  const t = text(Where.render({ model, history, sim: { ok: false, error: "reading the history for the first time…" }, preds: null, now, when, horizon: 30 }));
+  const t = text(WherePanel.render({ model, history, sim: { ok: false, error: "reading the history for the first time…" }, preds: null, now, when, horizon: 30 }));
   assert.match(t, /projection unavailable: reading the history for the first time…/);
   assert.match(t, /not read: the server did not answer/);
   assert.match(t, /Every fitted flow moves as its equation says/);
