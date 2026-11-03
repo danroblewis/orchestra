@@ -32,6 +32,7 @@ SURFACE = {
     "orchestra.sd.predictions": ["PredictionError", "Predictions", "expectation", "plain"],
     "orchestra.sd.series": ["Declared", "series_key"],
     "orchestra.sd.store": ["ModelStore"],
+    "orchestra.sd.subsystems": ["subsystems"],
     "orchestra.sources": ["SourceError", "report"],
     "orchestra.sources.catalogue": ["Catalogue"],
     "orchestra.sources.fetch": ["accumulate"],

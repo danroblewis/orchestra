@@ -1800,6 +1800,8 @@ How to stay compatible:
     `orchestra.sd.intended.ops` (`ENV_NAME`, `OPTION`), `.names` (`resolve`, `ABSENT`, `WAITS`,
     `WAITS_LINK`), `.keys` (`Keys`), `.checks` (`PROVENANCE`) and `.display` (`declared_names`: the
     names declared parts lend to the discovered ones they are linked to);
+  - **subsystems:** `orchestra.sd.subsystems` (`subsystems`: the model's partitions as `/api/dynamics/model`
+    reports them, read in process by a plugin that names or proposes one);
   - **used today, to be moved out of the web package:** `orchestra.web.machine_logs` (`tail`,
     `readable`), `orchestra.web.instruments` (`instruments_view`), `orchestra.web.dynamics`
     (`model_view`). Do not add to these.
