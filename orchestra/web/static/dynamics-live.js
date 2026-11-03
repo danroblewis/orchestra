@@ -368,7 +368,11 @@ const Live = (() => {
     const eq = a.eq != null ? `equation ${sig2(a.eq)} ${per()}` : `equation ${e.eqLabel}`;
     const first = few ? Evidence.tooFewText(f) : a.obs != null ? `${sig2(a.obs)} ${per()} observed · ${eq}` : eq;
     // the flow's name first (R3: a label of numbers alone said nothing of which flow it was)
-    return { label: [flowName(f), first, ...(Array.isArray(e.label) ? e.label.slice(1) : [])], quiet: !!a.quiet && HISTORY != null, warn: !few && !!a.differs };
+    // the lines after the rate are the edge's own (set once when it is drawn), never the label this
+    // function wrote last time: read back from e.label, every refresh added one more "observed" line
+    // (the owner, 2026-11-02: "a growing list of gray text under flow lines")
+    const extra = Array.isArray(e.extraLabels) ? e.extraLabels : [];
+    return { label: [flowName(f), first, ...extra], quiet: !!a.quiet && HISTORY != null, warn: !few && !!a.differs };
   }
   let GRAPH = null;
   async function refresh() {

@@ -213,7 +213,7 @@ function draw() {
   else Orchestra.focus.mount($("focus-row"), null);
   window.PLACES = (g.places || []).length;
   // a flow's label: the equation, or the observed rate first where it parts from it (dynamics-live.js)
-  for (const e of edges) if (e.flowPart && e.fid && Array.isArray(e.label)) { e.eqLabel = e.label[0]; const u = Live.edgeLabel(e); if (u) { e.label = u.label; e.quiet = u.quiet; e.warn = u.warn; } }
+  for (const e of edges) if (e.flowPart && e.fid && Array.isArray(e.label)) { if (e.eqLabel == null) { e.eqLabel = e.label[0]; e.extraLabels = e.label.slice(1); } const u = Live.edgeLabel(e); if (u) { e.label = u.label; e.quiet = u.quiet; e.warn = u.warn; } }
   window.ACC_HIDDEN = window.SHOW_ACC ? 0 : acc.size;
   FLOWEDGE = g.flowEdge;
   for (const n of nodes) n.decorate = Intended.decorator(n, n.sid ? Live.decorateStock : n.input ? Live.decorateInput : undefined);
