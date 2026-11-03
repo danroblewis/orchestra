@@ -19,7 +19,8 @@ over the limit costs two refusals, not one per halving. A part still refused at
 The checks are cheap whatever the tenant's size: ``health`` asks each endpoint about a name no
 store has (an answer that touches no series), never all of ``up``; ``names`` sends no ``match[]`` for the match-everything
 default (a ``match[]`` turns an index read into a series match); ``metadata`` asks one entry per
-metric (``limit_per_metric``), and for a few names, those names only.
+metric (``limit_per_metric``), and for a few names, those names only; every metadata request is
+bounded, by its ``metric`` or by ``limit`` (``METADATA_LIMIT`` metrics), never the whole store.
 
 Every request is **within the source's ``match``** (``scope.py``): its ``query`` and each of its
 ``match[]`` selectors carry the label matchers every ``match`` selector has, so a shared store is
@@ -60,6 +61,7 @@ ENDPOINTS = {"query_range": ("/api/v1/query_range", {"query": PROBE_NAME, "start
 MIN_SPAN = 600.0                     # the shortest time range a refused read is split down to
 EVERYTHING = {'{__name__=~".+"}', "{__name__=~'.+'}", '{__name__=~".*"}', '{__name__!=""}'}   # match-everything selectors
 FEW_NAMES = 10                       # metadata asked name by name for at most this many names
+METADATA_LIMIT = 5000                # metrics one metadata request asks for at most (its ``limit``): never the whole store
 
 
 def _with_name(selector: str, name: str) -> str | None:
@@ -254,7 +256,7 @@ class PrometheusSource(Transport):
         """Each metric's type, unit and help (one entry per metric); of ``names`` only, asked name
         by name when they are few."""
         forms = ([{"metric": n, "limit_per_metric": "1"} for n in sorted(set(names))] if names is not None and len(set(names)) <= FEW_NAMES
-                 else [{"limit_per_metric": "1"}])
+                 else [{"limit": str(METADATA_LIMIT), "limit_per_metric": "1"}])
         out: dict[str, dict] = {}
         for form in forms:
             try:

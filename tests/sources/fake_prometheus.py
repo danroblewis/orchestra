@@ -136,7 +136,8 @@ class FakePrometheus:
             return sorted({k for _, lab, _ in self.dump for k in lab} | {"__name__"})
         if endpoint == "metadata":
             self.meta_asks.append({k: one(k) for k in ("metric", "limit", "limit_per_metric") if one(k)})
-            return {k: v for k, v in self.meta.items() if not one("metric") or k == one("metric")}
+            out = {k: v for k, v in sorted(self.meta.items()) if not one("metric") or k == one("metric")}
+            return dict(list(out.items())[: int(one("limit"))]) if one("limit") else out
         if endpoint == "buildinfo":
             return {"version": "fake-1.0", "revision": "test"}
         raise KeyError(endpoint)

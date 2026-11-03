@@ -474,7 +474,7 @@ function leftOut(lo) {
     : why.startsWith("Orchestra's own") ? "Orchestra's own: what Orchestra did, not the system's work"
     : /^a counter of only \d+ events?/.test(why) ? `a counter of fewer than ${Evidence.MIN_EVENTS} events: too few to carry a balance`
     : /^a level that changed in only \d+ steps?/.test(why) ? `a level that changed in fewer than ${Evidence.MIN_EVENTS} steps: too few to tell a balance from coincidence`
-    : why.startsWith("live in only") ? "live in only some of the steps every counter was live in: too new, or too broken, to balance"
+    : why.startsWith("live in only") ? "live in only some of the steps its counters were live in: too new, or too broken, to balance"
     : why.startsWith("the same as ") ? "the same as another series (counts the same events)" : why);
   const titles = ((MODEL && MODEL.discovery) || {}).titles || {};
   for (const [k, why] of Object.entries(lo)) {

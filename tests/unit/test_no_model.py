@@ -60,7 +60,7 @@ LIVE = {"sampled": 70, "series": 2, "counter_events": {"counters": 3, "most": 2.
 
 def test_each_group_is_said_plainly_with_its_count_first_and_no_bare_n():
     t = text(reason(LIVE, host=True))
-    assert ("It left out 68 of them: 21 live in only some of the steps that every counter was live in; 16 that their instrument "
+    assert ("It left out 68 of them: 21 live in only some of the steps that their counters were live in; 16 that their instrument "
             "says are aggregates; 12 counters that did not move in the window; 10 of Orchestra's own; 6 counters with too few "
             "events; 2 that their instrument says are ages; 1 the same as another series.") in t
     assert t.endswith("Too few events: at most 2 per counter, 5 needed. It looks again every few minutes.")

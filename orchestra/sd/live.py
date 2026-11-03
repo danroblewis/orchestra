@@ -186,6 +186,27 @@ def balance_steps(level, counters: list) -> list[int]:
     return list(range(len(level.values) - 1)) if steps is None else sorted(steps)
 
 
+def level_steps(level, counters: list, min_steps: int) -> tuple[list[int], list]:
+    """The steps a level's balance may be searched on, and the counters left out of that search
+    because they were live in too few of them. A level needs the liveness of the counters it may
+    be balanced with, not of every counter in the store: the counters are taken from the one live
+    longest (of the level's own steps), each kept only while the steps all kept ones were live in
+    stay at least ``min_steps``. Where every counter leaves that many, they are all kept and the
+    steps are ``balance_steps``'; a counter live in none or few of them (one counted long before
+    its first write, which is live only from that write: ``before_first_write``) is set aside for
+    this level, and never empties the steps of the others."""
+    steps = set(balance_steps(level, []))
+    kept, dropped = [], []
+    for c in sorted(counters, key=lambda c: -1 if c.live is None else -len(steps.intersection(c.live))):
+        mine = steps if c.live is None else steps.intersection(c.live)
+        if len(mine) >= min_steps or len(mine) == len(steps):
+            steps = mine
+            kept.append(c)
+        else:
+            dropped.append(c)
+    return sorted(steps), dropped
+
+
 def arrived(steps: list[int], series: list, start: float, step: float) -> list[int]:
     """The steps in which every one of these series has data: none after the earliest of their
     last observations, when a series' newest samples have not arrived yet (``sd.series.arrived_until``).

@@ -16,7 +16,7 @@ from helpers import project
 from orchestra.sources.cache import attempt
 from orchestra.sources.catalogue import Catalogue
 from orchestra.sources.listing import TooManyNames, listing
-from orchestra.sources.prometheus import PROBE_NAME, PrometheusSource
+from orchestra.sources.prometheus import FEW_NAMES, METADATA_LIMIT, PROBE_NAME, PrometheusSource
 from orchestra.sources.spec import load
 
 NOW = math.floor(time.time() / 60) * 60
@@ -179,7 +179,20 @@ def test_health_and_metadata_touch_no_series(made, tmp_path):
     assert src.metadata(["queue_depth"]) == {"queue_depth": {"type": "gauge", "help": "", "unit": ""}}
     assert {"metric": "queue_depth", "limit_per_metric": "1"} in f.meta_asks
     many = src.metadata([f"m{i}" for i in range(50)] + ["up"])
-    assert set(many) == {"up"} and {"limit_per_metric": "1"} in f.meta_asks
+    assert set(many) == {"up"} and {"limit": str(METADATA_LIMIT), "limit_per_metric": "1"} in f.meta_asks
+
+
+def test_no_metadata_request_is_unbounded(made, tmp_path, monkeypatch):
+    # run 6 asked a store's metadata twice with neither a metric nor a limit: the whole catalogue
+    f = made([(f"jobs_{i}_total", {"queue": "q"}, every(15, lambda s: s // 15)) for i in range(FEW_NAMES + 5)]
+             + [("queue_depth", {"queue": "q"}, every(15, lambda s: 3))])
+    f.meta = {f"jobs_{i}_total": [{"type": "counter", "help": "", "unit": ""}] for i in range(FEW_NAMES + 5)}
+    p = project(tmp_path, monkeypatch, toml(f.url))
+    Catalogue(p, None).inference("lab", T0, NOW, refresh=True)
+    src = quick(f, tmp_path)
+    src.metadata()
+    src.metadata(["queue_depth"])
+    assert f.meta_asks and all("metric" in a or "limit" in a for a in f.meta_asks), f.meta_asks
 
 
 def test_a_family_too_big_to_compare_its_replicas_is_read_at_one_never_summed_across_them(made, tmp_path, monkeypatch):
