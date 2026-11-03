@@ -21,13 +21,18 @@ function layout() {
   return JSON.stringify(lay);
 }
 
-// the structural checks: each returns a list of failures, run in the page
+// the structural checks: each returns a list of failures, run in the page. The wording is the page's
+// since the owner's 2026-11-01 change (6e0e22e1, IntendedCore.machineWords): no "unconfirmed", a tag
+// only for what is not observed ("proposed, never heard", "declared, never heard"); a declared value
+// is shown beside the announced one ("declared continuous · observed …", 8dcd3ff4), not as pills.
 const CHECKS = {
   common: (id) => {
     const f = [], side = document.getElementById("im-side"), q = (s) => side.querySelector(s);
     if (!document.getElementById("im-row").classList.contains("open")) f.push("the panel is not open");
     if (side.querySelector("input, textarea, select")) f.push("the panel has an input: every field is read-only");
-    if (!side.querySelector(".im-ask")) f.push("no 'ask' affordance");
+    // a way to ask the machine that listens for requests: an "ask …" line, or, where the kind switch is
+    // offered, the switch and confirm / discard themselves (8dcd3ff4 drops the footer's ask line there)
+    if (!side.querySelector(".im-ask, .im-seg button, .im-acts button")) f.push("no 'ask' affordance");
     const node = document.querySelector(`#evsvg-host g.ng-node[data-id="m:${id}"]`);
     if (!node) f.push(`no node m:${id}`); else if (node.matches(".ng-dim,.ng-shade1,.ng-shade2")) f.push("the open machine is shaded");
     const card = document.querySelector("#cards .panel");
@@ -45,22 +50,22 @@ const CHECKS = {
   },
   E1: () => {
     const f = [], side = document.getElementById("im-side"), t = side.textContent;
-    for (const s of ["Feature Count Improver", "unconfirmed", "proposed by the Supervisor", "create a new Universal Machine", "Invariants", "Steps", "Uses",
+    for (const s of ["Feature Count Improver", "proposed, never heard", "proposed by the Supervisor", "create a new Universal Machine", "Invariants", "Steps", "Uses",
       "Expected effect", "waits for a series", "nobody listens for it yet", "horizon 7 days"]) if (!t.includes(s)) f.push(`panel lacks "${s}"`);
     if (side.querySelectorAll(".im-acts button").length !== 2) f.push("no confirm / discard");
     if ((side.querySelector(".im-seg button.on") || {}).textContent !== "Universal") f.push("kind is not Universal");
-    const on = [...side.querySelectorAll(".im-ind span.on")].map((e) => e.textContent);
-    if (!on.includes("orchestra") || !on.includes("continuous")) f.push(`indicators: ${on}`);
+    const on = [...side.querySelectorAll(".im-decl-val b")].map((e) => e.textContent);
+    if (!on.includes("orchestra") || !on.includes("continuous")) f.push(`declared values: ${on}`);
     if ([...side.querySelectorAll(".im-tag")].filter((e) => e.textContent === "a guess").length !== 2) f.push("not two guesses");
     const steps = [...side.querySelectorAll("h4")].find((h) => h.textContent.startsWith("Steps"));
     if (!steps || !steps.nextElementSibling || steps.nextElementSibling.querySelectorAll("li").length !== 5) f.push("not five steps");
     if (side.querySelectorAll(".im-pred").length !== 4) f.push("not four expected-effect rows");
     const node = document.querySelector('g.ng-node[data-id="m:feature_count_improver"]');
-    if (!node || !node.classList.contains("im-proposed") || !node.textContent.toLowerCase().includes("unconfirmed")) f.push("node not drawn unconfirmed");
+    if (!node || !node.classList.contains("im-proposed") || !node.textContent.includes("proposed, never heard")) f.push("node not drawn proposed, never heard");
     const ev = document.querySelector('g.ng-node[data-id="ev:work.improvement_proposed"]');
     if (!ev) f.push("its declared event type is not drawn"); else { if (!ev.textContent.includes("declared")) f.push("its event type is not tagged declared"); if (ev.matches(".ng-dim,.ng-shade1,.ng-shade2")) f.push("its event type is shaded"); }
     const card = document.querySelector('#cards .panel[data-id="feature_count_improver"]');
-    if (!card || !card.classList.contains("im-card") || !card.textContent.includes("unconfirmed")) f.push("card lacks the unconfirmed badge");
+    if (!card || !card.classList.contains("im-card") || !card.textContent.includes("proposed, never heard")) f.push("card lacks the 'proposed, never heard' tag");
     return f;
   },
   E2: () => {
@@ -81,9 +86,9 @@ const CHECKS = {
     const f = [], side = document.getElementById("im-side"), t = side.textContent;
     for (const s of ["Nightly metrics", "added by owner (quoted), per supervisor", "Declared as engaged"]) if (!t.includes(s)) f.push(`panel lacks "${s}"`);
     if ((side.querySelector(".im-seg button.on") || {}).textContent !== "Programmatic") f.push("kind is not Programmatic");
-    const on = [...side.querySelectorAll(".im-ind span.on")].map((e) => e.textContent), label = (s) => [...side.querySelectorAll(".im-tabbody .im-fl")].some((e) => e.textContent === s);
+    const on = [...side.querySelectorAll(".im-decl-val b")].map((e) => e.textContent), label = (s) => [...side.querySelectorAll(".im-tabbody .im-fl")].some((e) => e.textContent === s);
     const want = { adhoc: ["orchestra", "ad hoc"], continuous: ["orchestra", "continuous"], external: ["external", "continuous"] }[mode];
-    for (const w of want) if (!on.includes(w)) f.push(`indicator ${w} not on (${on})`);
+    for (const w of want) if (!on.includes(w)) f.push(`not declared ${w} (${on})`);
     const fields = { adhoc: ["command", "arguments", "environment", "stdin", "exit"], continuous: ["command", "protocol", "listens on", "send", "receive", "health"], external: ["source", "runs where", "log"] }[mode];
     for (const s of fields) if (!label(s)) f.push(`no ${s} row`);
     if (mode === "external" && label("command")) f.push("an external machine shows a command");
@@ -93,7 +98,7 @@ const CHECKS = {
   },
   E4: () => {
     const f = [], side = document.getElementById("im-side"), t = side.textContent;
-    for (const s of ["SAIL", "declared · never heard", "declared by owner (quoted), per supervisor", "none heard on the bus", "Measured by", "company_prom", "runner-3", "Flows (hypotheses)", "not readable"])
+    for (const s of ["SAIL", "declared, never heard", "confirmed by owner (quoted), per supervisor", "none heard on the bus", "Measured by", "company_prom", "runner-3", "Flows (hypotheses)", "not readable"])
       if (!t.includes(s)) f.push(`panel lacks "${s}"`);
     if (side.querySelectorAll("table.im-meas tr").length !== 4) f.push("the measured table has not three rows");
     const node = document.querySelector('g.ng-node[data-id="m:sail"]');
@@ -101,7 +106,7 @@ const CHECKS = {
     if ([...document.querySelectorAll("#evsvg-host g.ng-edge")].some((e) => (e.dataset.id || "").includes("m:sail"))) f.push("node has links");
     if (!node || !node.textContent.includes("declared · measured")) f.push("node not tagged 'declared · measured'");
     const card = document.querySelector('#cards .panel[data-id="sail"]'), ct = card ? card.textContent : "";
-    for (const s of ["never heard · measured by 1 instrument · 3 instances (last hour)", "last measured", "measured ×3", "declared · never heard"]) if (!ct.includes(s)) f.push(`card lacks "${s}"`);
+    for (const s of ["never heard · measured by 1 instrument · 3 instances (last hour)", "last measured", "measured ×3", "declared, never heard"]) if (!ct.includes(s)) f.push(`card lacks "${s}"`);
     if (!document.querySelector("#evsvg-host g.ng-node.ng-dim")) f.push("the rest is not shadowed");
     return f;
   },

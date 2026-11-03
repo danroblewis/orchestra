@@ -23,6 +23,10 @@ FRAMES = ("E1", "E2", "E3", "E3-continuous", "E3-external", "E4")
 
 SUPERVISOR = {"author": "supervisor", "source": "supervisor", "reason": "the owner asked for a feedback loop",
               "quote": "create a new Universal Machine called Feature Count Improver"}
+# the frames' Supervisor acts on the owner's requests, as orchestra-agents' Supervisor does: it
+# announces it listens for them, so the page names it and offers ask / confirm / discard / the kind
+# switch (static/intended-core.js: no listener, no request controls). The capture predates that rule.
+REQUESTS = {"supervisor": ["orchestra.intent.requested"]}
 
 
 def owner(quote: str) -> dict:
@@ -46,7 +50,7 @@ def replay_observed(project, span_s: float = 660.0) -> int:
         insts = m["instances"] or [{"id": m["id"], "mode": m["mode"], "kind": m["kind"]}]
         for i in insts:
             src = m["id"] if i["id"] == m["id"] else f"{m['id']}/{i['id']}"
-            data = {"mode": i.get("mode") or m["mode"], "kind": i.get("kind") or m["kind"], "listens_for": m["subscribes"]}
+            data = {"mode": i.get("mode") or m["mode"], "kind": i.get("kind") or m["kind"], "listens_for": m["subscribes"] + REQUESTS.get(m["id"], [])}
             if m.get("package"):
                 data["package"] = m["package"]
             events.publish("orchestra.machine.started", data, source=src, time=_iso(t0))

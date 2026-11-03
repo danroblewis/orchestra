@@ -76,7 +76,7 @@ def declare_level(layer: dict, op: dict, ctx: dict, part: str) -> tuple[str, str
         changed = {k: v for k, v in fields.items() if op.get(k) is not None}
         revise(el, changed, {}, {}, strings(op.get("guessed"), "guessed"), ctx)
         if el.get("state") == "proposed" and owner_asks(ctx["provenance"]):
-            el.update(state="declared", confirmed={"by": "owner", "change": ctx["change"]})
+            el.update(state="declared", confirmed=_confirmed_by(ctx))
         return part, eid
     group[eid] = _new(ctx, id=eid, part=part, **fields, found_as=None, measure=None, target=None)
     return part, eid
@@ -99,7 +99,7 @@ def declare_flow(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
                                      ("note", text(op.get("note"), "note"))) if op.get(k) is not None}
         revise(el, changed, {}, {}, strings(op.get("guessed"), "guessed"), ctx)
         if el.get("state") == "proposed":
-            el.update(state="declared", confirmed={"by": "owner", "change": ctx["change"]})
+            el.update(state="declared", confirmed=_confirmed_by(ctx))
         return "flow", eid
     name = text(op.get("name"), "name", limit=200) or f"{a or 'outside'} → {b or 'outside'}"
     layer["flows"][eid] = _new(ctx, id=eid, part="flow", name=name, note=text(op.get("note"), "note"), **{"from": a, "to": b},
@@ -230,10 +230,13 @@ def confirm(layer: dict, op: dict, ctx: dict, accept: bool) -> tuple[str, str]:
 
 
 def _confirmed_by(ctx: dict) -> dict:
-    """Who confirmed: the owner (asking, or by the request the call answers), else the author."""
+    """Who confirmed: the owner (asking, or by the request the call answers), else the author. The
+    owner's confirmation relayed by a plugin or the endpoint keeps who relayed it (``via``,
+    ``source``), so the pages say "owner (quoted), per <source>", and "you" only for a page control."""
     prov, cid = ctx["provenance"], ctx["change"]
     if owner_asks(prov):
-        return {"by": "owner", "change": cid}
+        relayed = {k: prov[k] for k in ("via", "source") if prov.get(k)} if prov.get("via") != "page" else {}
+        return {"by": "owner", **relayed, "change": cid}
     if prov.get("request"):                       # may_settle verified it: the owner's request
         return {"by": "owner", "via": "request", "request": prov["request"], "change": cid}
     return {"by": prov.get("author"), "change": cid}
