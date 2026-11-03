@@ -159,11 +159,24 @@ harness) → merge, push the plugins' mains → reset → start → feed → eva
 point runs it, and none may be added that does unless it is skipped without
 `ORCHESTRA_BOOTSTRAP=1`, its skip reason saying so. It is run by the coordinator's hand, as above.
 
+## The series
+
+| Run | Date | Steps reached | True spend | Recorded | Cause | Fixed in |
+|---|---|---|---|---|---|---|
+| 1 | 2026-11-02 | 1 (fail), 2 (partial); 3-10 not reached | $3.36 (step 1 $2.07, step 2 $1.30) | $8.76, over the $8 cap | Step 1: the agents plugin's compaction window (Claude Code's `--autocompact 100000`) sat just above the Supervisor's starting context in hackriff (about 81,000 tokens: its `CLAUDE.md` and rules, and the Supervisor's 90,000-character prompt), so every tool result started a compaction that freed too little, and Claude Code gave up ("Autocompact is thrashing"). Not the guides: they were served whole and only seven sections were read. The stop: the harness and the agents' record both added up a resumed session's running total, counting it again each turn. | the harness (the true total, questions in bold and in lists, step 2's answers); the agents plugin (the compaction window, its own spend record) |
+
+The coordinator adds each run's true spend to the series' total here before starting the next.
+
 ## The cost and the cap
 
-- **Per run: $5** (`--cap`, or `ORCHESTRA_LIVE_CAP_USD`; `orchestra_agents.live.cap_supervisor`
+- **Per run: $8, on the true total** (`--cap`, or `ORCHESTRA_LIVE_CAP_USD`; $5 until run 1, which
+  stopped at the cap). The true total is each Claude Code session counted once, at its highest
+  `total_cost_usd`: that figure is a running total that a `--resume`d session carries on, and adding
+  it up per turn counted run 1's one session three times. `orchestra_agents.live.cap_supervisor`
   every 30 seconds pauses the Supervisor at the cap with its reason on the Agents page; `feed.py`
-  stops before a step once it is reached and says so in `summary.json`). **The series: $50**,
+  stops before a step once the true total reaches the cap, or once the plugin's own figure does
+  (its capper then pauses the Supervisor), and says which in `summary.json` (`stopped_by`);
+  `spend.json` keeps both figures and the step's own cost. **The series: $50**,
   the owner's figure: about ten runs. The coordinator adds each run's spend (`summary.json`) to
   the series' total in the goal log before starting the next.
 - The estimate: the Supervisor on Opus takes 15 to 30 turns a run, the setup turns long (the
