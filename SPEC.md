@@ -89,7 +89,10 @@ unread (scalars and lists only), merged across the instances, the latest instanc
 others. An instance that announces only what it listens for and what it is (a part of a machine
 implemented elsewhere) so never erases what another instance said of the machine. A group is a
 label: the Machines page shows it on each card and draws a group's machines near each other on
-the map, but every machine stays on the one page and the one map (AGENTS.md rule 4). The web server
+the map, but every machine stays on the one page and the one map (AGENTS.md rule 4). The announced
+`group` and `package` each make a partition of the map's machines when two values or more are said
+(`/api/machines` `subsystems`, §10, named by the field): a machine whose instances announced two
+groups is in two, and so drawn outside every box. The web server
 shows an announced log only when its real path is a regular file inside the project's repository
 or state directory (`web/machine_logs.py`), because anything that can publish could name any
 file. The host starts and keeps running the commands a project or a plugin declares (§5.1), but
@@ -1185,7 +1188,18 @@ it (rule 7).
   `kind` universal | programmatic, `managed` orchestra | external, `engagement {mode, at, tz,
   missed}`, `receives`, `emits`, `reads`, checked; `spec` stored as sent, unread), event types,
   P5's attachments, a machine's expected effect (a draft prediction in §4.3's grammar, never an
-  association) and aliases. Every element carries its `state` (proposed or declared), its
+  association) and aliases, and subsystems (`docs/proposals/subsystems.md` §5, step 3:
+  `declare_subsystem` `{id?, name, note?, label, value}`, a name for a label's value, never a
+  writer's label (`NOT_IDENTITY`) or `simulated`/`draft`, each value named by one; or `{id?, name,
+  note?, members: {stocks: [keys], flows: [keys], machines: [ids]}}`, parts gathered that no label
+  groups, at least one, each part in one subsystem at a time; the same id again replaces it, under
+  the owner's guard; `retract`, `confirm`, `discard` on `part: "subsystem"`; no page control
+  declares one). Only a declared one is drawn: a name titles its group's box, "named by <who>", the
+  raw value said on the box title's hover; the gatherings make one partition, `declared`, listed and
+  chosen first, its stocks and flows matched by key, a flow it does not name placed by its ends and a
+  machine by its hypotheses, a member no longer in the model a ghost in its box, a declared
+  machine's `tags` naming one (its id or name) placing that machine in its box on the map. A
+  subsystem binds no series and changes no equation, hypothesis or key. Every element carries its `state` (proposed or declared), its
   `provenance` (`author`, `via`, `at`, `source`, `turn`, `message`, `quote`, `reason`, `request`;
   a page control's `control`, `page`, `from`; `via` and `at` are set by the store, never given)
   and its change id (`c<seq>.<i>`). What the owner asks for is declared at once, a re-declared
@@ -1792,7 +1806,9 @@ outside the frame beside the stock inside, and the tables filtered the same way;
 hypotheses and the counts stay those of the whole model. **Subsystems** (`sd/subsystems.py`,
 `docs/proposals/subsystems.md`): `/api/dynamics/model` reports `model.subsystems`, every partition
 of the model by a label its stocks' series carry (never who wrote them, nor `simulated` or
-`draft`; two values at least): per value its stocks, the flows inside it and the machines whose
+`draft`; for a stock its instrument's places name, only its scope, the labels its place value does
+not spell, its `label=value` tags, never the place label or the step and state it spells; two
+values at least): per value its stocks, the flows inside it and the machines whose
 hypotheses lie in it; the unassigned; the machines spanning groups; and the flows crossing between
 each pair of groups (`count`, the simulated apart), the default first (the most flows kept inside a
 group, then the fewest crossing). Derived on read, display only, saved in no version. **Boxes**
@@ -1813,7 +1829,32 @@ focus is drawn inside the boxes it touches. The partition label's tag is left of
 their box. A change of boxes is laid out as reset lays it out; each partition keeps its own saved
 layout (`dynamics.v2|boxes=<label>`); the choice is in the hash (`#boxes=<label>` or `off`, beside
 `focus=`). At phone width the list has a heading per group (a chip, as the box's title), then
-"between subsystems", then "outside every subsystem". The Machines map has no boxes yet. The diagram on a desktop is as tall as
+"between subsystems", then "outside every subsystem". The declared subsystems (§4.6) are served
+beside the derived partitions, declared first when present (`with_declared`,
+`sd/intended/subsystems.py`). A page extension may offer a partition
+(`Orchestra.subsystems.offer({title, groups: [{title, machines, events, stocks, flows}]})`,
+`static/subsystem-offers.js`, the same keys as a focus): listed after the API's partitions on both
+pages ("· offered"), placed by the same rules, display only, kept in the page's memory and stored
+nowhere. **The Machines map's boxes** (step 3): `/api/machines` reports `subsystems` of the same
+shape over machines, event types and hand-offs (`web/machine_subsystems.py`): the model's
+partitions (the declared first) carried to the machines by their flow hypotheses (never a series'
+`machine` label), then one partition per announced field that groups machines (`group`,
+`package`, §2); per group its machines and the event types every machine on which is in it;
+`between`, the event types whose machines are in several groups; the unassigned machines and event
+types; `spanning`, a machine in two groups; and per pair of groups the hand-offs crossing
+(`count`: pairs of machines, `subjects`). The map's bar has the same "boxes" control, on by the
+default at open; each group is a box around its machines and its event types, pulled toward its own
+spot (replacing the announced groups' ring anchors while on) and kept apart from the others and
+from what is not its own; a hand-off between boxes is drawn across, each pair's count written
+between them ("1 hand-off between a and b · 3 subjects"); spanning and unassigned machines sit
+outside every box; a box title is a focus chip; the map starts with the declared partition, else
+the model's own default (the one the Dynamics page opens on) whatever it boxes; when that boxes no
+machine, boxes start off and the note under the map says why ("6 machines act in both workflows
+(delivery_sail, pr_watch): no box holds one"), and the control lists every partition with how many
+machines it boxes ("place · 1 box · 5 machines"); a change of boxes is laid out as reset lays it out,
+each partition with its own layout (`machines.<view>|boxes=<label>`) and `#boxes=` in the hash; at
+phone width the list has a heading per group, then "between subsystems", then "outside every
+subsystem". The diagram on a desktop is as tall as
 the viewport less the header and the legend (600 to 1100 px). A **rediscover now** button reruns discovery in the background (an observation: it
 re-reads the metrics and may save a version, as the host does every 5 minutes). With eras, the
 timeline's era shows the predictions of the change that began it, with their verdicts;

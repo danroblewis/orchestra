@@ -6,7 +6,10 @@ stock, a flow, an equation or a hypothesis.
 - **The labels.** Every label a stock's series carries (its own series, or the level discovery
   keeps for a hidden one, ``evidence["level"]``), except who wrote it (``NOT_IDENTITY``:
   instrument, machine, source, project, instance) and Orchestra's own flags (``simulated``,
-  ``draft``): a series' writer is never a subsystem (AGENTS.md rule 7). A label with fewer than
+  ``draft``): a series' writer is never a subsystem (AGENTS.md rule 7). A stock its instrument's
+  places named (``sd.titles``) is partitioned only by its scope (its ``label=value`` tags), never
+  by its place label or the labels its place spells: a step or a state says where a thing is, not
+  which subsystem it is in (B14: a subsystem's label is the tag the name no longer carries). A label with fewer than
   two values among the stocks partitions nothing and is left out. No label's name is known here
   (rule 1).
 - **A stock** is in the group of its label's value; one whose series carries no such label is
@@ -33,13 +36,22 @@ LEFT = NOT_IDENTITY | {"simulated", "draft"}
 
 
 def labels_of(stock) -> dict[str, str]:
-    """The labels a stock's series carries that may partition it."""
+    """The labels a stock's series carries that may partition it: for a stock its instrument's
+    places named (``evidence["named"] == "places"``, ``sd.titles``), only its scope, the labels its
+    place's value does not spell, recorded as its ``label=value`` tags; never the place label nor
+    the labels its place spells (a step, a state: where a thing is, not which subsystem it is in).
+    For any other stock, every label but the writer's and the flags."""
+    ev = stock.evidence or {}
     if stock.series is not None:
         labels = stock.series.labels or {}
     else:
-        level = (stock.evidence or {}).get("level")
+        level = ev.get("level")
         labels = (level.get("labels") or {}) if isinstance(level, dict) else {}
-    return {k: str(v) for k, v in labels.items() if k not in LEFT}
+    out = {k: str(v) for k, v in labels.items() if k not in LEFT}
+    if ev.get("named") == "places":
+        scope = set(ev.get("tags") or [])
+        out = {k: v for k, v in out.items() if f"{k}={v}" in scope}
+    return out
 
 
 def _hypotheses(model) -> dict[str, list[str]]:
@@ -67,6 +79,16 @@ def partition(model, label: str) -> dict | None:
     values = sorted(set(group.values()))
     if len(values) < 2:
         return None
+    return place(model, label, group, values)
+
+
+def place(model, label: str, group: dict[str, str], values: list[str], flows: dict[str, str] | None = None,
+          machines: dict[str, str] | None = None) -> dict:
+    """The partition ``label`` of the model whose stocks are in the groups ``group`` says (stock id
+    -> value; ``values`` in order): flows by their ends, machines by their hypotheses (B7, B9).
+    ``flows`` and ``machines`` (id -> value) are placed as given instead: what a declared subsystem
+    gathers by name (sd/intended/subsystems.py)."""
+    flows, machines = flows or {}, machines or {}
     groups = {v: {"value": v, "stocks": [], "flows": [], "machines": []} for v in values}
     unassigned = {"stocks": [s.id for s in model.stocks if s.id not in group], "flows": [], "machines": []}
     for s in model.stocks:
@@ -78,7 +100,9 @@ def partition(model, label: str) -> dict | None:
     for f in model.flows:
         ends = [None if e is None else group.get(e, "") for e in (f.src, f.dst)]   # None: outside; "": unassigned
         inner = {e for e in ends if e}
-        if "" in ends:
+        if f.id in flows:                                  # gathered by name: in its group, whatever its ends
+            inner = {flows[f.id]}
+        if f.id not in flows and "" in ends:
             unassigned["flows"].append(f.id)
             flow_groups[f.id] = inner
         elif len(inner) == 1:
@@ -87,6 +111,9 @@ def partition(model, label: str) -> dict | None:
             flow_groups[f.id] = {g}
             if None not in ends and not (f.evidence or {}).get("simulated"):
                 joined += 1
+        elif not inner:
+            unassigned["flows"].append(f.id)
+            flow_groups[f.id] = set()
         else:
             pair = tuple(sorted(inner))
             c = crossing.setdefault(pair, {"between": list(pair), "flows": [], "count": 0, "simulated": 0, "simulated_flows": []})
@@ -99,13 +126,17 @@ def partition(model, label: str) -> dict | None:
     spanning = []
     hyps = _hypotheses(model)
     for m in model.machines:
-        gs = sorted({g for fid, ms in hyps.items() if m.id in ms for g in flow_groups.get(fid, ())})
+        gs = [machines[m.id]] if m.id in machines else sorted({g for fid, ms in hyps.items() if m.id in ms for g in flow_groups.get(fid, ())})
         if len(gs) == 1:
             groups[gs[0]]["machines"].append(m.id)
         elif gs:
             spanning.append({"machine": m.id, "groups": gs})
         else:
             unassigned["machines"].append(m.id)
+    known = {m.id for m in model.machines}
+    for mid, v in machines.items():                        # gathered by name, not (yet) in the model
+        if mid not in known:
+            groups[v]["machines"].append(mid)
     cross = sorted(crossing.values(), key=lambda c: (-c["count"], c["between"]))
     return {"label": label, "groups": list(groups.values()), "unassigned": unassigned, "crossing": cross,
             "spanning": spanning, "joined": joined, "crossed": sum(c["count"] for c in cross),

@@ -31,7 +31,7 @@
 const NetGraph = (() => {
   const NS = "http://www.w3.org/2000/svg";
   const POS_KEY = (k) => `orchestra.netgraph.${k}`;
-  const { size, edgePoint, onRender, frameOf, boxesOf, tetherPlaces, labelSize, placeLabels, isolatedRows, fitView, boundsOf, PAD } = NetGeometry;
+  const { size, edgePoint, onRender, frameOf, boxesOf, separateBoxes, tetherPlaces, labelSize, placeLabels, isolatedRows, fitView, boundsOf, PAD } = NetGeometry;
 
   // ``boundary``: {inside: node => bool, label}: a frame around the nodes inside (the system),
   // with every other node kept outside it, so what crosses the frame is visibly what crosses the
@@ -533,6 +533,15 @@ const NetGraph = (() => {
       const text = Math.max(String(n.label || "").length, String(n.sub || "").length, ...(n.tags || []).map((t) => String(t.text).length)) * 3.2 + 10;
       return Math.max(base, text, s.r + 12 + (n.sub ? 28 : 16));
     }
+    // subsystems' boxes on a force-laid map (no ``layout``): each box's members drawn toward their
+    // middle, the boxes pushed apart and other nodes out of them a little on every tick
+    function keepBoxes(alpha) {
+      const by = new Map();
+      for (const n of NODES) if (n.box != null && n.kind !== "cloud" && n.x !== undefined) { const k = String(n.box); if (!by.has(k)) by.set(k, []); by.get(k).push(n); }
+      for (const ms of by.values()) { const cx = ms.reduce((a, n) => a + n.x, 0) / ms.length, cy = ms.reduce((a, n) => a + n.y, 0) / ms.length;
+        for (const n of ms) { n.vx += (cx - n.x) * 0.06 * alpha; n.vy += (cy - n.y) * 0.06 * alpha; } }
+      if (by.size) separateBoxes(NODES, 40, Math.min(0.5, alpha * 2));
+    }
     function settle(movable, alpha, again) {
       if (sim) sim.stop();
       settling = { movable, refit: again };
@@ -546,6 +555,7 @@ const NetGraph = (() => {
         .force("collide", d3.forceCollide(reach))
         .force("boundary", boundary ? keepOutside : null)
         .force("edge", boundary ? towardEdge : null)
+        .force("boxes", boxes && !layout ? keepBoxes : null)
         .alpha(alpha);
       const whole = movable.size === NODES.length;
       // the first settling is shown fitted once most of its movement is done, not while it flies apart
@@ -555,6 +565,7 @@ const NetGraph = (() => {
       sim.on("tick", tick)
         .on("end", () => { settling = null; const added = NODES.some((n) => n._new); for (const n of NODES) { n.fx = n.fy = null; n._new = false; }
           if (isolatedRow && whole) rowIsolated();
+          if (boxes && !layout) { for (let i = 0; i < 100 && separateBoxes(NODES); i++); tick(); }   // the boxes apart, nothing inside one not its own
           save(); relabel();
           if (again && !userZoomed && (!autoFitted || asked || added || outOfView())) { refit(!hidden()); autoFitted = true; }
           asked = false; reveal(); });
@@ -564,7 +575,8 @@ const NetGraph = (() => {
     // (netgraph-geometry.js isolatedRows), never left wherever the forces threw them
     function rowIsolated() {
       const linked = new Set(EDGES.flatMap((e) => [e.source.id, e.target.id]));
-      const lone = NODES.filter((n) => !linked.has(n.id) && !n.pin && !n.tether && n.x !== undefined), rest = NODES.filter((n) => linked.has(n.id) && n.x !== undefined);
+      // (a node in a subsystem's box stays with its box)
+      const lone = NODES.filter((n) => !linked.has(n.id) && !n.pin && !n.tether && n.box == null && n.x !== undefined), rest = NODES.filter((n) => (linked.has(n.id) || n.box != null) && n.x !== undefined);
       const at = isolatedRows(lone, rest);
       for (const n of lone) if (at[n.id]) [n.x, n.y] = at[n.id];
       tick();

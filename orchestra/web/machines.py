@@ -314,6 +314,13 @@ class MachineIndex:
         with self._lock:
             return min((v["first"] for insts in self.instances.values() for v in insts.values()), default=None)
 
+    def announced_fields(self, fields=("group", "package")) -> dict[str, dict[str, list[str]]]:
+        """machine -> field -> the values its instances' latest announcements said (``group``,
+        ``package``): a machine whose instances said two is in two groups (web/machine_subsystems.py)."""
+        with self._lock:
+            return {m: {f: sorted({c[f] for c in cards.values() if c.get(f)}) for f in fields}
+                    for m, cards in self.cards.items()}
+
     def events_of(self, machine: str) -> list[dict]:
         """The machine's last events, newest first (envelopes only)."""
         with self._lock:

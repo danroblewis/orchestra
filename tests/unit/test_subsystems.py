@@ -80,3 +80,22 @@ def test_the_model_view_reports_them_and_changes_nothing_else(tmp_path, monkeypa
     out = model_view(project)["model"]
     assert out["subsystems"] == subsystems(m)
     assert [s["id"] for s in out["stocks"]] == [s.id for s in m.stocks] and len(out["flows"]) == len(m.flows)
+
+
+def test_a_stock_named_by_its_places_is_partitioned_by_its_scope_only():
+    """On the delivery fixture (piles a count view names by ``pile``, spelled by ``step`` and
+    ``place``): the place label and the labels it spells are where a thing is, never a subsystem;
+    the scope (``workflow``, a tag) is, and is the default. No label's name is known to the rule."""
+    import json
+    from pathlib import Path
+    d = json.loads((Path(__file__).parents[1] / "fixtures/dynamics/delivery-sail-2026-11-02.json").read_text(encoding="utf-8"))
+    m = Model.from_json(d.get("model", d))
+    out = subsystems(m)
+    labels = {p["label"] for p in out["partitions"]}
+    assert "workflow" in labels and not labels & {"place", "step", "pile"}
+    assert out["default"] == "workflow"
+    # a hidden stock named by its places keeps only its scope from its level's labels
+    hidden = Stock("h", "h", evidence={"named": "places", "tags": ["workflow=hotfix", "items"],
+                                        "level": {"name": "pile_items", "labels": {"workflow": "hotfix", "step": "write", "pile": "write"}}})
+    from orchestra.sd.subsystems import labels_of
+    assert labels_of(hidden) == {"workflow": "hotfix"}

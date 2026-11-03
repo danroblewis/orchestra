@@ -27,6 +27,7 @@ series, a declared flow changes no equation. Discovery never reads it (rule 7 as
 | ``announce`` | the host's ``orchestra.intent.changed`` |
 | ``lines`` | the journal's and the requests' JSON-lines files, a torn line never swallowing the next |
 | ``design`` | the plugin's summary |
+| ``subsystem_ops``, ``subsystems`` | a declared subsystem's op; the declared beside the derived partitions |
 """
 
 from .checks import IntentError

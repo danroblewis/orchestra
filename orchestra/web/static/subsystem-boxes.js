@@ -18,35 +18,96 @@
 // - **Tags** (B14): the partition label's tag ("workflow=hotfix") is left off the parts inside their
 //   box (its title says it once), kept on the unassigned; a crossing flow's ends are named by their boxes.
 //
-// Shared by the page (global SubsystemBoxes) and the Node tests (tests/subsystems).
+// - **Declared** (B14, §5): a group a declared subsystem names or gathers carries its ``name``: the
+//   box is titled by it, "named by <who>" (its provenance) and the raw value said on hover; a member
+//   it gathers that the model (or the map) no longer has is drawn as a ghost in its box (``ghosts``).
+// - **The Machines page's event map** (``applyMap``, step 3): a box around the machines of a group;
+//   an event type inside a box when the API placed it there (every machine on it is in the box); a
+//   hand-off between machines of two boxes drawn across, each pair's count between the boxes.
+// - **Offered** partitions (``Orchestra.subsystems.offer``, subsystem-offers.js) are listed after the
+//   ones the API reports, display only, stored nowhere.
+//
+// Shared by the pages (global SubsystemBoxes) and the Node tests (tests/subsystems).
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
   else root.SubsystemBoxes = factory();
 })(typeof self !== "undefined" ? self : this, function () {
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   // a partition as the control names it: "workflow · 2 boxes · 3 crossing"
-  const nameOf = (p) => `${p.label} · ${plural(p.groups.length, "box", "boxes")} · ${p.crossed} crossing${p.crossed_simulated ? ` (${p.crossed_simulated} simulated)` : ""}`;
-  // the control's entries: each partition the API reports, the default first, then off
-  function choices(subs) {
+  // (on the event map, a group no machine is in draws no box, so it is not counted)
+  const drawable = (p) => p.groups.filter((g) => !g.events || (g.machines || []).length || ((g.ghosts || {}).machines || []).length).length;
+  const isMap = (p) => p.groups.some((g) => g.events);
+  // how many machines a map partition puts in a box
+  const boxedMachines = (p) => p.groups.reduce((a, g) => a + (g.machines || []).length, 0);
+  // the control's name: "workflow · 2 boxes · 1 crossing"; on the map "place · 1 box · 5 machines"
+  const nameOf = (p) => (isMap(p) ? `${p.label} · ${plural(drawable(p), "box", "boxes")} · ${plural(boxedMachines(p), "machine", "machines")}${p.crossed ? ` · ${p.crossed} crossing` : ""}`
+    : `${p.label} · ${plural(drawable(p), "box", "boxes")} · ${p.crossed} crossing${p.crossed_simulated ? ` (${p.crossed_simulated} simulated)` : ""}`);
+  // the control's entries: each partition the API reports, the default first, then the offered
+  // (``offered``: partitions made from a page extension's offer), then off
+  function choices(subs, offered = []) {
     const parts = ((subs && subs.partitions) || []).slice();
     const d = subs && subs.default;
     parts.sort((a, b) => (a.label === d ? -1 : b.label === d ? 1 : 0));
-    return [...parts.map((p) => ({ value: p.label, text: nameOf(p) })), { value: "off", text: "off" }];
+    const taken = new Set(parts.map((p) => p.label));
+    return [...parts.map((p) => ({ value: p.label, text: nameOf(p) })),
+            ...offered.filter((p) => !taken.has(p.label)).map((p) => ({ value: p.label, text: `${nameOf(p)} · offered` })), { value: "off", text: "off" }];
   }
   // which partition is drawn: what the viewer chose (``wanted``, from the hash: a label or "off"),
-  // when the API still reports it; else the default; null for none
-  function choose(subs, wanted) {
-    const parts = (subs && subs.partitions) || [];
+  // when the API still reports it or an extension still offers it; else the default; null for none
+  function choose(subs, wanted, offered = []) {
+    const parts = [...((subs && subs.partitions) || []), ...offered];
     if (wanted === "off") return null;
     return parts.find((p) => p.label === wanted) || parts.find((p) => p.label === (subs && subs.default)) || null;
   }
+  // The map's partition: what the viewer chose, else the API's default (the declared, else the model's
+  // own, the one the Dynamics page opens on), whatever it boxes. Opened by default on a partition that
+  // boxes no machine, the map starts with boxes off and says why (``empty``: that partition).
+  // -> {partition, empty}
+  function mapChoice(subs, wanted, offered = []) {
+    const p = choose(subs, wanted, offered);
+    if (wanted == null && p && p.source !== "declared" && !boxedMachines(p)) return { partition: null, empty: p };
+    return { partition: p, empty: null };
+  }
+  // why no box holds a machine, in the owner's terms: "6 machines act in both workflows (delivery_sail,
+  // pr_watch): no box holds one"
+  function emptyNote(p) {
+    if (!p) return "";
+    const by = new Map();
+    for (const s of p.spanning || []) { const k = s.groups.join("|"); by.set(k, [...(by.get(k) || []), s.machine]); }
+    const said = [...by].map(([k, ms]) => { const gs = k.split("|");
+      return `${plural(ms.length, "machine acts", "machines act")} in ${gs.length === 2 ? "both" : gs.length} ${p.label}s (${gs.join(", ")})`; });
+    return `${said.length ? said.join("; ") : `no machine's hypotheses lie in one ${p.label}`}: no box holds one`;
+  }
+  // a group's title: a declared subsystem's name, else its value
+  const titleOf = (g) => (g && g.name) || (g && g.value);
+  const titles = (partition) => { const m = new Map(((partition && partition.groups) || []).map((g) => [g.value, titleOf(g)])); return (v) => m.get(v) ?? v; };
+  // who named a declared subsystem, from its provenance: "you" for the owner on a page, "the owner
+  // (quoted), per <source>" through a plugin, else its author ("the Supervisor"); confirmed by the owner said so
+  function namedBy(g) {
+    if (!g || !g.declared) return "";
+    const p = g.provenance || {}, src = p.source || p.author || "a plugin";
+    const who = p.author === "owner" ? (p.via === "page" || !p.via ? "you" : `the owner (quoted), per ${src}`) : `the ${src.charAt(0).toUpperCase() + src.slice(1)}`;
+    return `named by ${who}${g.confirmed && g.confirmed.by === "owner" && p.author !== "owner" ? ", confirmed by you" : ""}`;
+  }
+  // what a box's title says on hover: who named it and the raw value it names (B14: "the label's raw
+  // value is shown in the box's drawer only"), its note, its ghosts
+  function hintOf(partition, v) {
+    const g = ((partition && partition.groups) || []).find((x) => x.value === v); if (!g) return "";
+    const ghosts = g.ghosts ? [...(g.ghosts.stocks || []), ...(g.ghosts.flows || []), ...(g.ghosts.machines || [])] : [];
+    return [namedBy(g), g.declared && partition.source !== "declared" ? `${partition.label} = ${g.value}` : "", g.note || "",
+            ghosts.length ? `${plural(ghosts.length, "member", "members")} no longer here, drawn as ghosts` : ""].filter(Boolean).join(" · ");
+  }
   const between = (a, b) => `${a} and ${b}`;
-  // what is written between two boxes: "2 flows between delivery and hotfix", the simulated said apart
-  function pairText(c) {
-    const [a, b] = c.between;
+  // what is written between two boxes: "2 flows between delivery and hotfix", the simulated said
+  // apart; on the event map "1 hand-off between a and b · 3 subjects". ``title``: a value's title
+  function pairText(c, title = (v) => v) {
+    const [a, b] = c.between.map(title);
+    if (c.handoffs) return `${plural(c.count, "hand-off", "hand-offs")} between ${between(a, b)}${c.subjects ? ` · ${plural(c.subjects, "subject", "subjects")}` : ""}`;
     if (!c.count && c.simulated) return `${plural(c.simulated, "simulated flow", "simulated flows")} between ${between(a, b)}`;
     return `${plural(c.count, "flow", "flows")} between ${between(a, b)}${c.simulated ? ` · ${c.simulated} simulated` : ""}`;
   }
+  const shortText = (c) => (c.handoffs ? plural(c.count, "hand-off", "hand-offs")
+    : c.count ? `${plural(c.count, "flow", "flows")}${c.simulated ? ` · ${c.simulated} simulated` : ""}` : `${c.simulated} simulated`);
 
   // The diagram's nodes and edges (sd-graph.js build) with ``partition``'s boxes: every member node
   // gains ``box`` (its group's value), tags of the label dropped inside a box; a crossing flow gains
@@ -92,19 +153,68 @@
       return { ...e, cross: [a, b], cls: `${e.cls || ""} ng-box-cross`, ...(sim ? { dash: "6 4" } : {}),
                label: lines.length ? [lines[0], `${a} → ${b}`, ...lines.slice(1)] : [`${a} → ${b}`] };
     });
+    // a member a declared subsystem gathers that the model no longer has: a ghost in its box
+    for (const g of partition.groups) for (const [kind, keys] of [["stock", (g.ghosts && g.ghosts.stocks) || []], ["flow", (g.ghosts && g.ghosts.flows) || []]])
+      for (const k of keys) outNodes.push(ghost(`sub-ghost:${kind}:${k}`, k, g, kind === "stock" ? "gathered stock · not in this model" : "gathered flow · not in this model"));
     const values = partition.groups.map((g) => g.value).filter((v) => outNodes.some((n) => n.box === v));
-    const pairs = partition.crossing.filter((c) => c.count || c.simulated).map((c) => ({ between: c.between, count: c.count, simulated: c.simulated,
-      text: pairText(c), short: c.count ? `${plural(c.count, "flow", "flows")}${c.simulated ? ` · ${c.simulated} simulated` : ""}` : `${c.simulated} simulated`, dashed: !c.count, flows: c.flows }));
+    const pairs = pairsOf(partition);
     return { nodes: outNodes, edges: outEdges, boxes: values, pairs,
-             outside: { stocks: partition.unassigned.stocks.slice(), machines: partition.spanning.map((s) => ({ machine: s.machine, groups: s.groups.slice() })) } };
+             outside: { stocks: (partition.unassigned.stocks || []).slice(), machines: partition.spanning.map((s) => ({ machine: s.machine, groups: s.groups.slice() })) } };
+  }
+
+  const ghost = (id, label, g, caption) => ({ id, kind: "box", label, lines: [label], caption, color: "#5b6272", fill: "#07090d", cls: "im-ghost im-gone",
+    box: g.value, subGhost: { group: titleOf(g), caption } });
+  // each pair's count, written between its boxes
+  function pairsOf(partition) {
+    const t = titles(partition);
+    return partition.crossing.filter((c) => c.count || c.simulated).map((c) => ({ between: c.between, count: c.count, simulated: c.simulated,
+      text: pairText(c, t), short: shortText(c), dashed: !c.count && !c.handoffs, flows: c.flows || [], handoffs: c.handoffs }));
+  }
+
+  // The Machines page's event map (machines.html, its nodes and edges as NetGraph draws them) with
+  // ``partition``'s boxes (/api/machines ``subsystems``): a machine node ("m:<id>") gains ``box``, its
+  // group's value; an event type node ("ev:<type>", or several types folded into one node, ``labels``)
+  // is in a box when every type on it is inside that box; channels and stubs in none; an edge between
+  // two nodes of different boxes is drawn across (``cross``). A machine a declared subsystem gathers
+  // that the map does not show is a ghost in its box. -> {nodes, edges, boxes, pairs, outside: {machines, spanning}}
+  function applyMap(nodes, edges, partition) {
+    if (!partition) return { nodes, edges, boxes: [], pairs: [], outside: { machines: [], spanning: [] } };
+    const mBox = new Map(), eBox = new Map();
+    for (const g of partition.groups) { for (const m of g.machines || []) mBox.set(m, g.value); for (const t of g.events || []) eBox.set(t, g.value); }
+    const boxOf = (n) => {
+      if (n.machine || /^m:/.test(n.id)) return mBox.get(n.mid || n.id.replace(/^m:/, ""));
+      if (!/^ev:/.test(n.id)) return undefined;
+      const vs = new Set((n.labels || [n.label]).map((t) => eBox.get(t)));
+      return vs.size === 1 && !vs.has(undefined) ? [...vs][0] : undefined;
+    };
+    const outNodes = nodes.map((n) => { const v = boxOf(n); return v == null ? n : { ...n, box: v, anchor: undefined }; });
+    const shown = new Set(nodes.filter((n) => n.machine || /^m:/.test(n.id)).map((n) => n.mid || n.id.replace(/^m:/, "")));
+    for (const g of partition.groups) for (const m of (g.ghosts && g.ghosts.machines) || []) if (!shown.has(m))
+      outNodes.push({ id: "sub-ghost:m:" + m, kind: "circle", label: m, color: "#07090d", stroke: "#5b6272", cls: "im-ghost", box: g.value,
+        subGhost: { group: titleOf(g), caption: "gathered machine · not on the bus" } });
+    const at = new Map(outNodes.map((n) => [n.id, n.box]));
+    const outEdges = edges.map((e) => { const a = at.get(e.source), b = at.get(e.target);
+      return a != null && b != null && a !== b ? { ...e, cross: [a, b], cls: `${e.cls || ""} ng-box-cross` } : e; });
+    const values = partition.groups.map((g) => g.value).filter((v) => outNodes.some((n) => n.box === v));
+    return { nodes: outNodes, edges: outEdges, boxes: values, pairs: pairsOf(partition),
+             outside: { machines: (partition.unassigned.machines || []).slice(), spanning: partition.spanning.map((s) => ({ machine: s.machine, groups: s.groups.slice() })) } };
+  }
+  // where each box's machines are pulled on the map: a spot on a ring around the middle (they replace
+  // the announced groups' anchors while boxes are on); {value: [fx, fy]}
+  function anchors(partition) {
+    const vs = ((partition && partition.groups) || []).map((g) => g.value);
+    if (vs.length < 2) return Object.fromEntries(vs.map((v) => [v, [0.5, 0.5]]));
+    return Object.fromEntries(vs.map((v, i) => { const a = 2 * Math.PI * i / vs.length - Math.PI / 2; return [v, [0.5 + 0.3 * Math.cos(a), 0.5 + 0.3 * Math.sin(a)]]; }));
   }
 
   // a box's title is a focus chip of the core's own offer (B11): one offer per group, titled by its
-  // value, its subset the group's stocks, flows and machines (by id); listed on the box, not in the row
+  // title (a declared name, else its value), its subset the group's stocks, flows, machines and event
+  // types (by id); listed on the box, not in the row
   function offers(partition) {
-    return ((partition && partition.groups) || []).map((g) => ({ title: g.value, row: false,
-      subtitle: `${plural(g.stocks.length, "stock", "stocks")}`,
-      get: () => ({ stocks: g.stocks.slice(), flows: g.flows.slice(), machines: g.machines.slice(), reason: `the ${partition.label} ${g.value}: its box` }) }));
+    return ((partition && partition.groups) || []).map((g) => ({ title: titleOf(g), row: false,
+      subtitle: g.stocks ? `${plural(g.stocks.length, "stock", "stocks")}` : `${plural((g.machines || []).length, "machine", "machines")}`,
+      get: () => ({ stocks: (g.stocks || []).slice(), flows: (g.flows || []).slice(), machines: (g.machines || []).slice(), events: (g.events || []).slice(),
+                    reason: g.name ? `${g.name}: its box` : `the ${partition.label} ${g.value}: its box` }) }));
   }
 
   // the phone list's sections (B13): one per group (its stocks, its flows), then "between subsystems"
@@ -112,10 +222,12 @@
   // flows and the machines in no group or in several. Ids only; the page names them.
   function sections(partition) {
     if (!partition) return null;
-    return { groups: partition.groups.map((g) => ({ value: g.value, stocks: g.stocks.slice(), flows: g.flows.slice(), machines: g.machines.slice() })),
-             between: partition.crossing.map((c) => ({ between: c.between, flows: c.flows.slice(), text: pairText(c) })),
-             outside: { stocks: partition.unassigned.stocks.slice(), flows: partition.unassigned.flows.slice(), machines: partition.unassigned.machines.slice(),
-                        spanning: partition.spanning.map((s) => ({ machine: s.machine, groups: s.groups.slice() })) } };
+    const t = titles(partition);
+    return { groups: partition.groups.map((g) => ({ value: g.value, title: titleOf(g), stocks: (g.stocks || []).slice(), flows: (g.flows || []).slice(),
+                                                    machines: (g.machines || []).slice(), events: (g.events || []).slice() })),
+             between: partition.crossing.map((c) => ({ between: c.between, flows: (c.flows || []).slice(), handoffs: (c.handoffs || []).slice(), text: pairText(c, t) })),
+             outside: { stocks: (partition.unassigned.stocks || []).slice(), flows: (partition.unassigned.flows || []).slice(), machines: (partition.unassigned.machines || []).slice(),
+                        events: (partition.unassigned.events || []).slice(), spanning: partition.spanning.map((s) => ({ machine: s.machine, groups: s.groups.slice() })) } };
   }
   // how a machine outside every box is said: "in two subsystems (a, b): outside the boxes"
   const spanText = (s) => `in ${s.groups.length === 2 ? "two" : s.groups.length} subsystems (${s.groups.join(", ")}): outside the boxes`;
@@ -130,5 +242,5 @@
   // the layout key of a partition: each keeps its own saved layout (B12)
   const layoutKey = (base, partition) => (partition ? `${base}|boxes=${partition.label}` : base);
 
-  return { choices, choose, apply, offers, sections, pairText, spanText, nameOf, fromHash, hashWith, layoutKey };
+  return { choices, choose, mapChoice, emptyNote, boxedMachines, apply, applyMap, anchors, offers, sections, pairText, spanText, nameOf, titleOf, titles, namedBy, hintOf, fromHash, hashWith, layoutKey };
 });
