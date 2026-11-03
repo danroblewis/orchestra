@@ -775,22 +775,42 @@ oldest point read, and discovered again before "no model" is said; `discovery.wi
 which windows were read, and the page says the window the model was fitted over.
 
 **Eras** (`sd/eras.py`, `sd/prior.py`, `sd/compare.py`; goal G11). After a machine changes how
-the system works (a prompt or role edited, the configuration changed, a deploy) it is a different
-system, so a new **era** begins, and the era is the window the model is discovered in:
+the system behaves (a machine's spec, its model or its duties edited, a definition the machines
+work by changed, a declared effect confirmed, a deploy) it is a different system, so a new **era**
+begins, and the era is the window the model is discovered in. Measuring more, or otherwise, is not
+such a change: an era begun by it would throw away the history a new source brings (bootstrap run
+4: fifteen eras from the Supervisor's own setup, then one per merge, and no stock ever formed):
 
 - **What begins one.** Orchestra knows no domain, so it is told, by the envelope alone (never
   `data`): `system.changed`, the generic mark any machine publishes when it changed the system
-  (`source`: the machine; `subject`: what it changed, optionally), always does; `[discovery]
-  eras_from` names more, as filters `type[:source=glob,subject=glob]` (default
-  `["config.changed"]`, the conventional type any machine may publish when it changes the
-  configuration).
-  Orchestra's own events (`orchestra.*`) never do. The host records each such event once as an
-  era `e1`, `e2`, … (`model/eras.json`: start, label `type from source`, the cause event's id,
-  type, source and subject) and announces it, `orchestra.era.started` (subject the era's id,
-  `causationid` the cause's id). Before the first era there is none.
-- **Discovery within the era.** The window is `[discovery] window`, but never reaching back
-  past the current era's start: what came before is not evidence for the new system. An era
-  younger than two steps is not discovered; its model is its prior.
+  (`source`: the machine; `subject`: what it changed, optionally), and the types `[discovery]
+  eras_from` names, as filters `type[:source=glob,subject=glob]` (default `["config.changed"]`,
+  the conventional type any machine may publish when it changes the configuration). Of those, the
+  **subject decides**: one naming what is measured or a setting (`instrument:`, `collector:`,
+  `collect:`, `scrape:`, `source:`, `series:`, `setting:<section>`) never begins one; a change a
+  prediction is about (an `orchestra.prediction.made` whose `change` is its id) always does; one
+  naming a part that behaves (`machine:<name>`: its spec, its model or its duties;
+  `definition:<name>`: a definition machines work by; `override:<name>`: code loaded over a
+  package's) does; otherwise `config.changed` does not (it says the configuration changed, not
+  that the behaviour did: the configuration holds the instruments, the sources and the plugins'
+  settings too), and `system.changed` and every other named type do. A `config.changed` read
+  within 5 minutes of its time while the configuration (`orchestra.toml` and the overlay, hashed)
+  is what it was at the one before is a **no-op** and begins nothing. Orchestra's own events
+  (`orchestra.*`) never do. The host records each such event once as an era `e1`, `e2`, …
+  (`model/eras.json`: start, label `type from source`, the cause event's id, type, source and
+  subject) and announces it, `orchestra.era.started` (subject the era's id, `causationid` the
+  cause's id). Before the first era there is none.
+- **Never shorter than discovery needs.** A stock must cover half the window's data (`MIN_COVER`,
+  `sd/discover.py`), so a change that comes within `MIN_COVER` × `[discovery] window` (30 minutes
+  by default) of the current era's start begins no era: it is kept in that era (`Era.changes`:
+  its id, type, source, subject and time; the host logs it), a prediction about it belongs to
+  that era, and the Dynamics page says under the era's head "and N later changes kept in it, too
+  soon after its start for an era of their own", each with its type, source, subject and time.
+  Changes every few minutes (a merge taken for a release) give one era per half hour.
+- **Discovery within the era.** The window is `[discovery] window`, or what the sources hold
+  (§4.4, "History"), but never reaching back past the current era's start: what came before is
+  not evidence for the new system. An era younger than two steps is not discovered; its model is
+  its prior.
 - **The prior** (decision D4). The previous era's model is the new era's prior: its last
   discovery is saved as a version when the era begins (so it stays readable), and what the era
   discovers is merged with it (`sd/prior.py`). A flow in both, in the same form, keeps the era's
@@ -873,8 +893,9 @@ Orchestra judges it against what the era's discovery found.
   in `model/predictions.json` as it follows the bus (`waiting`; `invalid` with the reason when
   its `data` does not parse, so the machine can be told). A prediction changes no machine: it is
   a statement about the model (AGENTS.md rule 9).
-- **Matching.** A prediction belongs to the era whose `cause` is its `change`; it waits until
-  that change begins an era. One made after its change is judged, and marked `late`.
+- **Matching.** A prediction belongs to the era whose `cause` is its `change`, or the era its
+  change was kept in (too soon after that era's start for one of its own); it waits until that
+  change is read. One made after its change is judged, and marked `late`.
 - **When.** After a discovery of the era made at least `horizon_s` after it began. While an
   expected edit rests on the prior (the era has no evidence of its own on that flow yet) it waits
   on, to twice the horizon, then is `undecided`. When another era begins before the horizon it is
@@ -960,8 +981,9 @@ url = "https://tenant.example/data/metrics"
 auth = { bearer_env = "WORK_TOKEN" }   # or bearer_file, header, basic, client_cert/client_key/ca_file
 prefix = "work"                         # series work:<name>, machines work.<id>
 machine = "service"                     # the canonical label that names machines
-match = ['{__name__=~"http_.*"}']       # what to infer from (default everything, capped)
+match = ['{__name__=~"http_.*", env="prod"}']   # what is read (default everything, capped)
 max_series = 200                        # per source; at most max_per_family (12) per family
+history = "7d"                          # how far back its first read and discovery's window reach
 [sources.labels]                        # canonical = spellings; the first a metric has wins
 service = ["service", "app", "k8s_app"]
 [sources.transform]
@@ -1001,7 +1023,7 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   name counts events is a counter, a counter that falls by halves is a gauge, a gauge whose
   samples are counts of their own is a delta, a native histogram is a counter by its count, and
   timestamps, clocks, info metrics and Prometheus' `up`/`scrape_*` are never levels or flows. A
-  family that only rose in the window is judged over `history` (24 h) as well, and a type once
+  family that only rose in the window is judged over a day of `history` as well, and a type once
   judged changes only when the samples decide it. A scrape job or replica label is read at one
   value when its values scrape the same targets (instance without the port, EC2 host names as
   addresses, node labels) and agree: a counter's increase each quarter of the window within 5%
@@ -1060,6 +1082,29 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   the catalogue **only while a page asks for them**, at discovery's step, from the host's read
   cache and then only what is newer, in one round per source from its own share of the store's
   rate (`web_share`), slowing down when the store throttles it.
+- **Within `match`** (`sources/scope.py`). Every query made of a source carries the label
+  matchers every `match` selector has (`__name__` aside): `['{namespace="hackriff"}']` scopes it to
+  `namespace="hackriff"`; selectors with no label matcher in common (or the match-everything
+  default) scope it to nothing. Inference adds them to every vector selector of each definition's
+  queries (the definition's `query` and the expression its read is planned from, so a series'
+  provenance shows them), declared and script-written ones included, and the transport adds them
+  again to every request's `query` and `match[]` (listings, the schema's samples, probes, raw
+  reads): never to a selector that constrains that label itself (`namespace=~"a|b"` keeps its
+  own). Definitions inferred before this (bootstrap run 4: 0 of 160 queries named the namespace,
+  so `sum by (status)` summed another team's series in) are inferred again.
+- **History** (`sources/held.py`). A source's **first read**, and the first after its `url`,
+  `match` or `history` changed, looks back from now in pages of a day (48 points a series), until
+  a page returns nothing or the data begins inside one (the store holds no more), `history`
+  (default 7 days) is reached, or its budget is spent (`max_requests` by `deadline`, under the
+  store's rate and daily cap); a read stopped by its budget is taken up by the next discovery
+  where it stopped. `<state>/sources/<name>.held.json` keeps the oldest point returned, how far
+  back the pages reached and whether they are done. Discovery's window is then the longer of
+  `[discovery] window` and what the sources hold, up to `history` and 7 days, no longer than the
+  current era, in whole multiples of the window with the step scaled alike (`sd/rediscover.py`
+  `held_window`: the grid keeps its number of steps; `discovery.history` says so), read through
+  the read cache like any window. A source added with a week behind it gives a model at its first
+  discovery. Only the host's discovery and the CLI make a first read; a window or step asked for
+  explicitly is read as asked.
 
 **Counted traffic** (`sources/traffic.py`; `docs/proposals/event-sources.md` §1–3). A series
 definition may say what it counts on another system's bus:
@@ -1592,7 +1637,7 @@ url = "file"            # or http://host:8428 (VictoriaMetrics)
 auth = "on"             # the web UI asks for the project's token (§10.2); "off" only on a loopback bind
 [discovery]             # strategy, window, step, every, [discovery.options]
 strategy = "kalman_lna"
-eras_from = ["config.changed", "deploy.finished:subject=billing*"]   # begin an era, besides system.changed (§4.3)
+eras_from = ["config.changed", "deploy.finished:subject=billing*"]   # begin an era, besides system.changed, when their subject names a part that behaves (§4.3)
 prior_for = "60m"       # how long a new era carries what it has not found of its prior (default: window)
 announce_hold = 3       # discoveries a structure change holds before orchestra.model.changed
 announce_gap = "30m"    # the least time between two orchestra.model.changed
@@ -1612,6 +1657,8 @@ url = "http://127.0.0.1:9100/metrics"
 name = "work"
 url = "https://tenant.example/data/metrics"
 auth = { bearer_env = "WORK_TOKEN" }
+match = ['{namespace="checkout"}']   # every query carries its label matchers
+history = "7d"          # how far back its first read reaches; discovery's window is as long as it holds
 [[series]]              # a hand-written definition from a source (§4.4)
 source = "work"
 name = "checkout_errors"

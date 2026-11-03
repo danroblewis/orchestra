@@ -124,7 +124,7 @@ def _predictions(models, args) -> int:
 
     preds, eras = P.recorded(models), era_record.recorded(models)
     if args.json:
-        by_cause = {e.cause: e.id for e in eras if e.cause}
+        by_cause = {c: e.id for c, e in era_record.by_change(eras).items()}
         print(json.dumps({"predictions": [{**p, "era": by_cause.get(p.get("change"))} for p in preds], "eras": [vars(e) for e in eras]}))
         return 0
     print("\n".join(lines(preds, eras)))

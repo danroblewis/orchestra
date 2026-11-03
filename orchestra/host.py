@@ -14,8 +14,8 @@ In an empty Orchestra it does little, on purpose:
 - in the host that launches, it says when a machine falls silent past its own cadence on the bus
   (``orchestra.quiet``: ``orchestra.machine.quiet``, subject the machine), so each is said once;
 - it records the eras the bus begins (``orchestra.sd.eras``: ``system.changed`` and the events
-  ``[discovery] eras_from`` names) as it follows the bus, and announces each
-  (``orchestra.era.started``);
+  ``[discovery] eras_from`` names, when they change how the system behaves, never shorter than
+  half the window) as it follows the bus, and announces each (``orchestra.era.started``);
 - it rediscovers the model in the background (``orchestra.sd.rediscover``, with the strategy,
   window and interval in ``[discovery]``, within the current era), caches the result for
   readers, and saves a new model version when the structure changed or an era began. Runs never
@@ -295,9 +295,13 @@ class Host:
         from .sd.store import ModelStore
         store = ModelStore.for_state(self.project.state_dir)
         try:
-            _, new = eras.sync(store, self.events, self.project.config.eras_from, self.events.publish)
+            noted: list = []
+            _, new = eras.follow(store, self.events, self.project, self.events.publish, noted)
             for e in new:
                 self.log(f"era {e.id} began: {e.label}")
+            for era, c in noted:
+                self.log(f"{c['type']} from {c['source'] or 'an unnamed source'} kept in era {era}: too soon after its start "
+                         "for an era of its own")
         except Exception as e:  # noqa: BLE001 - the next look retries
             self.log(f"eras: {type(e).__name__}: {e}")
         try:

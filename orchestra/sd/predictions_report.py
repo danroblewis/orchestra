@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from .eras import by_change
+
 
 def _when(t: float | None) -> str:
     return datetime.fromtimestamp(t, UTC).strftime("%Y-%m-%d %H:%M") if t else "-"
@@ -69,7 +71,7 @@ def lines(predictions: list[dict], eras: list) -> list[str]:
     if not predictions:
         return [("no predictions yet: a machine records one before its change (orchestra.prediction.made; "
                  "the confirm of an expected effect, a machine's request (rule 9); sd.predictions.Predictions)")]
-    by_era = {e.cause: e for e in eras if e.cause}
+    by_era = by_change(eras)
     groups: dict[str, list[dict]] = {}
     for p in predictions:
         era = by_era.get(p.get("change"))

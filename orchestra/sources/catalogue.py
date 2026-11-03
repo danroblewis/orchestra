@@ -48,7 +48,8 @@ from ..collect.views import declared as declared_views
 from ..collect.views import provenance as instrument_views
 from ..metrics import MetricsStore
 from ..sd.series import Declared, series_key
-from . import SourceError
+from . import PastDeadline, SourceError
+from . import held as held_record
 from .cache import definitions
 from .fetch import grid_step, read_many
 from .infer import Inference
@@ -119,6 +120,17 @@ def _failures(failed: dict[str, str], names: dict[str, str], total: int, deadlin
     return "; ".join(out)
 
 
+def _first_held(d: Definition, pts: list) -> float | None:
+    """The time of a series' first point the store held: a counter's running total starts with a
+    0 of the reader's own, a turnover and a count are made up to the window's start; neither says
+    where the store's data begins."""
+    if d.view in ("starts", "stops", "count", "distinct"):
+        return None
+    if d.kind in ("counter", "rate"):
+        return pts[1][0] if len(pts) > 1 else None
+    return pts[0][0] if pts else None
+
+
 _THREAD = threading.local()
 
 
@@ -173,13 +185,14 @@ class Catalogue:
                            Path(self.project.state_dir), start, end, refresh=refresh, until=until, infer_ok=self.infer or refresh)
 
     def _remote(self, spec: SourceSpec, start: float, end: float, step: float, own_names: set[str], out: Reading,
-                keep: bool = True) -> None:
+                keep: bool = True, infer_s: float | None = None) -> None:
         src = self.remotes[spec.name]
         began, before = time.monotonic(), (src.requests, src.points, src.retries)
         st: dict = {"where": spec.where(), "auth": src.auth.describe(), "prefix": spec.prefix}
         out.status[spec.name] = st
         try:
-            inf = self.inference(spec.name, start, end)   # a fresh inference (rare: it is cached) has a deadline of its own
+            # a fresh inference (rare: it is cached) has a deadline of its own, over the last infer_s of the window when given
+            inf = self.inference(spec.name, max(start, end - infer_s) if infer_s else start, end)
         except Exception as e:  # noqa: BLE001 - one source's failure never ends the discovery of the others
             st.update(ok=False, error=f"inference failed: {why(e)}")
             out.missing[spec.name] = st["error"]
@@ -254,6 +267,46 @@ class Catalogue:
                     except OSError:
                         pass                    # the next round reads the window whole
 
+    def held(self, now: float, start: float, end: float) -> dict[str, float]:
+        """How far back each source holds, up to its ``history`` (``held.py``), making its first
+        read (or taking one up) when this catalogue may infer: the host's discovery and the CLI. Its
+        definitions are inferred over [start, end], the window discovery reads without the history."""
+        out: dict[str, float] = {}
+        state = Path(self.project.state_dir)
+        for spec in self.specs.sources:
+            rec = held_record.read(state, spec.name)
+            if self.infer and held_record.due(rec, spec):
+                try:
+                    rec = self._first_read(spec, rec, now, start, end)
+                    held_record.write(state, spec.name, rec)
+                except Exception as e:  # noqa: BLE001 - the window stays the configured one; the next discovery tries again
+                    self.errors[spec.name] = f"the first read of its history failed: {why(e)}"
+            out[spec.name] = held_record.span(rec, spec, now)
+        return out
+
+    def _first_read(self, spec: SourceSpec, rec: dict, now: float, start: float, end: float) -> dict:
+        """The pages of a source's first read, as one round of its budget (``held.first_read``)."""
+        src = self.remotes[spec.name]
+        until = time.monotonic() + spec.deadline
+        defs = self.inference(spec.name, start, end).kept     # a fresh round has a deadline of its own, as discovery's
+        until = time.monotonic() + spec.deadline
+        budget = Budget(spec.max_requests, until, "the first read of its history")
+        by_id = {d.id: d for d in defs}
+
+        def page(a: float, b: float, step: float) -> tuple[float | None, bool]:
+            outer, src.budget = src.budget, budget
+            try:
+                got, failed = read_many(src, defs, spec.prefix, spec.machine, a, b, step, spec.producers, until,
+                                        spec.concurrency, None, 0.0)
+            except PastDeadline:
+                return None, True
+            finally:
+                src.budget = outer
+            firsts = [first for i, rows in got.items() for _, _, pts, _ in rows if (first := _first_held(by_id[i], pts)) is not None]
+            stopped = any(w.startswith("late: ") for w in failed.values()) and not firsts
+            return (min(firsts) if firsts else None), stopped
+        return held_record.first_read(spec, rec, now, page)
+
     def counted(self, start: float, end: float, step: float) -> tuple[list[dict], dict[str, str]]:
         """Every series of counted traffic over [start, end]: its source, name, labels, points,
         direction, channel and machine; and the sources that failed, with why."""
@@ -287,10 +340,12 @@ class Catalogue:
         out = [{"name": n, "labels": labels, "points": pts} for d in defs for n, labels, pts, _ in results.get(d.id, [])]
         return out, (_failures(errors, {d.id: d.name for d in defs}, len(defs), spec.deadline) if errors else None)
 
-    def read(self, start: float, end: float, step: float, *, keep: bool = True) -> Reading:
+    def read(self, start: float, end: float, step: float, *, keep: bool = True, infer_s: float | None = None) -> Reading:
         """Every series for the window (see the module's docstring). ``keep``: the reads are kept
         for the next discovery and the project's other readers (``readcache.py``); False for a
-        read of another window (the judge's halves), which reads from the cache but keeps nothing."""
+        read of another window (the judge's halves), which reads from the cache but keeps nothing.
+        ``infer_s``: an inference this read starts looks at the window's last ``infer_s`` only (a
+        window as long as a source's history is read with what the last hour defines)."""
         out = Reading()
         if self.own is not None:
             out.dump = list(self.own.dump())
@@ -302,7 +357,7 @@ class Catalogue:
             out.status[name] = {"ok": False, "error": f"refused in orchestra.toml: {why}"}
             out.missing[name] = out.status[name]["error"]
         for spec in self.specs.sources:
-            self._remote(spec, start, end, step, own_names, out, keep)
+            self._remote(spec, start, end, step, own_names, out, keep, infer_s)
         return out
 
     def reader(self, start: float, end: float, step: float, refs: list | None = None):

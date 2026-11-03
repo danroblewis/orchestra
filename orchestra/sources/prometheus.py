@@ -21,6 +21,10 @@ store has (an answer that touches no series), never all of ``up``; ``names`` sen
 default (a ``match[]`` turns an index read into a series match); ``metadata`` asks one entry per
 metric (``limit_per_metric``), and for a few names, those names only.
 
+Every request is **within the source's ``match``** (``scope.py``): its ``query`` and each of its
+``match[]`` selectors carry the label matchers every ``match`` selector has, so a shared store is
+never read beyond the project's part of it.
+
 A **native histogram** (``histogram``/``histograms`` in an answer, Prometheus 2.40+) is read as
 its count, a counter; the names seen so are kept in ``native``, so inference reads them with
 ``histogram_count`` rather than as a gauge."""
@@ -32,6 +36,7 @@ import time
 
 from . import Health, Labels, PastDeadline, Points, SourceError
 from .limits import RateLimit
+from .scope import scope_of, scoped
 from .spec import SourceSpec
 from .transport import (
     RETRIES,
@@ -96,6 +101,19 @@ class PrometheusSource(Transport):
         super().__init__(spec, limiter)
         self.left_out: list[str] = []    # parts of a series listing still refused at MIN_SPAN
         self.native: set[str] = set()    # metric names answered as native histograms
+        self.scope = scope_of(spec.match)  # the label matchers every request carries (scope.py)
+
+    def _call(self, path: str, form: dict | None = None, **kw):
+        """Every request within the source's ``match`` (``scope.py``): its query, or each of its
+        ``match[]`` selectors, scoped before it is sent."""
+        if form and self.scope:
+            form = dict(form)
+            if isinstance(form.get("query"), str):
+                form["query"] = scoped(form["query"], self.scope)
+            if "match[]" in form:
+                ms = form["match[]"]
+                form["match[]"] = [scoped(m, self.scope) for m in ms] if isinstance(ms, list) else scoped(ms, self.scope)
+        return super()._call(path, form, **kw)
 
     def _results(self, path: str, form: dict, until: float | None = None) -> list[dict]:
         """The ``result`` list of a query's answer; ``SourceError`` when the answer has another shape."""

@@ -201,7 +201,7 @@ def false_change(project, metrics, prev_start: float | None, start: float, compa
 def judge_one(project, metrics, store: ModelStore, p: dict, eras: list, now: float, *, measure_false: bool = True,
               collectors: list | None = None) -> dict | None:
     """The verdict on one waiting prediction, or None while it waits."""
-    era = next((e for e in eras if e.cause and e.cause == p.get("change")), None)
+    era = era_record.of_change(eras, p.get("change"))
     if era is None:
         return None
     horizon = p["horizon_s"]
@@ -278,7 +278,7 @@ def judge_due(project, metrics, now: float, publish=None, *, events=None, measur
     for p in record.recorded(store):
         if p.get("status") != "waiting":
             continue
-        era = next((e for e in eras if e.cause and e.cause == p.get("change")), None)
+        era = era_record.of_change(eras, p.get("change"))
         if era is not None and p.get("era") != era.id:
             record.update(store, p["id"], lambda x, e=era: x.__setitem__("era", e.id))
         v = judge_one(project, metrics, store, p, eras, now, measure_false=measure_false, collectors=collectors)

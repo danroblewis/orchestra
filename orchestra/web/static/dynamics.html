@@ -646,9 +646,11 @@ function unitOf(s) {
   if (s.evidence && s.evidence.noun) return s.evidence.noun;
   return s.evidence && s.evidence.named && n ? s.unit || "" : "";
 }
-// Eras (sd/eras.py): a new one begins when a machine changes the system; each is discovered from
-// its own data, with the era before as its prior. The timeline picks the era to show (a past
-// one's last saved version); under it, what changed at the shown era's boundary.
+// Eras (sd/eras.py): a new one begins when a machine changes how the system behaves; each is
+// discovered from its own data, with the era before as its prior, and is never shorter than
+// discovery needs: a change too soon after its start is kept in it, said under the head. The
+// timeline picks the era to show (a past one's last saved version); under it, what changed at the
+// shown era's boundary.
 function erasBar() {
   const m = MODEL, eras = m.eras_recorded || [];
   if (!eras.length && !(m.predictions || []).length) { $("eras").style.display = "none"; return; }
@@ -660,12 +662,20 @@ function erasBar() {
   const none = '<div class="eranone">No era recorded yet: the first begins when a machine says it changed the system. Each prediction below waits for its first era.</div>';
   const bar = !eras.length ? "" : segs.map((e, i) => { const end = i + 1 < segs.length ? segs[i + 1].start : now, len = e.start ? Math.max(1, end - e.start) : Math.max(1, (end - eras[0].start) / 4 || 1);
     return `<button class="${e.id === shown ? "on" : ""} ${e.id === current ? "cur" : ""}" style="flex-grow:${Math.max(0.15, Math.sqrt(len))}" onclick="pickEra('${esc(e.id)}')"
-      title="${esc(e.id === "none" ? "before any era" : `${e.id}: ${e.label}${e.subject ? " (" + e.subject + ")" : ""}, from ${when(e.start)}`)}${e.id === current ? " · current" : ""}">${esc(e.id === "none" ? "before" : e.id)}</button>`; }).join("");
+      title="${esc(e.id === "none" ? "before any era" : `${e.id}: ${e.label}${e.subject ? " (" + e.subject + ")" : ""}, from ${when(e.start)}${(e.changes || []).length ? `; ${e.changes.length} later change${e.changes.length > 1 ? "s" : ""} kept in it` : ""}`)}${e.id === current ? " · current" : ""}">${esc(e.id === "none" ? "before" : e.id)}</button>`; }).join("");
   const e = eras.find((x) => x.id === shown);
   const head = e ? `era <b>${esc(e.id)}</b>${e.id === current ? " (current)" : ' <span class="past">· a past era</span>'}: began ${esc(ago(now - e.start))} ago, when ${esc(e.label)}${e.subject ? ` changed <span class="ty">${esc(e.subject)}</span>` : ""}`
     : "the time before any era";
-  $("eras").innerHTML = `<div><span class="muted">Eras: a new one begins when a machine says it changed the system (<code>system.changed</code>, or <code>[discovery] eras_from</code>); each is discovered from its own data, with the era before as its prior.</span></div>
-    ${eras.length ? `<div class="eratl">${bar}</div><div>${head}</div><div class="erachg">${eraChanges(m)}</div>` : none}${eraPredictions(m)}`;
+  $("eras").innerHTML = `<div><span class="muted">Eras: a new one begins when a machine says it changed how the system behaves (<code>system.changed</code>, or <code>[discovery] eras_from</code>, about a machine or a definition; never a measurement or a setting); each is discovered from its own data, with the era before as its prior.</span></div>
+    ${eras.length ? `<div class="eratl">${bar}</div><div>${head}</div>${eraKept(e)}<div class="erachg">${eraChanges(m)}</div>` : none}${eraPredictions(m)}`;
+}
+// the changes kept in an era (sd/eras.py): each came too soon after its start for an era of its
+// own, so the era's model mixes them; said, with when and what
+function eraKept(e) {
+  const cs = (e && e.changes) || [];
+  if (!cs.length) return "";
+  const one = (c) => `${esc(c.type)} from ${esc(c.source || "an unnamed source")}${c.subject ? ` (<span class="ty">${esc(c.subject)}</span>)` : ""}, ${esc(Orchestra.when(c.at, { date: true }))}`;
+  return `<div class="muted erakept">and ${cs.length} later change${cs.length > 1 ? "s" : ""} kept in it, too soon after its start for an era of ${cs.length > 1 ? "their" : "its"} own (an era is never shorter than half the window): ${cs.slice(0, 5).map(one).join("; ")}${cs.length > 5 ? `; ${cs.length - 5} more` : ""}</div>`;
 }
 // Predictions (sd/predictions.py, sd/judge.py): what the machine that made the era's change said
 // it would do, and the verdict once the horizon passed: the intended-effect test (drawn by

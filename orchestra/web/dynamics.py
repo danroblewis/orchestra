@@ -58,7 +58,7 @@ def predictions_view(project, era: str | None = None) -> dict:
     it is judged (``judge_at``: that era's start plus its horizon; None until matched); ``era``
     keeps one era's (``"none"``: the unmatched)."""
     store = ModelStore.for_state(project.state_dir)
-    by_cause = {e.cause: e for e in era_record.recorded(store) if e.cause}
+    by_cause = era_record.by_change(era_record.recorded(store))
 
     def judge_at(p: dict, e) -> float | None:            # when its horizon passes: its era's start + its horizon
         return e.start + float(p["horizon_s"]) if e is not None and p.get("horizon_s") is not None else None

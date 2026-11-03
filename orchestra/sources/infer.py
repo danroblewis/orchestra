@@ -31,11 +31,13 @@ from .plan import probe_form, shared
 from .rank import rank
 from .regroup import expr
 from .schema import read as read_schema
+from .scope import scope_of, scoped
 from .spec import DeclaredSeries, SourceSpec
 from .survey import known_record
 from .transform import apply, script_id
 from .views import Definition, one_count_per_thing, views
 
+FORMS = 2                    # how definitions' queries are written: 2, within the source's match (scope.py)
 SHAPE_POINTS = 30            # a probe's series, kept at this many points, to compare counts (duplicates.same_shape)
 REFUSED = re.compile(r"over the store's per-query series limit|HTTP 4(?!29|01|03)\d\d")   # the store will not read it: no retry helps
 UNPROBED = 0.5               # of the candidates, at most, not probed for the round to stand (partial)
@@ -80,22 +82,24 @@ class Inference:
 def settings_key(spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path) -> str:
     """A hash of everything an inference depends on but the data: the source's settings (not its
     credentials' values, which are never read here, nor how hard it is read: ``TRANSPORT``), its
-    declared series and the script."""
+    declared series, the script, and how definitions are written (``FORMS``: definitions inferred
+    before their queries carried the source's ``match`` are inferred again)."""
     s = asdict(spec)
     s.pop("auth", None)
     for k in TRANSPORT:
         s.pop(k, None)
     script = Path(repo_root) / spec.queries_script if spec.queries_script else None
-    body = json.dumps([s, [asdict(x) for x in declared], script_id(script) if script and script.is_file() else None], sort_keys=True, default=str)
+    body = json.dumps([FORMS, s, [asdict(x) for x in declared], script_id(script) if script and script.is_file() else None],
+                      sort_keys=True, default=str)
     return hashlib.sha256(body.encode()).hexdigest()[:16]
 
 
 def declared_definitions(spec: SourceSpec, declared: list[DeclaredSeries]) -> list[Definition]:
     """The hand-written and preset definitions: a ``select`` is a counter read from raw samples
     (view ``increments``, reset-safe, summed by its ``by`` labels), anything else a query."""
-    aliases = spec.aliases()
+    aliases, scope = spec.aliases(), scope_of(spec.match)
     return [Definition(id=f"declared.{i}", source=spec.name, name=x.name, family=f"declared:{x.name}",
-                       view="increments" if x.by is not None else "declared", kind=x.kind, query=x.query, unit=x.unit or from_name(x.name),
+                       view="increments" if x.by is not None else "declared", kind=x.kind, query=scoped(x.query, scope), unit=x.unit or from_name(x.name),
                        group_by=[aliases.get(b, b) for b in x.by or []], by_real=list(x.by or []),
                        origin=[f"declared in the preset {x.preset}" if x.preset else "declared in orchestra.toml"], pin=True,
                        rename=aliases, traffic=dict(x.traffic or {}), stock=dict(x.stock or {}))
@@ -241,6 +245,9 @@ def _infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], rep
     if spec.queries_script:
         cands, dropped, inf.script = apply(spec, repo_root, cands)
         inf.left_out += dropped
+    scope = scope_of(spec.match)
+    for d in cands:                          # every query within what match selects (scope.py)
+        d.query, d.inner = scoped(d.query, scope), scoped(d.inner, scope)
     probes = probe_all(source, cands, start, end, until, spec.concurrency)
     big = {i for i, p in probes.items() if REFUSED.search(p.get("error") or "")}
     missed = {i for i, p in probes.items() if p.get("error") and i not in big}

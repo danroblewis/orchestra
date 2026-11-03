@@ -137,7 +137,7 @@ url = "file"             # file (default) or http://host:8428 (VictoriaMetrics)
 window = "60m"           # how far back each discovery looks
 step = "30s"             # the grid it samples on
 every = "5m"             # how often the host rediscovers
-# eras_from = ["config.changed"]  # events that begin an era (besides system.changed): type[:source=…,subject=…]
+# eras_from = ["config.changed"]  # events that begin an era (besides system.changed) when their subject names a machine or a definition: type[:source=…,subject=…]
 # prior_for = "60m"      # how long a new era carries what it has not yet found of the era before (default: window)
 # announce_hold = 3      # discoveries a structure change must hold before orchestra.model.changed
 # announce_gap = "30m"   # the least time between two orchestra.model.changed

@@ -14,6 +14,7 @@ from test_eras import CHANGE, T0, at, poisson, project  # pytest puts this folde
 from orchestra.events import Events, envelope
 from orchestra.metrics import Point
 from orchestra.metrics.file import FileMetrics
+from orchestra.sd import eras
 from orchestra.sd import predictions as P
 from orchestra.sd.judge import judge_due
 from orchestra.sd.rediscover import rediscover
@@ -153,7 +154,7 @@ def test_a_null_test_on_a_change_that_does_change_something_is_a_side_effect(tmp
 
 
 def test_a_second_change_before_the_horizon_interrupts_with_what_could_be_judged(tmp_path):
-    second = envelope("system.changed", "ops", time=at(CHANGE + 1500), id="second")
+    second = envelope("system.changed", "ops", time=at(CHANGE + 1900), id="second")   # past the shortest era (half the window)
     store = FileMetrics(tmp_path / "m.jsonl")
     pipeline(store, 120, step(2.0, 4.0), step(0.5, 0.5), step(0.4, 0.4))
     events = Events(tmp_path / "events.jsonl")
@@ -161,13 +162,30 @@ def test_a_second_change_before_the_horizon_interrupts_with_what_could_be_judged
         events.bus.append(ev)
     p = project(tmp_path)
     rediscover(p, store, now=CHANGE - 1)
-    rediscover(p, store, now=CHANGE + 1400, events=events)
-    assert judge_due(p, store, CHANGE + 1400, events=events, measure_false=False) == [], "before the horizon, before the second change"
-    rediscover(p, store, now=CHANGE + 1600, events=events)                  # era e2 began: e1's last model is saved
-    [v] = judge_due(p, store, CHANGE + 1600, events=events, measure_false=False)
-    assert v["verdict"] == "interrupted" and v["interrupted_by"] == "e2" and v["until"] == CHANGE + 1500
+    rediscover(p, store, now=CHANGE + 1800, events=events)
+    assert judge_due(p, store, CHANGE + 1800, events=events, measure_false=False) == [], "before the horizon, before the second change"
+    rediscover(p, store, now=CHANGE + 2000, events=events)                  # era e2 began: e1's last model is saved
+    [v] = judge_due(p, store, CHANGE + 2000, events=events, measure_false=False)
+    assert v["verdict"] == "interrupted" and v["interrupted_by"] == "e2" and v["until"] == CHANGE + 1900
     assert v["partial"] == "passed", v
     assert v["expectations"][0]["status"] == "met"
+
+
+def test_a_second_change_too_soon_after_the_first_is_kept_in_its_era_and_its_prediction_belongs_there(tmp_path):
+    second = envelope("system.changed", "ops", subject="machine:worker", time=at(CHANGE + 600), id="second")
+    store = FileMetrics(tmp_path / "m.jsonl")
+    pipeline(store, 120, step(2.0, 4.0), step(0.5, 0.5), step(0.4, 0.4))
+    events = Events(tmp_path / "events.jsonl")
+    for ev in (made(DOUBLE_ARRIVALS), envelope("config.changed", "supervisor", time=at(CHANGE), id="cause"),
+               made([], id="pred2", change="second", t=CHANGE + 500), second):
+        events.bus.append(ev)
+    p = project(tmp_path)
+    rediscover(p, store, now=CHANGE + 700, events=events)
+    [era] = eras.recorded(ModelStore.for_state(p.state_dir))
+    assert era.cause == "cause" and [c["id"] for c in era.changes] == ["second"], "ten minutes in: kept in e1, no era of its own"
+    assert eras.of_change([era], "second") is era
+    judge_due(p, store, CHANGE + 700, events=events, measure_false=False)
+    assert {x["id"]: x.get("era") for x in P.recorded(ModelStore.for_state(p.state_dir))} == {"pred": "e1", "pred2": "e1"}
 
 
 # --- when it is judged

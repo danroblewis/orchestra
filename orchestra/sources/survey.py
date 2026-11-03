@@ -45,6 +45,7 @@ from .schema import SKIP_LABELS, _aliases, _group
 from .spec import SourceSpec
 
 RETYPABLE = ("gauge", "counter")
+JUDGE_S = 86400.0            # a family that only rose is judged over at most this much of the source's history
 
 
 def span(pts: list) -> float:
@@ -172,7 +173,8 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
         failed[n] = f"its extremes: {why}"
     unsure = {n: picks[n] for n, (typ, r) in window.items() if n not in failed and typ != "counter" and counter_like(r)[0]
               and families_by[n].kind != "counter"}
-    long, bad = census.history(source, unsure, end, spec.history, until, conc) if unsure and spec.history > end - start else ({}, {})
+    judged = min(spec.history, JUDGE_S)
+    long, bad = census.history(source, unsure, end, judged, until, conc) if unsure and judged > end - start else ({}, {})
     for n, why in bad.items():
         notes.append(f"{n}: its history could not be read ({why}): judged on the window alone")
     for n, (typ, r) in window.items():
@@ -185,7 +187,7 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
         evidence = r
         if n in long and long[n] and kind not in ("timestamp", "clock", "info"):
             hk, hwhy = classify(fam.first_metric(), "counter" if fam.kind == "counter" else typ, fam.help, long[n])
-            kind, why, evidence = hk, (f"{hwhy}, over the last {spec.history / 3600:g} h" if hk else ""), long[n]
+            kind, why, evidence = hk, (f"{hwhy}, over the last {judged / 3600:g} h" if hk else ""), long[n]
         new = {"delta": "counter"}.get(kind, kind) if kind else base
         prev = (known.get(n) or {}).get("kind")
         sampled = (known.get(n) or {}).get("resolution_s") is not None    # a verdict made without samples judged nothing

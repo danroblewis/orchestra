@@ -73,8 +73,8 @@ def at(t: float) -> str:
 
 def test_system_changed_always_begins_an_era_and_unconfigured_events_never_do():
     assert eras.begins({"type": "system.changed", "source": "deployer"}, [])
-    assert eras.begins({"type": "config.changed", "source": "supervisor"}, ["config.changed"])
-    assert not eras.begins({"type": "config.changed", "source": "supervisor"}, [])
+    assert eras.begins({"type": "config.changed", "source": "supervisor", "subject": "machine:worker"}, ["config.changed"])
+    assert not eras.begins({"type": "config.changed", "source": "supervisor", "subject": "machine:worker"}, [])
     assert not eras.begins({"type": "ticket.created", "source": "desk"}, ["config.changed"])
     assert not eras.begins({"type": "orchestra.model.changed", "source": "orchestra-host"}, ["orchestra.*"]), "never Orchestra's own"
 
@@ -93,12 +93,12 @@ def test_filters_read_the_envelope_only():
 def test_eras_are_recorded_once_and_announced_by_whoever_recorded_them(tmp_path):
     store = ModelStore.for_state(tmp_path)
     events = bus(tmp_path, envelope("ticket.created", "desk", time=at(T0)),
-                 envelope("config.changed", "supervisor", {"section": "x"}, subject="orchestra.toml", time=at(T0 + 60), id="c1"),
+                 envelope("config.changed", "supervisor", {"section": "x"}, subject="machine:worker", time=at(T0 + 60), id="c1"),
                  envelope("system.changed", "deployer", time=at(T0 + 120), id="d1"))
     said = []
     all_, new = eras.sync(store, events, ["config.changed"], lambda ty, data, **ext: said.append((ty, data, ext)))
     assert [(e.id, e.start, e.label, e.cause, e.subject) for e in all_] == [
-        ("e1", T0 + 60, "config.changed from supervisor", "c1", "orchestra.toml"), ("e2", T0 + 120, "system.changed from deployer", "d1", None)]
+        ("e1", T0 + 60, "config.changed from supervisor", "c1", "machine:worker"), ("e2", T0 + 120, "system.changed from deployer", "d1", None)]
     assert [s[0] for s in said] == ["orchestra.era.started"] * 2
     assert said[0][2] == {"subject": "e1", "causationid": "c1"} and said[0][1]["cause"]["type"] == "config.changed"
     events.bus.append(envelope("ticket.created", "desk", time=at(T0 + 180)))
@@ -110,10 +110,105 @@ def test_eras_are_recorded_once_and_announced_by_whoever_recorded_them(tmp_path)
 
 
 
+# --- what begins an era: a change of how the system behaves, never a measurement, a setting or a no-op
+
+def test_the_subject_decides_what_of_a_named_change_begins_an_era():
+    f = ["config.changed", "deploy.finished"]
+    ev = lambda ty, subject=None, **k: {"type": ty, "source": "supervisor", "subject": subject, **k}
+    for subject in ("machine:worker", "definition:pr_sail", "override:tasking"):
+        assert eras.begins(ev("config.changed", subject), f), f"{subject}: a part that behaves"
+    for subject in ("instrument:board", "collector:jira_poller", "source:prometheus", "series:queue_depth", "setting:agents",
+                    "scrape:node"):
+        assert not eras.begins(ev("config.changed", subject), f), f"{subject}: what is measured, or a setting"
+        assert not eras.begins(ev("system.changed", subject), f), f"{subject}: never, whatever the type"
+    assert not eras.begins(ev("config.changed"), f), "the configuration changed, not what: no era"
+    assert not eras.begins(ev("config.changed", "orchestra.toml"), f), "a file is not a part that behaves"
+    assert eras.begins(ev("system.changed"), f), "the generic mark: the machine says the system changed"
+    assert eras.begins(ev("deploy.finished", "billing"), f), "a type the owner named"
+    assert eras.begins(ev("config.changed", id="c9"), f, {"c9"}), "a change a prediction is about: a declared effect confirmed"
+    assert not eras.begins(ev("config.changed", "source:prometheus", id="c9"), f, {"c9"}), "a measurement, predicted or not"
+
+
+def test_run_4s_setup_begins_no_era_and_its_machine_change_does(tmp_path):
+    """Run 4: a collector added, one left unchanged, a source added, a setting under [agents], the
+    discovery's own setting (no subject on any): none is a change of behaviour."""
+    store = ModelStore.for_state(tmp_path)
+    t = T0 + 60
+    events = bus(tmp_path, envelope("config.changed", "supervisor", {"change": "added [[machines]] jira_poller"}, time=at(t), id="a"),
+                 envelope("config.changed", "supervisor", {"change": "nothing: changed [[machines]] jira_poller already"}, time=at(t + 30), id="b"),
+                 envelope("config.changed", "supervisor", subject="source:prometheus", time=at(t + 60), id="c"),
+                 envelope("config.changed", "supervisor", subject="setting:agents", time=at(t + 90), id="d"),
+                 envelope("instruments.changed", "supervisor", subject="collect:board", time=at(t + 120), id="e"),
+                 envelope("config.changed", "supervisor", subject="collector:slack_poller", time=at(t + 150), id="f"))
+    all_, new = eras.sync(store, events, ["config.changed", "instruments.*"])
+    assert all_ == [] and new == []
+    events.bus.append(envelope("role.changed", "supervisor", subject="machine:reviewer", time=at(t + 180), id="g"))
+    all_, _ = eras.sync(store, events, ["config.changed", "role.changed:source=supervisor"])
+    assert [e.cause for e in all_] == ["g"], "a machine's duties edited"
+
+
+def test_a_config_changed_that_left_the_configuration_as_it_was_begins_nothing(tmp_path):
+    store = ModelStore.for_state(tmp_path)
+    now = [T0 + 100]
+    events = bus(tmp_path)
+    conf = {"machines": [{"name": "worker", "command": "w"}]}
+    key = lambda: eras.config_key(conf)
+    sync = lambda: eras.sync(store, events, ["config.changed"], config=key, clock=lambda: now[0])
+    events.bus.append(envelope("config.changed", "supervisor", subject="machine:worker", time=at(T0 + 90), id="real"))
+    assert [e.cause for e in sync()[1]] == ["real"]
+    events.bus.append(envelope("config.changed", "supervisor", subject="machine:worker", time=at(T0 + 4000), id="noop"))
+    now[0] = T0 + 4010
+    assert sync()[1] == [], "nothing changed since the last config.changed: a no-op"
+    conf["machines"][0]["command"] = "w --faster"
+    events.bus.append(envelope("config.changed", "supervisor", subject="machine:worker", time=at(T0 + 8000), id="again"))
+    now[0] = T0 + 8010
+    assert [e.cause for e in sync()[1]] == ["again"], "the machine's command changed"
+    events.bus.append(envelope("config.changed", "supervisor", subject="machine:worker", time=at(T0 + 9000), id="old"))
+    now[0] = T0 + 20000
+    assert [e.cause for e in sync()[1]] == ["old"], "read long after its time (a replay): not judged a no-op"
+
+
+def test_an_era_is_never_shorter_than_discovery_needs(tmp_path):
+    """Run 4's per-merge eras, 5.2 minutes apart: with the shortest era half the window, a change
+    within it of the current era's start is kept in that era, said, and begins none of its own."""
+    store = ModelStore.for_state(tmp_path)
+    events = bus(tmp_path, *[envelope("github.pr.merged", "bot.github.sail-bot", subject=f"riff/hackriff#{i}",
+                                      time=at(T0 + i * 312), id=f"m{i}") for i in range(12)])
+    noted = []
+    all_, new = eras.sync(store, events, ["github.pr.merged"], min_s=1800.0, noted=noted)
+    assert [e.cause for e in all_] == [e.cause for e in new] == ["m0", "m6"], "one era per half hour, not one per merge"
+    assert [c["id"] for c in all_[0].changes] == ["m1", "m2", "m3", "m4", "m5"] and all_[0].changes[0]["at"] == T0 + 312
+    assert [c["id"] for c in all_[1].changes] == ["m7", "m8", "m9", "m10", "m11"]
+    assert len(noted) == 10 and noted[0][0] == "e1"
+    assert eras.of_change(all_, "m3").id == "e1" and eras.by_change(all_)["m9"].id == "e2"
+    assert eras.sync(store, events, ["github.pr.merged"], min_s=1800.0)[1] == [], "each kept once"
+    assert eras.shortest(SimpleNamespace(discovery_window=3600.0)) == 1800.0
+
+
+def test_the_host_keeps_a_change_too_soon_in_the_current_era_and_says_so(tmp_path, monkeypatch):
+    import subprocess
+
+    from orchestra.config import init_project
+    from orchestra.host import Host
+
+    monkeypatch.setenv("ORCHESTRATOR_HOME", str(tmp_path / "home"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    host = Host(init_project(repo))
+    host.events.publish("system.changed", {}, source="deployer", subject="machine:api")
+    host.events.publish("system.changed", {}, source="deployer", subject="machine:api")
+    host._eras()
+    [era] = eras.recorded(ModelStore.for_state(host.project.state_dir))
+    assert len(era.changes) == 1
+    log = (host.project.logs_dir / "orchestra-host.log").read_text()
+    assert "kept in era e1: too soon after its start" in log
+
+
 def test_a_rate_that_doubles_at_a_change_is_fitted_from_the_new_era_with_the_prior_early(tmp_path):
     store = FileMetrics(tmp_path / "m.jsonl")
     queue(store, 120, lambda t: 2.0 if t < CHANGE else 4.0)
-    events = bus(tmp_path, envelope("config.changed", "supervisor", subject="workers", time=at(CHANGE), id="cause"))
+    events = bus(tmp_path, envelope("config.changed", "supervisor", subject="machine:worker", time=at(CHANGE), id="cause"))
     p = project(tmp_path)
     models = ModelStore.for_state(p.state_dir)
 

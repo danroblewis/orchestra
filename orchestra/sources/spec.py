@@ -8,8 +8,9 @@ url = "https://tenant.example/data/metrics"
 auth = { bearer_env = "WORK_PROM_TOKEN" }   # never the secret itself
 prefix = "work"                             # series work:<name>, machines work.<id>
 machine = "service"                         # the canonical label that names machines
-match = ['{__name__=~"http_.*"}']           # what to infer from (default: everything, capped)
+match = ['{__name__=~"http_.*"}']           # what to infer from (default: everything, capped); every query carries its label matchers (scope.py)
 max_series = 200
+history = "7d"                              # how far back its first read and discovery's window reach (held.py)
 
 [sources.labels]                            # canonical = spellings; the first a metric has wins
 service = ["service", "svc", "app"]
@@ -102,7 +103,7 @@ class SourceSpec:
     infer_requests: int = 1500          # per inference round, retries included
     infer_deadline: float = 300.0       # for one inference round, the schema's reads included
     series_per_query: int = 2000        # the most series one batched read may touch (under the store's per-query limit)
-    history: float = 86400.0            # how far back a family's type (counter or gauge) is judged, coarsely
+    history: float = 7 * 86400.0        # how far back the source is read: its first read (held.py), discovery's window; a family's type is judged over a day of it at most
     infer_every: float = 3600.0         # 6 h when the source declares [[series]] and infer_every is not set
     max_requests_per_day: int = 20000   # per store (every project and process on this machine reading it), per UTC day
     web_share: float = 0.2              # of the store's rate and daily cap, at most, for the web server's reads
@@ -209,7 +210,7 @@ def _source(raw: dict, repo_root: Path) -> SourceSpec:
         max_points=int(raw.get("max_points", 11000)), concurrency=max(1, int(raw.get("concurrency", 4))),
         rate=float(raw.get("rate", 5.0)), burst=float(raw.get("burst", 10.0)), max_requests=int(raw.get("max_requests", 1000)),
         infer_requests=int(raw.get("infer_requests", 1500)), infer_deadline=parse_duration(raw.get("infer_deadline"), 300.0),
-        series_per_query=max(1, int(raw.get("series_per_query", 2000))), history=parse_duration(raw.get("history"), 86400.0),
+        series_per_query=max(1, int(raw.get("series_per_query", 2000))), history=parse_duration(raw.get("history"), 7 * 86400.0),
         infer_every=parse_duration(raw.get("infer_every"), 3600.0), insecure=bool(raw.get("insecure", False)),
         max_requests_per_day=max(1, int(raw.get("max_requests_per_day", 20000))),
         web_share=min(1.0, max(0.01, float(raw.get("web_share", 0.2)))), max_names=max(1, int(raw.get("max_names", 2000))),

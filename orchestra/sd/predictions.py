@@ -14,7 +14,8 @@ expected effect) and the event log itself shows the prediction came before the c
 - ``change``: the id of the event that makes the change. The machine may choose it before the
   change exists (``Predictions.record`` makes one when not given) and publish the change with
   that ``id``. The change must begin an era (``system.changed``, or what ``[discovery] eras_from``
-  names, ``sd.eras``); the prediction is matched to the era whose ``cause`` it is;
+  names, ``sd.eras``); the prediction is matched to the era whose ``cause`` it is, or the era it
+  was kept in when it came too soon after that era's start for one of its own;
 - ``expect``: the predicted effect as edits of the model, each one of
   ``{"flow": F, "factor": r}`` (the rate times r; ``"param": p`` for one of its numbers; a factor
   of 0 is the flow disappearing), ``{"flow": F, "unchanged": true}``,
@@ -268,8 +269,11 @@ def update(store: ModelStore, pid: str, change) -> dict | None:
 
 
 def of_era(predictions: list[dict], era) -> list[dict]:
-    """The predictions about the change that began ``era``."""
-    return [p for p in predictions if era is not None and p.get("change") and p.get("change") == era.cause]
+    """The predictions about the change that began ``era``, or one kept in it (``sd.eras``)."""
+    if era is None:
+        return []
+    ids = {era.cause, *(c.get("id") for c in getattr(era, "changes", None) or [])} - {None}
+    return [p for p in predictions if p.get("change") in ids]
 
 
 class Predictions:

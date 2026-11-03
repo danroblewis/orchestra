@@ -28,6 +28,13 @@ was found in the era is then merged with its prior, the latest version of anothe
 (``sd.prior.merge``), compared with it (``sd.compare``: ``discovery["era_comparison"]``), and
 saved as a version when its structure changed or it is the era's first.
 
+**The sources' history** (``sources.held``). With the configured window (no window or step asked
+for), a source's first read finds how far back it holds, up to its ``history`` (7 days), and the
+window is the longer of ``[discovery] window`` and that, up to ``MAX_WINDOW`` but no longer than the
+current era, in whole multiples of the window with the step scaled alike (``held_window``: the grid
+keeps its number of steps); ``discovery["history"]`` says so. A source added with a week behind it
+gives a model from its first discovery, not an hour later.
+
 **A quiet window** (``sd.quiet``). A stock of the current version whose series was written to the
 end of the window and moved fewer than five times in it (for a hidden stock, every counter of its
 flows) is carried into the discovery from that version, with its flows, before the structures are
@@ -113,6 +120,7 @@ def aligned(start: float, end: float, step: float) -> tuple[float, float]:
 
 
 MAX_WINDOW = 7 * 86400.0      # the furthest back a widened window reaches
+HELD_SLACK = 0.1              # of the window: history this little longer than it does not lengthen it
 
 
 def window_words(s: float) -> str:
@@ -147,6 +155,20 @@ def oldest(reading) -> float | None:
     return min((pts[0][0] for _, _, pts in reading.dump if pts), default=None)
 
 
+def held_window(window_s: float, step_s: float, held_s: float, era_start: float | None, now: float) -> tuple[float, float]:
+    """Discovery's window and step when the sources hold ``held_s`` of history (``sources.held``):
+    the longer of the configured window and that, up to ``MAX_WINDOW``, but no longer than the
+    current era (and never shorter than the configured window), in whole multiples of the window
+    with the step scaled alike, so the grid keeps its number of steps."""
+    span = min(held_s, MAX_WINDOW)
+    if era_start is not None:
+        span = min(span, now - era_start)
+    if span <= (1 + HELD_SLACK) * window_s:      # a store holding about the window (its first point a step before it): the window
+        return window_s, step_s
+    k = min(math.ceil(span / window_s - HELD_SLACK), max(1, math.floor(MAX_WINDOW / window_s)))
+    return window_s * k, step_s * k
+
+
 def era_window(start: float, end: float, step: float, era_start: float | None) -> float:
     """The window's start, moved forward to the era's start (on the grid) when the era is younger."""
     if era_start is None or era_start <= start:
@@ -166,22 +188,30 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
     cfg = project.config
     strategy = strategy or configured_strategy(project)
     options = cfg.discovery_options if options is None else options
+    asked = window_s is not None or step_s is not None
     window_s = window_s or cfg.discovery_window
     step_s = step_s or cfg.discovery_step
     with _lock, discovery_lock(project.state_dir, wait=not skip_if_busy):
         store = ModelStore.for_state(project.state_dir)
         if events is not None:
-            eras, _ = era_record.sync(store, events, cfg.eras_from, events.publish)
+            eras, _ = era_record.follow(store, events, project, events.publish)
         else:
             eras = era_record.recorded(store)
         now = time.time() if now is None else now
         era = era_record.current(eras, now)
+        held: dict[str, float] = {}
+        if not asked:                         # the configured window: as long as the sources hold, within the era
+            catalogue = Catalogue(project, metrics)
+            a0, e0 = aligned(now - window_s, now, step_s)    # inferred over the window discovery would read without it
+            held = catalogue.held(now, era_window(a0, e0, step_s, era.start if era else None), e0) if catalogue.specs.sources else {}
+            window_s, step_s = held_window(window_s, step_s, max(held.values(), default=0.0), era.start if era else None, now)
+        lengthened = window_s > cfg.discovery_window and bool(held)    # inferred over the configured window still
         start, end = aligned(now - window_s, now, step_s)
         start = era_window(start, end, step_s, era.start if era else None)
         if era is None or end - start >= 2 * step_s:
             base_s, tried = window_s, []
             while True:
-                reading = Catalogue(project, metrics).read(start, end, step_s)
+                reading = Catalogue(project, metrics).read(start, end, step_s, infer_s=cfg.discovery_window if lengthened and not tried else None)
                 allowed = None
                 if snapshot is not None:
                     sim = snap.simulated_allowed(project, reading, collectors)
@@ -208,6 +238,10 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
             m = Model("system", "The system", "The era is too young to discover: its prior, carried.")
             m.discovery = {"start": start, "end": end, "step": step_s, "left_out": {}, "too_young": True}
         m.discovery.update(window_s=window_s, step_s=step_s)
+        if held and window_s > cfg.discovery_window:
+            m.discovery["history"] = {"sources_s": {k: round(v) for k, v in held.items()}, "from_s": cfg.discovery_window,
+                                   "why": f"the sources hold {window_words(max(held.values()))} of history: the window is "
+                                          f"{window_words(window_s)}, not {window_words(cfg.discovery_window)}"}
         m.eras, m.era = eras, era.id if era else None
         for f in m.flows:
             for e in f.equations:

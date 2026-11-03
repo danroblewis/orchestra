@@ -104,7 +104,9 @@ class Machine:
 class Era:
     """A stretch of time that began when a machine changed the system (``sd.eras``): ``label`` is
     the cause event's type and source, ``cause`` its id; ``type``, ``source`` and ``subject`` are
-    its envelope's. Nothing of its ``data`` is read."""
+    its envelope's. Nothing of its ``data`` is read. ``changes``: the later changes kept in it, each
+    one that came too soon after its start for an era of its own (``sd.eras``: an era is never
+    shorter than discovery needs), with its id, type, source, subject and time."""
 
     id: str
     start: float
@@ -113,6 +115,7 @@ class Era:
     type: str | None = None
     source: str | None = None
     subject: str | None = None
+    changes: list[dict] = field(default_factory=list)
 
 
 @dataclass

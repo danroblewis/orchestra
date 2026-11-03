@@ -149,7 +149,8 @@ def test_a_store_that_holds_nothing_after_a_sleep_keeps_the_definitions_and_save
     dump, _ = world(now_grid(), 240, regions={"us-east": 1.0}, deploy_every=30)
     fake = FakePrometheus(dump)
     try:
-        p = project(tmp_path, monkeypatch, source_toml(fake.url, window="240m"))
+        # history no longer than the window: the window after the sleep is the window, not the history the source held before it
+        p = project(tmp_path, monkeypatch, source_toml(fake.url, window="240m", extra='history = "4h"'))
         first = rediscover(p, for_project(p))
         assert first.version == 1 and any(s.series and s.series.source == "rig" for s in first.model.stocks)
         good = cached(p.state_dir, "rig")

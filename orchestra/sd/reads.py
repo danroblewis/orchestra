@@ -91,7 +91,7 @@ def eras(store: ModelStore) -> dict:
 
 
 def predictions(store: ModelStore, pid: str | None = None) -> dict:
-    by_cause = {e.cause: e.id for e in era_record.recorded(store) if e.cause}
+    by_cause = {c: e.id for c, e in era_record.by_change(era_record.recorded(store)).items()}
     out = [{**p, "era": by_cause.get(p.get("change"))} for p in prediction_record.recorded(store)]
     if pid is None:
         return {"ok": True, "predictions": out}

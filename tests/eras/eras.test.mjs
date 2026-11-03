@@ -24,7 +24,7 @@ function pageContext(model) {
     $: (id) => (els[id] ||= element(id)), els };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(STATIC, "predictions.js"), "utf8") + "\nthis.Predictions = Predictions;", ctx);
-  for (const f of ["erasBar", "eraPredictions", "eraChanges", "paint"]) vm.runInContext(fnSource(f), ctx);
+  for (const f of ["erasBar", "eraKept", "eraPredictions", "eraChanges", "paint"]) vm.runInContext(fnSource(f), ctx);
   return ctx;
 }
 const model = { era: null, current_era: null, eras_recorded: [], flows: [{ id: "SAILED" }], stocks: [], discovery: {},
@@ -51,6 +51,23 @@ test("one era recorded: the timeline is drawn, with the time before it", () => {
   const ctx = pageContext({ ...model, era: "e1", current_era: "e1", eras_recorded: [{ id: "e1", label: "review_nudger", start: Date.now() / 1000 - 3600 }] });
   vm.runInContext("erasBar()", ctx);
   assert.match(ctx.els.eras.innerHTML, /class="eratl"/); assert.match(ctx.els.eras.innerHTML, />before</); assert.doesNotMatch(ctx.els.eras.innerHTML, /No era recorded yet/);
+});
+
+test("an era with changes kept in it says them under its head, and in its button's title", () => {
+  const changes = [{ id: "m1", type: "github.pr.merged", source: "bot.github.sail-bot", subject: "riff/hackriff#2", at: Date.now() / 1000 - 3000 },
+    { id: "m2", type: "github.pr.merged", source: "bot.github.sail-bot", subject: "riff/hackriff#3", at: Date.now() / 1000 - 2700 }];
+  const ctx = pageContext({ ...model, era: "e1", current_era: "e1",
+    eras_recorded: [{ id: "e1", label: "github.pr.merged from bot.github.sail-bot", start: Date.now() / 1000 - 3600, changes }] });
+  vm.runInContext("erasBar()", ctx);
+  const html = ctx.els.eras.innerHTML;
+  assert.match(html, /and 2 later changes kept in it, too soon after its start for an era of their own/);
+  assert.match(html, /riff\/hackriff#3/); assert.match(html, /2 later changes kept in it · current/);
+});
+
+test("an era with no change kept in it says nothing of them", () => {
+  const ctx = pageContext({ ...model, era: "e1", current_era: "e1", eras_recorded: [{ id: "e1", label: "x", start: Date.now() / 1000 - 3600 }] });
+  vm.runInContext("erasBar()", ctx);
+  assert.doesNotMatch(ctx.els.eras.innerHTML, /kept in it/);
 });
 
 test("a renderer that throws says so in its own panel only, and the note goes once it draws", () => {

@@ -115,6 +115,17 @@ stall_share = 0.1          # an outflow below this share of its usual rate count
 `step`s. A stall needs the history on both sides of the window: a new stock is not judged for
 `stall_after` plus a little after it first appears.
 
+**Eras.** An era begins only for a change of how the system behaves, and discovery reads only the
+current era, so an era begun by setup throws away the history. Publish `config.changed` with a
+`subject` naming what changed: `machine:<name>` (a machine's spec, its model or its duties),
+`definition:<name>` (a definition machines work by), and it begins an era; `instrument:`,
+`collector:`, `source:`, `series:` or `setting:<section>` (a plugin's settings) never do, nor does a
+`config.changed` with no subject, one that left the configuration as it was, or one about a
+measurement. A change a prediction is about always does. A change within half the window of the
+current era's start is kept in that era instead (an era is never shorter than discovery needs), so
+an `eras_from` that fires every few minutes (every merge) gives one era per half hour; prefer
+marking releases with a prediction to judge them, over an era per release.
+
 The defaults suit a system that runs all day. A level becomes a stock only after it has been
 written for half the window, changed in at least 5 steps, with counters that counted at least 5
 events each: so the first model appears about an hour after instruments start, and a series that
@@ -318,7 +329,12 @@ every = "15m"
 
 With these, check a store before inferring from it (`check_sources` asks no series), look at
 names before series (`source_schema` with a `match`), preview only aggregated queries with a label
-matcher, and infer at most once per change of `match`. `history = "24h"` is how far back a family's type is judged (below). A
+matcher, and infer at most once per change of `match`. Every query Orchestra sends carries the label matchers
+every `match` selector has (`{namespace="hackriff"}`), so a shared store is read within the
+project's part. `history` (default `"7d"`) is how far back a new source's first read reaches, in
+pages of a day, within `max_requests`: discovery's window is then the longer of `[discovery] window`
+and what the store holds, so a source with a week of data gives a model at once; a family's type is
+judged over at most a day of it (below). A
 `[[series]]` entry (`source`, `name`, `query` or `select`, `kind = "level" | "counter" | "rate"`)
 pins one definition the inference would not rank.
 
