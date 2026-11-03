@@ -702,17 +702,41 @@ and `slack_threads_unchecked{channel}`.
 
 ## 8. Chronosphere (a Prometheus-API store)
 
-This is strategy (a). Nothing is copied and you write no code. Add the entry to the overlay:
+This is strategy (a). Nothing is copied and you write no code. Chronosphere serves the Prometheus
+HTTP API under `https://<tenant>.chronosphere.io/data/metrics` (`.../api/v1/query`,
+`query_range`, `series`, `labels`) and its docs authenticate it with `Authorization: Bearer
+<token>`, a service account's API token. (The `API-Token: <token>` header is for its config API,
+`/api/v1/config/...`; `auth = "header:API-Token"` is there if your tenant takes it on
+`/data/metrics` too. Grafana's data source uses basic auth, user `chronosphere`, the token as the
+password: `auth = "basic"` with `user = "chronosphere"`.)
 
-```python
-p.config_edit.add_entry("sources", {
-    "name": "chronosphere", "url": "https://<tenant>.chronosphere.io/data/metrics",
-    "auth": {"bearer_file": "~/.config/orchestra-bridges/chronosphere-token"},     # or bearer_env
-    "prefix": "chrono", "machine": "service",                  # series chrono:<name>; machines chrono.<service>
-    "match": ['{__name__=~"http_requests_total|http_request_duration_seconds_count|kube_deployment_status_replicas_available"}'],
-    "max_series": 150, "rate": 2.0, "max_requests_per_day": 5000,
-    "labels": {"service": ["service", "app", "k8s_app", "job"]}}, target="overlay")
-```
+1. **The token goes in a file, never in `orchestra.toml`.** Ask the owner for a read-only
+   service account's token and keep it outside every repository, readable only by them:
+
+   ```bash
+   mkdir -p ~/.config/orchestra && umask 077
+   pbpaste > ~/.config/orchestra/chronosphere-token     # or: read -rs T && printf '%s\n' "$T" > ...
+   ```
+
+   It is read on every request, so a rotated token is picked up without a restart. Never echo it,
+   and never pass it on a command line (it would be in the shell's history).
+
+2. **Add the entry to the overlay:**
+
+   ```python
+   p.config_edit.add_entry("sources", {
+       "name": "chronosphere", "url": "https://<tenant>.chronosphere.io/data/metrics",
+       "auth": "bearer", "token_file": "~/.config/orchestra/chronosphere-token",
+       "prefix": "chrono", "machine": "service",                  # series chrono:<name>; machines chrono.<service>
+       "match": ['{__name__=~"http_requests_total|http_request_duration_seconds_count|kube_deployment_status_replicas_available"}'],
+       "max_series": 150, "rate": 2.0, "max_requests_per_day": 5000,
+       "labels": {"service": ["service", "app", "k8s_app", "job"]}}, target="overlay")
+   ```
+
+   The url keeps its path: every endpoint is joined under `/data/metrics`. A token file that is
+   not there, `auth` without `token_file`, or `"basic"` without `user` refuses the source and
+   `orchestra sources check` says which. The table form (`auth = { bearer_env = ... }`,
+   `header`, `basic`, mTLS; SPEC §4.4) works here too.
 
 - **`match`** limits inference to what matters. Never leave a big tenant on the default: a `match`
   that selects more than 2,000 metric names is refused.

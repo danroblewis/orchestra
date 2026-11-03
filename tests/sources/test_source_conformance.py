@@ -1,6 +1,8 @@
-"""One conformance suite for every source: the own store, the fake Prometheus, and a real server.
+"""One conformance suite for every source: the own store, the fake Prometheus, the fake served as
+Chronosphere serves the API (under ``/data/metrics``, a bearer token from ``token_file``, without
+the ``label/<name>/values`` and ``metadata`` endpoints its docs do not list), and a real server.
 
-The own store (the file backend) and the fake always run. A real Prometheus-compatible server
+The own store (the file backend) and both fakes always run. A real Prometheus-compatible server
 runs when its URL is set (see README.md):
   ORCHESTRA_TEST_PROM_URL          where it is read, e.g. the rig's proxy http://127.0.0.1:8432
   ORCHESTRA_TEST_PROM_TOKEN_FILE   the bearer token for it, e.g. ~/.orchestra-sources-rig/token
@@ -15,6 +17,7 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -27,7 +30,7 @@ from orchestra.sources.auth import AuthSpec
 from orchestra.sources.fetch import increments
 from orchestra.sources.own import OwnSource
 from orchestra.sources.prometheus import PrometheusSource
-from orchestra.sources.spec import SourceSpec
+from orchestra.sources.spec import SourceSpec, load
 
 REAL = os.environ.get("ORCHESTRA_TEST_PROM_URL")
 TOKEN_FILE = os.environ.get("ORCHESTRA_TEST_PROM_TOKEN_FILE")
@@ -41,7 +44,7 @@ def _vm(path: str, body: bytes | None = None, params: dict | None = None) -> Non
         pass
 
 
-@pytest.fixture(params=["own", "fake", "prometheus"])
+@pytest.fixture(params=["own", "fake", "chronosphere", "prometheus"])
 def make(request, tmp_path):
     """A source holding exactly ``dump`` (name, labels, points), with the series' names made
     unique for the test; returns (source, the unique prefix of the names)."""
@@ -60,6 +63,15 @@ def make(request, tmp_path):
             closers.append(fake.close)
             (tmp_path / "tok").write_text("t0ken")
             return PrometheusSource(SourceSpec("fake", "prometheus", fake.url, "fake", AuthSpec(bearer_file=str(tmp_path / "tok")), **spec_kw))
+        if kind == "chronosphere":
+            fake = build.fake = FakePrometheus(dump, token="t0ken", prefix="/data/metrics")
+            fake.missing = {"label_values", "metadata"}
+            closers.append(fake.close)
+            (tmp_path / "tok").write_text("t0ken\n")
+            specs = load({"sources": [{"name": "chrono", "url": fake.url + "/data/metrics", "auth": "bearer",
+                                       "token_file": str(tmp_path / "tok")}]}, tmp_path / "repo")
+            assert not specs.refused, specs.refused
+            return PrometheusSource(replace(specs.sources[0], **spec_kw))
         if not (REAL and IMPORT):
             pytest.skip("set ORCHESTRA_TEST_PROM_URL and ORCHESTRA_TEST_PROM_IMPORT_URL to run against a real server")
         body = "".join(json.dumps({"metric": {"__name__": n, **labels}, "values": [v for _, v in pts],
@@ -147,7 +159,7 @@ def test_wrong_credentials_are_refused_without_showing_them(make, tmp_path):
 
 
 def test_nan_and_inf_are_dropped(make):
-    if make.kind != "fake":
+    if make.kind not in ("fake", "chronosphere"):
         pytest.skip("only the fake can serve NaN on request")
     src = make([("level", {}, gauge())])
     make.fake.nan_at = {T0 + 60.0, T0 + 120.0}

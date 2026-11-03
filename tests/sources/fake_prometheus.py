@@ -1,13 +1,15 @@
 """A stdlib fake of the Prometheus HTTP query API, evaluating with Orchestra's PromQL subset
 (``orchestra/metrics/promql.py``) over points held in memory.
 
-Injectable: a required bearer token (or an ``API-Token`` header), mTLS, latency, failures (an HTTP
+Injectable: a required bearer token (or an ``API-Token`` header, or basic auth with the token as
+the password), the API under a path prefix (``/data/metrics``, as Chronosphere serves it), mTLS, latency, failures (an HTTP
 status for every request, or for the next N), refusals queued as a managed store sends them (a 429
 or 503 with ``Retry-After``, an HTML body), a per-query series limit (422), endpoints that are
 missing (404), NaN samples, and metadata. It records every query it was asked, so tests can check what went out."""
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import ssl
@@ -43,9 +45,13 @@ class Busy(Exception):
 
 
 class FakePrometheus:
-    def __init__(self, dump=None, *, token: str | None = None, header: str = "Authorization", tls=None):
+    def __init__(self, dump=None, *, token: str | None = None, header: str = "Authorization", tls=None,
+                 prefix: str = "", basic_user: str | None = None):
         self.dump = list(dump or [])            # (name, labels, [(t, v)])
         self.token, self.header = token, header
+        self.prefix = prefix.rstrip("/")        # the API is served under it only; elsewhere 404
+        self.basic_user = basic_user            # with a token: Authorization: Basic user:token
+        self.seen: list[tuple[str, dict]] = []  # (path, headers by lower-case name) of every request
         self.latency = 0.0
         self.fail_status: int | None = None     # every request answers this
         self.fail_next = 0                      # the next N requests answer 500
@@ -79,7 +85,10 @@ class FakePrometheus:
     def _authorized(self, headers) -> bool:
         if self.token is None:
             return True
-        want = f"Bearer {self.token}" if self.header == "Authorization" else self.token
+        if self.basic_user is not None:
+            want = "Basic " + base64.b64encode(f"{self.basic_user}:{self.token}".encode()).decode()
+        else:
+            want = f"Bearer {self.token}" if self.header == "Authorization" else self.token
         return headers.get(self.header) == want
 
     def _value(self, t: float, v: float) -> str:
@@ -168,6 +177,9 @@ class FakePrometheus:
                 if fake.latency:
                     time.sleep(fake.latency)
                 path = urllib.parse.urlsplit(self.path).path
+                fake.seen.append((path, {k.lower(): v for k, v in self.headers.items()}))
+                if fake.prefix:
+                    path = path.removeprefix(fake.prefix) if path.startswith(fake.prefix + "/") else ""
                 endpoint = {"/api/v1/query_range": "query_range", "/api/v1/query": "query", "/api/v1/series": "series",
                             "/api/v1/labels": "labels", "/api/v1/metadata": "metadata", "/api/v1/status/buildinfo": "buildinfo",
                             "/api/v1/label/__name__/values": "label_values"}.get(path)

@@ -548,7 +548,10 @@ role = "outflow"
   guessed. Lower `rate` when the store's owner gives Orchestra less than 5 requests a second.
 - **Credentials by reference.** A token the owner keeps in a file is
   `auth = { bearer_file = "~/path/to/token" }` (or `header = { name = "API-Token", value_file = "…" }`
-  for a store that wants its own header); one in the environment is `bearer_env`. Never read the
+  for a store that wants its own header), or the short form `token_file = "~/path/to/token"` with
+  `auth = "bearer"`, `"header:API-Token"` or `"basic"` (and `user`); one in the environment is
+  `bearer_env`. A `url` may carry a path (Chronosphere's `https://<tenant>.chronosphere.io/data/metrics`):
+  the API is joined under it. Never read the
   file, copy the token or put it in a command: the tools read it when they ask the store.
 
 Connecting a store the owner asked for is observation: Orchestra reads it and never writes, and it

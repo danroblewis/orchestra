@@ -1016,6 +1016,17 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   inside the repository, or an auth kind not built yet (command, OAuth2, SigV4) **refuses the
   source**, with the reason (`sources/spec.py`, `sources/auth.py`). Pages, logs and errors show
   the kind, where the credential comes from and whether it is there; never its value.
+- **The short form** names one token file and how its token is sent: `token_file =
+  "~/.config/orchestra/<store>-token"` with `auth = "bearer"` (`Authorization: Bearer`),
+  `"header:<Name>"` (e.g. `header:API-Token`) or `"basic"` (with `user`; the token is the
+  password). `auth` without `token_file`, `token_file` without `auth`, a file that is not there,
+  `basic` without `user` or `user` with another form refuses the source, with what it needs
+  (`sources/auth.py` `shorthand`).
+- **`url` may carry a path prefix** (Chronosphere: `https://<tenant>.chronosphere.io/data/metrics`):
+  every endpoint (`/api/v1/query`, `query_range`, `series`, ...) is joined under it, and the path
+  is part of the store's identity for the rate and daily cap (`limits.store_key`). A store
+  without `label/<name>/values` is listed by `series`, and one without `metadata` keeps none
+  (Chronosphere documents only `query`, `query_range`, `series` and `labels`).
 - **Series are inferred from the schema** every `infer_every` (an hour), cached in
   `<state>/sources/<name>.json` with the window inferred over (`sources/infer.py`,
   `sources/cache.py`). **Only the host's discovery and the CLI infer**; the web server and the

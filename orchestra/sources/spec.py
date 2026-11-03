@@ -5,7 +5,7 @@
 name = "work"
 type = "prometheus"
 url = "https://tenant.example/data/metrics"
-auth = { bearer_env = "WORK_PROM_TOKEN" }   # never the secret itself
+auth = { bearer_env = "WORK_PROM_TOKEN" }   # never the secret itself; or token_file = "~/..." with auth = "bearer" (auth.py)
 prefix = "work"                             # series work:<name>, machines work.<id>
 machine = "service"                         # the canonical label that names machines
 match = ['{__name__=~"http_.*"}']           # what to infer from (default: everything, capped); every query carries its label matchers (scope.py)
@@ -68,7 +68,7 @@ from urllib.parse import urlsplit
 from ..config import parse_duration
 from . import preset as presets
 from . import traffic as counted
-from .auth import AuthSpec, auth_problems
+from .auth import AuthSpec, auth_problems, shorthand
 
 NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
 TYPES = {"prometheus"}
@@ -185,7 +185,10 @@ def _source(raw: dict, repo_root: Path) -> SourceSpec:
     if keys := _secret_keys({k: v for k, v in raw.items() if k != "auth"}):
         raise ValueError(f"{', '.join(keys)}: a literal secret in orchestra.toml is refused; "
                          "name an environment variable or a file outside the repository in auth")
-    auth = AuthSpec.parse(raw.get("auth") or {})
+    auth_raw = raw.get("auth") or {}
+    if isinstance(auth_raw, str) or "token_file" in raw or "user" in raw:
+        auth_raw = shorthand(auth_raw, raw.get("token_file"), raw.get("user"))
+    auth = AuthSpec.parse(auth_raw)
     if problems := auth_problems(auth, repo_root):
         raise ValueError("; ".join(problems))
     prefix = str(raw.get("prefix") or name)

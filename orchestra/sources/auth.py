@@ -10,6 +10,15 @@ auth = { basic = { user = "orchestra", password_env = "PASS" } }      # or passw
 auth = { client_cert = "~/certs/me.pem", client_key = "~/certs/me.key", ca_file = "~/certs/ca.pem" }
 ```
 
+Or the short form, one token file and how it is sent (``shorthand``), on the source itself:
+
+```toml
+token_file = "~/.config/orchestra/chronosphere-token"
+auth = "bearer"                 # Authorization: Bearer <token> (Chronosphere's query API, Mimir, Thanos, Grafana Cloud)
+auth = "header:API-Token"       # API-Token: <token>, any header name
+auth = "basic"                  # with user = "chronosphere": Authorization: Basic user:<token>
+```
+
 Kinds may be combined (a bearer token over mTLS). ``insecure = true`` on the source skips TLS
 verification and is always shown as such. Command, OAuth2 and SigV4 are not built yet (the
 proposal's slices 2 and 3) and are refused with that reason."""
@@ -28,6 +37,36 @@ from . import SourceError
 SECRET_HEADER = re.compile(r"(?i)auth|token|key|secret|pass|cookie|session")
 LATER = {"bearer_command": "slice 2", "oauth2": "slice 2", "sigv4": "slice 3"}
 FIELDS = {"bearer_env", "bearer_file", "header", "basic", "client_cert", "client_key", "ca_file"}
+
+
+SHORT = re.compile(r"^(bearer|basic|header:([A-Za-z0-9][A-Za-z0-9_-]*))$")
+SHORT_FORMS = 'auth = "bearer", "header:<Header-Name>" or "basic" (with user = "...")'
+
+
+def shorthand(auth, token_file, user) -> dict:
+    """The table the short form means: ``auth`` a string naming how the token in ``token_file`` is
+    sent, ``user`` for basic. Raises ``ValueError`` naming what is missing; never reads the token,
+    only checks that the file is there (a source pointed at a file that is not is refused when
+    ``orchestra.toml`` is read, not on its first request)."""
+    m = SHORT.match(auth.strip()) if isinstance(auth, str) else None
+    if not m:
+        raise ValueError(f"auth = {auth!r}: give {SHORT_FORMS}, or a table (auth = {{ bearer_env = ... }})"
+                         if isinstance(auth, str) else f"token_file goes with {SHORT_FORMS}")
+    if not token_file or not isinstance(token_file, str):
+        raise ValueError(f'auth = "{auth}" needs token_file = "<a file outside the repository holding the token>"; '
+                         "the token itself is never written in orchestra.toml")
+    if not _path(token_file).is_file():
+        raise ValueError(f"token_file {token_file}: no such file (write the token there, one line, readable only by you)")
+    kind = m[1]
+    if kind == "basic":
+        if not user or not isinstance(user, str):
+            raise ValueError('auth = "basic" needs user = "..." (the token in token_file is the password)')
+        return {"basic": {"user": user, "password_file": token_file}}
+    if user:
+        raise ValueError(f'user goes with auth = "basic", not "{kind}"')
+    if kind == "bearer":
+        return {"bearer_file": token_file}
+    return {"header": {"name": m[2], "value_file": token_file}}
 
 
 @dataclass
