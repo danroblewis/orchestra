@@ -31,7 +31,27 @@ const NetGeometry = (() => {
     if (!ins.length) return null;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const n of ins) { const s = size(n), hw = s.r || s.w / 2, hh = s.r || s.h / 2; x0 = Math.min(x0, n.x - hw); x1 = Math.max(x1, n.x + hw); y0 = Math.min(y0, n.y - hh); y1 = Math.max(y1, n.y + hh); }
-    return { x0: x0 - PAD, y0: y0 - PAD - 12, x1: x1 + PAD, y1: y1 + PAD };
+    const f = { x0: x0 - PAD, y0: y0 - PAD - 12, x1: x1 + PAD, y1: y1 + PAD };
+    // with subsystems' boxes (subsystem-boxes.js), the frame holds every box too
+    for (const b of Object.values(boxesOf(ins))) { f.x0 = Math.min(f.x0, b.x0 - BOX_GAP); f.y0 = Math.min(f.y0, b.y0 - BOX_GAP - 12); f.x1 = Math.max(f.x1, b.x1 + BOX_GAP); f.y1 = Math.max(f.y1, b.y1 + BOX_GAP); }
+    return f;
+  }
+  // a subsystem's box (docs/proposals/subsystems.md B10): the hull of its members (the nodes whose
+  // ``box`` is its value), their tags included, padded, with room for its title above. A drag moves a
+  // member and the box follows; membership never changes by where a node is. {value: {x0, y0, x1, y1, members}}
+  const BOX_PAD = 16, BOX_TITLE = 22, BOX_GAP = 14;
+  function boxesOf(nodes) {
+    const out = {};
+    for (const n of nodes) {
+      if (n.box == null || n.kind === "cloud" || n.x === undefined || !isFinite(n.x)) continue;
+      const s = size(n), hw = s.r || s.w / 2, hh = s.r || s.h / 2;
+      let x0 = n.x - hw, y0 = n.y - hh, x1 = n.x + hw, y1 = n.y + hh;
+      for (const t of tagBoxes(n)) { x0 = Math.min(x0, t[0]); y0 = Math.min(y0, t[1]); x1 = Math.max(x1, t[2]); y1 = Math.max(y1, t[3]); }
+      const b = out[n.box] || (out[n.box] = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, members: [] });
+      b.x0 = Math.min(b.x0, x0 - BOX_PAD); b.y0 = Math.min(b.y0, y0 - BOX_PAD - BOX_TITLE); b.x1 = Math.max(b.x1, x1 + BOX_PAD); b.y1 = Math.max(b.y1, y1 + BOX_PAD);
+      b.members.push(n.id);
+    }
+    return out;
   }
   // where each tethered node goes: just outside the frame, level with the node it belongs to, on
   // the side whose stub crosses the fewest lines and boxes (with ``edges``; nearest side first among
@@ -191,6 +211,6 @@ const NetGeometry = (() => {
     return dragging ? "defer" : "reset";
   }
 
-  return { size, edgePoint, onRender, frameOf, tetherPlaces, labelSize, placeLabels, tagBoxes, isolatedRows, fitView, boundsOf, viewHeight, PAD, GAP, DESK_K, VIEW_MIN, VIEW_MAX };
+  return { size, edgePoint, onRender, frameOf, boxesOf, BOX_PAD, BOX_TITLE, BOX_GAP, tetherPlaces, labelSize, placeLabels, tagBoxes, isolatedRows, fitView, boundsOf, viewHeight, PAD, GAP, DESK_K, VIEW_MIN, VIEW_MAX };
 })();
 if (typeof module === "object" && module.exports) module.exports = NetGeometry;

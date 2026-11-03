@@ -31,7 +31,7 @@
 const NetGraph = (() => {
   const NS = "http://www.w3.org/2000/svg";
   const POS_KEY = (k) => `orchestra.netgraph.${k}`;
-  const { size, edgePoint, onRender, frameOf, tetherPlaces, labelSize, placeLabels, isolatedRows, fitView, boundsOf, PAD } = NetGeometry;
+  const { size, edgePoint, onRender, frameOf, boxesOf, tetherPlaces, labelSize, placeLabels, isolatedRows, fitView, boundsOf, PAD } = NetGeometry;
 
   // ``boundary``: {inside: node => bool, label}: a frame around the nodes inside (the system),
   // with every other node kept outside it, so what crosses the frame is visibly what crosses the
@@ -52,7 +52,11 @@ const NetGraph = (() => {
   // ``TOP``: the band at the top of the drawing the controls (reset, tidy, fit) sit in: a fit keeps
   // every node below it
   const NARROW = 600, TOP = 40, REVEAL_ALPHA = 0.1;
-  function create(container, { key, height = 600, isolateHops = 1, onClick, tip, boundary, layout, polish, isolatedRow = false, resetOnStructure = false } = {}) {
+  // ``boxes``: subsystems' boxes (subsystem-boxes.js; docs/proposals/subsystems.md B10–B11): a box
+  // around the nodes of each ``box`` value, titled by ``boxes.title(value)`` ({text, on, hint}); a
+  // title is a chip, pressed it calls ``boxes.onTitle(value)``; ``boxes.pairs()``: [{between: [a, b],
+  // text, dashed}], each written between its two boxes
+  function create(container, { key, height = 600, isolateHops = 1, onClick, tip, boundary, layout, polish, isolatedRow = false, resetOnStructure = false, boxes = null } = {}) {
     container.innerHTML = "";
     const svgEl = document.createElementNS(NS, "svg");
     svgEl.setAttribute("class", "netgraph");
@@ -72,7 +76,7 @@ const NetGraph = (() => {
       Wd = w; svg.attr("viewBox", `0 0 ${Wd} ${H}`); if (!userZoomed && NODES.length) refit(false); }).observe(container);
     const defs = svg.append("defs");
     defs.html(`<linearGradient id="ng-halo" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="60" y2="60"><stop offset="0" stop-color="#60a5fa"/><stop offset=".5" stop-color="#c084fc"/><stop offset="1" stop-color="#22c55e"/></linearGradient>`);
-    const root = svg.append("g"), gFrame = root.append("g"), gEdges = root.append("g"), gLabels = root.append("g"), gNodes = root.append("g");
+    const root = svg.append("g"), gFrame = root.append("g"), gBoxes = root.append("g"), gEdges = root.append("g"), gLabels = root.append("g"), gNodes = root.append("g"), gBoxNotes = root.append("g");
     const frameRect = gFrame.append("rect").attr("class", "ng-frame").attr("rx", 18).style("display", "none");
     const frameLabel = gFrame.append("text").attr("class", "ng-frame-label").style("display", "none");
     // the frame: the box around the inside nodes, padded
@@ -310,7 +314,7 @@ const NetGraph = (() => {
     }
 
     function render(nodes, edges) {
-      const newSig = JSON.stringify([nodes.map((n) => n.id + n.kind), edges.map((e) => e.id)]);
+      const newSig = JSON.stringify([nodes.map((n) => n.id + n.kind + (n.box != null ? "@" + n.box : "")), edges.map((e) => e.id)]);
       const mode = onRender({ resetOnStructure, structural: newSig !== sig, dragging });
       if (mode === "defer") pendingReset = true;
       const old = new Map(NODES.map((n) => [n.id, n]));
@@ -379,6 +383,7 @@ const NetGraph = (() => {
           .on("drag", (ev, d) => { d.x = ev.x; d.y = ev.y; tick(); }).on("end", (ev, d) => { dragging = false; d.pin = !d.tether; tick(); save(); relabel();
             if (pendingReset) { pendingReset = false; resetLayout(); } }))   // a cloud goes back beside its stock
         .on("dblclick", (ev, d) => { ev.stopPropagation(); d.pin = false; settle(new Set([d.id]), 0.3, false); });   // let the forces place it again
+      drawBoxes();
       // parallel edges (several flows between the same two nodes) spread apart
       const par = new Map();
       for (const e of EDGES) { const k = e.source.id + ">" + e.target.id; par.set(k, [...(par.get(k) || []), e]); }
@@ -492,6 +497,11 @@ const NetGraph = (() => {
       const b = frameBox(), t = 6;
       const obstacles = b ? [[b.x0 + 10, b.y0 - 18, b.x0 + 14 + String(boundary.label || "the system").length * 6.6, b.y0 + 2],
         [b.x0 - t, b.y0 - t, b.x1 + t, b.y0 + t], [b.x0 - t, b.y1 - t, b.x1 + t, b.y1 + t], [b.x0 - t, b.y0, b.x0 + t, b.y1], [b.x1 - t, b.y0, b.x1 + t, b.y1]] : [];
+      if (boxes) { const hulls = boxesOf(NODES), t0 = 4;
+        for (const [v, h] of Object.entries(hulls)) { const t = boxes.title(v) || { text: v }; obstacles.push([h.x0 + 8, h.y0 + 2, h.x0 + 30 + String(t.text).length * 6.6, h.y0 + 24]);
+          obstacles.push([h.x0 - t0, h.y0 - t0, h.x1 + t0, h.y0 + t0], [h.x0 - t0, h.y1 - t0, h.x1 + t0, h.y1 + t0], [h.x0 - t0, h.y0, h.x0 + t0, h.y1], [h.x1 - t0, h.y0, h.x1 + t0, h.y1]); }   // its edges, as the frame's
+        for (const p of boxes.pairs ? boxes.pairs() : []) { const A = hulls[p.between[0]], B = hulls[p.between[1]]; if (!A || !B) continue;
+          const [x, y] = pairPoint(A, B), w = String(p.text).length * 3.2 + 6; obstacles.push([x - w, y - 9, x + w, y + 7]); } }
       LABEL_AT = placeLabels(NODES, ALLEDGES, mids, obstacles);
       tick();
       crowd();
@@ -582,8 +592,64 @@ const NetGraph = (() => {
       placeNew(ALLEDGES.filter((e) => !e.toEdge).map((e) => ({ source: e.source.id, target: e.target.id })), new Map(NODES.map((n) => [n.id, n])));
       settle(new Set(NODES.map((n) => n.id)), 1, true);
     }
+    // subsystems' boxes: one per value of the nodes' ``box``, its title a chip (a focus on it), and
+    // each pair's crossing count written between the two boxes; placed on every tick
+    function drawBoxes() {
+      const values = boxes ? [...new Set(NODES.filter((n) => n.box != null && n.kind !== "cloud").map((n) => String(n.box)))] : [];
+      const sel = gBoxes.selectAll("g.ng-sub-box").data(values, (v) => v).join((en) => {
+        const g = en.append("g").attr("class", "ng-sub-box");
+        g.append("rect").attr("class", "ng-sub-box-rect").attr("rx", 12);
+        const t = g.append("g").attr("class", "ng-sub-box-title").attr("tabindex", 0).attr("role", "button");
+        t.append("rect").attr("class", "ng-sub-box-chip").attr("rx", 9).attr("height", 18);
+        t.append("text").attr("dy", 13).attr("x", 9);
+        return g;
+      });
+      sel.each(function (v) {
+        const t = boxes.title(v) || { text: v }, g = d3.select(this).select("g.ng-sub-box-title");
+        g.classed("on", !!t.on).attr("aria-pressed", t.on ? "true" : "false").attr("aria-label", `${t.text}: ${t.hint || "focus this subsystem"}`)
+          .on("click", (ev) => { ev.stopPropagation(); boxes.onTitle && boxes.onTitle(v); })
+          .on("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); boxes.onTitle && boxes.onTitle(v); } })
+          .on("mouseenter", (ev) => showTip(`<div class="tt">${String(t.text).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]))}</div><div class="muted">${t.hint || "a subsystem: press to show only it"}</div>`, ev))
+          .on("mousemove", moveTip).on("mouseleave", hideTip);
+        g.select("text").text(t.text);
+        g.select("rect").attr("width", String(t.text).length * 6.6 + 18);
+      });
+      const pairs = boxes && boxes.pairs ? boxes.pairs().filter((p) => p.between.every((v) => values.includes(String(v)))) : [];
+      gBoxNotes.selectAll("text.ng-sub-pair").data(pairs, (p) => p.between.join("|")).join((en) => { const t = en.append("text"); t.append("tspan"); t.append("title"); return t; })
+        .attr("class", (p) => `ng-sub-pair${p.dashed ? " dashed" : ""}`).attr("text-anchor", "middle").each(function (p) { d3.select(this).select("title").text(p.text); });
+    }
+    // where a pair's count is written: halfway between where the line joining the boxes' centres
+    // leaves the one and enters the other
+    function pairPoint(A, B) {
+      const ca = [(A.x0 + A.x1) / 2, (A.y0 + A.y1) / 2], cb = [(B.x0 + B.x1) / 2, (B.y0 + B.y1) / 2], dx = cb[0] - ca[0], dy = cb[1] - ca[1];
+      const k = (b) => Math.min((b.x1 - b.x0) / 2 / Math.abs(dx || 1e-9), (b.y1 - b.y0) / 2 / Math.abs(dy || 1e-9), 0.5);
+      const ka = k(A), kb = k(B);
+      return [(ca[0] + dx * ka + cb[0] - dx * kb) / 2, (ca[1] + dy * ka + cb[1] - dy * kb) / 2];
+    }
+    function tickBoxes() {
+      if (!boxes) return;
+      const hulls = boxesOf(NODES);
+      gBoxes.selectAll("g.ng-sub-box").each(function (v) {
+        const b = hulls[v], g = d3.select(this);
+        g.style("display", b ? null : "none"); if (!b) return;
+        g.select("rect.ng-sub-box-rect").attr("x", b.x0).attr("y", b.y0).attr("width", b.x1 - b.x0).attr("height", b.y1 - b.y0);
+        g.select("g.ng-sub-box-title").attr("transform", `translate(${b.x0 + 10},${b.y0 + 4})`);
+      });
+      gBoxNotes.selectAll("text.ng-sub-pair").each(function (p) {
+        const A = hulls[p.between[0]], B = hulls[p.between[1]], t = d3.select(this);
+        if (!A || !B) { t.style("display", "none"); return; }
+        // the whole sentence where the gap between the boxes holds it; else its count alone (the
+        // sentence on hover): "1 flow"
+        const [x, y] = pairPoint(A, B), w = String(p.text).length * 6;
+        const gapX = Math.max(B.x0 - A.x1, A.x0 - B.x1), gapY = Math.max(B.y0 - A.y1, A.y0 - B.y1);
+        const fits = gapX >= w || (gapY >= 14 && Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0) >= w);
+        t.style("display", null).attr("x", x).attr("y", y + 4);
+        t.select("tspan").text(fits ? p.text : p.short || p.text);
+      });
+    }
     function tick() {
       if (boundary) placeTethered();
+      tickBoxes();
       const b = frameBox();
       frameRect.style("display", b ? null : "none"); frameLabel.style("display", b ? null : "none");
       if (b) {

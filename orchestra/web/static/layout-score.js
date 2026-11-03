@@ -35,8 +35,9 @@
   const labelsOnNodesHas = (out, id) => out.labelsOnNodes.includes(id);
   const median = (xs) => { if (!xs.length) return 0; const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
 
-  // ``frame``: the system's box ({x0, y0, x1, y1}) when there is one
-  function score(nodes, edges, { size, frame = null, inside = (n) => n.kind !== "cloud", labels = null, labelSize = null } = {}) {
+  // ``frame``: the system's box ({x0, y0, x1, y1}) when there is one; ``boxes``: subsystems' boxes
+  // (NetGeometry.boxesOf: {value: {x0, y0, x1, y1, members}}) when they are drawn
+  function score(nodes, edges, { size, frame = null, inside = (n) => n.kind !== "cloud", labels = null, labelSize = null, boxes = null } = {}) {
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const flows = edges.filter((e) => !e.toEdge && byId.has(e.source) && byId.has(e.target)).map((e) => {
       const a = byId.get(e.source), b = byId.get(e.target), p = exit(a, size, b.x, b.y), q = exit(b, size, a.x, a.y);
@@ -100,6 +101,14 @@
       for (let i = 0; i < lb.length; i++) for (let j = i + 1; j < lb.length; j++) if (overlap(lb[i].b, lb[j].b)) out.labelsOnLabels++;
     }
     for (const [eid, nid] of out.through) { tangled.add(nid); const e = edges.find((x) => x.id === eid); if (e) { tangled.add(e.source); if (e.target) tangled.add(e.target); } }
+    // subsystems' boxes: two over each other, or one over a node that is not its member (a cloud is
+    // outside the frame, so never in one): [value, value] and [value, node id]
+    if (boxes) {
+      out.boxOverlaps = [];
+      const bs = Object.entries(boxes);
+      for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) if (overlap(bs[i][1], bs[j][1])) { out.boxOverlaps.push([bs[i][0], bs[j][0]]); for (const id of [...bs[i][1].members, ...bs[j][1].members]) tangled.add(id); }
+      for (const [v, b] of bs) for (const n of nodes) if (!b.members.includes(n.id) && overlap(box(n, size), b)) { out.boxOverlaps.push([v, n.id]); tangled.add(n.id); }
+    }
     out.tangled = [...tangled].map((x) => (typeof x === "string" ? x : x.id));
     if (frame) {
       out.cloudsInside = nodes.filter((n) => !inside(n) && overlap(box(n, size), frame)).map((n) => n.id);

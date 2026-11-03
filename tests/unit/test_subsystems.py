@@ -48,7 +48,7 @@ def test_a_label_the_series_carry_partitions_stocks_flows_and_machines():
     assert groups["hotfix"]["flows"] == ["in_a", "a1_a2"] and groups["delivery"]["flows"] == ["b1_b2", "b2_h", "old"]
     assert wf["unassigned"]["flows"] == ["b2_disk"]
     # the separation measure: crossing flows per pair, the simulated counted apart
-    assert wf["crossing"] == [{"between": ["delivery", "hotfix"], "flows": ["a2_b1", "sim"], "count": 1, "simulated": 1}]
+    assert wf["crossing"] == [{"between": ["delivery", "hotfix"], "flows": ["a2_b1", "sim"], "count": 1, "simulated": 1, "simulated_flows": ["sim"]}]
     assert (wf["joined"], wf["crossed"], wf["crossed_simulated"]) == (3, 1, 1)
     # machines only by their hypotheses: one group (a flow to an unassigned stock places it by its
     # other end), spanning several, or none (the old attributed list too)

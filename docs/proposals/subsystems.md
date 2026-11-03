@@ -1,6 +1,6 @@
 # Proposal: subsystems, boxes in the one map
 
-Status: proposal, 2026-11-02. Step 1 (§7) built; steps 2 and 3 not built. It answers the
+Status: proposal, 2026-11-02. Steps 1 and 2 (§7) built (step 2 for the Dynamics diagram; the Event Map's boxes go with step 3); step 3 not built. The owner answered §8 the same day (§8). It answers the
 owner's words of 2026-11-02 (`docs/roadmap/GOAL-2026-11-02-second-half.md`, the 21:49Z entry) and
 sits beside D2a, the names proposal in flight (scopes and nouns become tags beside a place-only
 name). No invariant of `AGENTS.md` changes; SPEC §10 gains a paragraph per step. This
@@ -78,8 +78,11 @@ The measure is shown, never judged: many crossings are a finding about the syste
 
 **B9. Machines are placed only by their hypotheses.** A machine is in a group when every flow it
 is a hypothesis for (`sd.attribute`, the flow's `evidence["machines"]`) has its assigned ends in
-that group; it **spans** groups when they are in several, and is listed with them; it is
-unassigned when it is a hypothesis for no flow. Never by a `machine` label on a series, and the
+that group; it **spans** groups when they are in several, and is then drawn **outside every box**
+(never between them, never inside one) and listed as outside, "in two subsystems: outside the
+boxes" (the owner, 2026-11-02: "a machine should only belong to one subsystem, i think. if it needs
+to belong to 2, it is probably outside of the box, it would be part of a different system for
+interconnectivity"); it is unassigned when it is a hypothesis for no flow. Never by a `machine` label on a series, and the
 placement is not an association: it reads the hypotheses and adds none (rule 6). On the Event
 Map (§3) a machine may also be placed by what it announced (`group`, `package`, SPEC §2) and a
 declared machine by its declared `tags` (§5).
@@ -89,12 +92,19 @@ declared machine by its declared `tags` (§5).
 **B10. Boxes in the same diagrams, never a separate map.** The Dynamics diagram and the Machines
 page's event map each gain a "boxes" control in their own bar, beside tidy and reset: off, or one
 of the partitions the API reports, the default first, each named by its label and how many groups
-and crossings it has ("workflow · 3 boxes · 2 crossing"). With boxes on:
+and crossings it has ("workflow · 3 boxes · 2 crossing"). Boxes are **on when the page opens**, by
+the default partition (the owner, 2026-11-02: "sub 1. yes, boxes on"); one partition at a time, no
+nesting ("sub 3. ... we dont need them now"). With boxes on:
 
 - **Dynamics.** Each group is a box inside the system's frame, titled by its label's value (or a
   declared subsystem's name, §5), holding its stocks, the clouds of its flows from and to outside,
   and the auxiliaries its rates read when no other box's rate reads them. Unassigned stocks sit
-  outside every box, inside the frame. A crossing flow is drawn from box to box, and each pair's count is written
+  outside every box, inside the frame; so does every machine spanning two groups (B9), on the
+  Dynamics page in the note under the diagram and the phone list, since the diagram draws no
+  machine node. As built (step 2): the clouds keep the cloud rule (just outside the frame, beside
+  their stock), so a box holds its stocks, its places and its auxiliaries; a pair's count is
+  written whole where the gap between the boxes holds it, else its count alone ("1 flow", the
+  sentence on hover). A crossing flow is drawn from box to box, and each pair's count is written
   between the boxes ("2 flows between delivery and hotfix"). ELK lays the boxes out as compound nodes (`sd-layout.js` already draws the system as a
   box of its own).
 - **Event Map.** Each group is a box around its machines; an event type or channel is inside a box
@@ -151,7 +161,7 @@ share a thing, "(hotfix)"). The scope label is what a partition is made of; so:
  "partitions": [{"label": "workflow",
                  "groups": [{"value": "hotfix", "stocks": ["s1"], "flows": ["f1"], "machines": ["planner"]}],
                  "unassigned": {"stocks": ["disk"], "flows": ["f9"], "machines": ["idle"]},
-                 "crossing": [{"between": ["delivery", "hotfix"], "flows": ["f4", "f5"], "count": 1, "simulated": 1}],
+                 "crossing": [{"between": ["delivery", "hotfix"], "flows": ["f4", "f5"], "count": 1, "simulated": 1, "simulated_flows": ["f5"]}],
                  "spanning": [{"machine": "worker", "groups": ["delivery", "hotfix"]}],
                  "joined": 3, "crossed": 1, "crossed_simulated": 1}]}
 ```
@@ -208,6 +218,13 @@ attention). No page control that declares one. No partition by an event's `data`
    offer tested in its own repository.
 
 ## 8. Questions for the owner
+
+Answered 2026-11-02, verbatim: "sub 1. yes, boxes on / sub 2. a machine should only belong to one
+subsystem, i think. if it needs to belong to 2, it is probably outside of the box, it would be part
+of a different system for interconnectivity / sub 3. nested subsystems sound like a good idea but
+might not be, we dont need them now / sub 4. yes it can gather". So: on at open (B10); a spanning
+machine outside every box (B9); no nesting; a declared subsystem may gather members no label
+groups (§5's `members`, step 3).
 
 1. Should the page start with boxes on, by the default partition, or off until you pick one?
 2. When a machine spans two subsystems, should it be drawn between their boxes or in the one it

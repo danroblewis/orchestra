@@ -83,7 +83,7 @@ nav #proj { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-
 /* range selectors in chart headers */
 select.range { background:var(--panel3); color:var(--text2); border:1px solid var(--border); border-radius:5px; font:inherit; font-size:10.5px; padding:1px 4px; margin-left:4px; text-transform:none; letter-spacing:0; cursor:pointer }
 /* operator controls */
-button.ctl { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:11px; padding:2px 8px; cursor:pointer; margin-left:6px }
+button.ctl, select.ctl { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:11px; padding:2px 8px; cursor:pointer; margin-left:6px }
 button.ctl:hover { color:var(--text); border-color:var(--accent) }
 /* chart hover */
 .tip { position:fixed; z-index:calc(var(--z-modal) + 10); pointer-events:none; background:#0b0d12; border:1px solid var(--border2); border-radius:6px; padding:6px 9px; font-size:11.5px; color:var(--text2); box-shadow:0 4px 16px rgba(0,0,0,.5); font-family:var(--mono) } .tip b { color:var(--text) }
@@ -153,7 +153,13 @@ g.ng-label:focus-visible .ng-elabel { fill:#fff; text-decoration:underline; stro
 .ng-pol.B { background:#1e3a5f; color:#93c5fd } .ng-pol.R { background:#4c1d1d; color:#fca5a5 }
 .ng-frame { fill:rgba(148,163,184,.035); stroke:var(--muted); stroke-width:1.4; stroke-dasharray:9 6; pointer-events:none }
 .ng-frame-label { fill:var(--muted); font-size:11px; letter-spacing:.06em; text-transform:uppercase; pointer-events:none }
-.ng-fit { position:absolute; top:8px; right:8px; z-index:2 }
+/* subsystems' boxes (subsystem-boxes.js): a box per group inside the system's frame, its title a focus chip */
+.ng-sub-box-rect { fill:rgba(125,211,252,.035); stroke:#475569; stroke-width:1.2; pointer-events:none }
+.ng-sub-box-title { cursor:pointer } .ng-sub-box-title text { fill:var(--text); font-size:11.5px; font-weight:600; pointer-events:none }
+.ng-sub-box-chip { fill:var(--panel3); stroke:var(--border2) } .ng-sub-box-title:hover .ng-sub-box-chip, .ng-sub-box-title:focus-visible .ng-sub-box-chip { stroke:var(--accent) }
+.ng-sub-box-title:focus { outline:none } .ng-sub-box-title.on .ng-sub-box-chip { fill:#1e3a5f; stroke:var(--accent) }
+.ng-sub-pair { fill:var(--text2); font-size:11px; paint-order:stroke; stroke:var(--canvas, #12151c); stroke-width:4px; stroke-linejoin:round; pointer-events:none } .ng-sub-pair.dashed { font-style:italic; fill:var(--muted) }
+.ng-fit { position:absolute; top:8px; right:8px; z-index:2 } select.ng-boxes { max-width:calc(100% - 180px); text-overflow:ellipsis }
 .ng-more { position:absolute; right:8px; top:50%; transform:translateY(-50%); z-index:2; background:var(--panel); border-color:var(--accent); color:var(--text); box-shadow:0 2px 10px #0008 }
 /* a flow nothing moved through lately: its line and label step back */
 .ng-label.ng-crowded { opacity:0 } .ng-label.ng-crowded:focus, .ng-label.ng-crowded:hover, .ng-label.ng-crowded.ng-lit { opacity:1 }
