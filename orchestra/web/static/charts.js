@@ -38,6 +38,9 @@ const Charts = (() => {
   // value), at the edge when the point is past it. ``range``: [t0, t1], the x axis's span whatever
   // the points cover (the range the viewer picked); ``onePoint``: what is said when every line has
   // one point, placed away from the dot
+  // A line marked ``nokey`` has no key under the chart (a projection drawn in its stock's colour);
+  // ``bandOpacity`` sets its band's fill (0.18); a note may be ``anchor: "start"`` (said to the right
+  // of its point) and carry a ``color``; notes are kept a line apart.
   // A line marked ``step`` is drawn step-after (a count holds its value until it changes: never a
   // triangle between 0 and 1); ``integer`` puts the y axis's ticks on whole numbers (a count's axis)
   function line(lines, { unit = "", H = 200, W = 720, marks = [], tight = false, now = null, yMax = null, notes = [],
@@ -64,9 +67,15 @@ const Charts = (() => {
     const ticks = yt.map((v) => `<line class="ax" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke-dasharray="2 4"/><text x="${L - 4}" y="${y(v) + 3}" text-anchor="end">${tnum(v)}</text>`).join("");
     const xt = [0, 0.5, 1].map((f) => `<text x="${L + (W - L - R) * f}" y="${H - 4}" text-anchor="${f === 0 ? "start" : f === 1 ? "end" : "middle"}">${now != null && t0 + (t1 - t0) * f > now + 30 ? rel(t0 + (t1 - t0) * f, now) : tlabel(t0 + (t1 - t0) * f, t1 - t0)}</text>`).join("");
     const mk = marks.filter((m) => m.t >= t0 && m.t <= t1).map((m) => `<line class="ax" x1="${x(m.t)}" x2="${x(m.t)}" y1="${T}" y2="${H - B}" stroke-dasharray="3 3"/><text x="${x(m.t) + 3}" y="${T + 10}">${esc(m.label)}</text>`).join("");
-    const bands = lines.map((l, i) => (l.band && l.band.length > 1 ? `<path class="band" data-i="${i}" style="fill:${colorOf(l, i)}" d="${l.band.map(([t, , b], j) => (j ? "L" : "M") + x(t).toFixed(1) + "," + y(b).toFixed(1)).join(" ")} ${l.band.slice().reverse().map(([t, a]) => "L" + x(t).toFixed(1) + "," + y(a).toFixed(1)).join(" ")} Z"/>` : "")).join("");
+    const bands = lines.map((l, i) => (l.band && l.band.length > 1 ? `<path class="band" data-i="${i}" style="fill:${colorOf(l, i)};stroke:none" fill-opacity="${l.bandOpacity ?? 0.18}" d="${l.band.map(([t, , b], j) => (j ? "L" : "M") + x(t).toFixed(1) + "," + y(b).toFixed(1)).join(" ")} ${l.band.slice().reverse().map(([t, a]) => "L" + x(t).toFixed(1) + "," + y(a).toFixed(1)).join(" ")} Z"/>` : "")).join("");
     const clip = `clip-${id}`;
-    const said = notes.filter((n) => n.t >= t0 && n.t <= t1).map((n) => `<text class="cnote" x="${Math.min(W - R - 2, x(n.t))}" y="${Math.max(T + 10, y(Math.min(hi, n.v)) - 5)}" text-anchor="end">${esc(n.text)}${n.v > hi ? " ↑" : ""}</text>`).join("");
+    // notes kept apart: each at least a line below the one above it
+    let last = -Infinity;
+    const placed = notes.filter((n) => n.t >= t0 && n.t <= t1).map((n) => ({ n, y: Math.max(T + 10, y(Math.min(hi, n.v)) - 5) })).sort((a, b) => a.y - b.y)
+      .map((p) => { p.y = Math.max(p.y, last + 11); last = p.y; return p; });
+    const over = placed.length ? Math.min(placed[placed.length - 1].y - (H - B - 3), placed[0].y - (T + 10)) : 0;   // a stack past the bottom moves up
+    const said = placed.map(({ n, y: yy }) => { yy -= Math.max(0, over); const start = n.anchor === "start";
+        return `<text class="cnote" x="${start ? Math.max(L + 2, x(n.t) + 4) : Math.min(W - R - 2, x(n.t))}" y="${yy.toFixed(1)}" text-anchor="${start ? "start" : "end"}"${n.color ? ` style="fill:${n.color}"` : ""}>${esc(n.text)}${n.v > hi ? " ↑" : ""}</text>`; }).join("");
     // a line of one point is a dot, since a path through one point draws nothing
     const paths = lines.map((l, i) => l.points.length === 1
       ? `<circle data-i="${i}" cx="${x(l.points[0][0]).toFixed(1)}" cy="${y(l.points[0][1]).toFixed(1)}" r="3.5" style="fill:${colorOf(l, i)}"/>`
@@ -76,7 +85,7 @@ const Charts = (() => {
     const onePoint = lines.every((l) => l.points.length <= 1)
       ? `<text class="cnote" x="${left ? L + 6 : W - R - 6}" y="${T + 12}" text-anchor="${left ? "start" : "end"}">${esc(onePointText)}</text>` : "";
     return `<svg class="chart" data-cid="${id}" viewBox="0 0 ${W} ${H}">${ticks}${xt}${mk}<clipPath id="${clip}"><rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}"/></clipPath><g class="bands" clip-path="url(#${clip})">${bands}</g><g class="lines" clip-path="url(#${clip})">${paths}</g>${said}${onePoint}<g class="hov"></g><rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/></svg>
-      <div class="ckeys" data-for="${id}">${lines.map((l, i) => `<span data-i="${i}"><i style="${l.dash ? `background:none;border-top:2px dashed ${colorOf(l, i)};height:0` : `background:${colorOf(l, i)}`}${l.band ? `;box-shadow:0 0 0 3px color-mix(in srgb, ${colorOf(l, i)} 25%, transparent)` : ""}"></i>${esc(l.label)}</span>`).join("")}${unit ? `<span class="muted">${esc(unit)}</span>` : ""}</div>`;
+      <div class="ckeys" data-for="${id}">${lines.map((l, i) => (l.nokey ? "" : `<span data-i="${i}"><i style="${l.dash ? `background:none;border-top:2px dashed ${colorOf(l, i)};height:0` : `background:${colorOf(l, i)}`}${l.band ? `;box-shadow:0 0 0 3px color-mix(in srgb, ${colorOf(l, i)} 25%, transparent)` : ""}"></i>${esc(l.label)}</span>`)).join("")}${unit ? `<span class="muted">${esc(unit)}</span>` : ""}</div>`;
   }
 
   // a line's path: point to point, or step-after (``step``: each value held until the next point)

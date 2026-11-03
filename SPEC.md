@@ -1712,7 +1712,16 @@ intended model's closed list of page controls (§4.6, AGENTS.md rule 9). Navigat
   and brought back from Panels (in the navigation); positions and sizes are kept in the browser,
   and a narrow window has one column. A panel may give its starting size. Orchestra's own panels are **Machines** (a short list of
   what runs now: the machines that announced themselves continuous, and any other that published
-  in the last two minutes; a click opens its dialog) and **Host** (a Core status strip; the
+  in the last two minutes; a click opens its dialog), **Model** (the version shown on Dynamics,
+  its stocks' trust and the flows not moving as their equations say), **Where this is going**
+  (`static/where-panel.js`, registered after Model and before Host, so on a phone it sits above
+  the Host: the three stocks the projection moves most, said as the Dynamics strip says them, each
+  with a sparkline of its history and its dashed projection, and the rest counted, with those
+  that have no projection and why; the machines' predictions still waiting for their horizon,
+  "supervisor predicted X, judged in 2 h", and the last three verdicts; and the equation misses,
+  "review → sail is not moving as its equation says". Each part is read on its own: no model
+  says "no model yet", a simulation that fails "projection unavailable" with its error, and the
+  rest of the page stands. The horizon is the Dynamics page's) and **Host** (a Core status strip; the
   host's CPU, GPU, memory and disk). A package adds panels of its own (`Orchestra.panels`, from its
   every-page script; §10.1).
 - **Machines:** every machine seen on the bus or counted, and every declared one (never one a series names, never an
@@ -1785,8 +1794,34 @@ minutes, which allows for the store's scrape interval and the minute between rea
   its feedback loops marked balancing or reinforcing, the stocks' history, and drawers with each
   stock's and flow's history (a flow's observed rate against its equation's prediction). A
   stock's drawer also runs the equations (`sd/simulate.py`, SD Lab's simulator): from the measured
-  levels at the start of the era to now, and from now a horizon the viewer chooses; flows with no
-  form the simulator steps are replayed from their observed rates, and named. Its flows are split
+  levels at the start of the era to now, and from now to the page's horizon; flows with no
+  form the simulator steps are replayed from their observed rates, and named.
+  **The projection** (`static/projection.js`), for the latest discovery only: the horizon is set
+  beside the stocks chart's title ("next 30 min", 30 by default, kept in the browser; it chooses
+  how far to draw and is display, like the boxes control), and the page makes one request to
+  `/api/dynamics/simulate` per refresh, shared by the chart, the strip, the flows table and the
+  stock's drawer. The **stocks chart** continues each shown stock from now to the horizon, dashed,
+  in a band of how far it is trusted (`sd/projection.py`: ± z × growth × h within the horizon its
+  held-out runs covered, `heldout.py`, shaded; beyond it the band widens by h / T and is shaded
+  lighter; no band where trust was not measured); a stock with no projection stops at now with its
+  reason at the line's end: "no level measured", "worse than holding" (its equations do worse than
+  holding the level), or "equations wrong now" (a flow that fills or drains it, stepped from its
+  equation, not moving as the equation says, `flow-check.js`). Above the chart, the **projections
+  strip**: one line per stock that moves within the horizon, "in review: 3 → 7 by 15:10 if nothing
+  changes (trusted 20 min)", a stock that empties or crosses its declared expectation (the
+  intended model's target on it, when it has one) first and said so ("… empties by 15:02",
+  "… leaves its expected level (below 5) at 15:04"); stocks that hold say nothing; at most six
+  lines, then "and N more that hold", then those with no projection and why. With no fitted flow
+  the strip is one line saying so, and nothing is requested. The **flows table** has a "next
+  <horizon>" column: what the flow's equation moves over the horizon, blank where there is no
+  projection (replayed, too few events, or not moving as its equation says now).
+  `/api/dynamics/simulate?horizon_min=` returns, beside the runs (`era`, `projection`, `replayed`,
+  `too_few`, `start`, `now`, `step`, `horizon` in seconds): `flows` (`{id: {count, replayed}}`,
+  what each flow moves over the projection) and `stocks` (`{id: {trust: {level, score,
+  beats_hold, trusted_s, growth, z} | null, no_projection: reason | null, start, end, empties_at
+  (when its outflows first take all it holds), band: [[t, lo, hi]], tested_until}}`).
+  `/api/dynamics/predictions` gives each prediction its `judge_at` (its era's start plus its
+  horizon; null until its change begins an era). Its flows are split
   into what fills it and what drains it (drawn below zero). It shows the host's latest discovery
   and steps through saved versions. With eras recorded, a timeline of them picks the era shown (a
   past era's last version: `/api/dynamics/model?era=`), and under it what changed at the era's
@@ -2027,7 +2062,7 @@ orchestra/
              unit), identify, accept and construction (the evidence a balance must show),
              stocktrust, netnull and persistence (each stock's trust), behaviour (its projection's), ends, inputs,
              drivers and driverchoice (which series may drive a flow, and which does), path, discover (conservation), attribute (machines associated with flows,
-             as hypotheses), rates, strategies, simulate, rediscover, trust (each flow's
+             as hypotheses), rates, strategies, simulate, projection (what the pages say of it), rediscover, trust (each flow's
              spread and what is not trusted), provenance (where each series in a model came from), linearise and observability
              (which stocks what is measured determines), eras, prior and compare (eras, the
              previous era's model as a prior, the boundary before → after), loops, announce and

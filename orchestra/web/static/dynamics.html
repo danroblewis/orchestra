@@ -28,7 +28,7 @@
   #stocks td.bound, #found td { overflow-wrap:anywhere } #flows td.eq { min-width:12ch } #flows td.mcell { min-width:14ch }
   #flows tr[data-fid]:focus-visible td, #stocks tr[data-sid]:focus-visible td { background:var(--panel3); outline:none } #flows tr[data-fid]:focus-visible, #stocks tr[data-sid]:focus-visible { outline:2px solid var(--accent); outline-offset:-2px }
   .drawer .tr.flowlink { cursor:pointer; border-radius:4px } .drawer .tr.flowlink:hover, .drawer .tr.flowlink:focus-visible { background:var(--panel3); outline:none }
-  .chart text.cnote { fill:var(--text2) }
+  .chart text.cnote { fill:var(--text2); paint-order:stroke; stroke:var(--panel); stroke-width:3px; stroke-linejoin:round }
   #found .ty { overflow-wrap:anywhere } #found table.dt { table-layout:fixed } #found td.num { white-space:normal; overflow-wrap:anywhere; width:55% }
   table.dt { width:100%; border-collapse:collapse; font-size:12px } table.dt th { text-align:left; color:var(--muted); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; padding:4px 6px; border-bottom:1px solid var(--border) }
   table.dt td { padding:4px 6px; border-bottom:1px solid var(--border); vertical-align:top } table.dt td.num { font-family:var(--mono); white-space:nowrap }
@@ -64,9 +64,15 @@
   /* a phone: the model as a list (stocks with now and max, flows with their observed rate); the drawing behind a toggle */
   .phone-list, .phone-only { display:none }
   @media (max-width:760px) { .phone-list { display:block; font-size:12.5px } .phone-only { display:inline-block; margin:6px 0 } body:not(.diag-on) #diagram-box { display:none }
-    #histp:not(.chart-on) #hist, #histp:not(.chart-on) #hist-keys { display:none } #histp h2 { cursor:pointer } #histp:not(.chart-on) h2::after { content:" · show the chart"; color:var(--accent); font-size:11px; text-transform:none; letter-spacing:0 }
+    #histp:not(.chart-on) #hist, #histp:not(.chart-on) #hist-keys, #histp:not(.chart-on) #hist-proj-key { display:none } #histp h2 { cursor:pointer } #histp:not(.chart-on) h2::after { content:" · show the chart"; color:var(--accent); font-size:11px; text-transform:none; letter-spacing:0 }
     .tables .panel { overflow-x:auto } #flows { min-width:560px }
     .phone-list .pl { display:flex; justify-content:space-between; gap:10px; padding:4px 0; border-bottom:1px solid var(--border) } .phone-list .pl b { font-weight:600 } .phone-list .pl span.num { white-space:nowrap } }
+  /* the projection: the strip above the stocks chart, the horizon beside its title (projection.js) */
+  .htitle { display:flex; flex-wrap:wrap; gap:4px 12px; align-items:baseline; min-width:0 }
+  .hzn { text-transform:none; letter-spacing:0; font-weight:400; font-size:11.5px; color:var(--text2); white-space:nowrap }
+  .hzn input { width:58px; background:var(--panel3); color:var(--text); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:11.5px; padding:1px 4px }
+  .pstrip { margin:0 0 8px; font-size:12.5px } .pline { margin:2px 0; padding:1px 0 1px 8px; border-left:2px solid var(--border2); overflow-wrap:anywhere }
+  .pline.flag { border-color:#f59e0b } .pline.muted { border-color:transparent } .pkey { font-size:11px; margin-top:2px }
   .tables h3 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:12px 0 6px }
 </style>
 </head>
@@ -96,7 +102,8 @@
   <div class="muted" id="diagram-note" style="font-size:12px;margin-top:6px"></div>
   <div class="legend" id="legend"></div></div>
   <div class="ng-loops panel" id="loops" style="margin:0 0 10px"></div>
-  <div class="panel histp" id="histp"><h2 style="margin-top:0" onclick="if(innerWidth<=760){$('histp').classList.toggle('chart-on');Live.refresh()}"><span id="hist-title">Stocks</span><span class="hctl muted" style="font-size:11px">click a name to show or hide it</span></h2><div class="hkeys" id="hist-keys"></div><div id="hist"></div></div>
+  <div class="panel histp" id="histp"><h2 style="margin-top:0" onclick="if(innerWidth<=760){$('histp').classList.toggle('chart-on');Live.refresh()}"><span class="htitle"><span id="hist-title">Stocks</span><label class="hzn" onclick="event.stopPropagation()" title="how far ahead to draw the projection: what is drawn, never a change to the model">next <input id="hzn" type="number" min="1" max="1440" step="5" value="30" aria-label="projection horizon, minutes"> min</label></span><span class="hctl muted" style="font-size:11px">click a name to show or hide it</span></h2>
+    <div class="pstrip" id="proj-strip"></div><div class="hkeys" id="hist-keys"></div><div id="hist"></div><div class="muted pkey" id="hist-proj-key"></div></div>
   <div class="tables" id="tables">
     <div>
       <div class="panel"><h2 style="margin-top:0"><span>Flows</span><span class="count" id="nflows"></span></h2><table class="dt" id="flows"></table></div>
@@ -130,6 +137,7 @@
 <script src="/static/left-out.js?v={{v}}"></script>
 <script src="/static/evidence-text.js?v={{v}}"></script>
 <script src="/static/flow-check.js?v={{v}}"></script>
+<script src="/static/projection.js?v={{v}}"></script>
 <script>
 // (a machine's colour, mcolor, is app.js's: the same on every page)
 let MODEL = null, VERSION = null;   // null: follow the current version
@@ -516,13 +524,13 @@ function tables() {
   const m = MODEL, byMachine = Object.fromEntries(m.machines.map((x) => [x.id, x]));
   const fx = focused(m), of = (n, N) => (fx.F ? `${n} of ${N} · ${fx.F.title}` : N);
   const sig2 = Live.sig2, per = Live.per();
-  const flowsHtml = `<tr><th>flow</th><th>observed · equation</th><th>fit</th><th title="machines whose events match the flow's counter: hypotheses, with their confidence. Two similar flows between the same stocks may not be told apart, so a hypothesis may belong to a flow's twin.">machines (hypotheses)</th></tr>` + fx.flows.map((f) => { const e = f.current, q = (e && e.quality) || {};
+  const flowsHtml = `<tr><th>flow</th><th>observed · equation</th><th>fit</th><th title="what the flow's equation moves over the projection's horizon, if nothing changes; blank where there is no projection (no equation stepped, or not moving as its equation says now)">next ${Live.horizon()} min</th><th title="machines whose events match the flow's counter: hypotheses, with their confidence. Two similar flows between the same stocks may not be told apart, so a hypothesis may belong to a flow's twin.">machines (hypotheses)</th></tr>` + fx.flows.map((f) => { const e = f.current, q = (e && e.quality) || {};
     const end = (which) => endOf(f, which);
     const same = SDGraph.sameAs(m, f);
     const zero = e && (q.events ?? 0) === 0 && (Object.values(e.params || {}).some((x) => x) || (e.spec && e.spec.value));
     return `<tr data-fid="${esc(f.id)}" ${opens(`Live.openFlow('${esc(f.id)}')`)}><td>${flowHead(f)}<div class="muted" style="font-size:11px">${esc(end("from"))} → ${esc(end("to"))}${same.length ? ` · same events as ${same.map(esc).join(", ")}` : ""}</div></td><td class="num eq">${obsLine(f)}${Evidence.tooFew(f) ? '<span class="muted">—</span>' : esc(eqText(f))}${!Evidence.tooFew(f) && e && q.se != null ? ` <span class="muted">± ${q.se.toFixed(3)}</span>` : ""}${SDGraph.correlational(m, f) ? `<div class="muted" style="font-family:inherit;font-size:11px">${esc(SDGraph.untestedText(m, f))}</div>` : ""}</td>
       <td>${Evidence.tooFew(f) ? `<span class="muted num" title="fewer than ${Evidence.MIN_EVENTS} events in the window: no rate can be told from chance">${esc(Evidence.tooFewText(f))}</span>${eraNote(f)}` : e ? `${misses(f) ? `<span class="stale num">${esc(misses(f))}</span>` : `<span class="origin ${esc(e.origin)}">${esc(e.origin)}</span>`} <span class="muted num" ${zero ? 'title="0 increments seen in the window; the counter first appeared already above 0"' : ""}>${esc(e.form)} · ${q.events ?? 0} events in the fit window${zero ? "*" : ""}${q.live_minutes ? ` (${q.live_minutes} min)` : ""} · dispersion ${q.events && q.dispersion != null ? sig2(q.dispersion) : "—"}</span>${e.prior && e.prior.weight != null && e.origin !== "prior" ? `<div class="muted" style="font-size:11px">${Math.round(100 * e.prior.weight)}% from the prior (era ${esc(e.prior.era || "before")})</div>` : ""}${eraNote(f)}` : '<span class="muted">—</span>'}</td>
-      <td class="mcell">${machinesCell(m, f, byMachine)}</td></tr>`; }).join("");
+      <td class="num">${projCell(f)}</td><td class="mcell">${machinesCell(m, f, byMachine)}</td></tr>`; }).join("");
   // how far to trust each stock, as its drawer says it
   const trustCell = Evidence.trustCell;
   const stocksHtml = `<tr><th>stock</th><th>now</th><th>trust</th><th>bound to series</th></tr>` + fx.stocks.map((s) => `<tr data-sid="${esc(s.id)}" ${opens(`Live.openStock('${esc(s.id)}')`)}><td>${stockHead(s.id)}${stockAbout(s.id)}</td><td class="num" style="white-space:nowrap">${!Live.has() ? '<span class="muted">loading…</span>' : Live.now(s.id) != null ? levelText(Live.now(s.id), unitOf(s)) : "—"}</td><td>${trustCell(s)}</td>
@@ -586,6 +594,11 @@ function phoneBoxes(m, P, fx) {
   const outside = s.outside.stocks.map(stockRow).join("") + s.outside.flows.map(flowRow).join("")
     + s.outside.spanning.map((x) => `<div class="pl"><span>${esc(mname(x.machine))}</span><span class="muted">${esc(SubsystemBoxes.spanText(x))}</span></div>`).join("");
   return groups.replace("<h3>", '<h3 style="margin-top:0">') + (between ? `<h3>Between subsystems</h3>${between}` : "") + (outside ? `<h3>Outside every subsystem</h3>${outside}` : "");
+}
+// what the flow's equation moves over the horizon (projection.js), blank where there is no projection
+function projCell(f) {
+  const c = Live.projectedCount(f);
+  return c == null ? "" : `${esc(Projection.level(c))}`;
 }
 // a flow's observed rate, said first (its equation after it): "0.31 /min observed"
 function obsLine(f) {
