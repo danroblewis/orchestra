@@ -156,6 +156,8 @@ g.ng-label:focus-visible .ng-elabel { fill:#fff; text-decoration:underline; stro
 /* subsystems' boxes (subsystem-boxes.js): a box per group inside the system's frame, its title a focus chip */
 .ng-sub-box-rect { fill:rgba(125,211,252,.035); stroke:#475569; stroke-width:1.2; pointer-events:none }
 .ng-sub-box-title { cursor:pointer } .ng-sub-box-title text { fill:var(--text); font-size:11.5px; font-weight:600; pointer-events:none }
+/* a box no machine acts only in: its line, muted, inside it (subsystem-boxes.js) */
+.ng-node.ng-sub-empty .ng-box { fill:none !important; stroke:none !important } .ng-node.ng-sub-empty .ng-boxtext { fill:var(--muted) !important; font-style:italic; font-size:11.5px }
 .ng-sub-box-chip { fill:var(--panel3); stroke:var(--border2) } .ng-sub-box-title:hover .ng-sub-box-chip, .ng-sub-box-title:focus-visible .ng-sub-box-chip { stroke:var(--accent) }
 .ng-sub-box-title:focus { outline:none } .ng-sub-box-title.on .ng-sub-box-chip { fill:#1e3a5f; stroke:var(--accent) }
 .ng-sub-pair { fill:var(--text2); font-size:11px; paint-order:stroke; stroke:var(--canvas, #12151c); stroke-width:4px; stroke-linejoin:round; pointer-events:none } .ng-sub-pair.dashed { font-style:italic; fill:var(--muted) }

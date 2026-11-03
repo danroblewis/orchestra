@@ -145,8 +145,8 @@ def from_announcements(field: str, label: str, out: dict, on: dict, announced: d
 
 def default_of(parts: list[dict], model_default: str | None) -> str | None:
     """Where the map starts: the declared partition when there is one, else the model's own default
-    (the one the Dynamics page opens on), whatever it boxes: the page starts with boxes off when it
-    boxes no machine, and says why. With no model partition, the announced partition the hand-offs
+    (the one the Dynamics page opens on), whatever it boxes: the page draws every group as a box even
+    when every machine is outside them, and says why. With no model partition, the announced partition the hand-offs
     separate best (the most pairs handed on inside a box, the fewest crossing, then by label)."""
     if any(p.get("source") == "declared" for p in parts):
         return next(p["label"] for p in parts if p.get("source") == "declared")

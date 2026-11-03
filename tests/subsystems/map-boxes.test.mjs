@@ -72,9 +72,17 @@ test("a hand-off between two boxes is drawn across, and each pair's count writte
   assert.equal(edge("m:planner>m:writer").cross, undefined, "inside one box");
   assert.deepEqual(r.pairs.map((p) => [p.between, p.text, p.short]), [[["a", "b"], "1 hand-off between a and b · 3 subjects", "1 hand-off"]]);
   assert.deepEqual(Boxes.choices(SUBS).map((c) => c.text), ["group · 2 boxes · 4 machines · 1 crossing", "declared · 1 box · 1 machine", "off"]);
-  // a group no machine is in draws no box on the map, and is not counted
-  const one = { ...GROUP, groups: [GROUP.groups[0], { value: "c", machines: [], events: [] }] };
-  assert.equal(Boxes.nameOf(one), "group · 1 box · 2 machines · 1 crossing");
+  // a group no machine acts only in is a box too, counted, with its line inside
+  const one = { ...GROUP, groups: [GROUP.groups[0], { value: "c", machines: [], events: [] }], spanning: [{ machine: "helper", groups: ["a", "c"] }] };
+  assert.equal(Boxes.nameOf(one), "group · 2 boxes · 2 machines · 1 crossing");
+  const e = Boxes.applyMap(NODES, EDGES, one);
+  assert.deepEqual(e.boxes, ["a", "c"], "every group drawn");
+  const line = e.nodes.find((n) => n.box === "c");
+  assert.equal(line.id, "sub-empty:c"); assert.deepEqual(line.lines, ["no machine acts only here"]); assert.ok(line.inert, "it opens nothing");
+  assert.deepEqual(line.subEmpty.acting, ["helper"]);
+  assert.equal(Boxes.emptyHint(one, "c"), "no machine acts only here: helper acts here and elsewhere, outside every box");
+  assert.match(Boxes.hintOf(one, "c"), /helper acts here and elsewhere/, "named on hover over its title");
+  assert.equal(e.nodes.find((n) => n.id === "m:helper").box, undefined, "the machine acting there stays outside");
 });
 
 test("a declared subsystem titles its box by its name, says who named it, and draws a gathered machine not on the map as a ghost", () => {
@@ -98,6 +106,13 @@ test("the phone list's sections: a heading per group, then between subsystems, t
   assert.deepEqual(s.between.map((c) => c.text), ["1 hand-off between a and b · 3 subjects"]);
   assert.deepEqual(s.outside.machines, ["orchestra-host"]);
   assert.deepEqual(s.outside.spanning, [{ machine: "helper", groups: ["a", "b"] }]);
+  assert.deepEqual(s.groups.map((g) => g.acting), [["helper"], ["helper"]], "who acts in each group and elsewhere, for an empty group's heading");
+  assert.ok(s.groups.every((g) => !g.empty), "both hold machines");
+  // a group no machine acts only in keeps its heading, saying so and who acts there
+  const e = Boxes.sections({ ...GROUP, groups: [...GROUP.groups, { value: "c", machines: [], events: [] }], spanning: [{ machine: "helper", groups: ["a", "c"] }] },
+    { name: (id) => id.toUpperCase() });
+  assert.deepEqual(e.groups.map((g) => [g.title, !!g.empty]), [["a", false], ["b", false], ["c", true]], "a heading per group, the empty one too");
+  assert.equal(e.groups[2].line, "no machine acts only here: HELPER acts here and elsewhere, outside every box");
 });
 
 test("boxes kept whole on a force-laid map: overlapping boxes pushed apart, a node not its own pushed out", () => {
@@ -164,19 +179,46 @@ test("an offered partition is listed after the API's, drawn on both pages, and s
   } finally { b.done(); }
 });
 
-test("the map opens on the API's default whatever it boxes; boxing no machine, boxes start off and the note says why", () => {
+test("the map opens with boxes on by the API's default, every group a box even when every machine is outside; the note says why", () => {
   const WF = { label: "workflow", source: "labels", groups: [{ value: "delivery_sail", machines: [], events: [] }, { value: "pr_watch", machines: [], events: [] }],
     unassigned: { machines: ["orchestra-host"], events: [] }, between: [], crossing: [], joined: 0, crossed: 0, crossed_simulated: 0,
     spanning: ["a", "b", "c", "d", "e", "f"].map((m) => ({ machine: m, groups: ["delivery_sail", "pr_watch"] })) };
   const PLACE = { label: "place", source: "labels", groups: [{ value: "held", machines: [], events: [] }, { value: "waiting", machines: ["a", "b", "c", "d", "e"], events: [] }],
     unassigned: { machines: [], events: [] }, between: [], crossing: [], spanning: [], joined: 0, crossed: 0, crossed_simulated: 0 };
   const subs = { default: "workflow", partitions: [WF, PLACE] };
-  const c = Boxes.mapChoice(subs, null);
-  assert.equal(c.partition, null, "boxes start off: never a state such as place chosen instead");
-  assert.equal(c.empty.label, "workflow");
-  assert.equal(Boxes.emptyNote(c.empty), "6 machines act in both workflows (delivery_sail, pr_watch): no box holds one");
-  assert.deepEqual(Boxes.choices(subs).map((x) => x.text), ["workflow · 0 boxes · 0 machines", "place · 1 box · 5 machines", "off"], "every partition listed, with how many machines it boxes");
-  assert.equal(Boxes.mapChoice(subs, "place").partition.label, "place", "the owner can turn one on");
-  assert.equal(Boxes.mapChoice({ default: "group", partitions: [GROUP] }, null).partition.label, "group", "a default that boxes machines is drawn");
-  assert.equal(Boxes.mapChoice({ default: "declared", partitions: [{ ...DECLARED, groups: [{ ...DECLARED.groups[0], machines: [] }] }] }, null).partition.label, "declared", "the declared is drawn whatever it boxes");
+  const P = Boxes.choose(subs, null);
+  assert.equal(P.label, "workflow", "on, by the partition the Dynamics page opens on: never a state such as place chosen instead");
+  assert.equal(Boxes.outsideNote(P), "6 machines act in both workflows (delivery_sail, pr_watch): outside every box, so no box holds a machine (a machine belongs to one subsystem only)");
+  assert.equal(Boxes.outsideNote(GROUP), "1 machine acts in both groups (a, b): outside every box (a machine belongs to one subsystem only)");
+  assert.equal(Boxes.outsideNote(DECLARED), "", "nothing outside to explain");
+  assert.deepEqual(Boxes.choices(subs).map((x) => x.text), ["workflow · 2 boxes · 0 machines", "place · 2 boxes · 5 machines", "off"], "the same boxes as the Dynamics page, with how many machines they hold");
+  // both boxes drawn side by side, each with its line; the six machines outside them
+  const nodes = ["a", "b", "c", "d", "e", "f"].map((m) => ({ id: "m:" + m, kind: "circle", label: m, mid: m, machine: true }));
+  const r = Boxes.applyMap(nodes, [], P);
+  assert.deepEqual(r.boxes, ["delivery_sail", "pr_watch"]);
+  assert.deepEqual(r.nodes.filter((n) => n.subEmpty).map((n) => [n.box, n.subEmpty.acting.length]), [["delivery_sail", 6], ["pr_watch", 6]]);
+  assert.ok(r.nodes.filter((n) => n.machine).every((n) => n.box == null), "every machine outside");
+  const spots = Boxes.anchors(P);
+  assert.equal(spots.delivery_sail[1], spots.pr_watch[1], "beside each other, in one row");
+  assert.ok(spots.delivery_sail[0] < spots.pr_watch[0]);
+  const four = Boxes.anchors({ groups: ["p", "q", "r", "s"].map((value) => ({ value })) });
+  assert.equal(new Set(Object.values(four).map((a) => a[1])).size, 2, "four boxes in two rows");
+  assert.equal(Boxes.choose(subs, "place").label, "place", "the owner can choose another");
+  assert.equal(Boxes.choose(subs, "off"), null, "or turn them off");
+});
+
+test("a focus on an empty box draws it with its line and the machines acting there as stubs joined to it", () => {
+  const P = { ...GROUP, groups: [...GROUP.groups, { value: "c", machines: [], events: [] }], spanning: [{ machine: "helper", groups: ["a", "c"] }] };
+  const r = Boxes.applyMap(NODES, EDGES, P);
+  const offer = Boxes.offers(P).find((o) => o.title === "c"), F = Focus.normal({ title: "c", ...offer.get() });
+  const fc = Boxes.focusEmpty(Focus.eventMap(r.nodes, r.edges, F), P, "c", r.nodes);
+  assert.ok(fc.nodes.some((n) => n.id === "sub-empty:c"), "the box, with its line");
+  const stub = fc.nodes.find((n) => n.stub);
+  assert.equal(stub.of, "m:helper"); assert.ok(fc.edges.some((e) => e.source === stub.id && e.target === "sub-empty:c"));
+  assert.deepEqual(fc.outside, ["helper"]);
+  assert.ok(!fc.nodes.some((n) => n.machine), "no machine inside the focus");
+  // any other focus is left as Focus.eventMap cut it
+  const Fa = Focus.normal({ title: "a", ...Boxes.offers(P)[0].get() }), cut = Focus.eventMap(r.nodes, r.edges, Fa);
+  assert.equal(Boxes.focusEmpty(cut, P, "a", r.nodes), cut);
+  assert.ok(!cut.nodes.some((n) => n.subEmpty), "another box's line is not in a focus");
 });

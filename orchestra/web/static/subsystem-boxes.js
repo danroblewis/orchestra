@@ -21,9 +21,12 @@
 // - **Declared** (B14, §5): a group a declared subsystem names or gathers carries its ``name``: the
 //   box is titled by it, "named by <who>" (its provenance) and the raw value said on hover; a member
 //   it gathers that the model (or the map) no longer has is drawn as a ghost in its box (``ghosts``).
-// - **The Machines page's event map** (``applyMap``, step 3): a box around the machines of a group;
-//   an event type inside a box when the API placed it there (every machine on it is in the box); a
-//   hand-off between machines of two boxes drawn across, each pair's count between the boxes.
+// - **The Machines page's event map** (``applyMap``, step 3): every group a box, as on the Dynamics
+//   diagram (the owner, 2026-11-02: "The event map should show multiple system boxes as well"), laid
+//   side by side; a box around the machines of its group, one no machine acts only in drawn with its
+//   line inside ("no machine acts only here"), the machines acting there and elsewhere outside it,
+//   named on hover; an event type inside a box when the API placed it there (every machine on it is
+//   in the box); a hand-off between machines of two boxes drawn across, each pair's count between them.
 // - **Offered** partitions (``Orchestra.subsystems.offer``, subsystem-offers.js) are listed after the
 //   ones the API reports, display only, stored nowhere.
 //
@@ -33,9 +36,9 @@
   else root.SubsystemBoxes = factory();
 })(typeof self !== "undefined" ? self : this, function () {
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  // a partition as the control names it: "workflow · 2 boxes · 3 crossing"
-  // (on the event map, a group no machine is in draws no box, so it is not counted)
-  const drawable = (p) => p.groups.filter((g) => !g.events || (g.machines || []).length || ((g.ghosts || {}).machines || []).length).length;
+  // a partition as the control names it: "workflow · 2 boxes · 3 crossing"; every group is a box on
+  // both maps (on the event map one no machine acts only in is drawn empty, its line inside it)
+  const drawable = (p) => p.groups.length;
   const isMap = (p) => p.groups.some((g) => g.events);
   // how many machines a map partition puts in a box
   const boxedMachines = (p) => p.groups.reduce((a, g) => a + (g.machines || []).length, 0);
@@ -59,25 +62,24 @@
     if (wanted === "off") return null;
     return parts.find((p) => p.label === wanted) || parts.find((p) => p.label === (subs && subs.default)) || null;
   }
-  // The map's partition: what the viewer chose, else the API's default (the declared, else the model's
-  // own, the one the Dynamics page opens on), whatever it boxes. Opened by default on a partition that
-  // boxes no machine, the map starts with boxes off and says why (``empty``: that partition).
-  // -> {partition, empty}
-  function mapChoice(subs, wanted, offered = []) {
-    const p = choose(subs, wanted, offered);
-    if (wanted == null && p && p.source !== "declared" && !boxedMachines(p)) return { partition: null, empty: p };
-    return { partition: p, empty: null };
-  }
-  // why no box holds a machine, in the owner's terms: "6 machines act in both workflows (delivery_sail,
-  // pr_watch): no box holds one"
-  function emptyNote(p) {
+  // why the machines in several groups are outside every box, in the owner's terms (a machine belongs
+  // to one subsystem only): "6 machines act in both workflows (delivery_sail, pr_watch): outside every
+  // box"; when no box holds a machine, said so. "" when no machine is in two groups and some box holds one
+  function outsideNote(p) {
     if (!p) return "";
     const by = new Map();
     for (const s of p.spanning || []) { const k = s.groups.join("|"); by.set(k, [...(by.get(k) || []), s.machine]); }
     const said = [...by].map(([k, ms]) => { const gs = k.split("|");
       return `${plural(ms.length, "machine acts", "machines act")} in ${gs.length === 2 ? "both" : gs.length} ${p.label}s (${gs.join(", ")})`; });
-    return `${said.length ? said.join("; ") : `no machine's hypotheses lie in one ${p.label}`}: no box holds one`;
+    if (!said.length) return boxedMachines(p) ? "" : `no machine's hypotheses lie in one ${p.label}: no box holds a machine`;
+    return `${said.join("; ")}: outside every box${boxedMachines(p) ? "" : ", so no box holds a machine"} (a machine belongs to one subsystem only)`;
   }
+  // the machines that act in a group and elsewhere (in two groups or more): outside its box
+  const actingIn = (partition, v) => ((partition && partition.spanning) || []).filter((s) => s.groups.includes(v)).map((s) => s.machine);
+  // the line inside a box no machine acts only in
+  const EMPTY_LINE = "no machine acts only here";
+  const emptyHint = (partition, v, name = (id) => id) => { const ms = actingIn(partition, v).map(name);
+    return ms.length ? `${EMPTY_LINE}: ${ms.join(", ")} ${ms.length === 1 ? "acts" : "act"} here and elsewhere, outside every box` : `${EMPTY_LINE}: no machine acts here`; };
   // a group's title: a declared subsystem's name, else its value
   const titleOf = (g) => (g && g.name) || (g && g.value);
   const titles = (partition) => { const m = new Map(((partition && partition.groups) || []).map((g) => [g.value, titleOf(g)])); return (v) => m.get(v) ?? v; };
@@ -94,7 +96,8 @@
   function hintOf(partition, v) {
     const g = ((partition && partition.groups) || []).find((x) => x.value === v); if (!g) return "";
     const ghosts = g.ghosts ? [...(g.ghosts.stocks || []), ...(g.ghosts.flows || []), ...(g.ghosts.machines || [])] : [];
-    return [namedBy(g), g.declared && partition.source !== "declared" ? `${partition.label} = ${g.value}` : "", g.note || "",
+    const empty = g.events && !(g.machines || []).length && !((g.ghosts && g.ghosts.machines) || []).length;
+    return [namedBy(g), g.declared && partition.source !== "declared" ? `${partition.label} = ${g.value}` : "", g.note || "", empty ? emptyHint(partition, v) : "",
             ghosts.length ? `${plural(ghosts.length, "member", "members")} no longer here, drawn as ghosts` : ""].filter(Boolean).join(" · ");
   }
   const between = (a, b) => `${a} and ${b}`;
@@ -195,16 +198,43 @@
     const at = new Map(outNodes.map((n) => [n.id, n.box]));
     const outEdges = edges.map((e) => { const a = at.get(e.source), b = at.get(e.target);
       return a != null && b != null && a !== b ? { ...e, cross: [a, b], cls: `${e.cls || ""} ng-box-cross` } : e; });
-    const values = partition.groups.map((g) => g.value).filter((v) => outNodes.some((n) => n.box === v));
+    // every group is a box (as on the Dynamics diagram): one with nothing in it holds its muted line
+    for (const g of partition.groups) if (!outNodes.some((n) => n.box === g.value)) outNodes.push(emptyNode(partition, g));
+    const values = partition.groups.map((g) => g.value);
     return { nodes: outNodes, edges: outEdges, boxes: values, pairs: pairsOf(partition),
              outside: { machines: (partition.unassigned.machines || []).slice(), spanning: partition.spanning.map((s) => ({ machine: s.machine, groups: s.groups.slice() })) } };
   }
-  // where each box's machines are pulled on the map: a spot on a ring around the middle (they replace
-  // the announced groups' anchors while boxes are on); {value: [fx, fy]}
+  // a box no machine acts only in: its line, muted, inside it (inert: it opens nothing); the machines
+  // acting there and elsewhere named on hover
+  const emptyNode = (partition, g) => ({ id: "sub-empty:" + g.value, kind: "box", inert: true, cls: "ng-sub-empty", label: EMPTY_LINE, lines: [EMPTY_LINE],
+    color: "transparent", fill: "transparent", textColor: "var(--muted)", box: g.value, subEmpty: { group: titleOf(g), acting: actingIn(partition, g.value) } });
+  // where each box's members are pulled on the map: the boxes side by side in rows filling a wide view
+  // (as the Dynamics diagram packs them), in the partition's order (they replace the announced groups'
+  // anchors while boxes are on); {value: [fx, fy]}
   function anchors(partition) {
     const vs = ((partition && partition.groups) || []).map((g) => g.value);
-    if (vs.length < 2) return Object.fromEntries(vs.map((v) => [v, [0.5, 0.5]]));
-    return Object.fromEntries(vs.map((v, i) => { const a = 2 * Math.PI * i / vs.length - Math.PI / 2; return [v, [0.5 + 0.3 * Math.cos(a), 0.5 + 0.3 * Math.sin(a)]]; }));
+    const cols = Math.min(vs.length, Math.ceil(Math.sqrt(vs.length * 2.1))) || 1, rows = Math.ceil(vs.length / cols) || 1;
+    const at = (i, n) => (n < 2 ? 0.5 : 0.15 + 0.7 * i / (n - 1));
+    return Object.fromEntries(vs.map((v, i) => { const r = Math.floor(i / cols), inRow = r < rows - 1 ? cols : vs.length - r * cols;
+      return [v, [at(i % cols, inRow), at(r, rows)]]; }));
+  }
+  // A focus on a box no machine acts only in (its title pressed): the focus names no machine, so the
+  // map cut to it (focus.js eventMap) is empty; the box is drawn with its line and each machine acting
+  // there (in it and elsewhere) as a grey named stub, joined to the box, as a focus draws what is
+  // outside it. ``fc``: Focus.eventMap's answer; ``nodes``: the map before the cut; ``name(node)``: a
+  // stub's name. -> fc, with the box and the stubs added (unchanged for any other focus)
+  function focusEmpty(fc, partition, title, nodes, { name } = {}) {
+    const g = ((partition && partition.groups) || []).find((x) => titleOf(x) === title);
+    const box = g && nodes.find((n) => n.id === "sub-empty:" + g.value);
+    if (!box) return fc;
+    const ms = actingIn(partition, g.value).map((m) => nodes.find((n) => n.machine && (n.mid || n.id.replace(/^m:/, "")) === m)).filter(Boolean);
+    const stubs = ms.map((n, i) => ({ id: "out:" + n.id, kind: "cloud", stub: true, charge: -120, label: (name && name(n)) || n.label, of: n.id, outside: true,
+      anchor: [0.04, (i + 1) / (ms.length + 1)] }));
+    const edges = stubs.map((s) => ({ id: s.id + ">" + box.id, source: s.id, target: box.id, cls: "ng-focus-cross", dash: "2 4", width: 1, color: "#64748b",
+      vias: [`${s.label} acts here and elsewhere: outside every box`] }));
+    const have = new Set(fc.nodes.map((n) => n.id));
+    return { ...fc, nodes: [...fc.nodes.filter((n) => n.id !== box.id), box, ...stubs.filter((s) => !have.has(s.id))], edges: [...fc.edges, ...edges],
+             outside: [...new Set([...fc.outside, ...stubs.map((s) => s.label)])] };
   }
 
   // a box's title is a focus chip of the core's own offer (B11): one offer per group, titled by its
@@ -217,14 +247,18 @@
                     reason: g.name ? `${g.name}: its box` : `the ${partition.label} ${g.value}: its box` }) }));
   }
 
-  // the phone list's sections (B13): one per group (its stocks, its flows), then "between subsystems"
+  // the phone list's sections (B13): one per group (its stocks, its flows; on the map its machines,
+  // and for a group no machine acts only in, the line saying so), then "between subsystems"
   // with the crossing flows by pair, then "outside every subsystem" with the unassigned stocks and
   // flows and the machines in no group or in several. Ids only; the page names them.
-  function sections(partition) {
+  // ``name(id)``: how a machine is named in an empty group's line
+  function sections(partition, { name } = {}) {
     if (!partition) return null;
     const t = titles(partition);
     return { groups: partition.groups.map((g) => ({ value: g.value, title: titleOf(g), stocks: (g.stocks || []).slice(), flows: (g.flows || []).slice(),
-                                                    machines: (g.machines || []).slice(), events: (g.events || []).slice() })),
+                                                    machines: (g.machines || []).slice(), events: (g.events || []).slice(), acting: actingIn(partition, g.value),
+                                                    // the phone list's line under an empty group's heading (the map's machines only)
+                                                    ...(g.events && !(g.machines || []).length ? { empty: true, line: emptyHint(partition, g.value, name) } : {}) })),
              between: partition.crossing.map((c) => ({ between: c.between, flows: (c.flows || []).slice(), handoffs: (c.handoffs || []).slice(), text: pairText(c, t) })),
              outside: { stocks: (partition.unassigned.stocks || []).slice(), flows: (partition.unassigned.flows || []).slice(), machines: (partition.unassigned.machines || []).slice(),
                         events: (partition.unassigned.events || []).slice(), spanning: partition.spanning.map((s) => ({ machine: s.machine, groups: s.groups.slice() })) } };
@@ -242,5 +276,5 @@
   // the layout key of a partition: each keeps its own saved layout (B12)
   const layoutKey = (base, partition) => (partition ? `${base}|boxes=${partition.label}` : base);
 
-  return { choices, choose, mapChoice, emptyNote, boxedMachines, apply, applyMap, anchors, offers, sections, pairText, spanText, nameOf, titleOf, titles, namedBy, hintOf, fromHash, hashWith, layoutKey };
+  return { choices, choose, outsideNote, emptyHint, EMPTY_LINE, focusEmpty, boxedMachines, apply, applyMap, anchors, offers, sections, pairText, spanText, nameOf, titleOf, titles, namedBy, hintOf, fromHash, hashWith, layoutKey };
 });

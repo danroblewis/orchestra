@@ -151,9 +151,9 @@ function familyBar(d) {
 let BOXES_WANTED = SubsystemBoxes.fromHash(location.hash), MAP_PAIRS = [], MAP_P = null, MAP_BOX_OFFERS = { sig: null, titles: [] };
 let MAP_TITLE = (v) => v;
 const mapOffered = (d) => Orchestra.subsystems.offers().map((o) => SubsystemOffers.eventMap(o, d));
-// opened on a partition that boxes no machine, boxes start off and the note under the map says why
-let MAP_EMPTY = null;
-function mapPartition(d) { const c = SubsystemBoxes.mapChoice(d.subsystems, BOXES_WANTED, mapOffered(d)); MAP_P = c.partition; MAP_EMPTY = c.empty;
+// the partition the Dynamics page opens on (the declared, else the model's own) unless the viewer chose
+// another, every group a box even when every machine is outside them (the note under the map says why)
+function mapPartition(d) { MAP_P = SubsystemBoxes.choose(d.subsystems, BOXES_WANTED, mapOffered(d));
   MAP_TITLE = SubsystemBoxes.titles(MAP_P); return MAP_P; }
 // the core's own focus offers, one per box (its title is the chip); withdrawn when the boxes change
 function offerMapBoxes(P) {
@@ -202,7 +202,7 @@ function eventMap(d0) {
           return { text: t, on, hint: (said ? said + " · " : "") + (on ? "showing only this subsystem: press to show everything" : "a subsystem: press to show only it, the machines outside it as grey named stubs") }; },
         onTitle: (v) => Orchestra.focus.toggle(MAP_TITLE(v)), pairs: () => MAP_PAIRS }, isolateHops: EV_MODE === "machines" ? 1 : 2, isolatedRow: true, resetOnStructure: true,
       onClick: (x, kind) => { if (kind === "node" && x.machine) openMachine(x.mid || x.label); },   // the panel (or, elsewhere, the dialog)
-      tip: (x, kind) => kind === "node" ? (x.subGhost ? `<div class="tt">${esc(x.label)}</div><div class="hint">${esc(x.subGhost.caption)}: gathered into ${esc(x.subGhost.group)}, drawn as a ghost in its box</div>` : x.stub ? `<div class="tt">${esc(x.label)}</div><div class="hint">outside this focus: it ${x.ins && x.outs ? "hands work in and takes it out" : x.ins ? "hands work in" : "takes work out"} · show everything to see it in place</div>` : x.machine ? `<div class="tt">${esc(x.label)}</div><div class="hint">${esc(rhythm(x.mid))} · click for its details${(byMid(x.mid) || {}).logs && byMid(x.mid).logs.length ? " and log" : ""}</div>`
+      tip: (x, kind) => kind === "node" ? (x.subEmpty ? `<div class="tt">${esc(x.subEmpty.group)}</div><div class="hint">${esc(SubsystemBoxes.emptyHint(MAP_P, x.box, (id) => (byMid(id) || {}).name || id))}</div>` : x.subGhost ? `<div class="tt">${esc(x.label)}</div><div class="hint">${esc(x.subGhost.caption)}: gathered into ${esc(x.subGhost.group)}, drawn as a ghost in its box</div>` : x.stub ? `<div class="tt">${esc(x.label)}</div><div class="hint">outside this focus: it ${x.ins && x.outs ? "hands work in and takes it out" : x.ins ? "hands work in" : "takes work out"} · show everything to see it in place</div>` : x.machine ? `<div class="tt">${esc(x.label)}</div><div class="hint">${esc(rhythm(x.mid))} · click for its details${(byMid(x.mid) || {}).logs && byMid(x.mid).logs.length ? " and log" : ""}</div>`
           : x.channel ? `<div class="tt">${esc(x.label)}</div><div class="hint">a channel on another system's bus, known by counts</div><div class="tr"><span>produced</span><b>${perMin(x.channel.out_per_min)}/min</b></div><div class="tr"><span>consumed</span><b>${perMin(x.channel.in_per_min)}/min</b></div>${x.channel.backlog != null ? `<div class="tr"><span>waiting</span><b>${Math.round(x.channel.backlog).toLocaleString()}</b></div>` : ""}`
           : x.unattributed ? `<div class="tt">unattributed</div><div class="hint">counted traffic no source names a machine for</div>`
           : `<div class="tt">${esc((x.labels || [x.label]).join(", "))}</div><div class="tr"><span>last 24h</span><b>${x.cnt}</b></div>`)
@@ -330,12 +330,14 @@ function eventMap(d0) {
   allNodes = bx.nodes.map((n) => (n.box != null ? { ...n, anchor: spots[n.box] } : n)); allEdges = bx.edges; MAP_PAIRS = bx.pairs; offerMapBoxes(P);
   const F = Orchestra.focus.current();
   // a stub's name says which box it leads to
-  if (F) { const fc = Focus.eventMap(allNodes, allEdges, F, { name: (n) => (n.box != null ? `${n.label} · in ${MAP_TITLE(n.box)}` : n.label) }); allNodes = fc.nodes; allEdges = fc.edges;
+  // a focus on a box no machine acts only in: the box, and the machines acting there as stubs
+  if (F) { const name = (n) => (n.box != null ? `${n.label} · in ${MAP_TITLE(n.box)}` : n.label);
+    const fc = SubsystemBoxes.focusEmpty(Focus.eventMap(allNodes, allEdges, F, { name }), P, F.title, allNodes, { name }); allNodes = fc.nodes; allEdges = fc.edges;
     Orchestra.focus.mount($("focus-row"), { shown: fc.inside, total: fc.total, noun: "machines", outside: fc.outside.join(", ") }); }
   else Orchestra.focus.mount($("focus-row"), null);
   GRAPH.render(allNodes, allEdges);
   mapBoxesControl(d0, P);
-  $("ev-boxnote").textContent = MAP_EMPTY ? `boxes off: ${SubsystemBoxes.emptyNote(MAP_EMPTY)} · the boxes control lists every partition` : "";
+  $("ev-boxnote").textContent = SubsystemBoxes.outsideNote(P) ? `${SubsystemBoxes.outsideNote(P)} · hover a box's title for who acts there · the boxes control lists every partition` : "";
   // the panel open on a machine: the highlight rule (intended-machines.js)
   const open = IntendedMachines.opened();
   GRAPH.focus(open ? IntendedMachines.focusSpec(open, drawNodes, drawEdges, EV_MODE) : null);
@@ -476,15 +478,17 @@ function phoneList(d) {
   el.innerHTML = (P ? phoneBoxes(d, P, inF) : "") + `<h3${P ? "" : ' style="margin-top:0"'}>Who hands work to whom</h3>${html || '<div class="muted">no hand-offs observed yet</div>'}`;
 }
 // the phone list with boxes on (B13): a heading per group (a focus chip, as the box's title is) with
-// its machines and the hand-offs inside it; then "between subsystems", the crossing hand-offs by
+// its machines and the hand-offs inside it, one no machine acts only in saying so (and who acts there
+// and elsewhere); then "between subsystems", the crossing hand-offs by
 // pair; then "outside every subsystem", the machines in no group and those in two
 function phoneBoxes(d, P, inF) {
-  const s = SubsystemBoxes.sections(P), C = Orchestra.focus.current(), name = (id) => (byMid(id) || {}).name || id;
+  const name = (id) => (byMid(id) || {}).name || id, s = SubsystemBoxes.sections(P, { name }), C = Orchestra.focus.current();
   const mine = (ids) => ids.filter(inF).map((id) => `<b>${esc(name(id))}</b>`).join(", ");
   const inside = (g) => (d.handoffs || []).filter((h) => h.from !== h.to && g.machines.includes(h.from) && g.machines.includes(h.to) && (inF(h.from) || inF(h.to)));
   const hand = (h) => `<div class="pl"><b>${esc(name(h.from))}</b> → <b>${esc(name(h.to))}</b> <span class="muted">· ${esc(h.via ? `via ${h.via}` : "acted next")} · ${h.count} time${h.count === 1 ? "" : "s"}</span></div>`;
   const head = (g) => `<h3><button type="button" class="focus-chip${C && C.title === g.title ? " on" : ""}" onclick="Orchestra.focus.toggle(this.dataset.v)" data-v="${esc(g.title)}" aria-pressed="${C && C.title === g.title ? "true" : "false"}">${esc(g.title)}</button> <span class="muted" style="text-transform:none;letter-spacing:0">${esc(P.label)}</span></h3>`;
   const groups = s.groups.map((g) => { const ms = mine(g.machines), hs = inside(g).map(hand).join("");
+    if (g.empty) return !C || C.title === g.title ? head(g) + `<div class="pl muted">${esc(g.line)}</div>` : "";
     return ms || hs ? head(g) + (ms ? `<div class="pl">${ms}</div>` : "") + hs : ""; }).join("");
   const between = s.between.map((c) => { const hs = c.handoffs.filter((h) => inF(h.from) || inF(h.to)).map(hand).join(""); return hs ? `<div class="muted" style="margin-top:4px">${esc(c.text)}</div>${hs}` : ""; }).join("");
   const outside = (mine(s.outside.machines) ? `<div class="pl">${mine(s.outside.machines)}</div>` : "")

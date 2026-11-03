@@ -1880,18 +1880,23 @@ partitions (the declared first) carried to the machines by their flow hypotheses
 `between`, the event types whose machines are in several groups; the unassigned machines and event
 types; `spanning`, a machine in two groups; and per pair of groups the hand-offs crossing
 (`count`: pairs of machines, `subjects`). The map's bar has the same "boxes" control, on by the
-default at open; each group is a box around its machines and its event types, pulled toward its own
-spot (replacing the announced groups' ring anchors while on) and kept apart from the others and
-from what is not its own; a hand-off between boxes is drawn across, each pair's count written
-between them ("1 hand-off between a and b · 3 subjects"); spanning and unassigned machines sit
-outside every box; a box title is a focus chip; the map starts with the declared partition, else
-the model's own default (the one the Dynamics page opens on) whatever it boxes; when that boxes no
-machine, boxes start off and the note under the map says why ("6 machines act in both workflows
-(delivery_sail, pr_watch): no box holds one"), and the control lists every partition with how many
-machines it boxes ("place · 1 box · 5 machines"); a change of boxes is laid out as reset lays it out,
+default at open; every group of the partition is a box, the same boxes as the Dynamics diagram
+draws (the owner, 2026-11-02: "The event map should show multiple system boxes as well"), around
+its machines and its event types, the boxes pulled toward spots side by side in rows (replacing the
+announced groups' ring anchors while on) and kept apart from the others and from what is not their
+own; a group no machine acts only in is a box with its title and a muted line inside ("no machine
+acts only here"), the machines acting there and elsewhere outside it and named on hover, its title's
+focus chip drawing the box and those machines as stubs; a hand-off between boxes is drawn across,
+each pair's count written between them ("1 hand-off between a and b · 3 subjects"); spanning and
+unassigned machines sit outside every box; a box title is a focus chip; the map starts with the
+declared partition, else the model's own default (the one the Dynamics page opens on), boxes on
+whatever it boxes, the note under the map saying why the machines in two groups are outside ("6
+machines act in both workflows (delivery_sail, pr_watch): outside every box, so no box holds a
+machine"), and the control names each partition as the Dynamics page does, with how many machines
+it boxes ("workflow · 2 boxes · 0 machines"); a change of boxes is laid out as reset lays it out,
 each partition with its own layout (`machines.<view>|boxes=<label>`) and `#boxes=` in the hash; at
-phone width the list has a heading per group, then "between subsystems", then "outside every
-subsystem". The diagram on a desktop is as tall as
+phone width the list has a heading per group (an empty one saying so and who acts there), then
+"between subsystems", then "outside every subsystem". The diagram on a desktop is as tall as
 the viewport less the header and the legend (600 to 1100 px). A **rediscover now** button reruns discovery in the background (an observation: it
 re-reads the metrics and may save a version, as the host does every 5 minutes). With eras, the
 timeline's era shows the predictions of the change that began it, with their verdicts;

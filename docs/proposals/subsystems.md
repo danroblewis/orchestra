@@ -118,7 +118,10 @@ nesting ("sub 3. ... we dont need them now"). With boxes on:
   when every machine that publishes or listens for it is, and between boxes otherwise. A hand-off
   from a machine in one box to a machine in another is drawn across, and counted on the box's edge
   the same way. Boxes replace the ring anchors of announced groups (`groupAnchors`) while on;
-  spanning and unassigned machines sit outside every box.
+  spanning and unassigned machines sit outside every box. As amended by the owner (2026-11-02: "The
+  event map should show multiple system boxes as well"): every group is a box, as on the Dynamics
+  diagram, side by side, one no machine acts only in drawn with its title and "no machine acts only
+  here" inside, boxes on by the default even when every machine is outside.
 
 **B11. A subsystem is a focus you can also draw as a box.** Focus is a filter to one; boxes are all
 at once. With boxes on, each box's title is a focus chip of the core's own offer
@@ -138,7 +141,9 @@ moves a member and the box follows, never membership. Each partition keeps its o
 **B13. Both widths.** At desktop width, as above. At phone width the Dynamics page shows the model
 as a list (`phoneList`) and the Machines page as lines in groups: with boxes on, the list gains
 one heading per group (its value, its stocks or machines under it), then "between subsystems" with
-the crossing flows or hand-offs by pair, then "outside every subsystem" with the unassigned.
+the crossing flows or hand-offs by pair, then "outside every subsystem" with the unassigned; on
+the Machines page every group keeps its heading, an empty one saying "no machine acts only here"
+and who acts there and elsewhere (the owner, 2026-11-02).
 
 ## 4. Names: nothing said twice
 
