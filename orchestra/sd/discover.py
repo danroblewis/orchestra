@@ -102,6 +102,7 @@ from .live import (
     held_for,
     intersect,
     length,
+    level_steps,
     live_span,
     observed,
     observed_from,
@@ -151,7 +152,7 @@ TWIN_CORR = 0.9            # ... or whose changes correlate this well (one a mom
 TWIN_SCALE = 0.2           # ... and only when the levels themselves match: their spreads within this share of each other
 TWIN_OFFSET = 0.5          # ... and their difference, usually, within this share of the level's own spread (or a step's change)
 TWIN_SIZE = 0.1            # ... or of its size (three orphan files beside a shelf of forty)
-MIN_STEPS = 5              # a level live in fewer steps than this (while every counter was) cannot be balanced
+MIN_STEPS = 5              # a level live in fewer steps than this (while its counters were) cannot be balanced
 MIN_COVER = 0.5            # a level live for less than this share of the window's data is too new (or too broken) to be a stock yet
 DRIVER_COVER = 0.95        # a stock may drive a flow only if it was live for this share of the time the flow is fitted on
 SHORT = "written for only"  # the start of the reason a level too new to be a stock is left out (it stays an input)
@@ -935,6 +936,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         good = r2 >= MIN_R2 or (terms is not None and steps is not None and two_clocks(s, terms)
                                 and timing_limited(s, terms, steps, r2))
         return good and (exact >= FLAG_EXACT or len({v for _, v in s.points}) > 2)
+    set_aside: dict[str, list[str]] = defaultdict(list)   # a counter -> the levels it was live in too few steps of
     never_level: set[str] = set()                # an age, an aggregate or a statistic: no stock, nor a state between moves
     for s in series:
         if s.counter:
@@ -952,13 +954,18 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         if why := too_short(s, since, end, awake):
             left_out[s.key] = why
             continue
-        # only the steps when the level and every counter were live: a level's stale value from
-        # before a silence (its machine was down, then restarted with a cleared state) is not a
-        # change any counter explains, and the fit below cuts the same time
-        steps = balance_steps(s, counters)
+        # only the steps when the level and the counters it may be balanced with were live: a
+        # level's stale value from before a silence (its machine was down, then restarted with a
+        # cleared state) is not a change any counter explains, and the fit below cuts the same
+        # time; a counter live in too few of the level's steps is set aside for it (sd.live.level_steps)
+        steps, unlive = level_steps(s, counters, MIN_STEPS)
+        if unlive:
+            barred[s.key] = barred.get(s.key, set()) | {c.key for c in unlive}
+            for c in unlive:
+                set_aside[c.key].append(s.key)
         if len(steps) < MIN_STEPS:
             live_s = round(len(s.live if s.live is not None else range(n)) * step)
-            left_out[s.key] = (f"live in only {len(steps)} of the {n} steps in the window while every counter was "
+            left_out[s.key] = (f"live in only {len(steps)} of the {n} steps in the window while its counters were "
                                f"(written over {live_s} s so far): too new, or too broken, to balance")
             continue
         moved = sum(1 for i in steps if s.deltas[i])
@@ -974,7 +981,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             # the declared counters (or the place's own moves), on the slowest one's writes when it
             # is slower than the level, where all of them have data
             view = on_writes(s, blocks) if s.blocks is None and (blocks := slowest(given)) else s
-            mine_steps = arrived(steps, [s, *(c for c, _ in given)], start, step)
+            given_steps = sorted(set(steps).intersection(balance_steps(s, [c for c, _ in given])))
+            mine_steps = arrived(given_steps, [s, *(c for c, _ in given)], start, step)
             r2, exact = fit_of(view, given, mine_steps)
             if fits(view, r2, exact, given, mine_steps):
                 s.blocks = view.blocks
@@ -1185,7 +1193,10 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             continue
         events = sum(c.deltas)
         rare = f"a counter of only {events:g} event{'s' if events != 1 else ''}: fewer than {MIN_EVENTS}, too few to carry a balance; it completed none"
-        left_out[c.key] = notes.get(c.key, rare if events < MIN_EVENTS else "a counter no stock's balance needed")
+        unlive = (f"{c.key}: live in fewer than {MIN_STEPS} of the steps of {len(set_aside[c.key])} level"
+                  f"{'s' if len(set_aside[c.key]) != 1 else ''} (live only from its first write, or seldom), so set aside "
+                  "from their balances; the other counters balance them without it") if c.key in set_aside else None
+        left_out[c.key] = notes.get(c.key, unlive or (rare if events < MIN_EVENTS else "a counter no stock's balance needed"))
 
     unit_s = UNITS[time_unit]
     # what a flow's rate may read, by path id: each stock's points and when it was live, and the
