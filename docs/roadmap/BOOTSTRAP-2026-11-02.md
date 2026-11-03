@@ -87,7 +87,9 @@ every git repository and outside `$HOME` (which is itself a repository on this m
 holds the owner's real tokens. `PYTHONDONTWRITEBYTECODE=1` keeps the sessions' Python from
 writing `__pycache__` into the tree.
 
-**Ports.** 8900-8919 only (the web on the first free, then the four fakes). The never-list is
+**Ports.** 8900-8919 only (the web on the first free, then the fakes; from run 4, 8904 is the
+metrics port, 8905-8912 the data generators, 8913-8914 hackriff's staging server and 8919
+Prometheus itself, never chosen for anything else). The never-list is
 refused before anything starts: 8000-8003, 8040, 8050, 8060, 8062, 8070, 8074, 8096, 8101, 8103,
 8105, 8157, 8173, 8300-8319, 8401-8499, 8500-8560, 8600-8660, 8700-8720, 8428, 9090.
 
@@ -104,6 +106,53 @@ addresses; `--stop` and `--reset` left the clone as cloned (`git status --ignore
 and its one tag), no process and no listener in 8900-8919, and the state directory gone. The
 Supervisor's setup path was checked alone (its spec on Opus on `orchestra/supervisor`, the overlay
 `model = "sonnet"`) and reset. No model was called.
+
+**The metrics: a real Prometheus, and hackriff's staging server** (from run 4). The owner
+(2026-11-02): "if we have a prometheus endpoint, then we probably already have a prometheus server
+to use … we should just set up a demo prometheus server with some data generators for it and see
+if it picks that up. that is a better approximation fo what i'll go through when i try this at
+work"; and, for hackriff's own `/metrics`, "we would want it to set up a staging server or
+something". Runs 1-3 had the bridges' fake Prometheus API standing in for Chronosphere on 8904
+(still there behind `bootstrap.sh --fake-metrics`). From run 4 the metrics port is the team's own
+Prometheus: the official 3.15.1 release for darwin/arm64, downloaded once into
+`/Users/Shared/orchestra-e2e/prometheus/3.15.1/` (outside `$HOME` and every repository), its
+sha256 checked against the release's `sha256sums.txt` before it is unpacked, and only its
+`prometheus` binary ever run (re-checked at each start). The harness writes its configuration:
+every 15 s, one job per service with `namespace` as a target label (as Kubernetes discovery
+labels a pod's series), retention one day, data under `~/orchestra-e2e/run/prometheus/` (ignored
+by the harness's repository; `--reset` removes it). It listens on 8919 behind the metrics port:
+8904 passes every request through and logs it (`run/logs/metrics-requests.log`, each request's
+path, `match[]`, `query`, the answer's size, and `unbounded` when it lists or selects the whole
+store), because Prometheus keeps no log of its HTTP API, and that log is how the rubric tells
+whether the Supervisor bounded its selectors. It scrapes small data generators
+(`harness/exporters.py`, 8905-8909, in the fakes' process) that play the week under the names a
+work SRE knows: `http_requests_total{service, route, status}`, the
+`http_request_duration_seconds` histogram, `errors_total{service, kind}`,
+`queue_depth{service, queue}` with `queue_jobs_enqueued_total` and `queue_jobs_processed_total`,
+`worker_busy` of `worker_pool_size`, `deploys_total`, the replicas; the day's load, `hk-api`'s bad
+deploy rolled back on Tuesday, `hk-store`'s stall on Wednesday (its `writes` queue fills for the
+hour); 150 series in `namespace="hackriff"` and 300 of noise in `namespace="other"` on the same
+names. Step 6 names the Prometheus, the namespace label and the jobs; step 1's answer says it
+already scrapes the services, so the Supervisor should read the store before instrumenting the
+code; the rubric asks for queue-depth and busy-workers stocks with flows from the counters, and
+for every request to the store bounded. **hackriff's staging server**: `hk` builds from the clone
+(`cargo build --release --locked -p hk-cli`, default features, no radio driver, the target
+directory `run/hackriff-staging/target` outside the clone; 1 min 51 s cold) and runs as staging on
+8913 over a synthetic replay (no radio, no fixture store; its stream port moved from the default
+8788 to 8914; `HACKRIFF_OPS` unset, so `~/.hackriff-ops` is never read). It is not scraped:
+`hk serve` has no `/metrics` route (`404 {"error":"not found"}`); its numbers are JSON on
+`/api/status` and `/api/health`. The harness probes it at each start and adds the scrape when
+`/metrics` answers in the text format, so the day hackriff grows one, Prometheus reads it.
+The dry run (2026-11-03, after run 3 ended, the Supervisor off): `./bootstrap.sh --no-supervisor`
+brought up the staging server (`/api/health` 200, `/metrics` 404, not scraped), the fakes with the
+five exporters, Prometheus on 8919 behind 8904 and every target `up`; `/api/v1/series` with
+`match[]={namespace="hackriff"}` answered the generated series 17 s after the start (165 with
+Prometheus's own `up` and `scrape_*`; 310 in `other`), and the request log held the three bounded
+listings and nothing unbounded; `--stop` and `--reset` left no listener in 8900-8919, no
+Prometheus or `hk` process, the clone as cloned (`git status --ignored` empty) and
+`run/prometheus/` gone. Before the reset, run 3's live state (the state directory, the
+Supervisor's branch as a bundle, the untracked `.orchestra/` and `orchestra.toml`) was kept in
+`runs/run3/live-before-reset/` for its evaluator. No model was called.
 
 ## The messages
 
