@@ -1806,7 +1806,9 @@ outside the frame beside the stock inside, and the tables filtered the same way;
 hypotheses and the counts stay those of the whole model. **Subsystems** (`sd/subsystems.py`,
 `docs/proposals/subsystems.md`): `/api/dynamics/model` reports `model.subsystems`, every partition
 of the model by a label its stocks' series carry (never who wrote them, nor `simulated` or
-`draft`; two values at least): per value its stocks, the flows inside it and the machines whose
+`draft`; for a stock its instrument's places name, only its scope, the labels its place value does
+not spell, its `label=value` tags, never the place label or the step and state it spells; two
+values at least): per value its stocks, the flows inside it and the machines whose
 hypotheses lie in it; the unassigned; the machines spanning groups; and the flows crossing between
 each pair of groups (`count`, the simulated apart), the default first (the most flows kept inside a
 group, then the fewest crossing). Derived on read, display only, saved in no version. **Boxes**

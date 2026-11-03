@@ -6,7 +6,10 @@ stock, a flow, an equation or a hypothesis.
 - **The labels.** Every label a stock's series carries (its own series, or the level discovery
   keeps for a hidden one, ``evidence["level"]``), except who wrote it (``NOT_IDENTITY``:
   instrument, machine, source, project, instance) and Orchestra's own flags (``simulated``,
-  ``draft``): a series' writer is never a subsystem (AGENTS.md rule 7). A label with fewer than
+  ``draft``): a series' writer is never a subsystem (AGENTS.md rule 7). A stock its instrument's
+  places named (``sd.titles``) is partitioned only by its scope (its ``label=value`` tags), never
+  by its place label or the labels its place spells: a step or a state says where a thing is, not
+  which subsystem it is in (B14: a subsystem's label is the tag the name no longer carries). A label with fewer than
   two values among the stocks partitions nothing and is left out. No label's name is known here
   (rule 1).
 - **A stock** is in the group of its label's value; one whose series carries no such label is
@@ -33,13 +36,22 @@ LEFT = NOT_IDENTITY | {"simulated", "draft"}
 
 
 def labels_of(stock) -> dict[str, str]:
-    """The labels a stock's series carries that may partition it."""
+    """The labels a stock's series carries that may partition it: for a stock its instrument's
+    places named (``evidence["named"] == "places"``, ``sd.titles``), only its scope, the labels its
+    place's value does not spell, recorded as its ``label=value`` tags; never the place label nor
+    the labels its place spells (a step, a state: where a thing is, not which subsystem it is in).
+    For any other stock, every label but the writer's and the flags."""
+    ev = stock.evidence or {}
     if stock.series is not None:
         labels = stock.series.labels or {}
     else:
-        level = (stock.evidence or {}).get("level")
+        level = ev.get("level")
         labels = (level.get("labels") or {}) if isinstance(level, dict) else {}
-    return {k: str(v) for k, v in labels.items() if k not in LEFT}
+    out = {k: str(v) for k, v in labels.items() if k not in LEFT}
+    if ev.get("named") == "places":
+        scope = set(ev.get("tags") or [])
+        out = {k: v for k, v in out.items() if f"{k}={v}" in scope}
+    return out
 
 
 def _hypotheses(model) -> dict[str, list[str]]:

@@ -37,7 +37,14 @@ machine, source, project, instance) and Orchestra's own flags (`simulated`, `dra
 fewer than two values among the stocks partitions nothing and is not offered. The writer labels
 are excluded because a series' writer is never a machine's subsystem any more than it is the
 machine (rule 7: a machine's existence, or its place, is never inferred from who wrote a series).
-No label's name is known to the core (rule 1): `workflow`, `step` and `team` are data.
+No label's name is known to the core (rule 1): `workflow`, `step` and `team` are data. Amended
+2026-11-02 (the coordinator, after the delivery demo opened on a pile's state): a stock its
+instrument's places name (`sd.titles`: a count view's `place` label and the labels its value spells,
+a step and a state) is partitioned only by its **scope**, the labels its place value does not spell,
+recorded as its `label=value` tags (B14: a subsystem's label is the tag the name no longer carries);
+never by its place label or the labels the place spells, which say where a thing is, not which
+subsystem it is in. A hidden stock's level labels are classified the same way (its tags). A stock
+whose series has no count view keeps the rule above.
 
 **B4. Several partitions side by side in the API, one at a time on the page.** The API reports
 every partition the series carry, so the Supervisor and a plugin can compare them; the page draws
