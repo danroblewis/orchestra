@@ -1,4 +1,5 @@
-"""The ops on stocks, effects, flows, marks, targets and event types (§6.3), each applied to a
+"""The ops on stocks, effects, flows, marks, targets and event types (§6.3), and the subsystem's
+declaration (``subsystem_ops``), each applied to a
 layer in place. A machine's and an attachment's are ``machine_ops``. Each op returns the part and
 id it changed; the store gives it its change id and provenance.
 
@@ -25,9 +26,10 @@ from . import machine_ops
 from .checks import IntentError, make_slug, no_derived, only, slug, strings, target, text
 from .consent import consents, guard_owners, may_settle, owner_asks, owners
 from .revise import revise, settle_pending
+from .subsystem_ops import declare_subsystem
 
 GROUP = {"stock": "stocks", "effect": "effects", "flow": "flows", "machine": "machines", "attachment": "attachments",
-         "event": "events"}
+         "event": "events", "subsystem": "subsystems"}
 OPTION = ("key", "title", "how", "kind", "instrument", "simulated", "cost", "caveat", "clearance", "provenance", "commit",
           "first_points", "bearer_env", "system", "series", "url", "command")
 # what an option names, as text: the company system it reads, the series, where and how (machine-design §2.2)
@@ -37,7 +39,7 @@ URL_SECRET = re.compile(r"://[^/@\s]*:[^/@\s]*@")          # user:password@ in a
 
 
 def empty() -> dict:
-    return {"stocks": {}, "effects": {}, "flows": {}, "machines": {}, "events": {}, "attachments": {}, "targets": {},
+    return {"stocks": {}, "effects": {}, "flows": {}, "machines": {}, "events": {}, "attachments": {}, "targets": {}, "subsystems": {},
             "marks": {"expected": {}, "ignored": {}}}
 
 
@@ -295,7 +297,8 @@ def apply_op(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
               "link": lambda: link(layer, op, ctx), "declare_event": lambda: declare_event(layer, op, ctx),
               "record_measurement": lambda: record_measurement(layer, op, ctx),
               "confirm": lambda: confirm(layer, op, ctx, True), "discard": lambda: confirm(layer, op, ctx, False),
-              "retract": lambda: retract(layer, op, ctx)}
+              "retract": lambda: retract(layer, op, ctx),
+              "declare_subsystem": lambda: declare_subsystem(layer, op, ctx)}
     if name in simple:
         return simple[name]()
     if name in machine_ops.OPS:

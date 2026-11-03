@@ -130,10 +130,36 @@ def attach_dynamics(project, out: dict, since, metrics) -> None:
                                                   metrics=metrics, hold=project.config.announce_hold)
         removed_facts(out["model"]["intended"], project.intended.models)
         lend_names(m, out["model"]["intended"])
+        out["model"]["subsystems"] = with_subsystems(project, m.get("subsystems") or {}, model)
     except IntentError as e:
         out["model"]["intended"] = {"error": str(e)}
     except Exception as e:  # noqa: BLE001 - the model is shown without its declared layer
         out["model"]["intended"] = {"error": f"{type(e).__name__}: {e}"}
+
+
+def with_subsystems(project, subs: dict, model) -> dict:
+    """The derived partitions with the declared subsystems (``sd.intended.subsystems``), declared
+    first; the derived alone when the declared layer cannot be read."""
+    from ..sd.intended.subsystems import with_declared
+    try:
+        layer = project.intended.read()["layer"]
+    except Exception:  # noqa: BLE001 - the derived partitions are shown without the declared ones
+        return subs
+    return with_declared(subs, layer, model)
+
+
+def machine_subsystems(project, out: dict, model, announced: dict) -> None:
+    """``/api/machines``'s ``subsystems`` (web/machine_subsystems.py): the model's partitions, the
+    declared first, carried to the machines; then one per announced field. A failure is said in
+    ``subsystems_error`` and never breaks the page."""
+    from ..sd.subsystems import subsystems as derived
+    from .machine_subsystems import subsystems
+    try:
+        base = model if model is not None else Model("none", "none")
+        out["subsystems"] = subsystems(out, with_subsystems(project, derived(base), base), announced)
+    except Exception as e:  # noqa: BLE001 - the map is drawn without boxes
+        out["subsystems"] = {"default": None, "partitions": []}
+        out["subsystems_error"] = f"{type(e).__name__}: {e}"
 
 
 def lend_names(m: dict, block: dict) -> None:

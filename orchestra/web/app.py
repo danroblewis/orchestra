@@ -24,7 +24,7 @@ from .core import CoreProbe
 from .core_explore import Explorer
 from .dynamics import era_eras, model_view, predictions_view
 from .finite_response import FiniteJSONResponse
-from .intended import attach_dynamics, attach_machines
+from .intended import attach_dynamics, attach_machines, machine_subsystems
 from .intended import install as install_intended
 from .machines import model_parts
 from .pages import STATIC, render
@@ -377,6 +377,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
             out["counted_failed"] = bg.counted["failed"]
         declare(out["machines"])
         attach_machines(project, out, bg.model(), bg.measured)   # the declared machines and what measures them (web/intended.py)
+        machine_subsystems(project, out, bg.model(), idx.announced_fields())   # boxes on the map (web/machine_subsystems.py)
         # the host publishes only when it starts and stops; whether it runs is in the runtime record
         # (``active_by``: what the flag was judged by, so no page says "in rhythm" of it)
         up = bool(runtime.hosts(runtime.read(project)))

@@ -898,6 +898,21 @@ it never writes under `<state>/model/intended/` itself (AGENTS.md rule 5 as amen
   effect that a flow, a target, an expected effect or a pending change names is retracted only
   after them, and an event type a machine names only after the machine changes. `via` is
   `plugin`, `endpoint` or `page`; nothing writes as `host` until inference does.
+- **Subsystems** (`docs/proposals/subsystems.md` §5). A plugin may **declare** (with the owner's
+  quote) or **propose** a subsystem, never on its own initiative as the owner:
+  `{"op": "declare_subsystem", "id"?, "name", "note"?, "label", "value"}` names a label's value
+  ("the hotfix line" for `workflow=hotfix`; never a writer's label such as `machine` or
+  `instrument`, nor `simulated` or `draft`); `{"op": "declare_subsystem", "id"?, "name", "note"?,
+  "members": {"stocks": [keys], "flows": [keys], "machines": [ids]}}` gathers parts no label groups
+  (stocks and flows by key, SPEC §4.6; a part in one subsystem at a time). The same id again
+  replaces it (the owner's only with the owner's consent); `retract`, `confirm` and `discard` take
+  `part: "subsystem"`. A declared one titles its box or makes the `declared` partition, drawn
+  first; it binds no series and discovery never reads it. A plugin may also **offer** a partition
+  on the pages, display only and stored nowhere, from its every-page script:
+  `Orchestra.subsystems && Orchestra.subsystems.offer({title, groups: [{title, machines, events,
+  stocks, flows}]})`, each group in a focus's keys (stocks and flows as `{name, labels}` series or
+  their keys); `Orchestra.subsystems.withdraw(title)` takes it back. It is listed after the
+  derived partitions under the boxes control on the Dynamics and Machines pages.
 
 ### 6.7 The whole path, in order
 

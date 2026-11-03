@@ -54,6 +54,8 @@
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeMachine()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
 <script src="/static/focus.js?v={{v}}"></script>
+<script src="/static/subsystem-boxes.js?v={{v}}"></script>
+<script src="/static/subsystem-offers.js?v={{v}}"></script>
 <script src="/static/machine-dialog.js?v={{v}}"></script>
 <script src="/static/evidence-text.js?v={{v}}"></script>
 <script src="/static/netgraph-geometry.js?v={{v}}"></script>
@@ -142,25 +144,68 @@ function familyBar(d) {
   $("ev-bar").innerHTML = `<span class="seg"><button class="${EV_MODE === "machines" ? "on" : ""}" onclick="setMode('machines')" title="one arrow per pair of machines that talk, standing for every event type between them">machines</button><button class="${EV_MODE === "events" ? "on" : ""}" onclick="setMode('events')" title="every event type as a box between the machines that publish and listen for it">with event types</button></span><span id="ev-proto"></span>
     <span class="muted">event families (click to hide or show):</span>` + fams.map((f) => `<button type="button" class="fam ${EV_HIDDEN.has(f) ? "off" : ""}" aria-pressed="${EV_HIDDEN.has(f) ? "false" : "true"}" onclick="toggleFamily('${esc(f)}')" title="${day[f]} in the last 24 h · ${EV_HIDDEN.has(f) ? "hidden: press to show" : "shown: press to hide"}">${esc(f)}.*</button>`).join("");
 }
+// Subsystems' boxes on the map (subsystem-boxes.js, subsystem-offers.js; docs/proposals/subsystems.md
+// B10, B13, B15): on when the page opens, by the default partition (the owner, 2026-11-02: "sub 1. yes,
+// boxes on"); the viewer's choice in the hash ("boxes=<label>", "off"), among what the API reports and
+// what a page extension offers (Orchestra.subsystems.offer), and nothing else
+let BOXES_WANTED = SubsystemBoxes.fromHash(location.hash), MAP_PAIRS = [], MAP_P = null, MAP_BOX_OFFERS = { sig: null, titles: [] };
+let MAP_TITLE = (v) => v;
+const mapOffered = (d) => Orchestra.subsystems.offers().map((o) => SubsystemOffers.eventMap(o, d));
+function mapPartition(d) { MAP_P = SubsystemBoxes.choose(d.subsystems, BOXES_WANTED, mapOffered(d)); MAP_TITLE = SubsystemBoxes.titles(MAP_P); return MAP_P; }
+// the core's own focus offers, one per box (its title is the chip); withdrawn when the boxes change
+function offerMapBoxes(P) {
+  const sig = P ? JSON.stringify([P.label, P.groups]) : "";
+  if (sig === MAP_BOX_OFFERS.sig) return;
+  for (const t of MAP_BOX_OFFERS.titles) Orchestra.focus.withdraw(t);
+  const os = SubsystemBoxes.offers(P);
+  MAP_BOX_OFFERS = { sig, titles: os.map((o) => o.title) };
+  for (const o of os) Orchestra.focus.offer(o);
+}
+// the "boxes" control in the map's bar, beside tidy and reset: off, or one of the partitions
+function mapBoxesControl(d, P) {
+  const host = $("evsvg-host"); if (!host) return;
+  const cs = SubsystemBoxes.choices(d.subsystems, mapOffered(d));
+  let sel = host.querySelector("select.ng-boxes");
+  if (cs.length < 2) { if (sel) sel.remove(); return; }
+  if (!sel) { sel = document.createElement("select"); sel.className = "ctl ng-fit ng-boxes"; sel.style.right = "156px";
+    sel.title = "subsystems drawn as boxes: the model's partitions carried to the machines by their hypotheses, the groups the machines announced, or what a plugin offers; or off";
+    sel.setAttribute("aria-label", "boxes"); sel.onchange = () => setMapBoxes(sel.value); host.appendChild(sel); }
+  const cur = P ? P.label : "off", html = cs.map((c) => `<option value="${esc(c.value)}"${c.value === cur ? " selected" : ""}>boxes: ${esc(c.text)}</option>`).join("");
+  if (sel.dataset.html !== html) { sel.dataset.html = html; sel.innerHTML = html; }
+  sel.value = cur;
+}
+function setMapBoxes(value) {
+  BOXES_WANTED = value;
+  try { history.replaceState(null, "", location.pathname + location.search + SubsystemBoxes.hashWith(value, location.hash)); } catch (e) {}
+  window.LOOPSIG = null; render();
+}
 function eventMap(d0) {
+  // subsystems' boxes (subsystem-boxes.js; docs/proposals/subsystems.md B10): the partition chosen (the
+  // default when none is), each group a box around its machines; they replace the announced groups' anchors
+  const P = mapPartition(d0), gkey = SubsystemBoxes.layoutKey("machines." + EV_MODE, P);
   // hidden families are left out everywhere: the map, its arrows and its cycles
   const d = { ...d0, machines: d0.machines.map((m) => ({ ...m, publishes: m.publishes.filter((p) => !EV_HIDDEN.has(family(p.type))), subscribes: m.subscribes.filter((t) => !EV_HIDDEN.has(family(t))) })) };
   const g = machineGraph(d);
-  if (!$("evsvg-host") || window.EV_DRAWN_MODE !== EV_MODE) {      // each view has a layout of its own
-    window.EV_DRAWN_MODE = EV_MODE; window.LOOPSIG = null;
+  // each view, and each partition's boxes, has a layout of its own (a change of boxes is laid out as reset lays it out)
+  if (!$("evsvg-host") || window.EV_DRAWN_MODE !== gkey) {
+    window.EV_DRAWN_MODE = gkey; window.LOOPSIG = null;
     $("evmap-host").innerHTML = `<div class="evmap"><div class="evbar" id="ev-bar"></div><div id="evsvg-host"></div>
       <div class="legend" id="ev-legend"></div>
       <div class="ng-loops" id="loops"></div></div>`;
-    GRAPH = NetGraph.create($("evsvg-host"), { key: "machines." + EV_MODE, height: 600, isolateHops: EV_MODE === "machines" ? 1 : 2, isolatedRow: true, resetOnStructure: true,
+    GRAPH = NetGraph.create($("evsvg-host"), { key: gkey, height: 600,
+      // a box's title is a focus chip of the core's own offer: pressed, only that subsystem is shown
+      boxes: { title: (v) => { const t = MAP_TITLE(v), C = Orchestra.focus.current(), on = !!(C && C.title === t), said = SubsystemBoxes.hintOf(MAP_P, v);
+          return { text: t, on, hint: (said ? said + " · " : "") + (on ? "showing only this subsystem: press to show everything" : "a subsystem: press to show only it, the machines outside it as grey named stubs") }; },
+        onTitle: (v) => Orchestra.focus.toggle(MAP_TITLE(v)), pairs: () => MAP_PAIRS }, isolateHops: EV_MODE === "machines" ? 1 : 2, isolatedRow: true, resetOnStructure: true,
       onClick: (x, kind) => { if (kind === "node" && x.machine) openMachine(x.mid || x.label); },   // the panel (or, elsewhere, the dialog)
-      tip: (x, kind) => kind === "node" ? (x.stub ? `<div class="tt">${esc(x.label)}</div><div class="hint">outside this focus: it ${x.ins && x.outs ? "hands work in and takes it out" : x.ins ? "hands work in" : "takes work out"} · show everything to see it in place</div>` : x.machine ? `<div class="tt">${esc(x.label)}</div><div class="hint">${esc(rhythm(x.mid))} · click for its details${(byMid(x.mid) || {}).logs && byMid(x.mid).logs.length ? " and log" : ""}</div>`
+      tip: (x, kind) => kind === "node" ? (x.subGhost ? `<div class="tt">${esc(x.label)}</div><div class="hint">${esc(x.subGhost.caption)}: gathered into ${esc(x.subGhost.group)}, drawn as a ghost in its box</div>` : x.stub ? `<div class="tt">${esc(x.label)}</div><div class="hint">outside this focus: it ${x.ins && x.outs ? "hands work in and takes it out" : x.ins ? "hands work in" : "takes work out"} · show everything to see it in place</div>` : x.machine ? `<div class="tt">${esc(x.label)}</div><div class="hint">${esc(rhythm(x.mid))} · click for its details${(byMid(x.mid) || {}).logs && byMid(x.mid).logs.length ? " and log" : ""}</div>`
           : x.channel ? `<div class="tt">${esc(x.label)}</div><div class="hint">a channel on another system's bus, known by counts</div><div class="tr"><span>produced</span><b>${perMin(x.channel.out_per_min)}/min</b></div><div class="tr"><span>consumed</span><b>${perMin(x.channel.in_per_min)}/min</b></div>${x.channel.backlog != null ? `<div class="tr"><span>waiting</span><b>${Math.round(x.channel.backlog).toLocaleString()}</b></div>` : ""}`
           : x.unattributed ? `<div class="tt">unattributed</div><div class="hint">counted traffic no source names a machine for</div>`
           : `<div class="tt">${esc((x.labels || [x.label]).join(", "))}</div><div class="tr"><span>last 24h</span><b>${x.cnt}</b></div>`)
         : `<div>${esc(x.source.label)} → ${esc(x.target.label)}</div>${x.declared && !x.seen ? '<div class="muted">declared: not observed</div>' : ""}${x.vias ? `<div class="muted">${x.vias.map(esc).join("<br>")}</div>` : ""}${x.seen ? `<div class="tr"><span>last 24h</span><b>${x.seen}</b></div>` : ""}` });
   }
   familyBar(d0);
-  const anchors = groupAnchors(d0.machines);
+  const anchors = P ? {} : groupAnchors(d0.machines);
   const nodes = g.nodes.map((n) => n.kind === "event"
     ? { id: n.id, kind: "box", cls: "ng-event", label: n.label, lines: n.labels || [n.label], sub: n.cnt ? n.cnt + "/24h" : "", color: "#6b5313", hop: true, cnt: n.cnt, labels: n.labels }
     : { id: n.id, kind: "circle", label: n.label, mid: n.mid, machine: true, active: n.active, halo: !!byMid(n.mid) && Orchestra.liveness(byMid(n.mid)).cls === "live", color: n.bootstrap ? "var(--panel3)" : mcolor(n.mid || n.label),
@@ -275,11 +320,17 @@ function eventMap(d0) {
   // a focus (focus.js): only the machines it names and what passes among them, the machines outside
   // that hand work in or take it out as grey stubs; everything above was computed on the whole map
   let allNodes = [...drawNodes, ...counted.nodes], allEdges = [...drawEdges, ...counted.edges];
+  // the boxes: machines and the event types inside one in their group's box, pulled toward its spot;
+  // what crosses between boxes drawn across, each pair's count between them
+  const bx = SubsystemBoxes.applyMap(allNodes, allEdges, P), spots = SubsystemBoxes.anchors(P);
+  allNodes = bx.nodes.map((n) => (n.box != null ? { ...n, anchor: spots[n.box] } : n)); allEdges = bx.edges; MAP_PAIRS = bx.pairs; offerMapBoxes(P);
   const F = Orchestra.focus.current();
-  if (F) { const fc = Focus.eventMap(allNodes, allEdges, F); allNodes = fc.nodes; allEdges = fc.edges;
+  // a stub's name says which box it leads to
+  if (F) { const fc = Focus.eventMap(allNodes, allEdges, F, { name: (n) => (n.box != null ? `${n.label} · in ${MAP_TITLE(n.box)}` : n.label) }); allNodes = fc.nodes; allEdges = fc.edges;
     Orchestra.focus.mount($("focus-row"), { shown: fc.inside, total: fc.total, noun: "machines", outside: fc.outside.join(", ") }); }
   else Orchestra.focus.mount($("focus-row"), null);
   GRAPH.render(allNodes, allEdges);
+  mapBoxesControl(d0, P);
   // the panel open on a machine: the highlight rule (intended-machines.js)
   const open = IntendedMachines.opened();
   GRAPH.focus(open ? IntendedMachines.focusSpec(open, drawNodes, drawEdges, EV_MODE) : null);
@@ -416,7 +467,24 @@ function phoneList(d) {
   const group = (title, map) => { const rs = [...map.values()].sort((a, b) => b.n - a.n || a.from.localeCompare(b.from));
     return rs.length ? `<h4 style="margin:8px 0 2px">${esc(title)} <span class="count">${rs.length}</span></h4>${rs.map(line).join("")}` : ""; };
   const html = group("hand-offs observed", handed) + group("acted next (inferred, not announced)", acted) + group("relayed through a hub", relayed);
-  el.innerHTML = `<h3 style="margin-top:0">Who hands work to whom</h3>${html || '<div class="muted">no hand-offs observed yet</div>'}`;
+  const P = mapPartition(d);
+  el.innerHTML = (P ? phoneBoxes(d, P, inF) : "") + `<h3${P ? "" : ' style="margin-top:0"'}>Who hands work to whom</h3>${html || '<div class="muted">no hand-offs observed yet</div>'}`;
+}
+// the phone list with boxes on (B13): a heading per group (a focus chip, as the box's title is) with
+// its machines and the hand-offs inside it; then "between subsystems", the crossing hand-offs by
+// pair; then "outside every subsystem", the machines in no group and those in two
+function phoneBoxes(d, P, inF) {
+  const s = SubsystemBoxes.sections(P), C = Orchestra.focus.current(), name = (id) => (byMid(id) || {}).name || id;
+  const mine = (ids) => ids.filter(inF).map((id) => `<b>${esc(name(id))}</b>`).join(", ");
+  const inside = (g) => (d.handoffs || []).filter((h) => h.from !== h.to && g.machines.includes(h.from) && g.machines.includes(h.to) && (inF(h.from) || inF(h.to)));
+  const hand = (h) => `<div class="pl"><b>${esc(name(h.from))}</b> → <b>${esc(name(h.to))}</b> <span class="muted">· ${esc(h.via ? `via ${h.via}` : "acted next")} · ${h.count} time${h.count === 1 ? "" : "s"}</span></div>`;
+  const head = (g) => `<h3><button type="button" class="focus-chip${C && C.title === g.title ? " on" : ""}" onclick="Orchestra.focus.toggle(this.dataset.v)" data-v="${esc(g.title)}" aria-pressed="${C && C.title === g.title ? "true" : "false"}">${esc(g.title)}</button> <span class="muted" style="text-transform:none;letter-spacing:0">${esc(P.label)}</span></h3>`;
+  const groups = s.groups.map((g) => { const ms = mine(g.machines), hs = inside(g).map(hand).join("");
+    return ms || hs ? head(g) + (ms ? `<div class="pl">${ms}</div>` : "") + hs : ""; }).join("");
+  const between = s.between.map((c) => { const hs = c.handoffs.filter((h) => inF(h.from) || inF(h.to)).map(hand).join(""); return hs ? `<div class="muted" style="margin-top:4px">${esc(c.text)}</div>${hs}` : ""; }).join("");
+  const outside = (mine(s.outside.machines) ? `<div class="pl">${mine(s.outside.machines)}</div>` : "")
+    + s.outside.spanning.filter((x) => inF(x.machine)).map((x) => `<div class="pl"><span>${esc(name(x.machine))}</span> <span class="muted">${esc(SubsystemBoxes.spanText({ ...x, groups: x.groups.map(MAP_TITLE) }))}</span></div>`).join("");
+  return groups.replace("<h3>", '<h3 style="margin-top:0">') + (between ? `<h3>Between subsystems</h3>${between}` : "") + (outside ? `<h3>Outside every subsystem</h3>${outside}` : "");
 }
 function render() { if (DATA) { IntendedMachines.draw(DATA); eventMap(DATA); cards(); phoneList(DATA); } }
 // a style from the declared layer over an edge's own: its class added to the page's
@@ -453,6 +521,7 @@ Orchestra.focus.mount($("focus-row"), null);   // the offers' chips, before the 
 load(); setInterval(load, 5000);
 document.addEventListener("orchestra:machinecards", () => { if (DATA) cards(); });
 document.addEventListener("orchestra:focus", () => { window.LOOPSIG = null; render(); });
+document.addEventListener("orchestra:subsystems", () => { window.LOOPSIG = null; render(); });   // a partition offered or withdrawn
 </script>
 </body>
 </html>

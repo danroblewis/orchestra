@@ -112,6 +112,7 @@
 <script src="/static/app.js?v={{v}}"></script>
 <script src="/static/focus.js?v={{v}}"></script>
 <script src="/static/subsystem-boxes.js?v={{v}}"></script>
+<script src="/static/subsystem-offers.js?v={{v}}"></script>
 <script src="/static/vendor/d3.min.js"></script>
 <script src="/static/netgraph-geometry.js?v={{v}}"></script>
 <script src="/static/netgraph.js?v={{v}}"></script>
@@ -208,7 +209,7 @@ function draw() {
   nodes = bx.nodes; edges = bx.edges; BOX_PAIRS = bx.pairs; offerBoxes(P);
   const F = Orchestra.focus.current();
   // a stub's name says which box it leads to
-  if (F) { const fc = Focus.dynamics(nodes, edges, Focus.resolve(m, F), { name: (n) => (n.box != null ? `${n.label} · in ${n.box}` : n.label) }); nodes = fc.nodes; edges = fc.edges;
+  if (F) { const fc = Focus.dynamics(nodes, edges, Focus.resolve(m, F), { name: (n) => (n.box != null ? `${n.label} · in ${BOX_TITLE(n.box)}` : n.label) }); nodes = fc.nodes; edges = fc.edges;
     Orchestra.focus.mount($("focus-row"), { shown: fc.inside, total: fc.total, noun: "stocks", outside: fc.outside.join(", "), left: fc.left.join(", ") }); }
   else Orchestra.focus.mount($("focus-row"), null);
   window.PLACES = (g.places || []).length;
@@ -240,12 +241,13 @@ function draw() {
         w.onerror = (ev) => { reject(ev.message || ev); w.terminate(); };
         w.postMessage({ nodes, edges, at, fixed });
       }) : null,
-      tip: (x, kind) => x.stub ? `<div class="tt">${esc(x.label)}</div><div class="muted">a stock outside this focus · show everything to see it in place</div>` : Intended.tip(x) ?? (kind === "node" ? (x.sid ? Live.stockSummary(x.sid) : x.place ? `<div class="tt">${esc(x.label)}</div><div class="muted">a place its counters name, kept as no stock${x.why ? `: ${esc(x.why)}` : ""}</div>` : x.fid ? Live.flowSummary(x.fid) : "") : (x.fid ? Live.flowSummary(x.fid) : "")),
-      onClick: (x, kind) => { if (x.stub) return; if (Intended.click(x)) return; if (x.sid) Live.openStock(x.sid); else if (x.fid) Live.openFlow(x.fid); },
+      tip: (x, kind) => x.subGhost ? `<div class="tt">${esc(x.label)}</div><div class="muted">${esc(x.subGhost.caption)}: gathered into ${esc(x.subGhost.group)}, drawn as a ghost in its box</div>` : x.stub ? `<div class="tt">${esc(x.label)}</div><div class="muted">a stock outside this focus · show everything to see it in place</div>` : Intended.tip(x) ?? (kind === "node" ? (x.sid ? Live.stockSummary(x.sid) : x.place ? `<div class="tt">${esc(x.label)}</div><div class="muted">a place its counters name, kept as no stock${x.why ? `: ${esc(x.why)}` : ""}</div>` : x.fid ? Live.flowSummary(x.fid) : "") : (x.fid ? Live.flowSummary(x.fid) : "")),
+      onClick: (x, kind) => { if (x.stub || x.subGhost) return; if (Intended.click(x)) return; if (x.sid) Live.openStock(x.sid); else if (x.fid) Live.openFlow(x.fid); },
       // a box's title is a focus chip: pressed, only that subsystem is shown, the box kept as its frame
-      boxes: { title: (v) => { const C = Orchestra.focus.current(), on = !!(C && C.title === v);
-          return { text: v, on, hint: on ? "showing only this subsystem: press to show everything" : "a subsystem: press to show only it, what crosses its edge as grey named stubs" }; },
-        onTitle: (v) => Orchestra.focus.toggle(v), pairs: () => BOX_PAIRS } }); }
+      // (titled by a declared subsystem's name, "named by <who>" and the raw value said on hover)
+      boxes: { title: (v) => { const t = BOX_TITLE(v), C = Orchestra.focus.current(), on = !!(C && C.title === t), said = SubsystemBoxes.hintOf(BOX_P, v);
+          return { text: t, on, hint: (said ? said + " · " : "") + (on ? "showing only this subsystem: press to show everything" : "a subsystem: press to show only it, what crosses its edge as grey named stubs") }; },
+        onTitle: (v) => Orchestra.focus.toggle(BOX_TITLE(v)), pairs: () => BOX_PAIRS } }); }
     GSIG = sig;
     GRAPH.render(nodes, edges);
     loops(g.nodes, causal, g.places);
@@ -273,7 +275,10 @@ function draw() {
 // the default partition on (the owner, 2026-11-02: "sub 1. yes, boxes on"); the viewer's choice is in
 // the hash ("boxes=<label>", "off"), chosen among what the API reports and nothing else
 let BOXES_WANTED = SubsystemBoxes.fromHash(location.hash), BOX_PAIRS = [], GKEY = null, BOX_OFFERS = { sig: null, titles: [] };
-const boxPartition = (m) => SubsystemBoxes.choose(m && m.subsystems, BOXES_WANTED);
+// the partitions a page extension offers (Orchestra.subsystems.offer, subsystem-offers.js), after the API's
+const offered = (m) => (m ? Orchestra.subsystems.offers().map((o) => SubsystemOffers.dynamics(o, m)) : []);
+let BOX_P = null, BOX_TITLE = (v) => v;
+function boxPartition(m) { BOX_P = SubsystemBoxes.choose(m && m.subsystems, BOXES_WANTED, offered(m)); BOX_TITLE = SubsystemBoxes.titles(BOX_P); return BOX_P; }
 // the core's own focus offers, one per box (its title is the chip); withdrawn when the boxes change
 function offerBoxes(P) {
   const sig = P ? JSON.stringify([P.label, P.groups]) : "";
@@ -285,7 +290,7 @@ function offerBoxes(P) {
 }
 // the "boxes" control in the diagram's bar, beside tidy and reset: off, or one of the partitions
 function boxesControl() {
-  const box = $("diagram"), subs = MODEL && MODEL.subsystems, cs = SubsystemBoxes.choices(subs);
+  const box = $("diagram"), subs = MODEL && MODEL.subsystems, cs = SubsystemBoxes.choices(subs, offered(MODEL));
   let sel = box.querySelector("select.ng-boxes");
   if (cs.length < 2) { if (sel) sel.remove(); return; }
   if (!sel) { sel = document.createElement("select"); sel.className = "ctl ng-fit ng-boxes"; sel.style.right = "156px";
@@ -576,7 +581,7 @@ function phoneBoxes(m, P, fx) {
   const C = Orchestra.focus.current(), mname = (id) => ((m.machines || []).find((x) => x.id === id) || { name: id }).name;
   const head = (v) => `<h3><button type="button" class="focus-chip${C && C.title === v ? " on" : ""}" onclick="Orchestra.focus.toggle(this.dataset.v)" data-v="${esc(v)}" aria-pressed="${C && C.title === v ? "true" : "false"}">${esc(v)}</button> <span class="muted" style="text-transform:none;letter-spacing:0">${esc(P.label)}</span></h3>`;
   const groups = s.groups.map((g) => { const body = g.stocks.map(stockRow).join("") + g.flows.map(flowRow).join("");
-    return body || !C ? head(g.value) + (body || '<div class="muted">nothing with events enough</div>') : ""; }).join("");
+    return body || !C ? head(g.title) + (body || '<div class="muted">nothing with events enough</div>') : ""; }).join("");
   const between = s.between.map((c) => { const body = c.flows.map(flowRow).join(""); return body ? `<div class="muted" style="margin-top:4px">${esc(c.text)}</div>${body}` : ""; }).join("");
   const outside = s.outside.stocks.map(stockRow).join("") + s.outside.flows.map(flowRow).join("")
     + s.outside.spanning.map((x) => `<div class="pl"><span>${esc(mname(x.machine))}</span><span class="muted">${esc(SubsystemBoxes.spanText(x))}</span></div>`).join("");
@@ -891,6 +896,7 @@ function fromHash() {
 window.addEventListener("hashchange", () => { if (/^[sxf]:/.test(Focus.hashId(location.hash))) fromHash(); });
 // a focus set or cleared: the diagram and the tables again (focus.js)
 document.addEventListener("orchestra:focus", () => { if (MODEL) { paint("diagram", draw); paint("tables", tables); } });
+document.addEventListener("orchestra:subsystems", () => { if (MODEL) { paint("diagram", draw); paint("tables", tables); } });   // a partition offered or withdrawn
 </script>
 <script src="/static/dynamics-live.js?v={{v}}"></script>
 </body>

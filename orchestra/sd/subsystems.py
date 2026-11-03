@@ -67,6 +67,16 @@ def partition(model, label: str) -> dict | None:
     values = sorted(set(group.values()))
     if len(values) < 2:
         return None
+    return place(model, label, group, values)
+
+
+def place(model, label: str, group: dict[str, str], values: list[str], flows: dict[str, str] | None = None,
+          machines: dict[str, str] | None = None) -> dict:
+    """The partition ``label`` of the model whose stocks are in the groups ``group`` says (stock id
+    -> value; ``values`` in order): flows by their ends, machines by their hypotheses (B7, B9).
+    ``flows`` and ``machines`` (id -> value) are placed as given instead: what a declared subsystem
+    gathers by name (sd/intended/subsystems.py)."""
+    flows, machines = flows or {}, machines or {}
     groups = {v: {"value": v, "stocks": [], "flows": [], "machines": []} for v in values}
     unassigned = {"stocks": [s.id for s in model.stocks if s.id not in group], "flows": [], "machines": []}
     for s in model.stocks:
@@ -78,7 +88,9 @@ def partition(model, label: str) -> dict | None:
     for f in model.flows:
         ends = [None if e is None else group.get(e, "") for e in (f.src, f.dst)]   # None: outside; "": unassigned
         inner = {e for e in ends if e}
-        if "" in ends:
+        if f.id in flows:                                  # gathered by name: in its group, whatever its ends
+            inner = {flows[f.id]}
+        if f.id not in flows and "" in ends:
             unassigned["flows"].append(f.id)
             flow_groups[f.id] = inner
         elif len(inner) == 1:
@@ -87,6 +99,9 @@ def partition(model, label: str) -> dict | None:
             flow_groups[f.id] = {g}
             if None not in ends and not (f.evidence or {}).get("simulated"):
                 joined += 1
+        elif not inner:
+            unassigned["flows"].append(f.id)
+            flow_groups[f.id] = set()
         else:
             pair = tuple(sorted(inner))
             c = crossing.setdefault(pair, {"between": list(pair), "flows": [], "count": 0, "simulated": 0, "simulated_flows": []})
@@ -99,13 +114,17 @@ def partition(model, label: str) -> dict | None:
     spanning = []
     hyps = _hypotheses(model)
     for m in model.machines:
-        gs = sorted({g for fid, ms in hyps.items() if m.id in ms for g in flow_groups.get(fid, ())})
+        gs = [machines[m.id]] if m.id in machines else sorted({g for fid, ms in hyps.items() if m.id in ms for g in flow_groups.get(fid, ())})
         if len(gs) == 1:
             groups[gs[0]]["machines"].append(m.id)
         elif gs:
             spanning.append({"machine": m.id, "groups": gs})
         else:
             unassigned["machines"].append(m.id)
+    known = {m.id for m in model.machines}
+    for mid, v in machines.items():                        # gathered by name, not (yet) in the model
+        if mid not in known:
+            groups[v]["machines"].append(mid)
     cross = sorted(crossing.values(), key=lambda c: (-c["count"], c["between"]))
     return {"label": label, "groups": list(groups.values()), "unassigned": unassigned, "crossing": cross,
             "spanning": spanning, "joined": joined, "crossed": sum(c["count"] for c in cross),

@@ -1,6 +1,6 @@
 # Proposal: subsystems, boxes in the one map
 
-Status: proposal, 2026-11-02. Steps 1 and 2 (§7) built (step 2 for the Dynamics diagram; the Event Map's boxes go with step 3); step 3 not built. The owner answered §8 the same day (§8). It answers the
+Status: proposal, 2026-11-02. Steps 1, 2 and 3 (§7) built. The owner answered §8 the same day (§8). It answers the
 owner's words of 2026-11-02 (`docs/roadmap/GOAL-2026-11-02-second-half.md`, the 21:49Z entry) and
 sits beside D2a, the names proposal in flight (scopes and nouns become tags beside a place-only
 name). No invariant of `AGENTS.md` changes; SPEC §10 gains a paragraph per step. This
@@ -216,6 +216,21 @@ attention). No page control that declares one. No partition by an event's `data`
    crossing); the op's checks and provenance in `tests/unit` beside the intended model's; a Node
    test that an offered partition is listed and drawn and stored nowhere; the Workflows plugin's
    offer tested in its own repository.
+
+   As built (2026-11-02): `web/machine_subsystems.py` (`/api/machines` `subsystems`: groups with
+   `machines` and `events`, `unassigned` machines and events, `between` event types, `crossing`
+   per pair with its `handoffs`, `count` the pairs of machines and `subjects`, `spanning`; each
+   partition's `source`: `labels`, `declared` or `announced`); `sd/subsystems.place` (a partition
+   from any assignment, the declared one's too); `sd/intended/subsystem_ops.py` (the op) and
+   `sd/intended/subsystems.py` (`with_declared`: the gathering partition `declared` first, a
+   name on the group it names, ghosts by key); `static/subsystem-offers.js`
+   (`Orchestra.subsystems`); `subsystem-boxes.js` `applyMap`, `anchors`, names and ghosts;
+   `NetGeometry.separateBoxes` and a box force for the force-laid map. A box's "drawer" is its
+   title's hover: who named it, the raw value, its note, its ghosts. Not done: the Workflows
+   plugin's offer (one group per definition from `pages/focus.py`, its machines and event types,
+   its piles' series), left to that repository; `tests/layout` has no saved machines graph with
+   groups (the map is laid out by d3's forces, not ELK; `NetGeometry.separateBoxes` is tested in
+   `tests/subsystems/map-boxes.test.mjs` instead).
 
 ## 8. Questions for the owner
 

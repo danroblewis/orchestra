@@ -53,6 +53,38 @@ const NetGeometry = (() => {
     }
     return out;
   }
+  // Subsystems' boxes kept whole on a force-laid map (the Machines page's event map; the Dynamics
+  // diagram uses sd-layout.js's ``separate``): two boxes that overlap (with ``gap``) are pushed apart
+  // as wholes, and a node of no box (or another's) inside a box is pushed out by its nearest side.
+  // ``k`` (0..1): how much of each push is made at once (a fraction on every tick of the forces, the
+  // whole at the end). Nodes held where they are (``fx`` set) do not move. Moves x, y in place; true
+  // when it moved one.
+  function separateBoxes(nodes, gap = 40, k = 1) {
+    const hulls = Object.entries(boxesOf(nodes));
+    if (!hulls.length) return false;
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    let moved = false;
+    const shift = (ids, dx, dy) => { for (const id of ids) { const n = byId.get(id); if (n && n.fx == null) { n.x += dx * k; n.y += dy * k; } } };
+    for (let i = 0; i < hulls.length; i++) for (let j = i + 1; j < hulls.length; j++) {
+      const [, A] = hulls[i], [, B] = hulls[j];
+      const ox = Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0) + gap, oy = Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0) + gap;
+      if (ox <= 0 || oy <= 0) continue;
+      moved = true;
+      if (ox < oy) { const s = Math.sign((B.x0 + B.x1) - (A.x0 + A.x1)) || 1; shift(A.members, -s * ox / 2, 0); shift(B.members, s * ox / 2, 0); }
+      else { const s = Math.sign((B.y0 + B.y1) - (A.y0 + A.y1)) || 1; shift(A.members, 0, -s * oy / 2); shift(B.members, 0, s * oy / 2); }
+    }
+    for (const n of nodes) {
+      if (n.x === undefined || !isFinite(n.x) || n.fx != null || n.kind === "cloud") continue;
+      const z = size(n), hw = (z.r || z.w / 2) + gap / 2, hh = (z.r || z.h / 2) + gap / 2;
+      for (const [v, H] of hulls) {
+        if (n.box != null && String(n.box) === v) continue;
+        if (!(n.x - hw < H.x1 && H.x0 < n.x + hw && n.y - hh < H.y1 && H.y0 < n.y + hh)) continue;
+        const opts = [[H.x0 - (n.x + hw), 0], [H.x1 - (n.x - hw), 0], [0, H.y0 - (n.y + hh)], [0, H.y1 - (n.y - hh)]].sort((a, b) => Math.abs(a[0] + a[1]) - Math.abs(b[0] + b[1]));
+        n.x += opts[0][0] * k; n.y += opts[0][1] * k; moved = true;
+      }
+    }
+    return moved;
+  }
   // where each tethered node goes: just outside the frame, level with the node it belongs to, on
   // the side whose stub crosses the fewest lines and boxes (with ``edges``; nearest side first among
   // equals, so with no edges it is simply the nearest side); several on one side of one node sit
@@ -211,6 +243,6 @@ const NetGeometry = (() => {
     return dragging ? "defer" : "reset";
   }
 
-  return { size, edgePoint, onRender, frameOf, boxesOf, BOX_PAD, BOX_TITLE, BOX_GAP, tetherPlaces, labelSize, placeLabels, tagBoxes, isolatedRows, fitView, boundsOf, viewHeight, PAD, GAP, DESK_K, VIEW_MIN, VIEW_MAX };
+  return { size, edgePoint, onRender, frameOf, boxesOf, separateBoxes, BOX_PAD, BOX_TITLE, BOX_GAP, tetherPlaces, labelSize, placeLabels, tagBoxes, isolatedRows, fitView, boundsOf, viewHeight, PAD, GAP, DESK_K, VIEW_MIN, VIEW_MAX };
 })();
 if (typeof module === "object" && module.exports) module.exports = NetGeometry;
