@@ -62,6 +62,8 @@ def entries(doc: TOMLDocument, parts: list[str], create: bool = False):
     (``[gate]`` with ``unit = "make test"``): an entry cannot be added to it or found in it."""
     holder = table(doc, parts[:-1], create)
     key, where = parts[-1], ".".join(parts)
+    if holder is not None and key in holder and holder[key] == []:
+        del holder[key]                                         # ``key = []``: no entries (as an emptied array was written)
     if holder is None or key not in holder:
         if not create:
             return None
@@ -156,7 +158,10 @@ def remove(text: str, parts: list[str], name: str) -> str:
         except tomllib.TOMLDecodeError:
             pass
     doc = tomlkit.parse(text)                                   # an unusual layout: let tomlkit remove it
-    del entries(doc, parts)[i]
+    items = entries(doc, parts)
+    del items[i]
+    if not items:                                               # the last: the array goes (tomlkit would write ``key = []``)
+        del table(doc, parts[:-1], create=False)[parts[-1]]
     return tomlkit.dumps(doc)
 
 
