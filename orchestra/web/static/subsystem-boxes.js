@@ -71,7 +71,7 @@
     for (const s of p.spanning || []) { const k = s.groups.join("|"); by.set(k, [...(by.get(k) || []), s.machine]); }
     const said = [...by].map(([k, ms]) => { const gs = k.split("|");
       return `${plural(ms.length, "machine acts", "machines act")} in ${gs.length === 2 ? "both" : gs.length} ${p.label}s (${gs.join(", ")})`; });
-    if (!said.length) return boxedMachines(p) ? "" : `no machine's hypotheses lie in one ${p.label}: no box holds a machine`;
+    if (!said.length) return boxedMachines(p) ? "" : `no machine's guessed flows lie in one ${p.label}: no box holds a machine`;
     return `${said.join("; ")}: outside every box${boxedMachines(p) ? "" : ", so no box holds a machine"} (a machine belongs to one subsystem only)`;
   }
   // the machines that act in a group and elsewhere (in two groups or more): outside its box

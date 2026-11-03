@@ -1305,7 +1305,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         span = live_span(ser, end) if ser is not None else []
         st.evidence["live_from"] = max(since, span[0][0]) if span else since
     # what a machine is (a program, a service, a person) is not in the metrics: the model says "machine"
-    machines = [Machine(m, m, "machine", "Seen on the bus. Associated with these flows as hypotheses (sd.attribute): "
+    machines = [Machine(m, m, "machine", "Seen on the bus. Guessed from timing on these flows (sd.attribute): "
                         + "; ".join(sorted({h["by"] for f in flows for h in f.evidence["machines"]["hypotheses"] if h["machine"] == m})) + ".",
                         sorted(set(by_machine[m])), [ref(e) for e in on_bus if writer_of(e) == m
                                                 and {"type": e.labels.get("type"), "source": m} in events_of_machine[m]])

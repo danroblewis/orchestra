@@ -495,7 +495,7 @@ draft = true</pre></div></div>
             ${RUNNERS.map(([r, up, q, s]) => `<tr><td class="num">${r}</td><td><span class="mk-live ${up ? "" : "mk-live-zero"}"></span> measured</td><td class="num">${up}</td><td class="num">${q}</td><td class="num">${ago(s)} ago</td></tr>`).join("")}</table>
           <div class="muted mk-note">measured means points are arriving, not that it is up: runner-3 reports <span class="ty">sail_up = 0</span></div>
         </div>
-        <h4>Flows (hypotheses)</h4><div class="muted">none hypothesised yet: a machine that is only measured gets none; its route to the model is an expected effect</div>
+        <h4>Flows (guessed from timing)</h4><div class="muted">none guessed yet: a machine that is only measured gets none; its route to the model is an expected effect</div>
         <h4>Log</h4><div class="muted">not readable: it runs outside the repository and the state directory</div>
         <div class="muted mk-foot">Measured, never heard: no "last seen", never "active". The attachment changes no point and no model. Every field is read-only: ${ask()} to change any of it.</div>`;
     }

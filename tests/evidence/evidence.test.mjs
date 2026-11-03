@@ -13,9 +13,9 @@ test("a stock whose behaviour has a null error renders, with — for the missing
   assert.equal(Evidence.trust({}), "");
 });
 
-test("a stock balanced by construction says it holds by construction and proves nothing, never 0.00 very low", () => {
+test("a stock balanced by construction says it is exact by definition and proves nothing, never 0.00 very low", () => {
   const s = { evidence: { trust: { kind: "by_construction", score: 0, level: "very low", weakest: "evidence" } } };
-  assert.match(Evidence.trustCell(s), /holds by construction: its level is the count of its own moves, so the balance proves nothing/);
+  assert.match(Evidence.trustCell(s), /exact by definition: its level and its moves are one count from one record, so the balance proves nothing/);
   assert.doesNotMatch(Evidence.trustCell(s), /D33|reporters/);
   assert.doesNotMatch(Evidence.trustCell(s), /0\.00|very low/);
   assert.doesNotMatch(Evidence.trust(s.evidence), /0\.00|very low/);

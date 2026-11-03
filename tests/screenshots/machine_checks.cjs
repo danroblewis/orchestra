@@ -98,7 +98,7 @@ const CHECKS = {
   },
   E4: () => {
     const f = [], side = document.getElementById("im-side"), t = side.textContent;
-    for (const s of ["SAIL", "declared, never heard", "confirmed by owner (quoted), per supervisor", "none heard on the bus", "Measured by", "company_prom", "runner-3", "Flows (hypotheses)", "not readable"])
+    for (const s of ["SAIL", "declared, never heard", "confirmed by owner (quoted), per supervisor", "none heard on the bus", "Measured by", "company_prom", "runner-3", "Flows (guessed from timing)", "not readable"])
       if (!t.includes(s)) f.push(`panel lacks "${s}"`);
     if (side.querySelectorAll("table.im-meas tr").length !== 4) f.push("the measured table has not three rows");
     const node = document.querySelector('g.ng-node[data-id="m:sail"]');

@@ -166,7 +166,7 @@ def test_a_count_of_reporters_balanced_by_its_own_turnover_is_marked_and_split_b
     assert ev["trust"]["kind"] == "by_construction" and ev["trust"]["score"] == 0.0
     assert m.discovery["by_construction"] == [st.id] and m.discovery["stocks"] == 0, "not counted as a discovered stock"
     why = m.discovery["left_out"]['http_requests_pods{code="404",instrument="lab"}']
-    assert "by construction" in why and "code" in why
+    assert "exact by definition" in why and "code" in why
 
 
 def test_cpu_seconds_never_balance_a_queue_of_messages():
