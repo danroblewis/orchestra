@@ -390,20 +390,24 @@ const Live = (() => {
       const s = sim.stocks[l.id], [tested, beyond] = Projection.bands(s);
       extra.push({ label: `${l.label}, projected`, points: (sim.projection || {})[l.id] || [], color: l.color, dash: "5 3", nokey: true });
       if (tested.length > 1) extra.push({ label: `${l.label}, trusted`, points: [], band: tested, color: l.color, nokey: true, bandOpacity: 0.2 });
-      if (beyond.length > 1) extra.push({ label: `${l.label}, beyond what was tested`, points: [], band: beyond, color: l.color, nokey: true, bandOpacity: 0.08 });
+      if (beyond.length > 1) extra.push({ label: `${l.label}, beyond what was tested`, points: [], band: beyond, color: l.color, nokey: true, bandOpacity: 0.035 });
     }
     // the chart runs on to the horizon only when something is projected; a reason is said right of
     // now then, and left of it when the chart stops at now
     const ahead = extra.length > 0;
+    // the y axis spans what was measured and the central projections; a band wider than that is cut at the top
+    const central = [...shown.flatMap((l) => l.points), ...extra.flatMap((l) => l.points)].map((p) => p[1]);
+    const yMax = central.length ? Math.max(...central) * 1.5 + 1 : null;
+    const cut = yMax != null && extra.some((l) => (l.band || []).some((r) => r[2] > yMax));
     const notes = [...ends.values()].map((g) => ({ t: g[0].t, v: g[0].v, text: g.length > 1 ? `${g[0].why} (${g.length} stocks)` : g[0].why, anchor: ahead ? "start" : "end", color: g.length > 1 ? null : g[0].color }));
     // keep each stock's colour when others are hidden: pad hidden lines as empty
     el.innerHTML = shown.length ? Charts.line([...lines.map((l) => (HIDDEN.has(l.id) ? { label: l.label, points: [], color: l.color } : l)), ...extra],
       { W: el.clientWidth || 900, H: 220, integer: shown.every((l) => l.points.every((p) => Number.isInteger(p[1]))), notes,
-        ...(ahead ? { now: sim.now, range: [all[0][0], sim.now + (sim.horizon || horizon() * 60)], marks: [{ t: sim.now, label: "now" }] } : {}) })
+        ...(ahead ? { yMax: cut ? yMax : null, now: sim.now, range: [all[0][0], sim.now + (sim.horizon || horizon() * 60)], marks: [{ t: sim.now, label: "now" }] } : {}) })
       : '<div class="muted">Every stock is hidden; click one above.</div>';
     el.querySelectorAll(".ckeys").forEach((k) => k.remove());
     const key = document.getElementById("hist-proj-key");
-    if (key) key.innerHTML = ahead ? `from now: dashed, the equations' projection if nothing changes; shaded, the band its held-out runs earned (lighter past how far ahead they were tested)` : "";
+    if (key) key.innerHTML = ahead ? `from now: dashed, the equations' projection if nothing changes; shaded, the band its held-out runs earned (lighter past how far ahead they were tested)${cut ? "; a band wider than the chart is cut at its top" : ""}` : "";
   }
   function toggle(id) { HIDDEN = HIDDEN || new Set(); HIDDEN.has(id) ? HIDDEN.delete(id) : HIDDEN.add(id); try { localStorage.setItem("orchestra.dyn.hidden", JSON.stringify([...HIDDEN])); } catch (e) {} chart(); }
 
