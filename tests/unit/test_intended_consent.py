@@ -145,7 +145,7 @@ def test_the_owners_redeclaration_of_a_proposed_flow_declares_it(tmp_path):
     assert s.read()["layer"]["flows"]["ab"]["state"] == "proposed"
     got = s.apply([{"op": "declare_flow", "id": "ab", "from": "a", "to": "b", "name": "a to b"}], OWNER)
     f = s.read()["layer"]["flows"]["ab"]
-    assert f["state"] == "declared" and f["name"] == "a to b" and f["confirmed"] == {"by": "owner", "change": got["changes"][0]["change"]}
+    assert f["state"] == "declared" and f["name"] == "a to b" and f["confirmed"] == {"by": "owner", "via": "plugin", "source": "supervisor", "change": got["changes"][0]["change"]}
     with pytest.raises(IntentError, match="already declared"):
         s.apply([{"op": "declare_flow", "id": "ab", "from": "a", "to": "b"}], SUPERVISOR)
 

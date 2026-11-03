@@ -164,7 +164,7 @@ def test_an_owners_revision_of_a_stock_applies_at_once_and_redeclaring_a_propose
     assert s.read()["layer"]["stocks"]["bugs"]["state"] == "proposed"
     got = s.apply([{"op": "declare_stock", "id": "bugs", "name": "Bugs", "unit": "bugs"}], OWNER)
     b = s.read()["layer"]["stocks"]["bugs"]
-    assert b["state"] == "declared" and b["unit"] == "bugs" and b["confirmed"] == {"by": "owner", "change": got["changes"][0]["change"]}
+    assert b["state"] == "declared" and b["unit"] == "bugs" and b["confirmed"] == {"by": "owner", "via": "plugin", "source": "supervisor", "change": got["changes"][0]["change"]}
     s.apply([{"op": "declare_stock", "id": "bugs", "name": "Bugs", "unit": "defects"}], OWNER)
     assert s.read()["layer"]["stocks"]["bugs"]["unit"] == "defects"
 
