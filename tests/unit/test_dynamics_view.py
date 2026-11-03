@@ -20,7 +20,8 @@ def test_no_model_yet_comes_with_the_left_out_list(tmp_path, monkeypatch):
     out = model_view(project)
     assert not out["ok"] and out["error"] == "no model" and out["text"].startswith("There is no model yet")
     assert out["discovery"] == {"left_out": {"disk_free_bytes{machine=\"telemetry\"}": "no counters balance it"},
-                                "series": 1, "step": 5.0, "start": 100.0, "end": 3700.0, "min_r2": 0.9, "looked_at": 1, "kept": []}
+                                "series": 1, "step": 5.0, "start": 100.0, "end": 3700.0, "min_r2": 0.9, "looked_at": 1, "kept": [],
+                                "fitted": {"window_s": 3600.0, "step_s": 5.0, "widened_from_s": None}}
     # the page points at its own button, not a command, and says when the host last looked
     assert "rediscover now" in out["hint"] and "orchestra sd discover" not in out["text"] and out["as_of"] is not None
 
@@ -110,3 +111,23 @@ def test_no_model_says_it_looks_again_only_while_a_host_runs(tmp_path, monkeypat
     monkeypatch.setenv("ORCHESTRATOR_HOME", str(tmp_path / "home"))
     runtime.update(project, lambda d: d.setdefault("hosts", {}).update({"1": runtime.me()}))
     assert dynamics.host_running(project)
+
+
+def test_the_page_is_told_the_window_and_step_discovery_was_fitted_over(tmp_path, monkeypatch):
+    """UC-K: the page said "60 min · 30 s steps" (orchestra.toml) of a model fitted over 7 days at
+    84-minute steps, the window widened to the history the source holds. The model's discovery
+    block says what was fitted (``fitted``), and the window it was widened from."""
+    from orchestra.sd.model import Stock
+
+    monkeypatch.setenv("ORCHESTRATOR_HOME", str(tmp_path / "home"))
+    (tmp_path / "repo").mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path / "repo", check=True)
+    project = init_project(tmp_path / "repo")
+    end = 1793741040.0
+    found = Model("system", "The system", stocks=[Stock("q", "queue depth")],
+                  discovery={"left_out": {}, "series": 1, "step": 5040.0, "start": end - 604800, "end": end, "min_r2": 0.9,
+                             "window_s": 604800.0, "step_s": 5040.0, "strategy": "kalman_lna",
+                             "history": {"sources_s": {"kube": 604800}, "from_s": 3600.0, "why": "the sources hold 7 d"}})
+    ModelStore.for_state(project.state_dir).write_discovery(found)
+    out = model_view(project)
+    assert out["ok"] and out["model"]["discovery"]["fitted"] == {"window_s": 604800.0, "step_s": 5040.0, "widened_from_s": 3600.0}

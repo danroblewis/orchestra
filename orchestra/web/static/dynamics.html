@@ -135,6 +135,7 @@
 <script src="/static/intended-panel.js?v={{v}}"></script>
 <script src="/static/intended-drawers.js?v={{v}}"></script>
 <script src="/static/left-out.js?v={{v}}"></script>
+<script src="/static/discovery-window.js?v={{v}}"></script>
 <script src="/static/evidence-text.js?v={{v}}"></script>
 <script src="/static/flow-check.js?v={{v}}"></script>
 <script src="/static/projection.js?v={{v}}"></script>
@@ -403,7 +404,7 @@ function loops(nodes, causal, places = []) {
 // were left out at once (by the reasons the record gives, LeftOut.early) and the rest considered
 function lookedAt(d) {
   const n = d.looked_at ?? d.series, early = n - (d.series ?? n);
-  return `Looked at ${n} series over ${ago(d.end - d.start)}, in ${d.step} s steps` + (early > 0 ? `: ${early} left out at once (${LeftOut.early(d.left_out, early)}), ${d.series} considered.` : ".");
+  return `Looked at ${n} series over ${DiscoveryWindow.dur(d.end - d.start)}, in ${DiscoveryWindow.dur(d.step)} steps` + (early > 0 ? `: ${early} left out at once (${LeftOut.early(d.left_out, early)}), ${d.series} considered.` : ".");
 }
 // the series a discovery kept (not left out), so "left out N of M" accounts for every one
 function keptNote(d, lo) {
@@ -415,9 +416,9 @@ function keptNote(d, lo) {
 }
 // the window and the step, said plainly: what they are and what they decide
 function plainWindow(windowS, stepS) {
-  return `The <b>window</b> is how far back discovery reads: the last ${ago(windowS)} of every series. A stock has to change, and a flow `
+  return `The <b>window</b> is how far back discovery reads: the last ${DiscoveryWindow.dur(windowS)} of every series. A stock has to change, and a flow `
     + `has to count, often enough inside it to be told from chance, so a slow system needs a long window. The <b>step</b> is how finely it `
-    + `compares them: every ${stepS} s it asks how much each level changed and how much each counter counted. A state an item passes `
+    + `compares them: every ${DiscoveryWindow.dur(stepS)} it asks how much each level changed and how much each counter counted. A state an item passes `
     + `through faster than one step is never seen holding it, so a fast system needs a short step. A series is never read finer than it `
     + `was written: one written every few minutes is compared over the stretches between its own points, and it explains nothing faster `
     + `than that (its resolution, beside each series below).`;
@@ -723,6 +724,7 @@ function savedNowText(m, vs) {
 }
 function versionBar() {
   const m = MODEL, vs = m.versions || [], i = vs.findIndex((v) => v.version === m.version);
+  dsetSum();
   $("mname").textContent = m.name;
   let html = "";
   if (!vs.length) html = "";
@@ -771,13 +773,19 @@ async function loadStrategies() {
     $("d-strategy").innerHTML = [...first, ...own].map(opt).join("") + (rest.length ? `<optgroup label="research strategies (SD Lab)">${rest.map(opt).join("")}</optgroup>` : "");
     $("d-window").value = Math.round(c.window_s / 60); $("d-step").value = Math.round(c.step_s); $("d-every").textContent = ago(c.every_s);
     $("d-options").value = Object.keys(c.options || {}).length ? JSON.stringify(c.options) : "";
-    const desc = () => { const s = d.strategies.find((x) => x.name === $("d-strategy").value); $("d-desc").textContent = s ? s.description : ""; $("dset-sum").textContent = `${$("d-strategy").value} · ${$("d-window").value} min · ${$("d-step").value} s steps`;
+    const desc = () => { const s = d.strategies.find((x) => x.name === $("d-strategy").value); $("d-desc").textContent = s ? s.description : ""; dsetSum();
       $("d-plain").innerHTML = plainWindow(+$("d-window").value * 60, +$("d-step").value); };
     ["d-strategy", "d-window", "d-step"].forEach((id) => $(id).addEventListener("change", desc)); desc();
     if (!d.sd_installed) $("d-desc").textContent += " · SD Lab's strategies need orchestra[sd] installed";
   } catch (e) {}
 }
 loadStrategies();
+// the settings' summary: what the shown discovery was fitted over (it may have widened the window), beside what is configured
+function dsetSum() {
+  if (!STRATS) return;
+  const configured = { strategy: $("d-strategy").value, window_s: +$("d-window").value * 60, step_s: +$("d-step").value };
+  $("dset-sum").textContent = DiscoveryWindow.summary(MODEL && MODEL.discovery, configured);
+}
 // rediscover now: in the background on the server; the page waits for it, then shows the result
 async function rediscover() {
   const btn = $("redisc"), note = $("redisc-note");

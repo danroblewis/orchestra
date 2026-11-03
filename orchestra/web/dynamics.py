@@ -29,6 +29,19 @@ NONE = "no machine associated yet"
 PRESS = {True: "Press \u201crediscover now\u201d to look at once.", False: "Press \u201crediscover now\u201d to look once."}
 
 
+def fitted(d: dict) -> dict | None:
+    """The window and step a discovery was fitted over, as its record has them: the window it read
+    (``end − start``, else ``window_s``) and its step, which may be wider than ``[discovery]``
+    configures (``widened``: too few events; ``history``: the sources hold more), and the window it
+    was widened from. None for a record without them."""
+    window = d["end"] - d["start"] if d.get("end") is not None and d.get("start") is not None else d.get("window_s")
+    step = d.get("step") or d.get("step_s")
+    if not window or not step:
+        return None
+    was = (d.get("widened") or {}).get("from_s") or (d.get("history") or {}).get("from_s")
+    return {"window_s": float(window), "step_s": float(step), "widened_from_s": float(was) if was else None}
+
+
 def no_model(project, discovery: dict | None, as_of: float | None = None) -> dict:
     """The answer with no model: ``sd.no_model``'s paragraph (``text``) and its facts (``reason``),
     the page's button (``hint``), and the discovery's block so the page can list which series it
@@ -43,6 +56,7 @@ def no_model(project, discovery: dict | None, as_of: float | None = None) -> dic
         d, left = discovery, discovery.get("left_out") or {}
         out["discovery"] = {**{k: d[k] for k in ("left_out", "series", "step", "start", "end", "min_r2", "sources", "not_saved",
                                                  "since_last_s", "window_s", "summed") if k in d}, "looked_at": looked_at(d),
+                            "fitted": fitted(d),
                             # the series considered and not left out: so "left out N of M" accounts for every one
                             "kept": sorted(k for k in (d.get("resolution") or {}) if k not in left)}
     return out
@@ -131,6 +145,7 @@ def model_view(project, version: int | None = None, levels: dict | None = None, 
     out["subsystems"] = subsystems(model)          # derived, display only (docs/proposals/subsystems.md)
     if model.discovery:
         out["discovery"]["looked_at"] = looked_at(model.discovery)
+        out["discovery"]["fitted"] = fitted(model.discovery)
     out["levels"] = levels or {}
     out["levels_error"] = levels_error
     return {"ok": True, "model": out}
