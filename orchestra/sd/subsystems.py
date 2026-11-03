@@ -89,9 +89,12 @@ def partition(model, label: str) -> dict | None:
                 joined += 1
         else:
             pair = tuple(sorted(inner))
-            c = crossing.setdefault(pair, {"between": list(pair), "flows": [], "count": 0, "simulated": 0})
+            c = crossing.setdefault(pair, {"between": list(pair), "flows": [], "count": 0, "simulated": 0, "simulated_flows": []})
             c["flows"].append(f.id)
-            c["simulated" if (f.evidence or {}).get("simulated") else "count"] += 1
+            sim = bool((f.evidence or {}).get("simulated"))
+            c["simulated" if sim else "count"] += 1
+            if sim:
+                c["simulated_flows"].append(f.id)   # the page draws these dashed
             flow_groups[f.id] = set(pair)
     spanning = []
     hyps = _hypotheses(model)

@@ -16,14 +16,18 @@ const SDGraph = require(path.join(STATIC, "sd-graph.js"));
 const SDLayout = require(path.join(STATIC, "sd-layout.js"));
 const LayoutScore = require(path.join(STATIC, "layout-score.js"));
 // the renderer's pure geometry (netgraph-geometry.js) needs no DOM or d3
-const { size, frameOf, tetherPlaces, labelSize, placeLabels } = require(path.join(STATIC, "netgraph-geometry.js"));
+const { size, frameOf, tetherPlaces, labelSize, placeLabels, boxesOf } = require(path.join(STATIC, "netgraph-geometry.js"));
+const SubsystemBoxes = require(path.join(STATIC, "subsystem-boxes.js"));
 const inside = (n) => n.kind !== "cloud";
 
-async function laidOut(file) {
+// ``boxes``: a partition's label (model.subsystems), or "default" (the page opens with it), drawn as
+// boxes as the page draws them
+async function laidOut(file, boxes = null) {
   const model = JSON.parse(fs.readFileSync(path.join(FIXTURES, file), "utf8")).model;
-  const { nodes, edges } = SDGraph.build(model);
+  let { nodes, edges } = SDGraph.build(model);
+  if (boxes) ({ nodes, edges } = SubsystemBoxes.apply(nodes, edges, SubsystemBoxes.choose(model.subsystems, boxes === "default" ? null : boxes)));
   // as the page does: ELK, then springs, then untangled (the page's worker), with labels placed
-  const geo = { size, inside, frameOf, tetherPlaces };
+  const geo = { size, inside, frameOf, tetherPlaces, boxesOf };
   const labels = (placed) => {
     const m = LayoutScore.mids(placed, edges, size), o = placeLabels(placed, edges, m);
     return Object.fromEntries(Object.entries(o).map(([id, [dx, dy]]) => [id, [m[id].x + dx, m[id].y + dy]]));
@@ -32,8 +36,45 @@ async function laidOut(file) {
   const springs = SDLayout.refine(nodes, edges, SDLayout.pack(nodes, edges, elk, geo), { ...geo, labelSize });
   const at = SDLayout.untangle(nodes, edges, springs, { ...geo, score: LayoutScore.score, labelSize, labels });
   const placed = nodes.map((n) => ({ ...n, x: at[n.id][0], y: at[n.id][1] }));
-  return { placed, edges, score: LayoutScore.score(placed, edges, { size, frame: frameOf(placed, inside), inside, labels: labels(placed), labelSize }) };
+  return { model, placed, edges, score: LayoutScore.score(placed, edges, { size, frame: frameOf(placed, inside), inside, labels: labels(placed), labelSize, boxes: boxesOf(placed) }) };
 }
+// how big the drawing is when fitted to the page's view (1: full size)
+const scaleOf = (placed) => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const n of placed) { const z = size(n), hw = (z.r || z.w / 2) + 40, hh = (z.r || z.h / 2) + 40; x0 = Math.min(x0, n.x - hw); x1 = Math.max(x1, n.x + hw); y0 = Math.min(y0, n.y - hh); y1 = Math.max(y1, n.y + hh); }
+  return Math.min(1, 1300 / (x1 - x0), 600 / (y1 - y0)); };
+
+// Subsystems' boxes (subsystem-boxes.js; docs/proposals/subsystems.md B10) on a saved model of two
+// workflows (delivery_sail and pr_watch, the delivery demo): every partition it reports drawn as
+// boxes keeps each member in its own box and nothing else in it, and the default one (the page opens
+// with it on) lays out no worse than the diagram without boxes
+const TWO = "delivery-sail-2026-11-02.json";
+test(`${TWO}: with each partition's boxes, every member inside its box, no box over another or over a part not its own`, async () => {
+  const model = JSON.parse(fs.readFileSync(path.join(FIXTURES, TWO), "utf8")).model;
+  assert.equal(model.subsystems.default, "workflow");
+  for (const p of model.subsystems.partitions) {
+    const { placed, score } = await laidOut(TWO, p.label), hulls = boxesOf(placed);
+    assert.deepEqual(Object.keys(hulls).sort(), p.groups.map((g) => g.value).sort(), `${p.label}: a box per group`);
+    for (const g of p.groups) for (const sid of g.stocks) {
+      const n = placed.find((x) => x.sid === sid); if (!n) continue;          // a stock the diagram does not draw
+      const b = hulls[g.value], z = size(n);
+      assert.ok(n.x - z.w / 2 >= b.x0 && n.x + z.w / 2 <= b.x1 && n.y - z.h / 2 >= b.y0 && n.y + z.h / 2 <= b.y1, `${p.label}: ${sid} inside ${g.value}`);
+    }
+    assert.deepEqual(score.boxOverlaps, [], `${p.label}: boxes over each other or over parts not theirs`);
+    assert.deepEqual(score.overlaps, [], `${p.label}: nodes on top of each other`);
+    assert.deepEqual(score.cloudsInside, [], `${p.label}: a cloud inside the system`);
+    assert.deepEqual(score.outsideFrame, [], `${p.label}: something of the system outside it`);
+  }
+});
+
+test(`${TWO}: the default partition's boxes lay out no worse than no boxes`, async () => {
+  const off = await laidOut(TWO), on = await laidOut(TWO, "default");
+  const o = off.score, b = on.score;
+  console.log(TWO, "boxes", JSON.stringify({ scale: [scaleOf(off.placed), scaleOf(on.placed)].map((x) => +x.toFixed(2)), all: [o.allCrossings, b.allCrossings], through: [o.through.length, b.through.length], emptiness: [o.emptiness, b.emptiness] }));
+  assert.ok(on.placed.some((n) => n.box != null), "drawn with boxes (the default, as the page opens)");
+  for (const k of ["through", "overlaps", "labelsOnNodes"]) assert.ok(b[k].length <= o[k].length, `${k}: ${b[k].length} with boxes, ${o[k].length} without`);
+  for (const k of ["crossings", "allCrossings", "labelsOnLabels"]) assert.ok(b[k] <= o[k], `${k}: ${b[k]} with boxes, ${o[k]} without`);
+  assert.ok(scaleOf(on.placed) >= scaleOf(off.placed) - 0.02, `fitted to the view: ${scaleOf(on.placed).toFixed(2)} with boxes, ${scaleOf(off.placed).toFixed(2)} without`);
+});
 
 // Known shortfalls, by fixture: what the layout does not yet reach on that model, recorded here so
 // it stays visible and cannot get worse. bakery-2026-10-25c (12 stocks in many small groups): the

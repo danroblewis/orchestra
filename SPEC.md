@@ -1790,8 +1790,25 @@ of the model by a label its stocks' series carry (never who wrote them, nor `sim
 `draft`; two values at least): per value its stocks, the flows inside it and the machines whose
 hypotheses lie in it; the unassigned; the machines spanning groups; and the flows crossing between
 each pair of groups (`count`, the simulated apart), the default first (the most flows kept inside a
-group, then the fewest crossing). Derived on read, display only, saved in no version; no page
-draws it yet. The diagram on a desktop is as tall as
+group, then the fewest crossing). Derived on read, display only, saved in no version. **Boxes**
+(`static/subsystem-boxes.js`; the owner, 2026-11-02: "sub 1. yes, boxes on"): the diagram's bar has
+a "boxes" control beside tidy and reset, off or one of the partitions the API reports ("workflow ·
+2 boxes · 0 crossing", the default first), on by the default when the page opens. Each group is a
+box inside the system's frame, titled by its value, laid out by ELK as a compound node and kept
+apart from the other boxes; a place or an auxiliary is in a box only when every flow it ends or
+drives is inside it; the clouds keep the cloud rule; an unassigned stock sits outside every box,
+inside the frame. A flow between two boxes is drawn box to box (dashed when simulated), its ends
+named by their boxes, and each pair's count is written between them ("1 flow between delivery and
+hotfix", its count alone where the gap is narrow). A machine whose hypotheses lie in two groups is
+outside every box and said so ("in two subsystems: outside the boxes"; the owner: "a machine should
+only belong to one subsystem ... if it needs to belong to 2, it is probably outside of the box").
+No nesting. A box's title is a focus chip of the core's own offer: pressed, only that subsystem is
+shown, its box kept, what crosses its edge a grey stub named for the box it leads to; a plugin's
+focus is drawn inside the boxes it touches. The partition label's tag is left off the parts inside
+their box. A change of boxes is laid out as reset lays it out; each partition keeps its own saved
+layout (`dynamics.v2|boxes=<label>`); the choice is in the hash (`#boxes=<label>` or `off`, beside
+`focus=`). At phone width the list has a heading per group (a chip, as the box's title), then
+"between subsystems", then "outside every subsystem". The Machines map has no boxes yet. The diagram on a desktop is as tall as
 the viewport less the header and the legend (600 to 1100 px). A **rediscover now** button reruns discovery in the background (an observation: it
 re-reads the metrics and may save a version, as the host does every 5 minutes). With eras, the
 timeline's era shows the predictions of the change that began it, with their verdicts;

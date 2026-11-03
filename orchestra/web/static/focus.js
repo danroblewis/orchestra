@@ -12,6 +12,10 @@
 //   Orchestra.focus.clear()
 //   Orchestra.focus.offer({title, subtitle, get: () => subset})   a chip above each diagram; click sets, again clears
 //   Orchestra.focus.update(title, {subtitle})                     an offer's chip says something new
+//   Orchestra.focus.withdraw(title)                               an offer no longer made (a focus set from it cleared)
+//
+// An offer with ``row: false`` draws no chip in the row: its chip is elsewhere (a subsystem's box
+// title, subsystem-boxes.js), and it is toggled from there (``toggle(title)``).
 //
 // ``stocks`` and ``flows`` name a stock or a flow by the series it is bound to: ``{name, labels}``,
 // keyed here as a discovery keys a series (``name{label="value",...}``, sorted, without the project
@@ -147,8 +151,10 @@
 
   // a page's hash holds what it opens (a machine's id) and the focus beside it: "#worker&focus=t".
   // ``hashId``: the part that is not the focus; ``hashWith(id, hash)``: the hash for ``id``, the focus kept
-  const hashId = (hash) => decodeURIComponent(String(hash || "").replace(/^#/, "").split("&").filter((p) => p && !p.startsWith("focus="))[0] || "");
-  const hashWith = (id, hash) => { const f = String(hash || "").replace(/^#/, "").split("&").filter((p) => p.startsWith("focus="));
+  // (``boxes=``, the subsystems' boxes, subsystem-boxes.js, is kept beside the focus the same way)
+  const kept = (p) => p.startsWith("focus=") || p.startsWith("boxes=");
+  const hashId = (hash) => decodeURIComponent(String(hash || "").replace(/^#/, "").split("&").filter((p) => p && !kept(p))[0] || "");
+  const hashWith = (id, hash) => { const f = String(hash || "").replace(/^#/, "").split("&").filter(kept);
     const h = [...(id ? [encodeURIComponent(id)] : []), ...f].join("&"); return h ? "#" + h : ""; };
 
   // The browser's side: one focus at a time, the offers, the hash, the chips and the bar.
@@ -173,13 +179,18 @@
       // an offer is idempotent by title: offering it again replaces it (and refreshes a focus set from it)
       offer(o) {
         if (!o || !o.title || typeof o.get !== "function") return;
-        const t = String(o.title); offers.set(t, { title: t, subtitle: o.subtitle, get: o.get });
+        const t = String(o.title); offers.set(t, { title: t, subtitle: o.subtitle, get: o.get, row: o.row !== false });
         if (waiting === t || (current && current.title === t && current.offered)) {
           try { const n = normal({ ...o.get(), title: t }); if (n) { n.offered = true; const same = current && JSON.stringify(current) === JSON.stringify(n); current = n; waiting = null; writeHash(); if (!same) { changed(); return; } } } catch (e) {}
         }
         for (const [el, c] of mounts) draw(el, c);
       },
       update(title, { subtitle } = {}) { const o = offers.get(String(title)); if (!o) return; o.subtitle = subtitle; for (const [el, c] of mounts) draw(el, c); },
+      withdraw(title) {
+        const t = String(title); if (!offers.delete(t)) return;
+        if (current && current.title === t && current.offered) { current = null; writeHash(); changed(); return; }
+        for (const [el, c] of mounts) draw(el, c);
+      },
       offers() { return [...offers.values()]; },
       toggle(title) {
         const o = offers.get(String(title)); if (!o) return;
@@ -192,7 +203,7 @@
     };
     function draw(el, c) {
       if (!el.isConnected) { mounts.delete(el); return; }
-      const chips = [...offers.values()].map((o) => { const on = current && current.title === o.title, sub = subtitleOf(o);
+      const chips = [...offers.values()].filter((o) => o.row).map((o) => { const on = current && current.title === o.title, sub = subtitleOf(o);
         return `<button type="button" class="focus-chip${on ? " on" : ""}" data-title="${esc(o.title)}" aria-pressed="${on ? "true" : "false"}" title="${on ? "showing this part of the system: press to show everything" : "show only this part of the system"}">${esc(o.title)}${sub ? ` <span class="muted">${esc(sub)}</span>` : ""}</button>`; }).join("");
       const bar = current && c ? `<div class="focus-bar" role="status">showing <b>${esc(current.title)}</b>: ${c.shown} of ${c.total} ${esc(c.noun || "")}${current.reason ? ` <span class="muted">· ${esc(current.reason)}</span>` : ""}${c.outside ? ` <span class="muted">· grey stubs: ${esc(c.outside)} outside it</span>` : ""}${c.left ? ` <span class="muted">· not shown: ${esc(c.left)}</span>` : ""} · <a href="#" class="focus-clear">show everything</a></div>` : "";
       const html = (chips ? `<div class="focus-chips">${chips}</div>` : "") + bar;

@@ -46,14 +46,21 @@
       // out with the rest: a stock fed from outside lands at the side its cloud is on
       const outs = nodes.filter((n) => !inside(n)), cut = [];
       for (const e of byEdge.values()) if (!isIn.has(e.source) || !isIn.has(e.target)) cut.push({ id: "c" + cut.length, sources: [e.source], targets: [e.target] });
+      // with subsystems' boxes (subsystem-boxes.js: a node's ``box``), each box a compound node inside
+      // the system holding its members and the flows between them; the unassigned beside the boxes
+      const boxOf = new Map(ins.filter((n) => n.box != null).map((n) => [n.id, String(n.box)]));
+      const sameBox = (l) => boxOf.has(l.sources[0]) && boxOf.get(l.sources[0]) === boxOf.get(l.targets[0]);
+      const boxes = [...new Set(boxOf.values())].map((v) => ({ id: "__box:" + v,
+        layoutOptions: { "elk.padding": `[top=${BOX_ROOM + 22},left=${BOX_ROOM},bottom=${BOX_ROOM + 14},right=${BOX_ROOM}]` },
+        children: kids.filter((k) => boxOf.get(k.id) === v), edges: links.filter((l) => sameBox(l) && boxOf.get(l.sources[0]) === v) }));
+      const system = { id: "__system", layoutOptions: { "elk.padding": `[top=${PAD + 12},left=${PAD},bottom=${PAD},right=${PAD}]` },
+        children: [...boxes, ...kids.filter((k) => !boxOf.has(k.id))], edges: links.filter((l) => !sameBox(l)) };
       const res = await elk.layout({ id: "root", layoutOptions: { ...OPTIONS, "elk.hierarchyHandling": "INCLUDE_CHILDREN", ...options },
-        children: [{ id: "__system", layoutOptions: { "elk.padding": `[top=${PAD + 12},left=${PAD},bottom=${PAD},right=${PAD}]` }, children: kids, edges: links },
-                   ...outs.map((n) => { const s = size(n), d = s.r ? 2 * s.r : s.w; return { id: n.id, width: d, height: d }; })],
+        children: [system, ...outs.map((n) => { const s = size(n), d = s.r ? 2 * s.r : s.w; return { id: n.id, width: d, height: d }; })],
         edges: cut });
-      for (const c of res.children) {
-        if (c.id === "__system") for (const k of c.children) at[k.id] = [c.x + k.x + k.width / 2, c.y + k.y + k.height / 2];
-        else at[c.id] = [c.x + c.width / 2, c.y + c.height / 2];
-      }
+      const walk = (c, ox, oy) => { if (c.children && c.children.length) { for (const k of c.children) walk(k, ox + c.x, oy + c.y); return; }
+        if (!c.id.startsWith("__")) at[c.id] = [ox + c.x + c.width / 2, oy + c.y + c.height / 2]; };
+      for (const c of res.children) walk(c, 0, 0);
     } else {
       const res = await elk.layout({ id: "root", layoutOptions: { ...OPTIONS, ...options }, children: kids, edges: links });
       for (const c of res.children) at[c.id] = [c.x + c.width / 2, c.y + c.height / 2];
@@ -66,6 +73,39 @@
     return at;
   }
   const ROOM = 7;
+  // the room ELK keeps inside a box around its members (its tags and title included)
+  const BOX_ROOM = 30;
+
+  // Subsystems' boxes kept apart (``boxesOf``: NetGeometry.boxesOf, a hull per box): two boxes that
+  // overlap (with ``gap``) are pushed apart as wholes, and a node of no box (or of another) inside a
+  // box is pushed out of it. ``half(n)``: a node's half width and height. Moves the positions ``P``
+  // ({id: {n, x, y}}) in place; true when it moved one.
+  function separate(P, boxesOf, half, gap = 40) {
+    const placed = [...P.values()].map((p) => ({ ...p.n, x: p.x, y: p.y }));
+    const hulls = Object.entries(boxesOf(placed));
+    if (!hulls.length) return false;
+    let moved = false;
+    const shift = (ids, dx, dy) => { for (const id of ids) { const p = P.get(id); if (p) { p.x += dx; p.y += dy; } } };
+    for (let i = 0; i < hulls.length; i++) for (let j = i + 1; j < hulls.length; j++) {
+      const [, A] = hulls[i], [, B] = hulls[j];
+      const ox = Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0) + gap, oy = Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0) + gap;
+      if (ox <= 0 || oy <= 0) continue;
+      moved = true;
+      if (ox < oy) { const s = Math.sign((B.x0 + B.x1) - (A.x0 + A.x1)) || 1; shift(A.members, -s * ox / 2, 0); shift(B.members, s * ox / 2, 0); }
+      else { const s = Math.sign((B.y0 + B.y1) - (A.y0 + A.y1)) || 1; shift(A.members, 0, -s * oy / 2); shift(B.members, 0, s * oy / 2); }
+    }
+    for (const p of P.values()) {
+      const [hw, hh] = half(p.n);
+      for (const [v, H] of hulls) {
+        if (p.n.box != null && String(p.n.box) === v) continue;
+        const r = { x0: p.x - hw - gap / 2, x1: p.x + hw + gap / 2, y0: p.y - hh - gap / 2, y1: p.y + hh + gap / 2 };
+        if (!(r.x0 < H.x1 && H.x0 < r.x1 && r.y0 < H.y1 && H.y0 < r.y1)) continue;
+        const opts = [[H.x0 - r.x1, 0], [H.x1 - r.x0, 0], [0, H.y0 - r.y1], [0, H.y1 - r.y0]].sort((a, b) => Math.abs(a[0] + a[1]) - Math.abs(b[0] + b[1]));
+        p.x += opts[0][0]; p.y += opts[0][1]; moved = true;
+      }
+    }
+    return moved;
+  }
 
   // Refine a layout (ELK's) by springs: every flow, influence and cloud is a spring toward a
   // sensible length, and a node moves in inverse proportion to how connected it is, so a node with
@@ -75,7 +115,7 @@
   // clouds' stubs are short. Returns new positions; clouds placed by the cloud rule.
   // A flow with a label is given room for it (``labelSize``): its rest length is at least the
   // label's width, so the words fit beside the line instead of on a box.
-  function refine(nodes, edges, at, { size, inside = (n) => n.kind !== "cloud", frameOf, tetherPlaces, iterations = 300, gap = 70, outwardK = 0.06, influenceGap = 40, labelSize = null }) {
+  function refine(nodes, edges, at, { size, inside = (n) => n.kind !== "cloud", frameOf, tetherPlaces, boxesOf = null, iterations = 300, gap = 70, outwardK = 0.06, influenceGap = 40, labelSize = null }) {
     const P = new Map(nodes.filter((n) => at[n.id] && inside(n)).map((n) => [n.id, { n, x: at[n.id][0], y: at[n.id][1] }]));
     const half = (n) => { const s = size(n); return s.r ? [s.r, s.r] : [s.w / 2, s.h / 2]; };
     const byEdge = new Map(edges.filter((e) => !e.toEdge).map((e) => [e.id, e]));
@@ -86,7 +126,9 @@
     const outward = new Set(nodes.filter((n) => n.kind === "cloud" && n.tether).map((n) => n.tether));
     const room = (id) => 14 + ROOM * (degree.get(id) || 0);
     const ids = [...P.keys()];
+    const boxes = !!boxesOf && [...P.values()].some((p) => p.n.box != null);
     for (let it = 0; it < iterations; it++) {
+      if (boxes) separate(P, boxesOf, half);
       const t = 1 - it / iterations, k = 0.08 * t + 0.01;
       for (const [a, b, extra] of springs) {              // springs: toward the touching distance plus a gap
         const A = P.get(a), B = P.get(b), dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy) || 1;
@@ -98,7 +140,8 @@
         A.x += dx / d * pull * wa / w; A.y += dy / d * pull * wa / w;
         B.x -= dx / d * pull * wb / w; B.y -= dy / d * pull * wb / w;
       }
-      const b = frameOf ? frameOf([...P.values()].map((p) => ({ ...p.n, x: p.x, y: p.y })), inside) : null;
+      // (the frame of the nodes alone: a frame around subsystems' boxes would draw a stock ever outward)
+      const b = frameOf ? frameOf([...P.values()].map((p) => ({ ...p.n, x: p.x, y: p.y, box: undefined })), inside) : null;
       if (b) for (const id of outward) {                   // toward the nearest side of the frame
         const p = P.get(id); if (!p) continue;
         const [h, v] = half(p.n);
@@ -115,6 +158,8 @@
         else { const s = Math.sign(B.y - A.y) || 1; A.y -= s * oy * wa; B.y += s * oy * (1 - wa); }
       }
     }
+    // subsystems' boxes: apart, and nothing of another box or of none inside one
+    if (boxes) for (let k = 0; k < 200 && separate(P, boxesOf, half); k++);
     const out = { ...at };
     for (const [id, p] of P) out[id] = [p.x, p.y];
     if (frameOf && tetherPlaces) {
@@ -133,6 +178,9 @@
     const flowById = new Map(edges.filter((e) => !e.toEdge).map((e) => [e.id, e]));
     for (const e of flowById.values()) join(e.source, e.target);
     for (const e of edges.filter((x) => x.toEdge)) { const f = flowById.get(e.toEdge); if (f) { join(e.source, f.source); join(e.source, f.target); } }
+    // a subsystem's box moves as one: its members are of one group, connected or not
+    const first = new Map();
+    for (const n of nodes) if (n.box != null && parent.has(n.id)) { const k = String(n.box); if (first.has(k)) join(n.id, first.get(k)); else first.set(k, n.id); }
     return [...ids.reduce((m, id) => m.set(find(id), [...(m.get(find(id)) || []), id]), new Map()).values()].sort((a, b) => b.length - a.length);
   }
 
@@ -169,13 +217,14 @@
   // any two lines that cross (a flow, a dashed influence, a cloud's stub) cost as much as a line
   // behind a box: a crossing is allowed only when every way around it costs more in length and spread
   const COST = (s) => 40 * s.through.length + 30 * s.crossings + 30 * s.allCrossings + 5000 * s.overlaps.length   // overlapping boxes: never worth it
+    + 5000 * (s.boxOverlaps ? s.boxOverlaps.length : 0)   // a subsystem's box over another, or over a node not its own: never either
     + 40 * (s.labelsOnNodes ? s.labelsOnNodes.length : 0) + 25 * (s.labelsOnLabels || 0)
     + 0.02 * s.nearest.max + 0.02 * s.influenceLength.median + 2 * (s.emptiness || 0)
     + 150 * Math.max(0, 1 - (s.scale ?? 1));   // shrunk to fit the view: smaller words, so worth about five crossings at half size
   // ``labels(placed)``, when given, places the edge labels ({edge id: [x, y]}) so words covered by
   // boxes or other words count too (``labelSize`` sizes them)
   // ``fixed``: node ids that stay where they are (the viewer's placements)
-  function untangle(nodes, edges, at, { size, score, inside = (n) => n.kind !== "cloud", frameOf, tetherPlaces, labels = null, labelSize = null, passes = 4, steps = [60, 120], groupSteps = [120, 240, 400], view = [1300, 600], fixed = [] }) {
+  function untangle(nodes, edges, at, { size, score, inside = (n) => n.kind !== "cloud", frameOf, tetherPlaces, boxesOf = null, labels = null, labelSize = null, passes = 4, steps = [60, 120], groupSteps = [120, 240, 400], view = [1300, 600], fixed = [] }) {
     const hold = new Set(fixed);
     const ids = nodes.filter((n) => inside(n) && at[n.id] && !hold.has(n.id)).map((n) => n.id), byId = new Map(nodes.map((n) => [n.id, n]));
     let cur = { ...at };
@@ -183,7 +232,7 @@
       const placed = nodes.map((n) => (inside(n) ? { ...n, x: pos[n.id][0], y: pos[n.id][1] } : { ...n, x: undefined, y: undefined }));
       const frame = frameOf(placed, inside), clouds = tetherPlaces(placed, frame, edges);
       for (const n of placed) if (clouds[n.id]) [n.x, n.y] = clouds[n.id];
-      const sc = score(placed, edges, { size, frame, inside, labels: labels ? labels(placed) : null, labelSize });
+      const sc = score(placed, edges, { size, frame, inside, labels: labels ? labels(placed) : null, labelSize, boxes: boxesOf ? boxesOf(placed) : null });
       // how big the drawing is when fitted to the view (1: full size; less: shrunk)
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const n of placed) { const z = size(n), hw = (z.r || z.w / 2) + 40, hh = (z.r || z.h / 2) + 40; x0 = Math.min(x0, n.x - hw); x1 = Math.max(x1, n.x + hw); y0 = Math.min(y0, n.y - hh); y1 = Math.max(y1, n.y + hh); }
@@ -197,7 +246,7 @@
       const placed = nodes.map((n) => (inside(n) ? { ...n, x: pos[n.id][0], y: pos[n.id][1] } : { ...n, x: undefined, y: undefined }));
       const frame = frameOf(placed, inside), clouds = tetherPlaces(placed, frame, edges);
       for (const n of placed) if (clouds[n.id]) [n.x, n.y] = clouds[n.id];
-      return new Set(score(placed, edges, { size, frame, inside, labels: labels ? labels(placed) : null, labelSize }).tangled || ids);
+      return new Set(score(placed, edges, { size, frame, inside, labels: labels ? labels(placed) : null, labelSize, boxes: boxesOf ? boxesOf(placed) : null }).tangled || ids);
     };
     const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
     // groups move as a whole too, so a group can step out of another's way instead of sitting among its lines

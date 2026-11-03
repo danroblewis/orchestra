@@ -9,6 +9,6 @@ onmessage = ({ data }) => {
     return Object.fromEntries(Object.entries(o).map(([id, [dx, dy]]) => [id, [m[id].x + dx, m[id].y + dy]]));
   };
   const out = SDLayout.untangle(nodes, edges, at, { size, frameOf: NetGeometry.frameOf, tetherPlaces: NetGeometry.tetherPlaces,
-    score: LayoutScore.score, labelSize: NetGeometry.labelSize, labels, fixed: fixed || [] });
+    score: LayoutScore.score, labelSize: NetGeometry.labelSize, labels, boxesOf: NetGeometry.boxesOf, fixed: fixed || [] });
   postMessage({ at: out });
 };
