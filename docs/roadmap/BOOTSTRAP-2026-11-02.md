@@ -78,7 +78,17 @@ The first-run wake-up is recorded as done, so the Supervisor waits for message 1
 Code's stream to `run/streams/` (the spend and the transcript) and keeps the sessions' tokens for
 the redaction; `HACKRIFF_OPS` points hackriff's own `.claude/hooks` (which run in the Supervisor's
 Claude Code sessions, as they would at work) at `run/hackriff-ops`, never the owner's
-`~/.hackriff-ops`. The Supervisor's sessions read hackriff's `CLAUDE.md` and run its hooks: that is
+`~/.hackriff-ops`. **Egress** (from run 4; run 3's Slack collector sent its canary token to
+`https://slack.com`, the template's default, which the owner never gave): every process the run
+starts has `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY` pointed at a blackhole proxy the harness runs on
+8918 (`harness/egress.py`: every host but loopback refused, each attempt logged to
+`run/logs/egress.log` and per step to `step-NN/egress.jsonl`) and `NO_PROXY=127.0.0.1,localhost,::1`.
+The Supervisor's Claude Code process alone is exempt (its API calls): its wrapper takes the
+variables out of Claude Code's environment and puts them back for every command its Bash tool and
+hooks run (`CLAUDE_CODE_SHELL_PREFIX`), and turns WebFetch off. `harness/egress_test.py` checks it
+without a model call (the real Claude Code against a fake Messages API: its Bash `curl
+https://example.com` refused and logged). A program that ignores the proxy variables is not
+stopped. The Supervisor's sessions read hackriff's `CLAUDE.md` and run its hooks: that is
 the owner's situation, and a finding if it misleads the Supervisor. The canary token files live in
 `/Users/Shared/orchestra-e2e/creds/` (mode 700, files 600; their values' list beside it), outside
 every git repository and outside `$HOME` (which is itself a repository on this machine);
@@ -88,7 +98,7 @@ holds the owner's real tokens. `PYTHONDONTWRITEBYTECODE=1` keeps the sessions' P
 writing `__pycache__` into the tree.
 
 **Ports.** 8900-8919 only (the web on the first free, then the fakes; from run 4, 8904 is the
-metrics port, 8905-8912 the data generators, 8913-8914 hackriff's staging server and 8919
+metrics port, 8905-8912 the data generators, 8913-8914 hackriff's staging server, 8918 the egress blackhole and 8919
 Prometheus itself, never chosen for anything else). The never-list is
 refused before anything starts: 8000-8003, 8040, 8050, 8060, 8062, 8070, 8074, 8096, 8101, 8103,
 8105, 8157, 8173, 8300-8319, 8401-8499, 8500-8560, 8600-8660, 8700-8720, 8428, 9090.
@@ -117,9 +127,9 @@ something". Runs 1-3 had the bridges' fake Prometheus API standing in for Chrono
 Prometheus: the official 3.15.1 release for darwin/arm64, downloaded once into
 `/Users/Shared/orchestra-e2e/prometheus/3.15.1/` (outside `$HOME` and every repository), its
 sha256 checked against the release's `sha256sums.txt` before it is unpacked, and only its
-`prometheus` binary ever run (re-checked at each start). The harness writes its configuration:
+`prometheus` and `promtool` binaries ever run (re-checked before each use). The harness writes its configuration:
 every 15 s, one job per service with `namespace` as a target label (as Kubernetes discovery
-labels a pod's series), retention one day, data under `~/orchestra-e2e/run/prometheus/` (ignored
+labels a pod's series), retention eight days, data under `~/orchestra-e2e/run/prometheus/` (ignored
 by the harness's repository; `--reset` removes it). It listens on 8919 behind the metrics port:
 8904 passes every request through and logs it (`run/logs/metrics-requests.log`, each request's
 path, `match[]`, `query`, the answer's size, and `unbounded` when it lists or selects the whole
@@ -150,7 +160,16 @@ five exporters, Prometheus on 8919 behind 8904 and every target `up`; `/api/v1/s
 Prometheus's own `up` and `scrape_*`; 310 in `other`), and the request log held the three bounded
 listings and nothing unbounded; `--stop` and `--reset` left no listener in 8900-8919, no
 Prometheus or `hk` process, the clone as cloned (`git status --ignored` empty) and
-`run/prometheus/` gone. Before the reset, run 3's live state (the state directory, the
+`run/prometheus/` gone. **From run 4 it starts with the week's history**: the fakes' process plays
+the generators over the last seven days on the clock's own weekdays (Tuesday's bad deploy,
+Wednesday's stall, a quieter weekend) into OpenMetrics files with timestamps, `promtool tsdb
+create-blocks-from openmetrics` turns them into blocks (15 half-day files at once, about 30 s;
+one file took 3 min 21 s) before Prometheus starts, and the exporters go on live from that state,
+counters continuing (the live traffic now in real seconds, the shape on the run's compressed
+week). The dry run of 2026-11-03: 2.3 million samples, 99 blocks in 27 s, the whole start in 36 s;
+24 s after Prometheus was ready `/api/v1/series` gave 165 series in `hackriff` and 310 in
+`other`, the earliest sample seven days back, the `writes` queue's peak on Wednesday 04:50, and no
+counter reset at the switch to live. Before the reset, run 3's live state (the state directory, the
 Supervisor's branch as a bundle, the untracked `.orchestra/` and `orchestra.toml`) was kept in
 `runs/run3/live-before-reset/` for its evaluator. No model was called.
 
@@ -220,6 +239,7 @@ point runs it, and none may be added that does unless it is skipped without
 |---|---|---|---|---|---|---|
 | 1 | 2026-11-02 | 1 (fail), 2 (partial); 3-10 not reached | $3.36 (step 1 $2.07, step 2 $1.30) | $8.76, over the $8 cap | Step 1: the agents plugin's compaction window (Claude Code's `--autocompact 100000`) sat just above the Supervisor's starting context in hackriff (about 81,000 tokens: its `CLAUDE.md` and rules, and the Supervisor's 90,000-character prompt), so every tool result started a compaction that freed too little, and Claude Code gave up ("Autocompact is thrashing"). Not the guides: they were served whole and only seven sections were read. The stop: the harness and the agents' record both added up a resumed session's running total, counting it again each turn. | the harness (the true total, questions in bold and in lists, step 2's answers); the agents plugin (the compaction window, its own spend record) |
 | 2 | 2026-11-02 | 10 of 10 (scores: 4 pass, 5 partial, 8 fail of 17) | $3.81 (step 1 $1.83; 13 turns, 966 s) | $3.81, the same (run 1's counting fixed) | No collector was approved or started, so nothing was heard and no model was found. The blocker: the agents plugin's approval refuses a token file with a `.git` in any ancestor (`integrate_kits._outside_repositories`), and the canary files sat in `run/creds/` inside `~/orchestra-e2e`, a repository; `$HOME` is itself one here, so the refusal's own hint (`~/.config/orchestra-bridges/`, the owner's real tokens) fails too. The Supervisor asked for new paths, but in lists headed "What's needed:", "From you:" and "To finish …:" that the feed's question detector missed, so the board's members, the logins, the channel ids and Chronosphere's yes were never given. Also: it ran hackriff's Python suite at step 1 and made it an instrument, read `~/.hackriff-ops`, probed port 8428, listed the owner's real token files and offered to use them. Series total $7.17 of $50. | the harness (canaries in `/Users/Shared/orchestra-e2e/creds/`, checked outside `$HOME` and every repository before start; the feed's "needed" lists and "tell me"; answers that never offer `~/.config`); the agents plugin (the repository rule and its hint; never run the project's tests, read outside the project or probe a listener; no collector for an unnamed system; `work = "code"`; `read_model` at step 10); the bridges (the github kit's `repo` beside `org`) |
+| 3 | 2026-11-02 to 11-03 | 10 of 10 (scores: 7 pass, 8 partial, 2 fail of 17) | $3.91 (step 1 $1.43; 15 exchanges, 632 s; no compaction) | $3.91, the same (the plugin's day figure restarted at midnight: $0.36) | Collectors heard under their own sources: the three Jira readers (`person.jira.*`; Epics and UFFs from other teams' people) and Slack (two people and the alert bot); Chronosphere read as a `[[sources]]` entry (9 series, 45 points); the model one stock and one flow, both the Workflows plugin's own pile ("in in_progress"). **GitHub never connected**, the harness's fault: the Supervisor asked for the five logins six times (steps 4 to 10), never with a "?" ("I need each person's GitHub login", "Send the five logins", "Still waiting on you:"), the feed's detector heard none (no `questions.jsonl` row for steps 4-10), so the owner's logins were never sent. **Egress**: Slack's collector was approved on the template's `https://slack.com`, an address the owner never gave, and its first poll sent the canary token there (`invalid_auth`). Series total $11.08 of $50. | the harness (requests without a "?"; an egress blackhole for every process the run starts, Claude Code's own calls exempt; the week's history backfilled into Prometheus; every system's address in step 1's answers and Slack's in step 5's message; the four unscripted questions; the fakes' request log; the cap per run; the live state kept at reset); the agents plugin (a `base_url` nobody gave is a guess; `read_model` and a `link` at step 10; the superseded GitHub scaffolds; the digest's counts); the bridges (the fake Prometheus's PromQL; the templates' token paths); the Workflows plugin (an event when an item opens); the core (a pile's stock named from its items) |
 
 The coordinator adds each run's true spend to the series' total here before starting the next.
 
