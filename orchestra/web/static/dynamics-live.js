@@ -102,7 +102,7 @@ const Live = (() => {
     const changers = [...new Set([...io.in, ...io.out].flatMap((f) => (f.machines || []).map((x) => x.machine)))];
     const ev = s.evidence || {};
     return `<div class="tt">${stockHead(s.id)}</div>${stockAbout(s.id)}<div class="tr"><span>now</span><b>${fmt(v)}</b></div>
-      <div class="tr"><span>machines (hypotheses)</span><b>${changers.map((m) => `<span style="color:${mcolor(m)}">${esc(m)}</span>`).join(", ") || "—"}</b></div>
+      <div class="tr"><span>machines (guessed from timing)</span><b>${changers.map((m) => `<span style="color:${mcolor(m)}">${esc(m)}</span>`).join(", ") || "—"}</b></div>
       <div class="tr"><span>${ev.hidden ? "its counters from" : "measured by"}</span><b>${esc(ev.hidden ? counterInstruments(ev) : ev.written_by || ev.machine || "—")}</b></div><div class="tr"><span>range, ${esc(spanText(stockHist(id)))}</span><b>${fmt(h.length ? Math.min(...h) : null)} – ${fmt(h.length ? Math.max(...h) : null)}</b></div>${rows}<div class="hint">click for history and details</div>`;
   }
   // why what the page shows as one stock is one: a passage's counters count the same items in and
@@ -136,7 +136,7 @@ const Live = (() => {
     const r = recentRate(f.id), pr = against(f).eq, few = Evidence.tooFew(f);
     return `<div class="tt">${esc(flowName(f))}</div><div class="muted">${esc(SDGraph.endName(MODEL, f, "from"))} → ${esc(SDGraph.endName(MODEL, f, "to"))}</div>
       <div class="tr"><span>observed, last ${Math.round(recentMinutes(f.id))} min</span><b>${sig2(r)}${per()}</b></div>${few ? `<div class="tr"><span>equation</span><b>${esc(Evidence.tooFewText(f))}</b></div>`
-      : `<div class="tr"><span>equation, same ${Math.round(recentMinutes(f.id))} min</span><b>${sig2(pr)}${per()}</b></div><div class="tr"><span>equation</span><b>${esc(eqText(f))}</b></div>`}<div class="tr"><span>machines (hypotheses)</span><b>${esc(machinesText(f))}</b></div><div class="hint">click for history and fit</div>`;
+      : `<div class="tr"><span>equation, same ${Math.round(recentMinutes(f.id))} min</span><b>${sig2(pr)}${per()}</b></div><div class="tr"><span>equation</span><b>${esc(eqText(f))}</b></div>`}<div class="tr"><span>machines (guessed from timing)</span><b>${esc(machinesText(f))}</b></div><div class="hint">click for history and fit</div>`;
   }
   // the stock's drawer: what it is, its level measured and as the equations run it (since the era
   // began, and projected ahead), and the flows that fill and drain it
@@ -159,7 +159,7 @@ const Live = (() => {
   // a reason not already said by the headline printed beside it (each fact said once)
   const fresh = (ws, said) => (ws || []).filter((w) => w && !said.some((x) => x && (x === w || x.includes(w) || w.includes(x))));
   function trustRows(t, said = []) {
-    if (Evidence.byConstruction(t)) return `<div>trust</div><div><b>${esc(Evidence.BY_CONSTRUCTION)}</b>${fresh(t.why, [Evidence.BY_CONSTRUCTION]).map((w) => `<br><span class="muted">${esc(w)}</span>`).join("")}</div>
+    if (Evidence.byConstruction(t)) return `<div>trust</div><div><b>${esc(Evidence.BY_CONSTRUCTION)}</b>${fresh(t.why, [Evidence.BY_CONSTRUCTION, "holds by construction"]).map((w) => `<br><span class="muted">${esc(w)}</span>`).join("")}</div>
       ${t.behaviour ? behaviourRows(t.behaviour) : ""}`;
     // a hidden stock's why is the question said at the top of its drawer (``said``): not again here
     if (t.kind === "unmeasured") return `<div>trust</div><div><b>0</b> <span class="muted">no measurement of its level</span>${fresh(t.why, said).map((w) => `<br><span class="muted">${esc(w)}</span>`).join("")}</div>`;
@@ -217,7 +217,7 @@ const Live = (() => {
       ${idRows("stocks", s.id)}
       ${oldest(id) ? `<div>oldest waiting</div><div class="num">${esc(oldest(id))} <span class="muted" style="font-family:inherit">(its instrument's age of this place, as last written: a measurement, not part of the model)</span></div>` : ""}
       ${whyOne(s, io)}
-      <div>machines</div><div>${[...new Set([...io.in, ...io.out].flatMap((f) => (f.machines || []).map((h) => h.machine)))].map((m) => `<span class="mdot" style="--c:${mcolor(m)}"></span>${esc(m)}`).join(" ") || '<span class="muted">none associated yet</span>'} <span class="muted">(hypotheses, from its flows)</span></div>
+      <div>machines</div><div>${[...new Set([...io.in, ...io.out].flatMap((f) => (f.machines || []).map((h) => h.machine)))].map((m) => `<span class="mdot" style="--c:${mcolor(m)}"></span>${esc(m)}`).join(" ") || '<span class="muted">none associated yet</span>'} <span class="muted">(guessed from timing, from its flows)</span></div>
       ${ev.hidden ? `<div>its counters from</div><div>${esc(counterInstruments(ev))} <span class="muted">(its level is what these counters imply)</span></div>` : `<div>measured by</div><div>${writerLink(s, ev)} <span class="muted">(wrote the series: an instrument, or the series' own label)</span></div>`}<div>bound to</div><div>${boundTo(s)}</div>
       ${s.series && s.series.source && s.series.source !== "own" ? `<div>read from</div><div>source <b>${esc(s.series.source)}</b><div class="num" style="font-size:11.5px">${esc(s.series.query || "")}</div><div class="muted" style="font-size:11.5px">${esc((s.series.origin || []).join(" → "))}</div></div>` : ""}
       ${s.series && s.series.traffic ? `<div>counted</div><div>${esc(trafficText(s.series.traffic))}</div>` : ""}
@@ -321,7 +321,7 @@ const Live = (() => {
     openDrawer(`<h3 data-drawer-key="f:${esc(fid)}">${flowHead(f)} <span class="tag">flow</span></h3>
       <div class="def"><div>moves</div><div>${esc(SDGraph.endName(MODEL, f, "from"))} → ${esc(SDGraph.endName(MODEL, f, "to"))}</div>
       ${idRows("flows", f.id)}
-      <div>equation</div><div class="num">${few ? "—" : esc(eqText(f))}${SDGraph.correlational(MODEL, f) ? `<div class="muted" style="font-family:inherit">${esc(SDGraph.untestedText(MODEL, f))}</div>` : ""}</div><div>machines</div><div>${(f.machines || []).length ? f.machines.map((h) => `<div><span class="mdot" style="--c:${mcolor(h.machine)}"></span><b><a href="/machines#${encodeURIComponent(h.machine)}" title="open it on the Machines page">${esc(h.machine)}</a></b>${Evidence.confidence(f, h) ? ` <span class="num">${Evidence.confidence(f, h).trim()}${esc(Evidence.chance(f, h))}</span>` : ""} <span class="muted">${esc(h.why || h.origin || "")}</span></div>`).join("") + (Evidence.untold(MODEL, f) ? `<div class="muted" style="font-size:11.5px">${esc(Evidence.untold(MODEL, f))}</div>` : "") + '<div class="muted" style="font-size:11.5px">hypotheses: a match in time, not a cause; they change no equation, and two similar flows between the same stocks may not be told apart</div>' + byLabel : `<span class="muted">${esc(f.association || "no machine associated yet")}</span>${byLabel}`}</div>
+      <div>equation</div><div class="num">${few ? "—" : esc(eqText(f))}${SDGraph.correlational(MODEL, f) ? `<div class="muted" style="font-family:inherit">${esc(SDGraph.untestedText(MODEL, f))}</div>` : ""}</div><div>machines</div><div>${(f.machines || []).length ? f.machines.map((h) => `<div><span class="mdot" style="--c:${mcolor(h.machine)}"></span><b><a href="/machines#${encodeURIComponent(h.machine)}" title="open it on the Machines page">${esc(h.machine)}</a></b>${Evidence.confidence(f, h) ? ` <span class="num">${Evidence.confidence(f, h).trim()}${esc(Evidence.chance(f, h))}</span>` : ""} <span class="muted">${esc(h.why || h.origin || "")}</span></div>`).join("") + (Evidence.untold(MODEL, f) ? `<div class="muted" style="font-size:11.5px">${esc(Evidence.untold(MODEL, f))}</div>` : "") + '<div class="muted" style="font-size:11.5px">guessed from timing: a match in time, not a cause; they change no equation, and two similar flows between the same stocks may not be told apart</div>' + byLabel : `<span class="muted">${esc(f.association || "no machine associated yet")}</span>${byLabel}`}</div>
       <div>fit</div><div class="num">${few ? `<b>${esc(Evidence.tooFewText(f))}</b>` : `${esc(e.origin || "")} by ${esc(e.method || "")} · ${esc(e.form || "")} · ${q.events ?? 0} events in the fit window${q.live_minutes ? ` (${q.live_minutes} min)` : ""}${q.dispersion != null ? ` · dispersion ${sig2(q.dispersion)}` : ""}`}${zeroEv ? `<div class="muted" style="font-family:inherit">${esc(zeroEv.slice(3))}</div>` : ""}</div>
       <div>rate</div><div class="num">${sig2(recentRate(fid))}${per()} <span class="muted" style="font-family:inherit">observed, last ${Math.round(recentMinutes(fid))} min</span>${few ? "" : `<br>${sig2(against(f).eq)}${per()} <span class="muted" style="font-family:inherit">the fitted equation over the same buckets, from the levels sampled in them</span>`}</div>
       ${(f.measured_by || []).length > 1 ? `<div>measured by</div><div class="num">${f.measured_by.map((c) => esc(c.name)).join(" + ")}</div>` : ""}

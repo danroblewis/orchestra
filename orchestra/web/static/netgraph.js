@@ -304,6 +304,7 @@ const NetGraph = (() => {
       const one = (t, y, x = null) => {
         const w = width(t), tg = g.append("g").attr("class", "ng-tag " + (t.cls || "")).attr("transform", `translate(${x == null ? -w / 2 : x},${y})`);
         tg.append("rect").attr("width", w).attr("height", 13).attr("rx", 3);
+        if (t.title) tg.append("title").text(t.title);
         tg.append("text").attr("x", w / 2).attr("y", 9.5).attr("text-anchor", "middle").text(t.text);
       };
       const below = hh + (s.r ? (n.sub ? 30 : 18) : 4);      // under a circle's name; right under a box

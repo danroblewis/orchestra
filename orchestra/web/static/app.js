@@ -196,8 +196,8 @@ Orchestra.machineCards = (() => {
     ${(m.counted || []).length ? `<div class="row"><span class="muted">counted</span>${m.counted.map((t) => t.direction === "backlog"
       ? `<span class="ty" title="what waits for it in ${esc(t.channel)}">${esc(t.channel)} · ${Math.round(t.backlog ?? 0).toLocaleString()} waiting</span>`
       : `<span class="ty" title="${Math.round(t.window).toLocaleString()} in the last hour, counted on another system's bus">${t.direction === "out" ? "→" : "←"} ${esc(t.channel)} · ${t.per_min}/min</span>`).join("")}</div>` : ""}
-    <div class="row"><span class="muted" title="flows of the model its events match in time: hypotheses, not causes">flows (hypotheses)</span>${(m.flows || []).map((f) => { const h = Orchestra.hypothesis(m, f);
-      return `<a class="ty fl" href="/dynamics#f:${encodeURIComponent(f.flow)}" onclick="event.stopPropagation()" title="${esc([h.title, f.why].filter(Boolean).join(" · "))} · open it on Dynamics">${esc(Orchestra.flowLabel(f))}${h.text ? ` · ${esc(h.text)}` : ""}${Orchestra.flowTags(f)}</a>`; }).join("") || '<span class="muted">none hypothesised yet</span>'}</div>`;
+    <div class="row"><span class="muted" title="this machine's events match the flow's counter in time; nothing says it causes the flow">flows (guessed from timing)</span>${(m.flows || []).map((f) => { const h = Orchestra.hypothesis(m, f);
+      return `<a class="ty fl" href="/dynamics#f:${encodeURIComponent(f.flow)}" onclick="event.stopPropagation()" title="${esc([h.title, f.why].filter(Boolean).join(" · "))} · open it on Dynamics">${esc(Orchestra.flowLabel(f))}${h.text ? ` · ${esc(h.text)}` : ""}${Orchestra.flowTags(f)}</a>`; }).join("") || '<span class="muted">none guessed yet</span>'}</div>`;
     },
     rank(m) { if (m.bootstrap) return 0; const s = this.of(m); try { return s && s.rank ? s.rank(m) : 50; } catch (e) { return 50; } },
     sort(ms) { return [...ms].sort((a, b) => this.rank(a) - this.rank(b) || a.id.localeCompare(b.id)); },

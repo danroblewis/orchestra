@@ -163,7 +163,7 @@ def _discovered(m, strategy: str) -> None:
             continue
         terms = " ".join(("+ " if b["sign"] > 0 else "− ") + b["series"] for b in st.evidence["balance"])
         if st.evidence.get("balance_r2") is None:
-            why = "by construction: a count and its own turnover" if st.evidence.get("by_construction") else "measured by no series"
+            why = "exact by definition: a count and its own turnover, so the balance proves nothing" if st.evidence.get("by_construction") else "measured by no series"
             print(f"  stock {st.id}: Δ = {terms}   ({why}{trust})")
             continue
         print(f"  stock {st.id}: Δ = {terms}   (R² {st.evidence['balance_r2']:.3f}, exact in {st.evidence['exact_steps']:.0%} of steps{trust})")
@@ -261,7 +261,7 @@ def cmd_sd(args) -> int:
                 "linear": f"{p.get('c', 0):.4g} {'+' if p.get('k', 0) >= 0 else '−'} {abs(p.get('k', 0)):.4g} × {(eq.inputs or ['?'])[0]}"
                 }.get(eq.form, str(p)) + f" /{m.time_unit}"
         print(f"  {f.id:<36} {eq.origin:<10} {eq.form:<12} {rate:<30} n={eq.quality.get('events', 0):.0f}")
-    print("\nmachines (attributed flows are hypotheses):")
+    print("\nmachines (flows guessed from timing: their events match a flow's counter in time; nothing says they cause it):")
     for mc in m.machines:
         print(f"  {mc.id:<20} {mc.kind:<8} flows: {', '.join(mc.attributed) or '-'}")
     return 0

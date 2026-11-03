@@ -4,7 +4,11 @@
 const Evidence = (() => {
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const fix = (v) => (typeof v === "number" && isFinite(v) ? v.toFixed(2) : "—");
-  const BY_CONSTRUCTION = "holds by construction: its level is the count of its own moves, so the balance proves nothing";
+  const BY_CONSTRUCTION = "exact by definition: its level and its moves are one count from one record, so the balance proves nothing";
+  // the short form, the tag under such a stock and its class in the counts
+  const EXACT = "exact by definition";
+  // a machine on a flow is a guess from timing (sd/attribute.py): what its tooltip says
+  const GUESSED = "this machine's events match the flow's counter in time; nothing says it causes the flow";
   const byConstruction = (t) => !!t && t.kind === "by_construction";
   // the drawer's and "How it was found"'s line: " · trust 0.42 (low; weakest: …) · behaviour …"
   function trust(ev) {
@@ -21,18 +25,18 @@ const Evidence = (() => {
     if (byConstruction(t)) return `<span class="muted">${BY_CONSTRUCTION}</span>`;
     return `<span class="num">${fix(t.score)}</span> <span class="muted">${esc(t.level || "")}</span>`;
   }
-  // a stock by how far it can be trusted, in one word: "by construction" (its balance is its own
-  // moves), "hidden" (no series measures it), "evidenced" (medium or high trust), else "weakly evidenced"
+  // a stock by how far it can be trusted, in one word: "exact by definition" (its balance is its
+  // own moves), "hidden" (no series measures it), "evidenced" (medium or high trust), else "weakly evidenced"
   function trustClass(s) {
     const ev = (s || {}).evidence || {}, t = ev.trust || {};
-    if (byConstruction(t) || ev.by_construction) return "by construction";
+    if (byConstruction(t) || ev.by_construction) return EXACT;
     if (ev.hidden || t.kind === "unmeasured") return "hidden";
     return (t.score ?? 0) >= 0.5 ? "evidenced" : "weakly evidenced";
   }
-  // "5 stocks: 0 evidenced, 3 by construction, 2 hidden" (evidenced always said, the rest when any)
+  // "5 stocks: 0 evidenced, 3 exact by definition, 2 hidden" (evidenced always said, the rest when any)
   function trustCounts(stocks) {
     const by = {}; for (const s of stocks || []) { const c = trustClass(s); by[c] = (by[c] || 0) + 1; }
-    const n = (stocks || []).length, parts = ["evidenced", "weakly evidenced", "by construction", "hidden"].filter((c) => c === "evidenced" || by[c]).map((c) => `${by[c] || 0} ${c}`);
+    const n = (stocks || []).length, parts = ["evidenced", "weakly evidenced", EXACT, "hidden"].filter((c) => c === "evidenced" || by[c]).map((c) => `${by[c] || 0} ${c}`);
     return { n, by, text: `${n} stock${n === 1 ? "" : "s"}: ${parts.join(", ")}`, none: !by.evidenced };
   }
   // a flow "fitted" from fewer events than this has no fit to speak of
@@ -69,6 +73,6 @@ const Evidence = (() => {
     if ((hs[0].chance ?? 0) <= CHANCE) return "";
     return hs.length === 1 ? `chance alone would pair ${Math.round(100 * hs[0].chance)}%` : UNTOLD;
   }
-  return { trust, trustCell, trustClass, trustCounts, UNTOLD, byConstruction, tooFew, tooFewText, confidence, chance, matched, untold, ranked, MARGIN, MIN_EVENTS, BY_CONSTRUCTION };
+  return { trust, trustCell, trustClass, trustCounts, UNTOLD, byConstruction, tooFew, tooFewText, confidence, chance, matched, untold, ranked, MARGIN, MIN_EVENTS, BY_CONSTRUCTION, EXACT, GUESSED };
 })();
 if (typeof module !== "undefined") module.exports = Evidence;

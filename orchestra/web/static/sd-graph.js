@@ -374,7 +374,7 @@
       // a stepped stock's caption is its sentence, cut to the box (the drawer and the hover say it all);
       // a stock a declaration names, the name it would have had (its identifier)
       const fit = Math.max(180, s.name.length * 7 + 30) / 6.2 - 2, cap = generated ? wrap(generated, fit) : (!byTags && family) || wrap(about || "", fit);
-      // its tags, chips under the box (sd/titles.py), after "by construction"
+      // its tags, chips under the box (sd/titles.py), after "exact by definition"
       const chips = tagsOf(s).map((t) => ({ text: t, cls: "ng-t-tag", below: true, row: true }));
       nodes.push({ id: "s:" + s.id, kind: "box", sid: s.id, label: name, lines: [name], caption: cap,
       // sized by the full name, as before the short names: the layout search is sensitive to box
@@ -384,7 +384,7 @@
       // a stock that holds by construction (its level is the count of its own moves): tagged, so it
       // never reads as trusted as one the evidence balances
       // (under the box: above it is where a version's marks go)
-      ...(byConstruction(s) || chips.length ? { tags: [...(byConstruction(s) ? [{ text: "by construction", cls: "ng-t-bc", below: true }] : []), ...chips] } : {}) }); }
+      ...(byConstruction(s) || chips.length ? { tags: [...(byConstruction(s) ? [{ text: "exact by definition", ...(typeof Evidence !== "undefined" ? { title: Evidence.BY_CONSTRUCTION } : {}), cls: "ng-t-bc", below: true }] : []), ...chips] } : {}) }); }
     // a place no stock was kept for, drawn named and unmeasured: with its level when its count holds
     // items now (``discovery.held_levels``), so the diagram never leaves out what a pile holds
     const placeBox = (v, p) => { const id = "p:" + v, title = placeTitle(v, p), lv = p.level != null ? `${count(p.level)} now · ` : "";

@@ -131,7 +131,7 @@ def unmeasured(note: str = "no series measures it: its level is what the counter
 
 def by_construction() -> dict:
     return scored("by_construction", {"evidence": 0.0}, {},
-                  ["holds by construction: its level is the count of its own moves, so the balance proves nothing"])
+                  ["exact by definition: its level and its moves are one count from one record, so the balance proves nothing"])
 
 
 def with_persistence(trust: dict, seen: int, of: int, enough: int) -> dict:

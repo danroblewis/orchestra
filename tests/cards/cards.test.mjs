@@ -20,7 +20,7 @@ test("every card names the package and what the machine listens for, whoever dre
   assert.match(rows, /listens for<\/span><span class="ty">order.assigned<\/span>/);
   assert.match(rows, /instances<\/span>.*> 1<\/span>/);
   // a machine's part in the model is a hypothesis, with its confidence; a series is never its own
-  assert.match(rows, /flows \(hypotheses\)<\/span><a class="ty fl" href="\/dynamics#f:loaves_baked"[^>]*title="baker's order.baked events match its increments · open it on Dynamics">loaves &lt;baked&gt;</);   // no flow record: no number
+  assert.match(rows, /flows \(guessed from timing\)<\/span><a class="ty fl" href="\/dynamics#f:loaves_baked"[^>]*title="baker's order.baked events match its increments · open it on Dynamics">loaves &lt;baked&gt;</);   // no flow record: no number
   assert.doesNotMatch(rows, /metrics|labelled machine/);
   const wrapped = Orchestra.machineCards.wrap(m, "<h3>the package's head</h3>" + rows);
   assert.ok(wrapped.startsWith('<div class="panel') && wrapped.includes("the package's head") && wrapped.includes("bakery"));
@@ -30,7 +30,7 @@ test("the mode tag's class has no space in it, and a kind is said as announced",
   const rows = Orchestra.machineCards.rows(m);
   assert.match(rows, /class="tag k-ad_hoc">ad hoc</);
   assert.match(Orchestra.machineCards.rows({ ...m, mode: "continuous", kind: "service" }), /k-continuous">continuous<.*>service</);
-  assert.match(Orchestra.machineCards.rows({ ...m, mode: null, kind: null, package: null, publishes: [], subscribes: [], flows: [], instances: [], first_seen: null }), /not announced.*not announced.*no package.*no events yet.*nothing.*nothing.*none hypothesised yet/s);
+  assert.match(Orchestra.machineCards.rows({ ...m, mode: null, kind: null, package: null, publishes: [], subscribes: [], flows: [], instances: [], first_seen: null }), /not announced.*not announced.*no package.*no events yet.*nothing.*nothing.*none guessed yet/s);
 });
 
 test("engaged and kind are rows of their own, so a narrow panel never wraps a kind under the engaged label", () => {

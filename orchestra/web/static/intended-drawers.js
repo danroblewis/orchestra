@@ -108,7 +108,7 @@ const IntendedDrawers = (() => {
       ${(x.candidates || []).length ? `<div>suggested from labels</div><div>${x.candidates.map((c) => `<b>${esc(I().nameOf(c.id))}</b> <span class="muted">(${esc(c.why)})</span>`).join(", ")}<br><span class="muted">whether it is this ${esc(x.part)} is for you to say: ${esc(ask("link them"))}</span></div>` : ""}
       ${targetLine(x.target)}
       <div>declared to affect it</div><div>${affects.length ? affects.map((a) => `<a href="/machines#${encodeURIComponent(a.id)}">${esc(a.name)}</a> <span class="muted">(${esc(a.how)} · ${esc(a.state)})</span>`).join("<br>") : '<span class="muted">no machine declares an effect on it or reads it</span>'}</div>
-      <div>machines</div><div><span class="muted">no flow hypotheses: an expected ${esc(x.part)} has no flows until discovery finds one</span></div></div>
+      <div>machines</div><div><span class="muted">no machine guessed on it: an expected ${esc(x.part)} has no flows until discovery finds one</span></div></div>
       <h4>How to measure it${m && (m.options || []).length ? ` <span class="muted im-h4note">${m.chosen ? `· the options recorded, in their order; chosen: <b>${esc(m.chosen)}</b>` : "· the options recorded; none chosen yet"}</span>` : ""}</h4>
       ${m && (m.options || []).length ? `<div class="im-opts">${m.options.map((o) => option(o, m.chosen) + (o.key === m.chosen ? recordingBlock(m) : "")).join("")}</div>
         <div class="muted im-facts" style="margin-top:6px">The choice is read only here: ${esc(ask(m.chosen ? "switch to another option" : "choose one"))}.</div>`
