@@ -413,5 +413,8 @@ def test_a_prediction_judged_by_the_host_shown_by_the_cli_and_the_dynamics_api(t
     from orchestra.web.auth import bearer
 
     web = TestClient(create_app(p), headers=bearer(p))
-    assert [x["id"] for x in web.get("/api/dynamics/predictions?era=e1").json()["predictions"]] == [pid]
+    [one] = web.get("/api/dynamics/predictions?era=e1").json()["predictions"]
+    assert one["id"] == pid
+    assert one["judge_at"] == pytest.approx(CHANGE + 40 * 60), "judged when its era's start plus its horizon passes"
+    assert web.get("/api/dynamics/predictions?era=none").json()["predictions"][0]["judge_at"] is None, "not matched: no time yet"
     assert [x["id"] for x in web.get("/api/dynamics/predictions?era=none").json()["predictions"]] == [other["id"]], "not yet matched"

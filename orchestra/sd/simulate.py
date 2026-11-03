@@ -13,7 +13,11 @@ measured inputs, and no stock giving more than it holds):
 A flow whose equation has no form the simulator steps (an SD Lab expression, or no equation) is
 replayed: its observed rate in the past, and its mean over the last ``HOLD_S`` in the future. So
 is a flow fitted from fewer than ``MIN_EVENTS`` events (``equations.forms.too_few``) (``too_few``): a rate on so few is no
-equation to step. The result says which flows were replayed. Hidden stocks start at 0."""
+equation to step. The result says which flows were replayed. Hidden stocks start at 0.
+
+Beside the runs: each flow's count over the projection (``flows``: what the stepper moved, a
+stock's outflows sharing what it holds), and each stock's projection as the pages say it
+(``stocks``: its trust band, when it empties, or why there is none: ``sd.projection``)."""
 
 from __future__ import annotations
 
@@ -22,6 +26,7 @@ from itertools import pairwise
 from .discover import UNITS
 from .equations.forms import too_few
 from .model import Equation, Model
+from .projection import summary
 from .rates import scale as _scale
 
 STEPPED = {"constant", "proportional", "linear", "gap"}
@@ -91,12 +96,23 @@ def simulate(model: Model, history: dict, *, now: float, start: float, horizon_s
         ts = sorted({t for pts in series.values() for t, _ in pts if t <= t_until}) or [start]
         return {"t": ts, "values": {k: [_at(pts, t) or 0.0 for t in ts] for k, pts in series.items()}}
 
-    def run(t0: float, t1: float, levels: dict) -> dict:
+    moved, emptied = {f["id"]: 0.0 for f in flows}, {}
+
+    def run(t0: float, t1: float, levels: dict, count: bool = False) -> dict:
         times = np.arange(t0, t1, step_s)
         stepper = Stepper(flows, ids, inputs=inputs(min(t1, now)))
         L = np.array([[levels.get(i) or 0.0] for i in ids], dtype=float)
         out = {i: [[round(t0), float(L[k, 0])]] for k, i in enumerate(ids)}
         for t in times:
+            if count:                                       # what each flow moves in the step, as the step moves it
+                taken = dict.fromkeys(ids, 0.0)
+                for f, a in zip(flows, stepper._amounts(L, np.array([t]))):
+                    moved[f["id"]] += (x := float(np.asarray(a).ravel()[0]))
+                    if f["from"] in taken:
+                        taken[f["from"]] += x
+                for k, i in enumerate(ids):                  # emptied: its outflows took all it held
+                    if i not in emptied and L[k, 0] > 1e-6 and taken[i] >= L[k, 0] * (1 - 1e-9):
+                        emptied[i] = round(t + step_s)
             L = stepper.step(L, np.array([t]))
             for k, i in enumerate(ids):
                 out[i].append([round(t + step_s), round(float(L[k, 0]), 4)])
@@ -105,6 +121,9 @@ def simulate(model: Model, history: dict, *, now: float, start: float, horizon_s
     measured = history.get("stocks") or {}
     at_start = {i: _at(measured.get(i) or [], start) for i in ids}
     at_now = {i: _at(measured.get(i) or [], now) for i in ids}
-    return {"start": start, "now": now, "step": step_s, "replayed": replayed, "too_few": few_ids,
-            "era": run(start, now, at_start) if now > start else {},
-            "projection": run(now, now + horizon_s, at_now)}
+    out = {"start": start, "now": now, "step": step_s, "horizon": horizon_s, "replayed": replayed, "too_few": few_ids,
+           "era": run(start, now, at_start) if now > start else {},
+           "projection": run(now, now + horizon_s, at_now, count=True)}
+    out["flows"] = {fid: {"count": round(v, 4), "replayed": fid in replayed} for fid, v in moved.items()}
+    out["stocks"] = summary(model, out, measured, emptied)
+    return out

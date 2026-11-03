@@ -36,6 +36,11 @@
   .mstat { display:block; padding:6px 8px; font-size:12.5px; color:var(--text); text-decoration:none } .mstat:hover { background:var(--panel3); border-radius:8px }
   /* the server is not answering: nothing on the panel reads as live */
   .dbody.stale .mline .d { background:#64748b !important; box-shadow:none !important } .dbody.stale .mline .k, .dbody.stale .mline b { opacity:.55 } .dbody.stale .mline .r .live { color:var(--muted) }
+  /* Where this is going (where-panel.js): the projection in words with a sparkline each, the predictions, the equation misses */
+  .dbody h4 { font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:8px 0 4px; font-weight:600 } .dbody h4:first-child { margin-top:0 }
+  .wline, .wmove { font-size:12.5px; padding:2px 0 2px 8px; border-left:2px solid var(--border2); margin:2px 0; overflow-wrap:anywhere }
+  .wline.muted { border-color:transparent } .wline.miss { border-color:#f59e0b } .wline.v-passed { border-color:#22c55e } .wline.v-side, .wline.v-wrong { border-color:#f59e0b } .wline.v-none { border-color:#ef4444 }
+  .wmove { display:flex; gap:10px; align-items:center; justify-content:space-between } .wmove .wtext { min-width:0 } .wmove .pspark { flex:none }
   /* a phone: a row wraps, its words under its name */
   @media (max-width:600px) { .mline { display:flex; flex-wrap:wrap; gap:4px 8px } .mline > span:nth-child(3) { flex-wrap:wrap } .mline .r { flex-basis:100%; text-align:left; white-space:normal } }
 </style>
@@ -50,6 +55,8 @@
 <script src="/static/evidence-text.js?v={{v}}"></script>
 <script src="/static/sd-graph.js?v={{v}}"></script>
 <script src="/static/flow-check.js?v={{v}}"></script>
+<script src="/static/projection.js?v={{v}}"></script>
+<script src="/static/predictions.js?v={{v}}"></script>
 <script>
 // Orchestra's own panels: the machines running now, and the host. A package adds its own
 // (Orchestra.panels.register, from its every-page script); dashboard.js lays them all out.
@@ -140,6 +147,9 @@ Orchestra.panels.register({ id: "model", title: "Model", size: { w: 5, h: 4 }, m
   refresh(); setInterval(refresh, 30000);
 } });
 
+</script>
+<script src="/static/where-panel.js?v={{v}}"></script>
+<script>
 // The Host panel: the Core services in a line, and the machine Orchestra runs on
 Orchestra.panels.register({ id: "host", title: "Host", size: { w: 7, h: 9 }, phone: "last", mount(body, ui) {
   body.innerHTML = `<a class="panel corestrip" id="corestrip" href="/core" title="Orchestra's fundamental services: the Core page">Core …</a>

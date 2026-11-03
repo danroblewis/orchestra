@@ -61,3 +61,43 @@ def test_a_flow_fitted_from_too_few_events_is_replayed_not_stepped():
     r = simulate(m, h, now=600, start=0, horizon_s=600, step_s=15)
     assert r["replayed"] == ["out"] and r["too_few"] == ["out"]
     assert r["projection"]["q"][-1][1] == pytest.approx(10.0 + 10.0, abs=0.5)     # 2 in, 1 out as observed: never the fitted 9
+
+
+def behaviour(**kw) -> dict:
+    return {"trust": {"score": 0.8, "kind": "balance", "behaviour": {"score": 0.7, "level": "medium", "beats_hold": True,
+                                                                     "growth": 0.5, "z": 2.0, "horizon": 10.0, **kw}}}
+
+
+def test_each_flow_says_what_it_moves_over_the_projection():
+    # 2/min in for 10 minutes; the outflow asks for 50/min of a queue that holds 3: it gets what is there
+    m = queue(Equation("constant", {"c": 50.0}, "fitted"))
+    r = simulate(m, history(3.0), now=600, start=0, horizon_s=600, step_s=15)
+    assert r["flows"]["in"] == {"count": pytest.approx(20.0, abs=0.01), "replayed": False}
+    assert r["flows"]["out"]["count"] == pytest.approx(22.5, abs=0.01), "never more than was there: the last step's 0.5 stays"
+    assert r["horizon"] == 600
+
+
+def test_a_stock_that_drains_says_when_it_empties_and_its_band_widens_past_what_was_tested():
+    m = queue(Equation("constant", {"c": 3.0}, "fitted"), Equation("constant", {"c": 1.0}, "fitted"))   # net −2/min
+    m.stocks[0].evidence = behaviour()
+    r = simulate(m, history(10.0), now=600, start=0, horizon_s=30 * 60, step_s=15)
+    s = r["stocks"]["q"]
+    assert s["no_projection"] is None and s["start"] == 10.0 and s["end"] == pytest.approx(0.25)
+    assert s["empties_at"] == pytest.approx(600 + 5 * 60, abs=15), "10 at −2/min: empty in five minutes"
+    assert s["trust"]["trusted_s"] == 600.0 and s["tested_until"] == 1200
+    by_t = {t: (lo, hi) for t, lo, hi in s["band"]}
+    assert by_t[600 + 120] == (pytest.approx(6 - 2.0 * 0.5 * 2), pytest.approx(6 + 2.0 * 0.5 * 2)), "within the tested horizon: ± z × growth × h"
+    assert by_t[600 + 1800][1] == pytest.approx(0.25 + 2.0 * 0.5 * 30 * 3), "beyond it: × h / T, so it widens faster"
+    assert min(lo for _, lo, _ in s["band"]) == 0.0, "never below zero"
+
+
+def test_no_projection_is_said_with_its_reason():
+    m = queue(Equation("constant", {"c": 1.0}, "fitted"))
+    m.stocks[0].evidence = behaviour(beats_hold=False)
+    r = simulate(m, history(5.0), now=600, start=0, horizon_s=600, step_s=15)
+    assert r["stocks"]["q"]["no_projection"] == "worse than holding" and "band" not in r["stocks"]["q"]
+    m.stocks[0].evidence = {"hidden": True}
+    assert simulate(m, history(5.0), now=600, start=0, horizon_s=600, step_s=15)["stocks"]["q"]["no_projection"] == "no level measured"
+    m.stocks[0].evidence = {}
+    r = simulate(m, history(5.0), now=600, start=0, horizon_s=600, step_s=15)
+    assert r["stocks"]["q"]["no_projection"] is None and r["stocks"]["q"]["trust"] is None and r["stocks"]["q"]["band"] == [], "trust not measured: no band"

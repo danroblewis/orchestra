@@ -4,7 +4,8 @@
 // - each flow carries moving dashes whose speed follows its recent rate;
 // - hovering a stock or a flow shows a summary; clicking opens a drawer with its history, and
 //   for a flow, its observed rate against what its fitted equation predicts;
-// - a chart under the diagram plots every stock, each line toggled from its legend.
+// - a chart under the diagram plots every stock, each line toggled from its legend, and from now
+//   its projection (projection.js), with a strip of what moves above it.
 // Data: MODEL (/api/dynamics/model) and HISTORY (/api/dynamics/history), both read from the web
 // server's caches; nothing here queries the metrics store directly.
 const Live = (() => {
@@ -225,21 +226,19 @@ const Live = (() => {
       ${ev.net_flow ? netFlowRows(s, ev, io) : ""}
       ${ev.quiet ? `<div>held</div><div>from v${esc(String(ev.quiet.version))}: ${esc(ev.quiet.why)}</div>` : ""}
       ${ev.trust ? trustRows(ev.trust, ev.hidden ? [ev.note, ev.passing && ev.passing.note, ...(ev.trust.why || [])] : []) : ""}</div>
-      ${unprojected(s) ? `<h4>Level</h4><div class="muted">not projected: no measurement of its level</div>` : `<h4 style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">Level: measured, as the equations run it, and projected
-        <label class="muted" style="font-weight:400;font-size:11.5px">project <input id="sim-h" type="number" min="1" max="1440" value="${horizon()}" style="width:58px"> min ahead</label></h4>
-      <div id="sim-chart"><div class="muted">running the equations…</div></div><div id="sim-note" class="muted" style="font-size:11.5px"></div>`}
+      ${unprojected(s) ? `<h4>Level</h4><div class="muted">not projected: no measurement of its level</div>` : `<h4>Level: measured, as the equations run it, and projected the next <span class="hzn-min">${horizon()}</span> min <span class="muted" style="text-transform:none;letter-spacing:0">(the horizon is set beside the stocks chart)</span></h4>
+      <div id="sim-chart" data-sid="${esc(id)}"><div class="muted">running the equations…</div></div><div id="sim-note" class="muted" style="font-size:11.5px"></div>`}
       <h4>Fills it <span class="muted">(inflows)</span></h4>${io.in.map((f) => flowRow(f, "+")).join("") || '<div class="muted">nothing flows in</div>'}
       <h4>Drains it <span class="muted">(outflows)</span></h4>${io.out.map((f) => flowRow(f, "−")).join("") || '<div class="muted">nothing flows out</div>'}
       <h4>Its flows' rates (${per()}), ${esc(spanText(lines.length ? lines[0].points : []))}: inflows above zero, outflows below</h4>${lines.length ? Charts.line(lines, { W: 700, H: 220, unit: per() }) : '<div class="muted">no flows measured</div>'}`, { key: "s:" + id });
-    const inp = document.getElementById("sim-h");
-    if (inp) inp.addEventListener("change", () => { try { localStorage.setItem("orchestra.dyn.horizon", String(Math.max(1, +inp.value || 30))); } catch (e) {} simChart(id); });
-    if (inp) simChart(id);
+    if (document.getElementById("sim-chart")) simChart(id);
     if (typeof IntendedDrawers !== "undefined") IntendedDrawers.expectSwitch("stock", id);     // "Expected: always show this stock" (intended-drawers.js)
   }
   async function simChart(id) {
     const el = document.getElementById("sim-chart"), note = document.getElementById("sim-note"); if (!el) return;
-    let d;
-    try { d = await (await fetch(`/api/dynamics/simulate?horizon_min=${horizon()}`)).json(); } catch (e) { d = { ok: false, error: String(e) }; }
+    // the page's one simulate per refresh, shared: the one in flight, or the last
+    let d = SIM || (SIMQ && await SIMQ) || await project();
+    if (!d) d = { ok: false, error: Projection.fitted(MODEL).length ? "no projection for a past version" : "the model has no fitted flows yet" };
     if (!document.getElementById("sim-chart")) return;
     // a hidden stock has no series: nothing measured to draw
     const hidden = ((MODEL.stocks.find((s) => s.id === id) || {}).evidence || {}).hidden;
@@ -340,7 +339,38 @@ const Live = (() => {
     if (typeof IntendedDrawers !== "undefined") IntendedDrawers.expectSwitch("flow", fid);
   }
 
-  // the history chart under the diagram: every stock, each toggled from its key
+  // the projection (/api/dynamics/simulate, sd/projection.py): fetched once per refresh, shared by
+  // the chart, the strip, the flows table and the stock's drawer (projection.js says it)
+  let SIM = null, SIMQ = null;
+  const latest = () => typeof VERSION === "undefined" || VERSION === null;
+  const differs = (f) => HISTORY != null && !!against(f).differs;
+  const names = { stock: (id) => stockName(id) };
+  async function project() {
+    if (!MODEL || !latest()) { SIM = null; return null; }
+    if (!Projection.fitted(MODEL).length) { SIM = null; strip(); return null; }   // nothing fitted: the strip says so, no request
+    const h = horizon();
+    SIMQ = (async () => { try { return await (await fetch(`/api/dynamics/simulate?horizon_min=${h}`)).json(); } catch (e) { return { ok: false, error: String(e) }; } })();
+    const d = await SIMQ;
+    if (h === horizon()) SIM = d;
+    return d;
+  }
+  const projectedCount = (f) => (SIM && SIM.ok ? Projection.count(SIM, f, differs) : null);
+  // the projections strip above the chart: one line per stock that moves within the horizon
+  function strip() {
+    const el = document.getElementById("proj-strip"); if (!el || !MODEL) return;
+    el.innerHTML = !latest() ? '<div class="pline muted">Projections are drawn for the latest discovery only: this is a past version.</div>'
+      : Projection.strip(MODEL, SIM, { names, when: (t) => Orchestra.when(t), differs, horizon: horizon() });
+  }
+  function setHorizon(v) {
+    const n = Math.max(1, Math.min(1440, Math.round(+v || 30)));
+    try { localStorage.setItem("orchestra.dyn.horizon", String(n)); } catch (e) {}
+    document.querySelectorAll(".hzn-min").forEach((x) => (x.textContent = n));
+    project().then(() => { chart(); strip(); if (typeof tables === "function") { try { tables(); } catch (e) {} } const dk = document.querySelector("#sim-chart"); if (dk && dk.dataset.sid) simChart(dk.dataset.sid); });
+  }
+
+  // the history chart under the diagram: every stock, each toggled from its key, and from now its
+  // projection to the horizon, dashed, in a band of how far it is trusted; a stock with no
+  // projection stops at now, its reason at the line's end
   function chart() {
     const el = document.getElementById("hist"); if (!el || !MODEL) return;
     const ids = MODEL.stocks.map((s) => s.id).filter((id) => stockHist(id).length);
@@ -352,10 +382,32 @@ const Live = (() => {
     const lines = ids.map((id, i) => ({ id, i, label: stockName(id), points: stockHist(id), color: stockColor(id), step: true }));
     const shown = lines.filter((l) => !HIDDEN.has(l.id));
     document.getElementById("hist-keys").innerHTML = lines.map((l) => `<span class="hk ${HIDDEN.has(l.id) ? "off" : ""}" onclick="Live.toggle('${esc(l.id)}')"><i style="background:${stockColor(l.id)}"></i>${esc(l.label)} <b>${fmt(now(l.id))}</b></span>`).join("");
+    const sim = SIM && SIM.ok && latest() ? SIM : null, extra = [], ends = new Map();
+    if (sim) for (const l of shown) {
+      const why = Projection.reason(MODEL, sim, l.id, differs), last = l.points[l.points.length - 1];
+      // stocks stopping at the same level for the same reason share one note
+      if (why) { const k = `${why}|${last[1]}`; ends.set(k, [...(ends.get(k) || []), { t: last[0], v: last[1], why, color: l.color }]); continue; }
+      const s = sim.stocks[l.id], [tested, beyond] = Projection.bands(s);
+      extra.push({ label: `${l.label}, projected`, points: (sim.projection || {})[l.id] || [], color: l.color, dash: "5 3", nokey: true });
+      if (tested.length > 1) extra.push({ label: `${l.label}, trusted`, points: [], band: tested, color: l.color, nokey: true, bandOpacity: 0.2 });
+      if (beyond.length > 1) extra.push({ label: `${l.label}, beyond what was tested`, points: [], band: beyond, color: l.color, nokey: true, bandOpacity: 0.035 });
+    }
+    // the chart runs on to the horizon only when something is projected; a reason is said right of
+    // now then, and left of it when the chart stops at now
+    const ahead = extra.length > 0;
+    // the y axis spans what was measured and the central projections; a band wider than that is cut at the top
+    const central = [...shown.flatMap((l) => l.points), ...extra.flatMap((l) => l.points)].map((p) => p[1]);
+    const yMax = central.length ? Math.max(...central) * 1.5 + 1 : null;
+    const cut = yMax != null && extra.some((l) => (l.band || []).some((r) => r[2] > yMax));
+    const notes = [...ends.values()].map((g) => ({ t: g[0].t, v: g[0].v, text: g.length > 1 ? `${g[0].why} (${g.length} stocks)` : g[0].why, anchor: ahead ? "start" : "end", color: g.length > 1 ? null : g[0].color }));
     // keep each stock's colour when others are hidden: pad hidden lines as empty
-    el.innerHTML = shown.length ? Charts.line(lines.map((l) => (HIDDEN.has(l.id) ? { label: l.label, points: [], color: l.color } : l)), { W: el.clientWidth || 900, H: 220, integer: shown.every((l) => l.points.every((p) => Number.isInteger(p[1]))) })
+    el.innerHTML = shown.length ? Charts.line([...lines.map((l) => (HIDDEN.has(l.id) ? { label: l.label, points: [], color: l.color } : l)), ...extra],
+      { W: el.clientWidth || 900, H: 220, integer: shown.every((l) => l.points.every((p) => Number.isInteger(p[1]))), notes,
+        ...(ahead ? { yMax: cut ? yMax : null, now: sim.now, range: [all[0][0], sim.now + (sim.horizon || horizon() * 60)], marks: [{ t: sim.now, label: "now" }] } : {}) })
       : '<div class="muted">Every stock is hidden; click one above.</div>';
     el.querySelectorAll(".ckeys").forEach((k) => k.remove());
+    const key = document.getElementById("hist-proj-key");
+    if (key) key.innerHTML = ahead ? `from now: dashed, the equations' projection if nothing changes; shaded, the band its held-out runs earned (lighter past how far ahead they were tested)${cut ? "; a band wider than the chart is cut at its top" : ""}` : "";
   }
   function toggle(id) { HIDDEN = HIDDEN || new Set(); HIDDEN.has(id) ? HIDDEN.delete(id) : HIDDEN.add(id); try { localStorage.setItem("orchestra.dyn.hidden", JSON.stringify([...HIDDEN])); } catch (e) {} chart(); }
 
@@ -386,11 +438,18 @@ const Live = (() => {
       GRAPH.setRates((e) => (e.flowPart ? recentRate(e.fid) : 0));
       GRAPH.setLabels((e) => (e.flowPart && e.fid ? edgeLabel(e) : null));
     }
-    chart();
+    await project();
+    chart(); strip();
     // the tables read the observed rates too (observed first, a missed equation said): redrawn when they changed
     if (typeof MODEL !== "undefined" && MODEL && typeof tables === "function") { try { tables(); } catch (e) {} }
   }
-  function drawn(graph) { GRAPH = graph; graph.setRates((e) => (e.flowPart ? recentRate(e.fid) : 0)); chart(); }
-  return { unreadLevel, recentRate, refresh, drawn, toggle, openStock, openFlow, decorateStock, decorateInput, stockSummary, flowSummary, edgeLabel, against, now: (id) => now(id), sig2, per, recentMinutes, has: () => HISTORY != null };
+  function drawn(graph) {
+    GRAPH = graph; graph.setRates((e) => (e.flowPart ? recentRate(e.fid) : 0)); chart(); strip();
+    // the model has arrived: its projection now, not at the next refresh
+    if (!SIM && !SIMQ) project().then(() => { chart(); strip(); if (typeof tables === "function") { try { tables(); } catch (e) {} } });
+  }
+  return { horizon, setHorizon, projectedCount, strip, unreadLevel, recentRate, refresh, drawn, toggle, openStock, openFlow, decorateStock, decorateInput, stockSummary, flowSummary, edgeLabel, against, now: (id) => now(id), sig2, per, recentMinutes, has: () => HISTORY != null };
 })();
 Live.refresh(); setInterval(Live.refresh, 15000);
+// the horizon beside the stocks chart's title: how far ahead to draw (display only, kept in this browser)
+(() => { const i = document.getElementById("hzn"); if (!i) return; i.value = Live.horizon(); i.addEventListener("change", () => { Live.setHorizon(i.value); i.value = Live.horizon(); }); })();

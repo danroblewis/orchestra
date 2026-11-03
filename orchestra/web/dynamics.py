@@ -54,11 +54,16 @@ def era_eras(project) -> list:
 
 
 def predictions_view(project, era: str | None = None) -> dict:
-    """Every prediction recorded, with the era its change began (None: not yet matched); ``era``
+    """Every prediction recorded, with the era its change began (None: not yet matched) and when
+    it is judged (``judge_at``: that era's start plus its horizon; None until matched); ``era``
     keeps one era's (``"none"``: the unmatched)."""
     store = ModelStore.for_state(project.state_dir)
-    by_cause = {e.cause: e.id for e in era_record.recorded(store) if e.cause}
-    out = [{**p, "era": by_cause.get(p.get("change"))} for p in prediction_record.recorded(store)]
+    by_cause = {e.cause: e for e in era_record.recorded(store) if e.cause}
+
+    def judge_at(p: dict, e) -> float | None:            # when its horizon passes: its era's start + its horizon
+        return e.start + float(p["horizon_s"]) if e is not None and p.get("horizon_s") is not None else None
+    out = [{**p, "era": e.id if (e := by_cause.get(p.get("change"))) else None, "judge_at": judge_at(p, e)}
+           for p in prediction_record.recorded(store)]
     if era is not None:
         out = [p for p in out if (p["era"] or "none") == era]
     return {"ok": True, "predictions": out}

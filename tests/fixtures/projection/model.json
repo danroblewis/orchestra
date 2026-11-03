@@ -1,0 +1,215 @@
+{
+ "version": 3,
+ "time_unit": "minute",
+ "stocks": [
+  {
+   "id": "queued",
+   "name": "queued",
+   "evidence": {
+    "trust": {
+     "score": 0.8,
+     "level": "high",
+     "kind": "balance",
+     "behaviour": {
+      "score": 0.7,
+      "level": "medium",
+      "beats_hold": true,
+      "error": 0.4,
+      "hold_error": 0.9,
+      "growth": 0.3,
+      "z": 1.5,
+      "horizon": 15.0
+     }
+    }
+   }
+  },
+  {
+   "id": "in_review",
+   "name": "in review",
+   "evidence": {
+    "trust": {
+     "score": 0.8,
+     "level": "high",
+     "kind": "balance",
+     "behaviour": {
+      "score": 0.7,
+      "level": "medium",
+      "beats_hold": true,
+      "error": 0.4,
+      "hold_error": 0.9,
+      "growth": 0.3,
+      "z": 1.5,
+      "horizon": 15.0
+     }
+    }
+   }
+  },
+  {
+   "id": "sailed",
+   "name": "sailed",
+   "evidence": {
+    "trust": {
+     "score": 0.8,
+     "level": "high",
+     "kind": "balance",
+     "behaviour": {
+      "score": 0.7,
+      "level": "medium",
+      "beats_hold": false,
+      "error": 0.4,
+      "hold_error": 0.9,
+      "growth": 0.3,
+      "z": 1.5,
+      "horizon": 15.0
+     }
+    }
+   }
+  },
+  {
+   "id": "drafts",
+   "name": "drafts",
+   "evidence": {
+    "trust": {
+     "score": 0.8,
+     "level": "high",
+     "kind": "balance",
+     "behaviour": {
+      "score": 0.7,
+      "level": "medium",
+      "beats_hold": true,
+      "error": 0.4,
+      "hold_error": 0.9,
+      "growth": 0.3,
+      "z": 1.5,
+      "horizon": 15.0
+     }
+    }
+   }
+  },
+  {
+   "id": "parked",
+   "name": "parked",
+   "evidence": {
+    "hidden": true,
+    "trust": {
+     "score": 0,
+     "kind": "unmeasured"
+    }
+   }
+  }
+ ],
+ "flows": [
+  {
+   "id": "assigned",
+   "name": "assigned",
+   "from": null,
+   "to": "queued",
+   "machines": [],
+   "current": {
+    "origin": "fitted",
+    "form": "constant",
+    "params": {
+     "c": 0.6
+    },
+    "inputs": [],
+    "quality": {
+     "events": 40,
+     "dispersion": 1.0
+    }
+   }
+  },
+  {
+   "id": "started",
+   "name": "started",
+   "from": "queued",
+   "to": "in_review",
+   "machines": [],
+   "current": {
+    "origin": "fitted",
+    "form": "proportional",
+    "params": {
+     "k": 0.05
+    },
+    "inputs": [
+     "queued"
+    ],
+    "quality": {
+     "events": 40,
+     "dispersion": 1.0
+    }
+   }
+  },
+  {
+   "id": "sailed_out",
+   "name": "sailed",
+   "from": "in_review",
+   "to": "sailed",
+   "machines": [],
+   "current": {
+    "origin": "fitted",
+    "form": "constant",
+    "params": {
+     "c": 0.1
+    },
+    "inputs": [],
+    "quality": {
+     "events": 40,
+     "dispersion": 1.0
+    }
+   }
+  },
+  {
+   "id": "drafted",
+   "name": "drafted",
+   "from": "drafts",
+   "to": null,
+   "machines": [],
+   "current": {
+    "origin": "fitted",
+    "form": "constant",
+    "params": {
+     "c": 1.0
+    },
+    "inputs": [],
+    "quality": {
+     "events": 40,
+     "dispersion": 1.0
+    }
+   }
+  },
+  {
+   "id": "parked_in",
+   "name": "parked",
+   "from": "in_review",
+   "to": "parked",
+   "machines": [],
+   "current": {
+    "origin": "fitted",
+    "form": "constant",
+    "params": {
+     "c": 0.2
+    },
+    "inputs": [],
+    "quality": {
+     "events": 2,
+     "dispersion": 1.0
+    }
+   }
+  }
+ ],
+ "machines": [],
+ "intended": {
+  "targets": [
+   {
+    "part": "stock",
+    "key": "k-in-review",
+    "id": "in_review",
+    "target": {
+     "op": "below",
+     "value": 5,
+     "over_s": 600
+    }
+   }
+  ]
+ }
+}
