@@ -72,6 +72,9 @@ test("a hand-off between two boxes is drawn across, and each pair's count writte
   assert.equal(edge("m:planner>m:writer").cross, undefined, "inside one box");
   assert.deepEqual(r.pairs.map((p) => [p.between, p.text, p.short]), [[["a", "b"], "1 hand-off between a and b · 3 subjects", "1 hand-off"]]);
   assert.deepEqual(Boxes.choices(SUBS).map((c) => c.text), ["group · 2 boxes · 1 crossing", "declared · 1 box · 0 crossing", "off"]);
+  // a group no machine is in draws no box on the map, and is not counted
+  const one = { ...GROUP, groups: [GROUP.groups[0], { value: "c", machines: [], events: [] }] };
+  assert.equal(Boxes.nameOf(one), "group · 1 box · 1 crossing");
 });
 
 test("a declared subsystem titles its box by its name, says who named it, and draws a gathered machine not on the map as a ghost", () => {

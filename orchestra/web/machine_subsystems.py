@@ -143,10 +143,28 @@ def from_announcements(field: str, label: str, out: dict, on: dict, announced: d
     return carry({"label": label, "source": "announced", "by": field}, values, where, span, out, on)
 
 
+def boxed(p: dict) -> int:
+    """How many machines a partition puts in a box."""
+    return sum(len(g["machines"]) for g in p["groups"])
+
+
+def default_of(parts: list[dict], model_default: str | None) -> str | None:
+    """Where the map starts: a declared partition; else the model's default when it puts a machine
+    in a box; else the partition the map's hand-offs separate best (the most pairs handed on inside
+    a box, the fewest crossing, the most machines boxed, then by label) among those that box one;
+    else the model's default (nothing boxed: the map is drawn without boxes)."""
+    by = {p["label"]: p for p in parts}
+    if model_default in by and (by[model_default].get("source") == "declared" or boxed(by[model_default])):
+        return model_default
+    some = [p for p in parts if boxed(p)]
+    if not some:
+        return model_default
+    return min(some, key=lambda p: (-p["joined"], p["crossed"], -boxed(p), p["label"]))["label"]
+
+
 def subsystems(out: dict, model_subs: dict | None, announced: dict[str, dict[str, list[str]]]) -> dict:
     """``/api/machines``'s ``subsystems``: the model's partitions (declared first) carried to the
-    machines, then one per announced field; the default the model's, else the announced partition
-    that keeps the most hand-offs inside a box, then crosses the fewest."""
+    machines, then one per announced field; the default as ``default_of`` says."""
     on, tags = on_types(out), _tags(out)
     parts = [from_model(p, out, on, tags) for p in (model_subs or {}).get("partitions") or []]
     taken = {p["label"] for p in parts}
@@ -155,8 +173,5 @@ def subsystems(out: dict, model_subs: dict | None, announced: dict[str, dict[str
         label = f if f not in taken else f"{f} (announced)"
         if (p := from_announcements(f, label, out, on, announced)) is not None:
             said.append(p)
-    default = (model_subs or {}).get("default")
-    if default is None and said:
-        default = min(said, key=lambda p: (-p["joined"], p["crossed"], len(p["unassigned"]["machines"]), p["label"]))["label"]
-    return {"default": default, "partitions": parts + said,
+    return {"default": default_of(parts + said, (model_subs or {}).get("default")), "partitions": parts + said,
             **({"declared": model_subs["declared"]} if (model_subs or {}).get("declared") else {})}

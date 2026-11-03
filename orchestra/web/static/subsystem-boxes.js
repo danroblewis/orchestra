@@ -34,7 +34,9 @@
 })(typeof self !== "undefined" ? self : this, function () {
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   // a partition as the control names it: "workflow · 2 boxes · 3 crossing"
-  const nameOf = (p) => `${p.label} · ${plural(p.groups.length, "box", "boxes")} · ${p.crossed} crossing${p.crossed_simulated ? ` (${p.crossed_simulated} simulated)` : ""}`;
+  // (on the event map, a group no machine is in draws no box, so it is not counted)
+  const drawable = (p) => p.groups.filter((g) => !g.events || (g.machines || []).length || ((g.ghosts || {}).machines || []).length).length;
+  const nameOf = (p) => `${p.label} · ${plural(drawable(p), "box", "boxes")} · ${p.crossed} crossing${p.crossed_simulated ? ` (${p.crossed_simulated} simulated)` : ""}`;
   // the control's entries: each partition the API reports, the default first, then the offered
   // (``offered``: partitions made from a page extension's offer), then off
   function choices(subs, offered = []) {
