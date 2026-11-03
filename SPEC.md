@@ -1869,7 +1869,12 @@ another's lines), refined by springs so nothing is left far from what it is conn
 stocks keep room for their flows and a labelled flow is long enough for its label, then untangled
 by a local search in a worker (`static/layout-worker.js`: moves, jumps and swaps of nodes and
 groups) so that no two lines cross (flows, dashed influences and cloud stubs alike) and none runs
-behind a box unless avoiding it would shrink the drawing below readable size; nodes glide to each stage. Edge labels sit where they cover no box and no
+behind a box unless avoiding it would shrink the drawing below readable size, nor a line is longer
+than reads as joining two things; nodes glide to each stage. A loop of flows is what layers draw
+worst (a line and one flow back as long as it), so the search also starts from each loop drawn as
+a ring (its longest cycle on an ellipse, at a few turns) and keeps the cheapest end; with boxes,
+each box is settled on its own first and the boxes packed side by side to fit the view, and
+without them the parts the flows make are tried that way too (L1, 2026-11-02). Edge labels sit where they cover no box and no
 other label (`placeLabels`); the Machines page's event map uses d3's forces, its lines in
 their machine's colour, toned down (`static/edge-color.js`: solid, it publishes; dashed, it
 listens; near-grey, not seen in 24 hours; full colour on hover). A layout keeps its shape while

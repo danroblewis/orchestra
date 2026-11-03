@@ -7,6 +7,10 @@
 // placed beside the flows it drives instead of wherever it lands. Influences from stocks are left
 // out of the layering (they would fight the flows' direction); clouds are placed afterwards.
 //
+// A loop of flows is the one thing layers draw badly (a line and one flow back from its end to its
+// start, as long as the line), so the untangling also starts from the loops drawn as rings and
+// keeps whichever start ends cheaper (``untangle``).
+//
 // Shared by the browser (global SDLayout, with the global ELK) and the layout tests (Node, elkjs).
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
@@ -31,14 +35,7 @@
     const ins = nodes.filter(inside), isIn = new Set(ins.map((n) => n.id));
     const dims = new Map(ins.map((n) => { const s = size(n); return [n.id, s.r ? [2 * s.r, 2 * s.r] : [s.w, s.h]]; }));
     const byEdge = new Map(edges.filter((e) => !e.toEdge).map((e) => [e.id, e]));
-    const links = [], seen = new Set();
-    const link = (a, b, id) => { const k = a + ">" + b; if (a === b || seen.has(k) || !isIn.has(a) || !isIn.has(b)) return; seen.add(k); links.push({ id, sources: [a], targets: [b] }); };
-    for (const e of byEdge.values()) link(e.source, e.target, "f" + links.length);
-    for (const e of edges.filter((x) => x.toEdge)) {
-      const src = nodes.find((n) => n.id === e.source), f = byEdge.get(e.toEdge);
-      if (!src || src.kind === "cloud" || src.sid || !f) continue;          // auxiliaries only
-      link(e.source, isIn.has(f.target) ? f.target : f.source, "i" + links.length);
-    }
+    const links = linksOf(nodes, edges, isIn);
     const kids = ins.map((n) => ({ id: n.id, width: dims.get(n.id)[0], height: dims.get(n.id)[1] }));
     const at = {};
     if (hierarchy) {
@@ -72,6 +69,91 @@
     }
     return at;
   }
+  // What ELK lays out: every flow between two nodes inside the system (``isIn``), and a link from
+  // each auxiliary to the stock its influence's flow runs into. [{id, sources: [a], targets: [b]}]
+  function linksOf(nodes, edges, isIn) {
+    const byEdge = new Map(edges.filter((e) => !e.toEdge).map((e) => [e.id, e])), byId = new Map(nodes.map((n) => [n.id, n]));
+    const links = [], seen = new Set();
+    const link = (a, b, id) => { const k = a + ">" + b; if (a === b || seen.has(k) || !isIn.has(a) || !isIn.has(b)) return; seen.add(k); links.push({ id, sources: [a], targets: [b] }); };
+    for (const e of byEdge.values()) link(e.source, e.target, "f" + links.length);
+    for (const e of edges.filter((x) => x.toEdge)) {
+      const src = byId.get(e.source), f = byEdge.get(e.toEdge);
+      if (!src || src.kind === "cloud" || src.sid || !f) continue;          // auxiliaries only
+      link(e.source, isIn.has(f.target) ? f.target : f.source, "i" + links.length);
+    }
+    return links;
+  }
+
+  // The loops of the flows: their strongly connected parts of three nodes or more, each with its
+  // longest cycle in the flows' order ([{members, cycle}]). A model has a few nodes, so the cycle
+  // is found by trying every path (within a budget).
+  function loopsOf(links) {
+    const out = new Map();
+    for (const l of links) out.set(l.sources[0], [...(out.get(l.sources[0]) || []), l.targets[0]]);
+    const index = new Map(), low = new Map(), on = new Set(), stack = [], parts = [];
+    const visit = (v) => {                                     // Tarjan's
+      index.set(v, index.size); low.set(v, index.get(v)); stack.push(v); on.add(v);
+      for (const w of out.get(v) || []) {
+        if (!index.has(w)) { visit(w); low.set(v, Math.min(low.get(v), low.get(w))); }
+        else if (on.has(w)) low.set(v, Math.min(low.get(v), index.get(w)));
+      }
+      if (low.get(v) === index.get(v)) { const part = []; let w; do { w = stack.pop(); on.delete(w); part.push(w); } while (w !== v); parts.push(part); }
+    };
+    for (const l of links) for (const v of [l.sources[0], l.targets[0]]) if (!index.has(v)) visit(v);
+    return parts.filter((p) => p.length >= 3).map((part) => {
+      const mine = new Set(part);
+      let cycle = [], budget = 100000;
+      const walk = (path, seen) => {
+        if (--budget < 0) return;
+        for (const w of (out.get(path[path.length - 1]) || []).filter((x) => mine.has(x))) {
+          if (w === path[0]) { if (path.length > cycle.length) cycle = [...path]; }
+          else if (!seen.has(w) && w > path[0]) { seen.add(w); path.push(w); walk(path, seen); path.pop(); seen.delete(w); }
+        }
+      };
+      for (const v of part) walk([v], new Set([v]));
+      return { members: part, cycle };
+    });
+  }
+
+  // The loops drawn as rings: each loop's longest cycle on an ellipse twice as wide as tall, in its
+  // order, clockwise from where material enters it on the left, its outline as long as the cycle's
+  // nodes and a gap between each; the loop's other members inside the ring between their
+  // neighbours, and what hangs off the loop alone (a place it fills, an auxiliary that drives it)
+  // just outside, beside what it hangs off. Centred where the loop was. Returns new positions, or
+  // null when there is no loop.
+  const RING_GAP = 90;
+  const TURNS = [0, 0.25, 0.5, 0.75];
+  function rings(nodes, edges, at, { size, inside = (n) => n.kind !== "cloud", turn = 0 }) {
+    const isIn = new Set(nodes.filter((n) => inside(n) && at[n.id]).map((n) => n.id)), byId = new Map(nodes.map((n) => [n.id, n]));
+    const links = linksOf(nodes, edges, isIn), loops = loopsOf(links.filter((l) => l.id[0] === "f"));
+    if (!loops.length) return null;
+    const dims = (id) => { const z = size(byId.get(id)); return z.r ? [2 * z.r, 2 * z.r] : [z.w, z.h]; };
+    const box = (id) => (byId.get(id).box == null ? null : String(byId.get(id).box));
+    const nbr = new Map();
+    for (const l of links) for (const [a, b] of [[l.sources[0], l.targets[0]], [l.targets[0], l.sources[0]]]) nbr.set(a, new Set([...(nbr.get(a) || []), b]));
+    const out = { ...at };
+    for (const { members, cycle } of loops) {
+      const R = new Set(members);
+      for (const v of members) for (const w of nbr.get(v) || []) if (!R.has(w) && box(w) === box(v) && [...nbr.get(w)].every((x) => R.has(x))) R.add(w);
+      const ids = [...R], [cx, cy] = centreOf(at, ids);
+      // where material enters: the member of the cycle with most flows into it from outside the loop
+      const entering = (v) => edges.filter((e) => !e.toEdge && e.target === v && !R.has(e.source)).length;
+      const first = (cycle.indexOf([...cycle].sort((a, b) => entering(b) - entering(a))[0]) + Math.round(turn * cycle.length)) % cycle.length;
+      const outline = cycle.reduce((a, id) => a + (dims(id)[0] + dims(id)[1]) / 2 + RING_GAP, 0);
+      const ry = outline / (Math.PI * 3.1), rx = ry * 2.1;
+      const start = new Map();
+      cycle.forEach((id, i) => { const t = Math.PI - 2 * Math.PI * (i - first) / cycle.length; start.set(id, [cx + rx * Math.cos(t), cy - ry * Math.sin(t)]); });
+      for (let pass = 0; pass < 3; pass++) for (const id of ids) if (!cycle.includes(id)) {
+        const ps = [...(nbr.get(id) || [])].map((w) => start.get(w)).filter(Boolean); if (!ps.length) continue;
+        const m = [ps.reduce((a, p) => a + p[0], 0) / ps.length, ps.reduce((a, p) => a + p[1], 0) / ps.length], dx = m[0] - cx, dy = m[1] - cy, d = Math.hypot(dx, dy) || 1;
+        start.set(id, ps.length > 1 ? [cx + dx * 0.55, cy + dy * 0.55] : [m[0] + dx / d * (dims(id)[0] / 2 + 100), m[1] + dy / d * (dims(id)[1] / 2 + 80)]);
+      }
+      for (const [id, p] of start) out[id] = p;
+    }
+    return out;
+  }
+  const centreOf = (pos, ids) => [ids.reduce((a, id) => a + pos[id][0], 0) / ids.length, ids.reduce((a, id) => a + pos[id][1], 0) / ids.length];
+
   const ROOM = 7;
   // the room ELK keeps inside a box around its members (its tags and title included)
   const BOX_ROOM = 30;
@@ -170,14 +252,21 @@
   }
 
   // The groups of a graph: what is connected inside the system (by flows between its nodes, and
-  // by influences). [[node id]], biggest first.
-  function groupsOf(nodes, edges, inside = (n) => n.kind !== "cloud") {
+  // by influences). [[node id]], biggest first. An influence from a subsystem's box into another
+  // box's flow joins no boxes (each box is a whole of its own); ``loose``: no influence from a
+  // stock joins either, so the parts the flows make are groups of their own.
+  function groupsOf(nodes, edges, inside = (n) => n.kind !== "cloud", loose = false) {
     const ids = nodes.filter(inside).map((n) => n.id), parent = new Map(ids.map((id) => [id, id]));
     const find = (x) => { while (parent.get(x) !== x) x = parent.get(x); return x; };
     const join = (a, b) => { if (parent.has(a) && parent.has(b)) parent.set(find(a), find(b)); };
     const flowById = new Map(edges.filter((e) => !e.toEdge).map((e) => [e.id, e]));
     for (const e of flowById.values()) join(e.source, e.target);
-    for (const e of edges.filter((x) => x.toEdge)) { const f = flowById.get(e.toEdge); if (f) { join(e.source, f.source); join(e.source, f.target); } }
+    const stock = new Set(nodes.filter((n) => n.sid).map((n) => n.id)), boxOf = new Map(nodes.filter((n) => n.box != null).map((n) => [n.id, String(n.box)]));
+    const across = (e, f) => boxOf.has(e.source) && [f.source, f.target].some((x) => boxOf.has(x) && boxOf.get(x) !== boxOf.get(e.source));
+    for (const e of edges.filter((x) => x.toEdge)) {
+      const f = flowById.get(e.toEdge);
+      if (f && !across(e, f) && !(loose && stock.has(e.source))) { join(e.source, f.source); join(e.source, f.target); }
+    }
     // a subsystem's box moves as one: its members are of one group, connected or not
     const first = new Map();
     for (const n of nodes) if (n.box != null && parent.has(n.id)) { const k = String(n.box); if (first.has(k)) join(n.id, first.get(k)); else first.set(k, n.id); }
@@ -186,22 +275,32 @@
 
   // Pack the groups side by side in rows to fill a view of ``aspect`` (width / height), each keeping
   // its own internal layout, so no group sits among another's lines and the drawing fits a wide view.
-  function pack(nodes, edges, at, { size, inside = (n) => n.kind !== "cloud", aspect = 2.1, gap = 90, frameOf, tetherPlaces }) {
+  // ``loose``: the groups as groupsOf counts them loosely (the parts the flows make)
+  function pack(nodes, edges, at, { size, inside = (n) => n.kind !== "cloud", aspect = 2.1, gap = 90, frameOf, tetherPlaces, loose = false }) {
     const byId = new Map(nodes.map((n) => [n.id, n]));
-    const boxes = groupsOf(nodes, edges, inside).map((g) => {
+    const boxes = groupsOf(nodes, edges, inside, loose).map((g) => {
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const id of g) { const z = size(byId.get(id)), hw = z.r || z.w / 2, hh = z.r || z.h / 2, [x, y] = at[id]; x0 = Math.min(x0, x - hw); x1 = Math.max(x1, x + hw); y0 = Math.min(y0, y - hh); y1 = Math.max(y1, y + hh); }
       return { g, x0, y0, w: x1 - x0, h: y1 - y0 };
     }).sort((a, b) => b.h - a.h);
     const area = boxes.reduce((a, b) => a + (b.w + gap) * (b.h + gap), 0);
-    const width = Math.max(Math.sqrt(area * aspect), ...boxes.map((b) => b.w));
-    const out = { ...at };
-    let x = 0, y = 0, rowH = 0;
-    for (const b of boxes) {
-      if (x > 0 && x + b.w > width) { x = 0; y += rowH + gap; rowH = 0; }
-      for (const id of b.g) out[id] = [at[id][0] - b.x0 + x, at[id][1] - b.y0 + y];
-      x += b.w + gap; rowH = Math.max(rowH, b.h);
-    }
+    // rows ``width`` wide: the places, and how wide and tall they are
+    const rows = (width) => {
+      const out = { ...at };
+      let x = 0, y = 0, rowH = 0, W = 0;
+      for (const b of boxes) {
+        if (x > 0 && x + b.w > width) { x = 0; y += rowH + gap; rowH = 0; }
+        for (const id of b.g) out[id] = [at[id][0] - b.x0 + x, at[id][1] - b.y0 + y];
+        x += b.w + gap; rowH = Math.max(rowH, b.h); W = Math.max(W, x - gap);
+      }
+      return { out, W, H: y + rowH };
+    };
+    // the width by area, unless another row break fits the view larger (a few groups of unlike
+    // sizes can fill it better than their area says), with the clouds' room around
+    const fit = (r) => Math.min(aspect / (r.W + 160), 1 / (r.H + 160));
+    let best = rows(Math.max(Math.sqrt(area * aspect), ...boxes.map((b) => b.w)));
+    for (let k = 0, w = 0; k < boxes.length; k++) { w += boxes[k].w + (k ? gap : 0); const r = rows(w + 1); if (fit(r) > fit(best) * 1.02) best = r; }
+    const out = best.out;
     if (frameOf && tetherPlaces) {
       const placed = nodes.map((n) => (inside(n) ? { ...n, x: out[n.id][0], y: out[n.id][1] } : { ...n, x: undefined, y: undefined }));
       Object.assign(out, tetherPlaces(placed, frameOf(placed, inside), edges));
@@ -220,11 +319,59 @@
     + 5000 * (s.boxOverlaps ? s.boxOverlaps.length : 0)   // a subsystem's box over another, or over a node not its own: never either
     + 40 * (s.labelsOnNodes ? s.labelsOnNodes.length : 0) + 25 * (s.labelsOnLabels || 0)
     + 0.02 * s.nearest.max + 0.02 * s.influenceLength.median + 2 * (s.emptiness || 0)
-    + 150 * Math.max(0, 1 - (s.scale ?? 1));   // shrunk to fit the view: smaller words, so worth about five crossings at half size
+    + 150 * Math.max(0, 1 - (s.scale ?? 1))   // shrunk to fit the view: smaller words, so worth about five crossings at half size
+    // a line longer than reads as joining two things (a flow past 280 px, a stub or an influence
+    // past 460): 20 px more worth a point, so a crossing's worth of length is 600 px
+    + 0.05 * (Math.max(0, s.flowLength.max - 280) + Math.max(0, s.stubLength.max - 460) + Math.max(0, s.influenceLength.max - 460));
   // ``labels(placed)``, when given, places the edge labels ({edge id: [x, y]}) so words covered by
   // boxes or other words count too (``labelSize`` sizes them)
   // ``fixed``: node ids that stay where they are (the viewer's placements)
-  function untangle(nodes, edges, at, { size, score, inside = (n) => n.kind !== "cloud", frameOf, tetherPlaces, boxesOf = null, labels = null, labelSize = null, passes = 4, steps = [60, 120], groupSteps = [120, 240, 400], view = [1300, 600], fixed = [] }) {
+  //
+  // Where it starts from matters (a local search keeps the shape it is given), so it starts from
+  // more than one place and keeps the cheapest end (``settle``): the layout as given and, when the
+  // flows make loops, the loops drawn as rings. With subsystems' boxes, each box is settled on its
+  // own first and the boxes then packed side by side to fit the view, so a box keeps the shape its
+  // own flows give it; without boxes, the parts the flows make (an influence from a stock joins
+  // none) are tried that way too, against the parts as they were placed together. The viewer's
+  // placements (``fixed``) are untangled around, from where they are.
+  function untangle(nodes, edges, at, opts) {
+    const { inside = (n) => n.kind !== "cloud", boxesOf = null, fixed = [] } = opts;
+    if (fixed.length) return search(nodes, edges, at, opts).at;
+    const boxed = !!boxesOf && nodes.some((n) => inside(n) && n.box != null);
+    const parts = boxed ? [...new Set(nodes.filter((n) => inside(n) && n.box != null).map((n) => String(n.box)))].map((v) => nodes.filter((n) => inside(n) && n.box != null && String(n.box) === v).map((n) => n.id))
+      : groupsOf(nodes, edges, inside, true);
+    if (!boxed && parts.length < 2) return settle(nodes, edges, at, opts).at;
+    const tries = [search(nodes, edges, apart(nodes, edges, at, parts, opts, !boxed), { ...opts, loose: !boxed })];
+    if (!boxed) tries.unshift(search(nodes, edges, at, opts));
+    return tries.reduce((a, b) => (b.cost < a.cost - 1e-6 ? b : a)).at;
+  }
+  // the cheapest end of the search from ``at`` and from the loops drawn as rings (``rings``, each
+  // of a few turns, then packed and sprung as a layout is): {at, cost}
+  function settle(nodes, edges, at, opts) {
+    const { size, inside = (n) => n.kind !== "cloud", frameOf, tetherPlaces, boxesOf = null, labelSize = null } = opts, geo = { size, inside, frameOf, tetherPlaces, boxesOf };
+    const tries = [search(nodes, edges, at, opts)];
+    for (const turn of TURNS) { const r = rings(nodes, edges, at, { ...geo, turn }); if (!r) break; tries.push(search(nodes, edges, refine(nodes, edges, pack(nodes, edges, r, geo), { ...geo, labelSize }), opts)); }
+    return tries.reduce((a, b) => (b.cost < a.cost - 1e-6 ? b : a));
+  }
+  // ``parts`` ([[id]]: boxes, or the parts the flows make) each settled on its own (its members,
+  // their clouds, the flows and influences among them), kept where it was, then packed (``loose``:
+  // as groupsOf counts loosely)
+  function apart(nodes, edges, at, parts, opts, loose) {
+    const { inside = (n) => n.kind !== "cloud", size, frameOf, tetherPlaces } = opts;
+    const cur = { ...at };
+    for (const part of parts) {
+      const mine = new Set(part);
+      const sub = nodes.filter((n) => mine.has(n.id) || (!inside(n) && n.tether && mine.has(n.tether))).map((n) => ({ ...n, box: undefined }));
+      const has = new Set(sub.map((n) => n.id)), flows = edges.filter((e) => !e.toEdge && has.has(e.source) && has.has(e.target)), fid = new Set(flows.map((e) => e.id));
+      const subEdges = [...flows, ...edges.filter((e) => e.toEdge && has.has(e.source) && fid.has(e.toEdge))];
+      const r = settle(sub, subEdges, Object.fromEntries(sub.filter((n) => cur[n.id]).map((n) => [n.id, cur[n.id]])), { ...opts, boxesOf: null }).at;
+      const c0 = centreOf(cur, part), c1 = centreOf(r, part);
+      for (const id of part) cur[id] = [r[id][0] - c1[0] + c0[0], r[id][1] - c1[1] + c0[1]];
+    }
+    return pack(nodes, edges, cur, { size, inside, frameOf, tetherPlaces, loose });
+  }
+  // the local search from ``at``: {at, cost}. ``loose``: groups move as groupsOf counts them loosely
+  function search(nodes, edges, at, { size, score, inside = (n) => n.kind !== "cloud", frameOf, tetherPlaces, boxesOf = null, labels = null, labelSize = null, passes = 4, steps = [60, 120], groupSteps = [120, 240, 400], view = [1300, 600], fixed = [], loose = false }) {
     const hold = new Set(fixed);
     const ids = nodes.filter((n) => inside(n) && at[n.id] && !hold.has(n.id)).map((n) => n.id), byId = new Map(nodes.map((n) => [n.id, n]));
     let cur = { ...at };
@@ -249,8 +396,11 @@
       return new Set(score(placed, edges, { size, frame, inside, labels: labels ? labels(placed) : null, labelSize, boxes: boxesOf ? boxesOf(placed) : null }).tangled || ids);
     };
     const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+    const joined = new Map(), inId = new Set(ids);
+    for (const e of edges.filter((x) => !x.toEdge && inId.has(x.source) && byId.has(x.target) && inside(byId.get(x.target))))
+      for (const [a, b] of [[e.source, e.target], [e.target, e.source]]) joined.set(a, new Set([...(joined.get(a) || []), b]));
     // groups move as a whole too, so a group can step out of another's way instead of sitting among its lines
-    const groups = groupsOf(nodes, edges, inside).filter((g) => !g.some((id) => hold.has(id)));   // a group with a held node stays
+    const groups = groupsOf(nodes, edges, inside, loose).filter((g) => !g.some((id) => hold.has(id)));   // a group with a held node stays
     const shift = (pos, members, dx, dy) => { const next = { ...pos }; for (const id of members) next[id] = [pos[id][0] + dx, pos[id][1] + dy]; return next; };
     const centre = (pos, members) => [members.reduce((a, id) => a + pos[id][0], 0) / members.length, members.reduce((a, id) => a + pos[id][1], 0) / members.length];
     for (let pass = 0; pass < passes; pass++) {
@@ -270,6 +420,15 @@
           if (r.cost < best.cost - 1e-6) { cur = next; best = r; improved = true; }
         }
       }
+      // a jump for a node: just beside each node a flow joins it to, all round it
+      const half = (id) => { const z = size(byId.get(id)); return z.r ? [z.r, z.r] : [z.w / 2, z.h / 2]; };
+      for (const id of ids.filter((x) => busy.has(x))) for (const o of joined.get(id) || []) {
+        const [ow, oh] = half(o), [w, h] = half(id);
+        for (const [dx, dy] of dirs) for (const g of [70, 140]) {
+          const next = { ...cur, [id]: [cur[o][0] + dx * (ow + w + g), cur[o][1] + dy * (oh + h + g)] }, r = evaluate(next);
+          if (r.cost < best.cost - 1e-6) { cur = next; best = r; improved = true; }
+        }
+      }
       // a jump for an auxiliary: next to the middle of each flow it influences, all round it
       const mid = (pos, f) => { const a = pos[f.source] || null, b = pos[f.target] || null; return a && b ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] : a || b; };
       const flows = new Map(edges.filter((e) => !e.toEdge).map((e) => [e.id, e]));
@@ -282,9 +441,20 @@
           }
         }
       }
+      // a jump: a group with an influence into another group's flow, its source beside the flow's
+      // middle, all round it, so the influence is short
+      for (const g of groups) {
+        const own = new Set(g);
+        for (const inf of edges.filter((e) => e.toEdge && own.has(e.source))) {
+          const f = flows.get(inf.toEdge), m = f && !own.has(f.source) && !own.has(f.target) && mid(cur, f); if (!m) continue;
+          for (const [dx, dy] of dirs) for (const r of [180, 280]) {
+            const next = shift(cur, g, m[0] + dx * r * 1.4 - cur[inf.source][0], m[1] + dy * r * 0.8 - cur[inf.source][1]), res = evaluate(next);
+            if (res.cost < best.cost - 1e-6) { cur = next; best = res; improved = true; }
+          }
+        }
+      }
       // a jump: a group in a problem tried just beside each other group (left, right, above, below
       // its box), so it can get out from between another group's lines
-      const half = (id) => { const z = size(byId.get(id)); return z.r ? [z.r, z.r] : [z.w / 2, z.h / 2]; };
       const bbox = (pos, members) => members.reduce((b, id) => { const [hw, hh] = half(id), [x, y] = pos[id];
         return [Math.min(b[0], x - hw), Math.min(b[1], y - hh), Math.max(b[2], x + hw), Math.max(b[3], y + hh)]; }, [Infinity, Infinity, -Infinity, -Infinity]);
       for (const g of groups) {
@@ -314,8 +484,8 @@
       }
       if (!improved) break;
     }
-    return { ...cur, ...best.clouds };
+    return { at: { ...cur, ...best.clouds }, cost: best.cost };
   }
 
-  return { layout, pack, refine, untangle, OPTIONS };
+  return { layout, pack, refine, untangle, rings, OPTIONS };
 });
