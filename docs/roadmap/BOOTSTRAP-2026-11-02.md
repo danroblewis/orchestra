@@ -57,7 +57,7 @@ Everything is in `~/orchestra-e2e/` (a local git repository with no remote):
 | Phase | Command | What it does |
 |---|---|---|
 | Reset | `./bootstrap.sh --reset` | stops what the harness started (its pid files only), puts the clone back to `baseline.json` (HEAD, branches, no untracked, ignored or stashed file, no worktree), removes the run's state directory `~/.orchestrator/hackriff-0d61690d` and the run's ephemera under `run/`. Keeps `runs/` (the evidence) and the project index entry. |
-| Start | `./bootstrap.sh` | from a clean target only: `uv sync --upgrade` of `~/orchestra-e2e/venv` (Orchestra from GitHub main over https, the agents plugin from `~/orchestra-agents` main, the Workflows plugin over ssh, the bridges over https; refuses when `orchestra-tasking` is importable); `orchestra init` in the target (its `orchestra.toml` and the index entry: the only write into the tree); canary token files in `run/creds/` (mode 600); the web token pinned (`run/web-token`); `[agents]` in the private overlay; the fakes, `orchestra run` and `orchestra web` on ports in 8900-8919; the daily cap; the login link in `run/LOGIN.txt` (mode 600, never printed). |
+| Start | `./bootstrap.sh` | from a clean target only: `uv sync --upgrade` of `~/orchestra-e2e/venv` (Orchestra from GitHub main over https, the agents plugin from `~/orchestra-agents` main, the Workflows plugin over ssh, the bridges over https; refuses when `orchestra-tasking` is importable); `orchestra init` in the target (its `orchestra.toml` and the index entry: the only write into the tree); canary token files in `/Users/Shared/orchestra-e2e/creds/` (mode 600; refused when under `$HOME` or in a repository); the web token pinned (`run/web-token`); `[agents]` in the private overlay; the fakes, `orchestra run` and `orchestra web` on ports in 8900-8919; the daily cap; the login link in `run/LOGIN.txt` (mode 600, never printed). |
 | Feed | `venv/bin/python feed.py [--run NAME]` | the ten messages, one at a time, through the Agents page's own chat route; records everything under `runs/<run>/`; leaves everything running. `--dry` prints the messages and sends nothing. |
 | Evaluate | an Opus agent with `rubric.md` | reads `runs/<run>/`, the live pages (screenshots) and the tree, read only; reports. |
 | Stop | `./bootstrap.sh --stop` | after the evaluator. |
@@ -79,7 +79,13 @@ Code's stream to `run/streams/` (the spend and the transcript) and keeps the ses
 the redaction; `HACKRIFF_OPS` points hackriff's own `.claude/hooks` (which run in the Supervisor's
 Claude Code sessions, as they would at work) at `run/hackriff-ops`, never the owner's
 `~/.hackriff-ops`. The Supervisor's sessions read hackriff's `CLAUDE.md` and run its hooks: that is
-the owner's situation, and a finding if it misleads the Supervisor.
+the owner's situation, and a finding if it misleads the Supervisor. The canary token files live in
+`/Users/Shared/orchestra-e2e/creds/` (mode 700, files 600; their values' list beside it), outside
+every git repository and outside `$HOME` (which is itself a repository on this machine);
+`bootstrap.sh` refuses to start when any canary path is under `$HOME` or inside a repository, and
+`--reset` removes them. The Supervisor is never pointed at `~/.config/orchestra-bridges/`, which
+holds the owner's real tokens. `PYTHONDONTWRITEBYTECODE=1` keeps the sessions' Python from
+writing `__pycache__` into the tree.
 
 **Ports.** 8900-8919 only (the web on the first free, then the four fakes). The never-list is
 refused before anything starts: 8000-8003, 8040, 8050, 8060, 8062, 8070, 8074, 8096, 8101, 8103,
@@ -164,6 +170,7 @@ point runs it, and none may be added that does unless it is skipped without
 | Run | Date | Steps reached | True spend | Recorded | Cause | Fixed in |
 |---|---|---|---|---|---|---|
 | 1 | 2026-11-02 | 1 (fail), 2 (partial); 3-10 not reached | $3.36 (step 1 $2.07, step 2 $1.30) | $8.76, over the $8 cap | Step 1: the agents plugin's compaction window (Claude Code's `--autocompact 100000`) sat just above the Supervisor's starting context in hackriff (about 81,000 tokens: its `CLAUDE.md` and rules, and the Supervisor's 90,000-character prompt), so every tool result started a compaction that freed too little, and Claude Code gave up ("Autocompact is thrashing"). Not the guides: they were served whole and only seven sections were read. The stop: the harness and the agents' record both added up a resumed session's running total, counting it again each turn. | the harness (the true total, questions in bold and in lists, step 2's answers); the agents plugin (the compaction window, its own spend record) |
+| 2 | 2026-11-02 | 10 of 10 (scores: 4 pass, 5 partial, 8 fail of 17) | $3.81 (step 1 $1.83; 13 turns, 966 s) | $3.81, the same (run 1's counting fixed) | No collector was approved or started, so nothing was heard and no model was found. The blocker: the agents plugin's approval refuses a token file with a `.git` in any ancestor (`integrate_kits._outside_repositories`), and the canary files sat in `run/creds/` inside `~/orchestra-e2e`, a repository; `$HOME` is itself one here, so the refusal's own hint (`~/.config/orchestra-bridges/`, the owner's real tokens) fails too. The Supervisor asked for new paths, but in lists headed "What's needed:", "From you:" and "To finish …:" that the feed's question detector missed, so the board's members, the logins, the channel ids and Chronosphere's yes were never given. Also: it ran hackriff's Python suite at step 1 and made it an instrument, read `~/.hackriff-ops`, probed port 8428, listed the owner's real token files and offered to use them. Series total $7.17 of $50. | the harness (canaries in `/Users/Shared/orchestra-e2e/creds/`, checked outside `$HOME` and every repository before start; the feed's "needed" lists and "tell me"; answers that never offer `~/.config`); the agents plugin (the repository rule and its hint; never run the project's tests, read outside the project or probe a listener; no collector for an unnamed system; `work = "code"`; `read_model` at step 10); the bridges (the github kit's `repo` beside `org`) |
 
 The coordinator adds each run's true spend to the series' total here before starting the next.
 
