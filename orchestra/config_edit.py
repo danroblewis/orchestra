@@ -242,21 +242,20 @@ class ConfigEdit:
         taken out of the merged configuration (``enabled = false``)."""
         parts = tt.split(array)
         where = f"[[{'.'.join(parts)}]] {name}"
-        if target == REPO:
-            return self._change(target, lambda text: (f"removed {where}", tt.remove(text, parts, name)), check, dry_run,
-                                on_text=True)
-
-        def edit(doc, merged):
-            if self._repo_entry(parts, name) is not None:
+        if target == OVERLAY and self._repo_entry(parts, name) is not None:
+            def disable(doc, merged):
                 tt.replace_entry(doc, parts, {"name": name, "enabled": False})
                 return f"removed {where}"
-            items = tt.entries(doc, parts)
-            i = tt.find(items, name)
-            if i is None:
-                raise ConfigError(f"there is no {where} in either file")
-            del items[i]
-            return f"removed {where}"
-        return self._change(target, edit, check, dry_run)
+            return self._change(target, disable, check, dry_run)
+
+        def drop(text):                                     # from the text, so the array goes with its last entry
+            try:
+                return f"removed {where}", tt.remove(text, parts, name)
+            except ConfigError:
+                if target == OVERLAY:
+                    raise ConfigError(f"there is no {where} in either file") from None
+                raise
+        return self._change(target, drop, check, dry_run, on_text=True)
 
     @contextmanager
     def _locked(self) -> Iterator[None]:

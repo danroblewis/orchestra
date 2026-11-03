@@ -243,3 +243,28 @@ def test_two_processes_changing_the_configuration_lose_nothing(project, spawn):
     assert [o.strip() for o, _ in outs] == ["15", "15"]
     raw = tomllib.loads(project.config_file.read_text())
     assert raw["alpha"] == {f"k{i}": i for i in range(15)} and raw["beta"] == {f"k{i}": i for i in range(15)}
+
+
+@pytest.mark.parametrize("array, other", [("machines", "collect"), ("collect", "machines"), ("scrape", "machines"),
+                                          ("sources", "collect")])
+def test_removing_the_overlay_s_last_entry_of_an_array_drops_the_array(project, array, other):
+    ed = project.config_edit
+    entry = {"sources": {"name": "x", "kind": "prometheus", "url": "http://localhost:1"},
+             "scrape": {"name": "x", "url": "http://localhost:1/metrics"}}.get(array, {"name": "x", "command": "x.sh"})
+    keep = {"name": "y", "command": "y.sh"}
+    project.overlay_file.parent.mkdir(parents=True, exist_ok=True)
+    project.overlay_file.write_text(f"# mine\n[[{other}]]\nname = \"y\"\ncommand = \"y.sh\"\n")
+    project.reload_config()
+    ed.add_entry(array, entry, target="overlay")
+    ed.remove_entry(array, "x", target="overlay")
+    text = project.overlay_file.read_text()
+    assert array not in tomllib.loads(text) and tomllib.loads(text)[other] == [keep] and "# mine" in text
+    ed.add_entry(array, entry, target="overlay")                             # and it can be added again
+    assert tomllib.loads(project.overlay_file.read_text())[array] == [entry]
+
+
+def test_an_empty_array_left_by_an_earlier_removal_is_no_entries():
+    doc = tomlkit.parse('machines = []\n[[collect]]\nname = "y"\n')
+    assert tt.entries(doc, ["machines"]) is None
+    tt.upsert(doc, ["machines"], {"name": "x", "command": "x.sh"})
+    assert tomllib.loads(tomlkit.dumps(doc))["machines"] == [{"name": "x", "command": "x.sh"}]
