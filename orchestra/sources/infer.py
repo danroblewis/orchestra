@@ -37,7 +37,7 @@ from .survey import known_record
 from .transform import apply, script_id
 from .views import Definition, one_count_per_thing, views
 
-FORMS = 2                    # how definitions' queries are written: 2, within the source's match (scope.py)
+FORMS = 3                    # how definitions' queries are written: 2, within the source's match (scope.py); 3, an indicator summed per state
 SHAPE_POINTS = 30            # a probe's series, kept at this many points, to compare counts (duplicates.same_shape)
 REFUSED = re.compile(r"over the store's per-query series limit|HTTP 4(?!29|01|03)\d\d")   # the store will not read it: no retry helps
 UNPROBED = 0.5               # of the candidates, at most, not probed for the round to stand (partial)

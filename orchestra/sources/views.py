@@ -10,6 +10,7 @@ counts, which switch its type.
 | a recording rule ``…:fn`` | ``fn by (G)`` of it (a sum of sums, a max of maxes; a sum of rates), as a rate when its name says rate, read with its own interval's lookback; in its base's family, it replaces the base's own view of that function; ``level:metric:fn`` is named by its full name, so it never takes an exporter's own ``metric_fn``. A rule over a counter (a rate, a sum) counts the same events as the counter: the counter is read, the rule left out and says why (only a ``count`` rule, of reporters, is read beside it). A rule is read at the value of a replica or scrape-job label its base is read at; one that lacks that label was summed across the copies and is left out for its base |
 | a timestamp, a clock, an info metric or a scrape's own series (``schema.UNREAD``) | none but an info metric's count of reporters: a sum of them means nothing |
 | any family with an identity label | ``count by (G)`` of one statistic: the pods reporting, a level; and its turnover, the pods that started and stopped reporting, as two counters that balance it exactly (read from raw samples, so only for a family of at most ``series_per_query`` series: a bigger one is counted on the server only) |
+| an **indicator** split by a **state** (a gauge whose every sample is 0 or 1, and a grouping label one reporter has several values of at once: kube-state-metrics' ``kube_pod_status_phase{pod, phase}``) | for a grouping with the state, view ``count`` read as ``sum by (G)``: the pods in each phase, never the pods reporting it (every pod reports every phase); its turnover (``starts``/``stops``, ``agg = "held"``) the series that turned 1 and turned 0, from raw samples, which balance it exactly; no count of reporters by any grouping (each pod is one series per phase) |
 | any family | how many values of each grouping label report: ``count(count by (L) (…))`` |
 
 A count is made from one family per thing counted (the gauges' before a counter's), so the pods of
@@ -117,6 +118,7 @@ def views(fam: Family, spec: SourceSpec) -> list[Definition]:
     touched = max(1, fam.series * max(1, len(fam.metrics)))
 
     grouping = {c: fam.labels[c].cardinality for c in fam.role("grouping")}
+    held = fam.indicator and bool(fam.states)       # a one-hot state per reporter (a pod's phase): summed, never counted
     noted = [f"{fam.name}: {fam.retyped}"] if fam.retyped else []
 
     def add(name: str, view: str, kind: str, query: str, group: list[str], *, stat=None, unit=None, flags=(), origin="", counts="",
@@ -193,10 +195,23 @@ def views(fam: Family, spec: SourceSpec) -> list[Definition]:
             if "avg" not in covered:
                 add(f"{fam.name}_avg", "avg_by", "level", _by("avg", by, sel), group, inner=sel, agg="avg",
                     flags=["an unweighted average"] if identity else [], origin=f"avg{gtext}")
-        elif "sum" not in covered:
+        elif "sum" not in covered and not (held and set(group) & set(fam.states)):    # an indicator's sum per state: its count, below
             sel = f"last_over_time({fam.selector()}[{r}])"
             add(fam.name, "sum_by", "level", _by("sum", by, sel), group, origin=f"sum{gtext}", inner=sel, agg="sum")
-        if identity and fam.kind not in ("rollup", "timestamp", "clock", "scrape"):
+        if identity and held and fam.kind == "gauge":
+            if set(group) & set(fam.states):            # the things in each state: the indicator's sum, and its turns to 1 and to 0
+                who, base = next((c for c in spec.identity if c in identity), identity[0]), fam.name.removesuffix("_total")
+                thing = "|".join([who, *(f"{c}={fam.constants.get(c, '?')}" for c in plain), *group, "held"])
+                sel = f"last_over_time({fam.selector()}[{r}])"
+                state = ", ".join(c for c in group if c in fam.states)
+                said = f"an indicator (every sample 0 or 1), summed: never a count of reporters, every one of which reports every {state}"
+                add(fam.name, "count", "level", _by("sum", [fam.labels[c].real for c in plain + group], sel), group, inner=sel,
+                    agg="sum", unit=f"{who}s", origin=f"{who}s in each {state}{gtext}, from {fam.name}: {said}", counts=thing)
+                for view, verb in (("starts", "entered"), ("stops", "left")) if fam.series <= spec.series_per_query else ():
+                    add(f"{base}_{verb}_total", view, "counter", fam.selector(), group, unit=f"{who}s", agg="held",
+                        origin=f"{who}s that {verb} each {state}{gtext}, from {fam.name}'s raw samples: its turns to 1 and to 0",
+                        counts=thing)
+        elif identity and fam.kind not in ("rollup", "timestamp", "clock", "scrape"):
             stat = "p50" if "p50" in fam.stats else (fam.stats[0] if fam.stats else None)
             who, base = next((c for c in spec.identity if c in identity), identity[0]), fam.name.removesuffix("_total")
             thing = "|".join([who, *(f"{c}={fam.constants.get(c, '?')}" for c in plain), *group])

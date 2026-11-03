@@ -3,8 +3,17 @@
 - A **level** is a query evaluated with ``query_range`` on discovery's grid, but never finer than
   the series' own resolution: the step is discovery's step times the smallest whole number that
   reaches the reporting interval, and the first point is at or before the window's start.
-- An inferred **counter** (view ``increments``) is read server-side, ``sum by (G) (increase(x[S]))``
-  on a grid of S (``plan.read_form``), and accumulated into a running total that starts at 0.
+- An inferred **counter** (view ``increments``) is read from its **raw samples** and differenced at
+  discovery's grid (``at_grid``): each series' value at a grid time is its last sample at or before
+  it, a drop is a reset (the value after it is all new events, as Prometheus counts one), and the
+  differences are summed by G into a running total from 0. Adjacent steps then add up exactly, and
+  a level read on the same grid from the same scrapes balances to the event (a queue's depth and its
+  two counters). Prometheus' ``increase(x[S])`` extrapolates each window to its edges, so its steps
+  drift from the level (UC-K: 2,389 jobs over 10 h). Where the store cannot give raw samples (a
+  refusal, a source with no raw read, more than ``RAW_SAMPLES`` samples or ``series_per_query``
+  series), it is read server-side as before, ``sum by (G) (increase(x[S]))`` on a grid of S
+  (``plan.read_form``), and accumulated into a running total that starts at 0. A native histogram
+  and a delta gauge are always read server-side.
 - A declared counter (``[[series]]`` with ``select``) is read from raw samples and keeps the real
   sample times: each reporting series' increments are ``b − a``, or ``b`` after a drop (a reset),
   and its first sample is a baseline, not events; the increments are summed by the definition's
@@ -14,7 +23,9 @@
   counts its first value too.
 - A **turnover** (views ``starts`` and ``stops``) is read from the same raw samples a count is
   made from: the series that started and stopped reporting, so the count is a stock its two
-  counters balance exactly. One raw read serves every turnover of one selector.
+  counters balance exactly; an indicator's (``agg = "held"``), the series that turned 1 and turned
+  0 (``held_turnover``), which balance its sum the same way. One raw read serves every turnover of
+  one selector.
 - The **generated views** of a family are read together, once per aggregation at the finest
   grouping, every family's in few requests (``plan.py``): ``read_many``; so are queries as written
   (declared, or a script's), each a tagged part of a batched read on its grid (``batch.py``). With a ``ReadCache``,
@@ -41,13 +52,15 @@ from itertools import pairwise
 
 from . import Labels, PastDeadline, Points, Source, SourceError
 from .batch import OVER_LIMIT, Part
-from .plan import grid_step, kept_run, read_form, shared
+from .plan import counter_step, grid_step, kept_run, read_form, shared
 from .readcache import ReadCache
 from .traffic import resolve
 from .transport import TooBig
 from .views import Definition, lookback
 
 __all__ = ["grid_step", "read", "read_many"]
+
+RAW_SAMPLES = 2_000_000      # a counter's raw read, at most, in samples (series × window / interval); above it, increase()
 
 
 def began_inside(pts: Points, start: float | None) -> bool:
@@ -89,6 +102,52 @@ def increments(raw: list[tuple[Labels, Points]], by_real: list[str], start: floa
     return out
 
 
+def at_grid(raw: list[tuple[Labels, Points]], by_real: list[str], t0: float, end: float, q: float,
+            start: float | None = None) -> list[tuple[Labels, Points]]:
+    """Raw counter samples into running totals by ``by_real`` on the grid ``t0, t0 + q, … ≤ end``:
+    each series' reset-corrected value at its last sample at or before a grid time, less its value
+    at ``t0`` (or, for a series that began inside the window, ``began_inside``, from 0; for one the
+    store holds only from later, from its first sample). A group's points begin at the last grid time
+    before its first sample, or at ``t0``."""
+    grid = [t0 + k * q for k in range(int((end - t0) // q) + 1)]
+    groups: dict[tuple, tuple[Labels, list[float], list[float]]] = {}
+    for labels, pts in raw:
+        pts = sorted(pts)
+        if not pts:
+            continue
+        key = {k: labels[k] for k in by_real if k in labels}
+        g = groups.setdefault(tuple(sorted(key.items())), (key, [0.0] * len(grid), []))
+        g[2].append(pts[0][0])
+        cum, c = [], 0.0
+        for i, (_, v) in enumerate(pts):
+            c = v if i == 0 else c + ((v - pts[i - 1][1]) if v >= pts[i - 1][1] else v)
+            cum.append(c)
+        if pts[0][0] <= t0:
+            base = next(cum[i] for i in range(len(pts) - 1, -1, -1) if pts[i][0] <= t0)
+        else:
+            base = 0.0 if began_inside(pts, start) else cum[0]
+        i = -1
+        for k, t in enumerate(grid):
+            while i + 1 < len(pts) and pts[i + 1][0] <= t + 1e-9:
+                i += 1
+            if i >= 0:
+                g[1][k] += cum[i] - base
+    out = []
+    for key, totals, firsts in groups.values():
+        k0 = max(0, next((k for k, t in enumerate(grid) if t >= min(firsts) - 1e-9), len(grid)) - 1)
+        out.append((key, list(zip(grid[k0:], totals[k0:], strict=True))))
+    return out
+
+
+def raw_counter(source: Source, d: Definition) -> bool:
+    """Whether an inferred counter is read from its raw samples (``at_grid``): a plain counter
+    whose read is within ``series_per_query`` series and ``RAW_SAMPLES`` samples."""
+    if d.agg != "increase" or not d.inner or d.counter_form or d.view != "increments":
+        return False
+    limit = int(getattr(getattr(source, "spec", None), "series_per_query", 0) or 2000)
+    return (d.touched or d.est_series or 1) <= limit
+
+
 def turnover(raw: list[tuple[Labels, Points]], by_real: list[str], window: float, start: float, end: float,
              stops: bool) -> list[tuple[Labels, Points]]:
     """How many reporting series (pods) started, or stopped, reporting: running totals by
@@ -118,6 +177,45 @@ def turnover(raw: list[tuple[Labels, Points]], by_real: list[str], window: float
     for key, events in groups.values():
         pts, total = [(start, 0.0)], 0.0
         for t in sorted(events):
+            total += 1
+            if t == pts[-1][0]:
+                pts[-1] = (t, total)
+            else:
+                pts.append((t, total))
+        out.append((key, pts))
+    return out
+
+
+def held_turnover(raw: list[tuple[Labels, Points]], by_real: list[str], window: float, start: float, end: float,
+                  left: bool) -> list[tuple[Labels, Points]]:
+    """An indicator's turns (its series that turned 1, or turned 0), running totals by ``by_real``:
+    the turnover of its sum by the same labels. A series holds a sample's value until its next one or
+    until ``window`` after it, when it no longer reports (as ``last_over_time(…[window])`` reads it):
+    it enters at a sample of 1 when it held 0 or nothing, and leaves at a sample of 0, or ``window``
+    after its last 1. Turns at or before ``start`` are the baseline; so the sum at any time is the
+    sum at ``start`` plus those that entered less those that left."""
+    groups: dict[tuple, tuple[Labels, list[float]]] = {}
+    for labels, pts in raw:
+        key = {k: labels[k] for k in by_real if k in labels}
+        g = groups.setdefault(tuple(sorted(key.items())), (key, []))
+        held, last = False, None
+        for t, v in sorted(pts):
+            if held and last is not None and t >= last + window:
+                held = False
+                if left:
+                    g[1].append(last + window)
+            on = v >= 0.5
+            if on != held:
+                if on != left:
+                    g[1].append(t)
+                held = on
+            last = t
+        if held and last is not None and left:
+            g[1].append(last + window)
+    out = []
+    for key, events in groups.values():
+        pts, total = [(start, 0.0)], 0.0
+        for t in sorted(e for e in events if start < e <= end):
             total += 1
             if t == pts[-1][0]:
                 pts[-1] = (t, total)
@@ -221,6 +319,8 @@ def _raw(source: Source, d: Definition, start: float, end: float, step: float, u
         return increments(select(d.query, start - res), d.by_real, start)
     if d.view in ("starts", "stops"):
         w = lookback(d.resolution_s)
+        if d.agg == "held":
+            return held_turnover(select(d.query, start - w), d.by_real, w, start, end, d.view == "stops")
         return turnover(select(d.query, start - w), d.by_real, w, start, end, d.view == "stops")
     q = grid_step(step, d.resolution_s)
     return _kept_range(source, d.query, math.floor(start / q) * q, end, q, until, cache, resettle)
@@ -259,10 +359,33 @@ def read_many(source: Source, defs: list[Definition], prefix: str, machine: str 
     points, what it counts when traffic), and why for those that could not be read. ``until``:
     the deadline (``time.monotonic()``), past which no request is made. With a ``cache``
     (``readcache.py``), only what it does not keep of the window is asked for."""
-    forms = {d.id: f for d in defs if (f := read_form(d, step)) is not None}
+    out: dict[str, list] = {}
+    selects: dict = {}
+    by_sel: dict[tuple, list[Definition]] = {}
+    for d in defs:
+        if raw_counter(source, d):           # counters from their raw samples, differenced at the grid; increase() where that fails
+            q = counter_step(step, d.resolution_s)          # the grid increase() is read on: the same points
+            a = math.floor(start / q) * q - lookback(d.resolution_s)
+            if (d.touched or d.est_series or 1) * (end - a) / (d.resolution_s or 60.0) <= RAW_SAMPLES:
+                by_sel.setdefault((d.inner, a, q), []).append(d)
+
+    def raw_one(key: tuple):
+        try:
+            return key, _kept_select(source, key[0], key[1], end, until, cache, resettle)
+        except PastDeadline:
+            raise
+        except (SourceError, NotImplementedError):
+            return key, None
+    try:
+        with ThreadPoolExecutor(max(1, concurrency)) as pool:
+            for (inner, a, q), raw in pool.map(raw_one, list(by_sel)):
+                for d in by_sel[(inner, a, q)] if raw is not None else ():
+                    out[d.id] = _finish(d, at_grid(raw, d.by_real, math.floor(start / q) * q, end, q, start), prefix, machine, producers)
+    except PastDeadline:
+        pass                                 # the rest are read server-side, or fail as late there
+    forms = {d.id: f for d in defs if d.id not in out and (f := read_form(d, step)) is not None}
     starts = {q: math.floor(start / q) * q for _, _, q in forms.values()}
     rows, errors = shared(source, defs, forms, starts, end, until, concurrency, cache, resettle) if forms else ({}, {})
-    out: dict[str, list] = {}
     out_rows: dict[str, list] = {}
     by_id = {d.id: d for d in defs}
     for i, got in rows.items():
@@ -280,8 +403,7 @@ def read_many(source: Source, defs: list[Definition], prefix: str, machine: str 
             for i, rows_of in got.items():
                 out_rows[i] = rows_of
             errors.update(bad)
-    selects: dict = {}
-    alone = [d for d in defs if d.id not in forms and d.id not in out_rows and d.id not in errors]
+    alone = [d for d in defs if d.id not in forms and d.id not in out and d.id not in out_rows and d.id not in errors]
 
     def one(d: Definition):
         try:

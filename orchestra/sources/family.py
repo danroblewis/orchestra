@@ -60,6 +60,8 @@ class Family:
     where: dict[str, str] = field(default_factory=dict)         # real label -> the one value read: the others repeat it (duplicates.py)
     notes: list[str] = field(default_factory=list)              # what was found about it: duplicates dropped, ...
     counter_form: str = ""       # a counter read otherwise: "native" (a native histogram, by its count), "delta" (each sample a count)
+    indicator: bool = False      # a gauge whose every sample is 0 or 1 (a one-hot state: kube_pod_status_phase): summed, never counted
+    states: list[str] = field(default_factory=list)            # its grouping labels one reporter has several values of at once (phase)
 
     @property
     def stats(self) -> list[str]:

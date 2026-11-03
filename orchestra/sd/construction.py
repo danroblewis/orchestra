@@ -8,7 +8,11 @@ R² of 1.000 is no evidence of anything. Such a level is still a count of things
 and it is kept as a stock only when it counts reporters in a place pods are held (a deployment, a
 node, a phase), recorded as ``by_construction`` with no R², its trust nil; split by what happened
 to a request (an HTTP status code, a method, an outcome), it counts the pods that happened to
-report one lately, which no system holds, and it is left out.
+report one lately, which no system holds, and it is left out. A count of reporters split by a
+state each reporter has one of at a time (a pod's ``phase``, kube-state-metrics' one-hot 0/1 gauge)
+would count every pod in every phase: the source reads such an **indicator** as the sum per state
+instead (view ``count``, ``sum by``), and its turnover as the series that turned 1 and turned 0
+(``orchestra.sources.views``), so the pods in each phase are a place's level and its own moves.
 
 Which series are counts of reporters and their turnover is the source's to say: its definitions'
 views (``count``, ``starts``, ``stops``), passed to discovery as the reading's provenance.

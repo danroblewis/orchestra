@@ -277,7 +277,9 @@ def test_the_first_read_reaches_back_for_levels_as_well_as_counters(tmp_path, mo
     cat = Catalogue(p, None)
     n = len(store["store"].forms)
     cat.held(NOW, NOW - 3600, NOW)
-    pages = [f["query"][0] for path, f in store["store"].forms[n:] if path.endswith("query_range") and float(f["start"][0]) < NOW - DAY]
+    # a level is read on a grid (query_range), a counter from its raw samples (an instant query of sel[range], ending at "time")
+    pages = [f["query"][0] for path, f in store["store"].forms[n:] if (path.endswith("query_range") and float(f["start"][0]) < NOW - DAY)
+             or (path.endswith("/query") and "time" in f and float(f["time"][0]) < NOW - DAY)]
     assert pages, "pages before the last day were read"
     assert any("queue_depth" in q for q in pages) and any("jobs_arrived_total" in q for q in pages), pages
 

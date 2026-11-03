@@ -111,9 +111,10 @@ class ReadCache:
             e = self.entries.get(key)
             if e is None or whole or a > e.b + 1e-6 or b < e.a - 1e-6:
                 e = self.entries[key] = Entry(a, b, {}, self._clock())
-            else:
+            else:                           # a raw read of [a, b] is Prometheus' (a, b]: a sample at a stays as it was kept
+                lo = a + 1e-6 if key.startswith("s|") else a - 1e-6
                 for _, pts in e.rows.values():
-                    for t in [t for t in pts if a - 1e-6 <= t <= b + 1e-6]:
+                    for t in [t for t in pts if lo <= t <= b + 1e-6]:
                         del pts[t]
                 e.a, e.b = min(e.a, a), max(e.b, b)
             for labels, pts in rows:
