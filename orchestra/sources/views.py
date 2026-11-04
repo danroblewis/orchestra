@@ -29,6 +29,11 @@ Each generated definition also says how it is read (``inner``, ``agg``, ``agg_la
 views of a family that differ only by grouping are read once at the finest of them and
 aggregated again exactly (``regroup.py``, ``plan.py``).
 
+With the source's **split** (``spec.py``), a family has one grouping, the labels it names (the
+ones the family has), and every other label is summed over by the store: no total, no single
+label, no pair, and how many values report is counted only of the named labels; each
+definition records what it is summed over (``summed``).
+
 Every definition says what it merges: the grouping labels of its family it aggregates over, with
 how many values each has (``merged``, and a flag), so a total over three queues says so."""
 
@@ -86,6 +91,7 @@ class Definition:
     counter_form: str = ""       # "native": a native histogram, read by its count; "delta": each sample a count (family.py)
     left: str = ""               # left out before ranking, and why (a rule over a counter: the counter is read)
     stock: dict = field(default_factory=dict)            # a declared stock's level or flow ({"name", "role"}; spec.DeclaredSeries)
+    summed: list[str] = field(default_factory=list)      # with the source's split: the labels it is summed over (as the store spells them)
 
 
 
@@ -97,8 +103,20 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_]+", "_", s).strip("_").lower()
 
 
-def groupings(fam: Family) -> list[list[str]]:
-    """Every grouping set, coarsest first."""
+def named(fam: Family, spec: SourceSpec | None) -> list[str] | None:
+    """The labels the source's ``split`` names that the family has (by the store's spelling or the
+    canonical one), in ``split``'s order, whatever role inference gave them (a constant or unit
+    label rides along anyway); None when the source names none."""
+    if spec is None or spec.split is None:
+        return None
+    by = {c: c for c in fam.labels} | {i.real: c for c, i in fam.labels.items()}
+    return list(dict.fromkeys(by[x] for x in spec.split if x in by and fam.labels[by[x]].role not in ("constant", "unit")))
+
+
+def groupings(fam: Family, spec: SourceSpec | None = None) -> list[list[str]]:
+    """Every grouping set, coarsest first; with the source's ``split``, the one it names."""
+    if (split := named(fam, spec)) is not None:
+        return [split]
     g = sorted(fam.role("grouping"), key=lambda c: fam.labels[c].cardinality)
     out: list[list[str]] = [[]] + [[c] for c in g]
     out += [list(p) for p in combinations(g, 2) if prod(fam.labels[c].cardinality for c in p) <= PAIR_LIMIT]
@@ -117,7 +135,10 @@ def views(fam: Family, spec: SourceSpec) -> list[Definition]:
     unit_label = fam.labels[units[0]].real if units else None
     touched = max(1, fam.series * max(1, len(fam.metrics)))
 
-    grouping = {c: fam.labels[c].cardinality for c in fam.role("grouping")}
+    split = named(fam, spec)
+    # with a split, every label but the named ones (and those kept in every view) is summed over, by the store
+    grouping = ({c: i.cardinality for c, i in fam.labels.items() if c not in split and c not in kept and i.role != "constant"}
+                if split is not None else {c: fam.labels[c].cardinality for c in fam.role("grouping")})
     held = fam.indicator and bool(fam.states)       # a one-hot state per reporter (a pod's phase): summed, never counted
     noted = [f"{fam.name}: {fam.retyped}"] if fam.retyped else []
 
@@ -127,6 +148,7 @@ def views(fam: Family, spec: SourceSpec) -> list[Definition]:
         canon = (plain if counted else kept if constants else [c for c in kept if c in units]) + group
         merged = {c: n for c, n in grouping.items() if c not in group}
         said = [f"merges {', '.join(f'{c} ({n} values)' for c, n in merged.items())}"] if merged and view != "distinct" else []
+        summed = sorted(fam.labels[c].real for c in merged) if split is not None and view != "distinct" else []
         out.append(Definition(counts=counts,
             id="", source=spec.name, name=_slug(name), family=fam.name, view=view, kind=kind, query=query,
             group_by=canon, by_real=[fam.labels[c].real for c in canon], rename=rename, stat=stat,
@@ -134,7 +156,8 @@ def views(fam: Family, spec: SourceSpec) -> list[Definition]:
             est_series=prod(fam.labels[c].cardinality for c in group) if group else 1, flags=list(flags) + said,
             origin=[f"inferred from {fam.name}: {origin}", *noted, *fam.notes], labels_info=info,
             merged=merged if view != "distinct" else {}, inner=inner, agg=agg, agg_labels=list(agg_labels), touched=touched,
-            unit_label=unit_label if view not in ("count", "starts", "stops", "distinct") else None, counter_form=fam.counter_form, left=left))
+            unit_label=unit_label if view not in ("count", "starts", "stops", "distinct") else None, counter_form=fam.counter_form, left=left,
+            summed=summed))
 
     rules = fam.rollups or ({fam.rollup["fn"]: {**fam.rollup, "metric": fam.name, "resolution_s": fam.resolution_s}} if fam.rollup else {})
     carries = lambda rule, k: "labels" not in rule or k in rule["labels"]
@@ -160,7 +183,7 @@ def views(fam: Family, spec: SourceSpec) -> list[Definition]:
             resolution_s=res, inner=inner, agg=outer, left=left)
 
     served: set[str] = set()
-    for group in groupings(fam):
+    for group in groupings(fam, spec):
         by = [fam.labels[c].real for c in kept + group]
         gtext = f" by {', '.join(group)}" if group else ""
         for fn, rule in sorted(rules.items()):
@@ -231,7 +254,7 @@ def views(fam: Family, spec: SourceSpec) -> list[Definition]:
                   left=f"summed across {over}, whose values repeat each other ({fam.name} is read at "
                        f"{', '.join(f'{k}={v}' for k, v in sorted(fam.where.items()))}): it counts every copy; {fam.name} is read instead")
     kept_real = [fam.labels[c].real for c in plain]
-    for c in fam.role("grouping") if fam.kind not in ("timestamp", "clock", "scrape") else []:
+    for c in (split if split is not None else fam.role("grouping")) if fam.kind not in ("timestamp", "clock", "scrape") else []:
         sel = f"last_over_time({fam.selector(fam.stats[0] if fam.stats else None)}[{r}])"
         inner = _by("count", [fam.labels[c].real, *kept_real], sel)
         add(f"{fam.name.removesuffix('_total')}_{c}s", "distinct", "level", _by("count", kept_real, inner), [], inner=sel, agg="distinct",

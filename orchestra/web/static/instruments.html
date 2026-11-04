@@ -42,7 +42,9 @@
 const draftPill = (x, now = Date.now() / 1000) => (x.expires && x.expires < now
   ? `<span class="ipill bad">draft · expired ${esc(ago(now - x.expires))} ago, still recording · left out of discovery</span>`
   : `<span class="ipill">draft${x.expires ? ` until ${esc(new Date(x.expires * 1000).toLocaleString())}` : ""} · left out of discovery</span>`);
-const pills = (x) => (x.simulated ? '<span class="ipill">simulated: placeholder numbers</span>' : "") + (x.draft ? draftPill(x) : "");
+// a source's split: the only labels its families are split by, every other summed over by the store
+const splitPill = (x) => (x.kind === "source" ? (x.split ? `<span class="ipill" title="every family read from it is split by these labels only and summed over every other, by the store">split by ${esc(x.split.join(", ") || "nothing: totals only")}</span>` : '<span class="ipill" title="no split set: inference chooses the labels each family is split by">split chosen by inference</span>') : "");
+const pills = (x) => splitPill(x) + (x.simulated ? '<span class="ipill">simulated: placeholder numbers</span>' : "") + (x.draft ? draftPill(x) : "");
 const every = (s) => (s == null ? "at each discovery" : s >= 60 ? `${+(s / 60).toFixed(1)} min` : `${s} s`);
 // the declared machines an instrument's attachments name, each with its match and what it selects
 function hungOn(list) {

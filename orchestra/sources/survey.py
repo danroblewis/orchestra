@@ -40,6 +40,7 @@ from .checks import (
     interval,
     is_object,
     is_unit,
+    named_like_object,
     pick,
     pick_live,
 )
@@ -273,7 +274,9 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
             if info.role != "pending":
                 continue
             card, churned = by_label.get(info.real, (0, 0.0))
-            role = "identity" if (churned >= CHURN and card > 3) or card > HIGH_CARDINALITY else ("grouping" if card > 1 else "constant")
+            # a name like an object's (container_name, pod_id) is a hint: a churning label is an identity even with few values
+            churns = churned >= CHURN and (card > 3 or named_like_object(c, info.real))
+            role = "identity" if churns or card > HIGH_CARDINALITY else ("grouping" if card > 1 else "constant")
             fam.labels[c] = LabelInfo(info.real, card, churned, role)
             values = {lab[info.real] for lab in sets_of[n] if info.real in lab}
             if role == "constant" and len(values) == 1:

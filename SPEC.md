@@ -1027,6 +1027,7 @@ prefix = "work"                         # series work:<name>, machines work.<id>
 machine = "service"                     # the canonical label that names machines
 match = ['{__name__=~"http_.*", env="prod"}']   # what is read: required, never everything
 max_series = 200                        # per source; at most max_per_family (12) per family
+split = ["service", "method", "status"]  # optional: split every family by these labels only, summed over the rest
 history = "7d"                          # how far back its first read and discovery's window reach
 [sources.labels]                        # canonical = spellings; the first a metric has wins
 service = ["service", "app", "k8s_app"]
@@ -1087,8 +1088,12 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   suffix, or a `stat`/`statistic`/`quantile` label; a histogram's or summary's `_count`, typed
   under its own name or its base's; a recording rule `…:sum`/`:avg` as a view of its base by that
   function, read on its own interval), label aliases, each label's role (identity: one of the
-  source's `identity` names, default pod/instance/container, a label naming one object (an id,
-  an address, an image or version), churning, or over 50 values; constant; grouping) and the
+  source's `identity` names, default pod/instance/container, a label whose values look like one
+  object's (ids, addresses, hashes, versions), churning, or over 50 values; constant; grouping. A
+  label **named** like an object's (`container_name`, `pod_id`, `hostname`, `version`) is only a
+  hint: it is an identity when its values behave like one (churning, even with few values, or
+  over 50, or looking like ids), and a grouping like any other when they are few and stable (the
+  owner's store names services in `container_name`, 2026-11-04); `split` may name any label) and the
   reporting interval (`sources/schema.py`); a label naming a **unit** (`unit`, `resource`, or
   values that are units) is kept in every view, and each definition carries its unit (metadata,
   else the name's suffix). **A name is a hint; the samples decide** (`sources/behaviour.py`): a
@@ -1110,6 +1115,20 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   reporting (`count by (G) (last_over_time(F[R]))`) is a level, with its turnover (the pods that started and stopped reporting,
   from the raw samples) as two counters that balance it exactly, so pods per service is a stock;
   and how many values of each grouping label report. One family counts each thing.
+- **`split`: the labels a family is split by, named** (the owner, 2026-11-04, at work: a family
+  carrying `edge_service`, with many values nobody wanted a series of). `split = ["service_name",
+  "method", "status"]` on a `[[sources]]` entry splits every family under it by those labels only
+  (the ones it has, by the store's spelling or the canonical one), and sums over every other: the
+  store does the sum (`sum by (service_name, method, status) (…)`, a counter's increments as
+  `sum by (…) (increase(…))` server-side, never from its raw samples), bounded as any read. So a
+  family's views are its one grouping (no total, no single label, no pair), its series number the
+  product of the named labels' values, and inference makes no series per value of a label the
+  owner did not name; how many values of each label report is counted only for the named ones.
+  The source's constant labels and a unit label still ride along (cores are never added to
+  bytes). Each such definition, and each series read by it, records what it was summed over
+  (`summed`, the store's spellings): the Instruments page's source row shows the split, and the
+  Dynamics page's left-out rows and a stock's drawer say "summed over <labels>". Without `split`,
+  inference chooses the groupings as above.
 - **The query script** (any executable, from the repository root, with a timeout) gets the
   candidates as JSON on standard input and prints rewrites: new queries, drops with a reason,
   definitions of its own, pins (`sources/transform.py`). A failure fails the round.

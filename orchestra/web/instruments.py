@@ -61,6 +61,7 @@ def _sources(project, discovery: dict | None) -> tuple[list[dict], list[str]]:
         series = [{"key": k, **{x: v for x, v in p.items() if x != "source"}} for k, p in sourced.items() if p.get("source") == s.name]
         out.append({"name": s.name, "kind": "source", "target": s.where(), "every_s": None, "owner": "project",
                     "type": s.type, "prefix": s.prefix, "status": st or None, "match": list(s.match),
+                    "split": list(s.split) if s.split is not None else None,      # the only labels its families are split by
                     # every series the latest discovery read from it, each with its selector as the store spells it
                     "series": series[:SOURCE_SERIES], "series_more": max(0, len(series) - SOURCE_SERIES), "window": window,
                     **({"last_error": st["error"]} if st.get("error") else {})})

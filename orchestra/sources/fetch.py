@@ -141,9 +141,12 @@ def at_grid(raw: list[tuple[Labels, Points]], by_real: list[str], t0: float, end
 
 def raw_counter(source: Source, d: Definition) -> bool:
     """Whether an inferred counter is read from its raw samples (``at_grid``): a plain counter
-    whose read is within ``series_per_query`` series and ``RAW_SAMPLES`` samples."""
+    whose read is within ``series_per_query`` series and ``RAW_SAMPLES`` samples, of a source with
+    no ``split``."""
     if d.agg != "increase" or not d.inner or d.counter_form or d.view != "increments":
         return False
+    if getattr(getattr(source, "spec", None), "split", None) is not None:
+        return False                        # a split source's sum is the store's: sum by (…) (increase(…)), never its raw samples
     limit = int(getattr(getattr(source, "spec", None), "series_per_query", 0) or 2000)
     return (d.touched or d.est_series or 1) <= limit
 

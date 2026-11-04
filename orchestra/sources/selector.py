@@ -75,9 +75,3 @@ def view_query(d, selector: str | None, step: float) -> str:
         return f"rate({selector}[{w}s])"
     return selector
 
-
-def summed(d) -> list[str]:
-    """The grouping labels of the series' family the definition sums over, as the store spells them
-    (``Definition.merged``), sorted."""
-    real = {c: (d.labels_info.get(c) or {}).get("real", c) for c in d.merged} if d.labels_info else {c: c for c in d.merged}
-    return sorted(real.values())

@@ -17,7 +17,8 @@ OBJECT_LABEL = re.compile(r"(?i)(?:^|_)(?:u?uid|guid|id|ip|mac|hostname|nodename
                           r"image|image_spec|hash|commit|sha)$")
 COLLECTION_LABELS = {"job", "prometheus", "prometheus_replica", "replica", "__replica__", "scrape_job", "exported_job"}   # labels the collection adds
 OBJECT_VALUE = re.compile(r"(?i)^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{12,}|"
-                          r"\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?|[a-z][a-z0-9+.-]*://.*|v?\d+\.\d+(?:\.\d+)?(?:[-+.].*)?)$")
+                          r"\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?|[a-z][a-z0-9+.-]*://.*|v?\d+\.\d+(?:\.\d+)?(?:[-+.].*)?|"
+                          r"\S+(?::v?\d+\.\d+\S*|@sha256:[0-9a-f]+))$")      # ... or an image reference: a tag that is a version, a digest
 UNIT_LABELS = {"unit", "units", "resource", "le", "type"}   # never summed across (review-r1-stats F8)
 UNIT_VALUES = {"byte", "bytes", "core", "cores", "cpu", "memory", "second", "seconds", "ms", "milliseconds", "ratio", "percent",
                "celsius", "kib", "mib", "gib", "kb", "mb", "gb", "count", "requests", "integer", "ephemeral_storage", "pods",
@@ -80,12 +81,17 @@ def interval(series: list[Points]) -> float | None:
     return round(max(medians), 3) if medians else None
 
 
+def named_like_object(canonical: str, real: str) -> bool:
+    """Whether a label's name says an id, an address, a pod, a container or a version: a hint
+    only. Its values decide (``survey.py``): many, or churning, it is an identity; few and stable
+    (a ``container_name`` holding five services), a grouping like any other (the owner, 2026-11-04)."""
+    return bool(OBJECT_LABEL.search(canonical) or OBJECT_LABEL.search(real))
+
+
 def is_object(canonical: str, real: str, values: set[str]) -> bool:
-    """Whether a label names one object, not a group: its name says an id, an address, a pod, a
-    container or a version, or most of its values look like ids (a UUID, a long hex string, an IP
-    address, a URL, a version number)."""
-    if OBJECT_LABEL.search(canonical) or OBJECT_LABEL.search(real):
-        return True
+    """Whether a label names one object, not a group, by its values alone: most of them look like
+    ids (a UUID, a long hex string, an IP address, a URL, a version number). Its name is no proof
+    (``named_like_object``)."""
     return bool(values) and sum(1 for v in values if OBJECT_VALUE.match(v)) >= 0.5 * len(values)
 
 

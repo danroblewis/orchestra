@@ -16,10 +16,12 @@ what their samples say they are.
 2. **Aliases.** Each family's real labels are renamed to canonical names by ``[sources.labels]``:
    the first spelling a metric has wins. Queries use the real label; results are renamed.
 3. **Roles.** A label is **identity** (a pod: aggregated away or counted, never kept) when its
-   canonical name is one of the source's ``identity`` names, when it names one object (an id, a
-   UUID, an address, a pod, a container, a version: ``checks.is_object``), when its values churn (on
-   average a tenth of the values seen in the window are not reporting at a given moment), or when
-   it has more than ``HIGH_CARDINALITY`` values; a label with one value is **constant**; the rest
+   canonical name is one of the source's ``identity`` names, when most of its values look like one
+   object's (a UUID, an address, a hash, a version: ``checks.is_object``), when its values churn (on
+   average a tenth of the values seen in the window are not reporting at a given moment; a label
+   named like an object's, ``container_name``, ``pod_id``, churns with as few as two values), or
+   when it has more than ``HIGH_CARDINALITY`` values; a name like an object's alone makes no
+   identity (``checks.named_like_object``): few, stable values are a grouping; a label with one value is **constant**; the rest
    are **grouping** labels (service, queue, phase). A grouping label whose values only repeat each
    other's series (two scrape jobs of one exporter: ``duplicates.py``) is read at one value.
    A label that names a **unit** (``unit``, ``resource``, or values such as ``cpu``/``memory``:

@@ -112,7 +112,7 @@ def provenance(spec: SourceSpec, d: Definition, traffic: dict | None = None, res
     store = {}
     if labels is not None:
         sel = store_selector(d, labels, spec.prefix)
-        store = {"selector": sel, "store_query": view_query(d, sel, step or 60.0)}
+        store = {"selector": sel, "store_query": view_query(d, sel, step or 60.0), **({"summed": list(d.summed)} if d.summed else {})}
     return {"source": spec.name, **store, **({"machine_label": spec.machine} if spec.machine else {}), "query": d.query, "kind": d.kind, "origin": list(d.origin),
             "resolution_s": d.resolution_s if resolution_s is None else resolution_s,
             "unit": d.unit, **({"unit_label": d.unit_label} if d.unit_label else {}), "view": d.view, "family": d.family, "flags": list(d.flags), **({"traffic": traffic} if traffic else {}),

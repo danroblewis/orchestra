@@ -89,6 +89,22 @@ match = ['{service="hk-checkout",__name__=~".*(queue|inflight|in_flight|pending|
 names show), and widen it later.
 
 
+**`split`: name the labels a series is split by.** Left alone, inference splits each family by
+the labels it judges to be groupings, and a label with many values you never wanted to look at
+apart (a `edge_service` with a value per downstream caller, say) becomes a series per value, or
+crowds out the ones you did want. Name the labels instead:
+
+```toml
+split = ["service_name", "method", "status"]
+```
+
+Every family under the source is then split by those labels only (the ones it has) and summed
+over every other label, `edge_service` included; the store does the sum (`sum by (service_name,
+method, status) (…)`), so each family gives as many series as the named labels have value
+combinations, and no more. The Instruments page shows the split on the source's row, and a
+left-out series on the Dynamics page says "summed over edge_service, …". Leave `split` out to
+let inference choose again.
+
 Every series read from the store is listed with the selector you would type in Chronosphere
 itself (its own metric name and labels, not Orchestra's `chrono:` name), copyable, and a **view**
 link that opens the Core page's External stores box on it: a counter as `rate(<selector>[<step>])`,

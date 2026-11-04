@@ -10,6 +10,7 @@ prefix = "work"                             # series work:<name>, machines work.
 machine = "service"                         # the canonical label that names machines
 match = ['{__name__=~"http_.*"}']           # what to read (required: a source without one, or with one that selects everything, is refused); every query carries its label matchers (scope.py)
 max_series = 200
+split = ["service", "method", "status"]     # optional: every family split by these labels only, summed over the rest
 history = "7d"                              # how far back its first read and discovery's window reach (held.py)
 
 [sources.labels]                            # canonical = spellings; the first a metric has wins
@@ -50,6 +51,9 @@ says otherwise), and
 store that hides the newest samples from range queries but not from raw reads (VictoriaMetrics'
 ``-search.latencyOffset``, 30 s by default) would otherwise give a counter read from raw samples
 steps its levels never saw.
+``split`` names the only labels each family is split by: the store sums over every other
+(``sum by (…)``), so inference never makes a series per value of a label the owner did not name
+(``views.py``); without it, inference chooses the groupings.
 
 A source that cannot be used is **refused with its reason**, never half-used: a literal secret
 (a token, a password, ``user:pass@`` in the URL), a query string in the URL (the API path is
@@ -71,6 +75,7 @@ from . import traffic as counted
 from .auth import AuthSpec, auth_problems, shorthand
 
 NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
+LABEL_NAME = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 TYPES = {"prometheus"}
 KINDS = {"level", "counter", "rate"}
 SECRET_KEYS = re.compile(r"(?i)^(token|bearer|password|passwd|secret|api_?key|apikey|credentials?)$")
@@ -114,6 +119,7 @@ class SourceSpec:
     settle: float = 0.0                 # every read from this source ends this long before now: the store's own delay
     producers: dict[str, str] = field(default_factory=dict)      # channel -> the machine producing into it (declared)
     preset: str | None = None
+    split: list[str] | None = None      # the only labels a family is split by (store or canonical spelling), summed over every other
 
     def aliases(self) -> dict[str, str]:
         """real -> canonical for a query someone wrote (a script's, a declared series'): every
@@ -210,6 +216,9 @@ def _source(raw: dict, repo_root: Path) -> SourceSpec:
     if not isinstance(producers, dict) or not all(isinstance(v, str) and v for v in producers.values()):
         raise ValueError("[sources.producers]: channel = \"machine\"")
     transform = raw.get("transform") or {}
+    split = raw.get("split")
+    if split is not None and (not isinstance(split, list) or not all(isinstance(x, str) and LABEL_NAME.match(x) for x in split)):
+        raise ValueError('split = ["label", ...]: the label names (as the store spells them) a family is split by')
     match = raw.get("match") or []
     match = [match] if isinstance(match, str) else list(match)
     if not match or all(everything(m) for m in match):
@@ -230,7 +239,8 @@ def _source(raw: dict, repo_root: Path) -> SourceSpec:
         max_requests_per_day=max(1, int(raw.get("max_requests_per_day", 20000))),
         web_share=min(1.0, max(0.01, float(raw.get("web_share", 0.2)))), max_names=max(1, int(raw.get("max_names", 2000))),
         infer_every_set="infer_every" in raw,
-        infer=bool(raw.get("infer", True)), settle=parse_duration(raw.get("settle"), 0.0), producers={str(k): v for k, v in producers.items()}, preset=raw.get("preset"))
+        infer=bool(raw.get("infer", True)), settle=parse_duration(raw.get("settle"), 0.0), producers={str(k): v for k, v in producers.items()}, preset=raw.get("preset"),
+        split=list(dict.fromkeys(split)) if split is not None else None)
 
 
 def _series(r: dict) -> DeclaredSeries:
