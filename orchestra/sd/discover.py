@@ -1405,8 +1405,12 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                        "left_out": dict(sorted(left_out.items())),
                        # what the pages call a left-out series its instrument's places or its words name
                        # (sd.titles): "items waiting at ci", never its raw key
-                       "titles": {x.key: t for x in series if x.key in left_out and (t := _left_title(x, places))},
-                       "title_tags": {x.key: t for x in series if x.key in left_out and (t := _left_tags(x, places))},
+                       # and the series a flow's rate reads (an auxiliary, a measured input), named the same way,
+                       # so the map never shows an input by its raw key ([[sources]] names applies to both)
+                       "titles": {x.key: t for x in series if (x.key in left_out or x.key in input_of)
+                                  and (t := _left_title(x, places))},
+                       "title_tags": {x.key: t for x in series if (x.key in left_out or x.key in input_of)
+                                      and (t := _left_tags(x, places))},
                        # a left-out count of a place that holds items now: its level and its place, so a page
                        # draws or captions it (never a count that silently leaves something out)
                        "held_levels": _held_levels(series, left_out, provenance),

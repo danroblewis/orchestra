@@ -425,8 +425,13 @@
         if (!isInput && hiddenStock(name)) continue;
         // a measured level the rate reads that no counters balance: an auxiliary, inside the system
         // like everything but the clouds, drawn round so it does not read as a stock
-        if (isInput && !has(node)) nodes.push({ id: node, kind: "box", input: name, label: name.replace(/_/g, " "), lines: [name.replace(/_/g, " ")],
-          w: Math.max(140, name.length * 6.2 + 30), h: 52, rx: 26, color: "#64748b", fill: "#0e1118", charge: -600, sub: " " });
+        if (isInput && !has(node)) {
+          // named as the Instruments page and the left-out list name it (the discovery's titles, sd/titles.py,
+          // [[sources]] names), never by its raw key
+          const title = inputTitle(m, name);
+          nodes.push({ id: node, kind: "box", input: name, label: title, lines: [title], title,
+            w: Math.max(140, title.length * 6.2 + 30), h: 52, rx: 26, color: "#64748b", fill: "#0e1118", charge: -600, sub: " " });
+        }
         if (sign !== 0) causal.push({ source: node, target: v, sign });
         // an influence: a dashed link to the middle of the flow it drives (not a flow's plain dependence on its own source)
         const plain = !isInput && name === f.from && (e.form === "proportional" || (e.spec && e.spec.form === "proportional"));
@@ -479,3 +484,17 @@
   }
   return { tagsOf, tagsHtml, namedBy, build, eqText, readsWithSign, readName, refOf, stockName, flowName, names, seriesName, sameAs, drawnApart, nice, num, correlational, untestedText, drivers, machineLabel, untoldGroups, placeTitle, placeOf, endName, wrap, UNTESTED, FLOW_INK, byConstruction };
 });
+
+// a measured input's title: the discovery's title for the series whose slug the input's name is
+// (sd/inputs.py input_name: the series' name and its naming labels' values joined by "_")
+function inputTitle(m, name) {
+  const titles = ((m || {}).discovery || {}).titles || {};
+  const slug = (key, drop) => {
+    const r = /^([^{]+)(?:\{(.*)\})?$/.exec(key); if (!r) return key;
+    const who = new Set(["instrument", "machine", "source", "project"]);
+    const vals = [...(r[2] || "").matchAll(/(\w+)="([^"]*)"/g)].filter((p) => !drop || !who.has(p[1])).sort((a, b) => a[1] < b[1] ? -1 : 1).map((p) => p[2].replace(/\W+/g, "_"));
+    return [r[1], ...vals].join("_");
+  };
+  const k = Object.keys(titles).find((key) => key === name || slug(key) === name || slug(key, true) === name);
+  return k ? titles[k] : name.replace(/_/g, " ");
+}
