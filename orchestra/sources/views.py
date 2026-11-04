@@ -8,6 +8,9 @@ counts, which switch its type.
 | a counter | increments by G: ``sum by (G) (increase(x[S]))`` on discovery's grid, read server-side (``fetch.py``) |
 | a native histogram | its count, a counter: ``histogram_count`` of the same (its ``_sum`` is not read, as for a classic one) |
 | a recording rule ``…:fn`` | ``fn by (G)`` of it (a sum of sums, a max of maxes; a sum of rates), as a rate when its name says rate, read with its own interval's lookback; in its base's family, it replaces the base's own view of that function; ``level:metric:fn`` is named by its full name, so it never takes an exporter's own ``metric_fn``. A rule over a counter (a rate, a sum) counts the same events as the counter: the counter is read, the rule left out and says why (only a ``count`` rule, of reporters, is read beside it). A rule is read at the value of a replica or scrape-job label its base is read at; one that lacks that label was summed across the copies and is left out for its base |
+| a latency with a sum and a count (``_sum``/``_count``, ``:sum``/``:count``) | also **occupancy**: the calls in progress, its busy time over the interval (Little's law), ``sum by (G) (last_over_time(x:sum[R]) / (interval × scale))`` per interval or ``sum by (G) (rate(x_sum[R]) / scale)`` cumulative, milliseconds made seconds; its moves the count view's completions by outcome, its driver the same count (``sd.construction``) |
+| a count beside a sum, of a family that is no counter (a summary's parts per interval) | the count as a flow: each sample the calls of its interval, ``sum_over_time`` per step, never a level; cumulative (never fell) by its ``increase`` |
+| a family or rule the source's ``kinds`` names | what it says: ``flow``, ``level``, or ``ignore`` (left out, with the reason; ``kinds.py``) |
 | a timestamp, a clock, an info metric or a scrape's own series (``schema.UNREAD``) | none but an info metric's count of reporters: a sum of them means nothing |
 | any family with an identity label | ``count by (G)`` of one statistic: the pods reporting, a level; and its turnover, the pods that started and stopped reporting, as two counters that balance it exactly (read from raw samples, so only for a family of at most ``series_per_query`` series: a bigger one is counted on the server only) |
 | an **indicator** split by a **state** (a gauge whose every sample is 0 or 1, and a grouping label one reporter has several values of at once: kube-state-metrics' ``kube_pod_status_phase{pod, phase}``) | for a grouping with the state, view ``count`` read as ``sum by (G)``: the pods in each phase, never the pods reporting it (every pod reports every phase); its turnover (``starts``/``stops``, ``agg = "held"``) the series that turned 1 and turned 0, from raw samples, which balance it exactly; no count of reporters by any grouping (each pod is one series per phase) |
@@ -40,18 +43,20 @@ how many values each has (``merged``, and a flag), so a total over three queues 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import combinations
 from math import prod
 
 from .family import esc, lookback
+from .kinds import IGNORED
 from .schema import INTENSIVE, UNREAD, Family
 from .spec import SourceSpec
 
 UPPER = {"p90", "p95", "p99", "p999"}
 PAIR_LIMIT = 60
 FINER_LIMIT = 4 * PAIR_LIMIT     # series, at most, of a finer split proposed because a coarser one became a stock (explore.py)
-WEIGHT = {"count": 1.0, "starts": 1.0, "stops": 1.0, "increments": 1.0, "declared": 1.0, "script": 1.0, "sum_by": 1.0, "rollup": 0.9,
+WEIGHT = {"ignored": 0.0, "count": 1.0, "starts": 1.0, "stops": 1.0, "increments": 1.0, "declared": 1.0, "script": 1.0, "sum_by": 1.0, "occupancy": 1.0,
+          "rollup": 0.9,
           "upper_by": 0.5, "max_by": 0.5, "distinct": 0.4, "avg_by": 0.4, "min_by": 0.3}
 
 
@@ -94,7 +99,43 @@ class Definition:
     stock: dict = field(default_factory=dict)            # a declared stock's level or flow ({"name", "role"}; spec.DeclaredSeries)
     summed: list[str] = field(default_factory=list)      # with the source's split: the labels it is summed over (as the store spells them)
     proposed: str = ""           # a finer split of one that became a stock, and of which (explore.py): probed before the others
+    declared_kind: str = ""      # flow | level | ignore: what [[sources]] kinds says it is (kinds.py)
+    occupancy: dict = field(default_factory=dict)        # an occupancy view: its completions (moves), their outcome label, its driver
 
+
+
+# a latency family's busy time over the interval is how many calls were in progress (Little's law)
+LATENCY = re.compile(r"(?i:millis|seconds|duration|latency|micros|nanos|(?:^|_)ms(?:_|$))|[a-z]Ms(?:_|$)")
+LITTLE = "busy time over the interval (Little's law)"
+OUTCOME = ("status", "code", "status_code", "grpc_code", "grpc_status", "outcome", "result")
+
+
+def scale(base: str) -> float:
+    """What a latency's unit is divided by to make seconds: its name says milli-, micro- or nanoseconds."""
+    low = base.lower()
+    if "nano" in low or re.search(r"(?:^|_)ns(?:_|$)", low):
+        return 1e9
+    if "micro" in low or re.search(r"(?:^|_)us(?:_|$)", low):
+        return 1e6
+    if "milli" in low or re.search(r"(?:^|_)ms(?:_|$)", low) or re.search(r"[a-z]Ms(?:_|$)", base):
+        return 1e3
+    return 1.0
+
+
+def busy_time(fam: Family, rules: dict[str, dict]) -> dict | None:
+    """A latency family's total busy time and its completions, when it has both a sum and a count:
+    a classic histogram's or a summary's ``_sum`` beside its ``_count`` (cumulative), or recording
+    rules ``…:sum`` and ``…:count`` (each interval's total and calls, or their rates); None otherwise."""
+    if fam.kind in UNREAD:
+        return None
+    if fam.busy and fam.kind == "counter" and LATENCY.search(base := fam.name.removesuffix("_count")):
+        return {"base": base, "metric": fam.busy, "cumulative": fam.counter_form != "delta", "rate": False, "count": _slug(fam.name),
+                "scale": scale(base)}
+    if "sum" in rules and "count" in rules and LATENCY.search(base := rules["sum"]["of"]):
+        c = rules["count"]
+        return {"base": base, "metric": rules["sum"]["metric"], "cumulative": False, "rate": rules["sum"]["rate"], "rule": rules["sum"],
+                "count": _slug(c["metric"] if c.get("level") else f"{c['of']}_count"), "count_rate": c["rate"], "scale": scale(base)}
+    return None
 
 
 def _by(fn: str, by_real: list[str], inner: str) -> str:
@@ -145,6 +186,11 @@ def finer_groupings(fam: Family, have: list[list[str]], stocks: list[tuple[list[
 def views(fam: Family, spec: SourceSpec, stocks: list[tuple[list[str], str]] | None = None) -> list[Definition]:
     """Every candidate of a family; ``stocks``: the groupings of its candidates that became stocks
     (``explore.finer``), whose finer splits are proposed too (``finer_groupings``)."""
+    if fam.busy and fam.kind == "gauge" and fam.declared_kind != "level":
+        # a summary's _count beside its _sum whose samples go up and down: each sample the calls of its
+        # interval, a flow (summed over each step), never a level
+        fam = replace(fam, kind="counter", counter_form="delta", retyped=f"{fam.retyped + '; ' if fam.retyped else ''}its samples are "
+                      "each interval's count beside its _sum (a summary's part per interval): a flow, summed over each step")
     plain = [c for c in fam.role("constant") if c in spec.labels or c == spec.machine]   # kept by every view but a count
     identity = fam.role("identity")
     rename = {fam.labels[c].real: c for c in fam.labels}
@@ -164,7 +210,8 @@ def views(fam: Family, spec: SourceSpec, stocks: list[tuple[list[str], str]] | N
     noted = [f"{fam.name}: {fam.retyped}"] if fam.retyped else []
 
     def add(name: str, view: str, kind: str, query: str, group: list[str], *, stat=None, unit=None, flags=(), origin="", counts="",
-            constants: bool = True, resolution_s: float | None = None, inner: str = "", agg: str = "", agg_labels=(), left: str = ""):
+            constants: bool = True, resolution_s: float | None = None, inner: str = "", agg: str = "", agg_labels=(), left: str = "",
+            counter_form: str = ""):
         counted = view in ("count", "starts", "stops", "distinct")     # reporters are counted once, whatever the unit
         canon = (plain if counted else kept if constants else [c for c in kept if c in units]) + group
         merged = {c: n for c, n in grouping.items() if c not in group}
@@ -177,9 +224,12 @@ def views(fam: Family, spec: SourceSpec, stocks: list[tuple[list[str], str]] | N
             est_series=prod(fam.labels[c].cardinality for c in group) if group else 1, flags=list(flags) + said,
             origin=[f"inferred from {fam.name}: {origin}", *noted, *fam.notes], labels_info=info,
             merged=merged if view != "distinct" else {}, inner=inner, agg=agg, agg_labels=list(agg_labels), touched=touched,
-            unit_label=unit_label if view not in ("count", "starts", "stops", "distinct") else None, counter_form=fam.counter_form, left=left,
-            summed=summed))
+            unit_label=unit_label if view not in ("count", "starts", "stops", "distinct") else None, counter_form=counter_form or fam.counter_form,
+            left=left, summed=summed, declared_kind=fam.declared_kind))
 
+    if fam.kind == "ignored":                       # the owner said never to read it: left out, with the reason
+        add(fam.name, "ignored", "level", fam.selector(), [], origin="declared ignore", left=IGNORED)
+        return out
     rules = fam.rollups or ({fam.rollup["fn"]: {**fam.rollup, "metric": fam.name, "resolution_s": fam.resolution_s}} if fam.rollup else {})
     carries = lambda rule, k: "labels" not in rule or k in rule["labels"]
     # a rule without a label the family is read at one value of (an HA pair's replica, a duplicated
@@ -187,6 +237,7 @@ def views(fam: Family, spec: SourceSpec, stocks: list[tuple[list[str], str]] | N
     doubled = {fn: r for fn, r in rules.items() if fam.kind not in ("rollup", *UNREAD) and any(not carries(r, k) for k in fam.where)}
     rules = {fn: r for fn, r in rules.items() if fn not in doubled}
     covered = set(rules)                            # the base's own views of these functions give way to the rules
+    busy = busy_time(fam, rules)                    # a latency's sum and count: how many calls are in progress (Little's law)
 
     def rule_view(fn: str, rule: dict, by: list[str], group: list[str], gtext: str, constants: bool = True, left: str = "") -> None:
         outer = {"count": "sum", "avg": "avg", "rate": "sum"}.get(fn, fn)
@@ -199,9 +250,53 @@ def views(fam: Family, spec: SourceSpec, stocks: list[tuple[list[str], str]] | N
         name = rule["metric"] if rule.get("level") else f"{rule['of']}_{fn}"    # level:metric:fn by its full name, never the base's own name
         pin = [f'{k}="{esc(v)}"' for k, v in sorted(fam.where.items()) if carries(rule, k)]   # read at the value its base is
         inner = f"last_over_time({rule['metric']}{'{' + ','.join(pin) + '}' if pin else ''}[{lookback(res)}s])"
-        add(name, "rollup", "rate" if rule["rate"] else "level", _by(outer, by, inner),
-            group, flags=flags, origin=f"a recording rule ({rule['metric']}), {fn} of {rule['of']}; {outer}{gtext}", constants=constants,
-            resolution_s=res, inner=inner, agg=outer, left=left)
+        said = rule.get("declared_kind", "")
+        if said == "ignore":
+            left = left or IGNORED
+        flow = said == "flow" or (fn == "count" and "sum" in rules and fam.kind != "counter" and not rule["rate"] and said != "level")
+        if flow and not left:
+            # a summary's count per interval (beside its :sum): the calls completed in each interval, a flow, summed
+            # over each step as a counter's increments are; a count that never fell is cumulative, read by its increase
+            sel = f"{rule['metric']}{'{' + ','.join(pin) + '}' if pin else ''}"
+            cumulative = rule.get("falls") is False and said != "flow"
+            add(name, "increments", "counter", sel, group, inner=sel, agg="increase", resolution_s=res, constants=constants,
+                counter_form="" if cumulative else "delta",
+                origin=f"a recording rule ({rule['metric']}), {fn} of {rule['of']}{gtext}: "
+                       + ("its increase, a counter" if cumulative else "each sample the count of its interval, summed over each step: a flow")
+                       + (" (declared a flow in [[sources]] kinds)" if said == "flow" else ""))
+        else:
+            add(name, "rollup", "rate" if rule["rate"] else "level", _by(outer, by, inner),
+                group, flags=flags, origin=f"a recording rule ({rule['metric']}), {fn} of {rule['of']}; {outer}{gtext}", constants=constants,
+                resolution_s=res, inner=inner, agg=outer, left=left)
+        out[-1].declared_kind = said
+
+    status = next((c for c in fam.role("grouping") if c in OUTCOME or fam.labels[c].real in OUTCOME), None)
+
+    def occupancy_view(by: list[str], group: list[str], gtext: str, sets: list[list[str]]) -> None:
+        """How many calls were in progress, by ``group``: the busy time over the interval, in
+        seconds of busy time per second (Little's law), its moves the completions by outcome."""
+        rule = busy.get("rule")
+        if rule is not None and "labels" in rule and not set(by) <= set(rule["labels"]):
+            return                                  # the rule keeps fewer labels than this grouping needs
+        res = (rule.get("resolution_s") if rule else None) or fam.resolution_s
+        pins = [f'{k}="{esc(v)}"' for k, v in sorted(fam.where.items()) if rule is None or carries(rule, k)]
+        sel = busy["metric"] + ("{" + ",".join(pins) + "}" if pins else "")
+        k = busy["scale"]
+        if busy["cumulative"]:
+            inner, how = f"rate({sel}[{lookback(res)}s])", "its cumulative sum's rate"
+        elif busy["rate"]:
+            inner, how = f"last_over_time({sel}[{lookback(res)}s])", "its rule, a rate of busy time"
+        else:
+            k *= res or 60.0
+            inner, how = f"last_over_time({sel}[{lookback(res)}s])", f"each interval's total over the interval ({res or 60.0:g} s)"
+        if k != 1:
+            inner = f"{inner} / {k:g}"
+        unit = {1e3: ", milliseconds as seconds", 1e6: ", microseconds as seconds", 1e9: ", nanoseconds as seconds"}.get(busy["scale"], "")
+        moves_by = status if status and status not in group and any(set(x) == {*group, status} for x in sets) else None
+        add(f"{busy['base']}_in_progress", "occupancy", "level", _by("sum", by, inner), group, unit="calls", inner=inner, agg="sum",
+            origin=f"calls in progress{gtext}, derived: {LITTLE}, from {busy['metric']} ({how}{unit})")
+        out[-1].occupancy = {"law": "Little's law", "derived": LITTLE, "busy": busy["metric"], "scale": busy["scale"],
+                             "completions": busy["count"], "by": moves_by, "driver": busy["count"]}
 
     served: set[str] = set()
     sets = groupings(fam, spec)
@@ -215,6 +310,8 @@ def views(fam: Family, spec: SourceSpec, stocks: list[tuple[list[str], str]] | N
                 continue                            # the rule keeps fewer labels than this grouping needs
             rule_view(fn, rule, by, group, gtext)
             served.add(fn)
+        if busy:
+            occupancy_view(by, group, gtext, sets)
         if fam.kind == "rollup" or fam.kind in UNREAD:
             pass                                    # rules only: their views are the rules'; the others are no level and no flow
         elif fam.kind == "counter":

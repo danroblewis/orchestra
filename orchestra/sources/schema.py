@@ -146,8 +146,9 @@ def _group(names: dict[str, list[Labels]], meta: dict[str, dict]) -> list[Family
             taken.update(x for x in (f"{base}_bucket", f"{base}_sum") if x in names)
             continue
         taken.update(x for x in (f"{base}_bucket", f"{base}_count", f"{base}_sum") if x in names)
-        out.append(Family(f"{base}_count", "counter", {f"{base}_count": None},
-                          help=f"the count of a {what} ({base}); its {'buckets and ' if what == 'histogram' else ''}_sum are not read"))
+        out.append(Family(f"{base}_count", "counter", {f"{base}_count": None}, busy=f"{base}_sum" if f"{base}_sum" in names else None,
+                          help=f"the count of a {what} ({base}); its {'buckets are' if what == 'histogram' else '_sum is'} not read"
+                               + (", its _sum only for the calls in progress of a latency (Little's law)" if f"{base}_sum" in names else "")))
     by_base: dict[str, dict[str, str]] = {}
     for n in names:
         if n not in taken and (m := STAT_SUFFIX.match(n)):

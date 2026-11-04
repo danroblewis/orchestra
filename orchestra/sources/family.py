@@ -6,8 +6,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-UNREAD = ("timestamp", "clock", "info", "scrape", "unknown")   # kinds read as neither a level nor a flow (an info metric's reporters are counted)
+UNREAD = ("timestamp", "clock", "info", "scrape", "unknown", "ignored")   # kinds read as neither a level nor a flow (an info metric's reporters are counted)
 # "unknown": its samples could not be read this round and no earlier round judged it: left out, never guessed
+# "ignored": the owner declared it so ([[sources]] kinds, kinds.py): never read, left out with the reason
 
 def lookback(resolution_s: float | None) -> int:
     """R, in seconds, for ``last_over_time(…[R])``: the larger of 2.5 reporting intervals and one
@@ -62,6 +63,8 @@ class Family:
     counter_form: str = ""       # a counter read otherwise: "native" (a native histogram, by its count), "delta" (each sample a count)
     indicator: bool = False      # a gauge whose every sample is 0 or 1 (a one-hot state: kube_pod_status_phase): summed, never counted
     states: list[str] = field(default_factory=list)            # its grouping labels one reporter has several values of at once (phase)
+    declared_kind: str = ""     # flow | level | ignore: what [[sources]] kinds says it is (kinds.py), over inference's reading
+    busy: str | None = None      # a histogram's or summary's ``_sum`` beside its ``_count``: its busy time, read for the calls in progress
 
     @property
     def stats(self) -> list[str]:

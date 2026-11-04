@@ -1115,6 +1115,36 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   reporting (`count by (G) (last_over_time(F[R]))`) is a level, with its turnover (the pods that started and stopped reporting,
   from the raw samples) as two counters that balance it exactly, so pods per service is a stock;
   and how many values of each grouping label report. One family counts each thing.
+- **Occupancy** (`sources/views.py`, Little's law): a latency family (a name with millis, seconds,
+  duration, latency, `ms`) with both a sum and a count (a classic histogram's or a summary's
+  `_sum` beside its `_count`, recording rules `…:sum` and `…:count`) also offers the **calls in
+  progress**, a level named "<family> in progress", unit calls: its busy time over the interval,
+  by each of its groupings (and `split`), read server-side like the other views:
+  `sum by (G) (last_over_time(x:sum[R]) / (interval_s × scale))` for a per-interval rule,
+  `sum by (G) (rate(x_sum[R]) / scale)` for a cumulative `_sum`, scale 1000 for milliseconds
+  (10⁶ micro-, 10⁹ nanoseconds, 1 for seconds). Its definition records its moves, the family's
+  completions (its count view, by the outcome label `status`/`code`/… when that split is read)
+  and its driver (the same count), and says "derived: busy time over the interval (Little's
+  law)", which the Instruments page shows. Discovery (`sd/construction.py`) keeps it as a stock
+  **by construction**: the completions are its outflows, and its arrivals, read by no series, are
+  derived as the completions plus its change (`…_arrived_total`), so the balance is exact by
+  definition, no evidence, whatever it is split by (a method is where calls are in progress);
+  the arrivals' rate is fitted like any flow's. Ranked like any level.
+- **A summary's count per interval is a flow:** a count (`:count`, or a `_count` whose samples
+  go up and down) beside a sum (`:sum`, `_sum`) of a family that is no counter holds each
+  interval's completions (the owner's `grpc_client_callMillis:count`): it is read as
+  increments, `sum by (G) (sum_over_time(x:count[S]))` per step, the way a counter's `increase`
+  is, never as a level; one whose samples never fell is cumulative and read by its `increase`.
+  A count rule with no sum beside it is read as before.
+- **`kinds`: what a metric is, declared** (`sources/kinds.py`): `kinds =
+  { "grpc_client_callMillis:count" = "flow", "some_gauge" = "level", "noise" = "ignore" }` on a
+  `[[sources]]` entry, a measurement fact like `split`, never a binding to a stock (rule 7). It
+  names a family (its name, a metric of it, a histogram's base) or one recording rule, and wins
+  over inference's reading of the samples: `flow` reads a non-counter as each sample a count,
+  summed over each step; `level` reads it as a gauge; `ignore` reads nothing and leaves it out,
+  saying "declared ignore in [[sources]] kinds: never read". Anything else refuses the source.
+  Each series records `declared_kind`, and the Instruments page's source row says "kind: flow
+  (declared)".
 - **`split`: the labels a family is split by, named** (the owner, 2026-11-04, at work: a family
   carrying `edge_service`, with many values nobody wanted a series of). `split = ["service_name",
   "method", "status"]` on a `[[sources]]` entry splits every family under it by those labels only

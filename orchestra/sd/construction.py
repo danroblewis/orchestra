@@ -27,11 +27,24 @@ move into the place adds one, every move out takes one, and the balance is recor
 declared (``terms``), never searched for and never fitted, its R² no evidence. The place is kept as a
 stock ``by_construction`` (an instrument's count names its place, so it is never left out for one),
 its moves are its flows, and the evidence about it is elsewhere: the fitted rates of its moves, the
-loops they make, and agreement with an outside measurement of the same quantity."""
+loops they make, and agreement with an outside measurement of the same quantity.
+
+**Occupancy** is the third: a latency family with a sum and a count (``orchestra.sources.views``,
+view ``occupancy``) gives the calls in progress, its busy time over the interval (Little's law),
+and its source records its moves, the family's completions (its count view's counters, by outcome:
+passed and failed drain it) and its driver, the same count's rate. What fills it, the arrivals, is
+read by no series: by Little's law they are the completions plus the level's change, so they are
+derived here (``arrivals``, the series ``…_arrived_total``, its provenance view ``arrivals``) and
+the balance, the arrivals in and the completions out, is exact by definition, its R² no evidence.
+The level is kept as a stock ``by_construction`` whatever it is split by (a method is where calls
+are in progress), its completions are its outflows and the arrivals its inflow, whose rate is
+fitted like any flow's."""
 
 from __future__ import annotations
 
 COUNT_VIEW = "count"
+OCCUPANCY_VIEW = "occupancy"
+ARRIVALS_VIEW = "arrivals"
 MOVES_VIEW = "moves"
 TURNOVER_VIEWS = {"starts", "stops", MOVES_VIEW}
 # labels that say where reporters or items are held: a count of them split by these is a count of things in a place
@@ -78,9 +91,48 @@ def terms(level, counters: list, provenance: dict) -> list:
     return [(c, sg) for c in counters if (sg := sign_of(level, c, provenance))]
 
 
+def completions(level, counters: list, provenance: dict) -> list:
+    """An occupancy level's moves as its source recorded them: the counters of its family's count
+    view with the level's own labels, split by the outcome label when its source read them so
+    (passed and failed), else not split; none for any other level."""
+    rec = (provenance.get(level.key) or {}).get("occupancy")
+    if _view(provenance, level.key) != OCCUPANCY_VIEW or not rec:
+        return []
+    family, by = (provenance.get(level.key) or {}).get("family"), rec.get("by")
+    mine = [c for c in counters if c.name.split(":", 1)[-1] == rec.get("completions")
+            and (provenance.get(c.key) or {}).get("family") == family and all(c.labels.get(k) == v for k, v in level.labels.items())]
+    split = [c for c in mine if by and set(c.labels) - set(level.labels) == {by}]
+    return split or [c for c in mine if set(c.labels) == set(level.labels)]
+
+
+def arrivals(level, outs: list, start: float, step: float):
+    """What filled an occupancy level, by Little's law: each step's completions plus the level's
+    change (never below none), as a counter on the grid with the level's labels."""
+    from .series import Series
+    vals = [0.0]
+    for i, d in enumerate(level.deltas):
+        vals.append(vals[-1] + max(0.0, d + sum(c.deltas[i] for c in outs)))
+    return Series(f"{level.name.removesuffix('_in_progress')}_arrived_total", dict(level.labels),
+                  [(start + i * step, v) for i, v in enumerate(vals)], vals, True,
+                  intervals=level.intervals, live=level.live, resolution=level.resolution)
+
+
+def arrivals_record(level, outs: list, provenance: dict) -> dict:
+    """The provenance of the arrivals derived for an occupancy level: derived, never read."""
+    rec = provenance.get(level.key) or {}
+    return {"view": ARRIVALS_VIEW, "family": rec.get("family"), "unit": "calls", "of": level.key,
+            "derived": "the completions plus the change in the calls in progress (Little's law)",
+            "completions": [c.key for c in outs], "driver": (rec.get("occupancy") or {}).get("driver")}
+
+
 def constructed(level, terms: list, provenance: dict) -> bool:
     """Whether a level's balance is a count and its own turnover only: a count of reporters and the
-    reporters that started and stopped, or a place's level and its own moves."""
+    reporters that started and stopped, a place's level and its own moves, or the calls in
+    progress and their arrivals and completions."""
+    if terms and _view(provenance, level.key) == OCCUPANCY_VIEW:
+        outs = {c.key for c in completions(level, [c for c, _ in terms], provenance)}
+        return (any(_view(provenance, c.key) == ARRIVALS_VIEW for c, _ in terms)
+                and all(_view(provenance, c.key) == ARRIVALS_VIEW or c.key in outs for c, _ in terms))
     if not terms or _view(provenance, level.key) != COUNT_VIEW:
         return False
     if _place(provenance, level) is not None:
@@ -91,8 +143,8 @@ def constructed(level, terms: list, provenance: dict) -> bool:
 def no_place(level, provenance: dict | None = None) -> str:
     """The label a count is split by that is no place things are held, or nothing; an
     instrument's count names its place, so it has none."""
-    if provenance is not None and _place(provenance, level) is not None:
-        return ""
+    if provenance is not None and (_place(provenance, level) is not None or _view(provenance, level.key) == OCCUPANCY_VIEW):
+        return ""          # an occupancy's method (or service) is where its calls are in progress
     return next((k for k in sorted(level.labels) if k not in WRITERS and k not in PLACES), "")
 
 

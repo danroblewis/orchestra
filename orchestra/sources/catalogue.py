@@ -119,7 +119,9 @@ def provenance(spec: SourceSpec, d: Definition, traffic: dict | None = None, res
             "resolution_s": d.resolution_s if resolution_s is None else resolution_s,
             "unit": d.unit, **({"unit_label": d.unit_label} if d.unit_label else {}), "view": d.view, "family": d.family, "flags": list(d.flags), **({"traffic": traffic} if traffic else {}),
             "candidate": ident(d),
-            **({"stock": dict(d.stock)} if d.stock else {})}
+            **({"stock": dict(d.stock)} if d.stock else {}), **({"declared_kind": d.declared_kind} if d.declared_kind else {}),
+            # an occupancy view (views.py): derived by Little's law, its completions its moves (sd.construction)
+            **({"occupancy": dict(d.occupancy), "derived": d.occupancy["derived"]} if d.occupancy else {})}
 
 
 def _failures(failed: dict[str, str], names: dict[str, str], total: int, deadline: float) -> str:
