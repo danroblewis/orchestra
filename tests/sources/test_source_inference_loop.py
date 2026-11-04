@@ -141,3 +141,53 @@ def test_verdicts_read_from_a_discovery():
     assert {k: v["fate"] for k, v in got.items()} == {"q|sum_by||svc": "stock", "in|increments||": "flow", "x|sum_by||": "refuted"}
     assert got["x|sum_by||"]["at"] == 5.0
 
+
+def test_a_round_spends_what_is_left_of_its_budget_on_the_best_candidates_never_probed(store, tmp_path):
+    data = [(f"fam_plain{i:02d}_items", {}, every(lambda x, i=i: (x // (60 * (i + 1))) % 9)) for i in range(15)]
+    data += [(f"fam_call{i:02d}_latency_seconds", {}, every(lambda x, i=i: 0.1 + (x // 90 + i) % 5 / 10)) for i in range(10)]
+    fake = FakePrometheus(data)
+    try:
+        n = 30
+        for _ in range(8):           # the schema's reads cost what they cost (its metadata, a share of what is left): the probes get the rest
+            spec = load({"sources": [{"name": "lab", "url": fake.url, "match": ['{__name__=~"fam.*"}'], "series_per_query": 1,
+                                      "infer_requests": n}]}, tmp_path).sources[0]
+            src = PrometheusSource(spec)
+            src._sleep = lambda s: None
+            inf = infer(src, spec, [], tmp_path, T0, NOW)
+            if inf.round["budget"] == 10:
+                break
+            n += 10 - inf.round["budget"] if inf.round["budget"] < 10 else -1
+        else:
+            pytest.fail("no budget left 10 requests for the probes")
+        assert inf.requests <= spec.infer_requests and not inf.partial
+        r = inf.round
+        assert (r["probed"], r["queued"], r["kept"], r["demoted"]) == (10, 25, 0, 0) and r["priced"] == 10
+        probed = [x for x in inf.explored if x["fate"] == "probed"]
+        assert all(x["family"].startswith("fam_plain") for x in probed)   # the best ranked: a sum (or a count) before a maximum or an average
+        queued = [x for x in inf.left_out if x.why.startswith("queued: not probed this round, its 10 requests")]
+        assert len(queued) == 25 and {x.family for x in queued} >= {f"fam_call{i:02d}_latency_seconds" for i in range(10)}
+        assert any(n.startswith("this round: probed 10, kept 0, demoted 0, 25 queued") for n in inf.notes)
+        nxt = infer(src, spec, [], tmp_path, T0, NOW, memory=inf)  # the next round: the queued first, never the probed again first
+        first = [x for x in nxt.explored if x["fate"] == "probed"]
+        assert first and not {x["candidate"] for x in first} & {x["candidate"] for x in probed}
+    finally:
+        fake.close()
+
+
+def test_the_instruments_row_and_the_record_of_a_series_say_the_round(store, tmp_path):
+    from orchestra.sources.cache import save
+    from orchestra.sources.catalogue import provenance
+    from orchestra.web.instruments import _round
+
+    _, src, spec = store(common_store())
+    inf = infer(src, spec, [], tmp_path, T0, NOW)
+    d = inf.kept[0]
+    assert provenance(spec, d)["candidate"] == ident(d)       # what discovery's record says each series was read by
+    state = tmp_path / "state"
+    assert _round(SimpleNamespace(state_dir=state), "lab") == {}
+    save(state, inf)
+    row = _round(SimpleNamespace(state_dir=state), "lab")
+    assert {k: row["inference"][k] for k in ("probed", "kept", "demoted", "queued")} == {
+        "probed": inf.round["probed"], "kept": 0, "demoted": 0, "queued": 0}
+    assert row["explored"][0]["fate"] == "probed" and row["explored"][0]["why"]
+    assert row["labels"][0] == {"label": "svc", "rank": 1.0, "why": "groups 6 of 6 families, 5 stable values"}

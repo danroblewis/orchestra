@@ -26,7 +26,7 @@ from pathlib import Path
 
 from ..sd.units import from_name
 from . import PastDeadline, Source, SourceError
-from .explore import CARRIED, finer, ident, plan
+from .explore import CARRIED, finer, headroom, ident, plan
 from .explore import summary as round_summary
 from .limits import Budget
 from .plan import probe_form, shared
@@ -328,7 +328,9 @@ def _infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], rep
     for d in cands:                          # every query within what match selects (scope.py)
         d.query, d.inner = scoped(d.query, scope), scoped(d.inner, scope)
     surveys = judge_from is not None and judge_from < start - 1.0
-    allot = None
+    room = headroom(source)
+    # a survey of the history to come keeps a read a family (at most half) of what is left for itself
+    allot = None if room is None else room - (min(room // 2, len({d.family for d in cands})) if surveys else 0)
     serves = end - (judge_from if surveys else start)
     chose = plan(source, cands, verdicts, memory, held_s, serves, allot,
                  lambda d: score(d, None, None, inf.labels)[0], start, end)

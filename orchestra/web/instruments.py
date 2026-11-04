@@ -15,7 +15,9 @@ instrument:
 - a source: ``[[sources]]`` in ``orchestra.toml`` (its server, never its credentials), with how
   the latest discovery found it (``Model.discovery["sources"]``) and the series it read from it
   (``Model.discovery["sourced"]``: each one's selector as the store spells it, and the query the
-  Core page's External stores box opens it with). A source is read at each
+  Core page's External stores box opens it with), and what its last inference round did (the
+  cache the host's round left, ``sources.cache``: probed, kept, demoted and queued, each
+  candidate's fate and why, the store's labels by rank). A source is read at each
   discovery, not on an interval of its own, and writes nothing to the metrics store.
 
 Each row also gains ``hung_on`` (``web/measured.py``, added by the route): the declared machines
@@ -44,6 +46,22 @@ def _row(c) -> dict:
 
 
 SOURCE_SERIES = 500          # a source's series listed in its row, at most
+EXPLORED = 300               # a source's candidates listed with their fate this round, at most
+LABELS = 30                  # ... and its labels ranked across the store
+
+
+def _round(project, name: str) -> dict:
+    """What the source's last inference round did (``sources.explore``): probed, kept, demoted and
+    queued, each candidate's fate and why, and the store's labels by rank, read from the cache the
+    host's round left (``sources.cache``); {} before any round."""
+    from ..sources.cache import cached
+    inf = cached(project.state_dir, name)
+    if inf is None or not inf.round:
+        return {}
+    labels = sorted(inf.labels.items(), key=lambda kv: (-kv[1].get("rank", 0.0), kv[0]))
+    return {"inference": {"at": inf.at, **inf.round, "requests": inf.requests},
+            "explored": inf.explored[:EXPLORED], "explored_more": max(0, len(inf.explored) - EXPLORED),
+            "labels": [{"label": k, "rank": v.get("rank"), "why": v.get("why")} for k, v in labels[:LABELS]]}
 
 
 def _sources(project, discovery: dict | None) -> tuple[list[dict], list[str]]:
@@ -64,7 +82,7 @@ def _sources(project, discovery: dict | None) -> tuple[list[dict], list[str]]:
                     "split": list(s.split) if s.split is not None else None,      # the only labels its families are split by
                     # every series the latest discovery read from it, each with its selector as the store spells it
                     "series": series[:SOURCE_SERIES], "series_more": max(0, len(series) - SOURCE_SERIES), "window": window,
-                    **({"last_error": st["error"]} if st.get("error") else {})})
+                    **({"last_error": st["error"]} if st.get("error") else {}), **_round(project, s.name)})
     return out, [f"[[sources]] {k}: {why}" for k, why in specs.refused.items()]
 
 

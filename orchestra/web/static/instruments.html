@@ -44,7 +44,9 @@ const draftPill = (x, now = Date.now() / 1000) => (x.expires && x.expires < now
   : `<span class="ipill">draft${x.expires ? ` until ${esc(new Date(x.expires * 1000).toLocaleString())}` : ""} · left out of discovery</span>`);
 // a source's split: the only labels its families are split by, every other summed over by the store
 const splitPill = (x) => (x.kind === "source" ? (x.split ? `<span class="ipill" title="every family read from it is split by these labels only and summed over every other, by the store">split by ${esc(x.split.join(", ") || "nothing: totals only")}</span>` : '<span class="ipill" title="no split set: inference chooses the labels each family is split by">split chosen by inference</span>') : "");
-const pills = (x) => splitPill(x) + (x.simulated ? '<span class="ipill">simulated: placeholder numbers</span>' : "") + (x.draft ? draftPill(x) : "");
+// a source's last inference round (sources/explore.py): what it probed, kept, demoted and queued
+const roundPill = (x) => (x.kind === "source" && x.inference ? `<span class="ipill" title="the last inference round (${esc(Orchestra.when(x.inference.at))}): candidates probed within its budget, kept because discovery made them stocks or flows, demoted because discovery refuted them, and queued for the next round; open the row for each one's reason">this round: probed ${x.inference.probed}, kept ${x.inference.kept}, demoted ${x.inference.demoted}, ${x.inference.queued} queued</span>` : "");
+const pills = (x) => splitPill(x) + roundPill(x) + (x.simulated ? '<span class="ipill">simulated: placeholder numbers</span>' : "") + (x.draft ? draftPill(x) : "");
 const every = (s) => (s == null ? "at each discovery" : s >= 60 ? `${+(s / 60).toFixed(1)} min` : `${s} s`);
 // the declared machines an instrument's attachments name, each with its match and what it selects
 function hungOn(list) {
@@ -155,11 +157,23 @@ function sourceSeries(x) {
     <td>${SourceView.html({ source: x.name, ...r }, span)}</td></tr>`).join("")}</table>`
     + (x.series_more ? `<div class="muted">and ${x.series_more} more</div>` : "");
 }
+// the last inference round's candidates, each with its fate and why, and the store's labels by rank
+function sourceRound(x) {
+  const r = x.inference;
+  if (!r) return `<div class="muted">no inference round recorded yet: the host's discovery infers it</div>`;
+  const by = (c) => (c.group_by || []).join(", ") || "total";
+  const head = `<div class="muted">${esc(Orchestra.when(r.at))} · ${r.requests} requests · probed ${r.probed}${r.budget != null ? ` within ${r.budget} left for probes` : ""}${r.proposed ? ` (${r.proposed} finer splits proposed)` : ""}, kept ${r.kept}, demoted ${r.demoted}, ${r.queued} queued${r.known ? `, ${r.known} known from an earlier probe` : ""}</div>`;
+  const rows = (x.explored || []).map((c) => `<tr><td><b>${esc(c.name)}</b> <span class="muted">by ${esc(by(c))} · ${esc(c.view)}</span></td><td>${esc(c.fate)}</td><td class="muted">${esc(c.why)}</td></tr>`).join("");
+  const labels = (x.labels || []).length ? `<h4>Labels across the store</h4><table class="itable"><tr><th>label</th><th style="text-align:right">rank</th><th>why</th></tr>${x.labels.map((l) => `<tr><td class="num">${esc(l.label)}</td><td class="num" style="text-align:right">${esc(String(l.rank))}</td><td class="muted">${esc(l.why)}</td></tr>`).join("")}</table>` : "";
+  return head + (rows ? `<table class="itable"><tr><th>candidate</th><th>this round</th><th>why</th></tr>${rows}</table>` : "")
+    + (x.explored_more ? `<div class="muted">and ${x.explored_more} more</div>` : "") + labels;
+}
 function openSource(x) {
   const n = (x.series || []).length + (x.series_more || 0);
   openDrawer(`<h3 data-drawer-key="i:${esc(x.name)}">${esc(x.name)} <span class="tag">source</span></h3>`
     + `<div class="muted" style="font-size:12px">Another store, read at each discovery: it has no log of its own here. Each series below is named as Orchestra names it, with the selector to type in the store itself and a link that opens it in the Core page's External stores box over the fitting window.</div>`
-    + `<h4>Series <span class="muted">(${n} read at the latest discovery)</span></h4>${sourceSeries(x)}`, { key: "i:" + x.name });
+    + `<h4>Series <span class="muted">(${n} read at the latest discovery)</span></h4>${sourceSeries(x)}`
+    + `<h4>Inference <span class="muted">(the last round: which candidates it probed, kept, demoted and queued, and why)</span></h4>${sourceRound(x)}`, { key: "i:" + x.name });
 }
 async function openLog(name) {
   const inst = INSTRUMENTS.find((i) => i.name === name);

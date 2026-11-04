@@ -1150,6 +1150,34 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   discovery tries the declared counters as that level's balance before any search, and judges it
   by the same evidence (`sd/pins.py`; it records `declared`, its origin, and is searched like any
   level when it does not fit).
+- **The inference loop** (the owner, 2026-11-04, at work against Chronosphere: nobody names `split`
+  labels per metric; inference chooses the groupings and improves under its budget as the equations
+  do). **Store-wide labels** (`sources/storewide.py`): before ranking, each label is ranked across
+  every family under `match`, the share of families it is a grouping label of, times 1 up to 8
+  values (less beyond), halved when it churns; a candidate split by grouping labels scores the
+  least of their ranks (`common`), so the store's common groupings (`container_name`,
+  `service_name`, `method`, `status`) win over one family's oddity (`edge_service`), and its reasons
+  say it ("groups 41 of 44 families, 7 stable values"). **Feedback from discovery**
+  (`sources/feedback.py`): every series read from a source records the candidate it was read by
+  (`sourced[…].candidate`: family, view, statistic, grouping, the same in every round); each round
+  reads the latest discovery (`ModelStore`, `discovered.json`): a candidate whose series became a
+  stock or a fitted flow is **kept** without being probed again, its last probe carried; one left
+  out as "an input, not a stock" or "no counters balance it" is **demoted** (its score less 2) and
+  not probed again until the source's held history grows by half or the window the round serves
+  widens, when it is probed first (a later discovery's refutation demotes it anew); a split that
+  became a stock has its finer splits (one more grouping label, at most 240 series) **proposed**,
+  probed before the others. **Budgeted exploration** (`sources/explore.py`): what is left of
+  `infer_requests` after the schema's reads, and of the store's daily cap (every bucket up to the
+  store's: a round never exceeds it, the rest waits for the next), goes to the never-probed
+  candidates best first (their score before a probe), each priced by the batched reads it adds
+  (`plan.probe_parts`); those that do not fit are **queued** (left out, saying so, first in line
+  next round); candidates probed before and given no verdict are probed again with what remains,
+  oldest first, else their last probe stands. The round's record (`<name>.json`: `round`,
+  `explored`, `probed`, `demoted`, `labels`) says what it probed, kept, demoted and queued, and each
+  candidate's fate and why; the Instruments page's source row shows "this round: probed 12, kept
+  9, demoted 3, 18 queued" and its drawer each candidate's reason and the store's labels by rank.
+  A round kept from replacing a broader one (above) still leaves its memory for the next. With
+  `split`, the owner's grouping stands: no finer split is proposed.
 - **Reading** (`sources/catalogue.py`, `sources/fetch.py`, `sources/plan.py`): every definition is
   read for exactly discovery's window, on its grid but never finer than the series' resolution;
   each family once per aggregation at the finest grouping its views need, every view derived
