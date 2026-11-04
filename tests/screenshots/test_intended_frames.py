@@ -23,11 +23,20 @@ pytestmark = pytest.mark.skipif(not _tools(), reason="needs node, puppeteer-core
 
 
 @pytest.fixture(scope="module")
-def frames():
+def frames(tmp_path_factory):
+    """Rendered once. ``render`` serves the apps in this process: it sets ``ORCHESTRATOR_HOME`` and
+    clears ``ORCHESTRA_METRICS_URL``, and each app's shutdown calls ``sd.bounded.kill_running``,
+    which refuses every strategy after it in the process; all three are undone after, so the tests
+    that run later in the same session discover as a fresh process would."""
+    from orchestra.sd import bounded
     spec = importlib.util.spec_from_file_location("intended_frames", HERE / "intended_frames.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return mod.render()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("ORCHESTRATOR_HOME", str(tmp_path_factory.mktemp("frames-home")))
+        mp.delenv("ORCHESTRA_METRICS_URL", raising=False)
+        mp.setattr(bounded, "_stopping", False)
+        return mod.render()
 
 
 def test_every_frame_renders_without_errors(frames):

@@ -190,7 +190,8 @@ def serve(p):
 
     port = free_port()
     server = uvicorn.Server(uvicorn.Config(create_app(p, "127.0.0.1"), host="127.0.0.1", port=port, log_level="warning"))
-    threading.Thread(target=server.run, daemon=True).start()
+    server.thread = threading.Thread(target=server.run, daemon=True)
+    server.thread.start()
     deadline = time.time() + 20
     while not server.started and time.time() < deadline:
         time.sleep(0.1)
@@ -218,7 +219,8 @@ def render(out: Path = OUT, work: Path | None = None, frames: list[str] | None =
         finally:
             for s, _ in servers:
                 s.should_exit = True
-            time.sleep(0.5)
+            for s, _ in servers:                 # shut down (the app's lifespan) before the caller goes on
+                s.thread.join(timeout=10)
 
 
 if __name__ == "__main__":
