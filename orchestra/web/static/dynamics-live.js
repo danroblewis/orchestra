@@ -213,7 +213,7 @@ const Live = (() => {
     openDrawer(`<h3 data-drawer-key="s:${esc(id)}">${stockHead(s.id)} <span class="tag">stock</span>${ev.hidden ? ' <span class="tag">hidden: found from the levels, not measured</span>' : ""}</h3>
       ${stockAbout(s.id)}
       ${ev.hidden ? `<div class="muted" style="font-size:12px;margin-bottom:8px">A question about the system: ${esc(ev.note || (ev.passing && ev.passing.note) || "something in it is not measured or not understood yet")}.</div>` : ""}
-      <div class="def"><div>now</div><div class="num">${HISTORY == null ? '<span class="muted">loading levels…</span>' : fmt(now(id))}</div>
+      <div class="def"><div>now</div><div class="num">${HISTORY == null ? '<span class="muted">loading levels…</span>' : fmt(now(id))}${(MODEL.levels[id] || {}).measured_by ? ` <span class="muted" style="font-family:inherit">read from the ${esc(MODEL.levels[id].measured_by)}</span>` : ""}</div>
       ${idRows("stocks", s.id)}
       ${oldest(id) ? `<div>oldest waiting</div><div class="num">${esc(oldest(id))} <span class="muted" style="font-family:inherit">(its instrument's age of this place, as last written: a measurement, not part of the model)</span></div>` : ""}
       ${whyOne(s, io)}

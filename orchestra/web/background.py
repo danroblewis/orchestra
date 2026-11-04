@@ -33,7 +33,13 @@ holds: the host's last discovery's reads first (``readcache.py``), then the step
 last round. Levels and history come from the same round. A round the store throttles (a 429)
 doubles the time to the next, up to ``REMOTE_MAX_EVERY_S``; a round without one restores it. A
 source that fails leaves its stocks without a level and records why (``errors["source <name>"]``);
-every other stock's level and history still update.
+every other stock's level and history still update. A source-fed stock's level is the last value
+the round read of it (a level is held between its points, SPEC §4.4), within the round's window
+and no older than ``LEVEL_S`` or two of the series' resolution, and says where it came from
+(``measured_by: "source <name>"``; the own store's: ``"own store"``); it is never copied into the
+own store. The catalogue follows the configuration: a source added, changed or removed while the
+web server runs (``fresh_config``) is read from the next round (bootstrap run 7: a source added
+after the page started was never read, and every queue's level showed "no data").
 
 Endpoints read the caches and report how old they are. The model itself is rediscovered by the
 bootstrap host, not here (``orchestra.host``); this only reads what the host cached, and so are a
@@ -44,6 +50,7 @@ from __future__ import annotations
 import threading
 import time
 
+from ..config import fresh_config
 from ..sd import eras as era_record
 from ..sd.history import FLOW_STEP_S, HISTORY_S, STOCK_STEP_S, history, remote_refs, stock_step  # noqa: F401 - re-exported for the web
 from ..sd.store import ModelStore
@@ -60,6 +67,7 @@ HISTORY_EVERY_S = 15.0
 REMOTE_EVERY_S = 15.0        # remote levels and history, while a page asks for them
 REMOTE_MAX_EVERY_S = 300.0   # ... at most this far apart when the store throttles
 WANT_S = 120.0               # how long a page's ask keeps remote reads going
+LEVEL_S = 900.0              # a level now: its last point no older than this, or two of its resolution
 
 
 class Refresher:
@@ -82,6 +90,7 @@ class Refresher:
         self.at: dict[str, float] = {}
         self.errors: dict[str, str] = {}
         self.catalogue = Catalogue(project, metrics, infer=False, share=True)    # reads the host's inference, never starts one
+        self._config = project.config                       # what the catalogue was made from
         self.wanted: dict[str, float] = {}                  # "remote", "counted" -> when a page last asked for them
         self.remote_every = REMOTE_EVERY_S
         self._remote = None                                 # (start, end, read) of the last remote round
@@ -148,6 +157,18 @@ class Refresher:
             self.past[key] = idx
         return self.past[key]
 
+    def _follow_config(self) -> None:
+        """Make the catalogue again when the configuration changed (a source added, changed or
+        removed while the web server runs); its reads start afresh from the host's read cache."""
+        fresh_config(self.project)
+        if self.project.config is self._config:
+            return
+        self._config = self.project.config
+        self.catalogue = Catalogue(self.project, self.metrics, infer=False, share=True)
+        self._remote, self.remote_levels = None, {}
+        self.at.pop("remote_levels", None)
+        self.at.pop("counted", None)
+
     def _flows(self) -> None:
         latest = self.models.latest_discovery()
         self.flows = flow_hypotheses(latest[1] if latest else None)
@@ -199,7 +220,7 @@ class Refresher:
         if model is not None and self.metrics is not None:
             for s in model.stocks:
                 if s.series and s.series.source in (None, "own") and (last := self.metrics.latest(s.series.name, s.series.labels)):
-                    out[s.id] = {"t": last[0], "v": last[1]}
+                    out[s.id] = {"t": last[0], "v": last[1], "measured_by": "own store"}
         self.own_levels = out
 
     def _remote_round(self) -> None:
@@ -220,8 +241,9 @@ class Refresher:
         out = {}
         raw = self.raw_for_round()
         for s in model.stocks:
-            if s.series and s.series.source not in (None, "own") and (pts := raw(s.series, now - 900, now)):
-                out[s.id] = {"t": pts[-1][0], "v": pts[-1][1]}
+            ref = s.series
+            if ref and ref.source not in (None, "own") and (pts := raw(ref, now - max(LEVEL_S, 2 * (ref.resolution_s or 0.0)), now)):
+                out[s.id] = {"t": pts[-1][0], "v": pts[-1][1], "measured_by": f"source {ref.source}"}
         self._note_sources()
         self.remote_levels = out
         self.at.pop("history", None)                # the history takes the new reads in at once
@@ -245,6 +267,7 @@ class Refresher:
 
     def _run_remote(self) -> None:
         while not self._stop.is_set():
+            self._do("config", 0.0, self._follow_config)
             if self.catalogue.specs.sources and self._wanted("counted"):
                 self._do("counted", max(COUNTED_EVERY_S, self.remote_every), self._counted)
             if self.catalogue.specs.sources and self._wanted("remote"):

@@ -94,7 +94,7 @@ from .drivers import AIC_MARGIN, EVENTS_PER_PARAM, behind, co_counting
 from .ends import claims, moves
 from .hops import split_hops
 from .identify import timing_limited, two_clocks
-from .inputs import offered_inputs
+from .inputs import keep_apart, offered_inputs, own_paths
 from .live import (
     arrived,
     balance_steps,
@@ -1204,7 +1204,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # the grid; each flow is fitted on its own window (flow_window)
     grid = lambda vals: [(start + i * step, v) for i, v in enumerate(vals)]
     sources: dict[str, tuple[list, list | None]] = {sid_of[s.key]: (s.points, s.intervals) for s, _, _, _ in found}
-    inputs, input_refs = offered_inputs(series, {s.key for s, _, _, _ in found}, left_out)
+    inputs, input_refs = offered_inputs(series, {s.key for s, _, _, _ in found}, left_out, provenance)
+    # Orchestra's own series drive only flows of Orchestra's own stocks (sd.inputs): with none, they are no input
+    keep_apart(inputs, input_refs, bool(own_paths({s.key: sid_of[s.key] for s, _, _, _ in found}, {}, provenance)), left_out)
     found_net: list[Series] = []
     for name, vals in inputs.items():
         sources[f"input:{name}"] = (grid(vals), None)
@@ -1240,6 +1242,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     described = {sid_of[s.key]: (s.name, s.labels, unit.get(s.key)) for s in [*series_of.values(), *found_net]}
     described.update({f"input:{k}": (r["name"], r.get("labels") or {}, unit_of(r["name"], r.get("labels") or {}))
                       for k, r in input_refs.items()})
+    own_ = own_paths({**{s.key: sid_of[s.key] for s, _, _, _ in found}, **{s.key: sid_of[s.key] for s in found_net}}, input_refs, provenance)
     windows: list[tuple[float, float]] = []
     path_cache: dict = {}
     for mvs in grouped.values():
@@ -1265,7 +1268,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         src = mvs[0].src
         near = {pid: adjacency(c.name, c.labels, *described[pid][:2], described[pid][2] == unit.get(c.key))
                 for pid in paths if pid in described}
-        best, *rest = fit_flow(events, live_s / unit_s, paths, src, set(paths) - accumulators - set(barred), slow, start,
+        # Orchestra's own series drive a flow only when every stock it moves is Orchestra's own too (sd.inputs)
+        apart = set() if ends and ends <= own_ else own_
+        best, *rest = fit_flow(events, live_s / unit_s, paths, src, set(paths) - accumulators - set(barred) - apart, slow, start,
                                {mv.dst for mv in mvs if mv.dst}, near)
         best["dispersion"] = dispersion(events, live, best, paths, unit_s)
         other = lambda x, src=src: f"_{x['inputs'][0]}" if x["inputs"] and x["inputs"] != [src] else ""   # a form in another stock says which

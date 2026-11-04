@@ -45,6 +45,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..collect.views import declared as declared_views
+from ..collect.views import owned as plugin_instruments
 from ..collect.views import provenance as instrument_views
 from ..metrics import MetricsStore
 from ..sd.series import Declared, series_key
@@ -357,7 +358,8 @@ class Catalogue:
                 out.dump = [(n, lab, kept) for n, lab, pts in out.dump if (kept := [p for p in pts if p[0] >= own_from])]
             out.status[OWN] = {"ok": True, "series": len(out.dump)}
             # what the project's instruments say of the series they print (collect.views): a place's level and its own moves
-            out.provenance.update(instrument_views(out.dump, declared_views(self.project), series_key))
+            # and which a plugin's instruments wrote: Orchestra's own machinery (sd.inputs)
+            out.provenance.update(instrument_views(out.dump, declared_views(self.project), series_key, plugin_instruments(self.project)))
         own_names = {name for name, _, _ in out.dump}
         for name, why in self.specs.refused.items():
             out.status[name] = {"ok": False, "error": f"refused in orchestra.toml: {why}"}
