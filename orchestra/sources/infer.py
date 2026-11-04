@@ -62,6 +62,7 @@ class Inference:
     requests: int = 0                            # the round's requests, retries included
     seconds: float = 0.0                         # its wall time
     remembered: dict = field(default_factory=dict)   # names too big, names listed at one replica (listing.py), for the next rounds
+    judged: list[float] = field(default_factory=list)   # [start, end] its definitions' motion was judged over (``survey_history``)
 
     def to_json(self) -> dict:
         return asdict(self)
@@ -73,10 +74,15 @@ class Inference:
         return cls(d["source"], d["at"], d["key"], defs(d.get("kept") or []), defs(d.get("left_out") or []),
                    list(d.get("families") or []), d.get("script"), list(d.get("notes") or []), d.get("error"),
                    bool(d.get("partial")), list(d.get("window") or []), int(d.get("requests") or 0), float(d.get("seconds") or 0.0),
-                   dict(d.get("remembered") or {}))
+                   dict(d.get("remembered") or {}), list(d.get("judged") or []))
 
     def span(self) -> float:
         return self.window[1] - self.window[0] if len(self.window) == 2 else 0.0
+
+    def judged_span(self) -> float:
+        """How long a stretch its definitions' motion was judged over: the window, or the history
+        surveyed beyond it (a round cached before the survey: its window)."""
+        return self.judged[1] - self.judged[0] if len(self.judged) == 2 else self.span()
 
 
 def settings_key(spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path) -> str:
@@ -190,6 +196,39 @@ def probe_all(source: Source, cands: list[Definition], start: float, end: float,
     return out
 
 
+def history_words(s: float) -> str:
+    """A judged stretch in words: "7-day", "6-hour"."""
+    return f"{round(s / 86400, 1):g}-day" if s >= 86400 else f"{round(s / 3600, 1):g}-hour"
+
+
+def survey_history(source: Source, spec: SourceSpec, cands: list[Definition], probes: dict[str, dict], judge_from: float,
+                   end: float, until: float | None, inf: Inference) -> None:
+    """The candidates the window's probe found still (or empty), probed again over the history
+    the round serves, [judge_from, end], at ``plan.PROBE_POINTS`` points a series: the generated
+    ones in a batched read per family and aggregation (``plan.shared``), within the round's
+    budget. One that moved there is kept, judged by that read (``over``: what ``rank`` says it was
+    judged over); one that did not is left out as still in the history. A probe the round's budget
+    stopped keeps the window's verdict, and the round is partial."""
+    still = [d for d in cands if not d.pin and not (p := probes[d.id]).get("error") and not p.get("moves")]
+    if not still:
+        return
+    over = f"{history_words(end - judge_from)} history"
+    got = probe_all(source, still, judge_from, end, until, spec.concurrency)
+    moved, late = 0, 0
+    for d in still:
+        p = got[d.id]
+        if p.get("error"):
+            late += bool(p.get("late"))
+            continue
+        if p.get("moves"):
+            moved += 1
+        probes[d.id] = {**p, "over": over}
+    inf.notes.append(f"{len(still)} candidates still in the window were probed over the {over}: {moved} moved there")
+    if late:
+        inf.partial = True
+        inf.notes.append(f"{late} candidates could not be probed over the {over} this round: judged by the window")
+
+
 def unique_names(defs: list[Definition]) -> None:
     """Two families' definitions never share a name and a grouping (they would be one series to
     discovery): the one whose family is the name keeps it, else the first family by name; the
@@ -207,18 +246,19 @@ def unique_names(defs: list[Definition]) -> None:
 
 def infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path,
           start: float, end: float, until: float | None = None, known: dict[str, dict] | None = None,
-          remembered: dict | None = None) -> Inference:
+          remembered: dict | None = None, judge_from: float | None = None) -> Inference:
     """A fresh round, by ``until`` (``time.monotonic()``; the source's ``infer_deadline`` from now
     by default) and within ``infer_requests``. Raises ``SourceError`` or ``TransformError`` when it
     cannot stand; ``known``: the last round's families by name; ``remembered``: what its listing
-    found too big or listed at one replica."""
+    found too big or listed at one replica; ``judge_from``: the start of the window the round
+    serves, when it reaches before ``start`` (``survey_history``)."""
     began = time.monotonic()
     until = began + spec.infer_deadline if until is None else until
     before, outer = getattr(source, "requests", 0), getattr(source, "budget", None)
     if hasattr(source, "budget"):
         source.budget = Budget(spec.infer_requests, until, "the inference round")
     try:
-        inf = _infer(source, spec, declared, repo_root, start, end, until, known, remembered)
+        inf = _infer(source, spec, declared, repo_root, start, end, until, known, remembered, judge_from)
     finally:
         if hasattr(source, "budget"):
             source.budget = outer
@@ -227,8 +267,9 @@ def infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo
 
 
 def _infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path,
-           start: float, end: float, until: float, known: dict[str, dict] | None, remembered: dict | None = None) -> Inference:
-    inf = Inference(spec.name, time.time(), settings_key(spec, declared, repo_root), window=[start, end])
+           start: float, end: float, until: float, known: dict[str, dict] | None, remembered: dict | None = None,
+           judge_from: float | None = None) -> Inference:
+    inf = Inference(spec.name, time.time(), settings_key(spec, declared, repo_root), window=[start, end], judged=[start, end])
     schema = read_schema(source, spec, start, end, until=until, known=known, remembered=remembered)
     inf.remembered = schema.remembered
     inf.notes = list(schema.notes)
@@ -249,6 +290,9 @@ def _infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], rep
     for d in cands:                          # every query within what match selects (scope.py)
         d.query, d.inner = scoped(d.query, scope), scoped(d.inner, scope)
     probes = probe_all(source, cands, start, end, until, spec.concurrency)
+    if judge_from is not None and judge_from < start - 1.0:
+        inf.judged = [judge_from, end]
+        survey_history(source, spec, cands, probes, judge_from, end, until, inf)
     big = {i for i, p in probes.items() if REFUSED.search(p.get("error") or "")}
     missed = {i for i, p in probes.items() if p.get("error") and i not in big}
     if missed and len(missed) > UNPROBED * len(probes):

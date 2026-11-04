@@ -1030,13 +1030,14 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   without `label/<name>/values` is listed by `series`, and one without `metadata` keeps none
   (Chronosphere documents only `query`, `query_range`, `series` and `labels`).
 - **Series are inferred from the schema** every `infer_every` (an hour), cached in
-  `<state>/sources/<name>.json` with the window inferred over (`sources/infer.py`,
-  `sources/cache.py`). **Only the host's discovery and the CLI infer**; the web server and the
+  `<state>/sources/<name>.json` with the window inferred over and the stretch motion was judged
+  over (`sources/infer.py`, `sources/cache.py`), and reused only for a window no longer than the
+  one judged: an hour's judgement is never reused for a week. **Only the host's discovery and the CLI infer**; the web server and the
   judge read the cache. One round at a time across processes (a lock); a failed or partial round
   is retried after 5 minutes, four times longer each next time, while the cached definitions
   stand; after three rounds that failed for their cost, or one refused because `match` selects
   more than `max_names` (2,000) metric names (a big tenant is never listed whole), none runs until
-  the source's settings change. A round over a narrower window never replaces a broader one. A
+  the source's settings change. A round serving a narrower window never replaces a broader one. A
   source that declares `[[series]]` infers every 6 h unless `infer_every` says otherwise. A round has a budget
   (`infer_requests`, 1500; `infer_deadline`, 300 s) and its reads are **batched across families**
   (`sources/listing.py`: names from `label/__name__/values`, series in batches of names split on a
@@ -1075,7 +1076,13 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   candidates as JSON on standard input and prints rewrites: new queries, drops with a reason,
   definitions of its own, pins (`sources/transform.py`). A failure fails the round.
 - **Rank and cap** (`sources/rank.py`): each candidate is read over the window at its resolution;
-  one that returns nothing or does not move is left out, and so is one equal at every point to
+  **motion is judged over the window the round serves**: when discovery's window reaches further
+  back than the probe (a week of held history read with an hour's probe, `infer_s`), the
+  candidates still in the probe are read again over the whole window at 1,000 points a series,
+  batched per family within the round's budget (`infer.survey_history`), and one that moved
+  anywhere in it is kept (the kube demo, 2026-11-03: a quiet hour left out every pod series, 56
+  of 72, and a week's discovery found the queue alone). One that returns nothing or does not
+  move is left out, saying over what ("did not move in the 7-day history", or "in the window"), and so is one equal at every point to
   another family's (a count of the same pods, a `_count` beside its `_total`); the rest are
   scored (moves, groups moving apart, stable, small, coarse, view) and taken in two rounds:
   every family's coarsest up to 60% of the cap, then the rest best first, splits whose groups

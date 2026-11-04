@@ -1,8 +1,11 @@
 """When an inference round runs, and what is kept of it.
 
 The round's result is cached in ``<state>/sources/<name>.json`` with the window it was inferred
-over, and reused for ``infer_every`` (an hour by default) while the source's settings and the
-script are unchanged (``infer.settings_key``).
+over and the stretch its definitions' motion was judged over (``judged``: the window it served,
+``infer.survey_history``), and reused for ``infer_every`` (an hour by default) while the source's
+settings and the script are unchanged (``infer.settings_key``) and for a window no longer than
+the one judged: an hour's judgement is never reused for a week (the kube demo, 2026-11-03: a
+quiet hour in which no pod moved left every pod series out of the week's discovery).
 
 - **Only one caller infers.** ``definitions(…, infer=False)`` reads the cache and never starts a
   round: the web server, the judge and ``orchestra sd show`` read so; the host's discovery and
@@ -20,8 +23,8 @@ script are unchanged (``infer.settings_key``).
   time), no round runs until the source's settings or its script change (``infer.settings_key``),
   or ``orchestra sources infer`` asks for one: a store that cannot be inferred is not paid for
   again and again.
-- **A narrower round never replaces a broader one.** A round over a shorter window than the
-  cached one's sees less (a deployment that did not move in 15 minutes moved in the hour); the
+- **A narrower round never replaces a broader one.** A round serving a shorter window than the
+  one the cached round judged sees less (a deployment that did not move in 15 minutes moved in the hour); the
   cached definitions stand. Nor does a round that keeps fewer than half the definitions the
   cached one kept (a store that answered but held little: a laptop that slept). ``refresh`` (the
   CLI's ``sources infer``) accepts either."""
@@ -151,21 +154,28 @@ def _when(t: float) -> str:
     return time.strftime("%Y-%m-%d %H:%M", time.localtime(t))
 
 
-def _fresh(inf: Inference | None, key: str, spec: SourceSpec) -> bool:
-    return inf is not None and inf.key == key and not inf.partial and time.time() - inf.at < spec.infer_every
+def _fresh(inf: Inference | None, key: str, spec: SourceSpec, serves: float) -> bool:
+    """Under these settings, whole, younger than ``infer_every`` and judged over at least the
+    ``serves`` seconds asked for: an hour's judgement is never reused for a week."""
+    return (inf is not None and inf.key == key and not inf.partial and time.time() - inf.at < spec.infer_every
+            and inf.judged_span() >= NARROWER * serves)
 
 
 def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path, state_dir: Path,
-                start: float, end: float, *, refresh: bool = False, until: float | None = None, infer_ok: bool = True) -> Inference:
-    """The source's definitions (see the module's docstring). Raises ``SourceError`` when there
-    are none to read."""
+                start: float, end: float, *, refresh: bool = False, until: float | None = None, infer_ok: bool = True,
+                judge_from: float | None = None) -> Inference:
+    """The source's definitions (see the module's docstring). A round probes [start, end] and
+    judges motion over the window it serves, from ``judge_from`` (default ``start``). Raises
+    ``SourceError`` when there are none to read."""
     key = settings_key(spec, declared, repo_root)
+    judge_from = start if judge_from is None or judge_from > start else judge_from
+    serves = end - judge_from
     if not spec.infer:                     # only what is declared: nothing to infer, nothing to cache
         return Inference(spec.name, time.time(), key, declared_definitions(spec, declared),
                          notes=["infer = false: only the declared series are read, never the schema"])
     old = cached(state_dir, spec.name)
     same = old is not None and old.key == key        # older definitions under other settings would not be what was asked for
-    if _fresh(old, key, spec) and not refresh:
+    if _fresh(old, key, spec, serves) and not refresh:
         return old
     if not infer_ok:
         if not same:
@@ -186,8 +196,8 @@ def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries]
             old.error = old.error or why
             return old
         raise SourceError(why)
-    if same and not refresh and old.span() and end - start < NARROWER * old.span():
-        old.error = (f"a round over {(end - start) / 60:g} min would replace one over {old.span() / 60:g} min, which saw more: "
+    if same and not refresh and old.judged_span() and serves < NARROWER * old.judged_span():
+        old.error = (f"a round over {serves / 60:g} min would replace one over {old.judged_span() / 60:g} min, which saw more: "
                      f"using the definitions inferred at {_when(old.at)}")
         return old
     lock = _Lock(state_dir, spec.name)
@@ -199,11 +209,11 @@ def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries]
         raise SourceError("another process is inferring this source and has not finished")
     try:
         now = cached(state_dir, spec.name)           # a round another process just finished
-        if _fresh(now, key, spec) and not refresh and (old is None or now.at > old.at):
+        if _fresh(now, key, spec, serves) and not refresh and (old is None or now.at > old.at):
             return now
         known = {f["name"]: f for f in (old.families if same else [])}
         try:
-            inf = infer(source, spec, declared, repo_root, start, end, until, known, old.remembered if old else None)
+            inf = infer(source, spec, declared, repo_root, start, end, until, known, old.remembered if old else None, judge_from)
         except Exception as e:
             said = str(e) if isinstance(e, (SourceError, TransformError)) else f"{type(e).__name__}: {e}"
             costly = isinstance(e, (PastDeadline, TooManyNames)) or "probes could not be made" in said

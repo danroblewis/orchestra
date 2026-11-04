@@ -180,9 +180,11 @@ class Catalogue:
     def spec(self, name: str) -> SourceSpec:
         return next(s for s in self.specs.sources if s.name == name)
 
-    def inference(self, name: str, start: float, end: float, *, refresh: bool = False, until: float | None = None) -> Inference:
+    def inference(self, name: str, start: float, end: float, *, refresh: bool = False, until: float | None = None,
+                  judge_from: float | None = None) -> Inference:
         return definitions(self.remotes[name], self.spec(name), self.specs.declared, Path(self.project.repo_root),
-                           Path(self.project.state_dir), start, end, refresh=refresh, until=until, infer_ok=self.infer or refresh)
+                           Path(self.project.state_dir), start, end, refresh=refresh, until=until, infer_ok=self.infer or refresh,
+                           judge_from=judge_from)
 
     def _remote(self, spec: SourceSpec, start: float, end: float, step: float, own_names: set[str], out: Reading,
                 keep: bool = True, infer_s: float | None = None) -> None:
@@ -191,8 +193,9 @@ class Catalogue:
         st: dict = {"where": spec.where(), "auth": src.auth.describe(), "prefix": spec.prefix}
         out.status[spec.name] = st
         try:
-            # a fresh inference (rare: it is cached) has a deadline of its own, over the last infer_s of the window when given
-            inf = self.inference(spec.name, max(start, end - infer_s) if infer_s else start, end)
+            # a fresh inference (rare: it is cached) has a deadline of its own, probing the last infer_s of the window when
+            # given, and judging motion over the whole window it serves (infer.survey_history)
+            inf = self.inference(spec.name, max(start, end - infer_s) if infer_s else start, end, judge_from=start)
         except Exception as e:  # noqa: BLE001 - one source's failure never ends the discovery of the others
             st.update(ok=False, error=f"inference failed: {why(e)}")
             out.missing[spec.name] = st["error"]
@@ -345,8 +348,9 @@ class Catalogue:
         """Every series for the window (see the module's docstring). ``keep``: the reads are kept
         for the next discovery and the project's other readers (``readcache.py``); False for a
         read of another window (the judge's halves), which reads from the cache but keeps nothing.
-        ``infer_s``: an inference this read starts looks at the window's last ``infer_s`` only (a
-        window as long as a source's history is read with what the last hour defines).
+        ``infer_s``: an inference this read starts probes the window's last ``infer_s`` only, and
+        surveys the rest of the window for the candidates still in it (a window as long as a
+        source's history is read with what moved anywhere in it, ``infer.survey_history``).
         ``own_from``: the own store's series only from then (the current era's start, when a
         source's history reaches further back: ``sd.rediscover``); a series with nothing since is
         left out."""
