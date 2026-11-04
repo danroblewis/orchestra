@@ -52,6 +52,8 @@ from ..sd.series import Declared, series_key
 from . import PastDeadline, SourceError
 from . import held as held_record
 from .cache import definitions
+from .explore import ident
+from .feedback import verdicts as discovery_verdicts
 from .fetch import grid_step, read_many
 from .infer import Inference
 from .limits import Budget, for_store, store_key
@@ -116,6 +118,7 @@ def provenance(spec: SourceSpec, d: Definition, traffic: dict | None = None, res
     return {"source": spec.name, **store, **({"machine_label": spec.machine} if spec.machine else {}), "query": d.query, "kind": d.kind, "origin": list(d.origin),
             "resolution_s": d.resolution_s if resolution_s is None else resolution_s,
             "unit": d.unit, **({"unit_label": d.unit_label} if d.unit_label else {}), "view": d.view, "family": d.family, "flags": list(d.flags), **({"traffic": traffic} if traffic else {}),
+            "candidate": ident(d),
             **({"stock": dict(d.stock)} if d.stock else {})}
 
 
@@ -198,11 +201,23 @@ class Catalogue:
         src = self.remotes[name]
         was, src.by = src.by, "infer"            # an inference round's requests are logged as its own
         try:
-            return definitions(src, self.spec(name), self.specs.declared, Path(self.project.repo_root),
-                               Path(self.project.state_dir), start, end, refresh=refresh, until=until, infer_ok=self.infer or refresh,
-                               judge_from=judge_from)
+            spec, state = self.spec(name), Path(self.project.state_dir)
+            return definitions(src, spec, self.specs.declared, Path(self.project.repo_root),
+                               state, start, end, refresh=refresh, until=until, infer_ok=self.infer or refresh,
+                               judge_from=judge_from, verdicts=lambda: self.verdicts(name),
+                               held_s=held_record.span(held_record.read(state, name), spec, time.time()))
         finally:
             src.by = was
+
+    def verdicts(self, name: str) -> dict[str, dict]:
+        """What the latest discovery made of each candidate the source's inference kept
+        (``feedback.py``), for its next round; none when there is no discovery yet or it cannot be read."""
+        from ..sd.store import ModelStore
+        try:
+            got = ModelStore.for_state(self.project.state_dir).latest_discovery()
+            return discovery_verdicts(got[0], got[1], name) if got else {}
+        except Exception:  # noqa: BLE001 - a record that cannot be read gives no feedback, never a failed round
+            return {}
 
     def _remote(self, spec: SourceSpec, start: float, end: float, step: float, own_names: set[str], out: Reading,
                 keep: bool = True, infer_s: float | None = None) -> None:

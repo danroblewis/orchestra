@@ -32,7 +32,7 @@ def _tell(ref: SeriesRef | None, provenance: dict[str, dict]) -> str | None:
     return ref.source
 
 
-SOURCED = ("source", "selector", "store_query", "kind", "summed")
+SOURCED = ("source", "selector", "store_query", "kind", "summed", "candidate")   # candidate: what inference read it by (sources.explore)
 
 
 def sourced(provenance: dict[str, dict]) -> dict[str, dict]:

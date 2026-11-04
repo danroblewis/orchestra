@@ -8,7 +8,8 @@ consumer groups, pod phases, each its own stock, which their total would merge);
 labels are **stable** (low churn); it is **small** (few series); its grouping is **coarse**; its
 view is one discovery uses most (counts and counters first, a minimum last); its grouping is one
 the **store** is split by (``storewide.py``: a label that groups most families with few stable
-values, so ``service_name`` beats one family's ``edge_service``). Only a level's own
+values, so ``service_name`` beats one family's ``edge_service``). One discovery refuted (an input,
+not a stock; no counters balance it) is **demoted** by ``DEMOTE`` (``explore.py``). Only a level's own
 groups count as apart: merging them merges stocks. A counter's split is worth its series only
 where a level is split by the same label, alone or with another, because its groups move apart
 (the lag by consumer group, or by consumer group and topic: the offsets produced per topic): then it scores as apart as that level, so the flows of each group are there to balance
@@ -45,6 +46,7 @@ APART = 1.5                  # what a grouping whose groups move apart adds to i
 APART_VALUES = 8             # ... by one label of at most this many values (a few queues, topics, phases)
 EXACT = ("increments", "sum_by", "rollup")    # views alike only when equal at every point
 TARGET_LABELS = COLLECTION_LABELS | {"endpoint", "metrics_path", "instance"}   # who reported a series, not what it is of
+DEMOTE = 2.0                 # what a candidate discovery refuted (an input, not a stock; no counters balance) loses (explore.py)
 WHOLE_SHARE = 0.6            # of the cap, what the first round (every family's coarsest) may take before the splits
 
 
@@ -78,9 +80,10 @@ def stock_splits(defs: list[Definition], probes: dict[str, dict]) -> dict[str, f
     return out
 
 
-def score(d: Definition, probe: dict | None, shared: dict[str, float] | None = None, ranks: dict[str, dict] | None = None) -> tuple[float, str]:
+def score(d: Definition, probe: dict | None, shared: dict[str, float] | None = None, ranks: dict[str, dict] | None = None,
+          demoted: str = "") -> tuple[float, str]:
     """A candidate's score and its parts, in words. ``ranks``: the store's labels (``storewide.py``),
-    whose rank enters as ``common``."""
+    whose rank enters as ``common``; ``demoted``: why discovery refuted it (``explore.py``)."""
     churn = max([float(d.labels_info.get(c, {}).get("churn", 0.0)) for c in d.group_by] or [0.0])
     n = (probe or {}).get("series", d.est_series)
     moves = 1.5 if probe is None else (3.0 if probe.get("moves") else 0.0)
@@ -91,6 +94,8 @@ def score(d: Definition, probe: dict | None, shared: dict[str, float] | None = N
     said = {}
     if ranks is not None:
         parts["common"], said["common"] = common(d.group_by, d.labels_info, ranks)
+    if demoted:
+        parts["demoted"], said["demoted"] = -DEMOTE, demoted
     return round(sum(parts.values()), 3), ", ".join(f"{k} {v:.2f}" + (f" [{said[k]}]" if said.get(k) else "") for k, v in parts.items())
 
 
@@ -123,12 +128,13 @@ def _same_counts(live: list[Definition], left: list[Definition], probes: dict[st
         left.append(replace(d, why=f"the same series as {twin.name} by ({', '.join(twin.group_by)}): {what}"))
 
 
-def rank(defs: list[Definition], spec: SourceSpec, probes: dict[str, dict], ranks: dict[str, dict] | None = None
-         ) -> tuple[list[Definition], list[Definition]]:
-    """(kept, left out), each with its score and why. ``ranks``: the store's labels (``storewide.py``)."""
+def rank(defs: list[Definition], spec: SourceSpec, probes: dict[str, dict], ranks: dict[str, dict] | None = None,
+         demoted: dict[str, str] | None = None) -> tuple[list[Definition], list[Definition]]:
+    """(kept, left out), each with its score and why. ``ranks``: the store's labels
+    (``storewide.py``); ``demoted``: candidate id -> why discovery refuted it."""
     scored, shared, apart_of = [], stock_splits(defs, probes), {}
     for d in defs:
-        s, why = score(d, probes.get(d.id), shared, ranks)
+        s, why = score(d, probes.get(d.id), shared, ranks, (demoted or {}).get(d.id, ""))
         scored.append(replace(d, score=s, why=why))
         apart_of[d.id] = float(why.split("apart ")[1].split(",")[0]) / APART if "apart " in why else 0.0
     left: list[Definition] = []

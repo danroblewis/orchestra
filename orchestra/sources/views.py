@@ -50,6 +50,7 @@ from .spec import SourceSpec
 
 UPPER = {"p90", "p95", "p99", "p999"}
 PAIR_LIMIT = 60
+FINER_LIMIT = 4 * PAIR_LIMIT     # series, at most, of a finer split proposed because a coarser one became a stock (explore.py)
 WEIGHT = {"count": 1.0, "starts": 1.0, "stops": 1.0, "increments": 1.0, "declared": 1.0, "script": 1.0, "sum_by": 1.0, "rollup": 0.9,
           "upper_by": 0.5, "max_by": 0.5, "distinct": 0.4, "avg_by": 0.4, "min_by": 0.3}
 
@@ -92,6 +93,7 @@ class Definition:
     left: str = ""               # left out before ranking, and why (a rule over a counter: the counter is read)
     stock: dict = field(default_factory=dict)            # a declared stock's level or flow ({"name", "role"}; spec.DeclaredSeries)
     summed: list[str] = field(default_factory=list)      # with the source's split: the labels it is summed over (as the store spells them)
+    proposed: str = ""           # a finer split of one that became a stock, and of which (explore.py): probed before the others
 
 
 
@@ -123,7 +125,26 @@ def groupings(fam: Family, spec: SourceSpec | None = None) -> list[list[str]]:
     return out
 
 
-def views(fam: Family, spec: SourceSpec) -> list[Definition]:
+def finer_groupings(fam: Family, have: list[list[str]], stocks: list[tuple[list[str], str]]) -> dict[tuple, str]:
+    """The splits one grouping label finer than a split of the family that became a stock
+    (``explore.finer``), not among ``have``: a grouping set (labels in ``have``'s order: by
+    cardinality) -> why it is proposed; of at most ``FINER_LIMIT`` series."""
+    g = sorted(fam.role("grouping"), key=lambda c: fam.labels[c].cardinality)
+    seen = {tuple(x) for x in have}
+    out: dict[tuple, str] = {}
+    for by, why in stocks:
+        base = [c for c in by if c in g]
+        for c in g:
+            new = tuple(x for x in g if x in base or x == c)
+            if c in base or new in seen or new in out or prod(fam.labels[x].cardinality for x in new) > FINER_LIMIT:
+                continue
+            out[new] = why
+    return out
+
+
+def views(fam: Family, spec: SourceSpec, stocks: list[tuple[list[str], str]] | None = None) -> list[Definition]:
+    """Every candidate of a family; ``stocks``: the groupings of its candidates that became stocks
+    (``explore.finer``), whose finer splits are proposed too (``finer_groupings``)."""
     plain = [c for c in fam.role("constant") if c in spec.labels or c == spec.machine]   # kept by every view but a count
     identity = fam.role("identity")
     rename = {fam.labels[c].real: c for c in fam.labels}
@@ -183,7 +204,10 @@ def views(fam: Family, spec: SourceSpec) -> list[Definition]:
             resolution_s=res, inner=inner, agg=outer, left=left)
 
     served: set[str] = set()
-    for group in groupings(fam, spec):
+    sets = groupings(fam, spec)
+    proposed = finer_groupings(fam, sets, stocks) if stocks and named(fam, spec) is None else {}
+    sets += [list(x) for x in proposed]
+    for group in sets:
         by = [fam.labels[c].real for c in kept + group]
         gtext = f" by {', '.join(group)}" if group else ""
         for fn, rule in sorted(rules.items()):
@@ -253,6 +277,9 @@ def views(fam: Family, spec: SourceSpec) -> list[Definition]:
         rule_view(fn, rule, [], [], "", constants=False,
                   left=f"summed across {over}, whose values repeat each other ({fam.name} is read at "
                        f"{', '.join(f'{k}={v}' for k, v in sorted(fam.where.items()))}): it counts every copy; {fam.name} is read instead")
+    for d in out:                                   # the finer splits proposed (explore.py)
+        if (why := proposed.get(tuple(c for c in d.group_by if c in fam.labels and fam.labels[c].role == "grouping"))) and d.view != "distinct":
+            d.proposed = why
     kept_real = [fam.labels[c].real for c in plain]
     for c in (split if split is not None else fam.role("grouping")) if fam.kind not in ("timestamp", "clock", "scrape") else []:
         sel = f"last_over_time({fam.selector(fam.stats[0] if fam.stats else None)}[{r}])"

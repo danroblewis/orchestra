@@ -26,9 +26,11 @@ from pathlib import Path
 
 from ..sd.units import from_name
 from . import PastDeadline, Source, SourceError
+from .explore import CARRIED, finer, ident, plan
+from .explore import summary as round_summary
 from .limits import Budget
 from .plan import probe_form, shared
-from .rank import APART_VALUES, TARGET_LABELS, rank
+from .rank import APART_VALUES, TARGET_LABELS, rank, score
 from .regroup import expr
 from .schema import read as read_schema
 from .scope import scope_of, scoped
@@ -65,6 +67,11 @@ class Inference:
     remembered: dict = field(default_factory=dict)   # names too big, names listed at one replica (listing.py), for the next rounds
     judged: list[float] = field(default_factory=list)   # [start, end] its definitions' motion was judged over (``survey_history``)
     labels: dict = field(default_factory=dict)   # each label's rank across the store's families, and why (``storewide.py``)
+    probed: dict = field(default_factory=dict)   # candidate ident -> its last probe (``explore.CARRIED``) and when: for the next rounds
+    demoted: dict = field(default_factory=dict)  # candidate ident -> a refutation by discovery standing: {why, at, held, serves}
+    lifted: dict = field(default_factory=dict)   # candidate ident -> the discovery whose refutation was lifted
+    round: dict = field(default_factory=dict)    # what the round did: probed, kept, demoted, queued, known, proposed, budget
+    explored: list[dict] = field(default_factory=list)   # each candidate's fate this round and why (``explore.summary``)
 
     def to_json(self) -> dict:
         return asdict(self)
@@ -76,7 +83,9 @@ class Inference:
         return cls(d["source"], d["at"], d["key"], defs(d.get("kept") or []), defs(d.get("left_out") or []),
                    list(d.get("families") or []), d.get("script"), list(d.get("notes") or []), d.get("error"),
                    bool(d.get("partial")), list(d.get("window") or []), int(d.get("requests") or 0), float(d.get("seconds") or 0.0),
-                   dict(d.get("remembered") or {}), list(d.get("judged") or []), dict(d.get("labels") or {}))
+                   dict(d.get("remembered") or {}), list(d.get("judged") or []), dict(d.get("labels") or {}),
+                   dict(d.get("probed") or {}), dict(d.get("demoted") or {}), dict(d.get("lifted") or {}), dict(d.get("round") or {}),
+                   list(d.get("explored") or []))
 
     def span(self) -> float:
         return self.window[1] - self.window[0] if len(self.window) == 2 else 0.0
@@ -231,6 +240,26 @@ def survey_history(source: Source, spec: SourceSpec, cands: list[Definition], pr
         inf.notes.append(f"{late} candidates could not be probed over the {over} this round: judged by the window")
 
 
+def _remember(inf: Inference, memory: Inference | None, cands: list[Definition], chose, probes: dict[str, dict]) -> None:
+    """What the next round keeps of this one (``explore.py``): each candidate's last probe, the
+    demotions standing, and what the round did."""
+    old = (memory.probed if memory is not None else {}) or {}
+    now = time.time()
+    for d in cands:
+        k = ident(d)
+        if d.id in {q.id for q in chose.queued} or (d.id in chose.demoted and d.id not in chose.carried):
+            continue
+        if d.id in chose.carried and k in old:
+            inf.probed[k] = old[k]
+        elif (p := probes.get(d.id)) is not None and not p.get("error") and not d.pin:
+            inf.probed[k] = {**{x: p[x] for x in CARRIED if x in p}, "at": now}
+    inf.demoted, inf.lifted = chose.demotions, chose.lifted
+    inf.round, inf.explored = round_summary(chose, cands)
+    r = inf.round
+    inf.notes.append(f"this round: probed {r['probed']}, kept {r['kept']}, demoted {r['demoted']}, {r['queued']} queued"
+                     + (f" (a budget of {r['budget']} requests for its probes)" if r["budget"] is not None else ""))
+
+
 def unique_names(defs: list[Definition]) -> None:
     """Two families' definitions never share a name and a grouping (they would be one series to
     discovery): the one whose family is the name keeps it, else the first family by name; the
@@ -248,19 +277,22 @@ def unique_names(defs: list[Definition]) -> None:
 
 def infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path,
           start: float, end: float, until: float | None = None, known: dict[str, dict] | None = None,
-          remembered: dict | None = None, judge_from: float | None = None) -> Inference:
+          remembered: dict | None = None, judge_from: float | None = None, memory: Inference | None = None,
+          verdicts: dict[str, dict] | None = None, held_s: float = 0.0) -> Inference:
     """A fresh round, by ``until`` (``time.monotonic()``; the source's ``infer_deadline`` from now
     by default) and within ``infer_requests``. Raises ``SourceError`` or ``TransformError`` when it
     cannot stand; ``known``: the last round's families by name; ``remembered``: what its listing
     found too big or listed at one replica; ``judge_from``: the start of the window the round
-    serves, when it reaches before ``start`` (``survey_history``)."""
+    serves, when it reaches before ``start`` (``survey_history``); ``memory``: the last round under
+    the same settings, ``verdicts``: the last discovery's (``feedback.py``), ``held_s``: the
+    source's held history (``explore.py``)."""
     began = time.monotonic()
     until = began + spec.infer_deadline if until is None else until
     before, outer = getattr(source, "requests", 0), getattr(source, "budget", None)
     if hasattr(source, "budget"):
         source.budget = Budget(spec.infer_requests, until, "the inference round")
     try:
-        inf = _infer(source, spec, declared, repo_root, start, end, until, known, remembered, judge_from)
+        inf = _infer(source, spec, declared, repo_root, start, end, until, known, remembered, judge_from, memory, verdicts or {}, held_s)
     finally:
         if hasattr(source, "budget"):
             source.budget = outer
@@ -270,7 +302,9 @@ def infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo
 
 def _infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path,
            start: float, end: float, until: float, known: dict[str, dict] | None, remembered: dict | None = None,
-           judge_from: float | None = None) -> Inference:
+           judge_from: float | None = None, memory: Inference | None = None, verdicts: dict[str, dict] | None = None,
+           held_s: float = 0.0) -> Inference:
+    verdicts = verdicts or {}
     inf = Inference(spec.name, time.time(), settings_key(spec, declared, repo_root), window=[start, end], judged=[start, end])
     schema = read_schema(source, spec, start, end, until=until, known=known, remembered=remembered)
     inf.remembered = schema.remembered
@@ -280,7 +314,8 @@ def _infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], rep
                      "rollup": f.rollup, "rollups": sorted(r["metric"] for r in f.rollups.values()), "notes": list(f.notes),
                      **known_record(f)} for f in schema.families]
     inf.labels = label_ranks(schema.families, APART_VALUES, TARGET_LABELS)
-    cands = one_count_per_thing([d for fam in schema.families for d in views(fam, spec)], schema.families)
+    stocks = finer(verdicts)
+    cands = one_count_per_thing([d for fam in schema.families for d in views(fam, spec, stocks.get(fam.name))], schema.families)
     unique_names(cands)
     for i, d in enumerate(cands):
         d.id = f"c{i}"
@@ -292,13 +327,23 @@ def _infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], rep
     scope = scope_of(spec.match)
     for d in cands:                          # every query within what match selects (scope.py)
         d.query, d.inner = scoped(d.query, scope), scoped(d.inner, scope)
-    probes = probe_all(source, cands, start, end, until, spec.concurrency)
-    if judge_from is not None and judge_from < start - 1.0:
+    surveys = judge_from is not None and judge_from < start - 1.0
+    allot = None
+    serves = end - (judge_from if surveys else start)
+    chose = plan(source, cands, verdicts, memory, held_s, serves, allot,
+                 lambda d: score(d, None, None, inf.labels)[0], start, end)
+    fresh = probe_all(source, [d for d in cands if d.pin] + chose.probe, start, end, until, spec.concurrency)
+    probes = {**chose.carried, **fresh}
+    if surveys:
         inf.judged = [judge_from, end]
-        survey_history(source, spec, cands, probes, judge_from, end, until, inf)
+        survey_history(source, spec, [d for d in cands if d.id in fresh], probes, judge_from, end, until, inf)
+    _remember(inf, memory, cands, chose, probes)
+    out_now = {d.id for d in chose.queued} | {i for i in chose.demoted if i not in chose.carried}
+    inf.left_out += [replace(d, why=chose.fates[d.id][1]) for d in cands if d.id in out_now]
+    cands = [d for d in cands if d.id not in out_now]
     big = {i for i, p in probes.items() if REFUSED.search(p.get("error") or "")}
     missed = {i for i, p in probes.items() if p.get("error") and i not in big}
-    if missed and len(missed) > UNPROBED * len(probes):
+    if missed and len(missed) > UNPROBED * len(fresh):
         first = next(probes[i]["error"] for i in missed)
         raise SourceError(f"{len(missed)} of {len(probes)} probes could not be made; the first: {first} "
                           "(narrow match on the [[sources]] entry to fewer families, or set infer = false and declare the series "
@@ -315,7 +360,7 @@ def _infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], rep
         if d.kind == "rate" and (probes[d.id].get("min") or 0.0) < 0:     # its name says a rate; its data, which went below 0, says not
             d.kind = "level"
             d.flags.append("named a rate, but it went below zero: read as a level")
-    kept, left = rank(cands, spec, probes, inf.labels)
+    kept, left = rank(cands, spec, probes, inf.labels, chose.demoted)
     inf.kept = declared_definitions(spec, declared) + kept
     inf.left_out += left
     return inf

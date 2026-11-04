@@ -1,14 +1,18 @@
 """Inference as a loop (SPEC §4.4, "The inference loop"): the store's own labels rank every
-family's groupings (``storewide.py``)."""
+family's groupings (``storewide.py``); each round reads the last discovery's verdicts and spends
+what is left of its budget on the best candidates never probed (``explore.py``)."""
 
 from __future__ import annotations
 
 import math
 import time
+from types import SimpleNamespace
 
 import pytest
 from fake_prometheus import FakePrometheus
 
+from orchestra.sources.explore import ident
+from orchestra.sources.feedback import verdicts
 from orchestra.sources.infer import infer
 from orchestra.sources.prometheus import PrometheusSource
 from orchestra.sources.spec import load
@@ -71,4 +75,69 @@ def test_the_stores_common_grouping_ranks_above_one_familys_oddity(store, tmp_pa
         if fam == "fam0_jobs":
             assert by("lens")
             assert min(d.score for d in by("svc")) > max(d.score for d in by("lens")), [(d.name, d.score, d.why) for d in by("svc") + by("lens")]
+
+
+def _one(inf, family, by, view="sum_by"):
+    return next(d for d in inf.kept if d.family == family and d.view == view and
+                [c for c in d.group_by if d.labels_info.get(c, {}).get("role") == "grouping"] == by)
+
+
+def _fate(inf, cand):
+    return next(r for r in inf.explored if r["candidate"] == cand)
+
+
+def test_a_candidate_discovery_refuted_is_not_probed_again_until_the_history_grows(store, tmp_path):
+    _, src, spec = store(common_store())
+    first = infer(src, spec, [], tmp_path, T0, NOW, held_s=3600.0)
+    d = _one(first, "fam2_items", ["svc"])
+    cand = ident(d)
+    assert _fate(first, cand)["fate"] == "probed" and cand in first.probed
+    said = {cand: {"fate": "refuted", "why": "discovery left it out: … so an input, not a stock", "series": "x", "at": 100.0}}
+    second = infer(src, spec, [], tmp_path, T0, NOW, memory=first, verdicts=said, held_s=3600.0)
+    assert _fate(second, cand)["fate"] == "demoted" and "an input, not a stock" in _fate(second, cand)["why"]
+    assert second.probed[cand] == first.probed[cand]                 # carried, not probed again
+    assert second.round["demoted"] == 1 and second.demoted[cand]["held"] == 3600.0
+    again = next(x for x in second.kept + second.left_out if ident(x) == cand)
+    assert "demoted -2.00" in again.why
+    third = infer(src, spec, [], tmp_path, T0, NOW, memory=second, verdicts={}, held_s=4000.0)    # the demotion stands
+    assert _fate(third, cand)["fate"] == "demoted"
+    fourth = infer(src, spec, [], tmp_path, T0, NOW, memory=third, verdicts=said, held_s=6000.0)  # the history grew by more than half
+    assert _fate(fourth, cand)["fate"] == "probed" and "held history grew from 1.0 h to 1.7 h" in _fate(fourth, cand)["why"]
+    assert fourth.probed[cand]["at"] > first.probed[cand]["at"] and cand not in fourth.demoted
+    fifth = infer(src, spec, [], tmp_path, T0, NOW, memory=fourth, verdicts=said, held_s=6000.0)   # the same discovery: not again
+    assert _fate(fifth, cand)["fate"] == "probed"
+    later = {cand: {**said[cand], "at": 200.0}}                                                     # a newer discovery refutes it again
+    assert _fate(infer(src, spec, [], tmp_path, T0, NOW, memory=fifth, verdicts=later, held_s=6000.0), cand)["fate"] == "demoted"
+
+
+def test_a_stock_is_kept_without_a_probe_and_its_finer_splits_are_proposed_first(store, tmp_path):
+    _, src, spec = store(common_store())
+    first = infer(src, spec, [], tmp_path, T0, NOW)
+    d = _one(first, "fam0_jobs", ["svc"])
+    said = {ident(d): {"fate": "stock", "why": "discovery made it a stock", "series": "x", "at": 100.0}}
+    second = infer(src, spec, [], tmp_path, T0, NOW, memory=first, verdicts=said)
+    assert _fate(second, ident(d))["fate"] == "kept" and second.probed[ident(d)] == first.probed[ident(d)]
+    assert any(ident(x) == ident(d) for x in second.kept)
+    finer = [r for r in second.explored if "a finer split of fam0_jobs by (svc)" in r["why"]]
+    assert finer and all(set(r["group_by"]) >= {"svc", "lens"} for r in finer)
+    probed = [r for r in second.explored if r["fate"] == "probed"]
+    assert probed[: len(finer)] == finer and second.round["proposed"] == len(finer)
+
+
+def test_verdicts_read_from_a_discovery():
+    ref = lambda name, **labels: SimpleNamespace(name=name, labels=labels)
+    model = SimpleNamespace(
+        stocks=[SimpleNamespace(series=ref("lab:q", svc="a"))],
+        flows=[SimpleNamespace(counter=ref("lab:in_total"), measured_by=[], equations=[SimpleNamespace(origin="fitted")])],
+        discovery={"sourced": {'lab:q{svc="a"}': {"source": "lab", "candidate": "q|sum_by||svc"},
+                               'lab:q{svc="b"}': {"source": "lab", "candidate": "q|sum_by||svc"},
+                               "lab:in_total": {"source": "lab", "candidate": "in|increments||"},
+                               "lab:x": {"source": "lab", "candidate": "x|sum_by||"},
+                               "lab:y": {"source": "lab", "candidate": "y|sum_by||"},
+                               "other:x": {"source": "other", "candidate": "x|sum_by||"}},
+                   "left_out": {'lab:q{svc="b"}': "no counters balance it (best R² 0.10)", "lab:x": "no counters balance it (best R² 0.2)",
+                                "lab:y": "a level that did not change in the window"}})
+    got = verdicts(5.0, model, "lab")
+    assert {k: v["fate"] for k, v in got.items()} == {"q|sum_by||svc": "stock", "in|increments||": "flow", "x|sum_by||": "refuted"}
+    assert got["x|sum_by||"]["at"] == 5.0
 

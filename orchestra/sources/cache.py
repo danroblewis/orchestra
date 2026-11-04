@@ -26,8 +26,12 @@ quiet hour in which no pod moved left every pod series out of the week's discove
 - **A narrower round never replaces a broader one.** A round serving a shorter window than the
   one the cached round judged sees less (a deployment that did not move in 15 minutes moved in the hour); the
   cached definitions stand. Nor does a round that keeps fewer than half the definitions the
-  cached one kept (a store that answered but held little: a laptop that slept). ``refresh`` (the
-  CLI's ``sources infer``) accepts either."""
+  cached one kept (a store that answered but held little: a laptop that slept); what it probed and
+  decided is kept as the next round's memory all the same (``explore.py``). ``refresh`` (the
+  CLI's ``sources infer``) accepts either.
+- **Each round goes on from the last** (``explore.py``): it reads the last round under the same
+  settings (what it probed, the demotions standing) and the latest discovery's verdicts of its
+  candidates (``verdicts``, read only when a round runs), and the source's held history."""
 
 from __future__ import annotations
 
@@ -163,10 +167,13 @@ def _fresh(inf: Inference | None, key: str, spec: SourceSpec, serves: float) -> 
 
 def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path, state_dir: Path,
                 start: float, end: float, *, refresh: bool = False, until: float | None = None, infer_ok: bool = True,
-                judge_from: float | None = None) -> Inference:
+                judge_from: float | None = None, verdicts=None, held_s: float = 0.0) -> Inference:
     """The source's definitions (see the module's docstring). A round probes [start, end] and
     judges motion over the window it serves, from ``judge_from`` (default ``start``). Raises
-    ``SourceError`` when there are none to read."""
+    ``SourceError`` when there are none to read. ``verdicts``: the last discovery's of the
+    candidates (``feedback.py``), or a function that reads them, called only when a round runs;
+    ``held_s``: the source's held history (``explore.py``). The round remembers what the last one
+    under the same settings probed (``Inference.probed``)."""
     key = settings_key(spec, declared, repo_root)
     judge_from = start if judge_from is None or judge_from > start else judge_from
     serves = end - judge_from
@@ -213,7 +220,9 @@ def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries]
             return now
         known = {f["name"]: f for f in (old.families if same else [])}
         try:
-            inf = infer(source, spec, declared, repo_root, start, end, until, known, old.remembered if old else None, judge_from)
+            said = verdicts() if callable(verdicts) else verdicts
+            inf = infer(source, spec, declared, repo_root, start, end, until, known, old.remembered if old else None, judge_from,
+                        old if same else None, said or {}, held_s)
         except Exception as e:
             said = str(e) if isinstance(e, (SourceError, TransformError)) else f"{type(e).__name__}: {e}"
             costly = isinstance(e, (PastDeadline, TooManyNames)) or "probes could not be made" in said
@@ -226,6 +235,10 @@ def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries]
         if same and not refresh and inferred(inf) < inferred(old) / 2:
             # A store that answered but held little in the window (a laptop that slept, a server
             # restarted empty) must not replace what was seen; the next discovery tries again.
+            # what it probed and decided is still the loop's memory (explore.py): the next round goes on from it
+            old.probed.update(inf.probed)
+            old.demoted, old.lifted, old.round, old.explored = inf.demoted, inf.lifted, inf.round, inf.explored
+            save(state_dir, old)
             old.error = (f"the last round kept {inferred(inf)} definitions where the one at {_when(old.at)} kept {inferred(old)}; "
                          "using those (`orchestra sources infer` accepts the new round)")
             return old

@@ -23,7 +23,7 @@ from __future__ import annotations
 import math
 
 from . import Source
-from .batch import OVER_LIMIT, Part, run
+from .batch import OVER_LIMIT, Part, limit_of, pack, run
 from .readcache import ReadCache
 from .regroup import BASES, derive, expr, fine_by
 from .views import Definition
@@ -52,6 +52,28 @@ def probe_form(d: Definition, start: float, end: float) -> tuple[str, str, float
     if d.inner and d.agg in BASES:
         return d.inner, d.agg, step
     return None
+
+
+def probe_parts(d: Definition, start: float, end: float) -> list[tuple[tuple, Part]] | None:
+    """The parts of the batched read a definition's probe needs, by key (``shared``: views of one
+    inner expression at one step share them); None when it is probed on its own, a request of its
+    own. What ``explore.py`` prices a round's probes by."""
+    f = probe_form(d, start, end)
+    if f is None:
+        return None
+    inner, agg, step = f
+    n = d.touched or d.est_series or 1
+    return [((inner, step, b), Part((inner, step, b), expr(b, d.by_real, inner), n)) for b in BASES[agg]]
+
+
+def requests_for(source: Source, parts: dict[tuple, Part], alone: int) -> int:
+    """How many requests reading ``parts`` takes, packed as ``batch.run`` packs them (each step
+    apart), and ``alone`` reads of a request each: at most what it will cost, before a refusal
+    splits one."""
+    steps: dict[float, list[Part]] = {}
+    for (_, step, _), p in parts.items():
+        steps.setdefault(step, []).append(p)
+    return alone + sum(len(pack(ps, limit_of(source))) for ps in steps.values())
 
 
 def counter_step(step: float, resolution_s: float | None) -> float:
