@@ -205,6 +205,8 @@ async function loadCatalog() {
     CAT = await (await fetch("/api/core/metrics/catalog")).json();
     if (!CAT.ok) { $("mx-cat").innerHTML = `<div class="probe bad">${esc(CAT.error)}</div>`; $("mx-note").textContent = ""; return; }
     $("mx-note").textContent = `${CAT.backend} · project ${CAT.project} · ${CAT.metrics.length} metrics · ${CAT.series} series in this catalogue (Orchestra's own included; read less often than the card) · ${CAT.points.toLocaleString()} points`;
+    // a project whose every series lives in another store ([[sources]]) writes nothing here: those are read where they are (SPEC §4.4) and listed on Instruments
+    if (!CAT.metrics.length) $("mx-note").textContent += " · nothing is written here when the series are read where they live, in another store: the sources and their series are on the Instruments page";
     const un = CAT.unlabelled || [];
     if (un.length) $("mx-note").textContent += ` · not shown: ${un.length} metric${un.length > 1 ? "s" : ""} in the store with no project label (${un.slice(0, 5).join(", ")}${un.length > 5 ? ", …" : ""}); write them through orchestra.metrics.for_repo`;
     $("mx-cat").innerHTML = `<div class="sl">points written per hour, last 24 h</div>${spark(CAT.writes_per_hour_24h, { w: 520, note: "per hour, last 24 h", label: "points written" })}
