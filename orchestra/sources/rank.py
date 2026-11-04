@@ -104,6 +104,7 @@ def _same_counts(live: list[Definition], left: list[Definition], probes: dict[st
     for d in alike:
         exact = d.view in EXACT
         twin = next((k for k in kept if (k.view in EXACT) == exact and k.family != d.family
+                     and probes[k.id].get("over") == probes[d.id].get("over")      # shapes of the same stretch
                      and same_shape(probes[k.id]["shape"], probes[d.id]["shape"], exact=exact)), None)
         if twin is None:
             kept.append(d)
@@ -125,10 +126,11 @@ def rank(defs: list[Definition], spec: SourceSpec, probes: dict[str, dict]) -> t
     live = []
     for d in scored:
         p = probes.get(d.id)
+        over = (p or {}).get("over", "window")       # the window, or the history surveyed beyond it (infer.survey_history)
         if p is not None and not p.get("series"):
-            left.append(replace(d, why=f"returned nothing in the window ({p.get('error') or 'no series'})"))
+            left.append(replace(d, why=f"returned nothing in the {over} ({p.get('error') or 'no series'})"))
         elif p is not None and not p.get("moves") and not d.pin:
-            left.append(replace(d, why=f"did not move in the window (score {d.score})"))
+            left.append(replace(d, why=f"did not move in the {over} (score {d.score})"))
         else:
             live.append(d)
     _same_counts(live, left, probes)
