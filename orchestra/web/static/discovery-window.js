@@ -1,6 +1,6 @@
 // The window and step a discovery was fitted over, said as the record has them (web/dynamics.py's
-// discovery.fitted): discovery may widen the configured window (to the history a source holds, or
-// until a counter has enough events), and the step with it, so the page says what was fitted, never
+// discovery.fitted): discovery may widen the configured window (to the history a source holds,
+// until a counter has enough events, or for sparse own data: `sparse`), and the step with it, so the page says what was fitted, never
 // only what orchestra.toml configures.
 const DiscoveryWindow = (() => {
   // a duration in the unit that reads best: 30 s, 84 min, 10 h, 7 d
@@ -12,7 +12,8 @@ const DiscoveryWindow = (() => {
     const f = discovery && discovery.fitted, c = configured || {};
     if (!f || !text(f)) return [c.strategy, text(c)].filter(Boolean).join(" · ");
     const differs = text(c) && text(c) !== text(f);
-    return [discovery.strategy || c.strategy, text(f)].filter(Boolean).join(" · ") + (differs ? ` (configured ${text(c)})` : "");
+    return [discovery.strategy || c.strategy, text(f)].filter(Boolean).join(" · ")
+      + (differs ? ` (${f.sparse ? "widened for sparse data; " : ""}configured ${text(c)})` : "");
   }
   return { dur, text, summary };
 })();

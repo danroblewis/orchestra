@@ -16,3 +16,9 @@ test("as configured, the configured settings once; with no record, the configure
   assert.equal(DW.summary(null, c), "conservation · 60 min · 30 s steps");
   assert.deepEqual([DW.dur(30), DW.dur(5040), DW.dur(36000), DW.dur(604800)], ["30 s", "84 min", "10 h", "7 d"]);
 });
+
+test("a window widened for sparse own data says so beside the configured settings", () => {
+  const d = { strategy: "kalman_lna", fitted: { window_s: 64800, step_s: 540, widened_from_s: 3600, sparse: true } };
+  assert.equal(DW.summary(d, { strategy: "kalman_lna", window_s: 3600, step_s: 30 }),
+    "kalman_lna · 18 h · 9 min steps (widened for sparse data; configured 60 min · 30 s steps)");
+});

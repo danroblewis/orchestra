@@ -937,6 +937,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                                 and timing_limited(s, terms, steps, r2))
         return good and (exact >= FLAG_EXACT or len({v for _, v in s.points}) > 2)
     set_aside: dict[str, list[str]] = defaultdict(list)   # a counter -> the levels it was live in too few steps of
+    sparse: dict[str, int] = {}                  # a level left out for too few live steps it moved in -> how many it had
+    enough_steps = 0                             # levels with enough of them (sd.rediscover.sparse_window)
     never_level: set[str] = set()                # an age, an aggregate or a statistic: no stock, nor a state between moves
     for s in series:
         if s.counter:
@@ -964,11 +966,16 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             for c in unlive:
                 set_aside[c.key].append(s.key)
         if len(steps) < MIN_STEPS:
+            sparse[s.key] = sum(1 for i in steps if s.deltas[i])
             live_s = round(len(s.live if s.live is not None else range(n)) * step)
             left_out[s.key] = (f"live in only {len(steps)} of the {n} steps in the window while its counters were "
                                f"(written over {live_s} s so far): too new, or too broken, to balance")
             continue
         moved = sum(1 for i in steps if s.deltas[i])
+        if moved < MIN_STEPS:
+            sparse[s.key] = moved
+        else:
+            enough_steps += 1
         if not moved:
             left_out[s.key] = "a level that did not change in the window" + (" while it was live" if len(steps) < n else "")
             continue
@@ -1339,6 +1346,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                        "by_construction": sorted(sid_of[k] for k in constructed_ if k in sid_of),
                        "refused": refused,
                        "counters_read": counters_read,
+                       # the levels whose live steps held fewer than MIN_STEPS moves, by how many: when every level is
+                       # one, a window over longer own data is widened (sd.rediscover.sparse_window)
+                       "level_steps": {"levels": len(sparse) + enough_steps, "sparse": dict(sorted(sparse.items())), "needed": MIN_STEPS},
                        "counter_events": {"counters": len(moved_events), "most": round(max(moved_events, default=0.0), 3), "needed": MIN_EVENTS},
                        **({"declared": {"stocks": {p.name: {"level": p.level, **p.record(),
                                                             "outcome": "a stock" if p.level in declared_keys and p.level in sid_of
