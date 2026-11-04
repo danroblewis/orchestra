@@ -89,62 +89,20 @@ match = ['{service="hk-checkout",__name__=~".*(queue|inflight|in_flight|pending|
 names show), and widen it later.
 
 
-**`split`: name the labels a series is split by.** Left alone, inference splits each family by
-the labels it judges to be groupings, and a label with many values you never wanted to look at
-apart (a `edge_service` with a value per downstream caller, say) becomes a series per value, or
-crowds out the ones you did want. Name the labels instead:
-
-```toml
-split = ["service_name", "method", "status"]
-```
-
-Every family under the source is then split by those labels only (the ones it has) and summed
-over every other label, `edge_service` included; the store does the sum (`sum by (service_name,
-method, status) (…)`), so each family gives as many series as the named labels have value
-combinations, and no more. The Instruments page shows the split on the source's row, and a
-left-out series on the Dynamics page says "summed over edge_service, …". Leave `split` out to
-let inference choose again.
-
-**`kinds`: only for the exceptions.** Most metrics say what they are by their names and the
-store's metadata, and are read so with no entry:
-
-| Name or metadata | Read as |
-|---|---|
-| typed `counter` | a counter: its increments are a flow |
-| a gauge whose help says per interval ("delta", "in the sampling period") | a flow |
-| a gauge or untyped `…_count` / `…_total` (GCP's per-minute DELTA counts: `ack_message_count`, `send_request_count`) | a flow (not `pod_count` and the like: things held) |
-| `num_…`, `oldest_…_age`, `…undelivered…`, `…backlog…` (`num_undelivered_messages`, `oldest_unacked_message_age`, `backlog_bytes`) | a level |
-| `:count` beside a `:sum` | a flow |
-
-Anything else is judged by how its samples behave. When one is read wrongly, say what it is,
-by name or by a glob (an exact name wins over a pattern, a longer pattern over a shorter):
-
-```toml
-kinds = { "*:count" = "flow", "gcp_pubsub_*_count" = "flow", "some_gauge" = "level", "noise" = "ignore" }
-```
-
-The Instruments page then says "kind: flow (declared by *:count)". An edit to `kinds` (or
-`match`, `split`, `prefix`, the labels) takes effect at the next discovery, or at once with
-`orchestra sources infer`: no reinstall, no cache to clear.
-
-**Naming your stocks.** A series read from the store is called by its metric's words and the
-labels that tell it from its siblings ("gcp pubsub subscription num undelivered messages
-(orders)"). Give it a better name by rule, not one name per stock: a few patterns, each a
-template over the labels, cover whole families:
-
-```toml
-[sources.names]
-"*_num_undelivered_messages" = "{subscription_id} messages waiting"
-"*_oldest_unacked_message_age" = "{subscription_id} oldest unacked age"
-"grpc_client_callMillis:count" = "{method} calls completed"
-"*:sum" = "{method} calls in progress"     # the occupancy view, calls in flight by Little's law
-```
-
-Keys match like `kinds` (an exact name over a pattern, a longer pattern over a shorter); a
-value's `{label}` is any label of the series, `{metric}` the metric's own name, and a label a
-series lacks is dropped from its name. Exact names are for the exceptions. A name takes effect
-at the next discovery, with no new inference; a name you give a stock on the Dynamics page
-still wins over it.
+**The levers, in the guide.** What each lever of the entry is for, when to use it and what it
+costs the store is in Orchestra's operator's guide, `orchestra/guide.md` (in the installed package:
+`"$PY" -c "import orchestra.guides as g; print(g.CORE)"`), the same text the Supervisor reads: "A
+Prometheus-API store: the entry and every lever" (`match`, `split`, `kinds` and the conventions
+that make most entries unnecessary, `names`, the caps and the sum to do before settling them),
+"Reading what Orchestra sees of a store" (`sources check`, `sources infer`, the request log, the
+explorer drawer, the run record and its health), "What makes a stock, in the owner's terms" (levels
+and flows, "in progress" by Little's law, Pub/Sub's backlog and outstanding) and "Machines from a
+workload label". In short: `split = ["service_name", "method", "status"]` when a label you never
+wanted apart crowds the series; `kinds = { "*:count" = "flow" }` only for a metric read wrongly;
+`[sources.names]` rules (`"*_num_undelivered_messages" = "{subscription_id} messages waiting"`) once
+stocks appear. An edit to any of them takes effect at the next discovery, or at once with
+`orchestra sources infer`: no reinstall, no cache to clear. A coding agent doing this for you
+starts from `docs/WORK-CLAUDE-PROMPT.md`, which points it at the guide.
 
 Every series read from the store is listed with the selector you would type in Chronosphere
 itself (its own metric name and labels, not Orchestra's `chrono:` name), copyable, and a **view**

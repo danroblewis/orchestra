@@ -231,7 +231,9 @@ scrape of nothing records errors, not zeros.
 ### `[[sources]]` and `[[series]]`: another store, read in place
 
 For metrics that already live in Prometheus, VictoriaMetrics, Thanos, Mimir or Chronosphere.
-Orchestra reads them and never writes. What to read is inferred from the store's schema.
+Orchestra reads them and never writes. What to read is inferred from the store's schema. The setup,
+step by step, with every lever and what it costs, is "A Prometheus-API store: the entry and every
+lever" below; this subsection and the next two are what inference and the reads do underneath.
 
 ```toml
 [[sources]]
@@ -239,7 +241,7 @@ name = "work"                       # lower-case letters, digits, _
 url = "https://tenant.example/data/metrics"   # no user:pass@, no query string
 auth = { bearer_env = "WORK_TOKEN" }          # the variable's name, never the token
 machine = "service"                 # the label that names machines
-match = ['{__name__=~"http_.*|queue_.*"}']    # required: a namespace or the families the model is about (ask the owner)
+match = ['{namespace="shop", __name__=~"http_.*|queue_.*"}']    # required: the owner's scope (ask them), never one family alone
 max_series = 200
 
 [sources.labels]
@@ -563,6 +565,255 @@ it, and say what you chose. Ask only what you cannot find out: where the credent
 store refuses without one and nobody said; which environment is production, when the data cannot
 tell. A store that bills per query is the owner's choice before it is read at all.
 
+## A Prometheus-API store: the entry and every lever
+
+This section and the three after it are the whole setup of a Prometheus-API store (Prometheus,
+VictoriaMetrics, Thanos, Mimir, Chronosphere), read in place and never written. The subsections of
+"Instruments and machines" above say how inference reads a schema and how a busy store is spared;
+read them when a reason sends you there. Work in this order: one entry with a narrow `match`,
+`sources check`, `sources infer`, then only the levers its reasons call for, one change at a time,
+each said to the owner (what and why) before you make it.
+
+```toml
+[[sources]]
+name = "chronosphere"                           # lower-case letters, digits, _
+url = "https://tenant.chronosphere.io/data/metrics"   # Chronosphere's Prometheus API is under /data/metrics
+auth = { bearer_env = "CHRONOSPHERE_TOKEN" }    # or auth = "bearer" with token_file = "~/.config/..."
+prefix = "chrono"                               # its series are chrono:<name>
+match = ['{service_name=~"checkout|payments"}'] # required: the owner's scope
+split = ["service_name", "method", "status"]
+kinds = { "*:count" = "flow", "legacy_queue_size" = "level", "debug_*" = "ignore" }
+max_series = 100
+rate = 2.0
+max_requests_per_day = 5000
+infer_every = "6h"
+
+[sources.names]
+"*_num_undelivered_messages" = "{subscription_id} messages waiting"
+"grpc_client_callMillis:count" = "{method} calls completed"
+"grpc_client_callMillis:sum" = "{method} calls in progress"
+
+[sources.labels]
+service = ["service", "service_name", "app"]
+```
+
+Add it with `project.config_edit.add_entry("sources", {...}, target="overlay")` (the overlay when
+the store is the owner's own, as at work); the same call with the entry's `name` and only the
+fields you change edits it later. `config_edit` does not check sources: the Instruments page's
+`errors` does.
+
+**`match` (required).** A list of PromQL selectors, the shape of Prometheus' `match[]`, saying the
+owner's scope: a label their team's series carry (`namespace`, `service`, `service_name`, `job`,
+`team`, `cluster`, `env`), narrowed by a name pattern if the scope is large. Orchestra conjoins it
+into every query it sends (the label matchers every selector has), so nothing outside it is asked.
+**Never one family alone** (`{__name__=~"grpc_client_callMillis.*"}`): one counter family holds
+no level and nothing for its counts to balance, so no stock can come of it ("no counters
+balance"). Match a service's levels and counters together (its queue depths, in-flight calls,
+replicas, and its request and error counts). `{}` and `{__name__=~".+"}` refuse the source; more
+than `max_names` (2,000) metric names refuses inference until the entry changes. To see the labels
+and values inside a match: `source_schema`, or the Core page's External stores row (its **labels**
+button). Ask the owner which part of the store is theirs when nobody said; widening past it, to
+families or services they did not name, is theirs to say yes to.
+
+**`split`: the labels a family is split by.** The store's spellings; every family is split by those
+it has and summed by the store over every other label. Use it when inference splits by a label
+nobody wants apart (a `edge_service` with a value per caller: a series per value, crowding out the
+ones that matter), or to pin the grouping the owner thinks in. Leave it out to let inference
+choose: it ranks labels across the store and proposes finer splits of a split that became a stock.
+A label left out of `split` is summed away everywhere, the replica label (`pod`) included: then no
+attachment can count replicas by it ("Machines from a workload label"). Rows and drawers say
+"summed over <labels>".
+
+**`kinds`: only for the exceptions.** Names and metadata already say most, so most entries need none:
+
+| Says | Read as |
+|---|---|
+| metadata `type=counter` | a counter: its increments are a flow |
+| a gauge or untyped whose help says per interval (`delta`, `in the sampling period`) | a flow, each sample its interval's count |
+| a gauge or untyped `…_count` / `…_total` (GCP's per-minute DELTA counts: `ack_message_count`, `send_request_count`) | a flow (not things held: `pod_count`, `…_pending_total`) |
+| `num_…`, `oldest_…_age`, `…undelivered…`, `…outstanding…`, `…unacked…`, `…backlog…`, `…retained…` | a level |
+| `:count` beside a `:sum` | a flow (a `:rate` a rate) |
+
+Anything else is judged by how its samples behave. When one is read wrongly (its row says the
+kind and why), say what it is: `"<metric or glob>" = "flow" | "level" | "ignore"`; an exact name
+wins over a pattern, a longer pattern over a shorter; `ignore` is never read. The row then says
+"kind: flow (declared by *:count)". A change re-infers at the next round, or at once with
+`sources infer`.
+
+**`names`: what the owner's stocks are called, by rule.** A series is called by its metric's words
+and the labels that tell it from its siblings ("gcp pubsub subscription num undelivered messages
+(orders)"). Once stocks and flows appear, read the metric names and label conventions of what was
+found and derive **a few general rules**, each a glob with a template over the labels (`{label}`
+any label, canonical or the store's spelling; `{metric}` the metric; a label a series lacks is
+dropped with its brackets), so one rule names a whole family. Show the owner the rules and, beside
+each current stock and flow, the name it would get:
+
+```
+"*_num_undelivered_messages" = "{subscription_id} messages waiting"
+    gcp pubsub subscription num undelivered messages (orders-worker)  ->  orders-worker messages waiting
+    gcp pubsub subscription num undelivered messages (billing)        ->  billing messages waiting
+```
+
+Write `[sources.names]` only on the owner's yes, and quote it when you say what you wrote. An exact
+name per stock is only for an exception a rule cannot reach. A name reads nothing differently and
+needs no inference: it shows at the next discovery; a name the owner gives a stock on the Dynamics
+page still wins.
+
+**The rest of the entry.** `prefix`: the series are `<prefix>:<name>`. `[sources.labels]` is an
+alias map (which spellings stand for one label), never a selection: only `match` selects.
+`machine = "<label>"` tags each series `machine=<prefix>.<value>`, which names a machine only for
+counted traffic a `[[series]]` declares (`traffic`); on any other series it is a label, and never
+makes a machine or ties one to a flow (rules 2 and 7).
+
+**Caps, and what each costs the store.** None changes what is inferred.
+
+| Lever | Default | Bounds | Costs the store |
+|---|---|---|---|
+| `rate`, `burst` | 5 a s, 10 | requests a second to this store, every project and process on this machine together | slower reads, not fewer; lower it to what the store's owner allows |
+| `max_requests_per_day` | 20,000 | requests per store per UTC day; past it nothing is asked until 00:00 UTC | when spent, the source is missing: no model version is saved and the job's health is red |
+| `max_series` | 200 | definitions discovery reads (12 a family at most) | each is a range read per discovery; more series, more points |
+| `infer_every` | 1 h (6 h with `[[series]]`) | how often inference reads the schema again | a round costs up to `infer_requests` (1,500), typically one or two hundred for a few hundred names |
+| `[discovery] every` | 5 m | how often the host rediscovers | each discovery reads the new steps only, the whole window hourly; tens of requests each |
+
+Do the sum before you settle: discoveries a day (1,440 ÷ `every` in minutes) × one discovery's
+requests, plus rounds a day (24 ÷ `infer_every` in hours) × one round's, must sit well under
+`max_requests_per_day` less the web server's share (`web_share`, a fifth). At 35 requests a
+discovery, every 5 minutes is about 10,000 a day: twice a 5,000 cap, so `every = "15m"` (a project
+setting: `[discovery]`, read at start). Read the real costs from the run record (next section),
+never guess them. `history` (7 d) is how far a new source's first read reaches, in pages of a day,
+within `max_requests` (1,000 a discovery). Raising a cap is the owner's; narrowing is yours.
+
+## Reading what Orchestra sees of a store
+
+Each of these reads what Orchestra already has, or asks the store a bounded question; none writes.
+
+- **`orchestra sources check`** (a plugin's `check_sources`): per source, the auth and where its
+  credential comes from (`bearer from file …: present`, never the value), whether the store
+  `answers`, which endpoints it serves (`metadata no` is normal for some), and the last five
+  requests. It asks no series: run it first, and after every change of `url` or `auth`.
+- **`orchestra sources infer --source <name>`** (`infer_source`): runs an inference round now (it
+  costs one) and lists each family found, the definitions kept, and every one left out with why;
+  `retyped` (a type judged from samples), what each merges (`merges queue (3 values)`), notes, and
+  why it re-inferred (`re-inferred: the source's kinds changed`). The left-out reasons are what you
+  act on and what you report.
+- **`orchestra sources preview '<query>' --source <name>`** (`preview_query`): a query's fan-out and
+  values, within `match`. Preview only aggregated queries with a label matcher.
+- **The request log**, `~/.orchestrator/<key>/sources/<name>.requests.jsonl` (the last 10,000):
+  every request any part of Orchestra sent the store: time, endpoint, query or `match[]`, window
+  and step, series, points, bytes, milliseconds, who asked (`host`, `infer`, `page`, `web`, `cli`),
+  the run's id, the error, and `sent: false` for one refused before sending (budget, daily cap). It
+  never holds a header. The Core page's row of the store shows the last twenty and today's count
+  beside the cap.
+- **The explorer drawer**, the Dynamics page: each left-out row, each changed-but-not-in-the-model
+  name and each stock opens a drawer saying what discovery read and tried for that series: the kind
+  taken and its evidence (never falls, resets, range, reporting interval), the exact query, window
+  and step, what came back (points, span, a sparkline), every role tried (the counters offered to
+  its balance with their R², each net-flow form and why it lost), the verdict, "summed over …" and
+  "named … by …". The same is `GET /api/dynamics/explain?key=<series key>` (with the web token),
+  the keys as the discovery record names them (`~/.orchestrator/<key>/model/discovered.json`,
+  `left_out`). An R² of 0.00 against nothing means there was nothing to compare with: read the
+  drawer, not the number.
+- **The run record**, `~/.orchestrator/<key>/model/runs.jsonl` (`GET /api/dynamics/runs`; the
+  Dynamics page's discovery line and its drawer): one line per discovery and per inference round:
+  trigger, phases (reads, inference, fit, saving), outcome (`saved vN`, `unchanged`, `no model`,
+  `failed: …`, `timed out`), `partial`, the strategy, window and step, and per source its cost:
+  requests, whole and incremental reads, series, points, bytes, waiting, refused, errors, and the
+  store's count today against its cap. **Health** (`GET /api/dynamics/runs/health`, the Core page's
+  discovery row) is red when the last two runs failed or a store spent its daily cap; amber when a
+  run is overdue, slow, partial, failed once or stopped at its deadline; each reason said.
+- **`orchestra sd discover`** runs one discovery now and prints the stocks, flows and what was left
+  out: after a change you want to see without waiting for `every` (it costs a discovery's reads).
+
+From a reason to a lever: "no counters balance" or "no counter moved" → the match holds a level
+without what fills it, or counts without a level (next section); "summed over <label>" where the
+owner wants that label apart → `split`; a kind read wrongly → `kinds`; "too many names" or a budget
+or deadline spent → narrow `match`, never raise a cap; a selector that returns nothing →
+`preview_query` it; a source missing → `sources check`, then the Instruments page's `errors`.
+
+## What makes a stock, in the owner's terms
+
+Say it to the owner this way. A **stock** is an amount you could count at one instant: messages
+waiting, calls in progress, pods running, tickets open. A **flow** is how fast something moves into
+or out of one: messages published a minute, acks a minute, calls completed a second. A stock changes
+only by its flows, and discovery finds a stock where a level moves as some counters say it should.
+So it needs a **level** (a gauge holding a quantity) and, to balance it, **counters** that fill and
+drain it, counting the same things grouped by the same labels.
+
+- **A per-interval count is a flow**, never a stock by itself: a `:count` recording rule, a GCP
+  per-minute DELTA count (`ack_message_count`), an OpenTelemetry delta. Each sample is the interval's
+  count. A "since reset" or "today" total is a counter too.
+- **"In progress", by Little's law.** A latency family with both a sum and a count (`_sum`/`_count`,
+  or `:sum`/`:count`) gives a level of its own: calls in progress = busy time over the interval
+  (arrival rate × mean latency), named "<family> in progress", by each grouping it is split by. It
+  is a stock **by construction**: its completions (the count) are its outflow and its arrivals are
+  derived as the completions plus its change, so its balance is exact by definition and proves
+  nothing; what it adds is the arrivals' rate and a level the owner can reason about. Tell the
+  owner so when it is the only stock. A latency family with a count and no sum gives no such stock.
+- **GCP Pub/Sub, one subscription.** Two stocks: the **backlog**, `…_num_undelivered_messages`
+  (published to its topic and not yet acked), filled by the topic's publishes
+  (`…topic…_send_message_count`, or `send_request_count` for requests) and drained by acks
+  (`…_ack_message_count`); and the **outstanding**, `…_num_outstanding_messages` (delivered and not
+  yet acked), filled by deliveries (`…_sent_message_count`) and drained by acks and by expired ack
+  deadlines (`…_expired_ack_deadlines_count`, messages handed out again). `oldest_unacked_message_age`
+  is a level but not an amount: a symptom, never a stock. Match one subscription and its topic
+  (`['{subscription_id="orders-worker"}', '{topic_id="orders"}']`): every subscription of a topic
+  gets every publish, so a topic's publishes fill each of its subscriptions, never their sum.
+- **Only flows under the match.** Counts alone give flows and no stock. Never invent the missing
+  level. Ask the owner one sentence for what would close it: "Is there a gauge of what waits or is
+  in flight for checkout (a queue depth, in-flight calls, replicas) I can read too?", "Does
+  `grpc_client_callMillis` have a sum beside its count?" (then "in progress" follows), or, for a
+  level with one side counted, "What counts what leaves it?" A level with an unmeasured outflow can
+  still be pinned with its inflow, the outflow the residual (step 8 of "Reading another store's
+  schema").
+
+## Machines from a workload label
+
+When a store's series carry a label naming the workloads (`container_name`, `service_name`,
+`subscription_id`, `job`, `app`), its values are the owner's existing machines: they do the work and
+will never publish on Orchestra's bus. Put the ones the owner cares about on the map as **declared
+machines**, each with the instruments that measure it attached
+(docs/proposals/instruments-on-machines.md):
+
+1. List the label's values within `match` (`source_schema`, or the Core page's labels button), and
+   for each the instruments whose series carry it: the source, a `[[scrape]]` of the same service.
+2. Find the label counting its replicas, where one is kept: `pod` or `instance`, with several stable
+   values (never one that grows without bound: a build number, a request id; never over 50). If
+   `split` sums it away, the attachment takes no `instance_label` (one would be refused); say so.
+3. Show the owner a list, one line per value: the machine's id (`^[a-z][a-z0-9_]{1,40}$`:
+   `hk-checkout` is `hk_checkout`), its title, each attachment (instrument and match), and its
+   replica label or "replicas not counted". Ask which they want declared. Never declare every value
+   on your own: the label's values are a list to choose from; the owner names the machines.
+4. On the owner's yes, one `POST /intended` on the events endpoint (`ORCHESTRA_EVENTS_ENDPOINT`,
+   `ORCHESTRA_EVENTS_TOKEN`), quoting it; in-process, `project.intended.apply(ops, provenance)`:
+
+```json
+{"source": "supervisor", "author": "owner", "quote": "yes, checkout and payments",
+ "reason": "workloads named by container_name in chronosphere",
+ "ops": [
+  {"op": "propose_machine", "id": "checkout", "title": "checkout", "kind": "programmatic",
+   "managed": "external", "engagement": {"mode": "continuous"}},
+  {"op": "propose_attachment", "machine": "checkout", "instrument": "chronosphere",
+   "match": {"labels": {"container_name": "checkout"}}, "instance_label": "pod"},
+  {"op": "confirm", "part": "machine", "id": "checkout"},
+  {"op": "confirm", "part": "attachment", "id": "checkout_chronosphere"}]}
+```
+
+An attachment's id is `<machine>_<instrument>` (`_2` for a second of the pair), as the answer's
+`changes` say. Its match labels are the source's canonical ones, after `[sources.labels]`. Without
+the owner's quoted yes, stop at `propose_…`: proposals are drawn dashed, "unconfirmed", for the owner
+to confirm on the Machines page (a request you then act on).
+
+The rules that bind it (rules 2 and 7): **a series never makes a machine**, and **a label never
+associates a machine with a flow**. The owner's declaration makes each machine; the label only told
+you what to offer. A declared machine is shown as declared; it is **heard** only once its id (or an
+`alias` of it) publishes on the bus, never because it is measured; it is **measured** by its
+attachments ("never heard · last measured 2 min ago", its replicas counted per attachment, never
+summed); and discovery's hypotheses of which machine drives a flow still come from events only
+(`sd/attribute.py` never reads attachments), so a machine that is only measured says "none
+hypothesised yet". Its route into the model is an expected effect, a prediction judged when the
+flow appears (`set_expected_effect`). Discovery reads the same series with or without the
+declaration: nothing is relabelled, no stock or flow is marked as the machine's.
+
 ## `[[machines]]`: commands kept running
 
 ```toml
@@ -587,9 +838,10 @@ the README. A container needs its runtime; prefer the command the developers use
 
 ## Connecting another system, and declaring what is expected
 
-To connect another system's store or events (an issue tracker, a chat, an alerting service, a
-Prometheus store), follow `docs/INTEGRATING.md` in Orchestra's repository: which route fits, the
-kits, and how to test against a fake before anything is scheduled. To declare what the owner
+A Prometheus-API store is set up by the sections above alone. To connect another system's events
+or counts (an issue tracker, a chat, an alerting service), follow `docs/INTEGRATING.md` in
+Orchestra's repository: which route fits, the kits, and how to test against a fake before anything
+is scheduled. To declare what the owner
 expects (a stock, an effect, a flow, a machine), call `POST /intended` on the events endpoint
 (`ORCHESTRA_EVENTS_ENDPOINT`, with `ORCHESTRA_EVENTS_TOKEN`), with the owner's words quoted in the
 provenance; read the layer with `GET /intended` and `GET /intended/design`. A declaration runs
@@ -653,5 +905,7 @@ the test-report instrument's `--run '...'` the same holds: write `uv run pytest`
 - A stock's R² is not its credibility; its trust score is. A count of pods balanced by its own
   started and stopped counts is exact by construction and scores 0; a hidden state has no R².
 - `[events]`, `[metrics]`, `[web]`, `[discovery]` need a restart; instruments and machines don't.
+- A workload label's values are a list for the owner to choose from, never machines you declare
+  on your own; a declared machine is measured by its attachments, heard only by its events.
 - A secret in either file is wrong; a private value goes to the overlay, a credential to the
   environment.

@@ -13,14 +13,17 @@ You are setting up Orchestra, an observer that reads metrics from a Prometheus-A
 owner's Chronosphere series into Orchestra's model, debug why series are left out, and explain
 what you find in plain words. Work in this directory only.
 
-Read first, in this order:
-- `orchestra.toml` here (the `[[sources]]` entry: `url`, `auth`, `token_file`, `match`, `split`,
-  `kinds`, `prefix`, caps).
-- Orchestra's docs, fetched with `gh` or from the installed package:
-  `https://github.com/danroblewis/orchestra/blob/main/docs/WORK-LAPTOP.md` (the setup this
-  follows), `docs/INTEGRATING.md` §8 (sources), and `SPEC.md` §4.4 (how sources are read,
-  inferred and limited). If the repository is private to you, `gh repo clone danroblewis/orchestra`
-  into a scratch directory and read them there.
+Your reference is Orchestra's operator's guide, `orchestra/guide.md`: the same text the
+Supervisor reads, and the one source for setting up a Prometheus-API store. Read it from the
+installed package (`"$(uv tool dir)/orchestra/bin/python" -c "import orchestra.guides as g;
+print(g.CORE)"` prints its path) or on GitHub
+(`https://github.com/danroblewis/orchestra/blob/main/orchestra/guide.md`; `gh repo clone
+danroblewis/orchestra` into a scratch directory if it is private to you). Read its contents first,
+then these sections whole before you change anything: "A Prometheus-API store: the entry and every
+lever", "Reading what Orchestra sees of a store", "What makes a stock, in the owner's terms" and
+"Machines from a workload label"; the others when a reason sends you there. Then read
+`orchestra.toml` here (its `[[sources]]` entry). Where the guide says "the owner's yes", ask the
+owner here and quote the answer in your report.
 
 Rules you must keep, with no exceptions:
 1. **Read only.** Never write to Chronosphere, Jira, Slack, GitHub or anything outside this
@@ -37,36 +40,11 @@ Rules you must keep, with no exceptions:
    what you changed and why before you change it. Keep a copy of the file before your first edit.
 5. **Ask the owner** before widening the match to new metric families, raising a cap, or anything
    you are not sure of. Ask in one sentence.
-
-How to look at what Orchestra sees:
-- `orchestra sources check` — the store answers, the auth works, the last requests.
-- `orchestra sources infer --source <name>` — what families it found, what it kept, and why each
-  was left out. Paste the left-out reasons into your report.
-- `<state>/sources/<name>.requests.jsonl` under `~/.orchestrator/<key>/` — every request Orchestra
-  sent (endpoint, selector, window, series, points, time). Never contains the token.
-- `orchestra sd discover` — runs discovery once and prints the stocks, flows and what was left out.
-- The web UI (`orchestra web`): the Dynamics page's "How it was found" and each left-out row's
-  drawer show the kind, the query, what came back, every form tried with its R², and the verdict.
-  The same data is at `GET /api/dynamics/explain?series=<name>` (authenticated: use the
-  browser's session or read the discovery record `~/.orchestrator/<key>/model/discovered.json`).
-
-What good looks like, and the levers:
-- A **stock** needs a level (a gauge holding a quantity: queue depth, in-flight, backlog) or
-  counters that fill and drain one. A per-interval count (`:count`, GCP per-minute deltas) is a
-  **flow**, never a stock by itself.
-- `split = ["label", ...]` names the labels a family is split by; others are summed.
-- `kinds = { "<metric or glob>" = "flow" | "level" | "ignore" }` overrides how a metric is read;
-  needed only for the exceptions, since names and metadata already say most (WORK-LAPTOP.md §3's
-  table). An edit takes effect at the next round, or at once with `orchestra sources infer`.
-- `names = { "<metric or glob>" = "<template>" }` names what a series becomes: `{label}` any
-  label, `{metric}` the metric; a missing label is left out. Rules over families
-  (`"*_num_undelivered_messages" = "{subscription_id} messages waiting"`), exact names only for
-  exceptions. It changes no reading and needs no new inference round.
-- A latency family with both `:sum` and `:count` yields "<family> in progress" (calls in flight
-  by Little's law), a stock with the completions as its outflow.
-- For GCP PubSub: `num_undelivered_messages` is a stock; `send_message_count` /
-  `send_request_count` (publishes), `sent_message_count`, `ack_message_count` and
-  `expired_ack_deadlines_count` are flows. Match one subscription and its topic.
+6. **Where the guide calls `project.config_edit`**, make the same edit by hand to `orchestra.toml`
+   (rule 4). Declared machines and attachments (the guide's "Machines from a workload label") go
+   only through `POST /intended` on the events endpoint while `orchestra run` is up
+   (`eval "$(orchestra events endpoint --env)"` sets its URL and token), and only on
+   the owner's yes, quoted in the call.
 
 Known issue as of 2026-11-04: after upgrading Orchestra from `main`, a source that worked before
 can come back with every family left out and "0 series". If you see that, collect the exact
@@ -74,13 +52,7 @@ left-out reasons from `orchestra sources infer --source <name>` and the last 20 
 requests log, and report them; to restore the earlier behaviour meanwhile, reinstall the core
 pinned to `@515233bd` (see WORK-LAPTOP.md step 1 for the install line; replace `@main`).
 
-Once stocks appear, propose names. From the metric names and the label conventions of the
-stocks and flows Orchestra found, derive a few general rules (patterns with templates that
-cover whole families, such as `"*_num_undelivered_messages" = "{subscription_id} messages
-waiting"`), not one entry per stock; add an exact name only for an exception. Show the owner
-the rules and, beside each current stock and flow, the name they would give it. Write the
-`[sources.names]` table only on the owner's yes.
-
 Report back to the owner, in under 300 words: what Orchestra reads now (series and points per
 source), the stocks and flows it found, every left-out reason grouped with what would help, each
-config change you made and why, and the one next step you recommend.
+config change you made and why, the names and machines you proposed with the owner's answers,
+and the one next step you recommend.
