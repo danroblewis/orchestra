@@ -17,14 +17,17 @@ the events endpoint's address and token, ``orchestra.endpoint``), in a process g
 stopping it stops what it started: SIGTERM to the group, then SIGKILL after its stop grace
 (``stop_grace``, ``STOP_GRACE_S`` unless given). One that exits is started again after a pause that doubles
 with each quick exit (up to a minute); one that fails ``GIVE_UP_AFTER`` times in a row, each
-within ``STABLE_S`` of starting, is given up on, in the host's log, the process's log and on the
-bus (``orchestra.process.gave_up``). ``orchestra.toml`` (and the private overlay, ``orchestra.overlay``) is read again whenever it changes, so a
+within ``STABLE_S`` of starting, has spent its fast-crash budget: it is stopped and tried again on
+the backoff schedule (``BACKOFF_SCHEDULE``: one minute, five, fifteen, then hourly) for as long as
+the host runs, said in the host's log, the process's log and on the bus (``orchestra.process.gave_up``,
+once per spent budget, with ``next_try``), and recorded as ``stopped after N crashes; next try at
+<time>``. One that then stays up ``STABLE_S`` has its budget reset. ``orchestra.toml`` (and the private overlay, ``orchestra.overlay``) is read again whenever it changes, so a
 machine added by a merged commit starts without restarting the host, one removed stops, and one
-whose command or restart changed is restarted (and a given-up one tried again); the plugins'
+whose command or restart changed is restarted (and a backing-off one tried at once); the plugins'
 processes are asked for again then too, so a plugin's section added or removed starts or stops
 them. A plugin's process that reads its settings once, when it starts, names them in
 ``config_keys`` (dotted keys of the merged configuration, ``["myplugin.upstream"]``): when the value
-under any of them changes, it is restarted the same way, and one given up on is tried again, so a
+under any of them changes, it is restarted the same way, and one backing off is tried at once, so a
 fixed setting reaches it without restarting the host. Every process is
 in the runtime record under ``processes`` for the Core page. A plugin's processes are named
 ``<plugin>.<name>`` there and in their logs' names, so a project's ``[[machines]]`` never collide
@@ -62,8 +65,9 @@ from .launcher_env import child_env, own_python
 RESTARTS = ("always", "on-failure", "never")
 NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
 STABLE_S = 60.0          # a run this long is no crash: the pause and the count of failures start over
-GIVE_UP_AFTER = 5        # failures in a row, each within STABLE_S of starting
+GIVE_UP_AFTER = 5        # failures in a row, each within STABLE_S of starting: the fast-crash budget
 BACKOFF_MAX = 60.0
+BACKOFF_SCHEDULE = (60.0, 300.0, 900.0, 3600.0)   # after the budget: the pauses before each next try; the last repeats
 STOP_GRACE_S = 10.0      # after SIGTERM, before SIGKILL
 LOG_MAX = 5_000_000
 
@@ -141,7 +145,7 @@ class _Run:
     quick: int = 0                 # exits in a row within STABLE_S of starting
     failures: int = 0              # of those, the ones that failed
     restarts: int = 0
-    state: str = "waiting"         # running | waiting | exited | gave_up
+    state: str = "waiting"         # running | waiting | exited | backing_off (budget spent, tried on the schedule)
     start_at: float = 0.0          # while waiting: when to start
     code: int | None = None        # the last exit code (negative: killed by that signal)
     fingerprint: str = ""          # of the settings under its spec's config_keys when it was declared
@@ -158,6 +162,7 @@ class Launcher:
     backoff: float = 1.0
     stable_s: float = STABLE_S
     give_up_after: int = GIVE_UP_AFTER
+    schedule: tuple[float, ...] = BACKOFF_SCHEDULE
     grace: float = STOP_GRACE_S
     runs: dict[str, _Run] = field(default_factory=dict)
     _mtime: tuple | None = None                   # the configuration's stamp last read
@@ -262,11 +267,16 @@ class Launcher:
             run.failures += code != 0
         restart = run.spec.restart == "always" or (run.spec.restart == "on-failure" and code != 0)
         if restart and run.failures >= self.give_up_after:
-            run.state = "gave_up"
-            self._note(run, f"exited with code {code}; gave up after {run.failures} failures in a row, each within "
-                            f"{self.stable_s:g} s of starting (fix it and change its entry, or restart orchestra run)")
-            self._tell("orchestra.process.exited", {"name": run.spec.name, "pid": pid, "code": code, "restart_in": None})
-            self._tell("orchestra.process.gave_up", {"name": run.spec.name, "code": code, "failures": run.failures})
+            spent = run.failures - self.give_up_after             # tries on the schedule since the budget ran out
+            delay = self.schedule[min(spent, len(self.schedule) - 1)]
+            run.state, run.start_at = "backing_off", time.time() + delay
+            run.restarts += 1
+            self._note(run, f"exited with code {code}; {_stopped(run)} (in {delay:g} s; each of the last {run.failures} "
+                            f"within {self.stable_s:g} s of starting)")
+            self._tell("orchestra.process.exited", {"name": run.spec.name, "pid": pid, "code": code, "restart_in": delay})
+            if spent == 0:
+                self._tell("orchestra.process.gave_up", {"name": run.spec.name, "code": code, "failures": run.failures,
+                                                         "next_try": run.start_at})
             return
         delay = min(self.backoff * 2 ** run.quick, BACKOFF_MAX) if restart else None
         if restart:
@@ -329,7 +339,9 @@ class Launcher:
             run.spec = spec                                       # the owner may have changed
             if run.state == "running" and run.popen is not None and (code := run.popen.poll()) is not None:
                 self._exited(run, code)
-            if run.state == "waiting" and now >= run.start_at:
+            elif run.state == "running" and run.failures and now - run.started >= self.stable_s:
+                run.quick = run.failures = 0                      # it stayed up: its budget is whole again
+            if run.state in ("waiting", "backing_off") and now >= run.start_at:
                 self._start(run)
         self._record()
 
@@ -341,7 +353,8 @@ class Launcher:
     def snapshot(self) -> dict:
         return {n: {"pid": r.popen.pid if r.popen else None, "since": r.started if r.popen else None,
                     "state": r.state, "restarts": r.restarts, "code": r.code, "owner": r.spec.owner,
-                    "command": r.spec.argv(), "log": str(r.log), "stop_grace_s": self._grace(r.spec)}
+                    "command": r.spec.argv(), "log": str(r.log), "stop_grace_s": self._grace(r.spec),
+                    **({"crashes": r.failures, "next_try": r.start_at, "note": _stopped(r)} if r.state == "backing_off" else {})}
                 for n, r in sorted(self.runs.items())}
 
     def _record(self) -> None:
@@ -374,6 +387,10 @@ class Launcher:
             except psutil.Error:
                 pass
             _signal_group(p.pid, signal.SIGKILL)                     # and whatever it started
+
+
+def _stopped(run: _Run) -> str:
+    return f"stopped after {run.failures} crashes; next try at {datetime.fromtimestamp(run.start_at).strftime('%Y-%m-%d %H:%M:%S')}"
 
 
 def _signal_group(pid: int, sig: int) -> None:

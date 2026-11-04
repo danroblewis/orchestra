@@ -100,22 +100,57 @@ def test_restarts_one_that_exits(project):
         la.stop_all()
 
 
-def test_gives_up_after_a_crash_loop_and_says_so(project):
+def test_a_crash_loop_backs_off_and_says_so(project):
     declare(project, ("broken", "raise SystemExit(3)", "always"))
     la, events, lines = launcher(project, give_up_after=3)
     try:
-        until(lambda: la.runs["broken"].state == "gave_up", la)
+        until(lambda: la.runs["broken"].state == "backing_off", la)
         starts = sum(t == "orchestra.process.started" for t, _ in events)
-        for _ in range(20):                     # it stays given up
+        for _ in range(20):                     # the next try is a minute away
             la.tick()
             time.sleep(0.01)
         assert sum(t == "orchestra.process.started" for t, _ in events) == starts == 3
-        assert ("orchestra.process.gave_up", {"name": "broken", "code": 3, "failures": 3}) in events
-        assert any("gave up" in ln for ln in lines)
-        assert "gave up" in (project.logs_dir / "machines" / "broken.log").read_text()
-        assert runtime.read(project)["processes"]["broken"]["state"] == "gave_up"
-        declare(project, ("broken", "import time; time.sleep(30)", "always"))     # fixed: tried again
+        told = [d for t, d in events if t == "orchestra.process.gave_up"]
+        assert [{k: d[k] for k in ("name", "code", "failures")} for d in told] == [{"name": "broken", "code": 3, "failures": 3}]
+        assert 55 < told[0]["next_try"] - time.time() <= 60
+        assert any("stopped after 3 crashes; next try at" in ln for ln in lines)
+        assert "stopped after 3 crashes" in (project.logs_dir / "machines" / "broken.log").read_text()
+        rec = runtime.read(project)["processes"]["broken"]
+        assert rec["state"] == "backing_off" and rec["crashes"] == 3 and rec["next_try"] == told[0]["next_try"]
+        assert rec["note"].startswith("stopped after 3 crashes; next try at 20")
+        declare(project, ("broken", "import time; time.sleep(30)", "always"))     # fixed: tried at once
         until(lambda: la.runs["broken"].state == "running", la)
+    finally:
+        la.stop_all()
+
+
+def test_after_the_budget_it_is_tried_on_the_schedule_for_good(project):
+    declare(project, ("broken", "raise SystemExit(3)", "always"))
+    la, events, _ = launcher(project, give_up_after=2, schedule=(0.3, 0.6, 0.9))
+    try:
+        until(lambda: sum(t == "orchestra.process.started" for t, _ in events) >= 6, la, timeout=20)
+        exits = [d for t, d in events if t == "orchestra.process.exited"]
+        assert [d["restart_in"] for d in exits[1:5]] == [0.3, 0.6, 0.9, 0.9]        # then the last pause, again and again
+        assert sum(t == "orchestra.process.gave_up" for t, _ in events) == 1        # said once per spent budget
+        until(lambda: la.runs["broken"].state == "backing_off", la)
+        rec = runtime.read(project)["processes"]["broken"]
+        assert rec["crashes"] >= 3 and rec["note"].startswith(f"stopped after {rec['crashes']} crashes; next try at")
+    finally:
+        la.stop_all()
+
+
+def test_one_that_stays_up_after_backing_off_has_its_budget_reset(project):
+    flag = project.repo_root / "fixed"
+    code = f"import os, sys, time; os.path.exists({str(flag)!r}) or sys.exit(2); time.sleep(30)"
+    declare(project, ("flaky", code, "always"))
+    la, _, _ = launcher(project, give_up_after=2, stable_s=0.5, schedule=(0.3,))
+    try:
+        until(lambda: la.runs["flaky"].state == "backing_off", la)
+        flag.write_text("")                     # the trouble passes: the next try stays up
+        until(lambda: la.runs["flaky"].state == "running", la)
+        assert la.runs["flaky"].failures == 2
+        until(lambda: la.runs["flaky"].failures == 0, la)
+        assert "note" not in runtime.read(project)["processes"]["flaky"]
     finally:
         la.stop_all()
 
@@ -125,7 +160,7 @@ def test_restart_policies(project):
     la, events, _ = launcher(project, give_up_after=2)
     try:
         until(lambda: la.runs["once"].state == "exited" and la.runs["ok"].state == "exited"
-              and la.runs["fails"].state == "gave_up", la)
+              and la.runs["fails"].state == "backing_off", la)
         starts = [d["name"] for t, d in events if t == "orchestra.process.started"]
         assert starts.count("once") == 1 and starts.count("ok") == 1 and starts.count("fails") == 2
     finally:
@@ -178,7 +213,7 @@ def test_bad_entries_are_reported_and_the_rest_run(project):
         until(lambda: "good" in la.runs and la.runs["good"].state == "running", la)
         text = "\n".join(lines)
         assert "bad name 'has space'" in text and "nocmd: empty command" in text and "restart must be one of" in text
-        until(lambda: la.runs["tools.missing"].state == "gave_up", la)      # a command that cannot start is a failure
+        until(lambda: la.runs["tools.missing"].state == "backing_off", la)      # a command that cannot start is a failure
         assert "cannot start" in (project.logs_dir / "machines" / "tools.missing.log").read_text()
         assert sum("bad name" in ln for ln in lines) == 1                   # said once, not every tick
     finally:
@@ -420,8 +455,8 @@ def test_a_process_is_restarted_when_the_settings_it_names_change(project):
         write('[tools]\nevery = "2s"\n')                              # its settings: restarted
         until(lambda: starts() == ["1s", "2s"] and la.runs["tools.helper"].state == "running", la)
         write('[tools]\nevery = "bad"\n')
-        until(lambda: la.runs["tools.helper"].state == "gave_up", la)
-        write('[tools]\nevery = "3s"\n')                              # fixed: tried again
+        until(lambda: la.runs["tools.helper"].state == "backing_off", la)
+        write('[tools]\nevery = "3s"\n')                              # fixed: tried at once
         until(lambda: starts()[-1] == "3s" and la.runs["tools.helper"].state == "running", la)
     finally:
         la.stop_all()

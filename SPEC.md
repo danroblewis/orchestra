@@ -1521,11 +1521,14 @@ endpoint serves (§3.1), `ORCHESTRA_EVENTS_ENDPOINT` (its URL) and `ORCHESTRA_EV
 project's `[[machines]]` entry never takes a plugin process's place; a project entry named
 `<plugin>.<something>` for a plugin with processes is refused, with a line in the host's log. One that exits is started again
 after a pause that doubles with each exit within a minute of starting (1 s up to 60 s); after five
-failures (non-zero exits) in a row, each within a minute of starting, it is given up on, which the
-host's log, the process's log and the bus (`orchestra.process.gave_up`) say. It is tried again when
-its entry changes or the host restarts. A plugin's process may name the settings it reads at start
+failures (non-zero exits) in a row, each within a minute of starting, its fast-crash budget is
+spent: it is stopped and tried again after one minute, then five, fifteen, then hourly, for as long
+as the host runs, which the host's log, the process's log and the bus (`orchestra.process.gave_up`,
+once per spent budget, with `next_try`) say; its record (and the Core page) says `stopped after N
+crashes; next try at <time>`. A try that stays up a minute resets the budget. It is tried at once
+when its entry changes or the host restarts. A plugin's process may name the settings it reads at start
 (`Process.config_keys`, dotted keys of the merged configuration): a change under them restarts
-it, and tries again one given up on. The host also publishes `orchestra.process.started` and
+it, and tries at once one backing off. The host also publishes `orchestra.process.started` and
 `orchestra.process.exited`. It re-reads the configuration (`orchestra.toml` with the private
 overlay merged, §8) whenever either file changes, appears or goes (checked every second): a new entry starts, a removed one stops, a changed one restarts. The plugins are then
 asked again for their processes (the config read first, since a plugin reads its own sections), so

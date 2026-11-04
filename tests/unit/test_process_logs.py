@@ -90,3 +90,15 @@ def test_a_recorded_process_carries_its_log_error_into_the_host_card(project):
     probe.project = project
     row = probe._processes(runtime.read(project))[0]
     assert row["code"] == 1 and row["restarts"] == 4 and row["log_error"] == "FATAL: cannot reach the bus"
+
+
+def test_a_process_backing_off_carries_its_next_try_into_the_host_card(project):
+    note = "stopped after 5 crashes; next try at 2026-11-03 04:10:00"
+    runtime.update(project, lambda d: d.update(processes={"outbox.sender": {
+        "pid": None, "state": "backing_off", "code": 1, "restarts": 5, "owner": "outbox",
+        "crashes": 5, "next_try": 1793333400.0, "note": note}}))
+    from orchestra.web.core import CoreProbe
+    probe = CoreProbe.__new__(CoreProbe)
+    probe.project = project
+    row = probe._processes(runtime.read(project))[0]
+    assert row["state"] == "backing_off" and row["crashes"] == 5 and row["next_try"] == 1793333400.0 and row["note"] == note

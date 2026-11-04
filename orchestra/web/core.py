@@ -196,6 +196,7 @@ class CoreProbe:
         for name, r in sorted((record.get("processes") or {}).items()):
             out.append({"name": name, "state": r.get("state"), "owner": r.get("owner"), "restarts": r.get("restarts", 0),
                         "code": r.get("code"), "command": r.get("command") or [],
+                        "crashes": r.get("crashes"), "next_try": r.get("next_try"), "note": r.get("note"),
                         **(_proc(r["pid"]) if r.get("pid") else {"alive": False}), "since": r.get("since"),
                         "log_error": process_logs.hint(name, self.project.logs_dir, self._roots()),
                         "log_written": _written(process_logs.directory(self.project.logs_dir) / f"{name}.log")})

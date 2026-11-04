@@ -138,10 +138,12 @@ an instrument.
 `orchestra run` starts it in the repository root with `ORCHESTRA_REPO`, `ORCHESTRA_MACHINE_LOG` and
 `ORCHESTRA_PROCESS` (the entry's name) set, sends its output to `<state>/logs/machines/app.log`, and starts it again when it exits, after
 a pause that doubles with each quick exit (up to a minute). Only failing exits (a non-zero code)
-count towards giving up: after five in a row, each within a minute of starting, it is given up on,
-which its log, the host's log and the bus (`orchestra.process.gave_up`) say; it is tried again when
-its entry changes or `orchestra run` restarts. A program that exits 0 is started again after the
-pause and never given up. For a measurement on a clock, a `[[collect]]` script is simpler.
+count: after five in a row, each within a minute of starting, it backs off and is tried again after
+one minute, then five, fifteen, then hourly, for as long as `orchestra run` runs, which its log, the
+host's log, the Core page (`stopped after N crashes; next try at <time>`) and the bus
+(`orchestra.process.gave_up`, once) say; a try that stays up a minute starts the count over. It is
+tried at once when its entry changes or `orchestra run` restarts. A program that exits 0 is started
+again after the pause and never backs off. For a measurement on a clock, a `[[collect]]` script is simpler.
 
 `orchestra.toml` is read again whenever it changes: an entry added (by a merge into the
 checked-out branch, say) starts within seconds, one removed stops, and one whose entry changed

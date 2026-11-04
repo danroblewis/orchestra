@@ -574,7 +574,8 @@ Each runs in the repository root in its own process group, with `ORCHESTRA_REPO`
 `ORCHESTRA_PROCESS` (the entry's name, which its announcement passes on as `process`),
 `ORCHESTRA_EVENTS_ENDPOINT` and `ORCHESTRA_EVENTS_TOKEN` set, its output in its log. One that
 exits is restarted after a pause that doubles (up to a minute); five quick failures in a row and
-it is given up on (`orchestra.process.gave_up`; the Core page says so). One that exits 0 under
+it backs off, tried again after one minute, five, fifteen, then hourly (`orchestra.process.gave_up`
+once, with `next_try`; the Core page says `stopped after N crashes; next try at <time>`). One that exits 0 under
 `always` runs again about once a minute: a sampler written as one reading is better a
 `[[collect]]`. A name `<plugin>.<name>` is refused (plugins' processes are named so). Find what
 to run from how the app is served: a `Procfile`, `docker-compose.yml` services, the `dev`/`start`

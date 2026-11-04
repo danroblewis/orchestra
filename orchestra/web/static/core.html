@@ -128,13 +128,13 @@ function card(title, c, html, right = "", warn = false) {
 const age = (sec) => (sec >= 2 * 86400 ? `${(sec / 86400).toFixed(1)}d` : ago(sec));
 const since = (t) => t ? ago(Date.now() / 1000 - t) : "—";
 // what the host keeps running: the [[machines]] in orchestra.toml and the plugins' processes
-const PROC_STATE = { running: "running", waiting: "restarting", exited: "exited", gave_up: "gave up" };
+const PROC_STATE = { running: "running", waiting: "restarting", exited: "exited", backing_off: "backing off" };
 function processesHtml(ps) {
   if (!ps.length) return "";
   // a stopped (paused) process is alive and does nothing: never said "running"; its log's last write beside it
   const logAge = (p) => (p.log_written ? ` · <span title="when its log was last written">log written ${since(p.log_written)} ago</span>` : "");
   const row = (p) => `<tr data-name="${esc(p.name)}"><td><b>${esc(p.name)}</b>${p.owner && p.owner !== "project" ? ` <span class="muted">(${esc(p.owner)})</span>` : ""}</td>
-    <td>${p.state === "running" && p.paused ? `<span class="stale" title="the system says it is stopped (SIGSTOP, a debugger, Ctrl-Z): alive, doing nothing">${esc(p.paused)}</span>` : p.state === "running" ? "running" : `<span class="stale">${esc(PROC_STATE[p.state] || p.state)}${p.code != null ? ` · exit ${p.code}` : ""}</span>`}</td>
+    <td>${p.state === "running" && p.paused ? `<span class="stale" title="the system says it is stopped (SIGSTOP, a debugger, Ctrl-Z): alive, doing nothing">${esc(p.paused)}</span>` : p.state === "running" ? "running" : `<span class="stale">${esc(p.state === "backing_off" && p.note ? p.note : PROC_STATE[p.state] || p.state)}${p.code != null ? ` · exit ${p.code}` : ""}</span>`}</td>
     <td class="num">${p.alive ? `pid ${p.pid} · up ${since(p.since)} · ${fmtBytes(p.rss || 0)}` : "—"}${logAge(p)}</td>
     <td class="num">${p.restarts ? `${p.restarts} restart${p.restarts > 1 ? "s" : ""}` : ""}${p.state === "running" && p.code != null ? ` · last exit ${p.code}` : ""}</td>
     <td>${p.log_error ? `<span class="perr" title="${esc(p.log_error)}" onclick="showLog('${esc(p.name)}')">⚠ error in log</span> · ` : ""}<button class="ctl" onclick="showLog('${esc(p.name)}')" title="This process's output, as the host writes it to logs/machines/${esc(p.name)}.log">log</button></td>
@@ -170,7 +170,7 @@ function renderCore() {
       <div>round trip</div><div class="num">${m.round_trip_ok ? "✓" : "✗"} write ${m.write_ms ?? "—"} ms · readable after ${m.visible_ms ?? "—"} ms · read ${m.read_ms ?? "—"} ms</div></div>
       <div class="sl">write latency</div>${spark(sp.metrics_write_ms, { unit: " ms", label: "write latency" })}<div class="sl">write → readable</div>${spark(sp.metrics_visible_ms, { unit: " ms", cls: "amber", label: "write → readable" })}
       <div class="muted" style="font-size:11px;margin-top:6px">Every probe writes its own measurements into the store; these lines are read back from it.</div>` : "";
-  Orchestra.keepFocus($("host-card"), () => { $("host-card").innerHTML = card("Bootstrap host", h, hostHtml, "", !(h.loop && h.loop.alive) || (h.processes || []).some((p) => p.state === "gave_up" || p.paused)); });
+  Orchestra.keepFocus($("host-card"), () => { $("host-card").innerHTML = card("Bootstrap host", h, hostHtml, "", !(h.loop && h.loop.alive) || (h.processes || []).some((p) => p.state === "backing_off" || p.paused)); });
   $("bus-card").innerHTML = card("Event bus", b, busHtml, `<button class="ctl" onclick="probeBus()" title="Append a bus_probe event to the stream and read it back by its offset">test write</button>`);
   $("met-card").innerHTML = card("Metrics store", m, metHtml);
 }
