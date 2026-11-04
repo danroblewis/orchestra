@@ -59,7 +59,7 @@ from . import extra
 from .attribute import UNSET
 from .bounded import Late, run_jobs
 from .discover import FLAG_EXACT, MIN_EVENTS, UNITS, discover
-from .inputs import offered_inputs
+from .inputs import keep_apart, offered_inputs, own_paths
 from .model import Equation, Flow, Model, Stock
 from .rates import combine, numbers, reads, scale
 from .resolution import steps_of
@@ -275,7 +275,9 @@ def _discover_with(dump, *, start: float, end: float, step: float, strategy: str
     stock_ids = [s.id for s in given]
     stock_keys = {series_key(s.series.name, s.series.labels): s.id for s in base.stocks if s.series}
     levels = {sid: by_key[key].values for key, sid in stock_keys.items() if key in by_key and sid in stock_ids}
-    inputs, input_refs = offered_inputs(series, set(stock_keys), base.discovery.get("left_out") or {})
+    inputs, input_refs = offered_inputs(series, set(stock_keys), base.discovery.get("left_out") or {}, provenance)
+    own = own_paths(stock_keys, input_refs, provenance or {})      # Orchestra's own: only for groups of its own stocks (sd.inputs)
+    keep_apart(inputs, input_refs, bool(own - {f"input:{k}" for k in input_refs}))
     known = known_changes(Model(base.id, base.name, stocks=given), by_key, n)
     # groups: stocks joined by a measured flow can exchange material; SD Lab proposes flows only
     # within a group, so it never links stocks of different kinds (orders and customers)
@@ -298,6 +300,8 @@ def _discover_with(dump, *, start: float, end: float, step: float, strategy: str
         run_g = {"t": list(range(n + 1)), "levels": {sid: levels[sid] for sid in ids}}
         known_g = {sid: known[sid] for sid in ids if sid in known}
         inputs_g = inputs if any("net_flow" not in st.evidence for st in members) else read_by(base, ids, inputs)
+        if not set(ids) <= own:
+            inputs_g = {k: v for k, v in inputs_g.items() if f"input:{k}" not in own}
         opts = {"eras": None, **({"inputs": inputs_g} if inputs_g else {}), **({"known": known_g} if known_g else {}),
                 **budget_options(deadline / len(by_group) if deadline else None), **(options or {})}
         jobs.append((strategy, req, run_g, opts))

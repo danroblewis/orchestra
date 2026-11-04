@@ -663,7 +663,16 @@ Conservation (`sd/discover.py`):
 4. each flow's rate is fitted by maximum likelihood, choosing by AIC among constant, proportional
    to its source, and linear in any stock or any measured gauge that is not a stock (`c + k ×
    X`; the gauges are those `sd/inputs.py` offers, recorded in the equation's inputs as
-   `input:<name>`). A form that reads another stock or an input is offered only with 10 events
+   `input:<name>`). **Orchestra's own series are never a system flow's input:** a series
+   Orchestra's own machinery wrote of itself (named `orchestra_*`, or written by an instrument a
+   plugin declared, its `owner` in the provenance: the workflows plugin's record, the agents'
+   turns) says what Orchestra did, as its own series are no stocks (AGENTS.md rule 7); it is
+   offered as an input, or read as a driver (conservation's and an SD Lab strategy's), only by a
+   flow whose stocks are all of that provenance, never by a flow of a source's stock or the
+   project's, and with no such stock it is no input, `left_out` saying "Orchestra's own (its
+   instrument … is the … plugin's): … offered as an input only to flows of stocks of the same
+   provenance …" (bootstrap run 7: a team's queue drained "0.00 × workflow record bytes").
+   A form that reads another stock or an input is offered only with 10 events
    per parameter (20 for `c + k × X`, on any X): below that a level that happened to be high
    beats the constant on likelihood alone, and the constant or the source's proportion is all a
    flow gets. A driver slower than the grid is known once per interval of its resolution, so the

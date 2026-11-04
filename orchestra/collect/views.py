@@ -140,16 +140,44 @@ def tables(views: Iterable[View]) -> dict[str, list[dict]]:
     return out
 
 
-def provenance(dump: Iterable, declared: dict[str, tuple[View, ...]], key) -> dict[str, dict]:
+def provenance(dump: Iterable, declared: dict[str, tuple[View, ...]], key, owners: dict[str, str] | None = None) -> dict[str, dict]:
     """The provenance of each series in ``dump`` (name, labels, points) an instrument declared a
-    view of, by series key (``key(name, labels)``)."""
+    view of, or a plugin's instrument wrote (``owners``: the plugin that declared each instrument,
+    ``owned``), by series key (``key(name, labels)``). A plugin's instrument's series carry its
+    ``owner``: what Orchestra's own machinery measures of itself, never a system's input (``sd.inputs``)."""
     out: dict[str, dict] = {}
+    owners = owners or {}
     for name, labels, _ in dump:
         inst = labels.get("instrument")
         for v in declared.get(inst, ()) if inst else ():
             if v.matches(name, labels):
                 out[key(name, labels)] = v.record(inst)
                 break
+        if inst and (owner := owners.get(inst)):
+            out.setdefault(key(name, labels), {"source": OWN, "instrument": inst})["owner"] = owner
+    return out
+
+
+def owned(project) -> dict[str, str]:
+    """The instruments a plugin declared (``Plugin.collectors``), each with that plugin's name, as
+    the host's runtime record holds them; an ``orchestra.toml`` entry of the same name is the
+    project's and is left out. Empty when neither can be read."""
+    from .. import runtime
+    from .spec import from_toml
+
+    out: dict[str, str] = {}
+    try:
+        for name, rec in (runtime.read(project).get("instruments") or {}).items():
+            owner = rec.get("owner") if isinstance(rec, dict) else None
+            if isinstance(owner, str) and owner and owner != "project":
+                out[name] = owner
+    except (OSError, AttributeError, ValueError):
+        return {}
+    try:
+        for c in from_toml(project.config.raw)[0]:
+            out.pop(c.name, None)
+    except (OSError, AttributeError, ValueError, ConfigError):
+        pass
     return out
 
 
