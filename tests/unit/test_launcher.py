@@ -497,3 +497,73 @@ def test_every_process_is_told_its_launcher_name(project):
         assert (out / "plugin").read_text() == "tools.sampler"
     finally:
         la.stop_all()
+
+
+def _as_launcher(project):
+    runtime.update(project, lambda d: d.__setitem__("launcher", runtime.me()))
+
+
+def test_a_restart_request_is_recorded_and_an_unknown_name_refused(project):
+    with pytest.raises(ValueError, match="no orchestra run launches"):
+        runtime.request_restart(project, "app", by="supervisor", reason="stuck")
+    declare(project, ("app", SLEEPER, "always"))
+    la, _, _ = launcher(project)
+    try:
+        _as_launcher(project)
+        la.tick()
+        with pytest.raises(ValueError, match="no process named 'nope'; the host keeps app"):
+            runtime.request_restart(project, "nope", by="supervisor", reason="stuck")
+        assert "restart_requests" not in runtime.read(project)
+        req = runtime.request_restart(project, "app", by="supervisor", reason="stuck")
+        rec = runtime.read(project)["restart_requests"]["app"]
+        assert req == {"name": "app", **rec} and rec["by"] == "supervisor" and rec["reason"] == "stuck"
+        assert abs(rec["requested_at"] - time.time()) < 5
+    finally:
+        la.stop_all()
+
+
+def test_a_requested_restart_restarts_a_running_command_once_and_clears_the_request(project):
+    from orchestra.web.core import _requested
+
+    declare(project, ("app", SLEEPER, "always"))
+    la, events, _ = launcher(project)
+    try:
+        _as_launcher(project)
+        until(lambda: la.runs["app"].state == "running", la)
+        pid = la.runs["app"].popen.pid
+        req = runtime.request_restart(project, "app", by="supervisor", reason="it stopped answering")
+        assert _requested(runtime.read(project)["restart_requests"]["app"]).startswith("restart requested by supervisor at 20")
+        la.tick()
+        assert la.runs["app"].state == "running" and la.runs["app"].popen.pid != pid and not runtime.alive(pid)
+        assert "restart_requests" not in runtime.read(project)
+        for _ in range(5):
+            la.tick()
+        told = [d for t, d in events if t == "orchestra.process.restart_requested"]
+        assert told == [{"name": "app", "by": "supervisor", "reason": "it stopped answering", "owner": "project"}]
+        assert sum(t == "orchestra.process.started" for t, _ in events) == 2
+        assert la.runs["app"].popen.pid == runtime.read(project)["processes"]["app"]["pid"]
+        assert "restart requested by supervisor: it stopped answering" in (project.logs_dir / "machines" / "app.log").read_text()
+        assert req["requested_at"]
+    finally:
+        la.stop_all()
+
+
+def test_a_crashed_out_process_is_started_at_once_with_its_budget_reset(project):
+    flag = project.repo_root / "fixed"
+    code = f"import os, sys, time; os.path.exists({str(flag)!r}) or sys.exit(2); time.sleep(30)"
+    declare(project, ("flaky", code, "always"))
+    la, events, _ = launcher(project, give_up_after=2)
+    try:
+        _as_launcher(project)
+        until(lambda: la.runs["flaky"].state == "backing_off", la)
+        assert la.runs["flaky"].start_at - time.time() > 30         # the next try is a minute away
+        flag.write_text("")
+        runtime.request_restart(project, "flaky", by="supervisor", reason="fixed its input")
+        la.tick()
+        run = la.runs["flaky"]
+        assert run.state == "running" and run.failures == run.quick == 0
+        rec = runtime.read(project)["processes"]["flaky"]
+        assert rec["state"] == "running" and "note" not in rec and "restart_requests" not in runtime.read(project)
+        assert [d["by"] for t, d in events if t == "orchestra.process.restart_requested"] == ["supervisor"]
+    finally:
+        la.stop_all()

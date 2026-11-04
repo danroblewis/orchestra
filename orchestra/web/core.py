@@ -98,6 +98,15 @@ def _proc(pid) -> dict:
         return {"pid": pid, "alive": False}
 
 
+def _requested(req: dict) -> str:
+    """A pending restart request (``runtime.request_restart``), as the process line says it."""
+    try:
+        at = datetime.fromtimestamp(float(req.get("requested_at"))).strftime("%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError, OverflowError, OSError):
+        at = "an unknown time"
+    return f"restart requested by {req.get('by') or 'someone unnamed'} at {at}"
+
+
 def _written(path: Path) -> float | None:
     """When a file was last written, or None."""
     try:
@@ -192,9 +201,10 @@ class CoreProbe:
 
     def _processes(self, record: dict) -> list[dict]:
         """What the host's launcher keeps running (orchestra/launcher.py), as it recorded them."""
-        out = []
+        out, asked = [], record.get("restart_requests") or {}
         for name, r in sorted((record.get("processes") or {}).items()):
-            out.append({"name": name, "state": r.get("state"), "owner": r.get("owner"), "restarts": r.get("restarts", 0),
+            req = asked.get(name) if isinstance(asked.get(name), dict) else None
+            out.append({"restart_requested": _requested(req) if req else None, "name": name, "state": r.get("state"), "owner": r.get("owner"), "restarts": r.get("restarts", 0),
                         "code": r.get("code"), "command": r.get("command") or [],
                         "crashes": r.get("crashes"), "next_try": r.get("next_try"), "note": r.get("note"),
                         **(_proc(r["pid"]) if r.get("pid") else {"alive": False}), "since": r.get("since"),

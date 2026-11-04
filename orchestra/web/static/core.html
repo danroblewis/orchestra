@@ -133,7 +133,7 @@ function processesHtml(ps) {
   if (!ps.length) return "";
   // a stopped (paused) process is alive and does nothing: never said "running"; its log's last write beside it
   const logAge = (p) => (p.log_written ? ` · <span title="when its log was last written">log written ${since(p.log_written)} ago</span>` : "");
-  const row = (p) => `<tr data-name="${esc(p.name)}"><td><b>${esc(p.name)}</b>${p.owner && p.owner !== "project" ? ` <span class="muted">(${esc(p.owner)})</span>` : ""}</td>
+  const row = (p) => `<tr data-name="${esc(p.name)}"><td><b>${esc(p.name)}</b>${p.owner && p.owner !== "project" ? ` <span class="muted">(${esc(p.owner)})</span>` : ""}${p.restart_requested ? `<div class="stale" title="asked of the host; it restarts the process at its next tick">${esc(p.restart_requested)}</div>` : ""}</td>
     <td>${p.state === "running" && p.paused ? `<span class="stale" title="the system says it is stopped (SIGSTOP, a debugger, Ctrl-Z): alive, doing nothing">${esc(p.paused)}</span>` : p.state === "running" ? "running" : `<span class="stale">${esc(p.state === "backing_off" && p.note ? p.note : PROC_STATE[p.state] || p.state)}${p.code != null ? ` · exit ${p.code}` : ""}</span>`}</td>
     <td class="num">${p.alive ? `pid ${p.pid} · up ${since(p.since)} · ${fmtBytes(p.rss || 0)}` : "—"}${logAge(p)}</td>
     <td class="num">${p.restarts ? `${p.restarts} restart${p.restarts > 1 ? "s" : ""}` : ""}${p.state === "running" && p.code != null ? ` · last exit ${p.code}` : ""}</td>

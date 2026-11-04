@@ -20,7 +20,7 @@ SURFACE = {
     "orchestra.metrics": ["MetricsStore", "Point", "ProjectStore", "for_project", "step_sample"],
     "orchestra.overlay": ["OVERLAY", "REPO", "describe"],
     "orchestra.plugins": ["Declared", "Page", "Plugin"],
-    "orchestra.runtime": ["alive"],
+    "orchestra.runtime": ["alive", "request_restart"],
     "orchestra.sd.discover": ["MIN_COVER", "MIN_STEPS"],
     "orchestra.sd.eras": ["recorded"],
     "orchestra.sd.flows_of": ["flows_of", "name_unit"],

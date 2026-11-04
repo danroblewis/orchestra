@@ -1535,7 +1535,14 @@ spent: it is stopped and tried again after one minute, then five, fifteen, then 
 as the host runs, which the host's log, the process's log and the bus (`orchestra.process.gave_up`,
 once per spent budget, with `next_try`) say; its record (and the Core page) says `stopped after N
 crashes; next try at <time>`. A try that stays up a minute resets the budget. It is tried at once
-when its entry changes or the host restarts. A plugin's process may name the settings it reads at start
+when its entry changes or the host restarts. A restart may be requested
+(`runtime.request_restart(project, name, *, by, reason)`, the Supervisor's through its plugin, §2
+rule 9): recorded in the runtime record under `restart_requests` (`by`, `reason`, `requested_at`;
+refused, with the reason, when no host launches or no process has that name), shown on the Core
+page's process line as `restart requested by <by> at <time>`, and carried out at the launcher's
+next tick whatever the process's state: stopped if it runs (SIGTERM, then SIGKILL after its grace),
+its crash budget and backoff reset, started at once, the request cleared and
+`orchestra.process.restart_requested` published (`name`, `by`, `reason`, `owner`). A plugin's process may name the settings it reads at start
 (`Process.config_keys`, dotted keys of the merged configuration): a change under them restarts
 it, and tries at once one backing off. The host also publishes `orchestra.process.started` and
 `orchestra.process.exited`. It re-reads the configuration (`orchestra.toml` with the private

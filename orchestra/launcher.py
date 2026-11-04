@@ -21,7 +21,11 @@ within ``STABLE_S`` of starting, has spent its fast-crash budget: it is stopped 
 the backoff schedule (``BACKOFF_SCHEDULE``: one minute, five, fifteen, then hourly) for as long as
 the host runs, said in the host's log, the process's log and on the bus (``orchestra.process.gave_up``,
 once per spent budget, with ``next_try``), and recorded as ``stopped after N crashes; next try at
-<time>``. One that then stays up ``STABLE_S`` has its budget reset. ``orchestra.toml`` (and the private overlay, ``orchestra.overlay``) is read again whenever it changes, so a
+<time>``. One that then stays up ``STABLE_S`` has its budget reset. A restart asked for in the
+runtime record (``runtime.request_restart``, the Supervisor's) is carried out at the next tick, for
+a process declared here, whatever its state: stopped if it runs (SIGTERM, then SIGKILL after its
+grace), its crash budget and backoff reset, started again at once, the request cleared, and
+``orchestra.process.restart_requested`` published (``by``, ``reason``). ``orchestra.toml`` (and the private overlay, ``orchestra.overlay``) is read again whenever it changes, so a
 machine added by a merged commit starts without restarting the host, one removed stops, and one
 whose command or restart changed is restarted (and a backing-off one tried at once); the plugins'
 processes are asked for again then too, so a plugin's section added or removed starts or stops
@@ -330,6 +334,7 @@ class Launcher:
             self._stop([self.runs[n] for n in gone], "no longer declared as it was")
             for n in gone:
                 del self.runs[n]
+        requests = dict(runtime.read(self.project).get("restart_requests") or {})
         now = time.time()
         for name, spec in wanted.items():
             run = self.runs.get(name)
@@ -337,13 +342,41 @@ class Launcher:
                 run = self.runs[name] = _Run(spec, self.project.logs_dir / "machines" / f"{name}.log",
                                              fingerprint=prints[name])
             run.spec = spec                                       # the owner may have changed
+            if (req := requests.pop(name, None)) is not None:
+                self._restart(run, req)
+                continue
             if run.state == "running" and run.popen is not None and (code := run.popen.poll()) is not None:
                 self._exited(run, code)
             elif run.state == "running" and run.failures and now - run.started >= self.stable_s:
                 run.quick = run.failures = 0                      # it stayed up: its budget is whole again
             if run.state in ("waiting", "backing_off") and now >= run.start_at:
                 self._start(run)
+        for name, req in requests.items():                        # for nothing declared here: dropped, and said
+            self.log(f"launcher: restart of {name} requested by {req.get('by')}: not declared here; dropped")
+            self._clear_request(name, req)
         self._record()
+
+    def _restart(self, run: _Run, req: dict) -> None:
+        """Carry out a requested restart: stop it if it runs, reset its budget and pause, start it now."""
+        by, reason = req.get("by"), req.get("reason")
+        self._stop([run], f"restart requested by {by}")
+        run.quick = run.failures = 0
+        self._note(run, f"restart requested by {by}: {reason}")
+        self._clear_request(run.spec.name, req)
+        self._tell("orchestra.process.restart_requested", {"name": run.spec.name, "by": by, "reason": reason,
+                                                            "owner": run.spec.owner})
+        run.restarts += 1
+        self._start(run)
+
+    def _clear_request(self, name: str, req: dict) -> None:
+        """Clear this request, and not one made since it was read."""
+        def clear(d: dict) -> None:
+            reqs = d.get("restart_requests") or {}
+            if reqs.get(name) == req:
+                del reqs[name]
+            if not reqs:
+                d.pop("restart_requests", None)
+        runtime.update(self.project, clear)
 
     def stop_all(self) -> None:
         self._stop(list(self.runs.values()), "orchestra run stopping")

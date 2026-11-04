@@ -142,7 +142,10 @@ count: after five in a row, each within a minute of starting, it backs off and i
 one minute, then five, fifteen, then hourly, for as long as `orchestra run` runs, which its log, the
 host's log, the Core page (`stopped after N crashes; next try at <time>`) and the bus
 (`orchestra.process.gave_up`, once) say; a try that stays up a minute starts the count over. It is
-tried at once when its entry changes or `orchestra run` restarts. A program that exits 0 is started
+tried at once when its entry changes or `orchestra run` restarts, or when the Supervisor asks
+for a restart (`runtime.request_restart`): it is then stopped if it runs, its count reset and
+started at once, the Core page saying `restart requested by <by> at <time>` until it happens and
+the bus `orchestra.process.restart_requested` (with `by` and `reason`) when it does. A program that exits 0 is started
 again after the pause and never backs off. For a measurement on a clock, a `[[collect]]` script is simpler.
 
 `orchestra.toml` is read again whenever it changes: an entry added (by a merge into the

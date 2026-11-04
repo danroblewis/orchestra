@@ -403,12 +403,19 @@ How the launcher runs it (`orchestra/launcher.py`):
   `<state>/logs/machines/<plugin>.<name>.log` (rotated at 5 MB);
 - restarted after it exits (per `restart`), after a pause that doubles with each quick exit, up to
   a minute. After 5 failing exits in a row, each within 60 s of starting, it is given up on
-  (`orchestra.process.gave_up`), until its declaration or the settings under its `config_keys`
-  change, or `orchestra run` restarts;
+  (`orchestra.process.gave_up`) and tried on the backoff schedule, at once when its declaration or
+  the settings under its `config_keys` change, or `orchestra run` restarts;
+- restarted on request: `orchestra.runtime.request_restart(project, name, *, by, reason)` records
+  the request in the runtime record (raising `ValueError` with the reason when no host launches or
+  no process is named `name`, the full `<plugin>.<name>`); at its next tick the launcher stops it
+  if it runs, resets its crash budget and backoff, starts it again, clears the request and
+  publishes `orchestra.process.restart_requested` (`name`, `by`, `reason`, `owner`). The Core page
+  says `restart requested by <by> at <time>` until then. This is how a Supervisor tool restarts a
+  process; nothing else writes the runtime record;
 - stopped with SIGTERM to its group, then SIGKILL after its grace, when the host stops, or when the
   plugin no longer declares it, or declares it differently (a different argv or restart), or the
   settings under its `config_keys` change (it is then started again with them);
-- published by the host as `orchestra.process.started` / `exited` / `gave_up` (source
+- published by the host as `orchestra.process.started` / `exited` / `gave_up` / `restart_requested` (source
   `orchestra-host`, `data.owner` = your plugin's name), and listed on the Core page.
 
 Only one host launches per project (`launcher` in the runtime record). A second `orchestra run`
@@ -992,7 +999,7 @@ These follow from AGENTS.md. The plugins' own `AGENTS.md` files repeat them.
   `orchestra.events.Events` or the events endpoint, metrics through `orchestra.metrics`, config through
   `orchestra.config` (`project.config` to read, `project.config_edit` to change; never open
   `orchestra.toml` or the overlay). Never open the JSONL files, Redis or VictoriaMetrics yourself, and never
-  write Orchestra's `runtime.json`, `events.jsonl` or `metrics.jsonl`. Other stores
+  write Orchestra's `runtime.json` (a restart request goes through `runtime.request_restart`), `events.jsonl` or `metrics.jsonl`. Other stores
   (`[[sources]]`) are read only, through `orchestra.sources`;
 - **keep state anywhere but its own place**: `~/.orchestrator/<key>/<plugin>/`
   (`project.state_dir / "tasks"`, `.../"agents"`), or the bus and the store themselves. Records
@@ -1785,7 +1792,7 @@ How to stay compatible:
     `orchestra.tokens` (`owner_only`);
   - **the bus, the store and the record:** `orchestra.events` (`Events`, `event_time`,
     `machine_and_instance`, `now`), `orchestra.endpoint`, `orchestra.metrics` (`MetricsStore`,
-    `Point`, `ProjectStore`, `for_project`, `step_sample`), `orchestra.runtime` (`alive`);
+    `Point`, `ProjectStore`, `for_project`, `step_sample`), `orchestra.runtime` (`alive`, `request_restart`);
   - **other stores:** `orchestra.sources` (`SourceError`, `report`), `orchestra.sources.spec`
     (`Specs`, `for_project`, `load`), `.limits` (`Budget`, `RateLimit`, `store_dir`, `store_key`),
     `.catalogue` (`Catalogue`), `.listing` (`listing`, `TooManyNames`), `.plan` (`counter_step`,
