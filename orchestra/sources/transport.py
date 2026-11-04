@@ -123,6 +123,7 @@ class Transport:
         none, nothing is logged. ``by``: who asks, as the log says it (changed by whoever borrows it)."""
         self.log_dir = log_dir
         self.by = by
+        self.run: str | None = None             # the run whose requests these are (sd/runs.py), as the log tags them
         self._attempt = threading.local()       # when this thread's last request was sent
         self.spec = spec
         self.name = spec.name
@@ -161,12 +162,14 @@ class Transport:
         reqlog.append(self.log_dir, self.spec.name, {
             "endpoint": path, "query": q, "window": window, **({"step": step} if step is not None else {}),
             "series": series, "points": points, "ms": round(1000 * (time.monotonic() - began), 1), "by": self.by,
+            **({"bytes": size} if (size := getattr(self._attempt, "bytes", None)) is not None and error is None else {}),
+            **({"run": self.run} if self.run else {}),
             **({"sent": False} if not sent else {}), **({"error": error} if error else {})})
 
     def _call(self, path: str, form: dict | None = None, *, post: bool = True, until: float | None = None) -> dict | list:
         """One request, asked again as ``_ask`` says, and logged: the answer's size, or why it failed
         (a refusal before anything was sent, ``sent`` false)."""
-        self._attempt.at = None
+        self._attempt.at = self._attempt.bytes = None
         began = time.monotonic()
         try:
             data = self._ask(path, form, post=post, until=until)
@@ -202,6 +205,7 @@ class Transport:
             try:
                 with self._open(req) as r:
                     raw = r.read()
+                self._attempt.bytes = len(raw)
                 break
             except urllib.error.HTTPError as e:
                 self.throttled += e.code == 429

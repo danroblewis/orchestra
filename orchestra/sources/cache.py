@@ -167,13 +167,15 @@ def _fresh(inf: Inference | None, key: str, spec: SourceSpec, serves: float) -> 
 
 def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path, state_dir: Path,
                 start: float, end: float, *, refresh: bool = False, until: float | None = None, infer_ok: bool = True,
-                judge_from: float | None = None, verdicts=None, held_s: float = 0.0) -> Inference:
+                judge_from: float | None = None, verdicts=None, held_s: float = 0.0, on_round=None) -> Inference:
     """The source's definitions (see the module's docstring). A round probes [start, end] and
     judges motion over the window it serves, from ``judge_from`` (default ``start``). Raises
     ``SourceError`` when there are none to read. ``verdicts``: the last discovery's of the
     candidates (``feedback.py``), or a function that reads them, called only when a round runs;
     ``held_s``: the source's held history (``explore.py``). The round remembers what the last one
-    under the same settings probed (``Inference.probed``)."""
+    under the same settings probed (``Inference.probed``). ``on_round(inf, error)``: told when a
+    round ran (not when the cache served), with what it gave or why it failed, for its run record
+    (``sd/runs.py``)."""
     key = settings_key(spec, declared, repo_root)
     judge_from = start if judge_from is None or judge_from > start else judge_from
     serves = end - judge_from
@@ -224,6 +226,8 @@ def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries]
             inf = infer(source, spec, declared, repo_root, start, end, until, known, old.remembered if old else None, judge_from,
                         old if same else None, said or {}, held_s)
         except Exception as e:
+            if on_round is not None:
+                on_round(None, e)
             said = str(e) if isinstance(e, (SourceError, TransformError)) else f"{type(e).__name__}: {e}"
             costly = isinstance(e, (PastDeadline, TooManyNames)) or "probes could not be made" in said
             rec = _failed(state_dir, spec, said, key, costly=costly, final=isinstance(e, TooManyNames))
@@ -232,6 +236,8 @@ def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries]
             then = "no next try until the settings change" if rec["stopped"] else f"the next try after {_when(rec['next'])}"
             old.error = f"inference failed ({said}); using the definitions inferred at {_when(old.at)}; {then}"
             return old
+        if on_round is not None:
+            on_round(inf, None)
         if same and not refresh and inferred(inf) < inferred(old) / 2:
             # A store that answered but held little in the window (a laptop that slept, a server
             # restarted empty) must not replace what was seen; the next discovery tries again.

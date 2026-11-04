@@ -118,6 +118,7 @@
 <script src="/static/promql-editor.js?v={{v}}"></script>
 <script src="/static/core-stores.js?v={{v}}"></script>
 <script src="/static/source-view.js?v={{v}}"></script>
+<script src="/static/discovery-runs.js?v={{v}}"></script>
 <script>
 let CORE = null, PROBE = null, LOG_SRC = "host", LOG_LINES = 200;
 const LOG_MAX_LINES = 2000;
@@ -153,7 +154,8 @@ function renderCore() {
       <div>version</div><div class="num">${esc(h.version)}${h.commit ? " · " + esc(h.commit) : ""} · ${esc(h.python)}</div>
       <div>project</div><div class="num">${esc(h.project)}</div>
       <div>state</div><div class="num">${esc(h.state)}</div>
-      <div>last log</div><div class="num" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(h.host_log_last || "—")}</div></div>${processesHtml(h.processes || [])}`;
+      <div>last log</div><div class="num" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(h.host_log_last || "—")}</div>
+      ${discoveryRow()}</div>${processesHtml(h.processes || [])}`;
   const types = ((b && b.recent_types) || []).map(([t, n]) => `<span class="ty">${esc(t)} <b>${n}</b></span>`).join("");
   const probe = PROBE ? (PROBE.ok ? `<div class="probe ok">✓ appended at offset ${PROBE.offset.toLocaleString()} in ${PROBE.append_ms} ms · read back by offset in ${PROBE.read_back_ms} ms</div>`
       : `<div class="probe bad">✗ ${esc(PROBE.error || "the probe event was not read back")}</div>`) : "";
@@ -175,7 +177,19 @@ function renderCore() {
   $("bus-card").innerHTML = card("Event bus", b, busHtml, `<button class="ctl" onclick="probeBus()" title="Append a bus_probe event to the stream and read it back by its offset">test write</button>`);
   $("met-card").innerHTML = card("Metrics store", m, metHtml);
 }
+// the discovery job's health, as the Dynamics page's drawer says it (/api/dynamics/runs/health,
+// read apart from /api/core: a model store that cannot be read never takes the Core page down)
+let DISC = null;
+function discoveryRow() {
+  if (!DISC || !DISC.ok || typeof DiscoveryRuns === "undefined") return "";
+  const h = DISC.health || {}, l = DISC.last, r = DISC.running;
+  return `<div>discovery</div><div>${DiscoveryRuns.dot(h)} ${(h.reasons || []).map(esc).join("; ")}${r ? ` · <span class="proc">${DiscoveryRuns.liveText(r)}</span>` : ""}${l ? ` · <a href="/dynamics" title="the Dynamics page's discovery line opens every run's cost">last run ${esc(DiscoveryRuns.dur(l.duration_s))}, ${DiscoveryRuns.requests(l)} requests, ${esc(l.outcome)}</a>` : ""}</div>`;
+}
+async function refreshDiscovery() {
+  try { DISC = await (await fetch("/api/dynamics/runs/health")).json(); } catch (e) { DISC = null; }
+}
 async function refreshCore() {
+  refreshDiscovery();
   try { CORE = await (await fetch("/api/core")).json(); Orchestra.conn(true); renderCore(); } catch (e) { Orchestra.conn(false, { seconds: true }); }
 }
 async function probeBus() {

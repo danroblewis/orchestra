@@ -317,7 +317,8 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
                 with reading_only():                # another store's definitions are the host's to infer
                     r = rediscover(project, core.metrics, strategy=body.get("strategy") or None, options=body.get("options"),
                                    window_s=body.get("window_s") or None, step_s=body.get("step_s") or None,
-                                   note="discovered on request: the structure changed", collectors=collectors_now())
+                                   note="discovered on request: the structure changed", collectors=collectors_now(),
+                                   trigger="button")
                 rediscovery.update(result={"at": r.at, "stocks": len(r.model.stocks), "flows": len(r.model.flows), "version": r.version,
                                            "strategy": r.strategy, "compute_ms": r.model.discovery.get("compute_ms"),
                                            **({"asked": r.model.discovery.get("strategy"), "sdlab": r.model.discovery["sdlab"]}
@@ -333,6 +334,19 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     @app.get("/api/dynamics/rediscover")
     def dynamics_rediscover_status() -> dict:
         return {"ok": True, **rediscovery}
+
+    @app.get("/api/dynamics/runs")
+    def dynamics_runs(n: int = 200) -> dict:
+        """What each discovery run and inference round cost, the run going now and the job's health
+        (sd/runs.py, sd/runhealth.py): the Dynamics page's discovery line and its drawer."""
+        from .runs_view import runs_view
+        return runs_view(project, n)
+
+    @app.get("/api/dynamics/runs/health")
+    def dynamics_runs_health() -> dict:
+        """The discovery job's health alone (the Core page's process section)."""
+        from .runs_view import health_view
+        return health_view(project)
 
     @app.get("/api/dynamics/history")
     def dynamics_history() -> dict:

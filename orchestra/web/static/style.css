@@ -201,3 +201,5 @@ g.ng-label:focus-visible .ng-elabel { fill:#fff; text-decoration:underline; stro
 /* a machine's kind, engagement and package: one pill wherever they are shown (the Dashboard's rows, the dialog) */
 .mchip { display:inline-block; font-size:10.5px; font-weight:400; padding:0 7px; border-radius:999px; border:1px solid var(--border2); color:var(--text2); white-space:nowrap; vertical-align:middle; text-transform:none; letter-spacing:0 }
 .evrow summary { display:flex; gap:10px; font-size:12px; padding:2px 0; cursor:pointer } .evrow .evenv { margin:4px 0 8px 14px; font-size:11.5px }
+/* the discovery job's health (discovery-runs.js): a shape and a colour, with its words beside it */
+.dr-dot { font-size:11px; display:inline-block; width:12px; text-align:center } .dr-green { color:#22c55e } .dr-amber { color:#f59e0b } .dr-red { color:#ef4444 } .dr-none { color:var(--muted) }

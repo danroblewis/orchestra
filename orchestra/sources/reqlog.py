@@ -7,7 +7,9 @@ Core page's guard): ``t`` (unix seconds), ``endpoint`` (the API path), ``query``
 an instant), ``step``, ``series`` and ``points`` in the answer, ``ms``, ``by`` (who asked:
 ``host`` for discovery's reads, ``infer`` for an inference round, ``page`` for the Core page's
 box, ``web`` for the web server's reads of the model's series, ``cli`` for ``orchestra sources``),
-``sent`` (false for a refusal never sent) and ``error``. Never a header, so never a credential.
+``sent`` (false for a refusal never sent), ``error``, ``bytes`` (the answer's size, when one came)
+and ``run`` (the discovery run or inference round that asked, ``sd/runs.py``, which derives each
+run's cost from the lines it tagged). Never a header, so never a credential.
 
 The log keeps the last ``KEEP`` lines: once it holds a tenth more, it is cut back to them (the
 newest kept), so it never grows past ``KEEP`` + ``KEEP``/10 lines. It never stops a read: a write
@@ -86,6 +88,16 @@ def _read(state_dir: Path | str, name: str) -> list[dict]:
         except ValueError:
             continue
     return out
+
+
+def lines_since(state_dir: Path | str, name: str, since: float) -> list[dict]:
+    """The lines logged at or after ``since``, oldest first (read from the end back to it)."""
+    out: list[dict] = []
+    for x in reversed(_read(state_dir, name)):
+        if (x.get("t") or 0) < since:
+            break
+        out.append(x)
+    return out[::-1]
 
 
 def last(state_dir: Path | str, name: str, n: int = 20) -> list[dict]:

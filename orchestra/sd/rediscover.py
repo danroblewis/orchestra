@@ -89,6 +89,7 @@ from .discover import MIN_STEPS, structure
 from .model import Model
 from .prior import merge
 from .provenance import annotate
+from .runs import Run, outcome_of, partial_of
 from .series import series_key
 from .store import ModelStore
 from .strategies import CONSERVATION, DEFAULT, sd_installed
@@ -249,8 +250,10 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
                window_s: float | None = None, step_s: float | None = None,
                note: str = "discovered: the structure changed", skip_if_busy: bool = False,
                events=None, now: float | None = None, collectors: list | None = None,
-               snapshot: Path | str | None = None) -> Result:
-    """``collectors``: the plugins' collectors the caller runs or has loaded, which say which
+               snapshot: Path | str | None = None, trigger: str = "cli") -> Result:
+    """``trigger``: what started it (``schedule``, ``button``, ``cli``, ``config change``), as its
+    run record says (``sd.runs``): every run is recorded, with what it cost the stores.
+    ``collectors``: the plugins' collectors the caller runs or has loaded, which say which
     instruments are simulated (``sd.simulated``); None loads the plugins when needed (the CLI).
     ``snapshot``: a directory to write what this discovery read to (``sd.snapshot``), so it can be
     replayed; nothing is written when the era is too young to read."""
@@ -262,63 +265,86 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
     step_s = step_s or cfg.discovery_step
     with _lock, discovery_lock(project.state_dir, wait=not skip_if_busy):
         store = ModelStore.for_state(project.state_dir)
-        if events is not None:
-            eras, _ = era_record.follow(store, events, project, events.publish)
-        else:
-            eras = era_record.recorded(store)
-        now = time.time() if now is None else now
-        era = era_record.current(eras, now)
-        own_from, cut = cuts(project, eras, now)
-        held: dict[str, float] = {}
-        if not asked:                         # the configured window: as long as the sources hold, within the era
-            catalogue = Catalogue(project, metrics)
-            a0, e0 = aligned(now - window_s, now, step_s)    # inferred over the window discovery would read without it
+        run = Run(store.runs(), project.state_dir, "discovery", trigger, specs=for_project(project).sources)
+        try:
+            r = _rediscover(project, metrics, store, run, strategy, options, window_s, step_s, asked, note, events, now,
+                            collectors, snapshot)
+        except BaseException as e:
+            why = "stopped mid-run" if type(e).__name__ == "Stopped" else f"{type(e).__name__}: {e}"
+            run.finish(f"failed: {why}", window_s=window_s, step_s=step_s,
+                       strategy={"configured": configured_strategy(project), "asked": strategy})
+            raise
+        d = r.model.discovery or {}
+        run.finish(outcome_of(r.model, r.version), model=r.model, window_s=d.get("window_s", window_s), step_s=d.get("step_s", step_s),
+                   strategy={"configured": configured_strategy(project), "asked": strategy, "ran": d.get("ran") or r.strategy},
+                   **({"partial": p} if (p := partial_of(r.model)) else {}), **({"version": r.version} if r.version else {}))
+        return r
+
+
+def _rediscover(project, metrics, store, run, strategy, options, window_s, step_s, asked, note, events, now, collectors,
+                snapshot) -> Result:
+    cfg = project.config
+    if events is not None:
+        eras, _ = era_record.follow(store, events, project, events.publish)
+    else:
+        eras = era_record.recorded(store)
+    now = time.time() if now is None else now
+    era = era_record.current(eras, now)
+    own_from, cut = cuts(project, eras, now)
+    held: dict[str, float] = {}
+    if not asked:                         # the configured window: as long as the sources hold, within the era
+        catalogue = Catalogue(project, metrics, run=run)
+        a0, e0 = aligned(now - window_s, now, step_s)    # inferred over the window discovery would read without it
+        with run.phase("reads"):
             held = catalogue.held(now, era_window(a0, e0, step_s, cut), e0) if catalogue.specs.sources else {}
-            window_s, step_s = held_window(window_s, step_s, max(held.values(), default=0.0), cut, now)
-        lengthened = window_s > cfg.discovery_window and bool(held)    # inferred over the configured window still
-        start, end = aligned(now - window_s, now, step_s)
-        start = era_window(start, end, step_s, cut)
-        own_from = own_from if own_from is not None and own_from > start else None    # the own series are cut further than the window
-        if era is None or end - start >= 2 * step_s:
-            base_s, tried, sparse_at, sparse_levels = window_s, [], None, set()
-            while True:
-                reading = Catalogue(project, metrics).read(start, end, step_s, infer_s=cfg.discovery_window if lengthened and not tried else None,
-                                                           own_from=own_from)
-                allowed = None
-                if snapshot is not None:
-                    sim = snap.simulated_allowed(project, reading, collectors)
-                    snap.write(snapshot, reading, start=start, end=end, step=step_s, strategy=strategy, options=options,
-                               deadline=DEADLINE_SHARE * cfg.discovery_every, window_s=window_s, project=project, simulated=sim)
-                    allowed = lambda sim=sim: set(sim or [])  # the same set the snapshot records
+        window_s, step_s = held_window(window_s, step_s, max(held.values(), default=0.0), cut, now)
+    lengthened = window_s > cfg.discovery_window and bool(held)    # inferred over the configured window still
+    start, end = aligned(now - window_s, now, step_s)
+    start = era_window(start, end, step_s, cut)
+    own_from = own_from if own_from is not None and own_from > start else None    # the own series are cut further than the window
+    if era is None or end - start >= 2 * step_s:
+        base_s, tried, sparse_at, sparse_levels = window_s, [], None, set()
+        while True:
+            with run.phase("reads"):
+                reading = Catalogue(project, metrics, run=run).read(start, end, step_s, own_from=own_from,
+                                                                    infer_s=cfg.discovery_window if lengthened and not tried else None)
+            allowed = None
+            if snapshot is not None:
+                sim = snap.simulated_allowed(project, reading, collectors)
+                snap.write(snapshot, reading, start=start, end=end, step=step_s, strategy=strategy, options=options,
+                           deadline=DEADLINE_SHARE * cfg.discovery_every, window_s=window_s, project=project, simulated=sim)
+                allowed = lambda sim=sim: set(sim or [])  # the same set the snapshot records
+            with run.phase("fit", strategy):
                 m = simulated.discovered(project, reading, collectors=collectors, start=start, end=end, step=step_s, strategy=strategy,
                                          options=options, deadline=DEADLINE_SHARE * cfg.discovery_every, provenance=reading.provenance,
                                          allowed=allowed)
                 annotate(m, reading.provenance)
-                wider = widen(m, window_s, step_s, now, cut, oldest(reading))
-                if wider is None and (thin := sparse_window(m, reading, window_s, step_s, now, cut)) is not None:
-                    sparse_at = sparse_at or window_s
-                    sparse_levels.update(thin[2])
-                    wider = thin[:2]
-                if wider is None:
-                    break
-                tried.append(window_s)
-                window_s, step_s = wider
-                start, end = aligned(now - window_s, now, step_s)
-                start = era_window(start, end, step_s, cut)
-                own_from = own_from if own_from is not None and own_from > start else None
-            if tried:
-                levels = f"{len(sparse_levels)} level{'s' if len(sparse_levels) != 1 else ''}"
-                why = (f"in the {window_words(sparse_at)} window {levels} over longer own data moved in fewer than {MIN_STEPS} "
-                       f"steps: widened for sparse data to {window_words(window_s)}" if sparse_at == base_s else
-                       f"the {window_words(base_s)} window held too few events for any counter (a balance needs {MIN_EVENTS}): "
-                       f"widened to {window_words(window_s)}" + (f", then for sparse data (in the {window_words(sparse_at)} window {levels} "
-                                                               f"moved in fewer than {MIN_STEPS} steps)" if sparse_at else ""))
-                m.discovery["widened"] = {"from_s": base_s, "tried_s": tried, "window_s": window_s, "step_s": step_s, "why": why,
-                                          **({"sparse": sorted(sparse_levels), "sparse_from_s": sparse_at, "needed": MIN_STEPS} if sparse_at else {})}
-        else:                                   # the era is too young to read: its prior, carried whole
-            reading = None
-            m = Model("system", "The system", "The era is too young to discover: its prior, carried.")
-            m.discovery = {"start": start, "end": end, "step": step_s, "left_out": {}, "too_young": True}
+            wider = widen(m, window_s, step_s, now, cut, oldest(reading))
+            if wider is None and (thin := sparse_window(m, reading, window_s, step_s, now, cut)) is not None:
+                sparse_at = sparse_at or window_s
+                sparse_levels.update(thin[2])
+                wider = thin[:2]
+            if wider is None:
+                break
+            tried.append(window_s)
+            window_s, step_s = wider
+            start, end = aligned(now - window_s, now, step_s)
+            start = era_window(start, end, step_s, cut)
+            own_from = own_from if own_from is not None and own_from > start else None
+        if tried:
+            levels = f"{len(sparse_levels)} level{'s' if len(sparse_levels) != 1 else ''}"
+            why = (f"in the {window_words(sparse_at)} window {levels} over longer own data moved in fewer than {MIN_STEPS} "
+                   f"steps: widened for sparse data to {window_words(window_s)}" if sparse_at == base_s else
+                   f"the {window_words(base_s)} window held too few events for any counter (a balance needs {MIN_EVENTS}): "
+                   f"widened to {window_words(window_s)}" + (f", then for sparse data (in the {window_words(sparse_at)} window {levels} "
+                                                           f"moved in fewer than {MIN_STEPS} steps)" if sparse_at else ""))
+            m.discovery["widened"] = {"from_s": base_s, "tried_s": tried, "window_s": window_s, "step_s": step_s, "why": why,
+                                      **({"sparse": sorted(sparse_levels), "sparse_from_s": sparse_at, "needed": MIN_STEPS} if sparse_at else {})}
+    else:                                   # the era is too young to read: its prior, carried whole
+        reading = None
+        m = Model("system", "The system", "The era is too young to discover: its prior, carried.")
+        m.discovery = {"start": start, "end": end, "step": step_s, "left_out": {}, "too_young": True}
+    with run.phase("saving"):
         m.discovery.update(window_s=window_s, step_s=step_s)
         if held and window_s > cfg.discovery_window:
             m.discovery["history"] = {"sources_s": {k: round(v) for k, v in held.items()}, "from_s": cfg.discovery_window,

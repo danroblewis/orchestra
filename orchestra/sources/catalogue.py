@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -164,9 +164,11 @@ def reading_only():
 
 class Catalogue:
     def __init__(self, project, metrics: MetricsStore | None, specs: Specs | None = None, *, infer: bool | None = None,
-                 share: bool = False, incremental: bool = True, by: str | None = None):
+                 share: bool = False, incremental: bool = True, by: str | None = None, run=None):
         """``share``: the web server's catalogue, reading from its share of each store (``web_share``)
-        under a small budget per round. ``incremental=False`` reads every window whole."""
+        under a small budget per round. ``incremental=False`` reads every window whole. ``run``: the
+        discovery run reading (``sd.runs.Run``): every request is tagged with its id, and an
+        inference round is timed as its phase and recorded as a round of its own."""
         self.project = project
         self.infer = (not getattr(_THREAD, "reading_only", False)) if infer is None else infer
         if specs is None:                  # orchestra.toml as it now is: an edited kinds or match is read at the next round
@@ -178,6 +180,9 @@ class Catalogue:
         self.by = by or ("web" if share else "host")
         self.remotes = {s.name: PrometheusSource(s, for_store(s, s.web_share if share else None), log_dir=Path(project.state_dir), by=self.by)
                         for s in self.specs.sources}
+        self.run = run
+        for src in self.remotes.values():
+            src.run = run.id if run is not None else None
         self.caches = {s.name: ReadCache(store_key(s.url, s.auth.headers), self._reads_file(s)) for s in self.specs.sources} if incremental else {}
         self._loaded: set[str] = set()
         self.errors: dict[str, str] = {}            # source -> why the last read of a model's series from it failed (reader)
@@ -205,15 +210,42 @@ class Catalogue:
     def inference(self, name: str, start: float, end: float, *, refresh: bool = False, until: float | None = None,
                   judge_from: float | None = None) -> Inference:
         src = self.remotes[name]
+        spec, state = self.spec(name), Path(self.project.state_dir)
+        rec = self._round(spec)
         was, src.by = src.by, "infer"            # an inference round's requests are logged as its own
+        run_was, src.run = src.run, rec.id if rec is not None else src.run
+
+        def ran(inf, error) -> None:
+            if rec is None:
+                return
+            try:
+                rec.finish(f"failed: {why(error)}" if error is not None else
+                           f"inferred {len(inf.kept)} definition{'s' if len(inf.kept) != 1 else ''}", window_s=end - start,
+                           source=name, **({"partial": inf.error or "a partial round"} if inf is not None and inf.partial else {}))
+            except Exception:  # noqa: BLE001, S110 - a record that cannot be written never fails a round
+                pass
         try:
-            spec, state = self.spec(name), Path(self.project.state_dir)
-            return definitions(src, spec, self.specs.declared, Path(self.project.repo_root),
-                               state, start, end, refresh=refresh, until=until, infer_ok=self.infer or refresh,
-                               judge_from=judge_from, verdicts=lambda: self.verdicts(name),
-                               held_s=held_record.span(held_record.read(state, name), spec, time.time()))
+            with self.run.phase("inference", name) if self.run is not None else nullcontext():
+                return definitions(src, spec, self.specs.declared, Path(self.project.repo_root),
+                                   state, start, end, refresh=refresh, until=until, infer_ok=self.infer or refresh,
+                                   judge_from=judge_from, verdicts=lambda: self.verdicts(name),
+                                   held_s=held_record.span(held_record.read(state, name), spec, time.time()), on_round=ran)
         finally:
-            src.by = was
+            src.by, src.run = was, run_was
+
+    def _round(self, spec: SourceSpec):
+        """The record of an inference round of ``spec`` (``sd.runs``), written only if one runs:
+        inside a discovery run, ``<its id>~infer-<source>``; else a run of its own."""
+        try:
+            from ..sd.runs import Run
+            from ..sd.store import ModelStore
+            parent = self.run
+            trigger = parent.trigger if parent is not None else ("cli" if self.by == "cli" else "schedule")
+            return Run(ModelStore.for_state(self.project.state_dir).runs(), self.project.state_dir, "inference", trigger,
+                       specs=[spec], run_id=f"{parent.id}~infer-{spec.name}" if parent is not None else None,
+                       parent=parent.id if parent is not None else None, live=False)
+        except Exception:  # noqa: BLE001 - no record, never a failed round
+            return None
 
     def verdicts(self, name: str) -> dict[str, dict]:
         """What the latest discovery made of each candidate the source's inference kept

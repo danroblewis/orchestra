@@ -374,12 +374,19 @@ class Host:
             self.log("discovery: " + extra.message("behaviour trust, divergence and SD Lab's strategies")
                      + "; discovering by conservation only")
         wait = 5.0                                    # soon after starting, then every interval (pace)
+        stamp = None                                  # the configuration the last discovery ran under
         while not self._stop.wait(wait):
             every = self.project.config.discovery_every
             wait, began = every, time.monotonic()
             try:
+                now_stamp = self.project.config_stamp()
+                trigger = "config change" if stamp is not None and now_stamp != stamp else "schedule"
+                stamp = now_stamp
+            except OSError:
+                trigger = "schedule"
+            try:
                 r = rediscover(self.project, metrics_for(self.project), skip_if_busy=True, events=self.events,
-                               collectors=self._collectors_run())
+                               collectors=self._collectors_run(), trigger=trigger)
                 took = time.monotonic() - began
                 wait = soon(r.model, pace(every, took))
                 self.log(discovery_line(r, took, every))

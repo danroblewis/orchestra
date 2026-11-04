@@ -125,6 +125,12 @@ class ModelStore:
         from .intended import IntendedStore
         return IntendedStore(self, project)
 
+    def runs(self):
+        """What each discovery run and inference round cost (``sd.runs``, ``runs.jsonl``): the only
+        way to it."""
+        from .runs import RunLog
+        return RunLog(self.dir)
+
     def read_record(self, name: str) -> dict | None:
         """One of the store's small records (``eras``, ``announce``), or None."""
         try:

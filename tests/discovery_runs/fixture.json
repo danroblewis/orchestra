@@ -1,0 +1,574 @@
+{
+ "ok": true,
+ "now": 1799944752,
+ "every_s": 300,
+ "running": null,
+ "runs": [
+  {
+   "id": "r0",
+   "kind": "discovery",
+   "trigger": "button",
+   "started": 1799928000,
+   "ended": 1799928040,
+   "duration_s": 40,
+   "phases": {
+    "reads": 16.0,
+    "inference": 4.0,
+    "fit": 18.0,
+    "saving": 2.0
+   },
+   "outcome": "unchanged",
+   "strategy": {
+    "configured": "kalman_lna",
+    "asked": "kalman_lna",
+    "ran": "kalman_lna"
+   },
+   "window_s": 3600,
+   "step_s": 30,
+   "cost": {
+    "chrono": {
+     "requests": 30,
+     "inference": 0,
+     "whole": 4,
+     "incremental": 26,
+     "series": 120,
+     "points": 4800,
+     "bytes": 512000,
+     "wait_ms": 9100,
+     "refused": 0,
+     "errors": 0,
+     "today": 4100,
+     "per_day": 20000
+    }
+   },
+   "result": {
+    "stocks": 5,
+    "flows": 9,
+    "left_out": 31
+   }
+  },
+  {
+   "id": "r1",
+   "kind": "discovery",
+   "trigger": "schedule",
+   "started": 1799929500,
+   "ended": 1799929543,
+   "duration_s": 43,
+   "phases": {
+    "reads": 17.2,
+    "inference": 4.3,
+    "fit": 19.35,
+    "saving": 2.15
+   },
+   "outcome": "unchanged",
+   "strategy": {
+    "configured": "kalman_lna",
+    "asked": "kalman_lna",
+    "ran": "kalman_lna"
+   },
+   "window_s": 3600,
+   "step_s": 30,
+   "cost": {
+    "chrono": {
+     "requests": 31,
+     "inference": 0,
+     "whole": 4,
+     "incremental": 27,
+     "series": 120,
+     "points": 4800,
+     "bytes": 512000,
+     "wait_ms": 9100,
+     "refused": 0,
+     "errors": 0,
+     "today": 4100,
+     "per_day": 20000
+    }
+   },
+   "result": {
+    "stocks": 5,
+    "flows": 9,
+    "left_out": 31
+   }
+  },
+  {
+   "id": "r2",
+   "kind": "discovery",
+   "trigger": "schedule",
+   "started": 1799931000,
+   "ended": 1799931046,
+   "duration_s": 46,
+   "phases": {
+    "reads": 18.400000000000002,
+    "inference": 4.6000000000000005,
+    "fit": 20.7,
+    "saving": 2.3000000000000003
+   },
+   "outcome": "unchanged",
+   "strategy": {
+    "configured": "kalman_lna",
+    "asked": "kalman_lna",
+    "ran": "kalman_lna"
+   },
+   "window_s": 3600,
+   "step_s": 30,
+   "cost": {
+    "chrono": {
+     "requests": 32,
+     "inference": 0,
+     "whole": 4,
+     "incremental": 28,
+     "series": 120,
+     "points": 4800,
+     "bytes": 512000,
+     "wait_ms": 9100,
+     "refused": 0,
+     "errors": 0,
+     "today": 4100,
+     "per_day": 20000
+    }
+   },
+   "result": {
+    "stocks": 5,
+    "flows": 9,
+    "left_out": 31
+   }
+  },
+  {
+   "id": "r3",
+   "kind": "discovery",
+   "trigger": "schedule",
+   "started": 1799932500,
+   "ended": 1799932549,
+   "duration_s": 49,
+   "phases": {
+    "reads": 19.6,
+    "inference": 4.9,
+    "fit": 22.05,
+    "saving": 2.45
+   },
+   "outcome": "unchanged",
+   "strategy": {
+    "configured": "kalman_lna",
+    "asked": "kalman_lna",
+    "ran": "kalman_lna"
+   },
+   "window_s": 3600,
+   "step_s": 30,
+   "cost": {
+    "chrono": {
+     "requests": 33,
+     "inference": 0,
+     "whole": 4,
+     "incremental": 29,
+     "series": 120,
+     "points": 4800,
+     "bytes": 512000,
+     "wait_ms": 9100,
+     "refused": 0,
+     "errors": 0,
+     "today": 4100,
+     "per_day": 20000
+    }
+   },
+   "result": {
+    "stocks": 5,
+    "flows": 9,
+    "left_out": 31
+   }
+  },
+  {
+   "id": "r3~infer-chrono",
+   "kind": "inference",
+   "trigger": "schedule",
+   "parent": "r3",
+   "source": "chrono",
+   "started": 1799932501,
+   "ended": 1799932521,
+   "duration_s": 20,
+   "phases": {
+    "inference": 20
+   },
+   "outcome": "inferred 14 definitions",
+   "window_s": 3600,
+   "cost": {
+    "chrono": {
+     "requests": 22,
+     "inference": 22,
+     "whole": 0,
+     "incremental": 0,
+     "series": 300,
+     "points": 0,
+     "bytes": 90000,
+     "wait_ms": 6000,
+     "refused": 0,
+     "errors": 0
+    }
+   }
+  },
+  {
+   "id": "r4",
+   "kind": "discovery",
+   "trigger": "button",
+   "started": 1799934000,
+   "ended": 1799934052,
+   "duration_s": 52,
+   "phases": {
+    "reads": 20.8,
+    "inference": 5.2,
+    "fit": 23.400000000000002,
+    "saving": 2.6
+   },
+   "outcome": "unchanged",
+   "strategy": {
+    "configured": "kalman_lna",
+    "asked": "kalman_lna",
+    "ran": "kalman_lna"
+   },
+   "window_s": 3600,
+   "step_s": 30,
+   "cost": {
+    "chrono": {
+     "requests": 34,
+     "inference": 0,
+     "whole": 4,
+     "incremental": 30,
+     "series": 120,
+     "points": 4800,
+     "bytes": 512000,
+     "wait_ms": 9100,
+     "refused": 0,
+     "errors": 0,
+     "today": 4100,
+     "per_day": 20000
+    }
+   },
+   "result": {
+    "stocks": 5,
+    "flows": 9,
+    "left_out": 31
+   }
+  },
+  {
+   "id": "r5",
+   "kind": "discovery",
+   "trigger": "schedule",
+   "started": 1799935500,
+   "ended": 1799935555,
+   "duration_s": 55,
+   "phases": {
+    "reads": 22.0,
+    "inference": 5.5,
+    "fit": 24.75,
+    "saving": 2.75
+   },
+   "outcome": "unchanged",
+   "strategy": {
+    "configured": "kalman_lna",
+    "asked": "kalman_lna",
+    "ran": "kalman_lna"
+   },
+   "window_s": 3600,
+   "step_s": 30,
+   "cost": {
+    "chrono": {
+     "requests": 35,
+     "inference": 0,
+     "whole": 4,
+     "incremental": 31,
+     "series": 120,
+     "points": 4800,
+     "bytes": 512000,
+     "wait_ms": 9100,
+     "refused": 0,
+     "errors": 0,
+     "today": 4100,
+     "per_day": 20000
+    }
+   },
+   "result": {
+    "stocks": 5,
+    "flows": 9,
+    "left_out": 31
+   }
+  },
+  {
+   "id": "r6",
+   "kind": "discovery",
+   "trigger": "schedule",
+   "started": 1799937000,
+   "ended": 1799937058,
+   "duration_s": 58,
+   "phases": {
+    "reads": 23.200000000000003,
+    "inference": 5.800000000000001,
+    "fit": 26.1,
+    "saving": 2.9000000000000004
+   },
+   "outcome": "unchanged",
+   "strategy": {
+    "configured": "kalman_lna",
+    "asked": "kalman_lna",
+    "ran": "kalman_lna"
+   },
+   "window_s": 3600,
+   "step_s": 30,
+   "cost": {
+    "chrono": {
+     "requests": 36,
+     "inference": 0,
+     "whole": 4,
+     "incremental": 32,
+     "series": 120,
+     "points": 4800,
+     "bytes": 512000,
+     "wait_ms": 9100,
+     "refused": 0,
+     "errors": 0,
+     "today": 4100,
+     "per_day": 20000
+    }
+   },
+   "result": {
+    "stocks": 5,
+    "flows": 9,
+    "left_out": 31
+   }
+  },
+  {
+   "id": "r7",
+   "kind": "discovery",
+   "trigger": "schedule",
+   "started": 1799938500,
+   "ended": 1799938561,
+   "duration_s": 61,
+   "phases": {
+    "reads": 24.400000000000002,
+    "inference": 6.1000000000000005,
+    "fit": 27.45,
+    "saving": 3.0500000000000003
+   },
+   "outcome": "unchanged",
+   "strategy": {
+    "configured": "kalman_lna",
+    "asked": "kalman_lna",
+    "ran": "kalman_lna"
+   },
+   "window_s": 3600,
+   "step_s": 30,
+   "cost": {
+    "chrono": {
+     "requests": 37,
+     "inference": 0,
+     "whole": 4,
+     "incremental": 33,
+     "series": 120,
+     "points": 4800,
+     "bytes": 512000,
+     "wait_ms": 9100,
+     "refused": 0,
+     "errors": 0,
+     "today": 4100,
+     "per_day": 20000
+    }
+   },
+   "result": {
+    "stocks": 5,
+    "flows": 9,
+    "left_out": 31
+   }
+  },
+  {
+   "id": "r8",
+   "kind": "discovery",
+   "trigger": "button",
+   "started": 1799940000,
+   "ended": 1799940064,
+   "duration_s": 64,
+   "phases": {
+    "reads": 25.6,
+    "inference": 6.4,
+    "fit": 28.8,
+    "saving": 3.2
+   },
+   "outcome": "unchanged",
+   "strategy": {
+    "configured": "kalman_lna",
+    "asked": "kalman_lna",
+    "ran": "kalman_lna"
+   },
+   "window_s": 3600,
+   "step_s": 30,
+   "cost": {
+    "chrono": {
+     "requests": 38,
+     "inference": 0,
+     "whole": 4,
+     "incremental": 34,
+     "series": 120,
+     "points": 4800,
+     "bytes": 512000,
+     "wait_ms": 9100,
+     "refused": 0,
+     "errors": 0,
+     "today": 4100,
+     "per_day": 20000
+    }
+   },
+   "result": {
+    "stocks": 5,
+    "flows": 9,
+    "left_out": 31
+   }
+  },
+  {
+   "id": "r9",
+   "kind": "discovery",
+   "trigger": "schedule",
+   "started": 1799941500,
+   "ended": 1799941567,
+   "duration_s": 67,
+   "phases": {
+    "reads": 26.8,
+    "inference": 6.7,
+    "fit": 30.150000000000002,
+    "saving": 3.35
+   },
+   "outcome": "unchanged",
+   "strategy": {
+    "configured": "kalman_lna",
+    "asked": "kalman_lna",
+    "ran": "kalman_lna"
+   },
+   "window_s": 3600,
+   "step_s": 30,
+   "cost": {
+    "chrono": {
+     "requests": 39,
+     "inference": 0,
+     "whole": 4,
+     "incremental": 35,
+     "series": 120,
+     "points": 4800,
+     "bytes": 512000,
+     "wait_ms": 9100,
+     "refused": 0,
+     "errors": 0,
+     "today": 4100,
+     "per_day": 20000
+    }
+   },
+   "result": {
+    "stocks": 5,
+    "flows": 9,
+    "left_out": 31
+   }
+  },
+  {
+   "id": "r10",
+   "kind": "discovery",
+   "trigger": "schedule",
+   "started": 1799943000,
+   "ended": 1799943192,
+   "duration_s": 192,
+   "phases": {
+    "reads": 76.80000000000001,
+    "inference": 19.200000000000003,
+    "fit": 86.4,
+    "saving": 9.600000000000001
+   },
+   "outcome": "unchanged",
+   "strategy": {
+    "configured": "kalman_lna",
+    "asked": "kalman_lna",
+    "ran": "kalman_lna"
+   },
+   "window_s": 3600,
+   "step_s": 30,
+   "cost": {
+    "chrono": {
+     "requests": 40,
+     "inference": 0,
+     "whole": 4,
+     "incremental": 36,
+     "series": 120,
+     "points": 4800,
+     "bytes": 512000,
+     "wait_ms": 9100,
+     "refused": 0,
+     "errors": 0,
+     "today": 4100,
+     "per_day": 20000
+    }
+   },
+   "result": {
+    "stocks": 5,
+    "flows": 9,
+    "left_out": 31
+   }
+  },
+  {
+   "id": "r11",
+   "kind": "discovery",
+   "trigger": "schedule",
+   "started": 1799944500,
+   "ended": 1799944692,
+   "duration_s": 192,
+   "phases": {
+    "reads": 61.2,
+    "inference": 0,
+    "fit": 121.5,
+    "saving": 9.3
+   },
+   "outcome": "saved v7",
+   "strategy": {
+    "configured": "kalman_lna",
+    "asked": "kalman_lna",
+    "ran": "kalman_lna"
+   },
+   "window_s": 3600,
+   "step_s": 30,
+   "cost": {
+    "chrono": {
+     "requests": 41,
+     "inference": 0,
+     "whole": 5,
+     "incremental": 36,
+     "series": 180,
+     "points": 10800,
+     "bytes": 2400000,
+     "wait_ms": 48000,
+     "refused": 1,
+     "errors": 0,
+     "today": 4141,
+     "per_day": 20000
+    },
+    "kube": {
+     "requests": 12,
+     "inference": 0,
+     "whole": 12,
+     "incremental": 0,
+     "series": 40,
+     "points": 1900,
+     "bytes": null,
+     "wait_ms": 3000,
+     "refused": 0,
+     "errors": 0,
+     "today": 200,
+     "per_day": 5000
+    }
+   },
+   "result": {
+    "stocks": 5,
+    "flows": 9,
+    "left_out": 31
+   }
+  }
+ ],
+ "caps": {},
+ "health": {
+  "level": "amber",
+  "reasons": [
+   "the last run took 3 m 12 s, more than 3\u00d7 the median of 58 s"
+  ]
+ }
+}
