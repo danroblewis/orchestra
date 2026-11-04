@@ -119,21 +119,23 @@ const PromEditor = (() => {
     return parts;
   }
 
-  function create(host, { onRun, catalog, placeholder = "" }) {
+  // ``labels(metric)``: a Map(label -> Set(values)) to use instead of the catalogue's; ``need(ctx)``:
+  // told what the caret needs, so a page can fetch it (bounded) and call ``refresh()`` when it arrives
+  function create(host, { onRun, catalog, placeholder = "", labels = null, need = null }) {
     host.classList.add("pq");
     host.innerHTML = `<pre class="pq-hl" aria-hidden="true"></pre><textarea class="pq-in" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off" rows="3" placeholder="${escH(placeholder)}"></textarea><div class="pq-ac" role="listbox"></div>`;
     const ta = host.querySelector("textarea"), hl = host.querySelector("pre"), ac = host.querySelector(".pq-ac");
     let items = [], sel = 0, ctx = null;
 
     const metrics = () => (catalog() || {}).metrics || [];
-    const labelsOf = (metric) => {
+    const labelsOf = labels || ((metric) => {
       const ms = metric ? metrics().filter((m) => m.name === metric) : metrics();
       const out = new Map();
       for (const m of ms) for (const [k, v] of Object.entries(m.labels)) if (k !== "project") {
         const cur = out.get(k) || new Set(); v.values.forEach((x) => cur.add(x)); out.set(k, cur);
       }
       return out;
-    };
+    });
     const metricsIn = (text) => metrics().map((m) => m.name).filter((n) => new RegExp(`\\b${n}\\b`).test(text));
 
     function sync() {
@@ -144,6 +146,7 @@ const PromEditor = (() => {
     }
     function suggest(force) {
       ctx = context(ta.value, ta.selectionStart);
+      if (need && ctx && (ctx.kind !== "name" || force || ctx.prefix.length >= 1)) need(ctx);
       items = [];
       if (ctx && ctx.kind === "label") {
         let labs;
@@ -158,7 +161,7 @@ const PromEditor = (() => {
           .map((v) => ({ text: v, insert: `"${v}"`, cls: "str", value: true }));
       } else if (ctx && ctx.kind === "name" && (force || ctx.prefix.length >= 1)) {
         const p = ctx.prefix.toLowerCase();
-        const ms = metrics().filter((m) => m.name.toLowerCase().includes(p)).map((m) => ({ text: m.name, insert: m.name, note: `${m.series} series`, cls: "met" }));
+        const ms = metrics().filter((m) => m.name.toLowerCase().includes(p)).map((m) => ({ text: m.name, insert: m.name, note: m.series != null ? `${m.series} series` : "", cls: "met" }));
         const fs = FUNCS.filter((f) => f.startsWith(p)).map((f) => ({ text: f, insert: f + "(", note: "function", cls: "fn" }));
         items = [...ms, ...fs];
         if (items.length === 1 && items[0].text === ctx.prefix) items = [];
@@ -271,6 +274,7 @@ const PromEditor = (() => {
       get value() { return ta.value; },
       set value(v) { if (v !== ta.value) { record(""); ta.value = v; } sync(); },
       focus() { ta.focus(); },
+      refresh() { if (document.activeElement === ta) suggest(false); },
     };
   }
   return { create };

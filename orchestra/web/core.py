@@ -17,7 +17,11 @@ Components:
 Logs: the bootstrap host's log file, a core log kept in this process (component state changes,
 errors, probe writes), the event stream's tail, and the logs of the processes the host launches
 (`orchestra/launcher.py`, read by `process_logs`: by name, bounded, within the state directory or
-the repository, under the same time limit)."""
+the repository, under the same time limit).
+
+The page's External stores section (``core_stores.py``) reads the ``[[sources]]`` entries through
+``orchestra.sources``, imported only when asked and under a time limit of its own (AGENTS.md rule 8,
+amended 2026-11-03: the external stores are part of the core, as its adaptors)."""
 
 from __future__ import annotations
 

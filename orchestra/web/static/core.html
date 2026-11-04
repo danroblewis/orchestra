@@ -55,6 +55,12 @@
   .qkeys .qk.on { border-color:var(--accent); color:var(--text) } .qkeys .qk.off { opacity:.5 } .qkeys .qk.clear { color:var(--accent) }
   .ckeys i { display:inline-block; width:10px; height:3px; border-radius:2px; margin-right:4px; vertical-align:middle }
   .scroll { max-height:340px; overflow:auto } .mono { font-family:var(--mono); font-size:11.5px }
+  .store { border-top:1px solid var(--border); padding:10px 0 12px } .store:first-of-type { border-top:0 }
+  .store > .sh { display:flex; gap:8px; align-items:baseline; font-size:13px; margin-bottom:6px } .store .sq { margin-top:8px }
+  .st-kv { grid-template-columns:max-content minmax(0, 1fr) } .st-out { margin-top:6px } .st-note { font-size:11px; color:var(--muted); overflow-wrap:anywhere }
+  .qbar input[type=number] { width:64px; background:var(--panel3); color:var(--text); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:11px; padding:1px 4px }
+  .qbar select { background:var(--panel3); color:var(--text); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:11px; padding:1px 6px }
+  .st-labels .lk { cursor:pointer } .st-labels .lk:hover b, .st-labels .lk:hover { color:var(--accent) }
 </style>
 </head>
 <body>
@@ -84,6 +90,11 @@
       <div id="mx-out"></div>
     </div>
   </section>
+  <div class="panel" id="st" style="margin-top:16px">
+    <h2 style="margin-top:0"><span>External stores</span><span class="hctl"><span class="muted" id="st-note"></span></span></h2>
+    <div class="intro" style="margin:0 0 6px">Other time-series stores this project reads where the data lives (<code>[[sources]]</code>): Orchestra's adaptors to them, read only through <code>orchestra.sources</code>. Every query here keeps within the store's <code>match</code>, needs a metric name or a label matcher of its own (never <code>{}</code>), reads a window of at most 24 h and at most its limit of series, counts against the store's shared request rate and daily cap, and is logged in <code>&lt;state&gt;/sources/&lt;name&gt;.asked.jsonl</code>. Labels come from the bounded label endpoints, never a listing of every series.</div>
+    <div id="st-list"></div>
+  </div>
   <div class="panel" id="cfg" style="margin-top:16px">
     <h2 style="margin-top:0"><span>Configuration</span><span class="hctl"><span class="muted" id="cfg-note"></span></span></h2>
     <div id="cfg-files" class="proc"></div>
@@ -105,6 +116,7 @@
 <script src="/static/app.js?v={{v}}"></script>
 <script src="/static/charts.js?v={{v}}"></script>
 <script src="/static/promql-editor.js?v={{v}}"></script>
+<script src="/static/core-stores.js?v={{v}}"></script>
 <script>
 let CORE = null, PROBE = null, LOG_SRC = "host", LOG_LINES = 200;
 const LOG_MAX_LINES = 2000;
@@ -325,6 +337,108 @@ async function loadLocal() {
     $("local-list").innerHTML = `<table class="ct"><tr><th>what</th><th>file</th><th>target</th><th>package (installed)</th><th>issue</th><th>status</th></tr>${local.map((x) => `<tr><td>${esc(x.kind_of)} <b>${esc(x.name)}</b></td><td class="mono">${esc(x.file || "")}</td><td class="mono">${esc(x.target || "")}</td><td class="mono">${esc(x.package || "")}${x.installed ? ` (${esc(x.installed)})` : ""}</td><td>${esc(x.issue || "")}</td><td${cls(x.status)}>${esc(x.status)}${x.error ? `: ${esc(x.error)}` : ""}</td></tr>`).join("")}</table>`;
   } catch (e) { $("local").style.display = "none"; }
 }
+// the external stores: their rows refresh; each store's query box is made once and kept
+let STORES = null;
+const STORE_Q = {};      // name -> { editor, cache, mode, minutes, limit, fetched }
+const STORE_WINDOWS = [["15 min", 15], ["1 h", 60], ["6 h", 360], ["24 h", 1440]];
+async function loadStores() {
+  let d;
+  try { d = await (await fetch("/api/core/stores")).json(); } catch (e) { d = { ok: false, error: "the web server did not answer: " + e }; }
+  const list = $("st-list"), state = CoreStores.stateHtml(d);
+  $("st-note").textContent = d.ok ? `${(d.stores || []).length} store${(d.stores || []).length === 1 ? "" : "s"}${(d.refused || []).length ? `, ${d.refused.length} refused` : ""} · read from files in ${d.read_ms} ms` : "";
+  if (state) { list.innerHTML = state; STORES = null; return; }
+  const names = d.stores.map((s) => s.name).join(",") + "|" + d.refused.map((r) => r.name).join(",");
+  if (STORES !== names) {
+    STORES = names;
+    list.innerHTML = d.stores.map((s) => `<div class="store" data-name="${esc(s.name)}"><div class="sh"><b>${esc(s.name)}</b><span class="muted">${esc(s.where)}</span></div>
+      <div class="st-row"></div><div class="sq"></div></div>`).join("") + d.refused.map(CoreStores.refusedHtml).join("");
+    for (const s of d.stores) storeQuery(s);
+  }
+  for (const s of d.stores) {
+    const el = list.querySelector(`.store[data-name="${s.name}"] .st-row`);
+    if (el) el.innerHTML = CoreStores.rowHtml(s);
+    if (STORE_Q[s.name]) STORE_Q[s.name].cap = s.max_series;
+  }
+}
+function storeQuery(s) {
+  const box = document.querySelector(`.store[data-name="${s.name}"] .sq`);
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem("orchestra.core.store." + s.name) || "{}"); } catch (e) {}
+  const st = STORE_Q[s.name] = { cache: CoreStores.cache(), mode: saved.mode || "range", minutes: saved.minutes || 60, limit: Math.min(saved.limit || 50, s.max_series), cap: s.max_series, fetched: {} };
+  box.innerHTML = `<div class="sl">query · PromQL · Enter runs · Ctrl+Space suggests, from the store's bounded label endpoints</div><div class="st-ed"></div>
+    <div class="qbar"><span class="seg st-mode"></span><select class="st-win" title="the window read: at most 24 h">${STORE_WINDOWS.map(([l, m]) => `<option value="${m}" ${m === st.minutes ? "selected" : ""}>${l}</option>`).join("")}</select>
+      <label title="at most this many series; at most the store's cap (max_series)">limit <input type="number" class="st-lim" min="1" max="${s.max_series}" value="${st.limit}"></label>
+      <button class="ctl st-run">run</button><button class="ctl st-lab" title="The label names within the store's match (and the query's first selector), from /api/v1/labels">labels</button><span class="st-note"></span></div>
+    <div class="st-labels"></div><div class="st-out"></div>`;
+  const renderMode = () => { box.querySelector(".st-mode").innerHTML = ["range", "instant"].map((m) => `<button class="${m === st.mode ? "on" : ""}" data-m="${m}">${m}</button>`).join(""); };
+  renderMode();
+  const keep = () => { try { localStorage.setItem("orchestra.core.store." + s.name, JSON.stringify({ mode: st.mode, minutes: st.minutes, limit: st.limit, q: st.editor.value })); } catch (e) {} };
+  box.querySelector(".st-mode").addEventListener("click", (e) => { const m = e.target.dataset.m; if (m) { st.mode = m; renderMode(); keep(); } });
+  box.querySelector(".st-win").addEventListener("change", (e) => { st.minutes = +e.target.value; keep(); });
+  box.querySelector(".st-lim").addEventListener("change", (e) => { st.limit = Math.max(1, Math.min(st.cap, +e.target.value || 50)); e.target.value = st.limit; keep(); });
+  box.querySelector(".st-run").addEventListener("click", () => storeRun(s.name));
+  box.querySelector(".st-lab").addEventListener("click", () => storeLabels(s.name));
+  st.editor = PromEditor.create(box.querySelector(".st-ed"), { onRun: () => storeRun(s.name), catalog: st.cache.catalog, labels: st.cache.labelsOf,
+    placeholder: 'up{job="api"}', need: (ctx) => storeNeed(s.name, ctx) });
+  st.editor.value = saved.q || "";
+}
+const storeUrl = (name, path, params) => `/api/core/stores/${encodeURIComponent(name)}/${path}?` + new URLSearchParams(params);
+// what the caret needs, asked once a minute at most per lookup, through the bounded endpoints
+async function storeNeed(name, ctx) {
+  const st = STORE_Q[name], look = CoreStores.lookup(ctx);
+  if (!look) return;
+  const key = look[0] + "|" + look[1].selector, now = Date.now();
+  if (st.fetched[key] && now - st.fetched[key] < 60000) return;
+  st.fetched[key] = now;
+  try {
+    const d = await (await fetch(storeUrl(name, look[0], { ...look[1], minutes: st.minutes, limit: st.cap }))).json();
+    if (!d.ok) { box(name, ".st-note").textContent = d.error; return; }
+    if (ctx.kind === "name") st.cache.addNames(d.values);
+    else if (ctx.kind === "label") st.cache.addLabels(ctx.metric, d.values);
+    else st.cache.addValues(ctx.metric, ctx.label, d.values);
+    st.editor.refresh();
+  } catch (e) {}
+}
+const box = (name, sel) => document.querySelector(`.store[data-name="${name}"] ${sel}`);
+async function storeLabels(name) {
+  const st = STORE_Q[name], first = CoreStores.firstSelector(st.editor.value);
+  const el = box(name, ".st-labels");
+  el.innerHTML = `<div class="muted" style="margin-top:6px">reading label names…</div>`;
+  try {
+    const d = await (await fetch(storeUrl(name, "labels", { selector: first, minutes: st.minutes, limit: st.cap }))).json();
+    if (!d.ok) { el.innerHTML = `<div class="probe bad" style="margin-top:6px">${esc(d.error)}</div>`; return; }
+    st.cache.addLabels(first.match(/^[a-zA-Z_:][\w:]*/)?.[0] || "", d.values);
+    el.innerHTML = `<div class="st-note" style="margin-top:6px">${d.values.length} label name${d.values.length === 1 ? "" : "s"}${first ? ` of ${esc(first)}` : ""} within the match (${(d.match || []).map(esc).join(", ") || "no match[]: the index's names"}) · click one for its values</div>`
+      + d.values.map((l) => `<span class="lk" data-l="${esc(l)}">${esc(l)}</span>`).join("") + `<div class="st-vals"></div>`;
+    el.querySelectorAll(".lk").forEach((k) => k.addEventListener("click", () => storeValues(name, k.dataset.l, first)));
+  } catch (e) { el.innerHTML = `<div class="probe bad">${esc(String(e))}</div>`; }
+}
+async function storeValues(name, label, selector) {
+  const st = STORE_Q[name], el = box(name, ".st-vals");
+  el.innerHTML = `<div class="muted">reading the values of ${esc(label)}…</div>`;
+  try {
+    const d = await (await fetch(storeUrl(name, `label/${encodeURIComponent(label)}/values`, { selector, minutes: st.minutes, limit: st.limit }))).json();
+    if (!d.ok) { el.innerHTML = `<div class="probe bad">${esc(d.error)}</div>`; return; }
+    el.innerHTML = `<div class="st-note">${esc(label)}: ${d.values.length}${d.values.length >= d.limit ? ` (the limit, ${d.limit})` : ""} value${d.values.length === 1 ? "" : "s"}</div><div class="mono" style="overflow-wrap:anywhere">${d.values.map(esc).join(" · ")}</div>`;
+  } catch (e) { el.innerHTML = `<div class="probe bad">${esc(String(e))}</div>`; }
+}
+async function storeRun(name) {
+  const st = STORE_Q[name], q = st.editor.value.trim(), out = box(name, ".st-out"), note = box(name, ".st-note");
+  if (!q) return;
+  st.limit = Math.max(1, Math.min(st.cap, +box(name, ".st-lim").value || 50));
+  try { localStorage.setItem("orchestra.core.store." + name, JSON.stringify({ mode: st.mode, minutes: st.minutes, limit: st.limit, q: st.editor.value })); } catch (e) {}
+  out.innerHTML = `<div class="muted" style="margin-top:6px">querying…</div>`; note.textContent = "";
+  try {
+    const d = await (await fetch(storeUrl(name, "query", { q, mode: st.mode, minutes: st.minutes, limit: st.limit }))).json();
+    if (!d.ok) { out.innerHTML = `<div class="probe bad" style="margin-top:6px;white-space:pre-wrap">${d.refused ? "refused: " : ""}${esc(d.error)}</div>`; return; }
+    note.textContent = CoreStores.noteText(d);
+    if (d.instant) { out.innerHTML = CoreStores.instantHtml(d); return; }
+    if (!d.lines.length) { out.innerHTML = `<div class="empty" style="margin-top:8px">no data in this range</div>`; return; }
+    const lines = d.lines.map((l, i) => ({ label: CoreStores.label(l.labels), points: l.points, color: Charts.PAL[i % Charts.PAL.length] }));
+    out.innerHTML = Charts.line(lines, { W: out.clientWidth, range: [d.start, d.end] });
+  } catch (e) { out.innerHTML = `<div class="probe bad">${esc(String(e))}</div>`; }
+}
+loadStores(); setInterval(loadStores, 15000);
 loadLocal(); setInterval(loadLocal, 30000);
 loadConfig(); setInterval(loadConfig, 30000);
 setInterval(loadCatalog, 10000); setInterval(loadEvents, 10000);

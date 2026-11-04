@@ -150,6 +150,20 @@ class RateLimit:
         if self.parent is not None:
             self.parent.hold(seconds)
 
+    def peek(self) -> dict:
+        """Today's count (UTC) and any hold, read without taking a token or writing the file (and
+        without creating it): what a page shows of the store's bucket."""
+        st = self._mem
+        if self.path is not None:
+            try:
+                d = json.loads(self.path.read_text() or "{}")
+                st = {"day": str(d.get("day") or ""), "count": int(d.get("count") or 0), "hold": float(d.get("hold") or 0.0)}
+            except (OSError, ValueError, TypeError):
+                st = {"day": "", "count": 0, "hold": 0.0}
+        now = self._clock()
+        return {"today": st.get("count", 0) if st.get("day") == _day(now) else 0, "per_day": self.per_day,
+                "held_s": round(max(0.0, st.get("hold", 0.0) - now), 1), "rate": self.rate, "burst": self.burst}
+
     def today(self) -> int:
         """Requests given out today (UTC) by this bucket, every process counted."""
         def fn(st):

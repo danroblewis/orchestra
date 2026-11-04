@@ -42,7 +42,9 @@ This document is the design of what exists. `AGENTS.md` lists the rules that mus
    generator relates them. Who wrote a series never makes a machine, and never associates one
    with a flow.
 6. **The core stays up.** The bus, the metrics store and the host are probed on their own, so the
-   Core page works when the model or every machine is broken.
+   Core page works when the model or every machine is broken. The external stores (`[[sources]]`)
+   are part of the core as its adaptors to other stores, read on the Core page only through
+   `orchestra.sources` and under the same time limit (§10, Core).
 
 ---
 
@@ -1139,6 +1141,22 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   discovery. Only the host's discovery and the CLI make a first read; a window or step asked for
   explicitly is read as asked.
 
+**From the Core page** (`sources/console.py`, `sources/asking.py`). A person may query a source
+there, and nothing asked can take the store down: every selector has the source's `match`
+conjoined, always (even on a label the selector constrains: `{namespace="other"}` under
+`namespace="shop"` asks for both and gets nothing; a match of selectors that differ cannot be
+conjoined, and the page refuses to query it); a selector needs a metric name or at least one label
+matcher of its own (`{}`, `{__name__=~".+"}`, a matcher with an empty or `.*`/`.+` value, and the
+match's own matchers count as none); a range query reads the last hour by default and a day at
+most, an instant query is evaluated at now, and no range or subquery reaches back more than a day;
+each selector is first counted with `/api/v1/series` over the window with `limit` + 1, and a query
+whose selector selects more than its limit (50 by default, at most `max_series`) is refused before
+it runs. Label names and values come from `/api/v1/labels` and `/api/v1/label/<name>/values` with
+`match[]` the conjoined selector (or the match alone, or none when the match selects everything:
+an index read), `start`/`end` the window and `limit`. Reads draw on the web server's share of the
+store's rate and daily cap; a spent cap is refused with when it resets (00:00 UTC). Every request
+and refusal is appended to `<state>/sources/<name>.asked.jsonl` with `reader` `core page`.
+
 **Counted traffic** (`sources/traffic.py`; `docs/proposals/event-sources.md` §1–3). A series
 definition may say what it counts on another system's bus:
 
@@ -2026,7 +2044,17 @@ it. Pages read only the web server's background caches
   the metrics store, each probed against its real backend within a time limit; explorers for the
   metrics (a catalogue of every series with the project's label, naming any series in the file
   store that lacks it, and a PromQL editor) and the events (types, volumes, sources); logs (the
-  host's, Core's, the event stream and each launched process's). It imports only the bus, the metrics store and the runtime record.
+  host's, Core's, the event stream and each launched process's). It imports only the bus, the metrics store and the runtime record,
+  and, for its **External stores** section, `orchestra.sources` (AGENTS.md rule 8, amended 2026-11-03: the owner counts the
+  external stores as part of the core, as its adaptors). That section (`web/core_stores.py`, `static/core-stores.js`) lists
+  every `[[sources]]` entry from files only, never a request: its name, backend, URL (redacted as the metrics store's), auth
+  form (the kinds and where each credential comes from, never a value or a file's contents), `match`, series and request
+  caps, the store's shared request count today against its daily cap (and the web server's share), the last read and the
+  last error, and the series definitions Orchestra keeps of it; a refused entry with why; "no `[[sources]]` entry" when
+  there is none. Each store has a query box (instant or range) and label lookups, bounded as §4.4 says ("From the Core
+  page"); its completion reads only the bounded label endpoints. `orchestra.sources` is imported only when the section
+  asks, and every call runs in the section's own workers under a time limit, so a store that cannot be reached, or a
+  package that cannot import, shows on the section and the rest of the page stands.
   Its bus probe appends an `orchestra.core.bus_probe` event (`data` `note`, from `orchestra-host`)
   and reads it back by offset: the web server's own event type, beside the owner's
   `orchestra.intent.requested`.
@@ -2146,7 +2174,8 @@ orchestra/
              exposition (the Prometheus text format), round, runner
   metrics/   file, victoria, promql
   sources/   other stores, read in place: spec, preset, auth, prometheus, own, schema, views,
-             transform, rank, infer, fetch, traffic (counted traffic), catalogue, report (the CLI's text)
+             transform, rank, infer, fetch, traffic (counted traffic), catalogue, report (the CLI's text),
+             console, asking and stores (the Core page's bounded queries and rows)
   sd/        model, store, fit, series and live (sampling, when a series was written), balance,
              collinear and restate (a level's balance), units (a balance's terms in the level's
              unit), identify, accept and construction (the evidence a balance must show),
@@ -2163,7 +2192,7 @@ orchestra/
              stepper), views, history, heldout, forward, predicted (a prediction's draft);
              experiments, which kept these, were removed on 2026-11-01
   sdlab/     SD Lab's discovery research: ~70 strategies (needs the sd extra)
-  web/       app, auth (the login, §10.2), core, core_explore, machines, instruments, traffic (counted traffic), dynamics, static/
+  web/       app, auth (the login, §10.2), core, core_explore, core_stores, machines, instruments, traffic (counted traffic), dynamics, static/
 tests/
   unit/  bus/  metrics/  sources/  acceptance/  e2e/ (slow, opt in: ORCHESTRA_E2E=1)
 ```

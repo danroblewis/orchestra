@@ -33,6 +33,7 @@ its count, a counter; the names seen so are kept in ``native``, so inference rea
 from __future__ import annotations
 
 import math
+import re
 import time
 
 from . import Health, Labels, PastDeadline, Points, SourceError
@@ -58,6 +59,7 @@ ENDPOINTS = {"query_range": ("/api/v1/query_range", {"query": PROBE_NAME, "start
              "labels": ("/api/v1/labels", {"match[]": PROBE_NAME, "limit": "1"}),
              "metadata": ("/api/v1/metadata", {"metric": PROBE_NAME, "limit": "1"}),
              "buildinfo": ("/api/v1/status/buildinfo", None)}
+LABEL_NAME = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 MIN_SPAN = 600.0                     # the shortest time range a refused read is split down to
 EVERYTHING = {'{__name__=~".+"}', "{__name__=~'.+'}", '{__name__=~".*"}', '{__name__!=""}'}   # match-everything selectors
 FEW_NAMES = 10                       # metadata asked name by name for at most this many names
@@ -202,6 +204,37 @@ class PrometheusSource(Transport):
         if not isinstance(data, list):
             raise SourceError(f"{self.spec.where()}/api/v1/label/__name__/values: not a Prometheus answer")
         return [str(x) for x in data]
+
+    def instant(self, query: str, at: float, until: float | None = None) -> list[tuple[Labels, Points]]:
+        """``query`` evaluated at ``at``: labels (with ``__name__``) and the point(s) of each result
+        (a range selector's raw samples; a scalar as one unlabelled point)."""
+        data = self._call("/api/v1/query", {"query": query, "time": f"{at:.3f}"}, until=until)
+        kind, res = (data.get("resultType"), data.get("result")) if isinstance(data, dict) else (None, None)
+        if kind == "scalar" and isinstance(res, list):
+            return [({}, _points([res]))]
+        if not isinstance(res, list) or not all(isinstance(r, dict) for r in res):
+            raise SourceError(f"{self.spec.where()}/api/v1/query: not a Prometheus answer")
+        return [(dict(r.get("metric") or {}), _points([r["value"]] if "value" in r else _samples(r))) for r in res]
+
+    def label_names(self, match: list[str], start: float, end: float, limit: int) -> list[str]:
+        """``/api/v1/labels`` within ``match`` (none: the index's names) over [start, end], at most ``limit``."""
+        return self._strings("/api/v1/labels", match, start, end, limit)
+
+    def label_values(self, label: str, match: list[str], start: float, end: float, limit: int) -> list[str]:
+        """``/api/v1/label/<label>/values`` within ``match`` (none: the index's values) over [start, end],
+        at most ``limit``."""
+        if not LABEL_NAME.match(label):
+            raise SourceError(f"{label!r} is not a label name")
+        return self._strings(f"/api/v1/label/{label}/values", match, start, end, limit)
+
+    def _strings(self, path: str, match: list[str], start: float, end: float, limit: int) -> list[str]:
+        form: dict = {"start": f"{start:.3f}", "end": f"{end:.3f}", "limit": str(max(1, limit))}
+        if match:
+            form["match[]"] = list(match)
+        data = self._call(path, form, post=False)
+        if not isinstance(data, list):
+            raise SourceError(f"{self.spec.where()}{path}: not a Prometheus answer")
+        return [str(x) for x in data][: max(1, limit)]
 
     def series(self, match: list[str], start: float, end: float, limit: int = 0, *, narrow: bool = True) -> list[Labels]:
         """``narrow``: a listing refused for its size is split by matcher, name and time (False:

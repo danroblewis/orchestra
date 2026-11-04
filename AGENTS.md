@@ -8,7 +8,8 @@ that must not be broken without updating the spec and saying so in the commit.
 These replaced the old task system's invariants on 2026-10-25, when the ticket
 tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
 Rules 2, 3, 4, 5, 6, 7 and 9 were amended on 2026-11-01 for the intended model
-(`docs/proposals/intended-model.md` §8).
+(`docs/proposals/intended-model.md` §8). Rule 8 was amended on 2026-11-03: the
+external stores are part of the core, as its adaptors (the owner).
 
 1. **Orchestra knows no tickets and no tasks, and runs no AI.** It has an
    event bus, a metrics store, a system dynamics model, a bootstrap host (with
@@ -140,7 +141,16 @@ Rules 2, 3, 4, 5, 6, 7 and 9 were amended on 2026-11-01 for the intended model
 8. **The core stays up.** `web/core.py` and `web/core_explore.py` import only
    the bus, the metrics store and the runtime record, and probe each under a
    time limit, so the Core page works when the model or every machine is
-   broken.
+   broken. The external stores (`[[sources]]`) are part of the core, as its
+   adaptors to other stores (the owner, 2026-11-03): the Core page
+   (`web/core.py` and its section `web/core_stores.py`) may also import
+   `orchestra.sources`, read-only, imported only when asked and probed under
+   the same time limit, so a store that cannot be reached, or an
+   `orchestra.sources` that cannot import, shows on its section and the rest
+   of the page stands. Every query the page makes of a store is within the
+   source's `match`, needs a selector of its own, is bounded in window and
+   series, counts against the store's rate and daily cap, and is logged
+   (`sources/console.py`, `sources/asking.py`).
 9. **Humans talk only to the Supervisor.** The web UI and CLI are read-only
    for humans, except for observations: rediscovering the model (the Dynamics
    page's button, `orchestra sd discover`) re-reads the metrics and may save a

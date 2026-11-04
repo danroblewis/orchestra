@@ -127,10 +127,11 @@ def _next(s: str, i: int) -> int:
     return i
 
 
-def scoped(expr: str, scope: list[str]) -> str:
-    """``expr`` with the scope's matchers in every vector selector (the module's docstring)."""
-    if not scope or not expr:
-        return expr
+def walk(expr: str, fn) -> str:
+    """``expr`` with every vector selector replaced by ``fn(name, block, head)``: ``name`` the metric
+    name written before the braces (or None), ``block`` the braces' content (None when there are
+    none) and ``head`` the text before the braces as written (the name and any space after it).
+    Function and aggregation names, label lists, strings, durations and numbers are left as they are."""
     out, i, n = [], 0, len(expr)
     while i < n:
         c = expr[i]
@@ -144,7 +145,7 @@ def scoped(expr: str, scope: list[str]) -> str:
             i = j
         elif c == "{":
             j = _close(expr, i, "{", "}")
-            out.append("{" + _inject(expr[i + 1:j - 1], scope) + "}")
+            out.append(fn(None, expr[i + 1:j - 1], ""))
             i = j
         elif c.isdigit() or (c == "." and i + 1 < n and expr[i + 1].isdigit()):
             j = i
@@ -167,12 +168,24 @@ def scoped(expr: str, scope: list[str]) -> str:
                 out.append(word)
             elif follows == "{":
                 e = _close(expr, k, "{", "}")
-                out.append(word + expr[j:k] + "{" + _inject(expr[k + 1:e - 1], scope) + "}")
+                out.append(fn(word, expr[k + 1:e - 1], word + expr[j:k]))
                 j = e
             else:
-                out.append(word + "{" + ",".join(scope) + "}")
+                out.append(fn(word, None, word))
             i = j
         else:
             out.append(c)
             i += 1
     return "".join(out)
+
+
+def scoped(expr: str, scope: list[str]) -> str:
+    """``expr`` with the scope's matchers in every vector selector (the module's docstring)."""
+    if not scope or not expr:
+        return expr
+
+    def one(name, block, head):
+        if block is None:
+            return name + "{" + ",".join(scope) + "}"
+        return head + "{" + _inject(block, scope) + "}"
+    return walk(expr, one)

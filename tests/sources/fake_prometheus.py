@@ -90,6 +90,7 @@ class FakePrometheus:
         self.native: set[str] = set()           # metric names served as native histograms (their values are the counts)
         self.queries_touched: list[int] = []
         self.name_asks: list[list[str]] = []      # the match[] of each label/__name__/values request
+        self.label_asks: list[tuple[str, dict]] = []   # (endpoint, parameters) of each labels or label/<name>/values request
         self.meta_asks: list[dict] = []           # the parameters of each metadata request
         self.ranges: list[tuple[float, float]] = []   # the time range of each range query and raw read
         self.refusals = 0                         # reads refused for their size (422)
@@ -150,6 +151,14 @@ class FakePrometheus:
                 return self._matrix([(lab, [(t, v) for t, v in pts if t > at - d]) for lab, pts in promql.select(self.dump, m["sel"], at - d, at)])
             res = promql.query_range(self.dump, q, at, at, 60)
             return {"resultType": "vector", "result": [{"metric": lab, "value": [at, self._value(at, pts[-1][1])]} for lab, pts in res]}
+        if endpoint == "labels" or endpoint.startswith("label/"):
+            self.label_asks.append((endpoint, {k: list(v) for k, v in form.items()}))
+        if endpoint.startswith("label/"):          # one label's values, within match[] (none: every series)
+            label = endpoint.split("/")[1]
+            start, end = float(one("start", 0)), float(one("end", time.time()))
+            sets = [lab for m in form.get("match[]") or ['{__name__=~".+"}'] for lab, _ in promql.select(self.dump, m, start, end)]
+            vals = sorted({lab[label] for lab in sets if label in lab})
+            return vals[: int(one("limit"))] if one("limit") else vals
         if endpoint in ("series", "label_values"):
             start, end = float(one("start", 0)), float(one("end", time.time()))
             seen = {}
@@ -164,7 +173,12 @@ class FakePrometheus:
             self._limit(len(out))
             return out[: int(one("limit"))] if one("limit") else out
         if endpoint == "labels":
-            return sorted({k for _, lab, _ in self.dump for k in lab} | {"__name__"})
+            if form.get("match[]"):
+                start, end = float(one("start", 0)), float(one("end", time.time()))
+                keys = sorted({k for m in form["match[]"] for lab, _ in promql.select(self.dump, m, start, end) for k in lab})
+            else:
+                keys = sorted({k for _, lab, _ in self.dump for k in lab} | {"__name__"})
+            return keys[: int(one("limit"))] if one("limit") else keys
         if endpoint == "metadata":
             self.meta_asks.append({k: one(k) for k in ("metric", "limit", "limit_per_metric") if one(k)})
             out = {k: v for k, v in sorted(self.meta.items()) if not one("metric") or k == one("metric")}
@@ -215,6 +229,8 @@ class FakePrometheus:
                 endpoint = {"/api/v1/query_range": "query_range", "/api/v1/query": "query", "/api/v1/series": "series",
                             "/api/v1/labels": "labels", "/api/v1/metadata": "metadata", "/api/v1/status/buildinfo": "buildinfo",
                             "/api/v1/label/__name__/values": "label_values"}.get(path)
+                if endpoint is None and (m := re.fullmatch(r"/api/v1/label/([a-zA-Z_][a-zA-Z0-9_]*)/values", path)):
+                    endpoint = f"label/{m[1]}"
                 if not fake._authorized(self.headers):
                     return self._send(401, {"status": "error", "error": "unauthorized"})
                 if fake.fail_status:

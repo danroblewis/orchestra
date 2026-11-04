@@ -22,6 +22,7 @@ from .auth import AuthMiddleware, enabled
 from .background import Refresher
 from .core import CoreProbe
 from .core_explore import Explorer
+from .core_stores import Stores
 from .dynamics import era_eras, model_view, predictions_view
 from .finite_response import FiniteJSONResponse
 from .intended import attach_dynamics, attach_machines, machine_subsystems
@@ -59,6 +60,7 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     events = Events.for_project(project)
     core = CoreProbe(project, events)
     explore = Explorer(core)
+    stores = Stores(core)
     bg = Refresher(project, events, core.metrics)
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
     install_sd_extra(app)
@@ -188,6 +190,24 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
     @app.get("/api/core/events")
     def core_events(hours: float = 24) -> dict:
         return explore.events(hours)
+
+    # the external stores ([[sources]]): Orchestra's adaptors to other stores, read only through
+    # orchestra.sources, every read bounded, within the source's match and logged (web/core_stores.py)
+    @app.get("/api/core/stores")
+    def core_stores() -> dict:
+        return stores.status()
+
+    @app.get("/api/core/stores/{name}/query")
+    def core_store_query(name: str, q: str, mode: str = "range", minutes: float = 60, limit: int = 50) -> dict:
+        return stores.query(name, q, instant=mode == "instant", minutes=minutes, limit=limit)
+
+    @app.get("/api/core/stores/{name}/labels")
+    def core_store_labels(name: str, selector: str = "", minutes: float = 60, limit: int = 50) -> dict:
+        return stores.labels(name, selector, minutes, limit)
+
+    @app.get("/api/core/stores/{name}/label/{label}/values")
+    def core_store_values(name: str, label: str, selector: str = "", minutes: float = 60, limit: int = 50) -> dict:
+        return stores.values(name, label, selector, minutes, limit)
 
     @app.get("/api/core/logs/sources")
     def core_log_sources() -> dict:
