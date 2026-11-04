@@ -60,7 +60,7 @@ PluginCheck = Callable[[dict, "Path | None"], list[str]]   # Plugin.check: (merg
 _LOADED: dict[tuple[str, str], tuple[list[tuple[str, PluginCheck]], list[str]] | None] = {}
 
 OVERLAY_HEADER = ("# The private overlay: merged over the repository's orchestra.toml, never committed\n"
-                  "# (Orchestra's USING_ORCHESTRA.md §2).\n")
+                  "# (Orchestra's SPEC.md §8.1).\n")
 
 
 @dataclass

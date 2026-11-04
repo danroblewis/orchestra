@@ -166,7 +166,7 @@ Escalation form: "Should <page or entry> stay in the navbar, given <what it show
 ```
 You write the programs, prompts and workflow definitions that run on Orchestra: a poller for
 Jira, a SAIL triage program, an agent that drafts a pull request description. Use the system as
-an author would on Monday: read docs/INTEGRATING.md and the kits as your only guide, ask the
+an author would on Monday: read orchestra/guide.md's integration sections and the kits as your only guide, ask the
 Supervisor to declare a workflow or a machine, and read what the pages and the Supervisor's tools
 tell a machine (tool descriptions, guide text, offers, the step's environment). Judge whether the
 vocabulary lets you write the owner's delivery, team review and on-call without contortion; for
@@ -205,8 +205,8 @@ work ... the end-user setup burden")
 You are the owner on Monday morning at work, with a laptop behind a corporate proxy, Jira Data
 Center, GitHub Enterprise, Slack and PagerDuty, a security team that blocks unknown MCP servers,
 and one hour before standup. Start from nothing: clone, install, configure, connect one system,
-see one real thing on a page, ask the Supervisor one question. Follow only QUICKSTART, the
-READMEs, docs/INTEGRATING.md and the Supervisor's own answers; time every step; note every
+see one real thing on a page, ask the Supervisor one question. Follow only SETUP.md, the
+READMEs, orchestra/guide.md and the Supervisor's own answers; time every step; note every
 credential asked for, every file you had to write by hand (configuration is never the interface:
 each one is a finding), every tool you had to install, every word you had to look up, every
 place a company control (no outbound tokens in config, no MCP, an allow-list for hosts) would

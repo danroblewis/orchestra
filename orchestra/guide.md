@@ -3,8 +3,7 @@
 For an AI operator (a plugin's machine) setting up Orchestra in the owner's repository. It says what
 each setting is for, when to choose each value, how they interact, the pitfalls, how to check a
 setting took, and which choices are the owner's. Each installed plugin has a guide of its own
-(`GET /api/guides` lists them all). Full reference: `USING_ORCHESTRA.md` in Orchestra's
-repository.
+(`GET /api/guides` lists them all). The design in full: `SPEC.md` in Orchestra's repository.
 
 Orchestra is an event bus, a metrics store and a system dynamics model discovered from the
 metrics. It runs no AI and knows no domain: plugins add one. What you configure here is
@@ -893,16 +892,445 @@ to run from how the app is served: a `Procfile`, `docker-compose.yml` services, 
 scripts in `package.json`, `[project.scripts]` in `pyproject.toml`, a `Makefile` `run` target,
 the README. A container needs its runtime; prefer the command the developers use locally.
 
-## Connecting another system, and declaring what is expected
+## Connecting another system: the strategies
 
-A Prometheus-API store is set up by the sections above alone. To connect another system's events
-or counts (an issue tracker, a chat, an alerting service), follow `docs/INTEGRATING.md` in
-Orchestra's repository: which route fits, the kits, and how to test against a fake before anything
-is scheduled. To declare what the owner
-expects (a stock, an effect, a flow, a machine), call `POST /intended` on the events endpoint
-(`ORCHESTRA_EVENTS_ENDPOINT`, with `ORCHESTRA_EVENTS_TOKEN`), with the owner's words quoted in the
-provenance; read the layer with `GET /intended` and `GET /intended/design`. A declaration runs
-nothing and binds no series (USING_ORCHESTRA.md, "What you expect").
+Orchestra never calls an outside system. A machine or an instrument does, and Orchestra sees only
+what they give it (`AGENTS.md` rules 1, 2 and 7): **series** (a measurement: "2 incidents open",
+shown on Instruments, then Dynamics), **events** (something happened to one item, as who did it:
+the Machines page, the actor a machine and the `subject` the item), or **a declared machine** (the
+owner's expectation, dashed on the Machines page until heard and confirmed). Orchestra counts every
+event by type and source itself (`orchestra_events_total`), so an event stream is also a flow:
+never write a counter of your own events.
+
+Take the first strategy that fits; most systems take two, one for series and one for events.
+
+- **(a) `[[sources]]`**, a store with a Prometheus API (Prometheus, Mimir, Thanos, VictoriaMetrics,
+  Chronosphere): read in place, no code. The sections above.
+- **(b) `[[collect]]` or `[[scrape]]`**, one number the store lacks that one cheap call gets (open
+  incidents now, issues per status). An instrument: it measures and never acts.
+- **(c) A poller** that reads an API's changes since its cursor every N minutes (5 by default) and
+  publishes one CloudEvent per change, as who acted. The same file run with `measure` is its
+  `[[collect]]`. It runs as a `[[machines]]` entry, never as a Workflows item or role: it is a
+  relay, not a machine. A workflow waits on what it relays (`jira.issue.assigned`) and declares the
+  system, managed elsewhere, as `bot.<system>`.
+
+| System | Series | Events |
+|---|---|---|
+| A Prometheus-API store | (a) | none: a metrics store has no item events |
+| An alerting service (PagerDuty) | (c)'s `measure`: open incidents | (c): each incident's status changes |
+| An issue tracker (Jira) | (c)'s `measure`: issues by status | (c): transitions and assignments |
+| A chat (Slack) | (c)'s `measure`: messages and threads per channel | (c): threads started, replied, checked |
+
+The bridges plugin is a library, not a reader: kits, fakes, templates and a scaffold
+(`orchestra bridges scaffold <jira|slack|pagerduty|promql|http> <name>`); every collector is a
+script in the owner's repository. Its own guide covers the kits, the fakes, credentials, clearance
+and the entries; its tools are `integrate_system` and `approve_integration`. Its older direct
+readers (`[bridges.jira]`, `[bridges.slack]`, `[bridges.github]`) are retired: never configure them.
+
+To declare what the owner expects (a stock, an effect, a flow, a machine), call `POST /intended` on
+the events endpoint (`ORCHESTRA_EVENTS_ENDPOINT`, with `ORCHESTRA_EVENTS_TOKEN`), with the owner's
+words quoted in the provenance; read the layer with `GET /intended` and `GET /intended/design`. A
+declaration runs nothing and binds no series (SPEC §4.6). A declared external machine names
+itself (`^[a-z][a-z0-9_]{1,40}$`), says `managed: "external"`, joins the observed source (`alias`
+→ `bot.pagerduty`) and predicts its effect ("a flow into open incidents appears"); it changes no
+flow, and the owner's confirm is a request that stays proposed until answered.
+
+## Rules for every collector
+
+1. **Where files go.** The program in the owner's repository, `.orchestra/machines/<name>/`
+   (`--root repo`), landing by a pull request like any code; the state directory
+   (`--root state`) only when the owner keeps the repository clean, or for a throwaway trial. What
+   changes as it runs stays in the state directory (`kits/pollers/<name>/`, `kits/cache/`). Its
+   `[[machines]]` and `[[collect]]` entries go in the private overlay
+   (`project.config_edit.add_entry(..., target="overlay")`), and only **after** the owner's
+   approval: an entry added early does no harm to the poller (it logs `waiting for approval`), but
+   its measurement fails every round.
+2. **Credentials by reference only**: `token_env` (the variable must be in `orchestra run`'s
+   environment, and every launched process inherits it) or `token_file` (`chmod 600`, outside every
+   repository). Never a `token` key, never in a chat, never printed, logged or committed.
+3. **Rates.** The kits' client limits each host for every process on the machine, retries 429 and
+   5xx honouring `Retry-After`, and caches only what `keep` returns; change reads use `ttl_s=0`.
+   Stay under the system's documented budget; unsure, poll less often.
+4. **Compliance before the first read.** A scaffolded `poller.toml` says
+   `clearance = "needs approval"`; until the owner's written yes (naming the system, the token's
+   scope and "metadata only") it reads only a fake on this machine. Never change it yourself.
+   **Never text**: events, series, logs and cache hold ids, keys, accounts, states, numbers and
+   times; titles, descriptions and messages are dropped by `keep`. **Your session is a model too**:
+   never paste a real API answer into it; use `--dry-run` and print counts.
+5. **Idempotent emission.** Each id is `<name>:<type>:<key>@<stamp>` (the item's id; its change
+   stamp), skipped once emitted, across restarts; the cursor is saved only after a good poll.
+6. **The envelope** (SPEC §2). `type` is `<system>.<item>.<what>` (`jira.issue.transitioned`);
+   `source` is who acted (`person.<system>.<account>`, `bot.<system>.<account>`, `bot.<system>`;
+   the `[bridges] people` map wins, so one person is one machine); `subject` is the item, the same
+   in every event about it; `time` is the system's own, RFC 3339 with a zone. **Never stamp the
+   future**: an event more than 60 s ahead of this clock is published but its count is refused, so
+   the flow never sees it (said only in `orchestra run`'s output).
+7. **The poller is not a machine** (decision D19). It never publishes as itself, never announces
+   itself, never writes a metric; it announces each actor once (`mode: "ad hoc"`, `kind`
+   `person` or `program`).
+8. **Ratios and flows.** A ratio is a level, never a flow. For a failure rate, publish one event
+   type per outcome (`<system>.build.succeeded`, `.failed`: the outcome in the type, which is what
+   is counted); print the ratio, if wanted, as a gauge over a stated window beside its counts.
+9. **A fake before any real call**, then a trial on a scratch project, then the real system.
+10. **Behind a corporate proxy.** Orchestra's HTTP takes `HTTPS_PROXY`, `HTTP_PROXY` and
+    `NO_PROXY` from `orchestra run`'s and `orchestra web`'s environment; put `127.0.0.1,localhost`
+    in `NO_PROXY`. A proxy that re-signs TLS needs its CA: for one store `[[sources]] auth =
+    { ca_file = "…" }`; for the process `SSL_CERT_FILE=<a bundle with the public CAs too>`; `uv`
+    reads `SSL_CERT_FILE`, or `UV_NATIVE_TLS=1`. Hosts to allow: `github.com`, `pypi.org`,
+    `files.pythonhosted.org`, the model provider's API (only where an agent runs), and each system
+    integrated.
+
+## The systems
+
+**Auth formats** (the kits' `auth_format`): Bearer for Jira Data Center, Slack, Chronosphere and
+most APIs; `"Token token={token}"` with a read-only REST key for PagerDuty; `"Basic {token}"` (the
+base64 of `user:apitoken`) for Jira Cloud, Jenkins and anything on HTTP Basic.
+
+**PagerDuty** (`scaffold pagerduty`). Each poll lists the open incidents and reads by id each that
+was open last poll and is not now; it emits `pagerduty.incident.<status>` with the incident id as
+subject, the user in `last_status_change_by` (or `bot.pagerduty`) as source,
+`last_status_change_at` as stamp. `measure` prints `pagerduty_incidents_open{service, urgency}`,
+with no total beside it (a gauge is never `_total`, and a sum of its parts is the level twice).
+
+**Jira** (`scaffold jira jira_ops`: not `jira`, which is the system's name). `[settings]`:
+`base_url` (no `/rest/...`), `jql` (no `ORDER BY`; the board's saved filter), `every = "5m"`,
+`per_minute = 20`, `lookback`, `overlap`, `since = "1d"` for a catch-up. `flavour`/`edition`:
+`datacenter` (REST v2, a personal access token as Bearer) or `cloud` (REST v3 `/search/jql`, email
+in `user_file`/`user_env` plus an API token, Basic); `auto` picks `cloud` on `*.atlassian.net`. It
+emits `jira.issue.transitioned` per status change (changelog id as stamp) and
+`jira.issue.assigned` per change of assignee; `measure` prints `jira_issues{status, category}`.
+A changelog cut short (`changelog.total > maxResults`) needs `/rest/api/2/issue/<key>?expand=changelog`.
+
+**Slack** (`scaffold slack <name>`). `channels` are ids, not names; `per_minute = 20`
+(`conversations.history` is Tier 3). A bot token (`xoxb-`, the bot added to each channel) with
+`channels:history` and `channels:read` (plus `groups:history`, `groups:read` for a private one);
+posting (`chat:write`) is an Outbox draft, never the kit. The owner's own pings need a user token
+with `search:read`. It emits `slack.thread.started`, `.replied`, `.checked`, `.unchecked` and
+`slack.message.posted`, subject `<channel>/<thread ts>`, ids and timestamps only; `measure` prints
+`slack_channel_messages_last_hour`, `slack_threads_awaiting_reply` and `slack_threads_unchecked`
+by channel. How soon a thread is answered is the workflow's setting, never the poller's.
+
+**Chronosphere** (strategy (a)). Its Prometheus API is under `https://<tenant>.chronosphere.io/data/metrics`,
+authenticated by `Authorization: Bearer <a service account's token>`; the `API-Token` header is its
+config API's (`auth = "header:API-Token"` if a tenant takes it on `/data/metrics`); Grafana's way is
+`auth = "basic"`, `user = "chronosphere"`. The token file is read on every request, so a rotated one
+needs no restart. Only where `[[sources]]` cannot serve (an auth kind not built, or a series that
+must be computed and stored here), the `promql` kit (`scaffold promql <name>`: a `[[collect]]` only,
+every 60 s) copies a few gauges into Orchestra's store.
+
+**A system with no kit.** `scaffold http <name>`, or the closest template renamed: `pagerduty` for
+items each with a status and who last changed it (builds, alerts, deployments; the usual one),
+`jira` for a search by update time with a history, `slack` for append-only streams, `promql` for
+numbers only. Write its fake on `FakeServer` (`route(method, path, query, body)` returning
+`(status, json)` in the real shape, `CANARY` in every text field).
+
+## Without the kits: `minikit.py` and a one-file poller
+
+Where the bridges plugin is not installed, save this as `minikit.py` beside the program: the kits'
+names for what the program below uses, the standard library and Orchestra only. It has no scaffold
+or fakes; keep the clearance as a constant in the program.
+
+```python
+"""minikit.py: a stand-in for orchestra_bridges.kits with the same names, standard library and Orchestra only."""
+import hashlib, json, os, re, signal, sys, threading, time, urllib.error, urllib.parse, urllib.request
+from pathlib import Path
+
+def state_root():
+    from orchestra.config import load_project
+    return load_project().state_dir
+
+def actor_source(system, account=None, *, bot=False):
+    safe = lambda s: re.sub(r"[^a-z0-9._-]", "-", str(s).lower())
+    return f"bot.{safe(system)}" if not account else f"{'bot' if bot else 'person'}.{safe(system)}.{safe(account)}"
+
+def read_token(token_env, token_file):
+    if token_env and os.environ.get(token_env, "").strip():
+        return os.environ[token_env].strip()
+    p = Path(token_file).expanduser() if token_file else None
+    if not p or not p.is_file():
+        sys.exit(f"no token: set {token_env} or put it in {token_file} (chmod 600)")
+    if p.stat().st_mode & 0o077:
+        sys.exit(f"{p} is readable by others: chmod 600 it")
+    return p.read_text().strip()
+
+class CachedClient:
+    def __init__(self, base_url, token_env=None, token_file=None, per_minute=60, cache_dir=None, ttl_s=300, *,
+                 auth_format="Bearer {token}", headers=None, retries=3):
+        self.base, self.ttl, self.retries, self.gap = base_url.rstrip("/"), ttl_s, retries, 60.0 / per_minute
+        self.hdr = {"Accept": "application/json", **(headers or {})}
+        if token_env or token_file:
+            self.hdr["Authorization"] = auth_format.format(token=read_token(token_env, token_file))
+        self.cache_dir = Path(cache_dir) if cache_dir else state_root() / "kits" / "cache"
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.last = 0.0
+
+    def get(self, path, params=None, *, keep=None, ttl_s=None, cache=True):
+        items = [(k, x) for k, v in (params or {}).items() if v is not None
+                 for x in (v if isinstance(v, (list, tuple)) else [v])]
+        url = self.base + "/" + path.lstrip("/") + ("?" + urllib.parse.urlencode(items) if items else "")
+        ttl = self.ttl if ttl_s is None else ttl_s
+        f = self.cache_dir / (hashlib.sha256(url.encode()).hexdigest() + ".json")
+        cache = cache and keep is not None and ttl > 0        # only what keep returns reaches the disk
+        if cache and f.exists() and time.time() - f.stat().st_mtime < ttl:
+            return json.loads(f.read_text())
+        for attempt in range(self.retries + 1):
+            time.sleep(max(0.0, self.last + self.gap - time.time()))
+            self.last = time.time()
+            try:
+                with urllib.request.urlopen(urllib.request.Request(url, headers=self.hdr), timeout=30) as r:
+                    body = json.load(r)
+                break
+            except urllib.error.HTTPError as e:
+                if e.code not in (429, 500, 502, 503, 504) or attempt == self.retries:
+                    raise RuntimeError(f"HTTP {e.code} from {self.base}{path}") from None
+                time.sleep(min(float(e.headers.get("Retry-After") or 2 ** attempt), 300))
+        body = keep(body) if keep else body
+        if cache:
+            f.write_text(json.dumps(body))
+        return body
+
+class Poller:
+    def __init__(self, name, every_s=300, state_dir=None, *, events=None, project=None, package=None):
+        from orchestra.config import load_project
+        from orchestra.events import Events
+        self.name, self.every_s, self.package = name, every_s, package or name
+        self.dir = Path(state_dir) if state_dir else state_root() / "kits" / "pollers" / name
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.events = events or Events.for_project(project or load_project())
+        cur, ids = self.dir / "cursor.json", self.dir / "emitted.log"
+        self.cursor = json.loads(cur.read_text()) if cur.exists() else None
+        self.emitted = set(ids.read_text().split()) if ids.exists() else set()
+        self.stopped = threading.Event()
+
+    def _publish(self, eid, type, data, source, **ext):
+        ev = self.events.publish(type, data, source=source, id=eid, **ext)
+        with open(self.dir / "emitted.log", "a") as fh:
+            fh.write(eid + "\n")
+        self.emitted.add(eid)
+        return ev
+
+    def announce(self, source, time=None):
+        eid = f"{self.name}:announce:{source}"
+        if eid not in self.emitted:
+            data = {"mode": "ad hoc", "kind": "program" if source.startswith("bot.") else "person",
+                    "listens_for": [], "package": self.package}
+            self._publish(eid, "orchestra.machine.started", data, source, **({"time": time} if time else {}))
+
+    def emit(self, type, subject, data=None, source=None, *, key=None, stamp=None, time=None):
+        if not str(source).startswith(("person.", "bot.")):
+            raise ValueError(f"{type}: publish only as who acted (person.…, bot.…), never {source!r}")
+        stamp = stamp or hashlib.sha1(json.dumps([type, data], sort_keys=True).encode()).hexdigest()[:16]
+        eid = f"{self.name}:{type}:{key or subject}@{stamp}"
+        if eid in self.emitted:
+            return None
+        self.announce(source, time)
+        return self._publish(eid, type, data, source, subject=subject, **({"time": time} if time else {}))
+
+    def run(self, poll, *, once=False, rounds=None):
+        signal.signal(signal.SIGTERM, lambda *_: self.stopped.set())
+        n, ok = 0, True
+        while not self.stopped.is_set():
+            before = self.cursor
+            try:
+                poll(self)
+                tmp = self.dir / "cursor.tmp"
+                tmp.write_text(json.dumps(self.cursor))
+                tmp.replace(self.dir / "cursor.json")     # saved only after a good poll
+                ok = True
+            except Exception as e:                        # say what failed; never a body or a header
+                self.cursor, ok = before, False
+                print(f"{self.name}: poll failed: {e.__class__.__name__}: {e}", file=sys.stderr, flush=True)
+            n += 1
+            if once or (rounds and n >= rounds):
+                break
+            self.stopped.wait(self.every_s)
+        return 0 if ok else 1
+```
+
+The program, `pagerduty_alerts.py`: one file with its own `__main__` and its settings as constants.
+It runs unchanged on the kits too (the import falls back to `minikit` only when they are missing);
+a scaffolded program keeps the scaffold's shape instead.
+
+```python
+"""PagerDuty -> pagerduty.incident.<status>, as who changed it (poll); open incidents as series (measure)."""
+import os, sys, urllib.parse
+try:
+    from orchestra_bridges.kits import CachedClient, Poller
+    from orchestra_bridges.kits.poller import actor_source
+except ImportError:
+    from minikit import CachedClient, Poller, actor_source
+
+CLEARANCE = "needs approval"     # the owner's word turns it to "approved"; until then only a fake is read
+
+def client(**kw):
+    url = os.environ.get("PAGERDUTY_API", "https://api.pagerduty.com")
+    if CLEARANCE != "approved" and urllib.parse.urlsplit(url).hostname not in ("127.0.0.1", "localhost"):
+        sys.exit(f"reading {url} is not cleared: CLEARANCE = {CLEARANCE!r}")
+    kw = {"per_minute": 30, "ttl_s": 240, **kw}
+    return CachedClient(url, token_env="PAGERDUTY_TOKEN", token_file="~/.config/orchestra-bridges/pagerduty-token",
+                        auth_format="Token token={token}", headers={"Accept": "application/vnd.pagerduty+json;version=2"}, **kw)
+
+def meta(i):                     # what is kept of an incident: never its title or a name
+    by = i.get("last_status_change_by") or {}
+    return {"id": i["id"], "status": i["status"], "urgency": i.get("urgency"),
+            "service": (i.get("service") or {}).get("id"), "changed_at": i.get("last_status_change_at"),
+            "by": by.get("id") if by.get("type") == "user_reference" else None}
+
+def open_incidents(api):
+    out, offset = [], 0
+    while True:
+        page = api.get("/incidents", {"statuses[]": ["triggered", "acknowledged"], "offset": offset, "limit": 100},
+                       keep=lambda b: {"incidents": [meta(i) for i in b.get("incidents") or []], "more": bool(b.get("more"))})
+        out += page["incidents"]
+        if not page["more"]:
+            return out
+        offset += 100
+
+def make_poll(api):
+    def poll(p):
+        now_open = open_incidents(api)
+        gone = [iid for iid in (p.cursor or {"open": []})["open"] if iid not in {i["id"] for i in now_open}]
+        closed = [api.get(f"/incidents/{iid}", keep=lambda b: meta(b["incident"]), ttl_s=0) for iid in gone]
+        for i in now_open + closed:
+            p.emit(f"pagerduty.incident.{i['status']}", i["id"], {"urgency": i["urgency"], "service": i["service"]},
+                   source=actor_source("pagerduty", i["by"]), stamp=i["changed_at"], time=i["changed_at"])
+        p.cursor = {"open": sorted(i["id"] for i in now_open)}
+    return poll
+
+def measure(api):
+    n = {}
+    for i in open_incidents(api):
+        n[(i["service"], i["urgency"])] = n.get((i["service"], i["urgency"]), 0) + 1
+    for (service, urgency), count in sorted(n.items()):
+        print(f'pagerduty_incidents_open{{service="{service}",urgency="{urgency}"}} {count}')
+
+if __name__ == "__main__":
+    if sys.argv[1:2] == ["measure"]:
+        measure(client())
+    else:
+        sys.exit(Poller("pagerduty_alerts", every_s=300).run(make_poll(client()), once="--once" in sys.argv))
+```
+
+Its test, `test_pagerduty_alerts.py` (`python test_pagerduty_alerts.py` prints `ok`):
+
+```python
+"""python test_pagerduty_alerts.py: the test, against a fake of /incidents with a canary in every title."""
+import contextlib, io, json, os, tempfile, threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from orchestra.events import Events
+
+CANARY = "CANARY-7f3a"
+SERVICE = {"type": "service_reference", "id": "PSVC1"}
+WORLD = {"PINC1": {"status": "triggered", "by": SERVICE, "at": "2026-11-02T10:00:00Z"},
+         "PINC2": {"status": "acknowledged", "by": {"type": "user_reference", "id": "PUSER1"}, "at": "2026-11-02T10:03:00Z"}}
+
+def shape(iid, w):
+    return {"id": iid, "title": CANARY, "status": w["status"], "urgency": "high", "service": SERVICE,
+            "last_status_change_at": w["at"], "last_status_change_by": {**w["by"], "summary": CANARY}}
+
+class Fake(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.headers.get("Authorization") != "Token token=test-token":
+            return self.send_error(401)
+        path = self.path.split("?")[0]
+        if path == "/incidents":
+            body = {"incidents": [shape(k, w) for k, w in WORLD.items() if w["status"] != "resolved"], "more": False}
+        elif path.startswith("/incidents/") and path[11:] in WORLD:
+            body = {"incident": shape(path[11:], WORLD[path[11:]])}
+        else:
+            return self.send_error(404)
+        raw = json.dumps(body).encode()
+        self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers()
+        self.wfile.write(raw)
+    def log_message(self, *a):
+        pass
+
+def test():
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), Fake)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    tmp = Path(tempfile.mkdtemp())
+    os.environ.update(PAGERDUTY_API=f"http://127.0.0.1:{srv.server_port}", PAGERDUTY_TOKEN="test-token")
+    import pagerduty_alerts as pd
+    def poll_once():
+        api = pd.client(cache_dir=tmp / "cache", ttl_s=0)
+        pd.Poller("pagerduty_alerts", state_dir=tmp / "state", events=Events(tmp / "events.jsonl")).run(pd.make_poll(api), once=True)
+        return [json.loads(x) for x in (tmp / "events.jsonl").read_text().splitlines()]
+    changes = lambda evs: [(e["type"], e["subject"], e["source"]) for e in evs if e["type"] != "orchestra.machine.started"]
+    assert changes(poll_once()) == [("pagerduty.incident.triggered", "PINC1", "bot.pagerduty"),
+                                    ("pagerduty.incident.acknowledged", "PINC2", "person.pagerduty.puser1")]
+    WORLD["PINC1"] = {"status": "resolved", "by": {"type": "user_reference", "id": "PUSER2"}, "at": "2026-11-02T10:20:00Z"}
+    evs = poll_once()                                           # a restart: cursor and emitted ids read back
+    assert changes(evs)[2:] == [("pagerduty.incident.resolved", "PINC1", "person.pagerduty.puser2")], changes(evs)
+    assert sum(e["type"] == "orchestra.machine.started" for e in evs) == 3     # each actor announced once
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        pd.measure(pd.client(cache_dir=tmp / "cache"))
+    assert 'pagerduty_incidents_open{service="PSVC1",urgency="high"} 1' in out.getvalue()
+    files = [p.read_text() for p in tmp.rglob("*") if p.is_file()]
+    assert not any(CANARY in s or "test-token" in s for s in [out.getvalue(), *files]), "text or token leaked"
+    print("ok")
+
+if __name__ == "__main__":
+    test()
+```
+
+The entries, after the owner's approval, with Orchestra's Python from the repository:
+
+```python
+import sys
+from orchestra.config import load_project
+p = load_project(); d = p.repo_root / ".orchestra" / "machines" / "pagerduty_alerts"   # or p.state_dir / "machines" / ...
+for array, entry in [("machines", {"name": "pagerduty_alerts", "command": f"{sys.executable} {d}/pagerduty_alerts.py",
+                                  "restart": "always"}),
+                     ("collect", {"name": "pagerduty_alerts", "command": f"{sys.executable} {d}/pagerduty_alerts.py measure",
+                                  "every": "5m", "timeout": "60s"})]:
+    print(p.config_edit.add_entry(array, entry, target="overlay").what)
+```
+
+`[[machines]]` is the poll loop (restarted whenever it exits); `[[collect]]` the instrument of the
+same name, on the same rhythm. A trial against the fake should publish
+`pagerduty.incident.triggered` on `PINC001` as `bot.pagerduty` and
+`pagerduty.incident.acknowledged` on `PINC002` as `person.pagerduty.puser01`, each actor announced
+once, and two points of `pagerduty_incidents_open`.
+
+## Confirming an integration, and what goes wrong
+
+| Check | What you should see |
+|---|---|
+| the program's test | passes against the fake, with the canary and token check |
+| `orchestra bridges integrations` | the poller `approved`, its token's variable name or file, scheduled, `[[collect]]` `yes`, no guesses left |
+| `<state>/logs/machines/<name>.log` | `poll N: K events`; no `poll failed` |
+| `<state>/logs/instruments/<name>.log` | `wrote N points` |
+| `orchestra metrics series` | the measured series, labelled `instrument=<name>` |
+| `orchestra sources check` / `infer` | the source answers; its definitions kept (strategy (a)) |
+| Instruments page | the entry, its interval, last write, no failures |
+| Machines page | `bot.<system>` and `person.<system>.<id>`, edges by event type, hand-offs; **no node named after the poller** |
+| Dynamics page | after an hour of data, the series as a stock or flow, its flows' hypotheses naming the actors |
+
+A hand-off is drawn only when two different actors act on one subject; one actor per subject gives
+none, and that is correct. Grep for a token's value by its shape, never the word:
+`grep -rEn '(xox[bpa]-|Bearer [A-Za-z0-9._-]{12,}|[A-Za-z0-9+/=_-]{32,})' <overlay> <the program's directory>`.
+
+- **"the environment variable X is not set" / "no token file at …"**: the owner sets it, never in
+  the chat; "readable by others" means `chmod 600`. A variable in your shell but not in
+  `orchestra run`'s environment is invisible to what it launches.
+- **"… is not cleared"** or **`waiting for approval`**: the compliance check working. Use the fake
+  (`--base-url http://127.0.0.1:…`) until the owner approves; then it polls on its own.
+- **HTTP 401 or 403**: the wrong token or a missing scope (above). Look at the status code only,
+  never the body.
+- **HTTP 429**: raise `every` or `ttl`, lower `per_minute`, narrow the query; for a source, lower
+  `rate` (its daily cap shows in `orchestra sources check`).
+- **Nothing on the Machines page**: is the process running (Core page, its log)? `poll N: 0
+  events` on a first run means nothing changed within `lookback`; already-emitted ids are in
+  `kits/pollers/<name>/`.
+- **Nothing on the Instruments page**: the `[[collect]]` entry is missing (`/api/project`), the
+  command fails (`logs/instruments/`), or it prints a series named `orchestra_*` (refused).
+- **No hand-offs**: the subject must be the item (the key, the incident id, the thread), never a
+  channel alone, a timestamp or the poller's name.
+- **"a poller publishes only as the person or bot who acted"**: use `actor_source` (rule 7).
+- **The same change twice under different ids**: the stamp moved without a change (a hash over a
+  timestamp), or two collectors read the same items.
 
 ## Patching an installed plugin: `.orchestra/overrides/` and `.orchestra/plugins/`
 

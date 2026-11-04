@@ -423,7 +423,7 @@ def build_parser(plugin_help: dict[str, str] | None = None) -> argparse.Argument
 
     s = sub.add_parser("sd", help="the system dynamics model: discover it from the metrics, show it, list its versions, "
                        "and list the predictions and their verdicts (predictions). Machines read the model through the events "
-                       "endpoint's HTTP API, or sd.reads.ModelReads (USING_ORCHESTRA.md §5.9)")
+                       "endpoint's HTTP API, or sd.reads.ModelReads (SPEC.md §3.1, §4.5)")
     s.add_argument("action", choices=["show", "versions", "discover", "snapshot", "predictions"], help="show: the model "
                    "and its stocks' latest levels; versions: every saved version; discover: discover the model now and print it; "
                    "snapshot: write every series discovery would read to a directory; "

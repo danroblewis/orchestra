@@ -6,7 +6,9 @@ and hypotheses, with their evidence, about which machines drive which flows; and
 you expect the system to be (the intended model). Its aim is to find the loops between a project's own domain
 and the processes used to develop it.
 
-**Documentation:** [USING_ORCHESTRA.md](USING_ORCHESTRA.md) (add your metrics, connect your machines, configure), [PLUGINS.md](PLUGINS.md) (write a plugin), [ARCHITECTURE.md](ARCHITECTURE.md) (how it works).
+**Start with [SETUP.md](SETUP.md):** install, give the Supervisor (an AI agent) a few details, and watch it set Orchestra up.
+
+**Documentation:** [orchestra/guide.md](orchestra/guide.md) (the operator's guide: every setting, store and integration), [docs/machines.md](docs/machines.md) (metrics and machines), [PLUGINS.md](PLUGINS.md) (write a plugin), [ARCHITECTURE.md](ARCHITECTURE.md) (how it works).
 
 This is an **empty Orchestra**: the bus, the metrics store, the model, the bootstrap host and the
 web UI, with no machines of its own. Machines come from other packages. A **plugin** is a package
@@ -18,8 +20,6 @@ lists them.
 - `SPEC.md` is the design of what exists.
 - `AGENTS.md` is the list of rules that must not be broken.
 
-
-**New here? Start with [QUICKSTART.md](QUICKSTART.md).**
 
 ## Install
 
@@ -76,10 +76,9 @@ metrics store (`[metrics] url`: file or VictoriaMetrics). `deploy/dev/compose.ya
 them locally. Series that live in another store (Prometheus, VictoriaMetrics, Mimir, Chronosphere)
 are read in place by naming it under `[[sources]]` (SPEC §4.4); `orchestra sources infer` shows
 what Orchestra will read from it.
-To connect Jira, Slack, PagerDuty or a Prometheus store, ask the Supervisor, or follow
-[docs/INTEGRATING.md](docs/INTEGRATING.md) with your own coding tool. What you expect the system to
-be (the intended model, shown beside the discovered one) is described in
-[USING_ORCHESTRA.md](USING_ORCHESTRA.md#what-you-expect-the-intended-model).
+To connect an issue tracker, a chat, an alerting service or a Prometheus store, ask the Supervisor
+([SETUP.md](SETUP.md)); its method is [orchestra/guide.md](orchestra/guide.md). What you expect the
+system to be (the intended model, shown beside the discovered one) is described in SPEC §4.6.
 
 Machines are your programs, and none needs to import Orchestra. Measurements come from
 instruments, which are not machines: a script that prints measurements in the Prometheus text

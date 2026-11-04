@@ -1,5 +1,5 @@
 """The equation language: one written form for a flow's rate, read by every machine and by
-Orchestra alike (goal G5; ``docs`` in USING_ORCHESTRA.md §5.9).
+Orchestra alike (goal G5; SPEC.md §4.5).
 
 A rate is an expression in Python's syntax, per the model's time unit:
 

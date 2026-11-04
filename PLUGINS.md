@@ -19,7 +19,7 @@ Read alongside it:
 - [`AGENTS.md`](AGENTS.md): the rules. Rules 1, 2, 3, 5 and 9 bind plugins directly.
 - [`docs/machines.md`](docs/machines.md): writing a machine's measurements and events, with or without a plugin.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md): how the core fits together.
-- [`USING_ORCHESTRA.md`](USING_ORCHESTRA.md): running Orchestra on a project.
+- [`SETUP.md`](SETUP.md): running Orchestra on a project.
 
 Contents:
 
@@ -48,7 +48,7 @@ machines gets the parts of Orchestra that a bare program cannot get by itself:
 
 | A bare machine can... | A plugin can also... |
 |---|---|
-| publish and read events over HTTP (the events endpoint, `USING_ORCHESTRA.md` §5.2), or through `orchestra.events.Events` | have `orchestra run` start, restart and stop its processes (`processes`) |
+| publish and read events over HTTP (the events endpoint, `SPEC.md` §3.1), or through `orchestra.events.Events` | have `orchestra run` start, restart and stop its processes (`processes`) |
 | be kept running by a project's `[[machines]]` entry | have `orchestra run` measure what it serves, with instruments of its own (`collectors`) |
 | be measured by the project's instruments (`[[collect]]`, `[[scrape]]`) | list its machines on the Machines page before they first run (`machines`) |
 | | add pages and API routes to the web UI (`pages`, `router`) |
@@ -327,7 +327,7 @@ does it in a router dependency, `Depends(fresh)`).
 ### 4.4.1 Your routes are behind Orchestra's login
 
 `orchestra web` puts every route behind the project's web token (`orchestra/web/auth.py`,
-USING_ORCHESTRA.md "Logging in to the web UI"): your pages, your static directory, your router,
+`SPEC.md` §10.2): your pages, your static directory, your router,
 and any websocket you add. It does this in one middleware in front of the whole app, so a plugin adds
 nothing and cannot forget it:
 
@@ -833,7 +833,7 @@ evs, offset = events.after(offset)        # every event after offset, in order; 
   `publish(..., time=..., id=...)`.
 - A plugin's process that is not written in Python, or would rather not import Orchestra, uses
   the events endpoint instead: the launcher gives it `ORCHESTRA_EVENTS_ENDPOINT` and
-  `ORCHESTRA_EVENTS_TOKEN`, as it does every process (`USING_ORCHESTRA.md` §5.2).
+  `ORCHESTRA_EVENTS_TOKEN`, as it does every process (`SPEC.md` §3.1).
 
 ### 6.5 Metrics
 
