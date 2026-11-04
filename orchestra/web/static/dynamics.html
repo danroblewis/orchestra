@@ -51,6 +51,8 @@
   svg .xh { stroke:var(--text2); stroke-width:1; stroke-dasharray:3 3; vector-effect:non-scaling-stroke }
   .drawer h4 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:14px 0 6px } .drawer .def { display:grid; grid-template-columns:110px minmax(0,1fr); gap:5px 12px; font-size:12.5px } .drawer .def > div:nth-child(odd) { color:var(--muted) }
   .drawer .def > div { min-width:0; overflow-wrap:anywhere } .drawer .bal-term { display:block; overflow-wrap:anywhere }
+  .drawer .xp-spark { display:block; margin:4px 0 10px; border:1px solid var(--border); border-radius:6px; background:var(--panel2, transparent) } .drawer .xp-forms td.num { white-space:normal }
+  .drawer .xp-help { border-left:3px solid var(--accent, #60a5fa); padding:6px 10px; background:var(--panel3); border-radius:4px; font-size:12.5px } .drawer .xp-story { font-size:12.5px }
   @media (max-width:600px) { .drawer .def { grid-template-columns:minmax(0,1fr) } .drawer .def > div:nth-child(odd) { margin-top:6px } }
   .origin.prior { color:#ddd6fe; border-color:#5b21b6 }
   .eras { margin:0 0 10px; font-size:12px } .eratl { display:flex; gap:2px; margin:6px 0 }
@@ -136,6 +138,7 @@
 <script src="/static/intended-drawers.js?v={{v}}"></script>
 <script src="/static/left-out.js?v={{v}}"></script>
 <script src="/static/source-view.js?v={{v}}"></script>
+<script src="/static/explain-drawer.js?v={{v}}"></script>
 <script src="/static/discovery-window.js?v={{v}}"></script>
 <script src="/static/evidence-text.js?v={{v}}"></script>
 <script src="/static/flow-check.js?v={{v}}"></script>
@@ -350,7 +353,7 @@ function leftOutChanged(m) {
   const flowsNamed = (w) => m.flows.filter((f) => f.counter).reduce((x, f) => x.split(keyOf(f.counter)).join(flowName(f)), w);
   const short = (why) => { const w = flowsNamed(why.replace(/^no counters balance it[^,]*, and /, "").replace(/^and /, ""));
     const follows = /; (follows [^;]*)/.exec(w); return w.split(";")[0].split(":")[0] + (follows ? `; ${follows[1]}` : ""); };
-  return `<div style="margin-top:4px">Changed but not in the model: ${changed.map(([k, why]) => `<b title="${esc(k)}">${esc(titles[k] || k)}</b> <span class="muted">(${esc(short(why))})</span>`).join(", ")} · <a href="#found" onclick="document.getElementById('found').scrollIntoView({block:'start'});return false">How it was found</a></div>`;
+  return `<div style="margin-top:4px">Changed but not in the model: ${changed.map(([k, why]) => `<b title="${esc(k)}: what discovery read and tried" data-xkey="${esc(k)}" tabindex="0" role="button" style="cursor:pointer">${esc(titles[k] || k)}</b> <span class="muted">(${esc(short(why))})</span>`).join(", ")} · <a href="#found" onclick="document.getElementById('found').scrollIntoView({block:'start'});return false">How it was found</a></div>`;
 }
 // under the diagram: how many levels were left out, and the places drawn that are not stocks
 function namedEndsNote(m, flows) {
@@ -492,7 +495,7 @@ function leftOut(lo, d) {
     const named = (why) => MODEL ? MODEL.flows.filter((f) => f.counter).reduce((w, f) => w.split(keyOf(f.counter)).join(flowName(f)), why) : why;
     // a series read from another store: its selector as the store spells it, and a link to view it there (source-view.js)
     const store = (k) => (d && d.sourced && d.sourced[k] ? SourceView.html(d.sourced[k], d.end && d.start ? d.end - d.start : null) : "");
-    const rows = groups[g].map(([k, why]) => `<tr><td class="num">${titles[k] ? `<b style="font-family:var(--sans,inherit)">${esc(titles[k])}</b><div class="muted">${esc(k)}</div>` : esc(k)}${res(k) ? `<div class="muted" style="font-family:inherit">${esc(res(k))}</div>` : ""}${store(k)}</td>${g.startsWith("changed") ? `<td class="muted">${esc(named(why.replace(/^no counters balance it /, "")))}</td>` : why !== g ? `<td class="muted">${esc(named(why))}</td>` : ""}</tr>`).join("");
+    const rows = groups[g].map(([k, why]) => `<tr data-xkey="${esc(k)}" tabindex="0" role="button" style="cursor:pointer" title="what discovery read and tried for this series"><td class="num">${titles[k] ? `<b style="font-family:var(--sans,inherit)">${esc(titles[k])}</b><div class="muted">${esc(k)}</div>` : esc(k)}${res(k) ? `<div class="muted" style="font-family:inherit">${esc(res(k))}</div>` : ""}${store(k)}</td>${g.startsWith("changed") ? `<td class="muted">${esc(named(why.replace(/^no counters balance it /, "")))}</td>` : why !== g ? `<td class="muted">${esc(named(why))}</td>` : ""}</tr>`).join("");
     const help = LeftOut.help(groups[g].map(([, why]) => why), d);     // what would help, in words (left-out.js)
     return `<details ${g.startsWith("changed") ? "open" : ""}><summary>${esc(g)} <span class="count">${groups[g].length}</span>${help ? ` <span class="muted">· ${esc(help)}</span>` : ""}</summary><table class="dt">${rows}</table></details>`;
   }).join("");
@@ -557,8 +560,9 @@ function tables() {
     + (d.end && d.step ? `<div class="muted" style="font-size:12px;margin-bottom:6px">${plainWindow(d.end - d.start, d.step)}</div>` : "") + quietNote(d) + sourcesNote(d)
     + m.stocks.map((s) => { const ev = s.evidence || {};
       const passage = ev.trust && ev.trust.kind === "passage";
-      if (ev.balance) return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">changes by</span> ${ev.balance.map((b) => `<span class="ty" title="${esc(b.series)}">${b.sign > 0 ? "+" : "−"} ${esc(termName(b.series))}</span>`).join(" ")} <span class="muted">${passage ? "a passage: judged on its raw points; R² not used" : ev.balance_r2 == null ? (ev.by_construction ? "a count and its own turnover" : "measured by no series") : `R² ${ev.balance_r2.toFixed(3)} · exact in ${Math.round(100 * ev.exact_steps)}% of steps`}${trustText(ev)}</span></div>`;
-      if (ev.net_flow) return netFlowLine(s, ev);
+      const xk = s.series ? ` data-xkey="${esc(keyOf(s.series))}" tabindex="0" role="button" style="cursor:pointer" title="why discovery kept it: what it read and tried"` : "";
+      if (ev.balance) return `<div class="bal"${xk}><b>${esc(stockName(s.id))}</b> <span class="muted">changes by</span> ${ev.balance.map((b) => `<span class="ty" title="${esc(b.series)}">${b.sign > 0 ? "+" : "−"} ${esc(termName(b.series))}</span>`).join(" ")} <span class="muted">${passage ? "a passage: judged on its raw points; R² not used" : ev.balance_r2 == null ? (ev.by_construction ? "a count and its own turnover" : "measured by no series") : `R² ${ev.balance_r2.toFixed(3)} · exact in ${Math.round(100 * ev.exact_steps)}% of steps`}${trustText(ev)}</span></div>`;
+      if (ev.net_flow) return netFlowLine(s, ev).replace('<div class="bal">', `<div class="bal"${xk}>`);
       return ""; }).join("")
     + leftOutHead(d, d.left_out, m) + keptNote(d, d.left_out) + leftOut(d.left_out, d) + unnamedBucket(d, d.left_out, m) : '<div class="muted">This version was declared, not discovered.</div>';
   Intended.tables();
@@ -918,6 +922,14 @@ setInterval(async () => {
     MODEL = d.model; paint("ver", versionBar); paint("eras", erasBar); if (changed) paint("diagram", draw); paint("tables", tables); rendered();
   } catch (e) { renderError(e); }
 }, 15000);
+// a left-out row or a stock's line opens what discovery read and tried for its series (explain-drawer.js)
+function openExplain(key) {
+  const d = (MODEL && MODEL.discovery) || LAST_DISCOVERY || {}, why = (d.left_out || {})[key];
+  Explain.open(key, { href: SourceView.href, titles: d.titles || {}, help: why ? LeftOut.help([why], d) : "" });
+}
+document.addEventListener("click", (e) => { const r = e.target.closest && e.target.closest("[data-xkey]"), a = e.target.closest && e.target.closest("a");
+  if (r && (!a || a === r)) { e.preventDefault(); openExplain(r.dataset.xkey); } });
+document.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.dataset && e.target.dataset.xkey) { e.preventDefault(); openExplain(e.target.dataset.xkey); } });
 // /dynamics#s:<stock> and #x:<expected part> open that part's drawer (the Machines page links here);
 // an s: not in this model falls back to the expected part of that id, and neither says why
 let HASH_SEEN = false;

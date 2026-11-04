@@ -1,0 +1,173 @@
+{
+ "ok": true,
+ "key": "chrono_grpc_client_callmillis_count{method=\"A\"}",
+ "explain": {
+  "kind": {
+   "as": "gauge",
+   "why": "its source's definition reads it as a level",
+   "evidence": {
+    "points": 181,
+    "never_falls": false,
+    "falls": 87,
+    "resets": 2,
+    "min": 46.0,
+    "max": 135.0,
+    "whole": true,
+    "distinct": 60,
+    "interval_s": 60.0,
+    "autocorr": -0.0999
+   },
+   "reads_as": "rate",
+   "reads_why": "each reading is new, not carried from the last (lag-one autocorrelation -0.10): readings around a mean, as a per-interval count or a rate is, not a quantity held"
+  },
+  "read": {
+   "source": "chrono",
+   "query": "sum by (method) ({__name__=\"grpc_client_callMillis:count\", method=~\"A|B|C\"})",
+   "selector": "{__name__=\"grpc_client_callMillis:count\",method=\"A\"}",
+   "store_query": "{__name__=\"grpc_client_callMillis:count\",method=\"A\"}",
+   "summed": [
+    "instance",
+    "pod"
+   ],
+   "candidate": "chrono:level:grpc_client_callMillis:count",
+   "view": "level",
+   "family": "grpc_client_callMillis:count",
+   "window": [
+    1800000000.0,
+    1800010800.0
+   ],
+   "step": 60.0,
+   "points": 181,
+   "first": 1800000000.0,
+   "last": 1800010800.0,
+   "span_s": 10800.0,
+   "min": 46.0,
+   "max": 135.0,
+   "spark": [
+    102.0,
+    102.3,
+    109.7,
+    109.3,
+    96.0,
+    83.33,
+    89.67,
+    92.0,
+    104.7,
+    83.67,
+    79.33,
+    98.67,
+    102.3,
+    107.0,
+    89.0,
+    101.0,
+    80.67,
+    87.33,
+    104.3,
+    91.67,
+    99.33,
+    95.67,
+    105.0,
+    104.0,
+    107.0,
+    97.0,
+    105.0,
+    71.67,
+    100.3,
+    106.0,
+    105.3,
+    109.3,
+    95.0,
+    92.0,
+    96.67,
+    93.67,
+    110.7,
+    98.0,
+    104.7,
+    98.33,
+    90.0,
+    85.33,
+    96.33,
+    94.33,
+    91.0,
+    103.7,
+    103.0,
+    88.33,
+    103.3,
+    103.7,
+    95.0,
+    102.0,
+    96.0,
+    106.7,
+    99.67,
+    93.67,
+    108.0,
+    90.67,
+    107.0,
+    95.0
+   ]
+  },
+  "roles": {
+   "balance": {
+    "in_window": 0,
+    "counters": {
+     "n": 0,
+     "keys": []
+    },
+    "kept_apart": {},
+    "steps": 180,
+    "terms": [],
+    "r2": 0.0,
+    "exact": 0.05,
+    "outcome": "no balance fits",
+    "min_r2": 0.9
+   },
+   "driven": {
+    "forms": [
+     {
+      "form": "c",
+      "inputs": [],
+      "own": false,
+      "r2": 0.0,
+      "outcome": "reference",
+      "why": "a constant drift: the form every other must beat"
+     },
+     {
+      "form": "c + b × level",
+      "inputs": [],
+      "own": true,
+      "stretch_s": 60.0,
+      "r2": 0.5494,
+      "outcome": "refuted",
+      "why": "the level loses 100% of itself from one stretch to the next (more than 50%): its readings scatter around a mean, each one new, so it holds nothing"
+     }
+    ],
+    "passed_over": [],
+    "offered": 0,
+    "stretch_s": 60.0,
+    "stretches": 180,
+    "changes": 171,
+    "margin": 2.0,
+    "why": "and no other series explains its changes better than a constant (of 1 forms tried): an input, not a stock",
+    "own_name": [
+     "chrono_grpc_client_callmillis_count{method=\"B\"}",
+     "chrono_grpc_client_callmillis_count{method=\"C\"}"
+    ]
+   },
+   "input": {
+    "name": "chrono_grpc_client_callmillis_count_A",
+    "to_flows": [],
+    "to_levels": []
+   }
+  },
+  "verdict": "no counters balance it (best R² 0.00), and no other series explains its changes better than a constant (of 1 forms tried): an input, not a stock",
+  "kept": false
+ },
+ "title": null,
+ "left_out": "no counters balance it (best R² 0.00), and no other series explains its changes better than a constant (of 1 forms tried): an input, not a stock",
+ "window": {
+  "start": 1800000000.0,
+  "end": 1800010800.0,
+  "step": 60.0
+ },
+ "min_r2": 0.9
+}

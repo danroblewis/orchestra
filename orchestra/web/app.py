@@ -23,7 +23,7 @@ from .background import Refresher
 from .core import CoreProbe
 from .core_explore import Explorer
 from .core_stores import Stores
-from .dynamics import era_eras, model_view, predictions_view
+from .dynamics import era_eras, explain_view, model_view, predictions_view
 from .finite_response import FiniteJSONResponse
 from .intended import attach_dynamics, attach_machines, machine_subsystems
 from .intended import install as install_intended
@@ -254,6 +254,11 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         machines = idx.view(flows=bg.flows)["machines"]
         declare(machines)
         block["askers"] = askers(machines)
+
+    @app.get("/api/dynamics/explain")
+    def dynamics_explain(key: str, version: int | None = None) -> dict:
+        """What discovery read and tried for one series, stock or left out (sd/explain.py)."""
+        return explain_view(project, key, version)
 
     @app.get("/api/dynamics/predictions")
     def dynamics_predictions(era: str | None = None) -> dict:

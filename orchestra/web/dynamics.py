@@ -145,8 +145,32 @@ def model_view(project, version: int | None = None, levels: dict | None = None, 
         f["current"] = f["equations"][-1] if f["equations"] else None
     out["subsystems"] = subsystems(model)          # derived, display only (docs/proposals/subsystems.md)
     if model.discovery:
+        out["discovery"].pop("explain", None)       # what was tried per series: asked for one series at a time (explain_view)
         out["discovery"]["looked_at"] = looked_at(model.discovery)
         out["discovery"]["fitted"] = fitted(model.discovery)
     out["levels"] = levels or {}
     out["levels_error"] = levels_error
     return {"ok": True, "model": out}
+
+
+def explain_view(project, key: str, version: int | None = None) -> dict:
+    """What discovery read and tried for one series (``discovery["explain"][key]``, ``sd.explain``):
+    from a saved version when asked, else the latest discovery (with or without a model), else the
+    current version. Kept out of the model's answer, which the page polls: one series' record,
+    with its title, the left-out reason and the window, for its drawer."""
+    store = ModelStore.for_state(project.state_dir)
+    if version is not None:
+        model = store.load(version)
+    else:
+        cached = store.latest_discovery()
+        model = cached[1] if cached else store.load()
+    if model is None or not model.discovery:
+        return {"ok": False, "error": "no discovery recorded yet"}
+    d = model.discovery
+    rec = (d.get("explain") or {}).get(key)
+    if rec is None:
+        why = (d.get("left_out") or {}).get(key)
+        return {"ok": False, "error": ("this discovery's record keeps no account of what it tried for this series: a discovery "
+                                       "from before the record kept one, or a series left out before being considered"), "left_out": why}
+    return {"ok": True, "key": key, "explain": rec, "title": (d.get("titles") or {}).get(key), "left_out": (d.get("left_out") or {}).get(key),
+            "window": {"start": d.get("start"), "end": d.get("end"), "step": d.get("step")}, "min_r2": d.get("min_r2")}

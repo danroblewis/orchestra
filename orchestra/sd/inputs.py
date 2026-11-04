@@ -42,6 +42,12 @@ def _name(name: str, labels: dict[str, str]) -> str:
     return "_".join([name, *[re.sub(r"\W+", "_", v) for k, v in sorted(labels.items()) if k not in NOT_NAMED]])
 
 
+def input_name(s: Series) -> str:
+    """The name of the input a gauge is offered as (``offered_inputs``), its instances summed."""
+    name, labels = _group(s)
+    return _name(name, dict(labels))
+
+
 OWN_REASON = ("Orchestra's own ({what}): a measure of Orchestra's own machinery, offered as an input only to flows "
               "of stocks of the same provenance, never to a flow of a source's stock or the project's; no stock here is one")
 

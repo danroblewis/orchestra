@@ -84,6 +84,7 @@ from collections import defaultdict
 from itertools import accumulate, pairwise
 
 from . import construction
+from . import explain as explained
 from .accept import accepted, stock_trust
 from .attribute import associate, candidates
 from .balance import MIN_EVENTS, MIN_GAIN, LeastSquares, balance, columns, fit_of, parsimonious
@@ -94,7 +95,7 @@ from .drivers import AIC_MARGIN, EVENTS_PER_PARAM, behind, co_counting
 from .ends import claims, moves
 from .hops import split_hops
 from .identify import timing_limited, two_clocks
-from .inputs import keep_apart, offered_inputs, own_paths
+from .inputs import input_name, keep_apart, offered_inputs, own_paths
 from .live import (
     arrived,
     balance_steps,
@@ -925,6 +926,20 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     built = {s.key: t for s in series if not s.counter and s.key not in pins and (t := construction.terms(s, counters, provenance))}
     pinned: list = []                             # declared balances that fit: kept out of the restatements below
     pin_tried: dict[str, str] = {}                # a declared balance that did not fit, and how well it did
+    balances: dict[str, dict] = {}                # each level's balance attempt, as tried (sd.explain)
+
+    def tried_balance(s: Series, mine: list[Series], unlive: list[Series], steps: list[int], terms, r2, exact, fit: bool) -> None:
+        other_unit = {c.key for c in counters if unit[c.key] != unit[s.key]}
+        not_live = {c.key for c in unlive} - other_unit
+        apart = set(barred.get(s.key, ())) - other_unit - not_live
+        balances[s.key] = {"in_window": len(counters), "counters_all": [c.key for c in mine],
+                           "counters": explained._few(c.key for c in mine),
+                           "kept_apart": {k: v for k, v in (("in another unit", len(other_unit)), ("not live in its steps", len(not_live)),
+                                                            ("counting another level of its name, or its own twin", len(apart))) if v},
+                           "steps": len(steps), "terms": [{"series": c.key, "sign": sg} for c, sg in terms or []],
+                           "r2": None if r2 is None else round(max(r2, 0.0), 4), "exact": None if exact is None else round(exact, 4),
+                           "outcome": "fits" if fit else "no balance fits",
+                           **({"declared": pin_tried[s.key]} if s.key in pin_tried else {})}
 
     def fits(s: Series, r2: float, exact: float, terms: list | None = None, steps: list[int] | None = None) -> bool:
         """A balance a level may be a stock on: a level that only ever takes two values is usually
@@ -995,6 +1010,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                 s.blocks = view.blocks
                 masks[s.key] = mine_steps
                 pinned.append((s, list(given), r2, exact))
+                tried_balance(s, [c for c, _ in given], unlive, mine_steps, given, r2, exact, True)
                 continue
             shown = " ".join(f"{'+' if sg > 0 else '−'}{c.key}" for c, sg in given)
             pin_tried[s.key] = (f"the balance declared for stock {pins[s.key].name} ({shown}) fits at R² {r2:.2f}" if s.key in pins
@@ -1018,6 +1034,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             r2, exact = fit_of(s, terms, steps)
             if backlog:                            # a backlog its traffic accounts for is judged on that traffic
                 r2 = max(r2, through_r2(s, terms, steps))
+        tried_balance(s, mine, unlive, steps, terms, r2, exact, bool(terms and fits(s, r2, exact)))
         values = {v for _, v in s.points}
         if len(values) <= 2 and not backlog and not (terms and fits(s, r2, exact)):
             if values == {0.0, 1.0}:
@@ -1215,13 +1232,16 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # Orchestra's own series drive only flows of Orchestra's own stocks (sd.inputs): with none, they are no input
     keep_apart(inputs, input_refs, bool(own_paths({s.key: sid_of[s.key] for s, _, _, _ in found}, {}, provenance)), left_out)
     found_net: list[Series] = []
+    input_of = {s.key: nm for s in series if not s.counter and (nm := input_name(s)) in input_refs}
+    net_trace: dict[str, dict] = {}               # each level's net flow as tried (sd.netflow, sd.explain)
     for name, vals in inputs.items():
         sources[f"input:{name}"] = (grid(vals), None)
     # a level no counters balance may still be a stock, its net flow fitted from the other series (sd.netflow)
     net_flows: list[Flow] = []
     for st, made, was_input, lv in net_flow_stocks(series, [s for s, _, _, _ in found], sid_of, inputs, input_refs, left_out, step,
                                                    unit_s, (since, end), lambda x: (unique_id(_slug(x), writer_of(x), ids), _title(x, places)),
-                                                   ref, writer_of, measure=net_evidence, units=unit, counters=counters):
+                                                   ref, writer_of, measure=net_evidence, units=unit, counters=counters,
+                                                   explain=net_trace):
         st.evidence.update(_named(lv, places))
         stocks.append(st)
         net_flows += made
@@ -1241,6 +1261,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     # balance counts the flow's own events, one off just before each of them (sd.drivers).
     accumulators = {sid_of[s.key] for s, terms, _, _ in found if all(sign > 0 for _, sign in terms)}
     flows, measured = [], {}
+    offered: dict[str, list[dict]] = defaultdict(list)    # a path a rate may read -> the flows it was offered to (sd.explain)
     grouped: dict[str, list] = defaultdict(list)       # per counter: its flow, then its co-flows (ends.moves's order)
     for mv in flow_moves:                              # a co-flow its own writer counted is still the flow's events
         grouped[mv.evidence.get("co_flow_of") or mv.evidence.get("copy_of") or mv.id].append(mv)
@@ -1280,6 +1301,8 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         best, *rest = fit_flow(events, live_s / unit_s, paths, src, set(paths) - accumulators - set(barred) - apart, slow, start,
                                {mv.dst for mv in mvs if mv.dst}, near)
         best["dispersion"] = dispersion(events, live, best, paths, unit_s)
+        for pid in set(paths) - accumulators - set(barred) - apart:
+            offered[pid].append({"flow": mvs[0].id, "chosen": pid in best["inputs"]})
         other = lambda x, src=src: f"_{x['inputs'][0]}" if x["inputs"] and x["inputs"] != [src] else ""   # a form in another stock says which
         # a form that could not be fitted (no finite AIC) is named only among the rejected, with its reason
         alt = {f"aic_{x['form']}{other(x)}": round(x["aic"], 2) for x in rest[:4] if math.isfinite(x["aic"])}
@@ -1338,6 +1361,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                   "as flows fitted by Poisson maximum likelihood, and levels no counters balance whose net flow "
                   "the other series explain, fitted by least squares.",
                   time_unit, stocks, flows, machines)
+    explain = explained.record(series, left_out=left_out, stocks=stocks, sid_of=sid_of, kinds=kinds, provenance=provenance,
+                               start=start, end=end, step=step, balances=balances, net=net_trace, input_of=input_of,
+                               offered=offered, flow_of={by.key: fid for fid, by in measured.items()}, min_r2=MIN_R2)
     model.discovery = {"summed": summed, "start": start, "end": end, "fit_start": fit_start, "live_minutes": round(live_s / 60, 2) if found else 0,
                        "gaps": [[a, b] for (_, a), (b, _) in pairwise(live)] if found else [],
                        "step": step, "sampled": sampled, "series": len(series), "inputs": input_refs, "held": held,
@@ -1363,7 +1389,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                        "title_tags": {x.key: t for x in series if x.key in left_out and (t := _left_tags(x, places))},
                        # a left-out count of a place that holds items now: its level and its place, so a page
                        # draws or captions it (never a count that silently leaves something out)
-                       "held_levels": _held_levels(series, left_out, provenance)}
+                       "held_levels": _held_levels(series, left_out, provenance),
+                       # what discovery read and tried for each series it considered, stock or left out (sd.explain)
+                       "explain": explain}
     return model
 
 

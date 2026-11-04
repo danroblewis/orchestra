@@ -351,11 +351,14 @@ def _follows(counters, starts: list[int], y: list[float], k: int) -> str:
     return f"; follows {best[1]}, R² {best[0]:.2f}, not fitted yet" if best else ""
 
 
-def fit(level, drivers: list[Driver], step: float, unit_s: float, defer: frozenset | set = frozenset(), counters=None) -> tuple[Fit | None, str]:
+def fit(level, drivers: list[Driver], step: float, unit_s: float, defer: frozenset | set = frozenset(), counters=None,
+        trace: dict | None = None) -> tuple[Fit | None, str]:
     """The level's net flow, or None and why it stays an input (said after conservation's reason).
     ``defer``: drivers that are the level measured again but give way to it (``stocks``): passed
     over, not a reason to keep the level an input. ``counters``: the window's counters, one of which
-    a level that changed too rarely to fit may be said to follow (``_follows``)."""
+    a level that changed too rarely to fit may be said to follow (``_follows``). ``trace``, when
+    given, is filled with every form tried, its inputs, R² and why it lost, and every driver passed
+    over and why (``sd.explain``: the record of what discovery tried); it changes nothing."""
     n = len(level.values) - 1
     live = set(range(n)) if level.live is None else set(level.live)
     k0 = steps_of(level.resolution.seconds if level.resolution else None, step)
@@ -365,6 +368,16 @@ def fit(level, drivers: list[Driver], step: float, unit_s: float, defer: frozens
     same: tuple[str, Driver] | None = None
     parts: list[str] = []
     cache: dict[int, tuple] = {}
+    forms: list[dict] = []                  # every form tried, for the trace: by its Fit's id once it is a candidate
+    passed: list[dict] = []                 # every driver passed over, and why
+    by_fit: dict[int, dict] = {}
+
+    def tried(k: int, driver: Driver | None, own: bool, r2: float | None, outcome: str, why: str) -> dict:
+        f = {"form": " + ".join(["c", *(["a × " + driver.ref] if driver else []), *(["b × level"] if own else [])]),
+             "inputs": [driver.key] if driver else [], "own": own, "stretch_s": k * step,
+             "r2": None if r2 is None else round(r2, 4), "outcome": outcome, "why": why}
+        forms.append(f)
+        return f
 
     def on(k: int):
         if k not in cache:
@@ -378,69 +391,103 @@ def fit(level, drivers: list[Driver], step: float, unit_s: float, defer: frozens
         starts, y, changes = on(k)
         p = 1 + (driver is not None) + own
         if changes < EVENTS_PER_PARAM * p or len(y) <= 2 * (p + 1):
+            tried(k, driver, own, None, "not fitted", f"the level changed in {changes} of {len(y)} stretches: a form of {p} "
+                  f"parameters needs {EVENTS_PER_PARAM * p} changes")
             return
         base = _ols([[1.0] for _ in y], y)
         rows = [[1.0, *([_mean(driver.values, a, k)] if driver else []), *([level.values[a]] if own else [])] for a in starts]
         got = _ols(rows, y)
         if base is None or got is None:
+            tried(k, driver, own, None, "not fitted", "its columns are degenerate (a driver that did not vary on these stretches)")
             return
         coef, rss, se = got
+        sst = sum((v - sum(y) / len(y)) ** 2 for v in y) or 1e-12
+        r2 = 1 - rss / sst
         aic0, aic = _aic(base[1], len(y), 1), _aic(rss, len(y), p)
         w = _independent_share([v - sum(c * x for c, x in zip(coef, r)) for r, v in zip(rows, y)])
         gain = lambda rss_simple, dp: w * len(y) * math.log(max(rss_simple, 1e-12) / max(rss, 1e-12)) - 2 * dp
-        if gain(base[1], p - 1) < margin:
+        if (g0 := gain(base[1], p - 1)) < margin:
+            tried(k, driver, own, r2, "lost to the constant", f"it beats a constant drift by {g0:.1f} in AIC, short of the "
+                  f"{margin:.1f} a form must ({AIC_MARGIN:g}, plus 2 ln {m} for the {m} forms tried)")
             return
         t_own = coef[-1] / se[-1] * math.sqrt(w) if own and se[-1] > 0 else (math.inf if own else None)
-        if own and (abs(t_own) < DF_T or coef[-1] * k * step / unit_s < -FORGETS):
+        if own and coef[-1] * k * step / unit_s < -FORGETS:
+            tried(k, driver, own, r2, "refuted", f"the level loses {min(1.0, -coef[-1] * k * step / unit_s):.0%} of itself from one "
+                  f"stretch to the next (more than {FORGETS:.0%}): its readings scatter around a mean, each one new, so it holds nothing")
+            return
+        if own and abs(t_own) < DF_T:
+            tried(k, driver, own, r2, "refuted", f"its pull toward a level has |t| {abs(t_own):.2f}, below the {DF_T} a random walk "
+                  "reaches by chance (Dickey–Fuller)")
             return
         if driver and own:                      # both terms must earn their place over each alone, the driver as one of many
             for sub, need in (([[1.0, r[1]] for r in rows], AIC_MARGIN), ([[1.0, r[2]] for r in rows], margin)):
                 g = _ols(sub, y)
                 if g is None or gain(g[1], 1) < need:
+                    tried(k, driver, own, r2, "lost to a simpler form", "both terms together do not earn their place over each alone")
                     return
         if not _without_largest(rows, y, w, margin):
+            tried(k, driver, own, r2, "refuted", "it rests on one jump: without the stretch whose change is furthest from the usual "
+                  "it no longer beats a constant")
             return
-        sst = sum((v - sum(y) / len(y)) ** 2 for v in y) or 1e-12
         params = {"c": coef[0], **({"a": coef[1]} if driver else {}), **({"b": coef[-1]} if own else {})}
         inflow = [coef[0] + (coef[1] * r[1] if driver else 0.0) for r in rows]
         simpler = [[0]] + ([[0, 1], [0, 2]] if driver and own else [])
         cands.append((Fit(params, driver, own, k * step, len(y), changes, 1 - rss / sst, aic, aic0, t_own, m,
                           sum(inflow) / len(inflow), coef, w), rows, y, simpler, starts, k))
+        by_fit[id(cands[-1][0])] = tried(k, driver, own, r2, "beat the constant", f"AIC {aic:.1f} against {aic0:.1f} for a constant")
+
+    def done(why: str = "") -> None:
+        if trace is not None:
+            trace.update(forms=forms, passed_over=passed, offered=len(drivers), stretch_s=k0 * step, stretches=len(on(k0)[0]),
+                         changes=on(k0)[2], margin=round(margin, 2), **({"why": why} if why else {}))
 
     starts0, y0, changes0 = on(k0)
     if changes0 < EVENTS_PER_PARAM * 2:
         said = (f"only {changes0} of its {len(y0)} stretches" if changes0 < len(y0) else f"{changes0} stretches")
-        return None, (f"and it changed in {said} of {k0 * step:g} s; at least {EVENTS_PER_PARAM * 2} are needed "
-                      f"to fit a net flow{_follows(counters, starts0, y0, k0) if changes0 else ''}")
+        why = (f"and it changed in {said} of {k0 * step:g} s; at least {EVENTS_PER_PARAM * 2} are needed "
+               f"to fit a net flow{_follows(counters, starts0, y0, k0) if changes0 else ''}")
+        done(why)
+        return None, why
     consider(k0, None, True)
     for d in drivers:
         k = max(k0, steps_of(d.resolution_s, step))
         starts, y, changes = on(k)
-        if changes < EVENTS_PER_PARAM * 2 or _eligible(d, starts, k):
+        if changes < EVENTS_PER_PARAM * 2:
+            passed.append({"series": d.key, "why": f"on its stretches of {k * step:g} s the level changed in only {changes}"})
+            continue
+        if why := _eligible(d, starts, k):
+            passed.append({"series": d.key, "why": why})
             continue
         if part := _part(level, d, starts, k):
             parts.append(part)
+            passed.append({"series": d.key, "why": part + ": a part and its total never drive each other"})
             continue
         if why := _same(level, d, starts, y, k, n):
             if d.key in defer or statistic(d.name):     # a copy that gives way, or a statistic of it (its maximum): not it again
+                passed.append({"series": d.key, "why": "a copy of it that gives way to it, or a statistic of it"})
                 continue
             same = (why, d)
             break
         consider(k, d, False)
         consider(k, d, True)
     if same:
-        return None, (f"and {same[0]} {same[1].key}: the same quantity measured again, or a function of it, "
-                      "so an input, not a stock")
+        why = f"and {same[0]} {same[1].key}: the same quantity measured again, or a function of it, so an input, not a stock"
+        done(why)
+        return None, why
     cands.sort(key=lambda c: c[0].aic - c[0].aic_constant)
     first = ""
     for f, rows, y, simpler, starts, k in cands:
         why = _refuted(f, rows, y, simpler, starts, k, n, step, margin)
         if not why:
+            by_fit[id(f)].update(outcome="chosen", why="the best form that beat the constant and survived every refutation")
+            done()
             return f, ""
+        by_fit[id(f)].update(outcome="refuted", why=why)
         first = first or f"the best, {f.form} at R² {f.r2:.2f}, refuted: {why}"
     part = f"; {'; '.join(parts)} (counts in one unit, one never above the other and swinging no wider): neither drives the other" if parts else ""
-    return None, (f"and no other series explains its changes better than a constant ({first or f'of {m} forms tried'}{part}): "
-                  "an input, not a stock")
+    why = f"and no other series explains its changes better than a constant ({first or f'of {m} forms tried'}{part}): an input, not a stock"
+    done(why)
+    return None, why
 
 
 def _r2_alone(x: list[float], y: list[float]) -> float:
@@ -506,13 +553,14 @@ def first(s) -> tuple:
 
 def stocks(series: list, counted: list, sid_of: dict[str, str], inputs: dict[str, list[float]], input_refs: dict[str, dict],
            left_out: dict[str, str], step: float, unit_s: float, window: tuple[float, float], name_of, ref_of, writer_of,
-           measure=None, units: dict[str, str] | None = None, counters: list | None = None) -> list:
+           measure=None, units: dict[str, str] | None = None, counters: list | None = None, explain: dict | None = None) -> list:
     """The levels conservation left out because no counters balance them that are stocks by their
     fitted net flow, as (stock, its flows, the input name it had, its series). The others get their
     reason in ``left_out``. ``counted``: conservation's stocks' series; ``name_of(series)``: a new
     stock's id and title; ``ref_of(series)``: the model's reference to it; ``measure(level, fit,
     drivers, step, unit_s)``: what the stock's trust is computed from (``sd.netnull.measured``);
-    ``units``: each series' unit (``sd.units``), by key."""
+    ``units``: each series' unit (``sd.units``), by key. ``explain``, when given, gets each level's
+    trace by key (``fit``): the forms tried, and the series of its own name never offered."""
     key_of = {name: series_key(r["name"], r.get("labels") or {}) for name, r in input_refs.items()}
     drivers = [Driver(sid_of[c.key], c.values, c.resolution.seconds if c.resolution else None, c.key, c.name) for c in counted]
     drivers += [Driver(f"input:{name}", vals, input_refs[name].get("resolution_s"), key_of[name], input_refs[name]["name"])
@@ -534,7 +582,11 @@ def stocks(series: list, counted: list, sid_of: dict[str, str], inputs: dict[str
                                 "of the running process, set by its work, not an accumulation, so no net flow is fitted to it")
             continue
         mine = [d for d in drivers if d.name != s.name]
-        got, why = fit(s, mine, step, unit_s, after[s.key] | no_stock - {s.key}, counters=counters)
+        trace: dict = {}
+        got, why = fit(s, mine, step, unit_s, after[s.key] | no_stock - {s.key}, counters=counters, trace=trace)
+        if explain is not None:
+            trace["own_name"] = [d.key for d in drivers if d.name == s.name and d.key != s.key]
+            explain[s.key] = trace
         if got is not None and (twin := copy_of(s, [lv for lv, _ in accepted], max(1, round(got.block_s / step)))):
             got, why = None, (f"and its changes move with {twin.key}'s, a stock already: the same quantity measured again, "
                               "so an input, not a second stock")
