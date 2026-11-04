@@ -89,6 +89,11 @@ match = ['{service="hk-checkout",__name__=~".*(queue|inflight|in_flight|pending|
 names show), and widen it later.
 
 
+Every series read from the store is listed with the selector you would type in Chronosphere
+itself (its own metric name and labels, not Orchestra's `chrono:` name), copyable, and a **view**
+link that opens the Core page's External stores box on it: a counter as `rate(<selector>[<step>])`,
+a gauge as the bare selector, over the window discovery fitted.
+
 `orchestra sources check` should say `bearer from file …: present`, `answers`, and the endpoints
 (`metadata no` is normal); never the token. `orchestra sources infer --source chronosphere` lists
 what it will read.

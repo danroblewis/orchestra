@@ -1207,6 +1207,22 @@ an index read), `start`/`end` the window and `limit`. Reads draw on the web serv
 store's rate and daily cap; a spent cap is refused with when it resets (00:00 UTC). Every request
 and refusal is appended to `<state>/sources/<name>.asked.jsonl` with `reader` `core page`.
 
+**A series as the store spells it** (`sources/selector.py`). Orchestra names a remote series
+`<prefix>:<name>`, lower-cased, `:` turned into `_`, its labels canonical: nothing that can be
+pasted back into the store. So every series read from a source also records, from the definition
+it was read by (never rebuilt from Orchestra's name), its **selector** in the store's own
+spelling (the store's metric name, the definition's matchers, the source's `match` among them,
+and one `label="value"` per label it is grouped by, as the store spells the label) and the
+**query a view of it opens with**: a counter's increments as `rate(<selector>[<step>])` (the
+discovery's step, at least the definition's lookback), anything else as the bare selector; a
+query as written (a `[[series]]` query, a script's) is its own. The discovery record lists them
+by series key (`sourced`), and a stock's series carries them. Every source-fed series row (the
+Instruments page's source drawer, the Dynamics page's left-out list and a stock's drawer) shows
+the selector as text beside Orchestra's name, and a link `/core#store=<name>&q=<query>&mode=range&minutes=<window>`
+that opens the source's box on the Core page with that query over the Core page's window holding
+the fitting window (a day at most), and runs it once; the page's guard applies as to any query
+typed there (`web/static/source-view.js`).
+
 **Counted traffic** (`sources/traffic.py`; `docs/proposals/event-sources.md` §1–3). A series
 definition may say what it counts on another system's bus:
 

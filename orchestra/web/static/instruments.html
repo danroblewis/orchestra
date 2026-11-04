@@ -29,7 +29,7 @@
 <body>
 <nav id="nav"><a href="/">Dashboard</a><a href="/machines">Machines</a><a href="/instruments" class="on">Instruments</a><a href="/dynamics">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="iwrap">
-  <div class="intro">An instrument measures the running system and never acts on it: a script Orchestra runs, a URL it reads, or another metrics store it reads. Click one for its series, each with its latest value, and its log.<details class="more"><summary>more about this page</summary>Instruments are not machines: their series are labelled <code>instrument=&lt;name&gt;</code>, which says who measured them, never who did the work. Machines are on the Machines page, known by their events on the bus. <b>Measures machine</b> names the declared machines an instrument is attached to: the owner's statement of which series measure which machine, never a machine made from a series.</details></div>
+  <div class="intro">An instrument measures the running system and never acts on it: a script Orchestra runs, a URL it reads, or another metrics store it reads. Click one for its series, each with its latest value, and its log; a source's series each with the selector to type in the store and a link to view it there.<details class="more"><summary>more about this page</summary>Instruments are not machines: their series are labelled <code>instrument=&lt;name&gt;</code>, which says who measured them, never who did the work. Machines are on the Machines page, known by their events on the bus. <b>Measures machine</b> names the declared machines an instrument is attached to: the owner's statement of which series measure which machine, never a machine made from a series.</details></div>
   <div id="state" class="muted" style="font-size:12px;margin-bottom:8px"></div>
   <div class="scroll-x"><table class="itable" id="list"></table></div>
   <div id="errors" class="muted" style="font-size:12px;margin-top:10px"></div>
@@ -37,6 +37,7 @@
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
 <script src="/static/sd-graph.js?v={{v}}"></script>
+<script src="/static/source-view.js?v={{v}}"></script>
 <script>
 const draftPill = (x, now = Date.now() / 1000) => (x.expires && x.expires < now
   ? `<span class="ipill bad">draft · expired ${esc(ago(now - x.expires))} ago, still recording · left out of discovery</span>`
@@ -79,7 +80,7 @@ async function load() {
     + (nlate ? ` · ${nlate} late (nothing written for more than three of its periods)` : "") + ` · as of ${new Date().toTimeString().slice(0, 8)}`;
   // what an operator reads first (is it writing? is it failing?) before what it reads
   Orchestra.keepFocus($("list"), () => $("list").innerHTML = `<tr><th>instrument</th><th>kind</th><th>last write</th><th>failures</th><th>last error</th><th>measures machine</th><th>target</th></tr>`
-    + d.instruments.map((x) => `<tr class="${x.kind === "source" ? "" : "click"}" data-name="${esc(x.name)}"${x.kind === "source" ? "" : ` tabindex="0" role="button" aria-label="${esc(x.name)}: open its log"`}>
+    + d.instruments.map((x) => `<tr class="click" data-name="${esc(x.name)}" tabindex="0" role="button" aria-label="${esc(x.name)}: ${x.kind === "source" ? "open its series" : "open its log"}">
       <td><b>${esc(x.name)}</b>${x.owner && x.owner !== "project" ? ` <span class="muted">(${esc(x.owner)})</span>` : ""}${pills(x)}</td><td class="kind" data-l="kind">${esc(x.kind)}</td>
       <td data-l="last write" class="${late(x, now) ? "late" : ""}">${x.last_write ? `${ago(now - x.last_write)} ago · ${x.points} series in its last write${late(x, now) ? ` · <b>late</b>: every ${esc(every(x.every_s))}` : ` <span class="muted">· every ${esc(every(x.every_s))}</span>`}` : x.kind === "source" ? (x.status ? (x.status.ok === false ? "" : "read at the last discovery") : "not read yet") : `<span class="muted">none yet · every ${esc(every(x.every_s))}</span>`}</td>
       <td data-l="failures" class="${x.failures ? "bad" : ""}">${x.failures || 0}</td>${x.last_error ? `<td class="bad err" data-l="last error">${esc(x.last_error)}${x.last_note ? `<div class="muted">last run said: ${esc(x.last_note)}</div>` : ""}</td>`
@@ -101,6 +102,7 @@ function fromHash() {
   if (!name || /^token=/.test(name)) return;
   const x = INSTRUMENTS.find((i) => i.name === name);
   if (x && x.kind !== "source") return openLog(name);
+  if (x) return openSource(x);
   openDrawer(`<h3>${esc(name)} <span class="tag">${x ? "source" : "not here"}</span></h3><div class="muted">${x ? "A source is another store, read at each discovery: it has no log of its own here. Its state is in its row." : `No instrument called <span class="num">${esc(name)}</span> is configured: the link may be from an older configuration.`}</div>`, { key: "i:" + name });
 }
 window.addEventListener("hashchange", fromHash);
@@ -142,7 +144,24 @@ function seriesTable(d, now, name) {
   return `<table class="itable series"><tr><th>series</th><th style="text-align:right">latest</th><th>written</th></tr>${rows}</table>`
     + (d.more ? `<div class="muted">and ${d.more} more</div>` : "");
 }
+// a source's series, as the latest discovery read them: Orchestra's name, and beside it the selector as
+// the store spells it (copyable) with a link that opens the Core page's External stores box on it
+function sourceSeries(x) {
+  const w = x.window || {}, span = w.end && w.start ? w.end - w.start : null;
+  if (!(x.series || []).length) return `<div class="muted">no series read from it yet: the host's discovery reads it</div>`;
+  return `<table class="itable series"><tr><th>series</th><th>in the store</th></tr>${x.series.map((r) => `<tr><td class="num">${esc(r.key)}<div class="muted">${esc(r.kind || "")}</div></td>
+    <td>${SourceView.html({ source: x.name, ...r }, span)}</td></tr>`).join("")}</table>`
+    + (x.series_more ? `<div class="muted">and ${x.series_more} more</div>` : "");
+}
+function openSource(x) {
+  const n = (x.series || []).length + (x.series_more || 0);
+  openDrawer(`<h3 data-drawer-key="i:${esc(x.name)}">${esc(x.name)} <span class="tag">source</span></h3>`
+    + `<div class="muted" style="font-size:12px">Another store, read at each discovery: it has no log of its own here. Each series below is named as Orchestra names it, with the selector to type in the store itself and a link that opens it in the Core page's External stores box over the fitting window.</div>`
+    + `<h4>Series <span class="muted">(${n} read at the latest discovery)</span></h4>${sourceSeries(x)}`, { key: "i:" + x.name });
+}
 async function openLog(name) {
+  const inst = INSTRUMENTS.find((i) => i.name === name);
+  if (inst && inst.kind === "source") return openSource(inst);
   let d, sr;
   const get = async (what) => { try { return await (await fetch(`/api/instruments/${encodeURIComponent(name)}/${what}`)).json(); } catch (e) { return { ok: false, error: "the web server did not answer" }; } };
   [d, sr] = await Promise.all([get("log"), get("series")]);

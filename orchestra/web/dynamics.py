@@ -56,7 +56,7 @@ def no_model(project, discovery: dict | None, as_of: float | None = None) -> dic
     if discovery is not None:
         d, left = discovery, discovery.get("left_out") or {}
         out["discovery"] = {**{k: d[k] for k in ("left_out", "series", "step", "start", "end", "min_r2", "sources", "not_saved",
-                                                 "since_last_s", "window_s", "summed") if k in d}, "looked_at": looked_at(d),
+                                                 "since_last_s", "window_s", "summed", "sourced") if k in d}, "looked_at": looked_at(d),
                             "fitted": fitted(d),
                             # the series considered and not left out: so "left out N of M" accounts for every one
                             "kept": sorted(k for k in (d.get("resolution") or {}) if k not in left)}

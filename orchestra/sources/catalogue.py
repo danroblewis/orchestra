@@ -59,6 +59,8 @@ from .own import OWN, OwnSource
 from .plan import read_resolution
 from .prometheus import PrometheusSource
 from .readcache import ReadCache
+from .selector import of_series as store_selector
+from .selector import view_query
 from .spec import SourceSpec, Specs, for_project
 from .transform import TransformError
 from .views import Definition
@@ -103,8 +105,15 @@ def summary(d: Definition) -> bool:
     return d.view in SUMMARIES or (d.view == "rollup" and d.name.endswith(("_avg", "_max", "_min")))
 
 
-def provenance(spec: SourceSpec, d: Definition, traffic: dict | None = None, resolution_s: float | None = None) -> dict:
-    return {"source": spec.name, **({"machine_label": spec.machine} if spec.machine else {}), "query": d.query, "kind": d.kind, "origin": list(d.origin),
+def provenance(spec: SourceSpec, d: Definition, traffic: dict | None = None, resolution_s: float | None = None,
+               labels: dict | None = None, step: float | None = None) -> dict:
+    """What a series read from a source says of itself; with its ``labels``, also its selector as
+    the store spells it and the query a view of it starts from (``selector.py``)."""
+    store = {}
+    if labels is not None:
+        sel = store_selector(d, labels, spec.prefix)
+        store = {"selector": sel, "store_query": view_query(d, sel, step or 60.0)}
+    return {"source": spec.name, **store, **({"machine_label": spec.machine} if spec.machine else {}), "query": d.query, "kind": d.kind, "origin": list(d.origin),
             "resolution_s": d.resolution_s if resolution_s is None else resolution_s,
             "unit": d.unit, **({"unit_label": d.unit_label} if d.unit_label else {}), "view": d.view, "family": d.family, "flags": list(d.flags), **({"traffic": traffic} if traffic else {}),
             **({"stock": dict(d.stock)} if d.stock else {})}
@@ -218,7 +227,7 @@ class Catalogue:
                                           baseline=d.kind == "counter" and d.view != "increments",
                                           direction=(counted or {}).get("direction"), channel=(counted or {}).get("channel"),
                                           resolution_s=read_resolution(d, step), summary=summary(d))
-                out.provenance[key] = provenance(spec, d, counted, read_resolution(d, step))
+                out.provenance[key] = provenance(spec, d, counted, read_resolution(d, step), labels, step)
                 if counted:
                     out.traffic[key] = counted
                 times += [t for t, _ in pts]

@@ -117,6 +117,7 @@
 <script src="/static/charts.js?v={{v}}"></script>
 <script src="/static/promql-editor.js?v={{v}}"></script>
 <script src="/static/core-stores.js?v={{v}}"></script>
+<script src="/static/source-view.js?v={{v}}"></script>
 <script>
 let CORE = null, PROBE = null, LOG_SRC = "host", LOG_LINES = 200;
 const LOG_MAX_LINES = 2000;
@@ -353,6 +354,7 @@ async function loadStores() {
     list.innerHTML = d.stores.map((s) => `<div class="store" data-name="${esc(s.name)}"><div class="sh"><b>${esc(s.name)}</b><span class="muted">${esc(s.where)}</span></div>
       <div class="st-row"></div><div class="sq"></div></div>`).join("") + d.refused.map(CoreStores.refusedHtml).join("");
     for (const s of d.stores) storeQuery(s);
+    fromStoreHash();
   }
   for (const s of d.stores) {
     const el = list.querySelector(`.store[data-name="${s.name}"] .st-row`);
@@ -382,6 +384,22 @@ function storeQuery(s) {
     placeholder: 'up{job="api"}', need: (ctx) => storeNeed(s.name, ctx) });
   st.editor.value = saved.q || "";
 }
+// /core#store=<name>&q=<query>&mode=range&minutes=<window>: a series' view link (source-view.js, from the
+// Instruments and Dynamics pages) opens that store's box with the query and window, and runs it once
+// (the hash is cleared, so a reload does not ask again); the query is guarded as any typed here
+function fromStoreHash() {
+  const h = SourceView.parse(location.hash);
+  if (!h) return;
+  const st = STORE_Q[h.store];
+  if (!st) { $("st-note").textContent = `no usable [[sources]] entry named ${h.store}: the link may be from an older configuration`; return; }
+  history.replaceState(null, "", location.pathname + location.search);
+  st.mode = h.mode; st.minutes = h.minutes; st.editor.value = h.q;
+  box(h.store, ".st-win").value = String(h.minutes);
+  box(h.store, ".st-mode").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.m === st.mode));
+  document.querySelector(`.store[data-name="${h.store}"]`).scrollIntoView({ block: "start" });
+  storeRun(h.store);
+}
+window.addEventListener("hashchange", () => { if (STORES) fromStoreHash(); });
 const storeUrl = (name, path, params) => `/api/core/stores/${encodeURIComponent(name)}/${path}?` + new URLSearchParams(params);
 // what the caret needs, asked once a minute at most per lookup, through the bounded endpoints
 async function storeNeed(name, ctx) {

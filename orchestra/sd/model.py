@@ -48,6 +48,9 @@ points; none for one written as things happen), with how it was ``read`` between
     unit: str | None = None
     traffic: dict | None = None         # counted traffic: direction, channel and machine (orchestra.sources.traffic)
     read: str | None = None             # how discovery read it between its points: hold (counts, states) or linear (measurements)
+    selector: str | None = None         # a source's series as the store spells it (orchestra.sources.selector), never Orchestra's name
+    store_query: str | None = None      # ... and the query a view of it starts from: a counter's rate(), else the selector
+    summed: list[str] | None = None     # the labels of its family the source summed over (a source's split, or inference's merges)
 
 
 @dataclass

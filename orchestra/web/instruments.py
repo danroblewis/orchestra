@@ -13,7 +13,9 @@ instrument:
   (``orchestra.collect.runner``) is read from the record; the rest, declared in ``orchestra.toml``
   or in the last record only, are marked not running;
 - a source: ``[[sources]]`` in ``orchestra.toml`` (its server, never its credentials), with how
-  the latest discovery found it (``Model.discovery["sources"]``). A source is read at each
+  the latest discovery found it (``Model.discovery["sources"]``) and the series it read from it
+  (``Model.discovery["sourced"]``: each one's selector as the store spells it, and the query the
+  Core page's External stores box opens it with). A source is read at each
   discovery, not on an interval of its own, and writes nothing to the metrics store.
 
 Each row also gains ``hung_on`` (``web/measured.py``, added by the route): the declared machines
@@ -41,18 +43,26 @@ def _row(c) -> dict:
     return {"name": c.name, "kind": c.what, "target": c.shown, "every_s": c.every_s, "owner": c.owner, **c.flags()}
 
 
+SOURCE_SERIES = 500          # a source's series listed in its row, at most
+
+
 def _sources(project, discovery: dict | None) -> tuple[list[dict], list[str]]:
     from ..sources.spec import for_project
     try:
         specs = for_project(project)
     except Exception as e:  # noqa: BLE001 - the page shows the rest
         return [], [f"[[sources]]: {type(e).__name__}: {e}"]
-    status = (discovery or {}).get("sources") or {}
+    d = discovery or {}
+    status, sourced = d.get("sources") or {}, d.get("sourced") or {}
+    window = {k: d[k] for k in ("start", "end", "step") if d.get(k) is not None}
     out = []
     for s in specs.sources:
         st = status.get(s.name) or {}
+        series = [{"key": k, **{x: v for x, v in p.items() if x != "source"}} for k, p in sourced.items() if p.get("source") == s.name]
         out.append({"name": s.name, "kind": "source", "target": s.where(), "every_s": None, "owner": "project",
-                    "type": s.type, "prefix": s.prefix, "status": st or None,
+                    "type": s.type, "prefix": s.prefix, "status": st or None, "match": list(s.match),
+                    # every series the latest discovery read from it, each with its selector as the store spells it
+                    "series": series[:SOURCE_SERIES], "series_more": max(0, len(series) - SOURCE_SERIES), "window": window,
                     **({"last_error": st["error"]} if st.get("error") else {})})
     return out, [f"[[sources]] {k}: {why}" for k, why in specs.refused.items()]
 
