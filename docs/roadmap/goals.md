@@ -63,7 +63,7 @@ marked as such. This is goal G1, and every other goal's tests depend on it.
     committed and announced.
 
 ### G4. A Supervisor and Coordinator who know how to change Orchestra's settings
-- **What:** they know the integration contract: [USING_ORCHESTRA.md](../../USING_ORCHESTRA.md)
+- **What:** they know the integration contract: [SETUP.md](../../SETUP.md) and [orchestra/guide.md](../../orchestra/guide.md)
   (metrics, machines, configuration), [PLUGINS.md](../../PLUGINS.md), and the task system's
   worker contract. They can read these docs through their tools, and their prompts say when to.
 - **Acceptance:**
@@ -81,7 +81,7 @@ marked as such. This is goal G1, and every other goal's tests depend on it.
     state, before its work, which flows it expects to change, and a later version of the model
     checks the guess.
   - **Guidance:** agents learn what good stock and flow metrics look like and how to add an
-    emitter (`docs/machines.md`, USING_ORCHESTRA.md §3–4), since agents implement new metrics.
+    emitter (`docs/machines.md`), since agents implement new metrics.
   - **Focus:** domain stocks the target repository emits come first; the task system's own
     stocks matter mostly to a pipeline manager (G9).
 - **Acceptance:**
@@ -442,7 +442,7 @@ the change did what was intended.
 - **Acceptance:** on the sample, adding e2e tests raises the e2e stock, breaking one shows a
   regression, and a flaky test that the gate reruns is counted.
 - **Built (2026-10-27).**
-  - **The instrument** (`orchestra/instruments/test_reports.py`, USING_ORCHESTRA.md §3.4), one
+  - **The instrument** (`orchestra/instruments/test_reports.py`, `orchestra/guide.md`, "The test-report instrument"), one
     `[[collect]]` entry, standard library only. It reads JUnit XML and pytest's report log and prints
     `tests{kind}`, `test_outcomes{kind,outcome}`, `tests_flaky{kind}`, `tests_confirmed{kind}`,
     `tests_duration_seconds{kind}` and `test_report_files{state}`. With `--history` it also prints

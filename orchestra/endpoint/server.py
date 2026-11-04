@@ -173,7 +173,7 @@ def _handler(ep: EventsEndpoint) -> type[BaseHTTPRequestHandler]:
                 return path
             if path != "/events" and not api.known(path):
                 self._send(404, {"ok": False, "error": f"no {path} here: POST /events, GET /events, GET /health, the model "
-                                                       "(GET /model, /eras, /series, ...: USING_ORCHESTRA.md §5.9), "
+                                                       "(GET /model, /eras, /series, ...: SPEC.md §4.5), "
                                                        "and the intended model (GET /intended, GET /intended/design, POST /intended)"})
                 return None
             if not ep.authorized(self.headers.get("Authorization")):

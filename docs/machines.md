@@ -16,7 +16,7 @@ There are three kinds of instrument, simplest first:
 2. **A scrape** (`[[scrape]]`): `orchestra run` reads a URL that serves Prometheus metrics, such
    as a program's `/metrics` or an exporter's.
 3. **A source** (`[[sources]]`): another time-series store, read in place at each discovery
-   (`USING_ORCHESTRA.md`, SPEC §4.4).
+   (`orchestra/guide.md`, SPEC §4.4).
 
 A plugin may add instruments too (`Plugin.collectors`, `PLUGINS.md`). Instruments are shown on
 the Instruments page (`/instruments`): what each is, its target, how often it runs, its last
@@ -69,7 +69,7 @@ test of it is a test of a script: run it and check what it prints.
 pytest -q'` runs your tests, reads the JUnit XML report the run writes and prints
 the tests by kind and outcome, the flaky and the confirmed ones, and with `--history` counters of
 tests added and removed, so the test count can be a stock. One `[[collect]]` entry adopts it
-(`USING_ORCHESTRA.md` section 3.4).
+(`orchestra/guide.md`, "The test-report instrument").
 
 ## What a collector prints
 
@@ -114,7 +114,7 @@ The body is read like a collector's output, with the same labels and the same ha
 failures (anything but a 200, or no answer within the timeout). The scrape `app` appears on the
 Instruments page as a URL. Orchestra reads Prometheus's text format only; it does not take
 pushes. A remote Prometheus-compatible store can also be read in place, without copying,
-under `[[sources]]` (`USING_ORCHESTRA.md`, SPEC §4.4).
+under `[[sources]]` (`orchestra/guide.md`, SPEC §4.4).
 
 ## A long-running program
 
@@ -202,7 +202,7 @@ stopped. The
 
 A machine takes part in the event bus (it publishes what it did, or listens for what others did)
 over HTTP, through the events
-endpoint `orchestra run` serves (`SPEC.md` §3.1, `USING_ORCHESTRA.md` §5.2). What it launches gets
+endpoint `orchestra run` serves (`SPEC.md` §3.1). What it launches gets
 the address in `ORCHESTRA_EVENTS_ENDPOINT` and the token in `ORCHESTRA_EVENTS_TOKEN`; a program it
 did not launch runs `eval "$(orchestra events endpoint --env)"` for both.
 
@@ -277,7 +277,7 @@ installed in (or with Orchestra as a dependency:
 `uv add "orchestra @ git+https://github.com/danroblewis/orchestra"`).
 
 A machine publishes and reads the same events with `orchestra.events.Events`
-(`USING_ORCHESTRA.md` §5.2):
+(`SPEC.md` §3.1):
 
 ```python
 import os
