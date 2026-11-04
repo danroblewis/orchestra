@@ -58,6 +58,7 @@ from .feedback import verdicts as discovery_verdicts
 from .fetch import grid_step, read_many
 from .infer import Inference
 from .limits import Budget, for_store, store_key
+from .naming import name_of
 from .own import OWN, OwnSource
 from .plan import read_resolution
 from .prometheus import PrometheusSource
@@ -244,6 +245,7 @@ class Catalogue:
         times: list[float] = []
         n = 0
         refused: list[str] = []
+        busy = {d.occupancy["busy"] for d in inf.kept if d.occupancy}      # an occupancy's busy time names that view alone (naming.py)
         for d in inf.kept:
             for name, labels, pts, counted in results.get(d.id, []):
                 key = series_key(name, labels)
@@ -256,6 +258,8 @@ class Catalogue:
                                           direction=(counted or {}).get("direction"), channel=(counted or {}).get("channel"),
                                           resolution_s=read_resolution(d, step), summary=summary(d))
                 out.provenance[key] = provenance(spec, d, counted, read_resolution(d, step), labels, step)
+                if got := name_of(spec.names, d, labels, busy):     # the owner's naming table: the base of its title (sd.titles)
+                    out.provenance[key].update(named_as=got[0], named_by=got[1])
                 if counted:
                     out.traffic[key] = counted
                 times += [t for t, _ in pts]

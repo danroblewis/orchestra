@@ -127,6 +127,25 @@ The Instruments page then says "kind: flow (declared by *:count)". An edit to `k
 `match`, `split`, `prefix`, the labels) takes effect at the next discovery, or at once with
 `orchestra sources infer`: no reinstall, no cache to clear.
 
+**Naming your stocks.** A series read from the store is called by its metric's words and the
+labels that tell it from its siblings ("gcp pubsub subscription num undelivered messages
+(orders)"). Give it a better name by rule, not one name per stock: a few patterns, each a
+template over the labels, cover whole families:
+
+```toml
+[sources.names]
+"*_num_undelivered_messages" = "{subscription_id} messages waiting"
+"*_oldest_unacked_message_age" = "{subscription_id} oldest unacked age"
+"grpc_client_callMillis:count" = "{method} calls completed"
+"*:sum" = "{method} calls in progress"     # the occupancy view, calls in flight by Little's law
+```
+
+Keys match like `kinds` (an exact name over a pattern, a longer pattern over a shorter); a
+value's `{label}` is any label of the series, `{metric}` the metric's own name, and a label a
+series lacks is dropped from its name. Exact names are for the exceptions. A name takes effect
+at the next discovery, with no new inference; a name you give a stock on the Dynamics page
+still wins over it.
+
 Every series read from the store is listed with the selector you would type in Chronosphere
 itself (its own metric name and labels, not Orchestra's `chrono:` name), copyable, and a **view**
 link that opens the Core page's External stores box on it: a counter as `rate(<selector>[<step>])`,

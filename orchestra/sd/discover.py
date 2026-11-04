@@ -218,7 +218,8 @@ def _named(s: Series, places: Places | None) -> dict:
         tags = places.move_tags(s.labels, s.key) if s.counter else places.level_tags(s.labels, s.key, s.name)
         return {"named": "places", **({"noun": noun} if noun else {}), **({"tags": tags} if tags else {})}
     if places is not None and places.sourced(s.name, s.labels, s.key):
-        return {"named": "words", "tags": places.sourced_tags(s.name, s.labels, s.key)}
+        by = (places.provenance.get(s.key) or {}).get("named_by")
+        return {"named": "words", "tags": places.sourced_tags(s.name, s.labels, s.key), **({"named_by": by} if by else {})}
     return {"named": "words"} if _in_words(s) else {}
 
 

@@ -108,6 +108,7 @@ def settings_parts(spec: SourceSpec, declared: list[DeclaredSeries], repo_root: 
     how definitions are written, and the rest of the source's settings."""
     s = asdict(spec)
     s.pop("auth", None)
+    s.pop("names", None)                       # what a series is called changes no reading (naming.py)
     for k in TRANSPORT:
         s.pop(k, None)
     h = lambda x: hashlib.sha256(json.dumps(x, sort_keys=True, default=str).encode()).hexdigest()[:12]
@@ -138,6 +139,7 @@ def settings_key(spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Pa
     before their queries carried the source's ``match`` are inferred again)."""
     s = asdict(spec)
     s.pop("auth", None)
+    s.pop("names", None)                       # what a series is called changes no reading (naming.py): applied at each read
     for k in TRANSPORT:
         s.pop(k, None)
     script = Path(repo_root) / spec.queries_script if spec.queries_script else None

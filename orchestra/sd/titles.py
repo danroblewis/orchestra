@@ -50,7 +50,10 @@ each value once: "queue depth (hk-api)", "queue depth (writes, hk-store)". The s
 labels that say which series it is are its tags, ``source=hackriff_prom`` first, then each label
 as ``label=value``, a value two labels carry said once (by the label the source names its
 machines by, when one of them is: its ``machine_label``). No label's name is known here (rule 1);
-the source's own words never stand in its name ("hackriff prom:queue depth", bootstrap run 5)."""
+the source's own words never stand in its name ("hackriff prom:queue depth", bootstrap run 5).
+When the source's naming table names it (``[[sources]] names``, ``sources/naming.py``: its
+provenance's ``named_as``), that is its title instead, its tags as before; a name the owner
+declares (``declared_name``) still wins on every page."""
 
 from __future__ import annotations
 
@@ -222,6 +225,8 @@ class Places:
         rec = self.provenance.get(key) or {}
         if not remote(rec):
             return None
+        if rec.get("named_as"):                          # the source's naming table names it ([[sources]] names)
+            return rec["named_as"]
         said = _said_values(labels, self.varying.get(name, set()))
         return sourced_words(name, rec) + (f" ({', '.join(said)})" if said else "")
 

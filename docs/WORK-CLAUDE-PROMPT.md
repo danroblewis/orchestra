@@ -58,6 +58,10 @@ What good looks like, and the levers:
 - `kinds = { "<metric or glob>" = "flow" | "level" | "ignore" }` overrides how a metric is read;
   needed only for the exceptions, since names and metadata already say most (WORK-LAPTOP.md §3's
   table). An edit takes effect at the next round, or at once with `orchestra sources infer`.
+- `names = { "<metric or glob>" = "<template>" }` names what a series becomes: `{label}` any
+  label, `{metric}` the metric; a missing label is left out. Rules over families
+  (`"*_num_undelivered_messages" = "{subscription_id} messages waiting"`), exact names only for
+  exceptions. It changes no reading and needs no new inference round.
 - A latency family with both `:sum` and `:count` yields "<family> in progress" (calls in flight
   by Little's law), a stock with the completions as its outflow.
 - For GCP PubSub: `num_undelivered_messages` is a stock; `send_message_count` /
@@ -69,6 +73,13 @@ can come back with every family left out and "0 series". If you see that, collec
 left-out reasons from `orchestra sources infer --source <name>` and the last 20 lines of the
 requests log, and report them; to restore the earlier behaviour meanwhile, reinstall the core
 pinned to `@515233bd` (see WORK-LAPTOP.md step 1 for the install line; replace `@main`).
+
+Once stocks appear, propose names. From the metric names and the label conventions of the
+stocks and flows Orchestra found, derive a few general rules (patterns with templates that
+cover whole families, such as `"*_num_undelivered_messages" = "{subscription_id} messages
+waiting"`), not one entry per stock; add an exact name only for an exception. Show the owner
+the rules and, beside each current stock and flow, the name they would give it. Write the
+`[sources.names]` table only on the owner's yes.
 
 Report back to the owner, in under 300 words: what Orchestra reads now (series and points per
 source), the stocks and flows it found, every left-out reason grouped with what would help, each

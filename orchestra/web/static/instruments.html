@@ -153,7 +153,7 @@ function seriesTable(d, now, name) {
 function sourceSeries(x) {
   const w = x.window || {}, span = w.end && w.start ? w.end - w.start : null;
   if (!(x.series || []).length) return `<div class="muted">no series read from it yet: the host's discovery reads it</div>`;
-  return `<table class="itable series"><tr><th>series</th><th>in the store</th></tr>${x.series.map((r) => `<tr><td class="num">${esc(r.key)}<div class="muted">${r.declared_kind ? `kind: ${esc(r.declared_kind)} (declared${r.declared_by ? ` by ${esc(r.declared_by)}` : ""})` : esc(r.kind || "")}${r.derived ? ` · derived: ${esc(r.derived)}` : ""}</div></td>
+  return `<table class="itable series"><tr><th>series</th><th>in the store</th></tr>${x.series.map((r) => `<tr><td class="num">${esc(r.key)}<div class="muted">${r.declared_kind ? `kind: ${esc(r.declared_kind)} (declared${r.declared_by ? ` by ${esc(r.declared_by)}` : ""})` : esc(r.kind || "")}${r.derived ? ` · derived: ${esc(r.derived)}` : ""}${r.named_by ? ` · named “${esc(r.named_as)}” by ${esc(r.named_by)}` : ""}</div></td>
     <td>${SourceView.html({ source: x.name, ...r }, span)}</td></tr>`).join("")}</table>`
     + (x.series_more ? `<div class="muted">and ${x.series_more} more</div>` : "");
 }

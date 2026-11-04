@@ -96,7 +96,7 @@ def read(s, prov: dict | None, start: float, end: float, step: float) -> dict:
     pts = [(t, v) for t, v in s.points if start <= t <= end]
     vals = [v for _, v in pts]
     q = {"source": p.get("source") or "own", "query": p.get("query") or s.key,
-         **{k: p[k] for k in ("selector", "store_query", "summed", "candidate", "view", "family") if p.get(k)},
+         **{k: p[k] for k in ("selector", "store_query", "summed", "candidate", "view", "family", "named_as", "named_by") if p.get(k)},
          "window": [start, end], "step": step}
     if s.members:
         q["instances"] = len(s.members)

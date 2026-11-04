@@ -78,6 +78,7 @@ const Explain = (() => {
     const view = !own && href && q ? ` <a class="sv-view" href="${esc(href(r.source, q, windowS))}" onclick="event.stopPropagation()" title="open the Core page's External stores box with this query over the fitting window">view in ${esc(r.source)}</a>` : "";
     const line = (label, text, all) => (text ? `<div>${label}</div><div><code class="xp-q" style="user-select:all;overflow-wrap:anywhere;font-size:11.5px">${esc(text)}</code>${all || ""}</div>` : "");
     return `<div class="def">${line(own ? "read as" : "query", r.query, view)}${r.selector && r.selector !== r.query ? line("selector", r.selector) : ""}${r.store_query && r.store_query !== r.query && r.store_query !== r.selector ? line("view query", r.store_query) : ""}`
+      + `${r.named_by ? `<div>named</div><div>“${esc(r.named_as || "")}”, by <code>${esc(r.named_by)}</code> in the source's names</div>` : ""}`
       + `${(r.summed || []).length ? `<div>split</div><div>summed by its split over ${esc(r.summed.join(", "))}</div>` : ""}`
       + `<div>window</div><div>${r.window ? `${dur(r.window[1] - r.window[0])} in ${dur(r.step)} steps` : "?"} from <b>${esc(r.source || "own")}</b>${r.instances ? ` · ${plural(r.instances, "instance")} summed` : ""}</div>`
       + `<div>came back</div><div>${plural(r.points ?? 0, "point")} over ${dur(r.span_s)}, from ${num(r.min)} to ${num(r.max)}</div></div>`;

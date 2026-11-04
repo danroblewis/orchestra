@@ -1159,6 +1159,22 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   | a gauge or untyped named `…_count` or `…_total` (not things held: `pod_count`, `…_pending_total`) | a flow: per interval, or cumulative when its samples never fell but by resets (Google Cloud Monitoring's DELTA counts, a per-minute value) |
   | a level by name: `num_…`, `oldest_…_age`, `…undelivered…`, `…outstanding…`, `…unacked…`, `…backlog…`, `…retained…` (Pub/Sub's `num_undelivered_messages`, `oldest_unacked_message_age`, `backlog_bytes`) | a level, whatever its samples do (a stuck age rising by one a second is no clock) |
   | recording rules `:count`, `:sum`, `:rate` | as above: a `:count` beside a `:sum` a flow, a `:rate` a rate |
+- **`names`: what a series is called, by rule** (`sources/naming.py`): `names = {
+  "*_num_undelivered_messages" = "{subscription_id} messages waiting", "grpc_client_callMillis:count"
+  = "{method} calls completed", "*:sum" = "{method} calls in progress" }` on a `[[sources]]` entry.
+  Keys are metric names or globs, matched as `kinds`' are (an exact name over a pattern, a longer
+  pattern over a shorter) against the store's metrics a definition reads (those its query
+  selects; for an occupancy view its busy time, `x:sum`, which then names that view and not the
+  sum's own). Values are templates: `{label}` any label of the series (its canonical name or the
+  store's spelling), `{metric}` the metric matched, without the source's prefix; a label the
+  series lacks is left out, with its empty brackets ("{method} calls ({status})": "Get calls").
+  The result is the series' base name in `sd/titles.py` (`sourced`), recorded in its provenance
+  (`named_as`, `named_by`); its tags and the place rules apply as before, and a name the owner
+  declares (`declared_name`, the intended model) still wins on every page. Like `kinds` it is a
+  fact about reading the store: it binds no series to a stock and never makes one. It is applied
+  at each read, never at inference, so a change takes effect at the next discovery with no new
+  round (`settings_key` leaves it out). The Dynamics page and its drawers, the Instruments page
+  and the API show the templated name; the explorer's drawer says which entry named it.
 - **An edited source is inferred again at the next round.** The cached inference is keyed by a
   hash of everything in the entry that changes what is read or how (`match`, `split`, `kinds`,
   `prefix`, the label aliases and identity, the caps that bound it, `machine`, the declared
