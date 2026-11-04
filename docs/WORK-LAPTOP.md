@@ -1,6 +1,7 @@
-# Orchestra on a work laptop: Jira and Chronosphere, read only, no AI
+# Orchestra on a work laptop: Jira and Chronosphere, read only, AI optional
 
-By hand; nothing here calls a model or writes anywhere. Have ready: GitHub
+By hand; nothing here writes anywhere, and nothing calls a model but the optional Supervisor
+(step 6). Have ready: GitHub
 access to `danroblewis/orchestra-bridges` (private); a read-only Chronosphere service account
 token and your namespace; a Jira Data Center personal access token (Profile → Personal Access
 Tokens), Jira's URL and your board id (`rapidView=<id>` in the board's URL).
@@ -10,7 +11,8 @@ Tokens), Jira's URL and your board id (`rapidView=<id>` in the board's URL).
 ```bash
 gh auth login && gh auth setup-git        # once: git over https uses your GitHub login
 uv tool install 'orchestra[sd] @ git+https://github.com/danroblewis/orchestra@main' \
-  --with 'orchestra-bridges @ git+https://github.com/danroblewis/orchestra-bridges@main'
+  --with 'orchestra-bridges @ git+https://github.com/danroblewis/orchestra-bridges@main' \
+  --with 'orchestra-agents @ git+https://github.com/danroblewis/orchestra-agents@main'  # only for step 6
 uv tool update-shell                      # then open a new terminal
 PY="$(uv tool dir)/orchestra/bin/python"  # Orchestra's Python: set it in each terminal
 "$PY" -c "import orchestra_bridges.kits"  # no output: the kits are there
@@ -201,14 +203,81 @@ The first hour:
 
 Logs: `~/.orchestrator/<key>/logs/machines/jira_ops.log` (`poll N: K events`).
 
-## 6. What never happens, and stopping
+## 6. The Supervisor (optional, in bash mode)
+
+The Supervisor is an AI agent (the agents plugin, `danroblewis/orchestra-agents`, private) that does
+what steps 3 to 5 had you do: it reads the same guide (`orchestra/guide.md`), reads the store
+within `match`, explains what is left out, and proposes `[[sources]]` changes. Your company allows
+Claude Code shell commands but only approved MCP servers, so it runs with `tools_via = "bash"`: it
+calls Orchestra by running `orchestra agents tool <name> '<json>'` from its shell, and no MCP
+server is configured or started.
+
+It needs: the `--with 'orchestra-agents …'` line in step 1 (GitHub access to the repository);
+Claude Code installed (`claude` on the PATH `orchestra run` has) and logged in once by hand; and a
+model. Opus for a setup session (about $5 to $7), Haiku for the standing role (a question about
+the store costs about 2 cents). Append to `orchestra.toml`:
+
+```toml
+[agents]
+harness = "claude_code"
+model = "haiku"            # the agents' default; the Supervisor's own model is in its spec (below)
+tools_via = "bash"         # no MCP server, ever
+serves = []                # no worker or reviewer: the Supervisor only
+review_usd_per_day = 0     # its own initiative (review rounds, wake-ups): 0 = none; e.g. 1.0 for a dollar a day
+```
+
+`review_usd_per_day` caps what it starts on its own. Your chat turns are not capped, so each one
+costs what it costs. Slack stays off: add no Slack machine.
+
+Restart `orchestra run`: it starts the agents' host, which writes the Supervisor's spec on
+**Sonnet**. Its log (`~/.orchestrator/<key>/logs/machines/agents.host.log`) says where: the live
+copy is `~/.orchestrator/<key>/agents/machines/supervisor/machine.toml`. Set the model there:
+
+```bash
+sed -i '' 's/^model = "sonnet"/model = "haiku"/' ~/.orchestrator/<key>/agents/machines/supervisor/machine.toml
+```
+
+(`"opus"` for a setup session). The log says `its model changed to haiku`; `orchestra agents
+status` should say `claude_code · haiku`.
+
+**Talk to it** on the Agents page of `orchestra web`, or in a terminal: `orchestra agents chat`
+(Ctrl-D leaves). Name the scope in your first message, or it asks before it reads anything: "The
+chronosphere source's match and max_series are the scope I set. Look at it and tell me which
+families could be stocks; change nothing."
+
+**Proof it uses no MCP server:**
+
+- `cat ~/.orchestrator/<key>/agents/sessions/claude-code/supervisor.none.json` says
+  `{"mcpServers": {}}`, and during a turn `ps -eo args | grep 'claude -p'` shows
+  `--strict-mcp-config --mcp-config …/supervisor.none.json`: no server, not even your own.
+- The transcript, `~/.claude/projects/<the project directory, / as ->/<uuid>.jsonl` (the uuid is in
+  `supervisor.json` beside it): `grep -o '"command":"orchestra agents tool [a-z_]*' <it>` lists every
+  Orchestra call, each a `Bash` tool call; `grep -c mcp__orchestra <it>` says `0`.
+
+**What it runs with**, for your policy: each turn is `claude -p --dangerously-skip-permissions` with
+a settings file (`supervisor.settings.json`, `--settings`) that denies reading credential stores
+(`~/.config/**`, `~/.ssh/**`, ...), `curl`, `wget`, `nc`, `cd ~`, `env`, the build and test tools,
+plus a hook that refuses file reads outside the project and the state directory, and Edit and Write
+turned off. Claude Code writes its transcript under `~/.claude/`. The agents repository's
+`docs/policy-modes.md` compares bash, MCP and file mode for a policy reviewer.
+
+**What never happens**: the rules of step 7 hold for it. Every query carries `match` (metadata is
+asked name by name), counts against the caps and is in the requests log; no store token enters
+the session; nothing outside is written. It changes only Orchestra's own files (`orchestra.toml`,
+each change a commit it tells you the reason for, and the state directory); "change nothing"
+keeps it to reading.
+
+**To stop it**: Ctrl-C `orchestra run` (the agents' host stops with it). To keep Orchestra and drop
+the Supervisor: `enabled = false` under `[agents]`.
+
+## 7. What never happens, and stopping
 
 - **No write.** The Jira program only reads. Orchestra only queries Chronosphere's Prometheus API,
   inside `match`, under the caps; every request it sends (discovery's, inference's, the page's)
   is logged in `~/.orchestrator/<key>/sources/chronosphere.requests.jsonl` (the last 10,000), shown
   on the Core page's row of the store (the last twenty, and today's count beside the cap) and by
   `orchestra sources check` (the last five).
-- **No AI.** Nothing installed here calls a model.
+- **No AI** without step 6: only the Supervisor calls a model, on your Claude Code login.
 - **No token leaves its file** except to its own host; pages and logs say only where it is.
   Ticket titles and descriptions are dropped.
 
