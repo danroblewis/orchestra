@@ -114,8 +114,8 @@ def _dur(seconds: float) -> str:
 
 
 class PrometheusSource(Transport):
-    def __init__(self, spec: SourceSpec, limiter: RateLimit | None = None):
-        super().__init__(spec, limiter)
+    def __init__(self, spec: SourceSpec, limiter: RateLimit | None = None, **log):
+        super().__init__(spec, limiter, **log)
         self.left_out: list[str] = []    # parts of a series listing still refused at MIN_SPAN
         self.native: set[str] = set()    # metric names answered as native histograms
         self.unasked: list[str] = []     # names the last metadata call left unasked (its budget)

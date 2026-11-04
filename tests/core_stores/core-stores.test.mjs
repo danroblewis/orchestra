@@ -78,3 +78,15 @@ test("the labels button narrows to the query's first selector", () => {
   assert.equal(CoreStores.firstSelector("time() + 1"), "");
   assert.equal(CoreStores.firstSelector(""), "");
 });
+
+test("a store's row shows its request log: today's count beside the cap, and the last twenty, newest first", () => {
+  const last = Array.from({ length: 20 }, (_, i) => ({ t: NOW - 100 + i, by: i % 2 ? "page" : "host", endpoint: "/api/v1/query_range",
+    query: `up{i="${i}"}`, window: [NOW - 3700, NOW - 100], series: i, points: 10 * i, ms: 12 }));
+  last.push({ t: NOW, by: "infer", endpoint: "/api/v1/series", query: ['{namespace="shop"}'], sent: false, error: "made its 2000 requests today" });
+  const html = CoreStores.rowHtml({ ...STORE, requests: { last, today: { sent: 340, refused: 1, by: { host: 300, page: 40 } } } }, NOW);
+  assert.match(html, /340 sent today \(UTC\) of the cap of 2,000 · by host 300, page 40 · 1 refused before sending/);
+  assert.match(html, /the last 21 requests/);
+  assert.ok(html.indexOf("/api/v1/series") < html.indexOf('up{i=&quot;19&quot;}'), "newest first");
+  assert.match(html, /not sent: made its 2000 requests today/);
+  assert.match(CoreStores.rowHtml(STORE, NOW), /no request logged yet/);
+});

@@ -92,7 +92,7 @@
   </section>
   <div class="panel" id="st" style="margin-top:16px">
     <h2 style="margin-top:0"><span>External stores</span><span class="hctl"><span class="muted" id="st-note"></span></span></h2>
-    <div class="intro" style="margin:0 0 6px">Other time-series stores this project reads where the data lives (<code>[[sources]]</code>): Orchestra's adaptors to them, read only through <code>orchestra.sources</code>. Every query here keeps within the store's <code>match</code>, needs a metric name or a label matcher of its own (never <code>{}</code>), reads a window of at most 24 h and at most its limit of series, counts against the store's shared request rate and daily cap, and is logged in <code>&lt;state&gt;/sources/&lt;name&gt;.asked.jsonl</code>. Labels come from the bounded label endpoints, never a listing of every series.</div>
+    <div class="intro" style="margin:0 0 6px">Other time-series stores this project reads where the data lives (<code>[[sources]]</code>): Orchestra's adaptors to them, read only through <code>orchestra.sources</code>. Every query here keeps within the store's <code>match</code>, needs a metric name or a label matcher of its own (never <code>{}</code>), reads a window of at most 24 h and at most its limit of series, counts against the store's shared request rate and daily cap, and is logged, as is every request Orchestra sends to the store (discovery's, inference's, this page's), in <code>&lt;state&gt;/sources/&lt;name&gt;.requests.jsonl</code>: each store's row shows the last twenty and today's count beside the cap. Labels come from the bounded label endpoints, never a listing of every series.</div>
     <div id="st-list"></div>
   </div>
   <div class="panel" id="cfg" style="margin-top:16px">

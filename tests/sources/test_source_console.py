@@ -13,7 +13,7 @@ from fake_prometheus import FakePrometheus
 from helpers import project
 
 from orchestra.events import Events
-from orchestra.sources import asking
+from orchestra.sources import asking, reqlog
 from orchestra.sources.spec import NO_MATCH, for_project
 from orchestra.web.core import CoreProbe
 from orchestra.web.core_stores import Stores
@@ -143,10 +143,17 @@ def test_every_request_and_refusal_is_logged_with_the_page_as_reader(made):
     p, spec = made
     asking.query(p.state_dir, spec, "up", now=NOW)
     asking.query(p.state_dir, spec, "{}", now=NOW)
-    lines = [json.loads(x) for x in asking.log_path(p.state_dir, "shop").read_text().splitlines()]
-    assert [x["reader"] for x in lines] == ["core page", "core page"]
-    assert lines[0]["ok"] and lines[0]["sent"] == 'up{namespace="shop"}' and lines[0]["requests"] == 2
-    assert not lines[1]["ok"] and "of its own" in lines[1]["error"]
+    lines = reqlog.last(p.state_dir, "shop", 50)
+    assert [x["by"] for x in lines] == ["page"] * 3               # the selector counted, the query, the refusal
+    count, ran, refused = lines
+    assert count["endpoint"] == "/api/v1/series" and ran["endpoint"] == "/api/v1/query_range"
+    assert ran["query"] == 'up{namespace="shop"}' and ran["series"] == 1 and ran["points"] > 0 and "error" not in ran
+    assert refused["sent"] is False and "of its own" in refused["error"]
+    assert not asking_logs(p.state_dir)                            # the page keeps no log of its own: one log for every request
+
+
+def asking_logs(state_dir):
+    return list((state_dir / "sources").glob("*.asked.jsonl"))
 
 
 def test_the_section_shows_each_store_from_files_and_never_asks_it(fake, tmp_path, monkeypatch):
@@ -165,6 +172,7 @@ def test_the_section_shows_each_store_from_files_and_never_asks_it(fake, tmp_pat
     row = stores.status()["stores"][0]
     assert row["bucket"]["store"]["today"] == 2 and row["bucket"]["web"]["today"] == 2
     assert row["last_ok"] and row["last_error"]["from"] == "this page"
+    assert row["requests"]["today"]["sent"] == 2 and row["requests"]["today"]["refused"] == 1 and len(row["requests"]["last"]) == 3
     assert any(x["component"] == "store shop" for x in stores.core.log)
     assert "s3cret" not in json.dumps(stores.status())
 

@@ -5,8 +5,9 @@ anyway), its auth form (``Auth.describe``: the kinds, where each credential come
 it is there, never a value nor a file's contents), ``match``, its series cap and request rate, the
 store's shared bucket (``limits.RateLimit.peek``: today's requests against the daily cap, the
 store's and the web server's share), the last read and the last error (the cached inference, the
-last failed round, the read cache's last write, the page's own asked log), and how many series
-definitions Orchestra keeps of it (the cached inference). A refused entry is listed with why."""
+last failed round, the read cache's last write, the request log), how many series definitions
+Orchestra keeps of it (the cached inference), and the request log (``reqlog.py``): the last
+``LAST`` requests made of the store and today's count, by who asked. A refused entry is listed with why."""
 
 from __future__ import annotations
 
@@ -14,11 +15,13 @@ import time
 import urllib.parse
 from pathlib import Path
 
-from . import asking
+from . import reqlog
 from .auth import Auth
 from .cache import attempt, cached, inferred
 from .limits import RateLimit, store_dir, store_key
 from .spec import SourceSpec, for_project
+
+LAST = 20                     # requests shown on a store's row
 
 
 def redact(url: str) -> str:
@@ -54,15 +57,15 @@ def row(spec: SourceSpec, state_dir: Path) -> dict:
     inf = cached(state_dir, spec.name)
     failed = attempt(state_dir, spec.name)
     reads = _mtime(Path(state_dir) / "sources" / f"{spec.name}.reads.json")
-    log = asking.asked(state_dir, spec.name, 50)
-    page_ok = next((x for x in reversed(log) if x.get("ok")), None)
-    page_err = next((x for x in reversed(log) if not x.get("ok")), None)
+    log = reqlog.last(state_dir, spec.name, 200)
+    page_ok = next((x for x in reversed(log) if not x.get("error")), None)
+    page_err = next((x for x in reversed(log) if x.get("error") and not str(x["error"]).endswith("asked again")), None)
     ok_at = max((t for t in (reads, inf.at if inf and not inf.error else None, page_ok and page_ok.get("t")) if t), default=None)
     errors = [(failed.get("at"), failed.get("error"), "the last inference round")] if failed.get("error") else []
     if inf and inf.error:
         errors.append((inf.at, inf.error, "the cached inference"))
     if page_err:
-        errors.append((page_err.get("t"), page_err.get("error"), "this page"))
+        errors.append((page_err.get("t"), page_err.get("error"), "this page" if page_err.get("by") == "page" else f"a request ({page_err.get('by', '?')})"))
     last_error = max((e for e in errors if e[0]), key=lambda e: e[0], default=None)
     return {
         "name": spec.name, "type": spec.type, "url": redact(spec.url), "where": spec.where(), "prefix": spec.prefix,
@@ -72,7 +75,7 @@ def row(spec: SourceSpec, state_dir: Path) -> dict:
         "last_ok": ok_at, "last_error": ({"at": last_error[0], "error": last_error[1], "from": last_error[2]} if last_error else None),
         "inferred": ({"definitions": len(inf.kept), "inferred": inferred(inf), "at": inf.at, "left_out": len(inf.left_out)}
                      if inf else None),
-        "asked": log[-10:],
+        "requests": {"last": log[-LAST:], "today": reqlog.today(state_dir, spec.name)},
     }
 
 

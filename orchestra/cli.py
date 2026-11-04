@@ -274,7 +274,7 @@ def cmd_sources(args) -> int:
     from .sources.catalogue import Catalogue
 
     project = _project(args)
-    cat = Catalogue(project, metrics_for(project))
+    cat = Catalogue(project, metrics_for(project), by="cli")
     if args.action == "check":
         lines = report.check(cat)
     elif args.action == "infer":

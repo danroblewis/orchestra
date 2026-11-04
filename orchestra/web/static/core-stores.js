@@ -24,6 +24,24 @@ const CoreStores = (() => {
     if (!inf) return "none yet: the host's discovery infers what to read (orchestra sources infer)";
     return `${num(inf.definitions)} series definition${inf.definitions === 1 ? "" : "s"} kept (${num(inf.inferred)} inferred${inf.left_out ? `, ${num(inf.left_out)} left out` : ""}) · inferred ${when(inf.at, now)}`;
   }
+  // the request log (<state>/sources/<name>.requests.jsonl): today's count beside the cap, and the last twenty
+  function loggedText(s) {
+    const r = s.requests || {}, t = r.today || {};
+    const by = Object.entries(t.by || {}).map(([k, v]) => `${k} ${num(v)}`).join(", ");
+    return `${num(t.sent || 0)} sent today (UTC) of the cap of ${num(s.per_day)}${by ? ` · by ${by}` : ""}${t.refused ? ` · ${num(t.refused)} refused before sending` : ""}`;
+  }
+  const clock = (t) => { const d = new Date(t * 1000); return d.toTimeString().slice(0, 8); };
+  const span = (w) => (!w ? "" : w.length === 1 || w[1] == null ? "instant" : `${ago(Math.max(0, w[1] - w[0]))} window`);
+  function requestsHtml(s) {
+    const xs = ((s.requests || {}).last || []).slice().reverse();
+    if (!xs.length) return `<div class="muted">no request logged yet</div>`;
+    return `<details class="st-req"><summary>the last ${xs.length} request${xs.length === 1 ? "" : "s"}</summary><table class="ct"><tr><th>at</th><th>by</th><th>endpoint</th><th>asked</th><th>window</th><th>series</th><th>points</th><th>ms</th><th>error</th></tr>${xs.map((x) => {
+      const q = Array.isArray(x.query) ? x.query.join(" or ") : x.query || "";
+      return `<tr><td class="num">${esc(clock(x.t))}</td><td>${esc(x.by || "")}</td><td class="mono">${esc(x.endpoint || "")}</td><td class="mono" style="overflow-wrap:anywhere">${esc(q)}</td>`
+        + `<td>${esc(span(x.window))}</td><td class="num">${x.series == null ? "" : num(x.series)}</td><td class="num">${x.points == null ? "" : num(x.points)}</td><td class="num">${x.ms == null ? "" : num(x.ms)}</td>`
+        + `<td>${x.error ? `<span class="stale">${esc(x.sent === false ? "not sent: " : "")}${esc(x.error)}</span>` : ""}</td></tr>`;
+    }).join("")}</table></details>`;
+  }
   function rowHtml(s, now = Date.now() / 1000) {
     const err = s.last_error;
     return `<div class="kv st-kv">
@@ -35,7 +53,8 @@ const CoreStores = (() => {
       <div>requests</div><div class="num">${esc(capText(s))}</div>
       <div>last read</div><div>${when(s.last_ok, now)}</div>
       <div>last error</div><div>${err ? `<span class="stale">${esc(err.error)}</span> <span class="muted">(${esc(err.from)}, ${when(err.at, now)})</span>` : "none"}</div>
-      <div>series</div><div>${esc(inferredText(s.inferred, now))}</div></div>`;
+      <div>series</div><div>${esc(inferredText(s.inferred, now))}</div>
+      <div>logged</div><div><span class="num">${esc(loggedText(s))}</span>${requestsHtml(s)}</div></div>`;
   }
   function refusedHtml(r) {
     return `<div class="probe bad"><b>${esc(r.name)}</b>: refused: ${esc(r.error)}</div>`;
@@ -106,5 +125,5 @@ const CoreStores = (() => {
     }
     return "";
   }
-  return { EMPTY, firstSelector, authText, capText, inferredText, rowHtml, refusedHtml, stateHtml, instantHtml, noteText, label, cache, lookup };
+  return { EMPTY, firstSelector, authText, capText, inferredText, loggedText, requestsHtml, rowHtml, refusedHtml, stateHtml, instantHtml, noteText, label, cache, lookup };
 })();

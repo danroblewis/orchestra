@@ -7,19 +7,18 @@ of the store than any of the web server's reads, with a request timeout of at mo
 the whole read done within ``DEADLINE_S``. The transport carries the source's auth and scopes every
 request within its ``match`` (``prometheus.py``) on top of the conjunction made here.
 
-Every request this makes, and every refusal, is appended to ``<state>/sources/<name>.asked.jsonl``
-with ``reader`` (the page), beside what the source's other reads keep under ``<state>/sources/``
-(the inference, the read cache, the history): what was asked, of what window, with what limit, how
-many requests it took, and how it ended. ``asked`` reads it back."""
+Every request this makes is logged by the transport in ``<state>/sources/<name>.requests.jsonl``
+with ``by`` ``page`` (``reqlog.py``), beside every other read of the source (the host's
+discovery, inference, the web server's); a query the guard refuses, never sent, is logged there
+too (``sent`` false), with why. One log, so the page's row shows every request made of the store."""
 
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import replace
 from pathlib import Path
 
-from . import PastDeadline, SourceError
+from . import PastDeadline, SourceError, reqlog
 from .console import (
     Refused,
     conjoined,
@@ -37,48 +36,14 @@ from .spec import SourceSpec
 
 TIMEOUT_S = 6.0               # one request, at most (the source's own timeout when shorter)
 DEADLINE_S = 7.0              # one read from the page, all its requests told
-LOG_MAX = 1_000_000           # bytes of the asked log before it is rotated
-READER = "core page"
+BY = "page"
 
 
-def source_for(spec: SourceSpec) -> PrometheusSource:
-    """A reader of the source at the web server's share of the store, with the page's timeout."""
+def source_for(spec: SourceSpec, state_dir: Path | None = None) -> PrometheusSource:
+    """A reader of the source at the web server's share of the store, with the page's timeout,
+    logging every request it sends (``by`` page)."""
     quick = replace(spec, timeout=min(spec.timeout, TIMEOUT_S))
-    return PrometheusSource(quick, for_store(spec, spec.web_share))
-
-
-def log_path(state_dir: Path, name: str) -> Path:
-    return Path(state_dir) / "sources" / f"{name}.asked.jsonl"
-
-
-def note(state_dir: Path, name: str, entry: dict) -> None:
-    p = log_path(state_dir, name)
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        if p.exists() and p.stat().st_size > LOG_MAX:
-            p.replace(p.with_suffix(".jsonl.1"))
-        with p.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"t": time.time(), **entry}, ensure_ascii=False) + "\n")
-    except OSError:
-        pass                                    # the log never stops a read
-
-
-def asked(state_dir: Path, name: str, lines: int = 200) -> list[dict]:
-    """The last ``lines`` entries of the asked log, oldest first."""
-    try:
-        with log_path(state_dir, name).open("rb") as f:
-            f.seek(0, 2)
-            f.seek(max(0, f.tell() - 600 * lines))
-            raw = f.read().decode("utf-8", "replace").splitlines()[-lines:]
-    except OSError:
-        return []
-    out = []
-    for line in raw:
-        try:
-            out.append(json.loads(line))
-        except ValueError:
-            continue
-    return out
+    return PrometheusSource(quick, for_store(spec, spec.web_share), log_dir=state_dir, by=BY)
 
 
 def _why(e: Exception) -> str:
@@ -90,20 +55,22 @@ def _why(e: Exception) -> str:
 
 
 def _run(state_dir: Path, spec: SourceSpec, what: str, entry: dict, fn) -> dict:
-    """``fn(src, until)`` -> dict, its failure as ``{"ok": False, "error"}``, logged either way."""
-    src = source_for(spec)
+    """``fn(src, until)`` -> dict, its failure as ``{"ok": False, "error"}``. The transport logs
+    every request sent; a refusal of the guard, never sent, is logged here."""
+    src = source_for(spec, state_dir)
     until = time.monotonic() + DEADLINE_S
     began = time.monotonic()
     try:
         out = {"ok": True, **fn(src, until)}
     except Refused as e:
         out = {"ok": False, "refused": True, "error": str(e)}
+        reqlog.append(state_dir, spec.name, {"endpoint": what, "query": entry.get("query") or entry.get("selector"),
+                                             "window": [entry.get("start"), entry.get("end")], "series": None, "points": None,
+                                             "ms": round(1000 * (time.monotonic() - began), 1), "by": BY, "sent": False,
+                                             "error": f"refused by the page's guard: {e}"})
     except SourceError as e:
         out = {"ok": False, "error": _why(e), **({"cap": True} if isinstance(e, DailyCap) else {})}
     out["requests"] = src.requests
-    note(state_dir, spec.name, {"reader": READER, "what": what, **entry, "requests": src.requests, "ok": out["ok"],
-                                "seconds": round(time.monotonic() - began, 3),
-                                **({"error": out["error"]} if not out["ok"] else {"results": out.get("matched", len(out.get("values") or []))})})
     return out
 
 

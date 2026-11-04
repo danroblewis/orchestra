@@ -16,7 +16,11 @@
   touches (``TooBig.by_series``) is helped by a shorter time range only when the series churn:
   callers halve it once and go on only while that sheds series (``time_helps``).
 - Other 4xx and 5xx raise ``SourceError`` at once, named by the server and what it said (a load
-  balancer's HTML page by its status only), never a credential."""
+  balancer's HTML page by its status only), never a credential.
+- **Every request is logged** (``reqlog.py``) when the transport is given the project's state
+  directory: one line per request sent, a retried one included, and one per read refused before
+  sending (the budget, the daily cap, the deadline), with ``by``, who asked (``host``, ``infer``,
+  ``page``, ``web``, ``cli``)."""
 
 from __future__ import annotations
 
@@ -25,14 +29,15 @@ import http.client
 import json
 import random
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import PastDeadline, SourceError
+from . import PastDeadline, SourceError, reqlog
 from .auth import Auth
-from .limits import Budget, RateLimit
+from .limits import Budget, DailyCap, RateLimit
 from .spec import SourceSpec
 
 RETRY = {429, 502, 503, 504}         # busy or rate-limited: wait and ask again
@@ -113,7 +118,12 @@ class SameOriginRedirects(urllib.request.HTTPRedirectHandler):
 
 
 class Transport:
-    def __init__(self, spec: SourceSpec, limiter: RateLimit | None = None):
+    def __init__(self, spec: SourceSpec, limiter: RateLimit | None = None, *, log_dir=None, by: str = "host"):
+        """``log_dir``: the project's state directory, where every request is logged (``reqlog.py``);
+        none, nothing is logged. ``by``: who asks, as the log says it (changed by whoever borrows it)."""
+        self.log_dir = log_dir
+        self.by = by
+        self._attempt = threading.local()       # when this thread's last request was sent
         self.spec = spec
         self.name = spec.name
         self.auth = Auth(spec.auth, spec.insecure)
@@ -143,7 +153,31 @@ class Transport:
         if u is not None and time.monotonic() > u:
             raise PastDeadline(f"{self.spec.where()}: past the deadline")
 
+    def _log(self, path: str, form: dict | None, began: float, *, data=None, error: str | None = None, sent: bool = True) -> None:
+        if self.log_dir is None:
+            return
+        q, window, step = reqlog.asked_about(form)
+        series, points = reqlog.answer_size(data) if error is None else (None, None)
+        reqlog.append(self.log_dir, self.spec.name, {
+            "endpoint": path, "query": q, "window": window, **({"step": step} if step is not None else {}),
+            "series": series, "points": points, "ms": round(1000 * (time.monotonic() - began), 1), "by": self.by,
+            **({"sent": False} if not sent else {}), **({"error": error} if error else {})})
+
     def _call(self, path: str, form: dict | None = None, *, post: bool = True, until: float | None = None) -> dict | list:
+        """One request, asked again as ``_ask`` says, and logged: the answer's size, or why it failed
+        (a refusal before anything was sent, ``sent`` false)."""
+        self._attempt.at = None
+        began = time.monotonic()
+        try:
+            data = self._ask(path, form, post=post, until=until)
+        except SourceError as e:
+            unsent = isinstance(e, (PastDeadline, DailyCap))
+            self._log(path, form, began if unsent or self._attempt.at is None else self._attempt.at, error=str(e), sent=not unsent)
+            raise
+        self._log(path, form, self._attempt.at or began, data=data)
+        return data
+
+    def _ask(self, path: str, form: dict | None = None, *, post: bool = True, until: float | None = None) -> dict | list:
         url = self.spec.url + path
         body = None
         if form is not None and post:
@@ -164,6 +198,7 @@ class Transport:
                 headers["Content-Type"] = "application/x-www-form-urlencoded"
             req = urllib.request.Request(url, data=body, headers=headers, method="POST" if body is not None else "GET")
             self.requests += 1
+            self._attempt.at = sent_at = time.monotonic()
             try:
                 with self._open(req) as r:
                     raw = r.read()
@@ -171,6 +206,7 @@ class Transport:
             except urllib.error.HTTPError as e:
                 self.throttled += e.code == 429
                 if e.code in RETRY and attempt < RETRIES:
+                    self._log(path, form, sent_at, error=f"HTTP {e.code}: asked again")
                     self._wait(e, attempt, where, u)
                     continue
                 said = self._said(e)
@@ -183,6 +219,7 @@ class Transport:
                 timed_out = isinstance(e, TimeoutError)
                 timeouts += timed_out
                 if attempt < RETRIES and timeouts <= 1:
+                    self._log(path, form, sent_at, error=("no answer in time" if timed_out else "the connection dropped") + ": asked again")
                     self._pause(attempt, where, u)
                     continue
                 raise SourceError(f"{where}: " + (f"no answer within the source's timeout of {self.spec.timeout:g} s (set timeout "
@@ -191,6 +228,7 @@ class Transport:
                 reason = getattr(e, "reason", None)
                 if isinstance(reason, (TimeoutError, ConnectionResetError)) and attempt < RETRIES and timeouts < 1:
                     timeouts += isinstance(reason, TimeoutError)
+                    self._log(path, form, sent_at, error=f"{reason}: asked again")
                     self._pause(attempt, where, u)
                     continue
                 if isinstance(reason, TimeoutError):

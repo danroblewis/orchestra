@@ -1223,8 +1223,21 @@ whose selector selects more than its limit (50 by default, at most `max_series`)
 it runs. Label names and values come from `/api/v1/labels` and `/api/v1/label/<name>/values` with
 `match[]` the conjoined selector (or the match alone, or none when the match selects everything:
 an index read), `start`/`end` the window and `limit`. Reads draw on the web server's share of the
-store's rate and daily cap; a spent cap is refused with when it resets (00:00 UTC). Every request
-and refusal is appended to `<state>/sources/<name>.asked.jsonl` with `reader` `core page`.
+store's rate and daily cap; a spent cap is refused with when it resets (00:00 UTC). Its requests,
+and its guard's refusals, are logged with every other request made of the store (below), `by`
+`page`.
+
+**Every request is logged** (`sources/reqlog.py`). Every request Orchestra sends to a source,
+from anywhere in `orchestra.sources` (the host's discovery reads, an inference round, the Core
+page's box, the web server's reads of the model's series, `orchestra sources`), is appended by the
+transport to `<state>/sources/<name>.requests.jsonl`: time, endpoint, the query or `match[]`
+selectors or metric asked about, the window and step, the series and points in the answer,
+milliseconds, `by` (`host`, `infer`, `page`, `web`, `cli`) and the error if any; a retried
+request once per attempt, and a read refused before it was sent (the round's budget, the daily
+cap, the deadline, the page's guard) with `sent` false. Never a header, so never a token. The
+log keeps its last 10,000 lines (cut back to them once it holds a tenth more). The Core page's
+row of the store shows the last twenty and today's (UTC) count beside the daily cap, by who
+asked; `orchestra sources check` prints today's count and the last five.
 
 **A series as the store spells it** (`sources/selector.py`). Orchestra names a remote series
 `<prefix>:<name>`, lower-cased, `:` turned into `_`, its labels canonical: nothing that can be

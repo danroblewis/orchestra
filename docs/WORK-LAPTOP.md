@@ -205,8 +205,10 @@ Logs: `~/.orchestrator/<key>/logs/machines/jira_ops.log` (`poll N: K events`).
 ## 6. What never happens, and stopping
 
 - **No write.** The Jira program only reads. Orchestra only queries Chronosphere's Prometheus API,
-  inside `match`, under the caps; page queries are logged in
-  `~/.orchestrator/<key>/sources/chronosphere.asked.jsonl`.
+  inside `match`, under the caps; every request it sends (discovery's, inference's, the page's)
+  is logged in `~/.orchestrator/<key>/sources/chronosphere.requests.jsonl` (the last 10,000), shown
+  on the Core page's row of the store (the last twenty, and today's count beside the cap) and by
+  `orchestra sources check` (the last five).
 - **No AI.** Nothing installed here calls a model.
 - **No token leaves its file** except to its own host; pages and logs say only where it is.
   Ticket titles and descriptions are dropped.

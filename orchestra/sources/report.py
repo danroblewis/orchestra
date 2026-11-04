@@ -6,7 +6,7 @@ from __future__ import annotations
 import time
 
 from ..sd.rediscover import aligned
-from . import SourceError
+from . import SourceError, reqlog
 from .catalogue import Catalogue
 from .transform import TransformError
 
@@ -28,6 +28,21 @@ def _label(canonical: str, i: dict) -> str:
     return f"{canonical}={i['real']} ({i['role']}, {i['cardinality']} values{churn})"
 
 
+def logged(state_dir, spec, n: int = 5) -> list[str]:
+    """Today's requests against the daily cap, and the last ``n`` from the request log (``reqlog.py``)."""
+    t = reqlog.today(state_dir, spec.name)
+    out = [f"  requests today (UTC): {t['sent']} sent of the cap of {spec.max_requests_per_day}"
+           + (f" ({', '.join(f'{k} {v}' for k, v in sorted(t['by'].items()))})" if t["by"] else "")
+           + (f", {t['refused']} refused before sending" if t["refused"] else "")
+           + f"; the log: {reqlog.path(state_dir, spec.name)}"]
+    for x in reqlog.last(state_dir, spec.name, n):
+        q = " or ".join(x["query"]) if isinstance(x.get("query"), list) else (x.get("query") or "")
+        size = f"{x['series']} series" if x.get("series") is not None else ""
+        out.append(f"    {time.strftime('%H:%M:%S', time.localtime(x.get('t') or 0))} {x.get('by', '?'):<5} {x.get('endpoint', '')} "
+                   f"{q[:100]}  {size} {x.get('ms', '?')} ms" + (f"  {'not sent: ' if x.get('sent') is False else ''}{x['error']}" if x.get("error") else ""))
+    return out
+
+
 def check(cat: Catalogue) -> list[str]:
     out = []
     for name, why in cat.specs.refused.items():
@@ -45,6 +60,7 @@ def check(cat: Catalogue) -> list[str]:
         out.append("  endpoints: " + ", ".join(f"{k} {'yes' if v else 'no'}" for k, v in h.endpoints.items()))
         if h.error:
             out.append(f"  error: {h.error}")
+        out += logged(cat.project.state_dir, spec)
     return out or ["no [[sources]] in orchestra.toml"]
 
 

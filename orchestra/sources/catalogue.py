@@ -157,7 +157,7 @@ def reading_only():
 
 class Catalogue:
     def __init__(self, project, metrics: MetricsStore | None, specs: Specs | None = None, *, infer: bool | None = None,
-                 share: bool = False, incremental: bool = True):
+                 share: bool = False, incremental: bool = True, by: str | None = None):
         """``share``: the web server's catalogue, reading from its share of each store (``web_share``)
         under a small budget per round. ``incremental=False`` reads every window whole."""
         self.project = project
@@ -165,7 +165,10 @@ class Catalogue:
         self.specs = specs if specs is not None else for_project(project)
         self.own = OwnSource(metrics, project.key) if metrics is not None else None
         self.share = share
-        self.remotes = {s.name: PrometheusSource(s, for_store(s, s.web_share if share else None)) for s in self.specs.sources}
+        # every request logged in <state>/sources/<name>.requests.jsonl (reqlog.py), by who asks
+        self.by = by or ("web" if share else "host")
+        self.remotes = {s.name: PrometheusSource(s, for_store(s, s.web_share if share else None), log_dir=Path(project.state_dir), by=self.by)
+                        for s in self.specs.sources}
         self.caches = {s.name: ReadCache(store_key(s.url, s.auth.headers), self._reads_file(s)) for s in self.specs.sources} if incremental else {}
         self._loaded: set[str] = set()
         self.errors: dict[str, str] = {}            # source -> why the last read of a model's series from it failed (reader)
@@ -192,9 +195,14 @@ class Catalogue:
 
     def inference(self, name: str, start: float, end: float, *, refresh: bool = False, until: float | None = None,
                   judge_from: float | None = None) -> Inference:
-        return definitions(self.remotes[name], self.spec(name), self.specs.declared, Path(self.project.repo_root),
-                           Path(self.project.state_dir), start, end, refresh=refresh, until=until, infer_ok=self.infer or refresh,
-                           judge_from=judge_from)
+        src = self.remotes[name]
+        was, src.by = src.by, "infer"            # an inference round's requests are logged as its own
+        try:
+            return definitions(src, self.spec(name), self.specs.declared, Path(self.project.repo_root),
+                               Path(self.project.state_dir), start, end, refresh=refresh, until=until, infer_ok=self.infer or refresh,
+                               judge_from=judge_from)
+        finally:
+            src.by = was
 
     def _remote(self, spec: SourceSpec, start: float, end: float, step: float, own_names: set[str], out: Reading,
                 keep: bool = True, infer_s: float | None = None) -> None:
