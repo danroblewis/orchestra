@@ -367,7 +367,7 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
         # instruments are unknown because the plugins failed to load: the structure is not known
         version = (store.save(m, note=f"{note} ({strategy})")
                    if changed and not reading.missing and not m.discovery.get("plugins_error") else None)
-        return Result(m, now, version, strategy)
+        return Result(m, now, version, m.discovery.get("ran") or strategy)
 
 
 def snapshot(project, metrics: MetricsStore, directory: Path | str, *, strategy: str | None = None,

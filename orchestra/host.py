@@ -112,7 +112,7 @@ def discovery_line(r, took: float, every: float) -> str:
             f"{', era ' + r.model.era if r.model.era else ''}; {what}; took {took:.0f} s")
     sdlab = str(r.model.discovery.get("sdlab") or "")
     if "deadline" in sdlab:
-        line += f"; {r.strategy} {sdlab}"
+        line += f"; {r.model.discovery.get('strategy') or r.strategy} {sdlab}"
     if took > every:
         line += f"; longer than [discovery] every ({every:g} s): the next starts {pace(every, took):.0f} s after this one ended"
     return line

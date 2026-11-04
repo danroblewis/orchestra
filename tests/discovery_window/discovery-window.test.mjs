@@ -22,3 +22,16 @@ test("a window widened for sparse own data says so beside the configured setting
   assert.equal(DW.summary(d, { strategy: "kalman_lna", window_s: 3600, step_s: 30 }),
     "kalman_lna · 18 h · 9 min steps (widened for sparse data (29 levels); configured 60 min · 30 s steps)");
 });
+
+test("the strategy said is the one that ran, the configured one beside it only when it differs", () => {
+  // the owner's page: kalman_lna configured, conservation found no stock, so SD Lab never ran
+  const d = { strategy: "kalman_lna", ran: "conservation", sdlab: "not run: conservation found no stock to hand it", fitted: { window_s: 3600, step_s: 30 } };
+  const c = { strategy: "kalman_lna", window_s: 3600, step_s: 30 };
+  assert.equal(DW.summary(d, c), "conservation (configured: kalman_lna) · 60 min · 30 s steps");
+  assert.equal(DW.strategy({ ran: "conservation" }, "kalman_lna"), "conservation (configured: kalman_lna)");
+  assert.equal(DW.strategy({ ran: "kalman_lna", strategy: "kalman_lna" }, "kalman_lna"), "kalman_lna");
+  // a record from before ``ran``: SD Lab not run says conservation made it
+  assert.equal(DW.strategy({ strategy: "kalman_lna", sdlab: "not run: the counters balance every stock exactly" }, "kalman_lna"), "conservation (configured: kalman_lna)");
+  // no model, only the record of the discovery that found none: still the strategy that ran
+  assert.equal(DW.summary({ strategy: "kalman_lna", ran: "conservation" }, c), "conservation (configured: kalman_lna) · 60 min · 30 s steps");
+});

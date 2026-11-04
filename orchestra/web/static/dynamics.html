@@ -766,7 +766,7 @@ function step(d) {
   load();
 }
 // discovery settings: the strategies there are, prefilled from orchestra.toml
-let STRATS = null;
+let STRATS = null, LAST_DISCOVERY = null;     // the latest discovery's record when it found no model (its strategy, for the summary)
 async function loadStrategies() {
   try {
     const d = await (await fetch("/api/dynamics/strategies")).json(); STRATS = d;
@@ -788,8 +788,9 @@ loadStrategies();
 // the settings' summary: what the shown discovery was fitted over (it may have widened the window), beside what is configured
 function dsetSum() {
   if (!STRATS) return;
-  const configured = { strategy: $("d-strategy").value, window_s: +$("d-window").value * 60, step_s: +$("d-step").value };
-  $("dset-sum").textContent = DiscoveryWindow.summary(MODEL && MODEL.discovery, configured);
+  // what orchestra.toml configures, not the dropdown's choice for the next run
+  const c = STRATS.configured || {}, configured = { strategy: c.strategy, window_s: c.window_s, step_s: c.step_s };
+  $("dset-sum").textContent = DiscoveryWindow.summary((MODEL && MODEL.discovery) || LAST_DISCOVERY, configured);
 }
 // rediscover now: in the background on the server; the page waits for it, then shows the result
 async function rediscover() {
@@ -806,7 +807,7 @@ async function rediscover() {
       const st = await (await fetch("/api/dynamics/rediscover")).json();
       if (st.running) continue;
       if (st.error) note.textContent = "failed: " + st.error;
-      else { const r = st.result || {}; note.textContent = `${r.strategy}: ${r.stocks} stocks, ${r.flows} flows${r.compute_ms ? ` in ${(r.compute_ms / 1000).toFixed(1)} s` : ""} · ${r.version ? "the structure changed: saved as version " + r.version : "structure unchanged"}`; }
+      else { const r = st.result || {}; note.textContent = `${DiscoveryWindow.strategy({ ran: r.strategy }, (STRATS && STRATS.configured || {}).strategy)}${r.sdlab ? ` (${r.asked} ${r.sdlab})` : ""}: ${r.stocks} stocks, ${r.flows} flows${r.compute_ms ? ` in ${(r.compute_ms / 1000).toFixed(1)} s` : ""} · ${r.version ? "the structure changed: saved as version " + r.version : "structure unchanged"}`; }
       VERSION = null; await load(); Live.refresh(); setTimeout(() => GRAPH && GRAPH.fit(), 1600);
       break;
     }
@@ -877,6 +878,7 @@ async function load() {
     $("sd-note").textContent = d.sd_missing || ""; $("sd-note").style.display = d.sd_missing ? "" : "none";
     $("focus-row").style.display = d.ok ? "" : "none";     // no chips to focus while there is no model to focus
     if (!d.ok) {
+      LAST_DISCOVERY = d.discovery || null; dsetSum();
       const lo = d.discovery && d.discovery.left_out;       // no model yet: what discovery saw, and why each series was left out
       const src = d.discovery ? sourcesNote(d.discovery) : "";   // ... and the sources that were missing or refused
       const waiting = await expectedWaiting();
@@ -893,7 +895,7 @@ async function load() {
           + `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d.discovery))} A level is a stock when counters balance it.</div>${keptNote(d.discovery, lo)}${leftOut(lo, d.discovery)}${unnamedBucket(d.discovery, lo)}</div>` : "");
       return;
     }
-    MODEL = d.model; paint("ver", versionBar); paint("eras", erasBar); paint("diagram", draw); paint("tables", tables); rendered();
+    MODEL = d.model; dsetSum(); paint("ver", versionBar); paint("eras", erasBar); paint("diagram", draw); paint("tables", tables); rendered();
     if (!HASH_SEEN) { HASH_SEEN = true; fromHash(); setTimeout(reserved, 3000); }
   } catch (e) { renderError(e); }
 }

@@ -296,6 +296,7 @@ def test_an_sdlab_strategy_adds_nothing_where_the_counters_balance_exactly(tmp_p
     assert {s.id for s in m.stocks} == {"bakery_oven_orders_pending", "bakery_shelf_loaves"}
     assert all(s.evidence["exact_steps"] >= 0.97 for s in m.stocks)
     assert m.discovery["strategy"] == "matrix_v2" and m.discovery["sdlab"].startswith("not run")
+    assert m.discovery["ran"] == "conservation"           # what made this model: SD Lab never ran
     assert not [f for f in m.flows if f.id.startswith("unmeasured:")], [f.id for f in m.flows]
     assert {f.id for f in m.flows} == {"bakery_loaves_baked_total", "bakery_loaves_sold_total", "bakery_loaves_discarded_total",
                                        "bakery_loaves_ordered_total", "bakery_orders_filled_total"}
@@ -494,3 +495,15 @@ def test_a_level_that_falls_is_no_accumulator_and_keeps_its_outflow(tmp_path, mo
     a = m.stock("a")
     assert a is not None and a.evidence["accumulator"] is False, a and a.evidence.get("accumulator")
     assert [f.id for f in m.flows if f.src == "a"], [(f.id, f.src, f.dst) for f in m.flows]
+
+
+def test_with_no_stock_the_record_says_conservation_ran_and_which_strategy_was_asked():
+    # the owner's page said "kalman_lna: 0 stocks" beside "discovery: conservation": with no stock
+    # conservation hands SD Lab nothing, so what ran is conservation, and the record says both
+    from orchestra.sd.strategies import discover_with as run
+    t0 = 1_800_000_000.0
+    dump = [("noise", {"machine": "m"}, [(t0 + 60 * i, float(i % 7)) for i in range(61)])]
+    m = run(dump, start=t0, end=t0 + 3600, step=60, strategy="kalman_lna", deadline=10)
+    assert not m.stocks
+    assert (m.discovery["strategy"], m.discovery["ran"]) == ("kalman_lna", "conservation")
+    assert m.discovery["sdlab"] == "not run: conservation found no stock to hand it"

@@ -314,7 +314,9 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
                                    window_s=body.get("window_s") or None, step_s=body.get("step_s") or None,
                                    note="discovered on request: the structure changed", collectors=collectors_now())
                 rediscovery.update(result={"at": r.at, "stocks": len(r.model.stocks), "flows": len(r.model.flows), "version": r.version,
-                                           "strategy": r.strategy, "compute_ms": r.model.discovery.get("compute_ms")}, error=None)
+                                           "strategy": r.strategy, "compute_ms": r.model.discovery.get("compute_ms"),
+                                           **({"asked": r.model.discovery.get("strategy"), "sdlab": r.model.discovery["sdlab"]}
+                                              if r.model.discovery.get("sdlab") and r.model.discovery.get("strategy") != r.strategy else {})}, error=None)
             except Exception as e:  # noqa: BLE001 - reported to the page
                 rediscovery.update(error=f"{type(e).__name__}: {e}")
             finally:

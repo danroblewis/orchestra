@@ -255,8 +255,13 @@ def discover_with(dump, *, start: float, end: float, step: float, strategy: str 
 def _discover_with(dump, *, start: float, end: float, step: float, strategy: str, options: dict | None, time_unit: str,
                    deadline: float | None, kinds: dict | None, provenance: dict | None) -> Model:
     base = discover(dump, start=start, end=end, step=step, time_unit=time_unit, kinds=kinds, provenance=provenance)
-    base.discovery["strategy"] = CONSERVATION
-    if strategy == CONSERVATION or not base.stocks:
+    # ``strategy``: the one asked for; ``ran``: the one that made this model (conservation alone,
+    # unless SD Lab's strategy ran on what conservation handed it), which the pages say
+    base.discovery.update(strategy=CONSERVATION, ran=CONSERVATION)
+    if strategy == CONSERVATION:
+        return base
+    if not base.stocks:
+        base.discovery.update(strategy=strategy, sdlab="not run: conservation found no stock to hand it")
         return base
     given = handed(base)
     if not given:
@@ -408,7 +413,7 @@ def _discover_with(dump, *, start: float, end: float, step: float, strategy: str
                   f"Discovered by SD Lab's {strategy} from the stocks' levels, with Orchestra's counters attached to its flows.",
                   time_unit, base.stocks + list(hidden.values()), flows, base.machines)
     one = lambda xs: xs[0] if len(xs) == 1 else xs
-    model.discovery = {**base.discovery, "strategy": strategy, "sd_flows": len(sd_flows), "options": options or {}, "steps": n,
+    model.discovery = {**base.discovery, "strategy": strategy, "ran": strategy, "sd_flows": len(sd_flows), "options": options or {}, "steps": n,
                        "inputs": input_refs, "known": sorted(known), "dropped": dropped, "chosen": one(chosen), "method": one(methods),
                        "sdlab_explains": one(["residual" if residual_of.get((sf.get("from"), sf.get("to"))) else "whole change"
                                               for sf in sd_flows[:1]] or ["residual" if known else "whole change"]),
