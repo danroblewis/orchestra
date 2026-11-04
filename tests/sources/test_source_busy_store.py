@@ -20,7 +20,7 @@ HTML = b"<html><body><h1>503 Service Unavailable</h1></body></html>"
 
 
 def _source(fake: FakePrometheus, tmp_path, **extra) -> PrometheusSource:
-    specs = load({"sources": [{"name": "busy", "url": fake.url, **extra}]}, tmp_path)
+    specs = load({"sources": [{"name": "busy", "url": fake.url, "match": ['{__name__=~"[a-zA-Z_:].*"}'], **extra}]}, tmp_path)
     assert not specs.refused, specs.refused
     src = PrometheusSource(specs.sources[0])
     src.slept = []
@@ -161,7 +161,7 @@ def test_probes_past_the_deadline_leave_their_candidates_out_and_the_round_parti
     dump += [("jobs_done_total", {"queue": q}, pts(lambda i, k=k: float(k * i))) for k, q in enumerate("abc", 1)]
     f = FakePrometheus(dump)
     try:
-        spec = load({"sources": [{"name": "busy", "url": f.url, "series_per_query": 1}]}, tmp_path).sources[0]
+        spec = load({"sources": [{"name": "busy", "url": f.url, "match": ['{__name__=~"[a-zA-Z_:].*"}'], "series_per_query": 1}]}, tmp_path).sources[0]
         inf = infer(_Late(spec), spec, [], tmp_path, now - 3600, now)
         assert inf.partial and any("not probed this round" in d.why for d in inf.left_out)
         assert not any("jobs_done" in d.query for d in inf.kept) and inf.kept

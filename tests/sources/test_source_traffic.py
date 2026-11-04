@@ -12,7 +12,7 @@ import time
 
 import pytest
 from fake_prometheus import FakePrometheus
-from helpers import project
+from helpers import MATCH_LINE, project
 
 from orchestra.events import Events
 from orchestra.sd.rediscover import rediscover
@@ -94,7 +94,7 @@ strategy = "conservation"
 name = "mq"
 url = "{url}"
 preset = "{preset}"
-{extra}
+{extra if "match" in extra else MATCH_LINE + chr(10) + extra}
 [sources.producers]
 orders = "orders-api"
 '''
@@ -182,7 +182,7 @@ def test_the_machines_view_gets_producers_channels_and_consumers(rig):
     ('traffic = { direction = "out", channel = "{q}", colour = "red" }', "unknown keys"),
 ])
 def test_a_bad_traffic_table_refuses_the_series_with_why(tmp_path, bad, why):
-    raw = {"sources": [{"name": "mq", "url": "http://127.0.0.1:9"}],
+    raw = {"sources": [{"name": "mq", "url": "http://127.0.0.1:9", "match": ['{__name__=~"[a-zA-Z_:].*"}']}],
            "series": [{"source": "mq", "name": "x_total", "query": "x", "kind": "counter", **_toml_table(bad)}]}
     specs = load(raw, tmp_path)
     assert not specs.declared and why in specs.refused["series[0]"]
@@ -194,7 +194,7 @@ def _toml_table(line: str) -> dict:
 
 
 def test_a_select_is_a_counter_and_a_missing_preset_refuses_its_source(tmp_path):
-    raw = {"sources": [{"name": "mq", "url": "http://127.0.0.1:9"}, {"name": "gone", "url": "http://127.0.0.1:9", "preset": "nope.toml"}],
+    raw = {"sources": [{"name": "mq", "url": "http://127.0.0.1:9", "match": ['{__name__=~"[a-zA-Z_:].*"}']}, {"name": "gone", "url": "http://127.0.0.1:9", "match": ['{__name__=~"[a-zA-Z_:].*"}'], "preset": "nope.toml"}],
            "series": [{"source": "mq", "name": "x", "select": "{__name__=\"x\"}", "kind": "level"},
                       {"source": "mq", "name": "y_total", "select": "{__name__=\"y\"}", "query": "y", "kind": "counter"}]}
     specs = load(raw, tmp_path)

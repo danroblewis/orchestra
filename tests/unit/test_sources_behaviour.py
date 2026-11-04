@@ -159,7 +159,7 @@ def _defn(i, family, name, group, view="sum_by", kind="level", card=3):
 def test_every_family_is_read_whole_first_and_splits_that_move_apart_come_next(tmp_path):
     """Three queues that fill and drain on their own, and services' request counters that move
     together: with room for one split, the queues get it."""
-    spec = load({"sources": [{"name": "lab", "url": "http://127.0.0.1:9", "max_series": 5}]}, tmp_path).sources[0]
+    spec = load({"sources": [{"name": "lab", "url": "http://127.0.0.1:9", "match": ['{__name__=~"[a-zA-Z_:].*"}'], "max_series": 5}]}, tmp_path).sources[0]
     q_total, q_split = _defn(0, "queue_messages", "queue_messages", []), _defn(1, "queue_messages", "queue_messages", ["queue"])
     r_total = _defn(2, "requests_total", "requests_total", [], view="increments", kind="counter")
     r_split = _defn(3, "requests_total", "requests_total", ["job"], view="increments", kind="counter")
@@ -173,7 +173,7 @@ def test_every_family_is_read_whole_first_and_splits_that_move_apart_come_next(t
 def test_counters_split_like_a_stock_score_as_apart(tmp_path):
     """Lag split by consumer group: the offsets consumed by consumer group are what balance it,
     though the groups' consumption moves together."""
-    spec = load({"sources": [{"name": "lab", "url": "http://127.0.0.1:9", "max_series": 8}]}, tmp_path).sources[0]
+    spec = load({"sources": [{"name": "lab", "url": "http://127.0.0.1:9", "match": ['{__name__=~"[a-zA-Z_:].*"}'], "max_series": 8}]}, tmp_path).sources[0]
     lag_total, lag = _defn(0, "lag", "lag", []), _defn(1, "lag", "lag", ["consumergroup"])
     total = _defn(2, "consumed", "consumed", [], view="increments", kind="counter")
     split = _defn(3, "consumed", "consumed", ["consumergroup"], view="increments", kind="counter")

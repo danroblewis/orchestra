@@ -17,14 +17,14 @@ over the limit costs two refusals, not one per halving. A part still refused at
 ``MIN_SPAN`` is named in ``left_out`` (series) or raised (queries: the caller asks for less).
 
 The checks are cheap whatever the tenant's size: ``health`` asks each endpoint about a name no
-store has (an answer that touches no series), never all of ``up``; ``names`` sends no ``match[]`` for the match-everything
-default (a ``match[]`` turns an index read into a series match), and then always a ``limit``.
+store has (an answer that touches no series), never all of ``up``; ``names`` always carries the
+source's ``match[]`` and a ``limit`` (a source has no match-everything default: ``spec.py``).
 **Nothing is asked of a store without naming what it is about:** ``metadata`` is asked metric by
 metric (``metric=<name>``, one entry each by ``limit_per_metric``), of the names the listing found
 under the source's ``match`` only, in sequence at the store's rate and within the round's budget
 (at most ``METADATA_NAMES``, and ``METADATA_SHARE`` of the requests the round has left); the names
 past that are kept in ``unasked`` (described "metadata not asked (budget)"), never asked by a
-listing of the store's whole metadata. ``label_names``/``label_values`` and ``series`` refuse a
+listing of the store's whole metadata. ``names``, ``label_names``/``label_values`` and ``series`` refuse a
 request with no ``match[]``, or one whose every ``match[]`` selects everything.
 
 Every request is **within the source's ``match``** (``scope.py``): its ``query`` and each of its
@@ -45,6 +45,7 @@ from . import Health, Labels, PastDeadline, Points, SourceError
 from .limits import OverBudget, RateLimit
 from .scope import scope_of, scoped
 from .spec import SourceSpec
+from .spec import everything as names_nothing
 from .transport import (
     RETRIES,
     RETRY,
@@ -66,15 +67,14 @@ ENDPOINTS = {"query_range": ("/api/v1/query_range", {"query": PROBE_NAME, "start
              "buildinfo": ("/api/v1/status/buildinfo", None)}
 LABEL_NAME = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 MIN_SPAN = 600.0                     # the shortest time range a refused read is split down to
-EVERYTHING = {'{__name__=~".+"}', "{__name__=~'.+'}", '{__name__=~".*"}', '{__name__!=""}'}   # match-everything selectors
 METADATA_NAMES = 200                 # names one round asks metadata of, at most: one request each
 METADATA_SHARE = 0.25                # of the requests the round has left, at most, spent on metadata
-NAMES_LIMIT = 2001                   # names one match-everything name listing asks for at most, when its caller gives none
+NAMES_LIMIT = 2001                   # names one name listing asks for at most, when its caller gives none
 
 
 def _named(path: str, match: list[str]) -> None:
     """Refuses a listing that names nothing: no ``match[]``, or only selectors that select everything."""
-    if not match or all(m.strip() in EVERYTHING or not m.strip() or m.strip() == "{}" for m in match):
+    if not match or all(names_nothing(m) for m in match):
         raise SourceError(f"{path} is never asked with no match[] naming what it is about (it would list the whole store): "
                           "give a selector, or set match on the [[sources]] entry")
 
@@ -209,14 +209,9 @@ class PrometheusSource(Transport):
 
     def names(self, match: list[str], start: float, end: float, limit: int = 0) -> list[str]:
         """The metric names that ``match`` selects in [start, end] (``label/__name__/values``), at
-        most ``limit`` (when the store honours it); no ``match[]`` when it selects everything."""
-        form: dict = {"start": f"{start:.3f}", "end": f"{end:.3f}"}
-        if not all(m.strip() in EVERYTHING for m in match):
-            form["match[]"] = list(match)
-        elif not limit:
-            limit = NAMES_LIMIT
-        if limit:
-            form["limit"] = str(limit)
+        most ``limit`` (``NAMES_LIMIT`` when none is given); refused when ``match`` names nothing."""
+        _named("/api/v1/label/__name__/values", match)
+        form: dict = {"start": f"{start:.3f}", "end": f"{end:.3f}", "match[]": list(match), "limit": str(limit or NAMES_LIMIT)}
         data = self._call("/api/v1/label/__name__/values", form, post=False)
         if not isinstance(data, list):
             raise SourceError(f"{self.spec.where()}/api/v1/label/__name__/values: not a Prometheus answer")

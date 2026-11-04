@@ -12,7 +12,7 @@ import time
 
 import pytest
 from fake_prometheus import FakePrometheus
-from helpers import project
+from helpers import MATCH_LINE, TEST_MATCH, project
 
 from orchestra.sources import SourceError, prometheus
 from orchestra.sources.cache import attempt
@@ -56,12 +56,12 @@ step = "60s"
 [[sources]]
 name = "lab"
 url = "{url}"
-{extra}
+{extra if "match" in extra else MATCH_LINE + chr(10) + extra}
 """
 
 
 def quick(fake, tmp_path, **kw) -> PrometheusSource:
-    src = PrometheusSource(load({"sources": [{"name": "lab", "url": fake.url, **kw}]}, tmp_path).sources[0])
+    src = PrometheusSource(load({"sources": [{"name": "lab", "url": fake.url, "match": ['{__name__=~"[a-zA-Z_:].*"}'], **kw}]}, tmp_path).sources[0])
     src._sleep = lambda s: None
     return src
 
@@ -73,7 +73,7 @@ def test_a_store_with_more_names_than_a_listing_is_made_of_is_refused_before_a_s
         Catalogue(p, None).inference("lab", T0, NOW)
     said = str(e.value)
     assert "at least 11 metric names" in said and "match" in said and "raise" not in said and "budget" not in said
-    assert f.requests == 1 and f.name_asks == [[]]           # one cheap request, and no match-everything filter in it
+    assert f.requests == 1 and f.name_asks == [[TEST_MATCH]]  # one cheap request, within the source's match
     assert attempt(p.state_dir, "lab")["stopped"]            # it would fail the same way every hour: not tried again
     with pytest.raises(Exception, match="none runs until"):
         Catalogue(p, None).inference("lab", T0, NOW)
@@ -83,7 +83,7 @@ def test_a_store_with_more_names_than_a_listing_is_made_of_is_refused_before_a_s
 def test_the_cap_holds_while_listing_not_after(made, tmp_path):
     f = made([(f"m_{i:03d}", {"pod": f"p{j}"}, every(60, lambda s: s)) for i in range(100) for j in range(5)])
     src = quick(f, tmp_path, concurrency=1)
-    out = listing(src, ['{__name__=~".+"}'], T0, NOW, concurrency=1, limit=200)
+    out = listing(src, [TEST_MATCH], T0, NOW, concurrency=1, limit=200)
     asked = f.requests
     assert out.cut and sum(len(v) for v in out.names.values()) < 300 and "stopped at 200 series" in " ".join(out.notes)
     assert asked < 1 + 100 / 24                              # not every batch of names was asked for
@@ -248,18 +248,23 @@ def test_series_and_labels_naming_nothing_are_never_sent(made, tmp_path):
         with pytest.raises(SourceError, match="never asked with no match"):
             ask()
     assert f.requests == 0
+    with pytest.raises(SourceError, match="never asked with no match"):
+        src.names(['{__name__=~".+"}'], T0, NOW)                           # nor the name index
+    assert f.requests == 0
     assert src.label_values("queue", ["jobs_00_total"], T0, NOW, 10) == ["q"]
-    src.names(['{__name__=~".+"}'], T0, NOW)                               # the name index: never without a limit
-    assert f.asks[-1][0] == "label_values" and f.asks[-1][1]["limit"] == [str(prometheus.NAMES_LIMIT)]
+    src.names(['{env="prod"}'], T0, NOW)                                   # the name index: within a match, with a limit
+    assert f.asks[-1] == ("label_values", {"match[]": ['{env="prod"}'], "limit": [str(prometheus.NAMES_LIMIT)],
+                                           "start": f.asks[-1][1]["start"], "end": f.asks[-1][1]["end"]})
 
 
-def test_a_store_without_a_name_index_is_never_listed_whole_by_series(made, tmp_path):
+def test_a_match_naming_nothing_is_refused_before_any_request(made, tmp_path):
     f = _sixty(made)
     f.missing.add("label_values")
-    with pytest.raises(TooManyNames, match="every series it holds"):
-        listing(quick(f, tmp_path), ['{__name__=~".+"}'], T0, NOW)
-    assert not any(e == "series" for e, _ in f.asks)
-    got = listing(quick(f, tmp_path), ['{env="prod"}'], T0, NOW)
+    for match in (['{__name__=~".+"}'], ["{}"], []):
+        with pytest.raises(TooManyNames, match="a source needs a match"):
+            listing(quick(f, tmp_path, match=['{env="prod"}']), match, T0, NOW)
+    assert f.requests == 0
+    got = listing(quick(f, tmp_path), ['{env="prod"}'], T0, NOW)            # no name index: listed by series, within the match
     assert len(got.names) == 60 and all(form["match[]"] == ['{env="prod"}'] for e, form in f.asks if e == "series")
 
 
@@ -295,7 +300,7 @@ def test_queries_written_by_hand_are_read_together_and_one_the_store_rejects_fai
 def test_a_family_bigger_than_a_batched_read_is_counted_on_the_server_never_turned_over_from_raw_samples(tmp_path):
     from orchestra.sources.family import Family, LabelInfo
     from orchestra.sources.views import views
-    spec = load({"sources": [{"name": "lab", "url": "http://127.0.0.1:9"}]}, tmp_path).sources[0]
+    spec = load({"sources": [{"name": "lab", "url": "http://127.0.0.1:9", "match": ['{__name__=~"[a-zA-Z_:].*"}']}]}, tmp_path).sources[0]
 
     def fam(n):
         return Family("checkout_orders_total", "counter", {"checkout_orders_total": None}, series=n, resolution_s=15.0,

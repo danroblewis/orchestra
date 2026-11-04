@@ -46,7 +46,7 @@ def store(tmp_path):
         f = cls(dump)
         f.meta = {}
         made.append(f)
-        specs = load({"sources": [{"name": "lab", "url": f.url, **kw}]}, tmp_path)
+        specs = load({"sources": [{"name": "lab", "url": f.url, "match": ['{__name__=~"[a-zA-Z_:].*"}'], **kw}]}, tmp_path)
         src = PrometheusSource(specs.sources[0])
         src._sleep = lambda s: None
         src.limiter.hold = lambda s: None

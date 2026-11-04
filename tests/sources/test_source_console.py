@@ -14,7 +14,7 @@ from helpers import project
 
 from orchestra.events import Events
 from orchestra.sources import asking
-from orchestra.sources.spec import for_project
+from orchestra.sources.spec import NO_MATCH, for_project
 from orchestra.web.core import CoreProbe
 from orchestra.web.core_stores import Stores
 
@@ -118,15 +118,16 @@ def test_labels_and_values_go_with_match_and_limit_bounded_by_the_window(made, f
     assert all(not path.endswith("/series") for path, _ in fake.seen)    # never a listing of series
 
 
-def test_with_the_match_everything_default_a_labels_request_naming_nothing_is_refused_unsent(fake, tmp_path, monkeypatch):
-    p = project(tmp_path, monkeypatch, f'[[sources]]\nname = "all"\nurl = "{fake.url}"\n')
-    spec = for_project(p).sources[0]
-    before = len(fake.label_asks)
-    for out in (asking.labels(p.state_dir, spec, "", now=NOW), asking.values(p.state_dir, spec, "pod", "", now=NOW)):
-        assert not out["ok"] and "whole store" in out["error"]
-    assert len(fake.label_asks) == before                                # never a labels request with no match[]
-    out = asking.labels(p.state_dir, spec, "queue_depth", now=NOW)
-    assert out["ok"] and fake.label_asks[-1][1]["match[]"] == ["queue_depth"]
+def test_a_source_without_a_match_is_refused_on_its_row_and_never_asked(fake, tmp_path, monkeypatch):
+    p = project(tmp_path, monkeypatch, f'[[sources]]\nname = "all"\nurl = "{fake.url}"\n'
+                                       f'\n[[sources]]\nname = "every"\nurl = "{fake.url}"\nmatch = [\'{{__name__=~".+"}}\']\n')
+    specs = for_project(p)
+    assert not specs.sources and set(specs.refused) == {"all", "every"}
+    st = Stores(CoreProbe(p, Events.for_project(p))).status()
+    assert {r["name"]: r["error"] for r in st["refused"]} == {n: NO_MATCH for n in ("all", "every")}
+    assert NO_MATCH == ("a source needs a match (a namespace or selector) before Orchestra reads it: ask the owner which "
+                        "part of the store to read")
+    assert fake.requests == 0                                           # never asked, not even the name index
 
 
 def test_a_spent_daily_cap_is_refused_with_when_it_resets(fake, tmp_path, monkeypatch):

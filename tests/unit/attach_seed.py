@@ -28,6 +28,7 @@ url = "http://127.0.0.1:1/metrics"
 name = "work"
 type = "prometheus"
 url = "http://127.0.0.1:1"
+match = ['{namespace="shop"}']
 auth = { bearer_env = "ORCHESTRA_TEST_NO_TOKEN" }
 prefix = "work"
 infer = false

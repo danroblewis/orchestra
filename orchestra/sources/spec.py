@@ -8,7 +8,7 @@ url = "https://tenant.example/data/metrics"
 auth = { bearer_env = "WORK_PROM_TOKEN" }   # never the secret itself; or token_file = "~/..." with auth = "bearer" (auth.py)
 prefix = "work"                             # series work:<name>, machines work.<id>
 machine = "service"                         # the canonical label that names machines
-match = ['{__name__=~"http_.*"}']           # what to infer from (default: everything, capped); every query carries its label matchers (scope.py)
+match = ['{__name__=~"http_.*"}']           # what to read (required: a source without one, or with one that selects everything, is refused); every query carries its label matchers (scope.py)
 max_series = 200
 history = "7d"                              # how far back its first read and discovery's window reach (held.py)
 
@@ -86,7 +86,7 @@ class SourceSpec:
     prefix: str
     auth: AuthSpec
     machine: str | None = None
-    match: list[str] = field(default_factory=lambda: ['{__name__=~".+"}'])
+    match: list[str] = field(default_factory=list)   # required: what is read (refused when it names nothing)
     max_series: int = 200
     max_per_family: int = 12
     labels: dict[str, list[str]] = field(default_factory=dict)    # canonical -> spellings
@@ -167,6 +167,15 @@ def _secret_keys(d: Any, path: str = "") -> list[str]:
     return out
 
 
+NO_MATCH = "a source needs a match (a namespace or selector) before Orchestra reads it: ask the owner which part of the store to read"
+EVERYTHING = re.compile(r"""^\s*\{?\s*(__name__\s*(=~\s*["'](\.[+*]|\^\.[+*]\$)?["']|!=\s*["']["']))?\s*\}?\s*$""")
+
+
+def everything(m: str) -> bool:
+    """Whether a selector names nothing: empty, ``{}``, or a match-everything ``__name__`` matcher."""
+    return bool(EVERYTHING.match(str(m)))
+
+
 def _source(raw: dict, repo_root: Path) -> SourceSpec:
     name = str(raw.get("name") or "")
     if not NAME.match(name):
@@ -201,10 +210,13 @@ def _source(raw: dict, repo_root: Path) -> SourceSpec:
     if not isinstance(producers, dict) or not all(isinstance(v, str) and v for v in producers.values()):
         raise ValueError("[sources.producers]: channel = \"machine\"")
     transform = raw.get("transform") or {}
-    match = raw.get("match") or ['{__name__=~".+"}']
+    match = raw.get("match") or []
+    match = [match] if isinstance(match, str) else list(match)
+    if not match or all(everything(m) for m in match):
+        raise ValueError(NO_MATCH)
     return SourceSpec(
         name=name, type=typ, url=url.rstrip("/"), prefix=prefix, auth=auth, machine=raw.get("machine"),
-        match=[match] if isinstance(match, str) else list(match),
+        match=match,
         max_series=int(raw.get("max_series", 200)), max_per_family=int(raw.get("max_per_family", 12)),
         labels={str(k): [str(x) for x in v] for k, v in labels.items()},
         identity=list(raw.get("identity") or IDENTITY),

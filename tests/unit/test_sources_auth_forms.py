@@ -11,7 +11,7 @@ from orchestra.sources.spec import load
 
 def _load(tmp_path, **entry):
     (tmp_path / "repo").mkdir(exist_ok=True)
-    specs = load({"sources": [{"name": "work", "url": "https://tenant.chronosphere.io/data/metrics/", **entry}]}, tmp_path / "repo")
+    specs = load({"sources": [{"name": "work", "url": "https://tenant.chronosphere.io/data/metrics/", "match": ['{__name__=~"[a-zA-Z_:].*"}'], **entry}]}, tmp_path / "repo")
     return specs.sources[0] if specs.sources else specs.refused["work"]
 
 

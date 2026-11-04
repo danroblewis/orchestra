@@ -37,7 +37,7 @@ def every(seconds, fn, start=T0, end=NOW):
 
 
 def spec_for(fake, tmp_path, **kw):
-    specs = load({"sources": [{"name": "lab", "url": fake.url, **kw}]}, tmp_path)
+    specs = load({"sources": [{"name": "lab", "url": fake.url, "match": ['{__name__=~"[a-zA-Z_:].*"}'], **kw}]}, tmp_path)
     assert not specs.refused, specs.refused
     return specs.sources[0]
 
@@ -151,7 +151,7 @@ def test_names_come_from_the_index_and_series_in_batches_split_on_a_422(made, tm
     f = made(dump)
     f.max_series = 100
     src = quick(spec_for(f, tmp_path))
-    got = listing(src, ['{__name__=~".+"}'], T0, NOW)
+    got = listing(src, ['{__name__=~"[a-zA-Z_:].*"}'], T0, NOW)
     assert len(got.names) == 42 and all(len(got.names[f"m{k:02d}"]) == 10 for k in range(40))
     assert got.names["lat_bucket"] == [] and len(got.names["lat_count"]) == 10     # buckets are never read: not listed
     assert "huge" in got.too_big and any("huge" in n for n in got.notes)
@@ -298,6 +298,7 @@ step = "60s"
 [[sources]]
 name = "lab"
 url = "{f.url}"
+match = ['{{__name__=~"[a-zA-Z_:].*"}}']
 """)
     cat = Catalogue(p, None)
     inf = cat.inference("lab", T0, NOW)
@@ -340,6 +341,7 @@ step = "30s"
 [[sources]]
 name = "lab"
 url = "{f.url}"
+match = ['{{__name__=~"[a-zA-Z_:].*"}}']
 """)
     r = Catalogue(p, None).read(T0, NOW, 30.0)
     counter = next(k for k in r.kinds if k.startswith("lab:jobs_total"))

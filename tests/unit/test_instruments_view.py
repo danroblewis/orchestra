@@ -21,7 +21,7 @@ def project(tmp_path, monkeypatch):
     (r / "orchestra.toml").write_text('[[collect]]\nname = "tides"\ncommand = "machines/tides.py"\nevery = "6m"\n'
                                       '\n[[scrape]]\nname = "app"\nurl = "http://127.0.0.1:9/metrics"\n'
                                       '\n[[scrape]]\nname = "bad"\nurl = "ftp://x"\n'
-                                      '\n[[sources]]\nname = "rig"\ntype = "prometheus"\nurl = "http://127.0.0.1:9090"\nprefix = "rig"\n')
+                                      '\n[[sources]]\nname = "rig"\ntype = "prometheus"\nurl = "http://127.0.0.1:9090"\nprefix = "rig"\nmatch = [\'{__name__=~"[a-zA-Z_:].*"}\']\n')
     p.reload_config()
     return p
 

@@ -738,8 +738,13 @@ password: `auth = "basic"` with `user = "chronosphere"`.)
    `orchestra sources check` says which. The table form (`auth = { bearer_env = ... }`,
    `header`, `basic`, mTLS; SPEC §4.4) works here too.
 
-- **`match`** limits inference to what matters. Never leave a big tenant on the default: a `match`
-  that selects more than 2,000 metric names is refused.
+- **`match` is required.** A source without one, or with one that selects everything
+  (`{__name__=~".+"}`, `{}`), is refused with "a source needs a match (a namespace or selector)
+  before Orchestra reads it: ask the owner which part of the store to read". Ask the owner, and
+  name a namespace or the families the model is about (`{namespace="shop"}`,
+  `{__name__=~"queue_.*|orders_.*", env="prod"}`). Every request Orchestra makes of the store
+  carries it: it never asks for the store's list of every metric. A `match` that selects more
+  than 2,000 metric names is refused too.
 - **`max_series`** caps what discovery reads, at most 12 per family.
 - **`labels`** are aliases: the first spelling a metric has becomes `service`.
 - **`rate` and `max_requests_per_day`** are per store, shared by every project and process on the
