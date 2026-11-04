@@ -43,7 +43,7 @@ name = "chronosphere"
 url = "https://<tenant>.chronosphere.io/data/metrics"
 auth = "bearer"
 token_file = "~/.config/orchestra/chronosphere-token"
-match = ['{namespace="<yours>"}']    # required: nothing outside it is read
+match = ['{service=~"hk-.*"}']      # required: a PromQL label selector; nothing outside it is read
 prefix = "chrono"
 machine = "service"
 max_series = 100
@@ -52,6 +52,15 @@ max_requests_per_day = 5000          # per UTC day; past it, nothing is asked un
 [sources.labels]
 service = ["service", "app", "k8s_app"]
 ```
+
+`match` is a list of PromQL label selectors, the same shape as Prometheus's `match[]`. Orchestra
+conjoins it into every query it sends, so the store is never asked for everything. `namespace`
+is only the usual label on Kubernetes-scraped series; use whatever label scopes your team's
+series: `service`, `app`, `job`, `team`, `cluster`, or a metric-name prefix such as
+`{__name__=~"hk_.*"}`. A selector that matches everything (`{}`, `{__name__=~".+"}`) is refused.
+To see which labels and values your store has, use the Core page's External stores section
+after step 5 (its label lookups are bounded), or your store's own explorer.
+
 
 `orchestra sources check` should say `bearer from file …: present`, `answers`, and the endpoints
 (`metadata no` is normal); never the token. `orchestra sources infer --source chronosphere` lists
