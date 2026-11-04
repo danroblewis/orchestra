@@ -1115,7 +1115,12 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   its source, query and origin; the web server reads remote stocks' levels and history through
   the catalogue **only while a page asks for them**, at discovery's step, from the host's read
   cache and then only what is newer, in one round per source from its own share of the store's
-  rate (`web_share`), slowing down when the store throttles it.
+  rate (`web_share`), slowing down when the store throttles it. A source-fed stock's level now,
+  its projection's start and its trust are read so, never from the own store and never copied into
+  it: its last value read (held, as discovery reads a level), no older than 15 minutes or two of
+  its resolution, with where it came from (`levels[stock].measured_by`: `source <name>`, or `own
+  store`). The web server's catalogue follows the configuration, so a source added while it runs is
+  read from the next round (bootstrap run 7: every queue's level read "no data").
 - **Within `match`** (`sources/scope.py`). Every query made of a source carries the label
   matchers every `match` selector has (`__name__` aside): `['{namespace="hackriff"}']` scopes it to
   `namespace="hackriff"`; selectors with no label matcher in common (or the match-everything
