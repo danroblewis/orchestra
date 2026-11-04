@@ -843,7 +843,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     """The model the metrics imply over [start, end], with how it was found in ``model.discovery``.
     ``provenance`` (by series key): what each series' source said of it (its unit, its view), when
     another store was read (``orchestra.sources``)."""
-    provenance = provenance or {}
+    provenance = dict(provenance or {})          # the arrivals derived for an occupancy are recorded in it (sd.construction)
     n = max(2, int((end - start) // step))
     series, summed = sum_instances(sample(dump, start, step, n, kinds))
     on_bus = candidates(series)    # each machine's event counts: what a flow may be associated with (sd.attribute)
@@ -923,6 +923,21 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     pins, pin_problems = declared_stocks(series, provenance)
     # a place's level and its own moves, as their instrument declared them: one construction, recorded (sd.construction)
     built = {s.key: t for s in series if not s.counter and s.key not in pins and (t := construction.terms(s, counters, provenance))}
+    # the calls in progress (an occupancy view) and its completions, with the arrivals Little's law
+    # derives from them: one construction too, its arrivals a counter no other level may take
+    occupancy: dict[str, dict] = {}
+    for s in [x for x in series if not x.counter and x.key not in pins and x.key not in built]:
+        if outs := construction.completions(s, counters, provenance):
+            a = construction.arrivals(s, outs, start, step)
+            counters.append(a)
+            unit[a.key] = unit[s.key]
+            provenance[a.key] = construction.arrivals_record(s, outs, provenance)
+            built[s.key] = [(a, 1), *((c, -1) for c in outs)]
+            for x in series:
+                if not x.counter and x.key != s.key:
+                    barred[x.key] = barred.get(x.key, set()) | {a.key}
+            occupancy[s.key] = {"law": "Little's law", "derived": (provenance.get(s.key) or {}).get("derived"), "arrivals": a.key,
+                                "completions": [c.key for c in outs], "driver": provenance[a.key]["driver"]}
     pinned: list = []                             # declared balances that fit: kept out of the restatements below
     pin_tried: dict[str, str] = {}                # a declared balance that did not fit, and how well it did
 
@@ -1180,6 +1195,10 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                              **({"age_series": {"name": a.name, "labels": dict(a.labels)}}
                                 if (not p or p.measured) and (a := age_of.get(tuple(sorted(s.labels.items())))) else {}),
                              **({"capacity_of": views[s.key]} if s.key in views else {}),
+                             # the calls in progress, derived by Little's law: explain and the drawer say so from this
+                             # record (C20's explain: the view's provenance text, "derived: busy time over the interval
+                             # (Little's law)", goes here; hook left for it)
+                             **({"occupancy": occupancy[s.key]} if s.key in occupancy else {}),
                              **({"declared": pins[s.key].record()} if s.key in declared_keys else {}),
                              **({"balance_on": f"the stretches between the writes of its slowest series ({len(s.blocks)} in the window)"}
                                 if s.blocks and any(c.blocks for c, _ in terms) else {})}))

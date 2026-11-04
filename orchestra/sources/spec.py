@@ -120,6 +120,7 @@ class SourceSpec:
     producers: dict[str, str] = field(default_factory=dict)      # channel -> the machine producing into it (declared)
     preset: str | None = None
     split: list[str] | None = None      # the only labels a family is split by (store or canonical spelling), summed over every other
+    kinds: dict[str, str] = field(default_factory=dict)          # metric or rule -> flow | level | ignore, over inference's reading (kinds.py)
 
     def aliases(self) -> dict[str, str]:
         """real -> canonical for a query someone wrote (a script's, a declared series'): every
@@ -219,6 +220,9 @@ def _source(raw: dict, repo_root: Path) -> SourceSpec:
     split = raw.get("split")
     if split is not None and (not isinstance(split, list) or not all(isinstance(x, str) and LABEL_NAME.match(x) for x in split)):
         raise ValueError('split = ["label", ...]: the label names (as the store spells them) a family is split by')
+    kinds = raw.get("kinds") or {}
+    if not isinstance(kinds, dict) or not all(isinstance(k, str) and v in ("flow", "level", "ignore") for k, v in kinds.items()):
+        raise ValueError('kinds = { "<metric or rule>" = "flow" | "level" | "ignore" }: what a metric is, over inference\'s reading')
     match = raw.get("match") or []
     match = [match] if isinstance(match, str) else list(match)
     if not match or all(everything(m) for m in match):
@@ -240,7 +244,7 @@ def _source(raw: dict, repo_root: Path) -> SourceSpec:
         web_share=min(1.0, max(0.01, float(raw.get("web_share", 0.2)))), max_names=max(1, int(raw.get("max_names", 2000))),
         infer_every_set="infer_every" in raw,
         infer=bool(raw.get("infer", True)), settle=parse_duration(raw.get("settle"), 0.0), producers={str(k): v for k, v in producers.items()}, preset=raw.get("preset"),
-        split=list(dict.fromkeys(split)) if split is not None else None)
+        split=list(dict.fromkeys(split)) if split is not None else None, kinds={str(k): str(v) for k, v in kinds.items()})
 
 
 def _series(r: dict) -> DeclaredSeries:

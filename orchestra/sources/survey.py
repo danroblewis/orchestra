@@ -28,6 +28,7 @@ state, never count its reporters (``views.py``)."""
 from __future__ import annotations
 
 import time
+from itertools import pairwise
 
 from . import Source, census
 from .behaviour import classify, counter_like, decides
@@ -46,6 +47,7 @@ from .checks import (
 )
 from .duplicates import duplicated
 from .family import UNREAD, Family, LabelInfo, Schema, esc
+from .kinds import declared
 from .listing import REPLICA_LABELS, listing
 from .schema import SKIP_LABELS, _aliases, _group
 from .spec import SourceSpec
@@ -192,6 +194,8 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
             if (fam.name, r["metric"]) in bad:
                 failed[fam.name] = f"its rule {r['metric']}'s samples: {bad[(fam.name, r['metric'])]}"
             r["resolution_s"] = interval(raw.get((fam.name, r["metric"]), []))
+            if rp := raw.get((fam.name, r["metric"])):          # a rule whose samples fall is per interval, never cumulative
+                r["falls"] = any(b < a for p in rp for (_, a), (_, b) in pairwise(p))
         if fam.first_metric() in getattr(source, "native", set()) and fam.kind in RETYPABLE:
             fam.kind, fam.counter_form = "counter", "native"
             fam.retyped = "a native histogram: read by its count, a counter"
@@ -339,5 +343,6 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
                      f"round found them, {len(failed) - kept} unknown and left out; the first: {next(iter(failed.values()))}")
     for n, why in lst.failed.items():
         notes.append(f"{n}: could not be listed ({why})")
+    declared(families, spec.kinds)          # what the owner says a metric is, over the samples' verdict (kinds.py)
     return Schema(families, notes, _remembered(lst, remembered))
 
