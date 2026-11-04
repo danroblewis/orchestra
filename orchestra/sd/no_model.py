@@ -92,6 +92,40 @@ def said(kind: str, k: int) -> str:
     return f"{k} {one if k == 1 else many}"
 
 
+# what would help, for the left-out reasons a person can act on (the Dynamics page's left-out list
+# says the same per group: left-out.js ``help``)
+WAIT_OR_WIDEN = "wait, or widen the match to series with history"
+NO_BALANCE = "a level with no matching counters: add the counters that fill and drain it, or a place count"
+SPAN = re.compile(r"written for only (\d+) min of the (\d+) min")
+
+
+def _min(s: float) -> str:
+    return f"{max(1, round(s / 60))} min"
+
+
+def helps(r: dict, discovery: dict | None) -> list[str]:
+    """What would help, in words, for the kinds of reason the last discovery left series out for:
+    too little of the window (with the window's data and the series' spans), levels no counters
+    balance, and counters that were flat for the whole window."""
+    if not discovery:
+        return []
+    left = (discovery.get("left_out") or {}).values()
+    out = []
+    spans = [(int(m[1]), int(m[2])) for w in left if (m := SPAN.match(str(w)))]
+    if spans:
+        lo, hi, held = min(g for g, _ in spans), max(g for g, _ in spans), max(h for _, h in spans)
+        written = f"{lo} min" if lo == hi else f"{lo}–{hi} min"
+        out.append(f"for the {len(spans)} written for too little of the window, {WAIT_OR_WIDEN} (the window holds "
+                   f"{held} min of data; {'it was' if len(spans) == 1 else 'they were'} written for {written})")
+    if k := sum(1 for w in left if str(w).startswith("no counters balance it")):
+        out.append(f"for the {k} no counters balance, each is {NO_BALANCE}")
+    ce = discovery.get("counter_events")
+    if ce is not None and not ce.get("counters"):
+        w = r.get("window_s")
+        out.append(f"the counters were flat for {_min(w) if w else 'the whole window'}: wait for traffic or widen the match")
+    return out
+
+
 def no_model_reason(d: dict, where: str = "below") -> str:
     """Why a discovery found no stocks, in one clause, from what it left out: a missing source;
     none of the series could be judged (every one left out before it was considered: the
@@ -129,6 +163,7 @@ def reason(discovery: dict | None, host: bool | None = None) -> dict:
                counter_events=discovery.get("counter_events"), missing_source=discovery.get("not_saved"),
                too_young=bool(discovery.get("too_young")), widened=discovery.get("widened"),
                window_s=(discovery["end"] - discovery["start"]) if discovery.get("end") is not None and discovery.get("start") is not None else None)
+    out["help"] = helps(out, discovery)
     return out
 
 
@@ -166,6 +201,9 @@ def text(r: dict) -> str:
                      else f"Events per counter: up to {_num(most)} ({needed} needed for a balance).")
     elif ce is not None:
         parts.append("No counter moved in the window, so nothing could balance a level.")
+    if r.get("help"):
+        h = "; ".join(r["help"])
+        parts.append(f"What would help: {h[0].upper() + h[1:]}.")
     parts.append(AGAIN if r.get("host_running") else NO_HOST if r.get("host_running") is False else HOST_UNKNOWN)
     return " ".join(parts)
 

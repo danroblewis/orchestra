@@ -27,3 +27,16 @@ test("the series left out at once are counted by the reasons the record gives, n
   assert.equal(LeftOut.early(lo, 5), "2 too new to measure, 1 Orchestra's own, 2 without a reason in the record");
   assert.doesNotMatch(LeftOut.early(lo, 3), /not being written/);
 });
+
+test("each group a person can act on says what would help (the owner's field report, 2026-11-04)", () => {
+  const d = { start: 0, end: 3600 };
+  const short = (n) => `written for only ${n} min of the 60 min the window holds data for (20%, less than the 50% a stock must cover): too new`;
+  assert.equal(LeftOut.help([short(10), short(14)], d),
+    "What would help: wait, or widen the match to series with history (the window holds 60 min of data; they were written for 10–14 min).");
+  assert.equal(LeftOut.help([short(9)], d), "What would help: wait, or widen the match to series with history (the window holds 60 min of data; it was written for 9 min).");
+  assert.equal(LeftOut.help(["no counters balance it (best R² 0.10)"], d),
+    "What would help: a level with no matching counters: add the counters that fill and drain it, or a place count.");
+  assert.equal(LeftOut.help(["a counter that did not move in the window"], d), "What would help: the counters were flat for 60 min: wait for traffic or widen the match.");
+  assert.match(LeftOut.help(["Orchestra's own (the host's plumbing)"], d), /^Nothing to do/);
+  assert.equal(LeftOut.help(["a flag (it only ever takes 0 and 1)"], d), "");
+});

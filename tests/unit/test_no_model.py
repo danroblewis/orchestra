@@ -139,3 +139,21 @@ def test_the_notice_says_how_long_until_a_counter_has_counted_enough_at_the_curr
     d = {"left_out": {"moves_total": "a counter of only 1 event: fewer than 5"}, "series": 1, "start": 1000.0, "end": 1600.0,
          "counter_events": {"counters": 1, "most": 1, "needed": 5}}
     assert "Too few events: at most 1 per counter, 5 needed; about 40 more minutes at the current rate." in text(reason(d, True))
+
+
+def test_the_paragraph_says_what_would_help_for_each_kind_a_person_can_act_on():
+    # the owner's field report (2026-11-04): no model, the reasons said but not what to do about them
+    short = "written for only {} min of the 60 min the window holds data for (20%, less than the 50% a stock must cover): too new"
+    d = {"sampled": 36, "series": 10, "start": 0.0, "end": 3600.0, "counter_events": {"counters": 0, "most": 0.0, "needed": 5},
+         "left_out": {"s1": short.format(10), "s2": short.format(14), "n": "no counters balance it (best R² 0.10)",
+                      "o": "Orchestra's own (the host's plumbing), not a measure of the system"}}
+    r = reason(d, host=True)
+    assert set(r) >= {"by_reason", "summary", "counter_events", "window_s"}          # the API's keys unchanged
+    assert r["help"] == [
+        ("for the 2 written for too little of the window, wait, or widen the match to series with history "
+         "(the window holds 60 min of data; they were written for 10–14 min)"),
+        "for the 1 no counters balance, each is a level with no matching counters: add the counters that fill and drain it, or a place count",
+        "the counters were flat for 60 min: wait for traffic or widen the match"]
+    assert "What would help: For the 2 written for too little" in text(r)
+    assert "help" not in reason(None) and reason({**D})["help"] == [("for the 2 no counters balance, each is a level with no matching "
+                                                                      "counters: add the counters that fill and drain it, or a place count")]

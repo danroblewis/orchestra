@@ -102,3 +102,23 @@ def test_the_url_is_shown_without_a_password():
     assert redact("https://user:secret@prom.example:9090/api/prom") == "https://user:•••@prom.example:9090/api/prom"
     assert redact("http://127.0.0.1:8920") == "http://127.0.0.1:8920"
     assert "secret" not in redact("https://u:secret@h/p?token=secret")
+
+
+@pytest.mark.parametrize("match", [SHOP, ['{__name__=~"grpc_.*"}'], ["a:b"], ['{__name__="a:b"}'], ['a:b{env="p"}']])
+@pytest.mark.parametrize("q", ["a:b", "count(a:b)", "sum by (status) (rate(a:b[5m]))", '{__name__="a:b"}',
+                               "count(grpc_client_callMillis:count)"])
+def test_a_metric_name_with_colons_is_a_name_of_its_own_even_when_the_match_names_it(q, match):
+    # the owner's field report (2026-11-04): count(grpc_client_callMillis:count) refused under a
+    # match of that one metric family
+    assert guard(q, match) is None
+
+
+@pytest.mark.parametrize("match", [SHOP, ["a:b"], ['{__name__="a:b"}']])
+@pytest.mark.parametrize("q", ["{}", '{__name__=~".+"}'])
+def test_with_colons_allowed_match_everything_is_still_refused(q, match):
+    assert guard(q, match)
+
+
+def test_a_metric_the_match_names_is_asked_once_and_within_the_match():
+    assert conjoined("count(a:b)", ['a:b{env="p"}']) == 'count({__name__="a:b",env="p"})'
+    assert conjoined("rate(a:b[5m])", SHOP) == 'rate(a:b{namespace="shop"}[5m])'

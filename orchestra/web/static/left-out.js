@@ -37,6 +37,23 @@ const LeftOut = (() => {
     if (n > named) parts.push(`${n - named} without a reason in the record`);
     return parts.join(", ");
   }
-  return { keyOf, used, counts, early };
+  // what would help, for a group of left-out reasons a person can act on ("" for the rest), in the
+  // words of sd/no_model.py's paragraph; ``d`` the discovery's record, for its window
+  const SPAN = /^written for only (\d+) min of the (\d+) min/;
+  function help(whys, d) {
+    const first = String((whys || [])[0] || ""), win = d && d.end != null && d.start != null ? Math.max(1, Math.round((d.end - d.start) / 60)) : null;
+    if (first.startsWith("written for only")) {
+      const spans = whys.map((w) => SPAN.exec(String(w))).filter(Boolean).map((m) => [+m[1], +m[2]]);
+      if (!spans.length) return "What would help: wait, or widen the match to series with history.";
+      const lo = Math.min(...spans.map((x) => x[0])), hi = Math.max(...spans.map((x) => x[0])), held = Math.max(...spans.map((x) => x[1]));
+      return `What would help: wait, or widen the match to series with history (the window holds ${held} min of data; `
+        + `${spans.length === 1 ? "it was" : "they were"} written for ${lo === hi ? lo : `${lo}–${hi}`} min).`;
+    }
+    if (first.startsWith("no counters balance it")) return "What would help: a level with no matching counters: add the counters that fill and drain it, or a place count.";
+    if (first.startsWith("a counter that did not move")) return `What would help: the counters were flat for ${win ? `${win} min` : "the whole window"}: wait for traffic or widen the match.`;
+    if (first.startsWith("Orchestra's own")) return "Nothing to do: Orchestra's own series are never a stock of the system.";
+    return "";
+  }
+  return { keyOf, used, counts, early, help };
 })();
 if (typeof module !== "undefined") module.exports = LeftOut;

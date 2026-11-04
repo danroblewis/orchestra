@@ -468,7 +468,7 @@ function unnamedBucket(d, lo, m) {
 }
 // series left out, grouped by why: the ones that changed but didn't balance are worth reading;
 // the ones that didn't move in the window are collapsed
-function leftOut(lo) {
+function leftOut(lo, d) {
   const groups = {};
   // like reasons read as one group: their particulars (how many events, which of Orchestra's own) stay on each row
   const groupOf = (why) => (why.startsWith("no counters balance") ? "changed, but no counters balance it"
@@ -476,7 +476,8 @@ function leftOut(lo) {
     : /^a counter of only \d+ events?/.test(why) ? `a counter of fewer than ${Evidence.MIN_EVENTS} events: too few to carry a balance`
     : /^a level that changed in only \d+ steps?/.test(why) ? `a level that changed in fewer than ${Evidence.MIN_EVENTS} steps: too few to tell a balance from coincidence`
     : why.startsWith("live in only") ? "live in only some of the steps its counters were live in: too new, or too broken, to balance"
-    : why.startsWith("the same as ") ? "the same as another series (counts the same events)" : why);
+    : why.startsWith("the same as ") ? "the same as another series (counts the same events)"
+    : why.startsWith("written for only") ? "written for too little of the window: too new to be a stock yet" : why);
   const titles = ((MODEL && MODEL.discovery) || {}).titles || {};
   for (const [k, why] of Object.entries(lo)) {
     const g = groupOf(why);
@@ -489,7 +490,8 @@ function leftOut(lo) {
     // a reason that names a counter a flow measures says the flow's name ("follows ci → review, R² 0.70")
     const named = (why) => MODEL ? MODEL.flows.filter((f) => f.counter).reduce((w, f) => w.split(keyOf(f.counter)).join(flowName(f)), why) : why;
     const rows = groups[g].map(([k, why]) => `<tr><td class="num">${titles[k] ? `<b style="font-family:var(--sans,inherit)">${esc(titles[k])}</b><div class="muted">${esc(k)}</div>` : esc(k)}${res(k) ? `<div class="muted" style="font-family:inherit">${esc(res(k))}</div>` : ""}</td>${g.startsWith("changed") ? `<td class="muted">${esc(named(why.replace(/^no counters balance it /, "")))}</td>` : why !== g ? `<td class="muted">${esc(named(why))}</td>` : ""}</tr>`).join("");
-    return `<details ${g.startsWith("changed") ? "open" : ""}><summary>${esc(g)} <span class="count">${groups[g].length}</span></summary><table class="dt">${rows}</table></details>`;
+    const help = LeftOut.help(groups[g].map(([, why]) => why), d);     // what would help, in words (left-out.js)
+    return `<details ${g.startsWith("changed") ? "open" : ""}><summary>${esc(g)} <span class="count">${groups[g].length}</span>${help ? ` <span class="muted">· ${esc(help)}</span>` : ""}</summary><table class="dt">${rows}</table></details>`;
   }).join("");
 }
 // how far to trust a stock (sd/stocktrust.py): the weakest of its measured evidence, 0 to 1; and its projection beside it (behaviour); evidence-text.js
@@ -555,7 +557,7 @@ function tables() {
       if (ev.balance) return `<div class="bal"><b>${esc(stockName(s.id))}</b> <span class="muted">changes by</span> ${ev.balance.map((b) => `<span class="ty" title="${esc(b.series)}">${b.sign > 0 ? "+" : "−"} ${esc(termName(b.series))}</span>`).join(" ")} <span class="muted">${passage ? "a passage: judged on its raw points; R² not used" : ev.balance_r2 == null ? (ev.by_construction ? "a count and its own turnover" : "measured by no series") : `R² ${ev.balance_r2.toFixed(3)} · exact in ${Math.round(100 * ev.exact_steps)}% of steps`}${trustText(ev)}</span></div>`;
       if (ev.net_flow) return netFlowLine(s, ev);
       return ""; }).join("")
-    + leftOutHead(d, d.left_out, m) + keptNote(d, d.left_out) + leftOut(d.left_out) + unnamedBucket(d, d.left_out, m) : '<div class="muted">This version was declared, not discovered.</div>';
+    + leftOutHead(d, d.left_out, m) + keptNote(d, d.left_out) + leftOut(d.left_out, d) + unnamedBucket(d, d.left_out, m) : '<div class="muted">This version was declared, not discovered.</div>';
   Intended.tables();
   // what is counted is said: stocks hidden from the diagram, machines with flow hypotheses out of all machines
   const hid = window.ACC_HIDDEN || 0;
@@ -885,7 +887,7 @@ async function load() {
         + (src ? `<div class="panel" style="margin-top:10px">${src}</div>` : "")
         + (lo && Object.keys(lo).length
         ? `<div class="panel" style="margin-top:10px">${leftOutHead(d.discovery, lo).replace("<h3>", '<h3 style="margin-top:0">')}`
-          + `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d.discovery))} A level is a stock when counters balance it.</div>${keptNote(d.discovery, lo)}${leftOut(lo)}${unnamedBucket(d.discovery, lo)}</div>` : "");
+          + `<div class="muted" style="font-size:12px;margin-bottom:6px">${esc(lookedAt(d.discovery))} A level is a stock when counters balance it.</div>${keptNote(d.discovery, lo)}${leftOut(lo, d.discovery)}${unnamedBucket(d.discovery, lo)}</div>` : "");
       return;
     }
     MODEL = d.model; paint("ver", versionBar); paint("eras", erasBar); paint("diagram", draw); paint("tables", tables); rendered();

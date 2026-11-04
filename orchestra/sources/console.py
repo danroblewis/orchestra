@@ -11,7 +11,10 @@ prometheus servers, gotta use other ways to get labels").
 - **A selector of its own** (``guard``): a selector needs a metric name or at least one label
   matcher of its own, not one the match has already and not one that matches everything
   (``=~".+"``, ``=~".*"``, ``=""``, ``!=""``): ``{}``, ``{__name__=~".+"}`` and, under
-  ``{namespace="shop"}``, ``{namespace="shop"}`` are refused.
+  ``{namespace="shop"}``, ``{namespace="shop"}`` are refused. A metric name always counts, the
+  match's own included (a match of one metric is queried by its name), and may hold colons as
+  PromQL's do (``a:b``, a recording rule's: ``[a-zA-Z_:][a-zA-Z0-9_:]*``), bare, as
+  ``{__name__="a:b"}``, or inside functions and aggregations.
 - **A bounded window** (``window``): an hour by default, a day at most; an instant query is
   evaluated at now, and no range or subquery in a query reaches back more than a day. **A bounded result** (``limit``): 50 series by default, at most the source's
   ``max_series``; each selector is first counted with ``/api/v1/series`` over the window with
@@ -91,9 +94,16 @@ def match_matchers(match: list[str]) -> list[tuple[str, str, str]]:
     return [x for x in sets[0] if not (x[0] == "__name__" and x[2] in EMPTY)]
 
 
+def _named(x: tuple[str, str, str]) -> bool:
+    """A matcher that names one metric (``a:b``, ``{__name__="a:b"}``): it selects one family however
+    the match is written, so it is the selector's own even when the match names that metric too."""
+    return x[0] == "__name__" and x[1] == "=" and bool(x[2])
+
+
 def _own(sel: list[tuple[str, str, str]], scope: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
-    """A selector's matchers of its own: not the match's, and not one that matches everything."""
-    return [x for x in sel if x not in scope and x[2] not in EMPTY]
+    """A selector's matchers of its own: a metric name, or a matcher not the match's and not one
+    that matches everything."""
+    return [x for x in sel if _named(x) or (x not in scope and x[2] not in EMPTY)]
 
 
 def conjoined(expr: str, match: list[str]) -> str:
@@ -113,7 +123,7 @@ def conjoined(expr: str, match: list[str]) -> str:
             raise Refused(f"{written.strip() or '{}'}: a selector needs a metric name or at least one label matcher of its own{within}; "
                           '__name__=~".+" counts as none, so a query cannot select every series of the store')
         mine = [matcher_text(*x) for x in sel if not (name and x == ("__name__", "=", name))]
-        extra = [matcher_text(*x) for x in scope]
+        extra = [matcher_text(*x) for x in scope if x not in sel]       # a matcher written twice is asked once
         if name and not named:
             return name + ("{" + ",".join(mine + extra) + "}" if mine or extra else "")
         return "{" + ",".join(([matcher_text("__name__", "=", name)] if name else []) + mine + extra) + "}"

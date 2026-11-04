@@ -59,7 +59,34 @@ is only the usual label on Kubernetes-scraped series; use whatever label scopes 
 series: `service`, `app`, `job`, `team`, `cluster`, or a metric-name prefix such as
 `{__name__=~"hk_.*"}`. A selector that matches everything (`{}`, `{__name__=~".+"}`) is refused.
 To see which labels and values your store has, use the Core page's External stores section
-after step 5 (its label lookups are bounded), or your store's own explorer.
+after step 5: in each source's row, under its match, the **labels** button beside the query box lists the label names within the
+match (narrowed to the query box's first selector, if it has one), and clicking a name lists its
+values, both through the store's bounded label endpoints. There is no CLI command for this; the
+page is the way (or your store's own explorer).
+
+**`[sources.labels]` is an alias map, not a selection.** Each line says which of the store's
+label spellings stand for one of Orchestra's own label names (`service`, `instance`, `pod`,
+`container`, ...): `service = ["service", "app", "k8s_app"]` means "a series' `service` is its
+`service` label, or else its `app`, or else its `k8s_app`" (the first one a metric has wins).
+Orchestra uses it to name machines (`machine = "service"`) and places. It never selects or
+limits which labels or series are read: only `match` does that, and every label on a series is
+kept as a tag whether or not it is in the map. So do not read `service = [...]` as "read only
+these services" or "only these labels": to narrow what is read, narrow `match`.
+
+**The first match: a service, not a metric family.** Discovery finds a stock where a level
+(a queue depth, requests in flight, replicas) moves, or where counters balance one (what came
+in minus what went out). A match of one counter family, such as
+`{__name__=~"grpc_client_callMillis.*"}`, holds no level and nothing for its counters to
+balance, so it can yield no stock at all ("no counters balance", "no counter moved"). Match the
+service's gauges and counters together instead: its queue depths, in-flight requests and
+replicas, and its request and error counters. For example:
+
+```toml
+match = ['{service="hk-checkout",__name__=~".*(queue|inflight|in_flight|pending|replicas|requests_total|errors_total).*"}']
+```
+
+(one selector; adjust the name pattern to what the **labels** button and the store's metric
+names show), and widen it later.
 
 
 `orchestra sources check` should say `bearer from file …: present`, `answers`, and the endpoints
