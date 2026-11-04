@@ -161,7 +161,7 @@ def test_names_come_from_the_index_and_series_in_batches_split_on_a_422(made, tm
 def test_a_store_without_the_name_index_is_listed_by_series(made, tmp_path):
     f = made(QUEUES)
     f.missing.add("label_values")
-    got = listing(quick(spec_for(f, tmp_path)), ['{__name__=~".+"}'], T0, NOW)
+    got = listing(quick(spec_for(f, tmp_path)), ['{queue=~"a|b|c"}'], T0, NOW)   # within a match: never every series
     assert len(got.names["queue_depth"]) == 12
 
 

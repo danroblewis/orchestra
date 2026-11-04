@@ -90,7 +90,7 @@ def test_a_metric_too_big_even_alone_is_split_by_time_then_named_as_left_out(tmp
     try:
         f.max_series = 4
         src = _source(f, tmp_path)
-        got = src.series(['{__name__=~".+"}'], T0, T0 + 6000)
+        got = src.series(['{__name__=~"pod_info|node_up|queue_depth"}'], T0, T0 + 6000)
         names = [g["__name__"] for g in got]
         assert names.count("pod_info") == 8  # churning pods: few at a time, so halving the range answers
         assert names.count("queue_depth") == 1

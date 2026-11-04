@@ -147,12 +147,14 @@ def query(state_dir: Path, spec: SourceSpec, expr: str, *, instant: bool = False
 
 def _match(expr: str, spec: SourceSpec) -> list[str]:
     """The ``match[]`` of a labels request: the selector conjoined with the source's match; with
-    none, the source's match, or nothing when it selects everything (an index read)."""
+    none, the source's match; ``Refused`` when that selects everything: a labels request naming
+    nothing would read the store's whole index, and is never sent."""
     if expr.strip():
         return [conjoined(expr, spec.match)]
     scope = match_matchers(spec.match)
     if not scope:
-        return []
+        raise Refused("name a metric or a label matcher: the source's match selects everything, and a labels request "
+                      "that names nothing would read the whole store's index")
     return ["{" + ",".join(matcher_text(*x) for x in scope) + "}"]
 
 

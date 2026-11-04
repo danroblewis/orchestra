@@ -118,11 +118,15 @@ def test_labels_and_values_go_with_match_and_limit_bounded_by_the_window(made, f
     assert all(not path.endswith("/series") for path, _ in fake.seen)    # never a listing of series
 
 
-def test_with_the_match_everything_default_and_no_selector_no_match_is_sent(fake, tmp_path, monkeypatch):
+def test_with_the_match_everything_default_a_labels_request_naming_nothing_is_refused_unsent(fake, tmp_path, monkeypatch):
     p = project(tmp_path, monkeypatch, f'[[sources]]\nname = "all"\nurl = "{fake.url}"\n')
     spec = for_project(p).sources[0]
-    out = asking.labels(p.state_dir, spec, "", now=NOW)
-    assert out["ok"] and "match[]" not in fake.label_asks[-1][1]       # an index read, not a series match
+    before = len(fake.label_asks)
+    for out in (asking.labels(p.state_dir, spec, "", now=NOW), asking.values(p.state_dir, spec, "pod", "", now=NOW)):
+        assert not out["ok"] and "whole store" in out["error"]
+    assert len(fake.label_asks) == before                                # never a labels request with no match[]
+    out = asking.labels(p.state_dir, spec, "queue_depth", now=NOW)
+    assert out["ok"] and fake.label_asks[-1][1]["match[]"] == ["queue_depth"]
 
 
 def test_a_spent_daily_cap_is_refused_with_when_it_resets(fake, tmp_path, monkeypatch):

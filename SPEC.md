@@ -1045,8 +1045,22 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
 - **`url` may carry a path prefix** (Chronosphere: `https://<tenant>.chronosphere.io/data/metrics`):
   every endpoint (`/api/v1/query`, `query_range`, `series`, ...) is joined under it, and the path
   is part of the store's identity for the rate and daily cap (`limits.store_key`). A store
-  without `label/<name>/values` is listed by `series`, and one without `metadata` keeps none
-  (Chronosphere documents only `query`, `query_range`, `series` and `labels`).
+  without `label/<name>/values` is listed by `series` (refused when `match` selects everything),
+  and one without `metadata` keeps none (Chronosphere documents only `query`, `query_range`,
+  `series` and `labels`).
+- **Orchestra never asks a store without naming what it asks about** (the owner: "never ask it
+  for the list of every metric"; a `{}`-shaped or whole-store request can take a shared store
+  down). Every `series`, `labels` and `label/<name>/values` request carries a `match[]` that names
+  a metric or a label matcher (the source's `match`, or narrower); one with none, or only
+  selectors that select everything, is refused before it is sent (`sources/prometheus.py`
+  `_named`, the Core page's `sources/asking.py`). `metadata` is asked **metric by metric**
+  (`metric=<name>`; Prometheus' `metadata` takes no `match[]`), of the names the listing found
+  under `match` only, in sequence at the store's rate, at most 200 names and a quarter of the
+  requests the round has left; the names past that are left without metadata, typed by their
+  names and samples, and the record says "metadata not asked (budget)", never a listing of the
+  store's metadata, with or without a `limit`. The one request that may carry no `match[]` is the
+  name index (`label/__name__/values`) under the match-everything default: names only, in the
+  window, at most `max_names` + 1.
 - **Series are inferred from the schema** every `infer_every` (an hour), cached in
   `<state>/sources/<name>.json` with the window inferred over and the stretch motion was judged
   over (`sources/infer.py`, `sources/cache.py`), and reused only for a window no longer than the

@@ -19,8 +19,9 @@ prometheus servers, gotta use other ways to get labels").
   refused before it is run.
 - **Labels the cheap way** (``labels``, ``values``): ``/api/v1/labels`` and
   ``/api/v1/label/<name>/values`` with ``match[]`` the conjoined selector, ``start``/``end`` the
-  window and ``limit``; with no selector, ``match[]`` is the source's match, or none at all when the
-  match selects everything (an index read). Never ``/api/v1/series`` unbounded.
+  window and ``limit``; with no selector, ``match[]`` is the source's match, and when the match
+  selects everything the request is refused: never one with no ``match[]``, never
+  ``/api/v1/series`` unbounded.
 
 The reads themselves, and their log, are ``asking.py``; what the page shows of each source,
 ``stores.py``."""

@@ -2,10 +2,12 @@
 
 1. **Names** from ``label/__name__/values`` with the source's ``match[]`` and the window: one
    request, whatever the tenant's size (no ``match[]`` for the match-everything default, and at
-   most ``max_names`` + 1 asked). **A big store is not listed whole:** when ``match`` selects more
+   most ``max_names`` + 1 asked: the one request that may carry no ``match[]``, an index read of
+   names only, never of series or metadata). **A big store is not listed whole:** when ``match`` selects more
    than ``max_names`` names, the listing is refused (``TooManyNames``) with what to narrow, before
-   a single series is listed. A store without that endpoint is listed as before, by ``series``
-   with ``match``, cut at ``LIMIT``.
+   a single series is listed. A store without that endpoint is listed by ``series`` with
+   ``match``, cut at ``LIMIT``; with a match that selects everything it is refused
+   (``TooManyNames``): a store's whole series list is never asked for.
 2. **Series** by batches of names, ``{__name__=~"a|b|…"}`` within each of ``match``, but for a
    histogram's ``_bucket`` beside its ``_count``: buckets are never read, and are most of a
    tenant's series, so only their name is kept (with no label sets). A batch the
@@ -173,6 +175,12 @@ def listing(source: Source, match: list[str], start: float, end: float, *, until
     if names is not None and len(names) > max_names:
         raise _too_many(len(names), match, max_names, len(names) == max_names + 1)
     if names is None:
+        if everything(match):                # the store's whole series list is never asked for
+            raise TooManyNames("the store has no name index (label/__name__/values) and match selects everything: listing "
+                               "it by series would ask for every series it holds, which is never done. Set match on the "
+                               "[[sources]] entry to the families the model is about, e.g. match = "
+                               "['{__name__=~\"queue_.*|orders_.*\"}'], with a label matcher (env, cluster) where the store "
+                               "is shared; or set infer = false and declare the series in [[series]]")
         sets = source.series(match, start, end, limit)
         if len(sets) >= limit:
             out.notes.append(f"the listing was cut at {limit} series; narrow match to infer from all")

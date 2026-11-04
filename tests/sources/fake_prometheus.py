@@ -92,6 +92,7 @@ class FakePrometheus:
         self.name_asks: list[list[str]] = []      # the match[] of each label/__name__/values request
         self.label_asks: list[tuple[str, dict]] = []   # (endpoint, parameters) of each labels or label/<name>/values request
         self.meta_asks: list[dict] = []           # the parameters of each metadata request
+        self.asks: list[tuple[str, dict]] = []    # (endpoint, parameters) of every request answered
         self.ranges: list[tuple[float, float]] = []   # the time range of each range query and raw read
         self.refusals = 0                         # reads refused for their size (422)
         self.queries: list[str] = []
@@ -132,6 +133,7 @@ class FakePrometheus:
 
     def answer(self, endpoint: str, form: dict[str, list[str]]):
         one = lambda k, d=None: (form.get(k) or [d])[0]
+        self.asks.append((endpoint, {k: list(v) for k, v in form.items()}))
         if endpoint == "query_range":
             q = one("query")
             self.queries.append(q)
