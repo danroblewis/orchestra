@@ -1,11 +1,12 @@
 """What a store holds, listed cheaply and under its per-query series limit.
 
 1. **Names** from ``label/__name__/values`` with the source's ``match[]`` and the window: one
-   request, whatever the tenant's size (no ``match[]`` for the match-everything default, and at
-   most ``max_names`` + 1 asked). **A big store is not listed whole:** when ``match`` selects more
+   request, whatever the tenant's size (at most ``max_names`` + 1 asked; a source always has a
+   match that names something, ``spec.py``). **A big store is not listed whole:** when ``match`` selects more
    than ``max_names`` names, the listing is refused (``TooManyNames``) with what to narrow, before
-   a single series is listed. A store without that endpoint is listed as before, by ``series``
-   with ``match``, cut at ``LIMIT``.
+   a single series is listed. A store without that endpoint is listed by ``series`` with
+   ``match``, cut at ``LIMIT``. A match that names nothing is refused (``TooManyNames``) before
+   any request: a store is never listed whole.
 2. **Series** by batches of names, ``{__name__=~"a|b|…"}`` within each of ``match``, but for a
    histogram's ``_bucket`` beside its ``_count``: buckets are never read, and are most of a
    tenant's series, so only their name is kept (with no label sets). A batch the
@@ -33,6 +34,8 @@ from dataclasses import dataclass, field
 
 from . import Labels, Source, SourceError
 from .family import esc
+from .spec import NO_MATCH
+from .spec import everything as names_nothing
 from .transport import TooBig
 
 UNSUPPORTED = re.compile(r"HTTP (400|404|405|501)\b")
@@ -41,7 +44,6 @@ LIMIT = 20000                # label sets read, at most, in all
 MAX_NAMES = 2000             # names a match may select for the listing to go on (the source's max_names)
 REPLICA_LABELS = ("prometheus_replica", "replica", "__replica__")   # labels that name one replica of an HA pair
 REMEMBER = 86400.0           # how long a name too big (or listed at one replica) is remembered
-EVERYTHING = re.compile(r"""^\{\s*__name__\s*(=~\s*["']\.[+*]["']|!=\s*["']["'])\s*\}$""")
 
 
 class TooManyNames(SourceError):
@@ -60,8 +62,8 @@ class Listing:
 
 
 def everything(match: list[str]) -> bool:
-    """Whether ``match`` selects every series (the default)."""
-    return all(EVERYTHING.match(m.strip()) for m in match)
+    """Whether ``match`` names nothing: no selector, or only ones that select every series."""
+    return all(names_nothing(m) for m in match)
 
 
 def with_names(match: str, names: list[str]) -> str:
@@ -154,11 +156,6 @@ def _at_replica(source: Source, name: str, pin: dict[str, str], start: float, en
 
 def _too_many(n: int, match: list[str], limit: int, at_least: bool) -> TooManyNames:
     more = f"at least {n}" if at_least else str(n)
-    if everything(match):
-        return TooManyNames(f"the store holds {more} metric names, more than the {limit} a listing is made of: its whole "
-                            "schema is not listed. Set match on the [[sources]] entry to the families the model is about, e.g. "
-                            "match = ['{__name__=~\"queue_.*|orders_.*\"}'], and add a label matcher (env, cluster) where "
-                            "the store is shared; or set infer = false and declare the series in [[series]]")
     return TooManyNames(f"match selects {more} metric names, more than the {limit} a listing is made of. Narrow match on the "
                         "[[sources]] entry to the families the model is about (a regex of names, with label matchers), or "
                         "set infer = false and declare the series in [[series]]")
@@ -168,6 +165,8 @@ def listing(source: Source, match: list[str], start: float, end: float, *, until
             concurrency: int = 4, max_names: int = MAX_NAMES, limit: int = LIMIT, known: dict | None = None) -> Listing:
     """``known``: what the last rounds found too big or listed at one replica
     (``{"too_big": {name: {"why", "at"}}, "pinned": {name: {"pin", "at"}}}``)."""
+    if everything(match):                    # a source needs a match (spec.py): the store is never listed whole
+        raise TooManyNames(NO_MATCH)
     out = Listing()
     names = _names(source, match, start, end, until, max_names + 1)
     if names is not None and len(names) > max_names:

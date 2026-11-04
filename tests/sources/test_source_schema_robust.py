@@ -42,7 +42,7 @@ def store(tmp_path):
         f = FakePrometheus(dump)
         f.meta = meta or {}
         made.append(f)
-        specs = load({"sources": [{"name": "lab", "url": f.url, **kw}]}, tmp_path)
+        specs = load({"sources": [{"name": "lab", "url": f.url, "match": ['{__name__=~"[a-zA-Z_:].*"}'], **kw}]}, tmp_path)
         assert not specs.refused, specs.refused
         src = PrometheusSource(specs.sources[0])
         src._sleep = lambda s: None
@@ -91,7 +91,7 @@ def test_a_type_is_judged_over_the_history_not_the_window(store):
                     start=NOW - day)
     fine = lambda pts: [(t, v) for t, v in pts if t < T0] + every(15, lambda s, a=pts[-13][1]: a + s / 3)
     f, src, spec = store([("shop_orders_since_reset", {}, fine(since_reset)), ("sidekiq_retries", {}, fine(retries))])
-    window_only = fams(src, load({"sources": [{"name": "lab", "url": f.url, "history": "1h"}]}, Path(".")).sources[0])
+    window_only = fams(src, load({"sources": [{"name": "lab", "url": f.url, "match": ['{__name__=~"[a-zA-Z_:].*"}'], "history": "1h"}]}, Path(".")).sources[0])
     assert window_only["sidekiq_retries"].kind == "counter"                  # the name's tie-break, on an hour that only rose
     got = fams(src, spec)
     assert got["shop_orders_since_reset"].kind == "counter" and "over the last 24 h" in got["shop_orders_since_reset"].retyped

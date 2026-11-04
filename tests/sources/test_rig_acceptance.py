@@ -45,7 +45,7 @@ def token_file() -> str:
 
 
 def spec(tmp_path, **kw):
-    s = load({"sources": [{"name": "rig", "url": PROXY, "machine": "service", "labels": LABELS,
+    s = load({"sources": [{"name": "rig", "url": PROXY, "match": ['{__name__=~"[a-zA-Z_:].*"}'], "machine": "service", "labels": LABELS,
                            "auth": {"bearer_file": token_file()}, **kw}]}, tmp_path)
     assert not s.refused, s.refused
     return s.sources[0]

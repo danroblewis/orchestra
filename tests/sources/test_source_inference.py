@@ -28,7 +28,7 @@ LABELS = {"service": ["service", "app", "k8s_app"], "region": ["region", "zone",
 
 
 def spec_for(url: str, tmp_path: Path, **kw):
-    specs = load({"sources": [{"name": "rig", "url": url, "machine": "service", "labels": LABELS, **kw}]}, tmp_path)
+    specs = load({"sources": [{"name": "rig", "url": url, "match": ['{__name__=~"[a-zA-Z_:].*"}'], "machine": "service", "labels": LABELS, **kw}]}, tmp_path)
     assert not specs.refused, specs.refused
     return specs.sources[0]
 

@@ -17,6 +17,7 @@ DOWN = """
 [[sources]]
 name = "rig"
 url = "http://127.0.0.1:9"
+match = ['{__name__=~"[a-zA-Z_:].*"}']
 timeout = "2s"
 """
 

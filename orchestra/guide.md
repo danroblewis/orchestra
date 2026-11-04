@@ -239,7 +239,7 @@ name = "work"                       # lower-case letters, digits, _
 url = "https://tenant.example/data/metrics"   # no user:pass@, no query string
 auth = { bearer_env = "WORK_TOKEN" }          # the variable's name, never the token
 machine = "service"                 # the label that names machines
-match = ['{__name__=~"http_.*|queue_.*"}']    # narrow it: the default reads everything, capped
+match = ['{__name__=~"http_.*|queue_.*"}']    # required: a namespace or the families the model is about (ask the owner)
 max_series = 200
 
 [sources.labels]
@@ -264,6 +264,7 @@ inferred, so changing one keeps the cached definitions):
 [[sources]]
 name = "work"
 url = "https://tenant.example/data/metrics"
+match = ['{namespace="shop"}']
 auth = { bearer_env = "WORK_TOKEN" }
 rate = 5                  # requests a second to this store, from everything on this machine
 burst = 10
@@ -479,11 +480,13 @@ each pin), or narrow `match` to the families you did not pin.
 [[sources]]
 name = "shop"
 url = "https://shop.example/metrics"
+match = ['{namespace="shop"}']
 infer = false
 
 [[sources]]
 name = "biz"
 url = "https://biz.example/metrics"
+match = ['{job="biz"}']
 settle = "90s"                                # it writes its samples a minute late
 infer = false
 

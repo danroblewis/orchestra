@@ -435,7 +435,7 @@ explains how.
 | `auth` | table | none | How Orchestra proves who it is. See [auth](#auth). |
 | `prefix` | string | the `name` | Series become `<prefix>:<name>`, machines `<prefix>.<id>`. Lower-case letters, digits and `_`; must not start with `orchestra`; unique among sources. |
 | `machine` | string | none | The canonical label that names machines (after `[sources.labels]`). |
-| `match` | string or array | `['{__name__=~".+"}']` | Selectors that say what to infer from. |
+| `match` | string or array, required | | Selectors that say what is read: a namespace or the families the model is about. A source without one, or with one that selects everything, is refused. |
 | `max_series` | integer | `200` | The most series kept from this source. |
 | `max_per_family` | integer | `12` | The most kept from one family. |
 | `identity` | array | `["pod", "instance", "container"]` | Labels that name one reporting thing (never summed into a stock by themselves). |

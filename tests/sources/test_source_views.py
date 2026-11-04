@@ -24,7 +24,7 @@ def test_a_group_that_vanishes_reads_zero_and_a_stretch_with_nothing_stays_a_gap
     down, empty = range(40, 60), range(90, 100)
     fake = FakePrometheus(_pods("a", 2, range(0), empty) + _pods("b", 3, down, empty))
     try:
-        spec = load({"sources": [{"name": "rig", "url": fake.url}]}, tmp_path).sources[0]
+        spec = load({"sources": [{"name": "rig", "url": fake.url, "match": ['{__name__=~"[a-zA-Z_:].*"}']}]}, tmp_path).sources[0]
         d = Definition(id="c0", source="rig", name="lat_pods", family="lat", view="count", kind="level",
                        query="count by (region) (last_over_time(lat[61s]))", group_by=["region"], by_real=["region"],
                        resolution_s=60.0)

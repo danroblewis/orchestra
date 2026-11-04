@@ -17,10 +17,15 @@ over the limit costs two refusals, not one per halving. A part still refused at
 ``MIN_SPAN`` is named in ``left_out`` (series) or raised (queries: the caller asks for less).
 
 The checks are cheap whatever the tenant's size: ``health`` asks each endpoint about a name no
-store has (an answer that touches no series), never all of ``up``; ``names`` sends no ``match[]`` for the match-everything
-default (a ``match[]`` turns an index read into a series match); ``metadata`` asks one entry per
-metric (``limit_per_metric``), and for a few names, those names only; every metadata request is
-bounded, by its ``metric`` or by ``limit`` (``METADATA_LIMIT`` metrics), never the whole store.
+store has (an answer that touches no series), never all of ``up``; ``names`` always carries the
+source's ``match[]`` and a ``limit`` (a source has no match-everything default: ``spec.py``).
+**Nothing is asked of a store without naming what it is about:** ``metadata`` is asked metric by
+metric (``metric=<name>``, one entry each by ``limit_per_metric``), of the names the listing found
+under the source's ``match`` only, in sequence at the store's rate and within the round's budget
+(at most ``METADATA_NAMES``, and ``METADATA_SHARE`` of the requests the round has left); the names
+past that are kept in ``unasked`` (described "metadata not asked (budget)"), never asked by a
+listing of the store's whole metadata. ``names``, ``label_names``/``label_values`` and ``series`` refuse a
+request with no ``match[]``, or one whose every ``match[]`` selects everything.
 
 Every request is **within the source's ``match``** (``scope.py``): its ``query`` and each of its
 ``match[]`` selectors carry the label matchers every ``match`` selector has, so a shared store is
@@ -37,9 +42,10 @@ import re
 import time
 
 from . import Health, Labels, PastDeadline, Points, SourceError
-from .limits import RateLimit
+from .limits import OverBudget, RateLimit
 from .scope import scope_of, scoped
 from .spec import SourceSpec
+from .spec import everything as names_nothing
 from .transport import (
     RETRIES,
     RETRY,
@@ -61,9 +67,16 @@ ENDPOINTS = {"query_range": ("/api/v1/query_range", {"query": PROBE_NAME, "start
              "buildinfo": ("/api/v1/status/buildinfo", None)}
 LABEL_NAME = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 MIN_SPAN = 600.0                     # the shortest time range a refused read is split down to
-EVERYTHING = {'{__name__=~".+"}', "{__name__=~'.+'}", '{__name__=~".*"}', '{__name__!=""}'}   # match-everything selectors
-FEW_NAMES = 10                       # metadata asked name by name for at most this many names
-METADATA_LIMIT = 5000                # metrics one metadata request asks for at most (its ``limit``): never the whole store
+METADATA_NAMES = 200                 # names one round asks metadata of, at most: one request each
+METADATA_SHARE = 0.25                # of the requests the round has left, at most, spent on metadata
+NAMES_LIMIT = 2001                   # names one name listing asks for at most, when its caller gives none
+
+
+def _named(path: str, match: list[str]) -> None:
+    """Refuses a listing that names nothing: no ``match[]``, or only selectors that select everything."""
+    if not match or all(names_nothing(m) for m in match):
+        raise SourceError(f"{path} is never asked with no match[] naming what it is about (it would list the whole store): "
+                          "give a selector, or set match on the [[sources]] entry")
 
 
 def _with_name(selector: str, name: str) -> str | None:
@@ -105,6 +118,7 @@ class PrometheusSource(Transport):
         super().__init__(spec, limiter)
         self.left_out: list[str] = []    # parts of a series listing still refused at MIN_SPAN
         self.native: set[str] = set()    # metric names answered as native histograms
+        self.unasked: list[str] = []     # names the last metadata call left unasked (its budget)
         self.scope = scope_of(spec.match)  # the label matchers every request carries (scope.py)
 
     def _call(self, path: str, form: dict | None = None, **kw):
@@ -184,6 +198,7 @@ class PrometheusSource(Transport):
         return out
 
     def _series(self, match: list[str], start: float, end: float, limit: int) -> list[Labels]:
+        _named("/api/v1/series", match)
         form = {"match[]": list(match), "start": f"{start:.3f}", "end": f"{end:.3f}"}
         if limit:
             form["limit"] = str(limit)
@@ -194,12 +209,9 @@ class PrometheusSource(Transport):
 
     def names(self, match: list[str], start: float, end: float, limit: int = 0) -> list[str]:
         """The metric names that ``match`` selects in [start, end] (``label/__name__/values``), at
-        most ``limit`` (when the store honours it); no ``match[]`` when it selects everything."""
-        form: dict = {"start": f"{start:.3f}", "end": f"{end:.3f}"}
-        if not all(m.strip() in EVERYTHING for m in match):
-            form["match[]"] = list(match)
-        if limit:
-            form["limit"] = str(limit)
+        most ``limit`` (``NAMES_LIMIT`` when none is given); refused when ``match`` names nothing."""
+        _named("/api/v1/label/__name__/values", match)
+        form: dict = {"start": f"{start:.3f}", "end": f"{end:.3f}", "match[]": list(match), "limit": str(limit or NAMES_LIMIT)}
         data = self._call("/api/v1/label/__name__/values", form, post=False)
         if not isinstance(data, list):
             raise SourceError(f"{self.spec.where()}/api/v1/label/__name__/values: not a Prometheus answer")
@@ -217,20 +229,20 @@ class PrometheusSource(Transport):
         return [(dict(r.get("metric") or {}), _points([r["value"]] if "value" in r else _samples(r))) for r in res]
 
     def label_names(self, match: list[str], start: float, end: float, limit: int) -> list[str]:
-        """``/api/v1/labels`` within ``match`` (none: the index's names) over [start, end], at most ``limit``."""
+        """``/api/v1/labels`` within ``match`` (a selector naming something: never none) over [start, end],
+        at most ``limit``."""
         return self._strings("/api/v1/labels", match, start, end, limit)
 
     def label_values(self, label: str, match: list[str], start: float, end: float, limit: int) -> list[str]:
-        """``/api/v1/label/<label>/values`` within ``match`` (none: the index's values) over [start, end],
-        at most ``limit``."""
+        """``/api/v1/label/<label>/values`` within ``match`` (a selector naming something: never none) over
+        [start, end], at most ``limit``."""
         if not LABEL_NAME.match(label):
             raise SourceError(f"{label!r} is not a label name")
         return self._strings(f"/api/v1/label/{label}/values", match, start, end, limit)
 
     def _strings(self, path: str, match: list[str], start: float, end: float, limit: int) -> list[str]:
-        form: dict = {"start": f"{start:.3f}", "end": f"{end:.3f}", "limit": str(max(1, limit))}
-        if match:
-            form["match[]"] = list(match)
+        _named(path, match)
+        form: dict = {"start": f"{start:.3f}", "end": f"{end:.3f}", "limit": str(max(1, limit)), "match[]": list(match)}
         data = self._call(path, form, post=False)
         if not isinstance(data, list):
             raise SourceError(f"{self.spec.where()}{path}: not a Prometheus answer")
@@ -286,20 +298,30 @@ class PrometheusSource(Transport):
         return self._by_time(m, start, mid, limit, before) + self._by_time(m, mid, end, limit, before)
 
     def metadata(self, names: list[str] | None = None) -> dict[str, dict]:
-        """Each metric's type, unit and help (one entry per metric); of ``names`` only, asked name
-        by name when they are few."""
-        forms = ([{"metric": n, "limit_per_metric": "1"} for n in sorted(set(names))] if names is not None and len(set(names)) <= FEW_NAMES
-                 else [{"limit": str(METADATA_LIMIT), "limit_per_metric": "1"}])
+        """Each of ``names``' type, unit and help (one entry per metric), asked metric by metric
+        (``metric=<name>``), in sequence; no names, nothing asked (never the store's whole list).
+        At most ``METADATA_NAMES``, and ``METADATA_SHARE`` of what the round's budget has left; the
+        names past that, or past the budget, are in ``unasked``. A store that refuses metadata
+        (Chronosphere has none) is not asked again this call: none kept."""
+        want = sorted(set(names or []))
+        room = METADATA_NAMES
+        if self.budget is not None and self.budget.requests is not None:
+            room = min(room, max(0, int((self.budget.requests - self.budget.used) * METADATA_SHARE)))
+        self.unasked = want[room:]
         out: dict[str, dict] = {}
-        for form in forms:
+        for i, name in enumerate(want[:room]):
             try:
-                data = self._call("/api/v1/metadata", form, post=False) or {}
+                data = self._call("/api/v1/metadata", {"metric": name, "limit_per_metric": "1"}, post=False) or {}
+            except OverBudget:
+                self.unasked = want[i:]
+                return out
             except SourceError:
                 return out
             if not isinstance(data, dict):                  # metadata is optional: a store answering it oddly keeps none
                 return out
-            out.update({name: dict(entries[0]) for name, entries in data.items() if isinstance(entries, list) and entries
-                        and isinstance(entries[0], dict) and (names is None or name in names)})
+            entries = data.get(name)
+            if isinstance(entries, list) and entries and isinstance(entries[0], dict):
+                out[name] = dict(entries[0])
         return out
 
     def health(self) -> Health:

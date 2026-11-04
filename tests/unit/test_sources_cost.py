@@ -47,7 +47,7 @@ def test_a_store_is_its_url_and_tenant_never_the_source_name_or_credential():
 def test_two_sources_and_two_projects_on_one_store_share_one_bucket(tmp_path, monkeypatch):
     monkeypatch.setenv("ORCHESTRATOR_HOME", str(tmp_path / "home"))
     from orchestra.sources.limits import for_store
-    specs = load({"sources": [{"name": "shop", "url": "http://127.0.0.1:9/x"}, {"name": "undeclared", "url": "http://127.0.0.1:9/x/"}]},
+    specs = load({"sources": [{"name": "shop", "url": "http://127.0.0.1:9/x", "match": ['{__name__=~"[a-zA-Z_:].*"}']}, {"name": "undeclared", "url": "http://127.0.0.1:9/x/", "match": ['{__name__=~"[a-zA-Z_:].*"}']}]},
                  tmp_path)
     a, b = (for_store(s) for s in specs.sources)
     assert a.path == b.path and a.path.is_relative_to(tmp_path / "home" / "stores")
@@ -153,7 +153,7 @@ def test_a_series_refusal_is_halved_by_time_only_while_that_sheds_series():
 # -- inference that cannot succeed stops ----------------------------------------------------------
 
 def _spec(tmp_path, **extra):
-    return load({"sources": [{"name": "big", "url": "http://127.0.0.1:9", **extra}]}, tmp_path).sources[0]
+    return load({"sources": [{"name": "big", "url": "http://127.0.0.1:9", "match": ['{__name__=~"[a-zA-Z_:].*"}'], **extra}]}, tmp_path).sources[0]
 
 
 def test_inference_failing_for_its_cost_backs_off_harder_then_stops_until_the_settings_change(tmp_path, monkeypatch):
@@ -214,8 +214,8 @@ def test_a_stopped_source_keeps_its_cached_definitions(tmp_path, monkeypatch):
 
 
 def test_a_source_that_declares_its_series_infers_less_often_unless_told():
-    raw = {"sources": [{"name": "a", "url": "http://x:1"}, {"name": "b", "url": "http://x:2", "infer_every": "30m"},
-                       {"name": "c", "url": "http://x:3"}],
+    raw = {"sources": [{"name": "a", "url": "http://x:1", "match": ['{__name__=~"[a-zA-Z_:].*"}']}, {"name": "b", "url": "http://x:2", "match": ['{__name__=~"[a-zA-Z_:].*"}'], "infer_every": "30m"},
+                       {"name": "c", "url": "http://x:3", "match": ['{__name__=~"[a-zA-Z_:].*"}']}],
            "series": [{"source": "a", "name": "q", "query": "sum(q)"}, {"source": "b", "name": "q", "query": "sum(q)"}]}
     a, b, c = load(raw, ".").sources
     assert a.infer_every == DECLARED_INFER_EVERY and b.infer_every == 1800 and c.infer_every == 3600

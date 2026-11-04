@@ -107,7 +107,7 @@ def test_a_redirect_to_another_server_is_not_followed_and_carries_no_credential(
     elsewhere = _Recorder()
     redirector = _Recorder(target=elsewhere.url)
     try:
-        specs = load({"sources": [{"name": "work", "url": redirector.url, "auth": {"bearer_env": "TOK"}}]}, tmp_path / "repo")
+        specs = load({"sources": [{"name": "work", "url": redirector.url, "match": ['{__name__=~"[a-zA-Z_:].*"}'], "auth": {"bearer_env": "TOK"}}]}, tmp_path / "repo")
         src = PrometheusSource(specs.sources[0])
         with pytest.raises(SourceError) as e:
             src.query_range("up", 0, 60, 60)

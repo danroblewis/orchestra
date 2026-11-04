@@ -5,7 +5,7 @@ queries named no namespace, so ``sum by (status)`` summed another team's series 
 ``match`` is a list of selectors, any of which a series may match. Its **scope** (``scope_of``) is
 the label matchers every one of them carries (``__name__`` aside): ``['{namespace="hackriff"}']``
 scopes to ``namespace="hackriff"``; ``['{__name__=~"http_.*",env="prod"}', 'queue_depth{env="prod"}']``
-to ``env="prod"``; the match-everything default, or entries with no label matcher in common, to
+to ``env="prod"``; a match of names only, or entries with no label matcher in common, to
 nothing (each entry's own label matchers would need a query of its own).
 
 ``scoped(expr, scope)`` adds the scope's matchers to every vector selector of a PromQL expression

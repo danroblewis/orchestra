@@ -14,11 +14,11 @@ from fake_prometheus import FakePrometheus
 from orchestra.sources import SourceError
 from orchestra.sources.auth import Auth
 from orchestra.sources.prometheus import PrometheusSource
-from orchestra.sources.spec import load
+from orchestra.sources.spec import NO_MATCH, load
 
 
 def one(tmp_path, **src):
-    specs = load({"sources": [{"name": "work", "url": "https://metrics.example:9443/data", **src}]}, tmp_path / "repo")
+    specs = load({"sources": [{"name": "work", "url": "https://metrics.example:9443/data", "match": ['{__name__=~"[a-zA-Z_:].*"}'], **src}]}, tmp_path / "repo")
     return specs.sources[0] if specs.sources else None, specs.refused.get("work")
 
 
@@ -68,7 +68,7 @@ def test_every_kind_reads_its_credential_when_asked_and_never_shows_it(tmp_path,
 
 
 def test_declared_series_need_a_usable_source(tmp_path):
-    specs = load({"sources": [{"name": "work", "url": "http://x:1"}],
+    specs = load({"sources": [{"name": "work", "url": "http://x:1", "match": ['{__name__=~"[a-zA-Z_:].*"}']}],
                   "series": [{"source": "work", "name": "errors", "query": "sum(x)", "kind": "rate"},
                              {"source": "nope", "name": "y", "query": "y"},
                              {"source": "work", "name": "Bad-Name", "query": "y"}]}, tmp_path)
@@ -109,6 +109,19 @@ def test_mtls_against_a_server_that_demands_a_client_certificate(tmp_path):
 
 
 def test_a_second_source_with_a_prefix_already_used_is_refused(tmp_path):
-    specs = load({"sources": [{"name": "work", "url": "https://a.example"},
-                              {"name": "other", "url": "https://b.example", "prefix": "work"}]}, tmp_path / "repo")
+    specs = load({"sources": [{"name": "work", "url": "https://a.example", "match": ['{__name__=~"[a-zA-Z_:].*"}']},
+                              {"name": "other", "url": "https://b.example", "match": ['{__name__=~"[a-zA-Z_:].*"}'], "prefix": "work"}]}, tmp_path / "repo")
     assert [x.name for x in specs.sources] == ["work"] and specs.refused["other"] == "the prefix work is used by source work"
+
+
+@pytest.mark.parametrize("match", [None, [], "", ["{}"], ['{__name__=~".+"}'], ["{__name__=~'.*'}"], ['{__name__!=""}']])
+def test_a_source_without_a_match_naming_something_is_refused_with_the_reason(tmp_path, match):
+    entry = {"name": "work", "url": "https://metrics.example"} | ({} if match is None else {"match": match})
+    specs = load({"sources": [entry]}, tmp_path / "repo")
+    assert not specs.sources and specs.refused == {"work": NO_MATCH}
+
+
+def test_a_match_naming_a_namespace_or_families_is_kept(tmp_path):
+    for match in (['{namespace="shop"}'], 'queue_depth', ['{__name__=~"queue_.*"}']):
+        specs = load({"sources": [{"name": "work", "url": "https://metrics.example", "match": match}]}, tmp_path / "repo")
+        assert specs.sources and not specs.refused, specs.refused

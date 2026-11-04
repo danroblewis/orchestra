@@ -2,7 +2,8 @@
 whole is refused before a series is listed, the cap holds while listing, an HA pair's name too big
 across its replicas is read at one and a rule over the pair is read at one replica (never summed
 across it), discovery reads only the new steps of its window, a read refused for its size is not
-asked again every round, and the health and metadata checks touch no series."""
+asked again every round, the health and metadata checks touch no series, and no request names
+nothing: metadata is asked metric by metric within the round's budget, never as a listing."""
 
 from __future__ import annotations
 
@@ -11,12 +12,14 @@ import time
 
 import pytest
 from fake_prometheus import FakePrometheus
-from helpers import project
+from helpers import MATCH_LINE, TEST_MATCH, project
 
+from orchestra.sources import SourceError, prometheus
 from orchestra.sources.cache import attempt
 from orchestra.sources.catalogue import Catalogue
+from orchestra.sources.limits import Budget
 from orchestra.sources.listing import TooManyNames, listing
-from orchestra.sources.prometheus import FEW_NAMES, METADATA_LIMIT, PROBE_NAME, PrometheusSource
+from orchestra.sources.prometheus import PROBE_NAME, PrometheusSource
 from orchestra.sources.spec import load
 
 NOW = math.floor(time.time() / 60) * 60
@@ -53,12 +56,12 @@ step = "60s"
 [[sources]]
 name = "lab"
 url = "{url}"
-{extra}
+{extra if "match" in extra else MATCH_LINE + chr(10) + extra}
 """
 
 
 def quick(fake, tmp_path, **kw) -> PrometheusSource:
-    src = PrometheusSource(load({"sources": [{"name": "lab", "url": fake.url, **kw}]}, tmp_path).sources[0])
+    src = PrometheusSource(load({"sources": [{"name": "lab", "url": fake.url, "match": ['{__name__=~"[a-zA-Z_:].*"}'], **kw}]}, tmp_path).sources[0])
     src._sleep = lambda s: None
     return src
 
@@ -70,7 +73,7 @@ def test_a_store_with_more_names_than_a_listing_is_made_of_is_refused_before_a_s
         Catalogue(p, None).inference("lab", T0, NOW)
     said = str(e.value)
     assert "at least 11 metric names" in said and "match" in said and "raise" not in said and "budget" not in said
-    assert f.requests == 1 and f.name_asks == [[]]           # one cheap request, and no match-everything filter in it
+    assert f.requests == 1 and f.name_asks == [[TEST_MATCH]]  # one cheap request, within the source's match
     assert attempt(p.state_dir, "lab")["stopped"]            # it would fail the same way every hour: not tried again
     with pytest.raises(Exception, match="none runs until"):
         Catalogue(p, None).inference("lab", T0, NOW)
@@ -80,7 +83,7 @@ def test_a_store_with_more_names_than_a_listing_is_made_of_is_refused_before_a_s
 def test_the_cap_holds_while_listing_not_after(made, tmp_path):
     f = made([(f"m_{i:03d}", {"pod": f"p{j}"}, every(60, lambda s: s)) for i in range(100) for j in range(5)])
     src = quick(f, tmp_path, concurrency=1)
-    out = listing(src, ['{__name__=~".+"}'], T0, NOW, concurrency=1, limit=200)
+    out = listing(src, [TEST_MATCH], T0, NOW, concurrency=1, limit=200)
     asked = f.requests
     assert out.cut and sum(len(v) for v in out.names.values()) < 300 and "stopped at 200 series" in " ".join(out.notes)
     assert asked < 1 + 100 / 24                              # not every batch of names was asked for
@@ -179,20 +182,90 @@ def test_health_and_metadata_touch_no_series(made, tmp_path):
     assert src.metadata(["queue_depth"]) == {"queue_depth": {"type": "gauge", "help": "", "unit": ""}}
     assert {"metric": "queue_depth", "limit_per_metric": "1"} in f.meta_asks
     many = src.metadata([f"m{i}" for i in range(50)] + ["up"])
-    assert set(many) == {"up"} and {"limit": str(METADATA_LIMIT), "limit_per_metric": "1"} in f.meta_asks
+    assert set(many) == {"up"} and len(f.meta_asks) == 1 + 1 + 51      # health's probe, then one per name
+    asked = len(f.meta_asks)
+    assert src.metadata() == {} and src.metadata([]) == {} and len(f.meta_asks) == asked   # no names: nothing asked
 
 
-def test_no_metadata_request_is_unbounded(made, tmp_path, monkeypatch):
-    # run 6 asked a store's metadata twice with neither a metric nor a limit: the whole catalogue
-    f = made([(f"jobs_{i}_total", {"queue": "q"}, every(15, lambda s: s // 15)) for i in range(FEW_NAMES + 5)]
-             + [("queue_depth", {"queue": "q"}, every(15, lambda s: 3))])
-    f.meta = {f"jobs_{i}_total": [{"type": "counter", "help": "", "unit": ""}] for i in range(FEW_NAMES + 5)}
-    p = project(tmp_path, monkeypatch, toml(f.url))
-    Catalogue(p, None).inference("lab", T0, NOW, refresh=True)
+def _sixty(made):
+    # run 8 asked /api/v1/metadata?limit=5000 for 12 names: the store's whole metric list, up to the limit
+    dump = [(f"jobs_{i:02d}_total", {"queue": "q", "env": "prod"}, every(15, lambda s: s // 15)) for i in range(60)]
+    dump += [("other_team_total", {"env": "dev"}, every(15, lambda s: s // 15))]
+    f = made(dump)
+    f.meta = {n: [{"type": "counter", "help": "", "unit": ""}] for n, _, _ in dump}
+    return f
+
+
+def _named(form: dict) -> bool:
+    return bool(form.get("metric")) or any(m.strip() not in ('{__name__=~".+"}', "{}", "") for m in form.get("match[]") or [])
+
+
+def test_with_sixty_names_under_the_match_no_request_names_nothing(made, tmp_path, monkeypatch):
+    f = _sixty(made)
+    p = project(tmp_path, monkeypatch, toml(f.url, "match = ['{env=\"prod\"}']"))
+    inf = Catalogue(p, None).inference("lab", T0, NOW, refresh=True)
+    assert any(x["name"].startswith("jobs_") for x in inf.families)
+    listings = [(e, form) for e, form in f.asks if e in ("metadata", "series", "labels", "label_values") or e.startswith("label/")]
+    assert listings and all(_named(form) for _, form in listings), [x for x in listings if not _named(x[1])]
+    metas = [a for a in f.meta_asks if a.get("metric") != PROBE_NAME]
+    assert len(metas) == 60 and all("limit" not in a for a in metas)      # one per name, never a listing with a limit
+    assert "other_team_total" not in {a["metric"] for a in metas}         # only names seen under the match
+
+
+def test_metadata_past_the_cap_is_left_unasked_and_said_so(made, tmp_path, monkeypatch):
+    f = _sixty(made)
+    monkeypatch.setattr(prometheus, "METADATA_NAMES", 20)
+    p = project(tmp_path, monkeypatch, toml(f.url, "match = ['{env=\"prod\"}']"))
+    inf = Catalogue(p, None).inference("lab", T0, NOW, refresh=True)
+    assert len([a for a in f.meta_asks if a.get("metric") != PROBE_NAME]) == 20
+    assert any("40 metric(s): metadata not asked (budget)" in n for n in inf.notes), inf.notes
+    unasked = [x for x in inf.families if any("metadata not asked (budget)" in n for n in x["notes"])]
+    assert len(unasked) == 40
+    assert all("metric" in a for a in f.meta_asks)                         # never a whole-store call for the rest
+
+
+def test_metadata_takes_only_its_share_of_the_rounds_budget(made, tmp_path, monkeypatch):
+    f = _sixty(made)
     src = quick(f, tmp_path)
-    src.metadata()
-    src.metadata(["queue_depth"])
-    assert f.meta_asks and all("metric" in a or "limit" in a for a in f.meta_asks), f.meta_asks
+    src.budget = Budget(100, None, "the round")
+    src.budget.used = 20
+    got = src.metadata([f"jobs_{i:02d}_total" for i in range(60)])
+    assert len(f.meta_asks) == 20 and len(got) == 20                      # a quarter of the 80 left
+    assert src.unasked == [f"jobs_{i:02d}_total" for i in range(20, 60)]
+    src.budget = Budget(3, None, "the round")                              # a budget spent mid-way: the rest unasked
+    monkeypatch.setattr(prometheus, "METADATA_SHARE", 1.0)
+    src.metadata(["a_total", "b_total", "c_total", "d_total"])
+    assert src.unasked == ["d_total"]
+
+
+def test_series_and_labels_naming_nothing_are_never_sent(made, tmp_path):
+    f = _sixty(made)
+    src = quick(f, tmp_path)
+    for ask in (lambda: src.series(['{__name__=~".+"}'], T0, NOW, 10), lambda: src.series([], T0, NOW, 10),
+                lambda: src.series(["{}"], T0, NOW, 10),
+                lambda: src.label_names([], T0, NOW, 10), lambda: src.label_names(['{__name__=~".+"}'], T0, NOW, 10),
+                lambda: src.label_values("queue", [], T0, NOW, 10)):
+        with pytest.raises(SourceError, match="never asked with no match"):
+            ask()
+    assert f.requests == 0
+    with pytest.raises(SourceError, match="never asked with no match"):
+        src.names(['{__name__=~".+"}'], T0, NOW)                           # nor the name index
+    assert f.requests == 0
+    assert src.label_values("queue", ["jobs_00_total"], T0, NOW, 10) == ["q"]
+    src.names(['{env="prod"}'], T0, NOW)                                   # the name index: within a match, with a limit
+    assert f.asks[-1] == ("label_values", {"match[]": ['{env="prod"}'], "limit": [str(prometheus.NAMES_LIMIT)],
+                                           "start": f.asks[-1][1]["start"], "end": f.asks[-1][1]["end"]})
+
+
+def test_a_match_naming_nothing_is_refused_before_any_request(made, tmp_path):
+    f = _sixty(made)
+    f.missing.add("label_values")
+    for match in (['{__name__=~".+"}'], ["{}"], []):
+        with pytest.raises(TooManyNames, match="a source needs a match"):
+            listing(quick(f, tmp_path, match=['{env="prod"}']), match, T0, NOW)
+    assert f.requests == 0
+    got = listing(quick(f, tmp_path), ['{env="prod"}'], T0, NOW)            # no name index: listed by series, within the match
+    assert len(got.names) == 60 and all(form["match[]"] == ['{env="prod"}'] for e, form in f.asks if e == "series")
 
 
 def test_a_family_too_big_to_compare_its_replicas_is_read_at_one_never_summed_across_them(made, tmp_path, monkeypatch):
@@ -227,7 +300,7 @@ def test_queries_written_by_hand_are_read_together_and_one_the_store_rejects_fai
 def test_a_family_bigger_than_a_batched_read_is_counted_on_the_server_never_turned_over_from_raw_samples(tmp_path):
     from orchestra.sources.family import Family, LabelInfo
     from orchestra.sources.views import views
-    spec = load({"sources": [{"name": "lab", "url": "http://127.0.0.1:9"}]}, tmp_path).sources[0]
+    spec = load({"sources": [{"name": "lab", "url": "http://127.0.0.1:9", "match": ['{__name__=~"[a-zA-Z_:].*"}']}]}, tmp_path).sources[0]
 
     def fam(n):
         return Family("checkout_orders_total", "counter", {"checkout_orders_total": None}, series=n, resolution_s=15.0,

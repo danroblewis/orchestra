@@ -23,6 +23,9 @@ SECRET = "chrono-SECRET-0123456789"
 PREFIX = "/data/metrics"
 
 
+MATCH = "match = ['{__name__=~\"app_.*|http_.*|k8s_.*\"}']"   # no name index: a match-everything listing would be every series
+
+
 def _files_hold(root, needle: str) -> list[str]:
     return [str(p) for p in root.rglob("*") if p.is_file() and needle.encode() in p.read_bytes()]
 
@@ -41,7 +44,8 @@ def test_a_chronosphere_shaped_store_is_read_under_its_prefix_with_the_token_sen
     tok.parent.mkdir()
     tok.write_text(SECRET + "\n")
     try:
-        p = project(tmp_path, monkeypatch, source_toml(fake.url + PREFIX + "/", auth=f'{auth}\ntoken_file = "{tok}"'))
+        p = project(tmp_path, monkeypatch, source_toml(fake.url + PREFIX + "/", auth=f'{auth}\ntoken_file = "{tok}"',
+                                         extra=MATCH))
         start, stop = aligned(end - 7200, end, 60.0)
         reading = Catalogue(p, for_project(p)).read(start, stop, 60.0)
         assert cli.main(["--repo", str(p.repo_root), "sources", "check"]) == 0

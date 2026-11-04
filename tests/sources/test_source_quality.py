@@ -31,7 +31,7 @@ def every(seconds: float, fn, *, start: float = T0, end: float = END, offset: fl
 
 
 def spec_for(url: str, tmp_path: Path, **kw):
-    specs = load({"sources": [{"name": "lab", "url": url, **kw}]}, tmp_path)
+    specs = load({"sources": [{"name": "lab", "url": url, "match": ['{__name__=~"[a-zA-Z_:].*"}'], **kw}]}, tmp_path)
     assert not specs.refused, specs.refused
     return specs.sources[0]
 

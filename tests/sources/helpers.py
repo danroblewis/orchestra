@@ -26,6 +26,10 @@ def project(tmp_path: Path, monkeypatch, toml: str):
     return load_project(repo)
 
 
+TEST_MATCH = '{__name__=~"[a-zA-Z_:].*"}'   # the fake store is the test's own: every name in it (a source needs a match)
+MATCH_LINE = f"match = ['{TEST_MATCH}']"
+
+
 def source_toml(url: str, *, auth: str = "", extra: str = "", window: str = "120m", step: str = "60s") -> str:
     return f"""
 [discovery]
@@ -38,7 +42,8 @@ name = "rig"
 url = "{url}"
 machine = "service"
 {auth}
-{extra}
+{extra if "match" in extra else MATCH_LINE}
+{"" if "match" in extra else extra}
 {LABELS}"""
 
 

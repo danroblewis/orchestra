@@ -133,8 +133,14 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
     lst = listing(source, spec.match, start, end, until=until, concurrency=conc, max_names=spec.max_names, known=remembered)
     notes = list(lst.notes)
     names = lst.names
-    meta = _metadata(source, sorted(names))
+    meta = _metadata(source, sorted(names))       # metric by metric, of the names listed under match only
     families = _group(names, meta)
+    if unasked := set(getattr(source, "unasked", None) or []):
+        notes.append(f"{len(unasked)} metric(s): metadata not asked (budget): {', '.join(sorted(unasked)[:10])}"
+                     f"{' …' if len(unasked) > 10 else ''}; typed by their names and samples")
+        for fam in families:
+            if unasked & set(fam.metrics):
+                fam.notes.append("metadata not asked (budget): typed by its name and samples")
     families_by = {f.name: f for f in families}
     for fam in families:                   # listed at one replica of an HA pair: read there
         if pin := next((lst.pinned[m] for m in fam.metrics if m in lst.pinned), None):

@@ -127,7 +127,7 @@ def test_a_declared_stock_that_does_not_fit_is_searched_and_says_so():
 
 
 def test_series_declare_a_stock_s_level_and_flows():
-    base = {"sources": [{"name": "work", "url": "http://127.0.0.1:9"}]}
+    base = {"sources": [{"name": "work", "url": "http://127.0.0.1:9", "match": ['{__name__=~"[a-zA-Z_:].*"}']}]}
     ok = load({**base, "series": [
         {"source": "work", "name": "backlog", "query": "q", "kind": "level", "stock": "email", "role": "level"},
         {"source": "work", "name": "sent", "query": "q", "kind": "counter", "stock": "email", "role": "outflow"}]}, Path("."))

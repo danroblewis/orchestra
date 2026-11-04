@@ -46,7 +46,7 @@ def test_the_configurations_instruments_are_known_before_the_bus_names_them(tmp_
     """No ``collector:`` event was ever read (the bus was replaced): the configuration's
     ``[[collect]]``, ``[[scrape]]`` and ``[[sources]]`` names are instruments' all the same."""
     raw = {"collect": [{"name": "jira_poller", "command": "p measure"}], "scrape": [{"name": "node", "url": "http://x"}],
-           "sources": [{"name": "prom", "url": "http://y"}], "machines": [{"name": "jira_poller"}, {"name": "worker"}]}
+           "sources": [{"name": "prom", "url": "http://y", "match": ['{__name__=~"[a-zA-Z_:].*"}']}], "machines": [{"name": "jira_poller"}, {"name": "worker"}]}
     project = SimpleNamespace(config=SimpleNamespace(raw=raw))
     assert eras.instrument_names(project) == {"jira_poller", "node", "prom"}
     store = ModelStore.for_state(tmp_path)

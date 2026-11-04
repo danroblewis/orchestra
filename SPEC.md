@@ -1022,7 +1022,7 @@ url = "https://tenant.example/data/metrics"
 auth = { bearer_env = "WORK_TOKEN" }   # or bearer_file, header, basic, client_cert/client_key/ca_file
 prefix = "work"                         # series work:<name>, machines work.<id>
 machine = "service"                     # the canonical label that names machines
-match = ['{__name__=~"http_.*", env="prod"}']   # what is read (default everything, capped)
+match = ['{__name__=~"http_.*", env="prod"}']   # what is read: required, never everything
 max_series = 200                        # per source; at most max_per_family (12) per family
 history = "7d"                          # how far back its first read and discovery's window reach
 [sources.labels]                        # canonical = spellings; the first a metric has wins
@@ -1045,8 +1045,25 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
 - **`url` may carry a path prefix** (Chronosphere: `https://<tenant>.chronosphere.io/data/metrics`):
   every endpoint (`/api/v1/query`, `query_range`, `series`, ...) is joined under it, and the path
   is part of the store's identity for the rate and daily cap (`limits.store_key`). A store
-  without `label/<name>/values` is listed by `series`, and one without `metadata` keeps none
-  (Chronosphere documents only `query`, `query_range`, `series` and `labels`).
+  without `label/<name>/values` is listed by `series` (refused when `match` selects everything),
+  and one without `metadata` keeps none (Chronosphere documents only `query`, `query_range`,
+  `series` and `labels`).
+- **Orchestra never asks a store without naming what it asks about** (the owner: "never ask it
+  for the list of every metric"; a `{}`-shaped or whole-store request can take a shared store
+  down). Every `series`, `labels` and `label/<name>/values` request carries a `match[]` that names
+  a metric or a label matcher (the source's `match`, or narrower); one with none, or only
+  selectors that select everything, is refused before it is sent (`sources/prometheus.py`
+  `_named`, the Core page's `sources/asking.py`). `metadata` is asked **metric by metric**
+  (`metric=<name>`; Prometheus' `metadata` takes no `match[]`), of the names the listing found
+  under `match` only, in sequence at the store's rate, at most 200 names and a quarter of the
+  requests the round has left; the names past that are left without metadata, typed by their
+  names and samples, and the record says "metadata not asked (budget)", never a listing of the
+  store's metadata, with or without a `limit`. **A source needs a `match`:** an entry without
+  one, or whose every selector selects everything (`{}`, `{__name__=~".+"}`), is refused at the
+  config check and by inference with "a source needs a match (a namespace or selector) before
+  Orchestra reads it: ask the owner which part of the store to read" (`sources/spec.py`), shown on
+  its row of the Core page; so the name index (`label/__name__/values`, at most `max_names` + 1
+  names in the window) too always carries `match[]`.
 - **Series are inferred from the schema** every `infer_every` (an hour), cached in
   `<state>/sources/<name>.json` with the window inferred over and the stretch motion was judged
   over (`sources/infer.py`, `sources/cache.py`), and reused only for a window no longer than the

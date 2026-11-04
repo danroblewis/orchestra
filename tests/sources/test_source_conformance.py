@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 from fake_prometheus import FakePrometheus
+from helpers import TEST_MATCH
 
 from orchestra.metrics import Point
 from orchestra.metrics.file import FileMetrics
@@ -62,13 +63,13 @@ def make(request, tmp_path):
             fake = build.fake = FakePrometheus(dump, token="t0ken")
             closers.append(fake.close)
             (tmp_path / "tok").write_text("t0ken")
-            return PrometheusSource(SourceSpec("fake", "prometheus", fake.url, "fake", AuthSpec(bearer_file=str(tmp_path / "tok")), **spec_kw))
+            return PrometheusSource(SourceSpec("fake", "prometheus", fake.url, "fake", AuthSpec(bearer_file=str(tmp_path / "tok")), **{"match": [TEST_MATCH], **spec_kw}))
         if kind == "chronosphere":
             fake = build.fake = FakePrometheus(dump, token="t0ken", prefix="/data/metrics")
             fake.missing = {"label_values", "metadata"}
             closers.append(fake.close)
             (tmp_path / "tok").write_text("t0ken\n")
-            specs = load({"sources": [{"name": "chrono", "url": fake.url + "/data/metrics", "auth": "bearer",
+            specs = load({"sources": [{"name": "chrono", "url": fake.url + "/data/metrics", "match": ['{__name__=~"[a-zA-Z_:].*"}'], "auth": "bearer",
                                        "token_file": str(tmp_path / "tok")}]}, tmp_path / "repo")
             assert not specs.refused, specs.refused
             return PrometheusSource(replace(specs.sources[0], **spec_kw))
@@ -80,7 +81,8 @@ def make(request, tmp_path):
         _vm("/internal/force_flush")
         closers.append(lambda: _vm("/api/v1/admin/tsdb/delete_series", b"", {"match[]": f'{{__name__=~"{pre}.*"}}'}))
         return PrometheusSource(SourceSpec("real", "prometheus", REAL, "real",
-                                           AuthSpec(bearer_file=TOKEN_FILE) if TOKEN_FILE else AuthSpec(), **spec_kw))
+                                           AuthSpec(bearer_file=TOKEN_FILE) if TOKEN_FILE else AuthSpec(),
+                                           **{"match": [f'{{__name__=~"{pre}.*"}}'], **spec_kw}))
 
     build.kind, build.pre = kind, pre
     yield build
@@ -152,7 +154,7 @@ def test_wrong_credentials_are_refused_without_showing_them(make, tmp_path):
         pytest.skip("needs a server that demands a token")
     src = make([("level", {}, gauge())])
     (tmp_path / "bad").write_text("not-the-token")
-    bad = PrometheusSource(SourceSpec("x", "prometheus", src.spec.url, "x", AuthSpec(bearer_file=str(tmp_path / "bad"))))
+    bad = PrometheusSource(SourceSpec("x", "prometheus", src.spec.url, "x", AuthSpec(bearer_file=str(tmp_path / "bad")), match=src.spec.match))
     with pytest.raises(SourceError, match="401") as e:
         bad.query_range(f"{make.pre}level", T0, T0 + 60, 60)
     assert "not-the-token" not in str(e.value) and Path(tmp_path / "bad").read_text() not in str(e.value)

@@ -43,7 +43,7 @@ def fake():
 
 
 def spec_for(fake, tmp_path, **kw):
-    specs = load({"sources": [{"name": "lab", "url": fake.url, "infer_every": "1h", **kw}]}, tmp_path)
+    specs = load({"sources": [{"name": "lab", "url": fake.url, "match": ['{__name__=~"[a-zA-Z_:].*"}'], "infer_every": "1h", **kw}]}, tmp_path)
     assert not specs.refused, specs.refused
     return specs.sources[0]
 
