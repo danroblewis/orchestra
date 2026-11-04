@@ -2,7 +2,9 @@
 // ("last run: 3 m 12 s · 41 requests · saved v7", with the job's health as a dot, and the phase and
 // elapsed time live while a run is going), and the drawer it opens: the health in words, the last
 // run's phases as a bar, its cost per source and outcome, trend lines of duration and requests per
-// run over the last day, and the recent runs with the inference rounds interleaved and marked.
+// run over the last day, and the recent runs with the inference rounds and the explorer's
+// experiments (sd/explorer.py: the change, what it expected, its verdict and measured effect)
+// interleaved and marked.
 // The records are sd/runs.py's, the health sd/runhealth.py's, served by /api/dynamics/runs.
 // Pure functions but `open`, `start` and `paintLine`: tests/discovery_runs/discovery-runs.test.mjs.
 const DiscoveryRuns = (() => {
@@ -76,9 +78,21 @@ const DiscoveryRuns = (() => {
       + `<polyline fill="none" stroke="#3987e5" stroke-width="2" vector-effect="non-scaling-stroke" points="${line}"/>`
       + `<circle cx="${x(lastP[0]).toFixed(1)}" cy="${y(lastP[1]).toFixed(1)}" r="3" fill="#3987e5"/>${hits}</svg></div>`;
   }
-  // the recent runs, newest first, the inference rounds interleaved and marked
-  function history(runs, n = 40) {
-    const rows = [...runs].reverse().slice(0, n).map((r) => {
+  // one experiment of the explorer's log, as a row among the runs: what changed, what it expected,
+  // its verdict after how many runs and the effect measured (after less before)
+  function experimentRow(e) {
+    const change = Object.entries(e.change || {}).map(([k, v]) => `${k} ${typeof v === "string" ? v : JSON.stringify(v)}`).join(", ");
+    const eff = Object.entries(e.effect || {}).map(([k, d]) => `${k} ${d > 0 ? "+" : d < 0 ? "−" : "±"}${Math.abs(d)}`).join(", ");
+    const verdict = e.verdict ? `${e.verdict} after ${plural((e.rounds || []).length, "run")}${eff ? ` · ${eff}` : ""}` : "pending: not judged yet";
+    const cls = e.verdict === "kept" ? "dr-good" : e.verdict === "reverted" ? "dr-bad" : e.verdict ? "dr-warn" : "muted";
+    return `<tr class="dr-exp"><td class="num">${esc(clock(e.t))}</td><td><span class="tag dr-etag">experiment</span> ${esc(e.by || "")}</td>`
+      + `<td colspan="3" title="${esc(e.why || "")}">${esc(change)} <span class="muted">· expects: ${esc(e.expect || "")}</span></td><td class="${cls}">${esc(verdict)}</td></tr>`;
+  }
+  // the recent runs, newest first, the inference rounds and the experiments interleaved and marked
+  function history(runs, n = 40, experiments = []) {
+    const items = [...runs.map((r) => [r.started || 0, r]), ...experiments.map((e) => [e.t || 0, { experiment: e }])].sort((a, b) => b[0] - a[0]);
+    const rows = items.slice(0, n).map(([, r]) => {
+      if (r.experiment) return experimentRow(r.experiment);
       const inf = r.kind === "inference";
       return `<tr class="${inf ? "dr-inf" : ""}"><td class="num">${esc(clock(r.started))}</td><td>${inf ? `<span class="tag dr-itag">inference</span> ${esc(r.source || "")}` : esc(r.trigger)}</td><td class="num">${dur(r.duration_s)}</td><td class="num">${num(requests(r))}</td><td class="num">${num(points(r))}</td><td class="${outcomeClass(r.outcome)}">${esc(r.outcome)}${r.partial ? ' <span class="dr-warn" title="' + esc(r.partial) + '">(partial)</span>' : ""}</td></tr>`;
     }).join("");
@@ -100,7 +114,7 @@ const DiscoveryRuns = (() => {
       + `<div>model</div><div>${plural(res.stocks || 0, "stock")}, ${plural(res.flows || 0, "flow")}, ${num(res.left_out || 0)} series left out</div></div>`;
     return head + `<h4>The last run</h4>${phaseBar(last)}${facts}<h4>What it cost the stores</h4>${costTable(last)}`
       + `<h4>The last day <span class="muted" style="text-transform:none;letter-spacing:0">· ${plural(day.length, "discovery run")}</span></h4><div class="dr-trends">${trend(day, (r) => r.duration_s, "duration per run", dur)}${trend(day, requests, "requests per run", (n) => num(n))}</div>`
-      + `<h4>Recent runs</h4>${history(runs)}`;
+      + `<h4>Recent runs${(v.experiments || []).length ? " and experiments" : ""}</h4>${history(runs, 40, v.experiments || [])}`;
   }
   // the page side: the line kept fresh (every 2 s while a run is going, else every 15 s) and the drawer
   let VIEW = null, READ_AT = 0, TIMER = null;
@@ -122,6 +136,6 @@ const DiscoveryRuns = (() => {
   async function open() { if (!VIEW) await fetchView(); if (VIEW) openDrawer(drawerHtml(VIEW), { key: "runs" }); }
   // a run asked for from this page: look again soon, so the line goes live at once
   function soon() { clearTimeout(TIMER); TIMER = setTimeout(tick, 400); }
-  return { dur, dot, liveText, lineHtml, phaseBar, costTable, trend, history, drawerHtml, requests, points, open, start, soon, paintLine };
+  return { dur, dot, liveText, lineHtml, phaseBar, costTable, trend, history, experimentRow, drawerHtml, requests, points, open, start, soon, paintLine };
 })();
 if (typeof module !== "undefined") module.exports = DiscoveryRuns;

@@ -131,6 +131,12 @@ class ModelStore:
         from .runs import RunLog
         return RunLog(self.dir)
 
+    def explorer(self):
+        """The explorer's experiment log (``sd.explorer``, ``explorer.jsonl``), judged against the
+        run record: the only way to it."""
+        from .explorer import ExperimentLog
+        return ExperimentLog(self.dir, self.runs())
+
     def read_record(self, name: str) -> dict | None:
         """One of the store's small records (``eras``, ``announce``), or None."""
         try:

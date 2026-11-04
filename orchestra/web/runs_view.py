@@ -1,6 +1,7 @@
 """The discovery job's runs for the Dynamics page's drawer and the Core page's process section:
 the recent run records (``sd/runs.py``), the run going now with its phase, and the job's health
-(``sd/runhealth.py``) with each source's daily count against its cap as it is now."""
+(``sd/runhealth.py``) with each source's daily count against its cap as it is now, and the
+explorer's experiments (``sd/explorer.py``), which the drawer interleaves with the runs."""
 
 from __future__ import annotations
 
@@ -28,7 +29,8 @@ def caps(project) -> dict[str, dict]:
 
 def runs_view(project, n: int = RECENT, now: float | None = None, cap_counts: dict | None = None) -> dict:
     now = time.time() if now is None else now
-    log = ModelStore.for_state(project.state_dir).runs()
+    store = ModelStore.for_state(project.state_dir)
+    log = store.runs()
     recs = log.recent(max(1, min(int(n or RECENT), 2000)))
     going = log.current()
     if going is not None:
@@ -38,7 +40,7 @@ def runs_view(project, n: int = RECENT, now: float | None = None, cap_counts: di
     cc = caps(project) if cap_counts is None else cap_counts
     every = project.config.discovery_every
     return {"ok": True, "now": now, "every_s": every, "running": going, "runs": recs, "caps": cc,
-            "health": health(recs, every, now, cc, going)}
+            "health": health(recs, every, now, cc, going), "experiments": store.explorer().recent(RECENT)}
 
 
 def health_view(project, now: float | None = None) -> dict:

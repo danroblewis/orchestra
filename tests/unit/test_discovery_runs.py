@@ -132,7 +132,7 @@ def test_rediscover_records_each_run_with_its_trigger_window_result_and_failure(
         rd.rediscover(project, FileMetrics(tmp_path / "m.jsonl"), now=NOW + 600, trigger="config change")
     first, second, third = ModelStore.for_state(tmp_path).runs().recent()
     assert (first["trigger"], first["outcome"], first["version"]) == ("button", "saved v1", 1)
-    assert first["result"] == {"stocks": 1, "flows": 0, "left_out": 2} and (first["window_s"], first["step_s"]) == (3600.0, 30.0)
+    assert first["result"] == {"stocks": 1, "flows": 0, "left_out": 2, "trust": None, "fitted": 0, "r2": None} and (first["window_s"], first["step_s"]) == (3600.0, 30.0)
     assert first["strategy"] == {"configured": CONSERVATION, "asked": CONSERVATION, "ran": CONSERVATION}
     assert set(first["phases"]) == {"reads", "fit", "saving"} and first["cost"] == {}
     assert second["outcome"] == "unchanged" and "version" not in second
@@ -214,3 +214,5 @@ def test_the_api_serves_the_runs_the_run_going_now_and_the_health(tmp_path, monk
         assert h["ok"] and h["last"]["id"] == "a" and h["health"]["level"] == "green" and h["running"]["trigger"] == "button"
     going.finish("no model")
     assert web.get("/api/dynamics/runs", params={"n": 1}).json()["runs"][0]["kind"] == "discovery"
+    e = ModelStore.for_state(project.state_dir).explorer().add({"source": "x", "split": ["queue"]}, "a stock per queue")
+    assert [x["id"] for x in web.get("/api/dynamics/runs").json()["experiments"]] == [e["id"]]   # the drawer's experiment rows

@@ -12,7 +12,8 @@ A record: ``id``, ``kind``, ``trigger`` (``schedule``, ``button``, ``cli``, ``co
 stores, ``inference`` (its survey and probes), the strategy's ``fit``, ``saving``), ``outcome``
 (``saved vN``, ``unchanged``, ``no model``, ``failed: <why>``, ``timed out``), ``partial`` (why,
 when a source was missing or read in part), ``strategy`` (configured, asked, ran), ``window_s``
-and ``step_s``, ``cost`` per source, and the model's ``result`` (stocks, flows, left out).
+and ``step_s``, ``cost`` per source, and the model's ``result`` (stocks, flows, left out, mean stock trust, fitted flows and their mean
+R², ``result_of``).
 
 **The cost is derived from the request log** (``sources/reqlog.py``): every request a run makes is
 tagged with its id (an inference round inside a discovery with ``<id>~infer-<source>``), and the
@@ -185,9 +186,18 @@ def cost(state_dir: Path | str, specs: list, run_id: str, since: float, window_s
 
 
 def result_of(model) -> dict:
+    """The model a run made, in numbers: stocks, flows, series left out, the stocks' mean trust
+    score (``sd.stocktrust``), the flows whose current equation is fitted and their mean R²."""
     d = (model.discovery or {}) if model is not None else {}
-    return {"stocks": len(model.stocks) if model is not None else 0, "flows": len(model.flows) if model is not None else 0,
-            "left_out": len(d.get("left_out") or {})}
+    stocks = model.stocks if model is not None else []
+    flows = model.flows if model is not None else []
+    scores = [t["score"] for s in stocks if isinstance(t := (getattr(s, "evidence", None) or {}).get("trust"), dict)
+              and isinstance(t.get("score"), (int, float))]
+    fitted = [eq for f in flows if (eq := f.current()) is not None and eq.origin == "fitted"]
+    r2 = [q for eq in fitted if isinstance(q := (eq.quality or {}).get("r2"), (int, float))]
+    return {"stocks": len(stocks), "flows": len(flows), "left_out": len(d.get("left_out") or {}),
+            "trust": round(sum(scores) / len(scores), 4) if scores else None, "fitted": len(fitted),
+            "r2": round(sum(r2) / len(r2), 4) if r2 else None}
 
 
 def outcome_of(model, version: int | None) -> str:

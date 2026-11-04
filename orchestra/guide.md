@@ -613,7 +613,8 @@ replicas, and its request and error counts). `{}` and `{__name__=~".+"}` refuse 
 than `max_names` (2,000) metric names refuses inference until the entry changes. To see the labels
 and values inside a match: `source_schema`, or the Core page's External stores row (its **labels**
 button). Ask the owner which part of the store is theirs when nobody said; widening past it, to
-families or services they did not name, is theirs to say yes to.
+families or services they did not name, is theirs to say yes to. What you may survey beyond it is the
+owner's `explore` ("Exploring beyond the match").
 
 **`split`: the labels a family is split by.** The store's spellings; every family is split by those
 it has and summed by the store over every other label. Use it when inference splits by a label
@@ -700,7 +701,7 @@ Each of these reads what Orchestra already has, or asks the store a bounded ques
   values, within `match`. Preview only aggregated queries with a label matcher.
 - **The request log**, `~/.orchestrator/<key>/sources/<name>.requests.jsonl` (the last 10,000):
   every request any part of Orchestra sent the store: time, endpoint, query or `match[]`, window
-  and step, series, points, bytes, milliseconds, who asked (`host`, `infer`, `page`, `web`, `cli`),
+  and step, series, points, bytes, milliseconds, who asked (`host`, `infer`, `page`, `web`, `cli`, `explore`),
   the run's id, the error, and `sent: false` for one refused before sending (budget, daily cap). It
   never holds a header. The Core page's row of the store shows the last twenty and today's count
   beside the cap.
@@ -813,6 +814,62 @@ summed); and discovery's hypotheses of which machine drives a flow still come fr
 hypothesised yet". Its route into the model is an expected effect, a prediction judged when the
 flow appears (`set_expected_effect`). Discovery reads the same series with or without the
 declaration: nothing is relabelled, no stock or flow is marked as the machine's.
+
+## Exploring beyond the match
+
+**Two scopes.** `match` is what the model reads: narrow and deliberate. `explore` is what you may
+look at to choose what the model should read next: wider, and the owner's alone.
+
+```toml
+[[sources]]
+name = "chronosphere"
+url = "https://tenant.chronosphere.io/data/metrics"
+auth = { bearer_env = "CHRONOSPHERE_TOKEN" }
+match = ['{namespace="payments", service_name=~"checkout|ledger"}']
+explore = ['{namespace="payments"}', '{__name__=~"gcp_pubsub_.*", project_id="payments-prod"}']
+```
+
+Without `explore`, it is `match`: nothing beyond the match may be surveyed. A selector that
+selects everything refuses the source, as in `match`, and so does a `match` selector that lies
+within none of `explore`'s (judged by the matchers as written: `{service_name="checkout",
+namespace="payments"}` lies within `{namespace="payments"}`; two regexes are never proved, so
+write `explore` plainer). **Never write or widen `explore` yourself**, through `config_edit` or
+otherwise: nothing in code stops you, and that is why the rule is yours to keep. Ask the owner in
+one sentence when a candidate lies outside it.
+
+**The command.** `orchestra sources explore --source <name> [--family '<glob>'] [--limit N]
+[--minutes M] [--json]` surveys `explore` beyond `match`, bounded: the metric names under each
+`explore` selector, grouped into families, those outside the match first; for at most N families
+(10, at most 50) their labels and each label's value count (`50+` past fifty), their metadata, and
+their kind as inference would read it from a few sampled series. Columns: **family**, **in
+match** (whether the model reads it already), **kind**, **reads as** (flow, level, neither),
+**type** (the store's metadata), **labels (values)**, **why** (the kind's reason). The families past
+N are named in a line; narrow with `--family 'gcp_pubsub_*'`. Every request is within `explore`,
+counted against the store's rate and daily cap and logged `by: explore`; a survey whose worst case
+(about 14 requests a family) would pass the daily cap is refused before anything is sent, with
+when the cap resets: ask for fewer families. It reads only.
+
+**The experiment discipline.** The explorer reads; discovery concludes.
+
+1. **One change at a time**: a change to `match`, `split`, `kinds` or `names`, or an expected flow
+   in the declared layer. Two at once cannot be told apart in discovery's verdict.
+2. **Expected effect first**, recorded before the change is made:
+   `orchestra explorer log add --change '{"source": "chronosphere", "match": [...]}' --expect "the
+   undelivered-messages level gets the ack count as its outflow"`. It records the last discovery
+   run as `before`.
+3. **Apply it** on the owner's standing rule (narrowing and naming without asking, widening `match`
+   only on their yes), or ask in one sentence.
+4. **Judged by discovery's next rounds**, never by the survey: after one or more discovery runs,
+   `orchestra explorer log judge <id> --verdict kept|reverted|inconclusive --why "<what the runs
+   showed>"` records the runs since, the latest one's stocks, flows, mean trust, fitted flows and
+   their mean R², the store's requests, and the effect (after less before).
+5. **Reverted when worse**: fewer stocks kept, lower trust, worse fits or a higher store cost for
+   no gain: undo the change, then judge it `reverted`. Inconclusive when the runs cannot say.
+
+`orchestra explorer log list [--json]` reads the log (`~/.orchestrator/<key>/model/explorer.jsonl`)
+first each round, so nothing that failed is retried until the data changes. The Dynamics page's
+run drawer shows each experiment among the runs: what changed, what it expected, its verdict and
+effect.
 
 ## `[[machines]]`: commands kept running
 

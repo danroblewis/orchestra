@@ -6,7 +6,8 @@ Core page's guard): ``t`` (unix seconds), ``endpoint`` (the API path), ``query``
 ``match[]`` selectors or the metric asked about), ``window`` (``[start, end]``, or ``[time]`` for
 an instant), ``step``, ``series`` and ``points`` in the answer, ``ms``, ``by`` (who asked:
 ``host`` for discovery's reads, ``infer`` for an inference round, ``page`` for the Core page's
-box, ``web`` for the web server's reads of the model's series, ``cli`` for ``orchestra sources``),
+box, ``web`` for the web server's reads of the model's series, ``cli`` for ``orchestra sources``,
+``explore`` for ``orchestra sources explore``'s survey beyond the match, ``exploring.py``),
 ``sent`` (false for a refusal never sent), ``error``, ``bytes`` (the answer's size, when one came)
 and ``run`` (the discovery run or inference round that asked, ``sd/runs.py``, which derives each
 run's cost from the lines it tagged). Never a header, so never a credential.
@@ -27,7 +28,7 @@ from pathlib import Path
 
 KEEP = 10_000                 # lines kept
 SLACK = KEEP // 10            # ... and at most this many more before the log is cut back
-BYS = ("host", "infer", "page", "web", "cli")
+BYS = ("host", "infer", "page", "web", "cli", "explore")
 _LOCK = threading.Lock()
 _COUNTS: dict[str, int] = {}  # path -> lines, as this process last counted them
 

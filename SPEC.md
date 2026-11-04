@@ -1026,6 +1026,7 @@ auth = { bearer_env = "WORK_TOKEN" }   # or bearer_file, header, basic, client_c
 prefix = "work"                         # series work:<name>, machines work.<id>
 machine = "service"                     # the canonical label that names machines
 match = ['{__name__=~"http_.*", env="prod"}']   # what is read: required, never everything
+explore = ['{env="prod"}']              # optional, the owner's: what the explorer may survey beyond match (default: match)
 max_series = 200                        # per source; at most max_per_family (12) per family
 split = ["service", "method", "status"]  # optional: split every family by these labels only, summed over the rest
 history = "7d"                          # how far back its first read and discovery's window reach
@@ -1324,12 +1325,49 @@ store's rate and daily cap; a spent cap is refused with when it resets (00:00 UT
 and its guard's refusals, are logged with every other request made of the store (below), `by`
 `page`.
 
+**Exploring beyond the match** (`sources/exploring.py`, `sources/within.py`,
+`docs/proposals/metric-explorer.md`). `explore` is a second, wider scope the owner sets on a source:
+what the explorer (an agent choosing what discovery is given) may look at, never what the model
+reads. It is validated like `match`: a selector that selects everything refuses the source, and
+every `match` selector must lie within one `explore` selector (judged by the matchers as written:
+the same matcher, an equality a regex matches whole, or one an exclusion admits); without it,
+`explore` is `match`. Nothing in code keeps a plugin's setting tool from writing it: the explorer
+must never widen it, and its prompt and the experiment log are the guard. `orchestra sources
+explore --source <name> [--family <glob>] [--limit N] [--minutes M] [--json]` surveys it, bounded:
+per `explore` selector the names under it (`label/__name__/values` with `match[]` and a `limit`),
+per `match` selector the names under that (so each family says whether the model reads it), the
+names grouped into families as inference groups them, those outside the match first; for at most
+N (10 by default, 50 at most) families, their label names (`labels` with `match[]`), the value
+count of at most 8 labels (`label/<name>/values` with `match[]` and `limit` 51: "50+"), the
+metadata of at most 3 of their metrics (metric by metric), and their kind as inference would judge
+it (names and metadata, then the raw samples of a few series picked from a listing of 10, then the
+source's `kinds`). The table's columns: family, in match, kind, reads as (flow, level, neither),
+type, labels (values), why. Every request is within `explore` (the transport's scope, and each
+selector conjoined with the `explore` selector its family was found under), at the store's rate
+and daily cap, within a budget of the worst case (2 + N × 14 requests and one per selector), and
+logged `by` `explore`. When that worst case would pass the daily cap nothing is sent: the refusal
+is logged (`sent` false) and the command exits 1 with when the cap resets.
+
+**The experiment log** (`sd/explorer.py`, `ModelStore.explorer()`, `<state>/model/explorer.jsonl`).
+One entry per experiment the explorer makes of what discovery is given: `id`, `t`, `by`, `change`
+(a JSON object), `expect` (the effect expected, in words, recorded first) and `before` (the last
+discovery run's summary from the run record: `id`, `ended`, `outcome`, `stocks`, `flows`,
+`left_out`, `trust` (the stocks' mean score), `fitted` (flows with a fitted current equation),
+`r2` (their mean) and `requests` per source). `orchestra explorer log judge <id> --verdict
+kept|reverted|inconclusive --why <text>` adds `judged`, `judged_by`, `verdict`, `why`, `after`
+(the latest discovery run since), `rounds` (every discovery run's id since) and `effect` (after
+less before); `kept` and `reverted` need a discovery run since. `orchestra explorer log add
+--change <json> --expect <text> [--by <who>]` and `orchestra explorer log list [--json]`. The log
+records and changes nothing; `/api/dynamics/runs` serves it as `experiments`, and the Dynamics
+page's run drawer shows each among the runs: what changed, what it expected, its verdict after how
+many runs and its effect.
+
 **Every request is logged** (`sources/reqlog.py`). Every request Orchestra sends to a source,
 from anywhere in `orchestra.sources` (the host's discovery reads, an inference round, the Core
 page's box, the web server's reads of the model's series, `orchestra sources`), is appended by the
 transport to `<state>/sources/<name>.requests.jsonl`: time, endpoint, the query or `match[]`
 selectors or metric asked about, the window and step, the series and points in the answer,
-milliseconds, `by` (`host`, `infer`, `page`, `web`, `cli`) and the error if any; a retried
+milliseconds, `by` (`host`, `infer`, `page`, `web`, `cli`, `explore`) and the error if any; a retried
 request once per attempt, and a read refused before it was sent (the round's budget, the daily
 cap, the deadline, the page's guard) with `sent` false. Never a header, so never a token. The
 log keeps its last 10,000 lines (cut back to them once it holds a tenth more). The Core page's
@@ -1998,6 +2036,8 @@ since, and `restore(change)` puts the file back. Orchestra commits nothing: comm
 | `orchestra sd discover [--strategy S] [--minutes N] [--step-s S]\|show\|versions` | The model: discover it from the metrics, show it, list versions |
 | `orchestra sd predictions [--json]` | The predictions recorded and their verdicts, by era; read only |
 | `orchestra sources check\|infer\|preview QUERY` | Other stores (§4.4): probe them, infer what to read, read a query's fan-out |
+| `orchestra sources explore --source S [--family G] [--limit N] [--json]` | A bounded survey of a source's `explore` scope beyond its `match` (§4.4) |
+| `orchestra explorer log add\|judge ID\|list` | The explorer's experiment log (§4.4): record one change and its expected effect, judge it by discovery's runs since |
 
 Machines ask what a change would do, predict, and read the eras and the observability report
 through the APIs (§3.1, §4.5), and the web UI shows them.
@@ -2380,7 +2420,8 @@ orchestra/
   metrics/   file, victoria, promql
   sources/   other stores, read in place: spec, preset, auth, prometheus, own, schema, views,
              transform, rank, infer, fetch, traffic (counted traffic), catalogue, report (the CLI's text),
-             console, asking and stores (the Core page's bounded queries and rows)
+             console, asking and stores (the Core page's bounded queries and rows), within and
+             exploring (the explore scope and its bounded survey)
   sd/        model, store, fit, series and live (sampling, when a series was written), balance,
              collinear and restate (a level's balance), units (a balance's terms in the level's
              unit), identify, accept and construction (the evidence a balance must show),
@@ -2392,7 +2433,8 @@ orchestra/
              previous era's model as a prior, the boundary before → after), loops, announce and
              diverge (the model's own events), predictions, verdict, judge and predictions_report
              (the intended-effect test: the record, its rules, when and from what, the CLI's text),
-             reads (the model as a machine reads it, §4.5)
+             reads (the model as a machine reads it, §4.5), runs (the run record), explorer (the
+             experiment log, §4.4)
     equations/  §4.5: language, forms, compile, engine (the equation language and its
              stepper), views, history, heldout, forward, predicted (a prediction's draft);
              experiments, which kept these, were removed on 2026-11-01

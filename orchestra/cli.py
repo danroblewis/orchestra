@@ -274,6 +274,8 @@ def cmd_sources(args) -> int:
     from .sources.catalogue import Catalogue
 
     project = _project(args)
+    if args.action == "explore":
+        return _explore(project, args)
     cat = Catalogue(project, metrics_for(project), by="cli")
     if args.action == "check":
         lines = report.check(cat)
@@ -286,6 +288,54 @@ def cmd_sources(args) -> int:
         lines = report.preview(cat, args.query, args.source, args.minutes or project.config.discovery_window / 60,
                                args.step_s or project.config.discovery_step)
     print("\n".join(lines))
+    return 0
+
+
+def _explore(project, args) -> int:
+    """``sources explore``: the bounded survey of a source's explore scope beyond its match."""
+    from .sources import exploring
+    from .sources.spec import for_project
+
+    specs = for_project(project)
+    spec = next((s for s in specs.sources if s.name == args.source), None)
+    if spec is None:
+        why = specs.refused.get(args.source or "") or f"no usable source {args.source!r} (sources: {', '.join(s.name for s in specs.sources) or 'none'})"
+        print(f"orchestra: {args.source or 'explore needs --source'}: {why}", file=sys.stderr)
+        return 1
+    out = exploring.explore(project.state_dir, spec, family=args.family, limit=args.limit, minutes=args.minutes)
+    print(json.dumps(out, indent=2, default=str) if args.json else "\n".join(exploring.table(out)))
+    return 1 if out.get("refused") else 0
+
+
+def cmd_explorer(args) -> int:
+    """The explorer's experiment log: add one, judge one by discovery's runs since, list them."""
+    from .sd.explorer import ExperimentError
+    from .sd.store import ModelStore
+
+    log = ModelStore.for_state(_project(args).state_dir).explorer()
+    try:
+        if args.action == "add":
+            e = log.add(args.change, args.expect, args.by)
+            print(json.dumps(e, default=str) if args.json else f"recorded {e['id']}" + (f" (before: run {e['before']['id']})" if e["before"] else " (no discovery run yet)"))
+            return 0
+        if args.action == "judge":
+            e = log.judge(args.id, args.verdict, args.why, args.by)
+            print(json.dumps(e, default=str) if args.json else f"{e['id']}: {e['verdict']}, after {len(e['rounds'])} run(s)"
+                  + (f"; effect {', '.join(f'{k} {v:+g}' for k, v in (e['effect'] or {}).items())}" if e.get("effect") else ""))
+            return 0
+    except ExperimentError as err:
+        print(f"orchestra: {err}", file=sys.stderr)
+        return 1
+    entries = log.recent(0)
+    if args.json:
+        print(json.dumps(entries, indent=2, default=str))
+        return 0
+    if not entries:
+        print(f"no experiments recorded ({log.path})")
+    for e in entries:
+        eff = ", ".join(f"{k} {v:+g}" for k, v in (e.get("effect") or {}).items())
+        print(f"{e['id']}  {_when(e.get('t'))}  {e.get('by', '?'):<10} {e.get('verdict') or 'pending':<12} {json.dumps(e.get('change'))}")
+        print(f"    expect: {e.get('expect')}" + (f"\n    why: {e['why']} ({len(e.get('rounds') or [])} run(s); {eff or 'no effect measured'})" if e.get("verdict") else ""))
     return 0
 
 
@@ -390,13 +440,35 @@ def build_parser(plugin_help: dict[str, str] | None = None) -> argparse.Argument
     s.set_defaults(fn=cmd_sd)
 
     s = sub.add_parser("sources", help="other time-series stores ([[sources]]): check them, infer what to read, preview a query")
-    s.add_argument("action", choices=["check", "infer", "preview"], help="check: probe each source's endpoints and "
-                   "credentials; infer: run an inference round, what to read from each; preview: read a query's fan-out")
+    s.add_argument("action", choices=["check", "infer", "preview", "explore"], help="check: probe each source's endpoints and "
+                   "credentials; infer: run an inference round, what to read from each; preview: read a query's fan-out; "
+                   "explore: a bounded survey of the source's explore scope beyond its match (families, labels, kinds)")
     s.add_argument("query", nargs="?", help="for preview: a PromQL query")
-    s.add_argument("--source", help="for infer and preview: one source by name (preview default: the own store)")
-    s.add_argument("--minutes", type=float, help="for preview: the window (default: [discovery] window)")
+    s.add_argument("--source", help="for infer, preview and explore: one source by name (preview default: the own store)")
+    s.add_argument("--family", help="for explore: only the metric names this glob matches (e.g. 'gcp_pubsub_*')")
+    s.add_argument("--limit", type=int, help="for explore: families surveyed, at most (default 10, at most 50)")
+    s.add_argument("--json", action="store_true", help="for explore: the survey as JSON")
+    s.add_argument("--minutes", type=float, help="for preview: the window (default: [discovery] window); for explore (default 60)")
     s.add_argument("--step-s", dest="step_s", type=float, help="for preview: seconds per step (default: [discovery] step)")
     s.set_defaults(fn=cmd_sources)
+
+    s = sub.add_parser("explorer", help="the explorer's experiment log (<state>/model/explorer.jsonl): one change at a time, "
+                       "its expected effect first, judged by discovery's next runs")
+    es = s.add_subparsers(dest="what", required=True)
+    log = es.add_parser("log", help="add, judge or list experiments")
+    ls = log.add_subparsers(dest="action", required=True)
+    a = ls.add_parser("add", help="record an experiment before its effect is known")
+    a.add_argument("--change", required=True, help="a JSON object: what changes (a source's match, split, kinds or names, an expected flow)")
+    a.add_argument("--expect", required=True, help="the effect expected, in words")
+    j = ls.add_parser("judge", help="judge one by the discovery runs since it was recorded")
+    j.add_argument("id")
+    j.add_argument("--verdict", required=True, choices=["kept", "reverted", "inconclusive"])
+    j.add_argument("--why", required=True, help="what in discovery's runs decided it")
+    ls.add_parser("list", help="every experiment, oldest first")
+    for x in (a, j, ls.choices["list"]):
+        x.add_argument("--by", default="explorer", help="who records it (default explorer)")
+        x.add_argument("--json", action="store_true", help="the answer as JSON")
+    s.set_defaults(fn=cmd_explorer)
 
     s = sub.add_parser("events", help="the event log: info, the HTTP endpoint machines use, or copy it to another bus backend")
     s.add_argument("action", choices=["info", "endpoint", "copy"], help="info: the backend and how many events it holds; "

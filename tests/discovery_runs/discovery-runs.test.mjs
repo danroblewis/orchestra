@@ -52,3 +52,25 @@ test("no run yet: the drawer says when one runs", () => {
   const t = text(DR.drawerHtml({ ok: true, runs: [], every_s: 300, health: { level: "none", reasons: ["no discovery run recorded yet"] } }));
   assert.match(t, /No discovery run is recorded yet\. The host runs one every 5 m 0 s; the rediscover button runs one now\./);
 });
+
+test("the history: the explorer's experiments interleaved with the runs by time, their verdict and effect", () => {
+  const last = VIEW.runs[VIEW.runs.length - 1];
+  const experiments = [
+    { id: "x1", t: last.started - 1, by: "explorer", change: { source: "chrono", split: ["subscription_id"] }, expect: "a stock per subscription",
+      verdict: "kept", why: "two stocks more", rounds: ["r10", "r11"], effect: { stocks: 2, trust: 0.12, requests: -3 } },
+    { id: "x2", t: last.started + 10, by: "owner", change: { source: "chrono", kinds: { legacy_queue_size: "level" } }, expect: "the queue is a stock", verdict: null },
+  ];
+  const html = DR.drawerHtml({ ...VIEW, experiments }), t = text(html);
+  assert.match(t, /Recent runs and experiments/);
+  const hist = html.slice(html.indexOf('<table class="dt dr-hist">'));
+  const rows = [...hist.matchAll(/<tr class="([^"]*)">(.*?)<\/tr>/g)];
+  assert.equal(rows.length, 15);
+  assert.equal(rows[0][1], "dr-exp");                       // newest first: the pending one, after the last run
+  assert.match(text(rows[0][2]), /experiment owner source chrono, kinds \{&quot;legacy_queue_size&quot;:&quot;level&quot;\} · expects: the queue is a stock pending: not judged yet$/);
+  assert.equal(rows[1][1], "");                             // the last run
+  assert.equal(rows[2][1], "dr-exp");
+  assert.match(text(rows[2][2]), /experiment explorer source chrono, split \[&quot;subscription_id&quot;\] · expects: a stock per subscription kept after 2 runs · stocks \+2, trust \+0\.12, requests −3$/);
+  assert.match(rows[2][2], /<td class="dr-good">kept/);
+  assert.match(rows[2][2], /title="two stocks more"/);
+  assert.doesNotMatch(DR.drawerHtml(VIEW), /and experiments/);
+});

@@ -35,7 +35,7 @@ from pathlib import Path
 
 GROUP = "orchestra.commands"
 PROG_ENV = "ORCHESTRA_PROG"
-BUILTIN = frozenset({"init", "run", "web", "metrics", "sd", "sources", "events"})
+BUILTIN = frozenset({"init", "run", "web", "metrics", "sd", "sources", "explorer", "events"})
 
 
 @dataclass

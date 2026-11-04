@@ -9,6 +9,7 @@ auth = { bearer_env = "WORK_PROM_TOKEN" }   # never the secret itself; or token_
 prefix = "work"                             # series work:<name>, machines work.<id>
 machine = "service"                         # the canonical label that names machines
 match = ['{__name__=~"http_.*"}']           # what to read (required: a source without one, or with one that selects everything, is refused); every query carries its label matchers (scope.py)
+explore = ['{env="prod"}']                  # optional, the owner's: what the explorer may look at beyond match (default: match); match lies within it
 max_series = 200
 split = ["service", "method", "status"]     # optional: every family split by these labels only, summed over the rest
 history = "7d"                              # how far back its first read and discovery's window reach (held.py)
@@ -51,6 +52,11 @@ says otherwise), and
 store that hides the newest samples from range queries but not from raw reads (VictoriaMetrics'
 ``-search.latencyOffset``, 30 s by default) would otherwise give a counter read from raw samples
 steps its levels never saw.
+``explore`` (``orchestra sources explore``, ``exploring.py``) is the owner's wider scope for the
+explorer's bounded reads: never one that selects everything, and every ``match`` selector must lie
+within one of its selectors (``within.py``); without it, it is ``match``. Nothing in code stops a
+plugin's setting tool from writing it: the explorer must never widen it, and its prompt and the
+experiment log (``sd/explorer.py``) are the guard.
 ``split`` names the only labels each family is split by: the store sums over every other
 (``sum by (…)``), so inference never makes a series per value of a label the owner did not name
 (``views.py``); without it, inference chooses the groupings.
@@ -73,6 +79,7 @@ from ..config import parse_duration
 from . import preset as presets
 from . import traffic as counted
 from .auth import AuthSpec, auth_problems, shorthand
+from .within import outside, parsed
 
 NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
 LABEL_NAME = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
@@ -92,6 +99,7 @@ class SourceSpec:
     auth: AuthSpec
     machine: str | None = None
     match: list[str] = field(default_factory=list)   # required: what is read (refused when it names nothing)
+    explore: list[str] = field(default_factory=list)  # what the explorer may look at (the owner's; default match): match lies within it
     max_series: int = 200
     max_per_family: int = 12
     labels: dict[str, list[str]] = field(default_factory=dict)    # canonical -> spellings
@@ -231,9 +239,10 @@ def _source(raw: dict, repo_root: Path) -> SourceSpec:
     match = [match] if isinstance(match, str) else list(match)
     if not match or all(everything(m) for m in match):
         raise ValueError(NO_MATCH)
+    explore = _explore(raw.get("explore"), match)
     return SourceSpec(
         name=name, type=typ, url=url.rstrip("/"), prefix=prefix, auth=auth, machine=raw.get("machine"),
-        match=match,
+        match=match, explore=explore,
         max_series=int(raw.get("max_series", 200)), max_per_family=int(raw.get("max_per_family", 12)),
         labels={str(k): [str(x) for x in v] for k, v in labels.items()},
         identity=list(raw.get("identity") or IDENTITY),
@@ -250,6 +259,25 @@ def _source(raw: dict, repo_root: Path) -> SourceSpec:
         infer=bool(raw.get("infer", True)), settle=parse_duration(raw.get("settle"), 0.0), producers={str(k): v for k, v in producers.items()}, preset=raw.get("preset"),
         split=list(dict.fromkeys(split)) if split is not None else None, kinds={str(k): str(v) for k, v in kinds.items()},
         names={str(k): str(v) for k, v in names.items()})
+
+
+def _explore(raw, match: list[str]) -> list[str]:
+    """``explore``, checked: selectors, none selecting everything, ``match`` within them; ``match``
+    when it is not given. Raises ``ValueError`` with what it needs."""
+    if raw is None:
+        return list(match)
+    explore = [raw] if isinstance(raw, str) else raw
+    if not isinstance(explore, list) or not explore or not all(isinstance(e, str) and e.strip() for e in explore):
+        raise ValueError("explore = ['<selector>', ...]: the wider scope the explorer may look at (the owner's)")
+    if wide := [e for e in explore if everything(e)]:
+        raise ValueError(f"explore {', '.join(wide)}: a selector that selects everything is refused, as in match: "
+                         "ask the owner which wider part of the store the explorer may look at")
+    if bad := [e for e in explore if parsed(e) is None]:
+        raise ValueError(f"explore {', '.join(bad)}: not one selector each")
+    if out := outside(match, explore):
+        raise ValueError(f"match {', '.join(out)} does not lie within explore ({', '.join(explore)}): explore holds what the "
+                         "model reads; widen explore (the owner's) or leave it out")
+    return list(explore)
 
 
 def _series(r: dict) -> DeclaredSeries:
