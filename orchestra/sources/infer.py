@@ -28,11 +28,12 @@ from ..sd.units import from_name
 from . import PastDeadline, Source, SourceError
 from .limits import Budget
 from .plan import probe_form, shared
-from .rank import rank
+from .rank import APART_VALUES, TARGET_LABELS, rank
 from .regroup import expr
 from .schema import read as read_schema
 from .scope import scope_of, scoped
 from .spec import DeclaredSeries, SourceSpec
+from .storewide import label_ranks
 from .survey import known_record
 from .transform import apply, script_id
 from .views import Definition, one_count_per_thing, views
@@ -63,6 +64,7 @@ class Inference:
     seconds: float = 0.0                         # its wall time
     remembered: dict = field(default_factory=dict)   # names too big, names listed at one replica (listing.py), for the next rounds
     judged: list[float] = field(default_factory=list)   # [start, end] its definitions' motion was judged over (``survey_history``)
+    labels: dict = field(default_factory=dict)   # each label's rank across the store's families, and why (``storewide.py``)
 
     def to_json(self) -> dict:
         return asdict(self)
@@ -74,7 +76,7 @@ class Inference:
         return cls(d["source"], d["at"], d["key"], defs(d.get("kept") or []), defs(d.get("left_out") or []),
                    list(d.get("families") or []), d.get("script"), list(d.get("notes") or []), d.get("error"),
                    bool(d.get("partial")), list(d.get("window") or []), int(d.get("requests") or 0), float(d.get("seconds") or 0.0),
-                   dict(d.get("remembered") or {}), list(d.get("judged") or []))
+                   dict(d.get("remembered") or {}), list(d.get("judged") or []), dict(d.get("labels") or {}))
 
     def span(self) -> float:
         return self.window[1] - self.window[0] if len(self.window) == 2 else 0.0
@@ -277,6 +279,7 @@ def _infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], rep
     inf.families = [{"name": f.name, "metrics": list(f.metrics), "stats": f.stats, "series": f.series, "unit": f.unit,
                      "rollup": f.rollup, "rollups": sorted(r["metric"] for r in f.rollups.values()), "notes": list(f.notes),
                      **known_record(f)} for f in schema.families]
+    inf.labels = label_ranks(schema.families, APART_VALUES, TARGET_LABELS)
     cands = one_count_per_thing([d for fam in schema.families for d in views(fam, spec)], schema.families)
     unique_names(cands)
     for i, d in enumerate(cands):
@@ -312,7 +315,7 @@ def _infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], rep
         if d.kind == "rate" and (probes[d.id].get("min") or 0.0) < 0:     # its name says a rate; its data, which went below 0, says not
             d.kind = "level"
             d.flags.append("named a rate, but it went below zero: read as a level")
-    kept, left = rank(cands, spec, probes)
+    kept, left = rank(cands, spec, probes, inf.labels)
     inf.kept = declared_definitions(spec, declared) + kept
     inf.left_out += left
     return inf

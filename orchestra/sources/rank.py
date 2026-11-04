@@ -6,7 +6,9 @@ A higher score: it **moves** within the window (measured by a read of it, ``infe
 groups move **apart** (a grouping whose groups' changes do not move together: three queues,
 consumer groups, pod phases, each its own stock, which their total would merge); its grouping
 labels are **stable** (low churn); it is **small** (few series); its grouping is **coarse**; its
-view is one discovery uses most (counts and counters first, a minimum last). Only a level's own
+view is one discovery uses most (counts and counters first, a minimum last); its grouping is one
+the **store** is split by (``storewide.py``: a label that groups most families with few stable
+values, so ``service_name`` beats one family's ``edge_service``). Only a level's own
 groups count as apart: merging them merges stocks. A counter's split is worth its series only
 where a level is split by the same label, alone or with another, because its groups move apart
 (the lag by consumer group, or by consumer group and topic: the offsets produced per topic): then it scores as apart as that level, so the flows of each group are there to balance
@@ -36,6 +38,7 @@ from math import log10
 from .checks import COLLECTION_LABELS
 from .duplicates import same_shape
 from .spec import SourceSpec
+from .storewide import common
 from .views import WEIGHT, Definition
 
 APART = 1.5                  # what a grouping whose groups move apart adds to its score, at most
@@ -75,7 +78,9 @@ def stock_splits(defs: list[Definition], probes: dict[str, dict]) -> dict[str, f
     return out
 
 
-def score(d: Definition, probe: dict | None, shared: dict[str, float] | None = None) -> tuple[float, str]:
+def score(d: Definition, probe: dict | None, shared: dict[str, float] | None = None, ranks: dict[str, dict] | None = None) -> tuple[float, str]:
+    """A candidate's score and its parts, in words. ``ranks``: the store's labels (``storewide.py``),
+    whose rank enters as ``common``."""
     churn = max([float(d.labels_info.get(c, {}).get("churn", 0.0)) for c in d.group_by] or [0.0])
     n = (probe or {}).get("series", d.est_series)
     moves = 1.5 if probe is None else (3.0 if probe.get("moves") else 0.0)
@@ -83,7 +88,10 @@ def score(d: Definition, probe: dict | None, shared: dict[str, float] | None = N
     apart = 0.0 if split is None else ((shared or {}).get(split, 0.0) if d.kind != "level" else own)
     parts = {"moves": moves, "apart": APART * apart, "stable": 1.0 - churn,
              "small": 1.0 / (1.0 + log10(max(1, n))), "coarse": 1.0 / (1.0 + len(d.group_by)), "view": WEIGHT.get(d.view, 0.5)}
-    return round(sum(parts.values()), 3), ", ".join(f"{k} {v:.2f}" for k, v in parts.items())
+    said = {}
+    if ranks is not None:
+        parts["common"], said["common"] = common(d.group_by, d.labels_info, ranks)
+    return round(sum(parts.values()), 3), ", ".join(f"{k} {v:.2f}" + (f" [{said[k]}]" if said.get(k) else "") for k, v in parts.items())
 
 
 def _unit(d: Definition) -> tuple | None:
@@ -115,11 +123,12 @@ def _same_counts(live: list[Definition], left: list[Definition], probes: dict[st
         left.append(replace(d, why=f"the same series as {twin.name} by ({', '.join(twin.group_by)}): {what}"))
 
 
-def rank(defs: list[Definition], spec: SourceSpec, probes: dict[str, dict]) -> tuple[list[Definition], list[Definition]]:
-    """(kept, left out), each with its score and why."""
+def rank(defs: list[Definition], spec: SourceSpec, probes: dict[str, dict], ranks: dict[str, dict] | None = None
+         ) -> tuple[list[Definition], list[Definition]]:
+    """(kept, left out), each with its score and why. ``ranks``: the store's labels (``storewide.py``)."""
     scored, shared, apart_of = [], stock_splits(defs, probes), {}
     for d in defs:
-        s, why = score(d, probes.get(d.id), shared)
+        s, why = score(d, probes.get(d.id), shared, ranks)
         scored.append(replace(d, score=s, why=why))
         apart_of[d.id] = float(why.split("apart ")[1].split(",")[0]) / APART if "apart " in why else 0.0
     left: list[Definition] = []
