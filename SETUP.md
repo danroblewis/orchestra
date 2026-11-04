@@ -37,7 +37,7 @@ Append to `orchestra.toml`:
 [agents]
 harness = "pi"
 provider = "anthropic"
-model = "sonnet"
+model = "claude-sonnet-5"                 # the id Pi lists for Sonnet (check `pi` on your machine)
 tools_via = "bash"          # tools from its shell; no MCP server
 serves = []                 # the Supervisor only
 review_usd_per_day = 2.0    # daily cap on its own initiative
