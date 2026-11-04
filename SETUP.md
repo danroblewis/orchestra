@@ -6,7 +6,7 @@ You give the Supervisor (an AI agent) a few details; it does the setup. You watc
 
 - macOS or Linux, `git` and [uv](https://docs.astral.sh/uv/).
 - GitHub access to the plugins: `danroblewis/orchestra-agents` (the Supervisor) and
-  `danroblewis/orchestra-bridges` (the collectors' kits) are private; Orchestra itself is public.
+  `danroblewis/orchestra-bridges` (the collectors' kits) are public, like Orchestra itself; `gh auth setup-git` or SSH access covers them.
   Run `gh auth login && gh auth setup-git` once.
 - [Pi](https://github.com/badlogic/pi-mono) or [Claude Code](https://docs.claude.com/en/docs/claude-code)
   installed and logged in once by hand (`pi` then `/login`, or `claude`).
