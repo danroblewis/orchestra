@@ -18,7 +18,7 @@ test("as configured, the configured settings once; with no record, the configure
 });
 
 test("a window widened for sparse own data says so beside the configured settings", () => {
-  const d = { strategy: "kalman_lna", fitted: { window_s: 64800, step_s: 540, widened_from_s: 3600, sparse: true } };
+  const d = { strategy: "kalman_lna", fitted: { window_s: 64800, step_s: 540, widened_from_s: 3600, sparse: 29 } };
   assert.equal(DW.summary(d, { strategy: "kalman_lna", window_s: 3600, step_s: 30 }),
-    "kalman_lna · 18 h · 9 min steps (widened for sparse data; configured 60 min · 30 s steps)");
+    "kalman_lna · 18 h · 9 min steps (widened for sparse data (29 levels); configured 60 min · 30 s steps)");
 });

@@ -55,14 +55,15 @@ low traffic"), the window is doubled, with its step (the grid keeps its number o
 model" is said; the record says which windows were read (``discovery["widened"]``) and
 ``window_s`` is the one the model was fitted over.
 
-**Sparse own data** (``sparse_window``). When every level discovery judged moved in fewer than
+**Sparse own data** (``sparse_window``). When any own level discovery judged moved in fewer than
 ``MIN_STEPS`` of its live steps (``discovery["level_steps"]``: a board that moves one ticket every
-four hours, beside agents' counters that count every minute, so no counter is short of events) but
-the project's own series span longer than the window, the window is widened at once, in whole
-multiples of the configured window with the step scaled alike (as for a source's history), to the
-shortest that holds ``MIN_STEPS`` steps in which one of those levels moved, up to ``MAX_WINDOW``,
-never past the era's start and no further than the own data reach; ``discovery["widened"]`` says
-it was widened for sparse data (``sparse``)."""
+four hours, beside agents' counters that count every minute, so no counter is short of events, and
+beside the Supervisor's busy level, which moves every few minutes) and its series spans longer than
+the window, the window is widened at once, in whole multiples of the configured window with the
+step scaled alike (as for a source's history): each such level asks for the shortest multiple that
+gives it ``MIN_STEPS`` steps in which it moved (none, when no window up to ``MAX_WINDOW``, the era's
+start and its own data does), and the window is the longest asked; the dense levels are fitted at the widened step like the rest (one
+model, one window). ``discovery["widened"]["sparse"]`` names the levels that asked."""
 
 from __future__ import annotations
 
@@ -168,31 +169,39 @@ def widen(m: Model, window_s: float, step_s: float, now: float, era_start: float
 
 
 def sparse_window(m: Model, reading, window_s: float, step_s: float, now: float, era_start: float | None,
-                  ) -> tuple[float, float] | None:
-    """The window and step to read when every level the discovery ``m`` judged moved in fewer than
-    ``MIN_STEPS`` live steps (``discovery["level_steps"]``) and the project's own series span longer
-    than ``window_s``: the shortest whole multiple of the window (the step scaled alike, so the grid
-    keeps its number of steps) in which one of those levels, from its own points, moved in
-    ``MIN_STEPS`` steps, up to ``MAX_WINDOW``, the era's start and the oldest own point. None when a
-    level had the steps, none was judged, the own data reach no further, or no wider window holds them."""
-    ls = (m.discovery or {}).get("level_steps") or {}
-    sparse = ls.get("sparse") or {}
-    if not ls.get("levels") or len(sparse) < ls["levels"] or window_s >= MAX_WINDOW:
+                  ) -> tuple[float, float, list[str]] | None:
+    """The window and step to read, and the levels that asked for them, when any own level the
+    discovery ``m`` judged moved in fewer than ``MIN_STEPS`` of its live steps
+    (``discovery["level_steps"]["sparse"]``) and its series spans longer than ``window_s``: each such
+    level asks for the shortest whole multiple of the window (the step scaled alike, so the grid
+    keeps its number of steps) in which it, from its own points, moved in ``MIN_STEPS`` steps, up to
+    ``MAX_WINDOW`` and the era's start; the window is the longest any level asked for, so every level
+    that asked has its steps. A dense level beside them is fitted at the widened step like the rest
+    (one model, one window). None when no level asks: none was sparse, the own data reach no
+    further, or no wider window gives one its steps."""
+    sparse = ((m.discovery or {}).get("level_steps") or {}).get("sparse") or {}
+    if not sparse or window_s >= MAX_WINDOW:
         return None
-    own = [(series_key(n, lab), pts) for n, lab, pts in reading.dump
-           if pts and (reading.provenance.get(series_key(n, lab)) or {}).get("source") in (None, OWN)]
-    first = min((pts[0][0] for _, pts in own), default=None)
-    if first is None or now - first <= (1 + HELD_SLACK) * window_s:
+    asked: dict[str, int] = {}
+    for n, lab, pts in reading.dump:
+        key = series_key(n, lab)
+        if key not in sparse or not pts or (reading.provenance.get(key) or {}).get("source") not in (None, OWN):
+            continue
+        if now - pts[0][0] <= (1 + HELD_SLACK) * window_s:      # no longer than the window: wider reads nothing more
+            continue
+        reach = min(now - pts[0][0], MAX_WINDOW, now - era_start if era_start is not None else MAX_WINDOW)
+        top = max(1, min(math.ceil(reach / window_s - HELD_SLACK), math.floor(MAX_WINDOW / window_s)))
+        ts = [b[0] for a, b in itertools.pairwise(pts) if b[1] != a[1]]
+        for k in range(1, top + 1):
+            start, _ = aligned(now - window_s * k, now, step_s * k)
+            if len({int((t - start) // (step_s * k)) for t in ts if t > start}) >= MIN_STEPS:
+                if k > 1:                                       # at k = 1 it had them: not short of data
+                    asked[key] = k
+                break
+    if not asked:
         return None
-    reach = min(now - first, MAX_WINDOW, now - era_start if era_start is not None else MAX_WINDOW)
-    top = max(1, min(math.ceil(reach / window_s - HELD_SLACK), math.floor(MAX_WINDOW / window_s)))
-    moves = [[b[0] for a, b in itertools.pairwise(pts) if b[1] != a[1]] for key, pts in own if key in sparse]
-    for k in range(2, top + 1):
-        w, st = window_s * k, step_s * k
-        start, _ = aligned(now - w, now, st)
-        if any(len({int((t - start) // st) for t in ts if t > start}) >= MIN_STEPS for ts in moves):
-            return w, st
-    return None
+    k = max(asked.values())
+    return window_s * k, step_s * k, sorted(asked)
 
 
 def oldest(reading) -> float | None:
@@ -271,7 +280,7 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
         start = era_window(start, end, step_s, cut)
         own_from = own_from if own_from is not None and own_from > start else None    # the own series are cut further than the window
         if era is None or end - start >= 2 * step_s:
-            base_s, tried, sparse_at = window_s, [], None
+            base_s, tried, sparse_at, sparse_levels = window_s, [], None, set()
             while True:
                 reading = Catalogue(project, metrics).read(start, end, step_s, infer_s=cfg.discovery_window if lengthened and not tried else None,
                                                            own_from=own_from)
@@ -286,8 +295,10 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
                                          allowed=allowed)
                 annotate(m, reading.provenance)
                 wider = widen(m, window_s, step_s, now, cut, oldest(reading))
-                if wider is None and (wider := sparse_window(m, reading, window_s, step_s, now, cut)) is not None:
+                if wider is None and (thin := sparse_window(m, reading, window_s, step_s, now, cut)) is not None:
                     sparse_at = sparse_at or window_s
+                    sparse_levels.update(thin[2])
+                    wider = thin[:2]
                 if wider is None:
                     break
                 tried.append(window_s)
@@ -296,13 +307,14 @@ def rediscover(project, metrics: MetricsStore, *, strategy: str | None = None, o
                 start = era_window(start, end, step_s, cut)
                 own_from = own_from if own_from is not None and own_from > start else None
             if tried:
-                why = (f"the {window_words(sparse_at)} window held fewer than {MIN_STEPS} steps in which any level moved, "
-                       f"over longer own data: widened for sparse data to {window_words(window_s)}" if sparse_at == base_s else
+                levels = f"{len(sparse_levels)} level{'s' if len(sparse_levels) != 1 else ''}"
+                why = (f"in the {window_words(sparse_at)} window {levels} over longer own data moved in fewer than {MIN_STEPS} "
+                       f"steps: widened for sparse data to {window_words(window_s)}" if sparse_at == base_s else
                        f"the {window_words(base_s)} window held too few events for any counter (a balance needs {MIN_EVENTS}): "
-                       f"widened to {window_words(window_s)}" + (f", then for sparse data (the {window_words(sparse_at)} window held "
-                                                               f"fewer than {MIN_STEPS} steps in which any level moved)" if sparse_at else ""))
+                       f"widened to {window_words(window_s)}" + (f", then for sparse data (in the {window_words(sparse_at)} window {levels} "
+                                                               f"moved in fewer than {MIN_STEPS} steps)" if sparse_at else ""))
                 m.discovery["widened"] = {"from_s": base_s, "tried_s": tried, "window_s": window_s, "step_s": step_s, "why": why,
-                                          **({"sparse": {"from_s": sparse_at, "needed": MIN_STEPS}} if sparse_at else {})}
+                                          **({"sparse": sorted(sparse_levels), "sparse_from_s": sparse_at, "needed": MIN_STEPS} if sparse_at else {})}
         else:                                   # the era is too young to read: its prior, carried whole
             reading = None
             m = Model("system", "The system", "The era is too young to discover: its prior, carried.")

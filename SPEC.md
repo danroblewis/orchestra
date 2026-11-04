@@ -794,14 +794,17 @@ keeps its number of steps), up to 7 days, never past the era's start and no furt
 oldest point read, and discovered again before "no model" is said; `discovery.widened` says
 which windows were read, and the page says the window the model was fitted over.
 
-**Sparse own data** (`sd/rediscover.py`, `sparse_window`). When every level discovery judged
-moved in fewer than `MIN_STEPS` (5) of its live steps (`discovery.level_steps`; a board moving
-one ticket every four hours beside agents' counters that count every minute, so no counter is
-short of events) and the project's own series span longer than the window, the window widens at
-once, in whole multiples of `[discovery] window` with the step scaled alike (as for a source's
-history), to the shortest that holds 5 steps in which one of those levels moved, up to 7 days,
-never past the era's start and no further than the own data reach; `discovery.widened.sparse`
-says it was widened for sparse data, and the page says so beside the configured window.
+**Sparse own data** (`sd/rediscover.py`, `sparse_window`). When any own level discovery judged
+moved in fewer than `MIN_STEPS` (5) of its live steps (`discovery.level_steps`; a board's piles
+moving one ticket every four hours beside agents' counters that count every minute, so no counter
+is short of events, and beside the Supervisor's busy level, which moves every few minutes) and its
+series spans longer than the window, the window widens at once, in whole multiples of
+`[discovery] window` with the step scaled alike (as for a source's history): each such level asks
+for the shortest multiple that gives it 5 steps in which it moved, and the window is the longest
+asked, up to 7 days, never past the era's start and no further than the own data reach. The dense
+levels are fitted at the widened step like the rest (one model, one window). `discovery.widened.sparse`
+names the levels that asked, and the page says "widened for sparse data (N levels)" beside the
+configured window.
 
 **Eras** (`sd/eras.py`, `sd/prior.py`, `sd/compare.py`; goal G11). After a machine changes how
 the system behaves (a machine's spec, its model or its duties edited, a definition the machines

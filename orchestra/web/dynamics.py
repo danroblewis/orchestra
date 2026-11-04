@@ -32,15 +32,15 @@ PRESS = {True: "Press \u201crediscover now\u201d to look at once.", False: "Pres
 def fitted(d: dict) -> dict | None:
     """The window and step a discovery was fitted over, as its record has them: the window it read
     (``end − start``, else ``window_s``) and its step, which may be wider than ``[discovery]``
-    configures (``widened``: too few events, or sparse own data, ``sparse``; ``history``: the sources
-    hold more), and the window it was widened from. None for a record without them."""
+    configures (``widened``: too few events, or sparse own data, ``sparse``: how many levels asked;
+    ``history``: the sources hold more), and the window it was widened from. None for a record without them."""
     window = d["end"] - d["start"] if d.get("end") is not None and d.get("start") is not None else d.get("window_s")
     step = d.get("step") or d.get("step_s")
     if not window or not step:
         return None
     was = (d.get("widened") or {}).get("from_s") or (d.get("history") or {}).get("from_s")
     return {"window_s": float(window), "step_s": float(step), "widened_from_s": float(was) if was else None,
-            **({"sparse": True} if (d.get("widened") or {}).get("sparse") else {})}
+            **({"sparse": len(sp)} if isinstance(sp := (d.get("widened") or {}).get("sparse"), list) and sp else {})}
 
 
 def no_model(project, discovery: dict | None, as_of: float | None = None) -> dict:
