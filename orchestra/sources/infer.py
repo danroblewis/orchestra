@@ -72,6 +72,8 @@ class Inference:
     lifted: dict = field(default_factory=dict)   # candidate ident -> the discovery whose refutation was lifted
     round: dict = field(default_factory=dict)    # what the round did: probed, kept, demoted, queued, known, proposed, budget
     explored: list[dict] = field(default_factory=list)   # each candidate's fate this round and why (``explore.summary``)
+    settings: dict = field(default_factory=dict)  # settings_parts: which part of the key changed, for the next round's reason
+    reason: str = ""                             # why this round ran when one under other settings was cached ("re-inferred: …")
 
     def to_json(self) -> dict:
         return asdict(self)
@@ -85,7 +87,7 @@ class Inference:
                    bool(d.get("partial")), list(d.get("window") or []), int(d.get("requests") or 0), float(d.get("seconds") or 0.0),
                    dict(d.get("remembered") or {}), list(d.get("judged") or []), dict(d.get("labels") or {}),
                    dict(d.get("probed") or {}), dict(d.get("demoted") or {}), dict(d.get("lifted") or {}), dict(d.get("round") or {}),
-                   list(d.get("explored") or []))
+                   list(d.get("explored") or []), dict(d.get("settings") or {}), str(d.get("reason") or ""))
 
     def span(self) -> float:
         return self.window[1] - self.window[0] if len(self.window) == 2 else 0.0
@@ -94,6 +96,39 @@ class Inference:
         """How long a stretch its definitions' motion was judged over: the window, or the history
         surveyed beyond it (a round cached before the survey: its window)."""
         return self.judged[1] - self.judged[0] if len(self.judged) == 2 else self.span()
+
+
+PARTS = {"match": ("match",), "split": ("split",), "kinds": ("kinds",), "prefix": ("prefix",), "label aliases": ("labels", "identity"),
+         "caps": ("max_series", "max_per_family", "history"), "machine": ("machine", "producers")}   # named in the reason a round re-ran
+
+
+def settings_parts(spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path) -> dict[str, str]:
+    """``settings_key``'s parts, each hashed on its own, so a round that runs because the key
+    changed says which (``changed``): the parts of ``PARTS``, the declared series, the script,
+    how definitions are written, and the rest of the source's settings."""
+    s = asdict(spec)
+    s.pop("auth", None)
+    for k in TRANSPORT:
+        s.pop(k, None)
+    h = lambda x: hashlib.sha256(json.dumps(x, sort_keys=True, default=str).encode()).hexdigest()[:12]
+    out = {part: h([s.pop(k, None) for k in keys]) for part, keys in PARTS.items()}
+    script = Path(repo_root) / spec.queries_script if spec.queries_script else None
+    out["declared series"] = h([asdict(x) for x in declared])
+    out["queries script"] = h(script_id(script) if script and script.is_file() else None)
+    out["way definitions are written"] = h(FORMS)
+    out["other settings"] = h(s)
+    return out
+
+
+def changed(old: dict, new: dict) -> str:
+    """Why a round re-ran, in words: "re-inferred: the source's kinds changed"."""
+    if not old:
+        return "re-inferred: the source's settings changed (or the round before recorded none)"
+    parts = [p for p in new if old.get(p) != new[p]]
+    if not parts:
+        return "re-inferred: the source's settings changed"
+    said = ", ".join(parts[:-1]) + (" and " if len(parts) > 1 else "") + parts[-1]
+    return f"re-inferred: the source's {said} changed"
 
 
 def settings_key(spec: SourceSpec, declared: list[DeclaredSeries], repo_root: Path) -> str:
@@ -305,7 +340,8 @@ def _infer(source: Source, spec: SourceSpec, declared: list[DeclaredSeries], rep
            judge_from: float | None = None, memory: Inference | None = None, verdicts: dict[str, dict] | None = None,
            held_s: float = 0.0) -> Inference:
     verdicts = verdicts or {}
-    inf = Inference(spec.name, time.time(), settings_key(spec, declared, repo_root), window=[start, end], judged=[start, end])
+    inf = Inference(spec.name, time.time(), settings_key(spec, declared, repo_root), window=[start, end], judged=[start, end],
+                    settings=settings_parts(spec, declared, repo_root))
     schema = read_schema(source, spec, start, end, until=until, known=known, remembered=remembered)
     inf.remembered = schema.remembered
     inf.notes = list(schema.notes)

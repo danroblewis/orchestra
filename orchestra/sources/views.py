@@ -100,6 +100,7 @@ class Definition:
     summed: list[str] = field(default_factory=list)      # with the source's split: the labels it is summed over (as the store spells them)
     proposed: str = ""           # a finer split of one that became a stock, and of which (explore.py): probed before the others
     declared_kind: str = ""      # flow | level | ignore: what [[sources]] kinds says it is (kinds.py)
+    declared_by: str = ""        # the kinds entry that said it: the name or a pattern
     occupancy: dict = field(default_factory=dict)        # an occupancy view: its completions (moves), their outcome label, its driver
 
 
@@ -225,7 +226,7 @@ def views(fam: Family, spec: SourceSpec, stocks: list[tuple[list[str], str]] | N
             origin=[f"inferred from {fam.name}: {origin}", *noted, *fam.notes], labels_info=info,
             merged=merged if view != "distinct" else {}, inner=inner, agg=agg, agg_labels=list(agg_labels), touched=touched,
             unit_label=unit_label if view not in ("count", "starts", "stops", "distinct") else None, counter_form=counter_form or fam.counter_form,
-            left=left, summed=summed, declared_kind=fam.declared_kind))
+            left=left, summed=summed, declared_kind=fam.declared_kind, declared_by=fam.declared_by))
 
     if fam.kind == "ignored":                       # the owner said never to read it: left out, with the reason
         add(fam.name, "ignored", "level", fam.selector(), [], origin="declared ignore", left=IGNORED)
@@ -268,7 +269,7 @@ def views(fam: Family, spec: SourceSpec, stocks: list[tuple[list[str], str]] | N
             add(name, "rollup", "rate" if rule["rate"] else "level", _by(outer, by, inner),
                 group, flags=flags, origin=f"a recording rule ({rule['metric']}), {fn} of {rule['of']}; {outer}{gtext}", constants=constants,
                 resolution_s=res, inner=inner, agg=outer, left=left)
-        out[-1].declared_kind = said
+        out[-1].declared_kind, out[-1].declared_by = said, rule.get("declared_by", "") if said else ""
 
     status = next((c for c in fam.role("grouping") if c in OUTCOME or fam.labels[c].real in OUTCOME), None)
 

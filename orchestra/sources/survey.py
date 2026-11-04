@@ -5,7 +5,8 @@ at once (``census.py``):
 2. sample a few series of each (raw, the window): interval, native histograms, behaviour; when
    fewer than two of those picked report through half the window (a listing by day names pods
    long replaced), the ones with most samples in it are picked instead (``census.live``);
-3. for the families the window cannot judge (it only rose), the same series over ``history``;
+3. what the names and the store's metadata say (``conventions.py``), and for the rest their
+   behaviour; for the families the window cannot judge (it only rose), the same series over ``history``;
    for those whose samples are all 1, their extremes (an info metric);
 4. each label's role: identity, unit, constant, or grouping when its values do not churn;
 5. labels the collection adds whose values repeat each other (``duplicates.py``), recording rules
@@ -45,6 +46,7 @@ from .checks import (
     pick,
     pick_live,
 )
+from .conventions import convention
 from .duplicates import duplicated
 from .family import UNREAD, Family, LabelInfo, Schema, esc
 from .kinds import declared
@@ -211,8 +213,11 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
     ext, bad = census.extremes(source, {n: (sel, families_by[n].series) for n, sel in ones.items()}, start, end, until, conc) if ones else ({}, {})
     for n, why in bad.items():
         failed[n] = f"its extremes: {why}"
-    unsure = {n: picks[n] for n, (typ, r) in window.items() if n not in failed and typ != "counter" and counter_like(r)[0]
-              and families_by[n].kind != "counter"}
+    # names and metadata first (conventions.py): the samples decide only the form of a flow they name
+    said = {n: c for n, (typ, r) in window.items() if n not in failed and not families_by[n].busy
+            and (c := convention(families_by[n].first_metric(), typ, families_by[n].help, r))}
+    unsure = {n: picks[n] for n, (typ, r) in window.items() if n not in failed and n not in said and typ != "counter"
+              and counter_like(r)[0] and families_by[n].kind != "counter"}
     judged = min(spec.history, JUDGE_S)
     long, bad = census.history(source, unsure, end, judged, until, conc) if unsure and judged > end - start else ({}, {})
     for n, why in bad.items():
@@ -221,6 +226,13 @@ def survey(source: Source, spec: SourceSpec, start: float, end: float, *, until:
         if n in failed:
             continue
         fam = families_by[n]
+        if n in said:
+            kind, form, why = said[n]
+            if (kind, form) != (fam.kind, fam.counter_form):      # what its type already said needs no word
+                fam.kind, fam.counter_form, fam.retyped = kind, form, why
+            if fam.kind == "gauge" and n in ext and indicator(r, *ext[n]):
+                fam.indicator = True
+            continue
         low, high = ext.get(n, (None, None))
         base = fam.kind
         kind, why = classify(fam.first_metric(), "counter" if fam.kind == "counter" else typ, fam.help, r, low=low, high=high)

@@ -64,6 +64,7 @@ class Family:
     indicator: bool = False      # a gauge whose every sample is 0 or 1 (a one-hot state: kube_pod_status_phase): summed, never counted
     states: list[str] = field(default_factory=list)            # its grouping labels one reporter has several values of at once (phase)
     declared_kind: str = ""     # flow | level | ignore: what [[sources]] kinds says it is (kinds.py), over inference's reading
+    declared_by: str = ""       # the kinds entry that said it: the name itself or a pattern (kinds.py)
     busy: str | None = None      # a histogram's or summary's ``_sum`` beside its ``_count``: its busy time, read for the calls in progress
 
     @property

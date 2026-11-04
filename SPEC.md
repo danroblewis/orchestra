@@ -1143,8 +1143,31 @@ queries = "scripts/queries.py"          # optional: rewrites the candidates (JSO
   over inference's reading of the samples: `flow` reads a non-counter as each sample a count,
   summed over each step; `level` reads it as a gauge; `ignore` reads nothing and leaves it out,
   saying "declared ignore in [[sources]] kinds: never read". Anything else refuses the source.
-  Each series records `declared_kind`, and the Instruments page's source row says "kind: flow
-  (declared)".
+  A key may be a glob (`"gcp_pubsub_*_count" = "flow"`, `"*:count" = "flow"`) matched against
+  those names: an exact name wins over a pattern, a longer pattern over a shorter. Each series
+  records `declared_kind` and the entry that decided (`declared_by`), and the Instruments page's
+  source row says "kind: flow (declared by *:count)".
+- **Conventions: names and metadata first, so `kinds` is needed only for the exceptions**
+  (`sources/conventions.py`). Before a family's samples are judged, its name and the store's
+  metadata (type, help, unit, asked metric by metric under `match`, C14) say what it is when they
+  can; behaviour decides only when they are silent, and `kinds` overrules both:
+
+  | Says | Read as |
+  |---|---|
+  | metadata `type=counter` | a counter (its increments a flow); its samples overrule it only by falling part way |
+  | a gauge or untyped whose help says per interval (`delta`, `per interval`, `in the interval`, `in the sampling period`, `since the last sample`) | a flow, each sample its interval's count |
+  | a gauge or untyped named `…_count` or `…_total` (not things held: `pod_count`, `…_pending_total`) | a flow: per interval, or cumulative when its samples never fell but by resets (Google Cloud Monitoring's DELTA counts, a per-minute value) |
+  | a level by name: `num_…`, `oldest_…_age`, `…undelivered…`, `…outstanding…`, `…unacked…`, `…backlog…`, `…retained…` (Pub/Sub's `num_undelivered_messages`, `oldest_unacked_message_age`, `backlog_bytes`) | a level, whatever its samples do (a stuck age rising by one a second is no clock) |
+  | recording rules `:count`, `:sum`, `:rate` | as above: a `:count` beside a `:sum` a flow, a `:rate` a rate |
+- **An edited source is inferred again at the next round.** The cached inference is keyed by a
+  hash of everything in the entry that changes what is read or how (`match`, `split`, `kinds`,
+  `prefix`, the label aliases and identity, the caps that bound it, `machine`, the declared
+  series, the script, `FORMS`), never by how hard the store is read (`TRANSPORT`) or the
+  credentials. A change to any re-runs inference at the next round (at once on `orchestra sources
+  infer`), with no reinstall and no cache wiped by hand, and the round records which part changed
+  ("re-inferred: the source's kinds changed": `Inference.reason`, its first note, and the
+  Instruments page's round line). Every catalogue reads `orchestra.toml` again when it changed
+  (`config.fresh_config`).
 - **`split`: the labels a family is split by, named** (the owner, 2026-11-04, at work: a family
   carrying `edge_service`, with many values nobody wanted a series of). `split = ["service_name",
   "method", "status"]` on a `[[sources]]` entry splits every family under it by those labels only

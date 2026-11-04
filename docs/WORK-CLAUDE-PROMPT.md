@@ -55,7 +55,9 @@ What good looks like, and the levers:
   counters that fill and drain one. A per-interval count (`:count`, GCP per-minute deltas) is a
   **flow**, never a stock by itself.
 - `split = ["label", ...]` names the labels a family is split by; others are summed.
-- `kinds = { "<metric>" = "flow" | "level" | "ignore" }` overrides how a metric is read.
+- `kinds = { "<metric or glob>" = "flow" | "level" | "ignore" }` overrides how a metric is read;
+  needed only for the exceptions, since names and metadata already say most (WORK-LAPTOP.md §3's
+  table). An edit takes effect at the next round, or at once with `orchestra sources infer`.
 - A latency family with both `:sum` and `:count` yields "<family> in progress" (calls in flight
   by Little's law), a stock with the completions as its outflow.
 - For GCP PubSub: `num_undelivered_messages` is a stock; `send_message_count` /

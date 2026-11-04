@@ -105,6 +105,28 @@ combinations, and no more. The Instruments page shows the split on the source's 
 left-out series on the Dynamics page says "summed over edge_service, …". Leave `split` out to
 let inference choose again.
 
+**`kinds`: only for the exceptions.** Most metrics say what they are by their names and the
+store's metadata, and are read so with no entry:
+
+| Name or metadata | Read as |
+|---|---|
+| typed `counter` | a counter: its increments are a flow |
+| a gauge whose help says per interval ("delta", "in the sampling period") | a flow |
+| a gauge or untyped `…_count` / `…_total` (GCP's per-minute DELTA counts: `ack_message_count`, `send_request_count`) | a flow (not `pod_count` and the like: things held) |
+| `num_…`, `oldest_…_age`, `…undelivered…`, `…backlog…` (`num_undelivered_messages`, `oldest_unacked_message_age`, `backlog_bytes`) | a level |
+| `:count` beside a `:sum` | a flow |
+
+Anything else is judged by how its samples behave. When one is read wrongly, say what it is,
+by name or by a glob (an exact name wins over a pattern, a longer pattern over a shorter):
+
+```toml
+kinds = { "*:count" = "flow", "gcp_pubsub_*_count" = "flow", "some_gauge" = "level", "noise" = "ignore" }
+```
+
+The Instruments page then says "kind: flow (declared by *:count)". An edit to `kinds` (or
+`match`, `split`, `prefix`, the labels) takes effect at the next discovery, or at once with
+`orchestra sources infer`: no reinstall, no cache to clear.
+
 Every series read from the store is listed with the selector you would type in Chronosphere
 itself (its own metric name and labels, not Orchestra's `chrono:` name), copyable, and a **view**
 link that opens the Core page's External stores box on it: a counter as `rate(<selector>[<step>])`,

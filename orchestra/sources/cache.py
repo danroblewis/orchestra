@@ -43,7 +43,7 @@ import time
 from pathlib import Path
 
 from . import PastDeadline, Source, SourceError
-from .infer import Inference, declared_definitions, infer, settings_key
+from .infer import Inference, changed, declared_definitions, infer, settings_key
 from .listing import TooManyNames
 from .spec import DeclaredSeries, SourceSpec
 from .transform import TransformError
@@ -242,6 +242,10 @@ def definitions(source: Source, spec: SourceSpec, declared: list[DeclaredSeries]
             old.error = (f"the last round kept {inferred(inf)} definitions where the one at {_when(old.at)} kept {inferred(old)}; "
                          "using those (`orchestra sources infer` accepts the new round)")
             return old
+        if old is not None and not same:           # the settings changed: say which (the owner edited kinds, say)
+            inf.reason = changed(old.settings, inf.settings)
+            inf.notes.insert(0, inf.reason)
+            inf.round["reason"] = inf.reason
         if inf.partial:
             rec = _failed(state_dir, spec, next((n for n in inf.notes if "could not" in n or "not probed" in n), "partial"), key,
                           partial=True)

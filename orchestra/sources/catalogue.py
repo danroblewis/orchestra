@@ -47,6 +47,7 @@ from pathlib import Path
 from ..collect.views import declared as declared_views
 from ..collect.views import owned as plugin_instruments
 from ..collect.views import provenance as instrument_views
+from ..config import fresh_config
 from ..metrics import MetricsStore
 from ..sd.series import Declared, series_key
 from . import PastDeadline, SourceError
@@ -119,7 +120,7 @@ def provenance(spec: SourceSpec, d: Definition, traffic: dict | None = None, res
             "resolution_s": d.resolution_s if resolution_s is None else resolution_s,
             "unit": d.unit, **({"unit_label": d.unit_label} if d.unit_label else {}), "view": d.view, "family": d.family, "flags": list(d.flags), **({"traffic": traffic} if traffic else {}),
             "candidate": ident(d),
-            **({"stock": dict(d.stock)} if d.stock else {}), **({"declared_kind": d.declared_kind} if d.declared_kind else {}),
+            **({"stock": dict(d.stock)} if d.stock else {}), **({"declared_kind": d.declared_kind, "declared_by": d.declared_by or d.family} if d.declared_kind else {}),
             # an occupancy view (views.py): derived by Little's law, its completions its moves (sd.construction)
             **({"occupancy": dict(d.occupancy), "derived": d.occupancy["derived"]} if d.occupancy else {})}
 
@@ -167,6 +168,8 @@ class Catalogue:
         under a small budget per round. ``incremental=False`` reads every window whole."""
         self.project = project
         self.infer = (not getattr(_THREAD, "reading_only", False)) if infer is None else infer
+        if specs is None:                  # orchestra.toml as it now is: an edited kinds or match is read at the next round
+            fresh_config(project)
         self.specs = specs if specs is not None else for_project(project)
         self.own = OwnSource(metrics, project.key) if metrics is not None else None
         self.share = share

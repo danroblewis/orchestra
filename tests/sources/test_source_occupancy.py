@@ -183,4 +183,4 @@ def test_kinds_must_say_flow_level_or_ignore(tmp_path):
 
 def test_the_instruments_page_says_derived_and_declared():
     html = (Path(__file__).parents[2] / "orchestra/web/static/instruments.html").read_text()
-    assert "derived: ${esc(r.derived)}" in html and "kind: ${esc(r.declared_kind)} (declared)" in html
+    assert "derived: ${esc(r.derived)}" in html and "kind: ${esc(r.declared_kind)} (declared${r.declared_by ? ` by ${esc(r.declared_by)}`" in html

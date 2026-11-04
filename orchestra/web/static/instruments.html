@@ -153,7 +153,7 @@ function seriesTable(d, now, name) {
 function sourceSeries(x) {
   const w = x.window || {}, span = w.end && w.start ? w.end - w.start : null;
   if (!(x.series || []).length) return `<div class="muted">no series read from it yet: the host's discovery reads it</div>`;
-  return `<table class="itable series"><tr><th>series</th><th>in the store</th></tr>${x.series.map((r) => `<tr><td class="num">${esc(r.key)}<div class="muted">${r.declared_kind ? `kind: ${esc(r.declared_kind)} (declared)` : esc(r.kind || "")}${r.derived ? ` · derived: ${esc(r.derived)}` : ""}</div></td>
+  return `<table class="itable series"><tr><th>series</th><th>in the store</th></tr>${x.series.map((r) => `<tr><td class="num">${esc(r.key)}<div class="muted">${r.declared_kind ? `kind: ${esc(r.declared_kind)} (declared${r.declared_by ? ` by ${esc(r.declared_by)}` : ""})` : esc(r.kind || "")}${r.derived ? ` · derived: ${esc(r.derived)}` : ""}</div></td>
     <td>${SourceView.html({ source: x.name, ...r }, span)}</td></tr>`).join("")}</table>`
     + (x.series_more ? `<div class="muted">and ${x.series_more} more</div>` : "");
 }
@@ -162,7 +162,7 @@ function sourceRound(x) {
   const r = x.inference;
   if (!r) return `<div class="muted">no inference round recorded yet: the host's discovery infers it</div>`;
   const by = (c) => (c.group_by || []).join(", ") || "total";
-  const head = `<div class="muted">${esc(Orchestra.when(r.at))} · ${r.requests} requests · probed ${r.probed}${r.budget != null ? ` within ${r.budget} left for probes` : ""}${r.proposed ? ` (${r.proposed} finer splits proposed)` : ""}, kept ${r.kept}, demoted ${r.demoted}, ${r.queued} queued${r.known ? `, ${r.known} known from an earlier probe` : ""}</div>`;
+  const head = `<div class="muted">${esc(Orchestra.when(r.at))} · ${r.requests} requests · probed ${r.probed}${r.budget != null ? ` within ${r.budget} left for probes` : ""}${r.proposed ? ` (${r.proposed} finer splits proposed)` : ""}, kept ${r.kept}, demoted ${r.demoted}, ${r.queued} queued${r.known ? `, ${r.known} known from an earlier probe` : ""}${r.reason ? ` · ${esc(r.reason)}` : ""}</div>`;
   const rows = (x.explored || []).map((c) => `<tr><td><b>${esc(c.name)}</b> <span class="muted">by ${esc(by(c))} · ${esc(c.view)}</span></td><td>${esc(c.fate)}</td><td class="muted">${esc(c.why)}</td></tr>`).join("");
   const labels = (x.labels || []).length ? `<h4>Labels across the store</h4><table class="itable"><tr><th>label</th><th style="text-align:right">rank</th><th>why</th></tr>${x.labels.map((l) => `<tr><td class="num">${esc(l.label)}</td><td class="num" style="text-align:right">${esc(String(l.rank))}</td><td class="muted">${esc(l.why)}</td></tr>`).join("")}</table>` : "";
   return head + (rows ? `<table class="itable"><tr><th>candidate</th><th>this round</th><th>why</th></tr>${rows}</table>` : "")
