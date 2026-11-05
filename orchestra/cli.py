@@ -47,10 +47,28 @@ def cmd_init(args) -> int:
 
 
 def cmd_run(args) -> int:
-    """The bootstrap host."""
+    """The bootstrap host; with ``--web``, the web server beside it in a process of its own, stopped
+    with the host (the owner, 2026-11-04: "so i can just run one command")."""
     from .host import Host
 
-    Host(_project(args)).run(once=args.once)
+    project = _project(args)
+    web = None
+    if getattr(args, "web", False) and not args.once:
+        if why := _cannot_bind(args.host, args.port):
+            print(f"orchestra: {why}; serve on another: orchestra run --web --port {args.port + 10}", file=sys.stderr)
+            return 1
+        import subprocess
+        web = subprocess.Popen([sys.executable, "-m", "orchestra", "--repo", str(project.repo_root), "web",
+                                "--port", str(args.port), "--host", args.host])
+    try:
+        Host(project).run(once=args.once)
+    finally:
+        if web is not None and web.poll() is None:
+            web.terminate()
+            try:
+                web.wait(timeout=10)
+            except Exception:  # noqa: BLE001 - a web server that will not stop is killed
+                web.kill()
     return 0
 
 
@@ -416,6 +434,9 @@ def build_parser(plugin_help: dict[str, str] | None = None) -> argparse.Argument
 
     s = sub.add_parser("run", help="run the bootstrap host: its event collector, discovery, and the processes the project and plugins declare")
     s.add_argument("--once", action="store_true", help="start, record one heartbeat, stop")
+    s.add_argument("--web", action="store_true", help="also serve the web UI, as `orchestra web` does, stopped with the host")
+    s.add_argument("--port", type=int, default=8000, help="with --web: the port to serve on (default 8000)")
+    s.add_argument("--host", default="127.0.0.1", help="with --web: the address to serve on (default 127.0.0.1)")
     s.set_defaults(fn=cmd_run)
 
     s = sub.add_parser("web", help="serve the web UI (behind the project's web token), or print the token")

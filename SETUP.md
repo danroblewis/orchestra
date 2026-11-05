@@ -78,17 +78,15 @@ your chat keeps working while it is paused.
 
 ## 5. Start it
 
-In two terminals, from the project directory:
+From the project directory:
 
 ```bash
-orchestra run
+orchestra run --web
 ```
 
-```bash
-orchestra web
-```
-
-Open the "log in" link `orchestra web` prints, then the **Agents** page: the Supervisor's chat.
+It runs the host and the web UI together, and Ctrl-C stops both. Open the "log in" link it prints,
+then the **Agents** page: the Supervisor's chat. (`orchestra run` and `orchestra web` in two
+terminals do the same; `--port` picks another port than 8000.)
 
 ## 6. The first message
 
@@ -128,11 +126,11 @@ address, its token file's path, and the part of it the Supervisor may read.
 - **Items**: the tickets and where each one is.
 - **Agents**: the chat, what wakes the Supervisor, and what it spent today.
 
-Raise problems with the Supervisor in the chat. To stop, press Ctrl-C in both terminals.
+Raise problems with the Supervisor in the chat. To stop, press Ctrl-C.
 
 ## 8. Start over from nothing
 
-Stop both terminals first. Then, from the project directory:
+Stop Orchestra first (Ctrl-C). Then, from the project directory:
 
 ```bash
 KEY=$(basename "$(git rev-parse --show-toplevel)")-$(python3 -c "import hashlib,subprocess;print(hashlib.sha256(subprocess.check_output(['git','rev-parse','--show-toplevel']).decode().strip().encode()).hexdigest()[:8])")
