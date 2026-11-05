@@ -52,6 +52,7 @@
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeMachine()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
 <script src="/static/machine-dialog.js?v={{v}}"></script>
+<script src="/static/people-groups.js?v={{v}}"></script>
 <script src="/static/evidence-text.js?v={{v}}"></script>
 <script src="/static/sd-graph.js?v={{v}}"></script>
 <script src="/static/flow-check.js?v={{v}}"></script>
@@ -70,22 +71,24 @@ Orchestra.machineList = () => (MACHINES && MACHINES.machines) || [];
 Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 11 }, mount(body, ui) {
   async function refresh() {
     try {
-      MACHINES = await (await fetch("/api/machines?era=all")).json();
+      // grouped: the people relayed from one system as one row each (web/people.py), counted as many as they are
+      MACHINES = await (await fetch("/api/machines?era=all&people=grouped")).json();
       Orchestra.conn(true);
       body.classList.remove("stale");
       if (!MACHINES.ok) { body.innerHTML = `<div class="empty">${esc(MACHINES.error)}</div>`; return; }
       Orchestra.modelParts = MACHINES.model_parts || null;
-      Orchestra.setMachines(MACHINES.machines);
+      Orchestra.setMachines(PeopleGroups.allIds(MACHINES).map((id) => ({ id })));
       // every machine is a row or in a note below them: the rows and notes add up to the header's count
       // what the Machines page folds away (hidden by the owner, announced and never acted) is left
       // out here too; it is counted on the Machines page
       const all = MACHINES.machines.filter((m) => !m.hidden && !m.announced_only), G = Orchestra.dashboardGroups(all), run = G.rows;
       // one count, split by the one word set (Orchestra.liveness): "11 machines: 1 active, 2 not answering, 8 quiet"
-      const by = {}; for (const m of all) { const w = G.group.get(m); by[w] = (by[w] || 0) + 1; }
-      ui.setSub(`${all.length} machines: ${["active", "not answering", "late", "heard, no rhythm yet", "disabled", "quiet", "no evidence yet"].filter((w) => by[w]).map((w) => `${by[w]} ${w}`).join(", ")}`);
+      const size = (m) => (PeopleGroups.isGroup(m) ? m.people_group.size : 1), count = (ms) => ms.reduce((a, m) => a + size(m), 0);
+      const by = {}; for (const m of all) { const w = G.group.get(m); by[w] = (by[w] || 0) + size(m); }
+      ui.setSub(`${count(all)} machines: ${["active", "not answering", "late", "heard, no rhythm yet", "disabled", "quiet", "no evidence yet"].filter((w) => by[w]).map((w) => `${by[w]} ${w}`).join(", ")}`);
       // a machine is shown by the name it announced (a person's, from the relay that saw them), its id in the tooltip
       const shown = (m) => m.name || m.id;
-      const link = (m, extra = "") => `<a href="/machines#${encodeURIComponent(m.id)}" title="${esc(m.id)}">${esc(shown(m))}</a>${extra}`;
+      const link = (m, extra = "") => `<a href="/machines${PeopleGroups.isGroup(m) ? "" : "#" + encodeURIComponent(m.id)}" title="${esc(m.id)}">${esc(shown(m))}</a>${extra}`;
       // the bus's word for it, always shown, even beside a package's own summary (the host's: the runtime record's)
       const live = (m) => { const lv = Orchestra.liveness(m); return `<span class="lw ${lv.cls}" title="${esc(lv.title)}">${esc(lv.word)}</span>`; };
       const down = (m) => { const n = Orchestra.downOf(m).length; return n ? ` <span class="stale" title="points arrive and its up series reads 0: a report, not a verdict">(${n} instance${n === 1 ? "" : "s"} report${n === 1 ? "s" : ""} down)</span>` : ""; };
@@ -94,7 +97,7 @@ Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 
       const young = run.filter((m) => G.group.get(m) === "heard, no rhythm yet"), rows = run.filter((m) => !young.includes(m));
       // people (ad hoc, relayed by a bridge) are counted in one line each, never one name each in a long list
       const person = (m) => m.kind === "person";
-      const people = (ms, what) => { const ps = ms.filter(person); return ps.length ? `<div class="mnote">· ${ps.length} ${ps.length === 1 ? "person" : "people"} ${what} <a href="/machines">(on the Machines page)</a></div>` : ""; };
+      const people = (ms, what) => { const ps = ms.filter(person), n = count(ps); return n ? `<div class="mnote">· ${n} ${n === 1 ? "person" : "people"} ${what} <a href="/machines">(on the Machines page)</a></div>` : ""; };
       const notPeople = (ms) => ms.filter((m) => !person(m));
       const notes = note(notPeople(young), "heard, no rhythm yet") + note(G.declared, "declared, not heard") + note(G.proposed, "proposed, never heard") + note(G.unseen, "no evidence yet") + note(notPeople(G.quiet), "quiet")
         + people(young, "heard, no rhythm yet") + people(G.quiet, "quiet");
@@ -105,7 +108,7 @@ Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 
         const own = Orchestra.machineCards.summary(m), lv = Orchestra.liveness(m);
         // a package's own summary is its own element beside the bus's word, never joined by a dot to it
         const right = own != null ? `${live(m)} <span class="own">${own}</span>` : [live(m), lv.detail ? esc(lv.detail) : ""].filter(Boolean).join(" · ");
-        return `<div class="mline" data-id="${esc(m.id)}" data-lv="${esc(lv.cls)}" tabindex="0" role="button" aria-label="${esc(m.id)}: open its details" onclick="openMachine(this.dataset.id)" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openMachine(this.dataset.id)}" title="${esc(m.id)}: click for its details">
+        return `<div class="mline" data-id="${esc(m.id)}" data-lv="${esc(lv.cls)}" tabindex="0" role="button" aria-label="${esc(m.id)}: open its details" onclick="${PeopleGroups.isGroup(m) ? "location.href='/machines'" : "openMachine(this.dataset.id)"}" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();this.click()}" title="${esc(m.id)}: ${PeopleGroups.isGroup(m) ? "drawn as one: each is on the Machines page" : "click for its details"}">
           <span class="d" style="background:${m.bootstrap ? "#fbbf24" : mcolor(m.id)};box-shadow:${lv.cls === "live" ? "0 0 0 2px #22c55e" : lv.cls === "late" ? "0 0 0 2px #f59e0b" : "none"}" title="its colour on every page${lv.cls === "live" || lv.cls === "late" ? `; the ring: ${esc(lv.word)}` : ""}"></span><b>${esc(shown(m))}</b>
           <span>${kind ? `<span class="k">${esc(kind)}</span> ` : ""}${m.mode ? `<span class="k">${esc(m.mode)}</span>` : ""}${m.package ? `<span class="k" title="the package this machine belongs to">${esc(m.package)}</span>` : ""}</span>
           <span class="r">${right}</span></div>`;

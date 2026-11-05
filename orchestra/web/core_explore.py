@@ -16,6 +16,7 @@ from ..events import event_time, for_an_instrument
 from ..metrics import MetricsError
 
 MAX_LINES = 30
+MAX_SOURCES = 40               # the busiest sources listed one by one; the rest counted in one line (hundreds of people)
 EVENTS_READ = 300_000          # the explorer reads at most the bus's last this many events
 NICE_STEPS = [15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400]
 CACHE_S = 8.0
@@ -179,7 +180,9 @@ class Explorer:
                            if drawn < nb else None)
             rows = [{**d, "machines": d["machines"].most_common(4)} for d in sorted(types.values(), key=lambda x: (-x["in_range"], -x["total"]))]
             machines = [{"machine": m, "events": sum(c.values()), "types": c.most_common(5)} for m, c in sorted(by_machine.items(), key=lambda x: -sum(x[1].values()))]
-            return {"ok": True, "backend": self.core.events.bus.name, "total": on_bus, "read": len(evs),
+            rest = machines[MAX_SOURCES:]
+            machines = machines[:MAX_SOURCES]
+            return {**({"more_machines": {"sources": len(rest), "events": sum(m["events"] for m in rest)}} if rest else {}),"ok": True, "backend": self.core.events.bus.name, "total": on_bus, "read": len(evs),
                     **({"capped": EVENTS_READ} if on_bus > len(evs) and len(evs) >= EVENTS_READ else {}),
                     "in_range": sum(d["in_range"] for d in types.values()), "open_bucket": open_bucket,
                     "types": rows, "machines": machines, "instruments": sorted(instruments), "volume": series, "bucket_s": width, "from": t0}

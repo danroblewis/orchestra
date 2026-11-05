@@ -47,6 +47,18 @@ its evidence and a ``confidence`` between 0 and 1), from one of:
   than discovery's ``MIN_EVENTS`` events, each confidence is scaled by its share of them
   (``capped``): a few events coincide by chance.
 
+**People relayed from one system are tested together** (``orchestra.people``): a bridge relays
+each act on a system it reads as the person who did it (``person.<system>.<account>``), and at work
+that is hundreds of machines, each a candidate for every flow (600 people cost 3.6 s for 22 flows,
+2026-11-04). When at least ``GROUP_MIN`` of one system's people have events, their events of each
+type are summed into one candidate and compared with the counter once, as a machine's instances
+are summed. When it matches, the hypothesis is each of those people who published that type in the
+window, named as machines, as ever, sharing the group's confidence (they tie, and timing could not
+tell them apart one by one either), the busiest first, with the group in ``together`` (every
+person in it, and why). An owner-mapped ``person.<key>`` is tested on its own. The limit: one
+person whose events alone match a counter, among many of the system's people publishing the same
+type, is not told apart from them.
+
 A counter of traffic on another system's bus (``orchestra.sources.traffic``) carries the
 producer or consumer its definition names in its ``machine`` label; that is a label (or, with
 ``[sources.producers]``, a declaration), so it is not read here either.
@@ -61,7 +73,9 @@ announcements, the host's and the launcher's) are never candidates."""
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 
+from ..people import GROUP_MIN, relayed_from
 from .balance import MIN_EVENTS
 from .series import EVENT_COUNTER, Series, writer_of
 
@@ -191,7 +205,8 @@ def _by_step(xc: dict[int, float], xe: dict[int, float], live: set[int], n: int)
     hypothesis chance would make as well is dropped."""
     best = None
     for lag in LAGS:
-        valid = {i for i in live if 0 <= i + lag < n}
+        edge = 0 if lag < 0 else n - 1 if lag > 0 else None      # the step the lag takes out of the window
+        valid = live - {edge} if edge in live else live         # set operations: hundreds of candidates per flow
         if not valid:
             continue
         x = {i: v for i, v in xc.items() if i in valid}
@@ -209,7 +224,7 @@ def _by_step(xc: dict[int, float], xe: dict[int, float], live: set[int], n: int)
             continue
         # chance: the events moved around the live steps, measured the same way
         order = sorted(valid)
-        at = {i: p for p, i in enumerate(order)}
+        at = dict(zip(order, range(len(order))))
         shifted = [_step_measures(x, {order[(at[j] + sh) % len(order)]: v for j, v in y.items()}, k) for sh in CHANCE_SHIFTS]
         base = sum((m[0] if test == "step by step" else max(0.0, m[1]) * min(ratio, 1 / ratio)) for m in shifted) / len(shifted)
         confidence = discounted(share, base)
@@ -240,9 +255,57 @@ def _why(m: dict) -> str:
 
 
 def candidates(series: list[Series]) -> list[Series]:
-    """Each machine's event counts, one per (type, machine): what a flow may be explained by."""
-    return [s for s in series if s.name == EVENT_COUNTER and s.counter and writer_of(s) is not None
+    """Each machine's event counts, one per (type, machine): what a flow may be explained by. The
+    people relayed from one system, at least ``GROUP_MIN`` of them, are one candidate per type: their
+    counts summed (``together``; the module's text)."""
+    each = [s for s in series if s.name == EVENT_COUNTER and s.counter and writer_of(s) is not None
             and not (s.labels.get("type") or "").startswith("orchestra.")]
+    people: dict[str, set[str]] = defaultdict(set)
+    for s in each:
+        if system := relayed_from(writer_of(s)):
+            people[system].add(writer_of(s))
+    many = {system for system, who in people.items() if len(who) >= GROUP_MIN}
+    if not many:
+        return each
+    out, parts = [], defaultdict(list)
+    for s in each:
+        system = relayed_from(writer_of(s))
+        if system in many:
+            parts[(system, s.labels.get("type") or "")].append(s)
+        else:
+            out.append(s)
+    return out + [together(system, type_, members) for (system, type_), members in sorted(parts.items())]
+
+
+def together(system: str, type_: str, members: list[Series]) -> Series:
+    """One candidate for the people relayed from ``system``: their events of ``type_`` summed, live
+    whenever any of them is (``relayed``: the system and the people's own counts)."""
+    n = max(len(m.values) for m in members)
+    step = [0.0] * max(0, n - 1)
+    for m in members:
+        for i, v in _nonzero(m).items():
+            step[i] += v
+    values, total = [0.0], 0.0
+    for v in step:
+        total += v
+        values.append(total)
+    live = None if any(m.live is None for m in members) else sorted({i for m in members for i in m.live})
+    s = Series(EVENT_COUNTER, {"type": type_, "source": f"person.{system}.*"}, [], values, True, live=live)
+    s.__dict__["relayed"] = (system, members)
+    return s
+
+
+def _relayed_hypotheses(e: Series, m: dict) -> dict[str, dict]:
+    """A match of the people relayed from one system, tested together: each of them who published
+    the type, named as the machine it is, with the group's evidence and their own count of events."""
+    system, members = e.__dict__["relayed"]
+    type_ = e.labels.get("type")
+    own = sorted(((sum(_nonzero(s).values()), writer_of(s)) for s in members), key=lambda x: (-x[0], x[1]))
+    who = [(n, w) for n, w in own if n > 0]
+    why = f"the {len(who)} people relayed from {system}, tested together: their {type_} events {_why(m)}"
+    return {w: {"machine": w, "origin": "inferred", "by": "events on the bus", "events": {"type": type_, "source": w}, **m,
+                "together": {"system": system, "people": len(who), "own_events": round(n, 3)}, "why": why}
+            for n, w in who}
 
 
 def tied(found: list[dict]) -> list[dict]:
@@ -274,21 +337,34 @@ def associate(counter: Series | None, events: list[Series], siblings: list[Serie
                                 "events": {"type": counter.labels.get("type"), "source": who},
                                 "why": f"its counter counts {who}'s own events of type {counter.labels.get('type')}"}]}
     best: dict[str, dict] = {}
+    groups: list[dict] = []
     for e in events:
         if e is counter or (m := match(counter, e, siblings)) is None:
             continue
         who = writer_of(e)
-        if who not in best or m["confidence"] > best[who]["confidence"]:
-            best[who] = {"machine": who, "origin": "inferred", "by": "events on the bus",
-                         "events": {"type": e.labels.get("type"), "source": who}, **m,
-                         "why": f"{who}'s {e.labels.get('type')} events {_why(m)}"}
+        if "relayed" in e.__dict__:                   # people relayed from one system, tested together
+            found = _relayed_hypotheses(e, m)
+            groups.append({"system": e.__dict__["relayed"][0], "type": e.labels.get("type"), "machines": list(found),
+                           "confidence": m["confidence"], "why": next(iter(found.values()))["why"] if found else ""})
+        else:
+            found = {who: {"machine": who, "origin": "inferred", "by": "events on the bus",
+                           "events": {"type": e.labels.get("type"), "source": who}, **m,
+                           "why": f"{who}'s {e.labels.get('type')} events {_why(m)}"}}
+        for who, h in found.items():
+            if who not in best or h["confidence"] > best[who]["confidence"]:
+                best[who] = h
     events_n = sum(counter.deltas)
     if events_n < MIN_EVENTS:
         for h in best.values():           # too few events to tell a machine from chance: never near certain
             h["confidence"] = round(h["confidence"] * events_n / MIN_EVENTS, 3)
             h["capped"] = (f"only {events_n:g} event{'' if events_n == 1 else 's'} in the window, fewer than the {MIN_EVENTS} discovery "
                            f"needs: its confidence scaled by {events_n:g}/{MIN_EVENTS}")
-    found = sorted(best.values(), key=lambda h: (-h["confidence"], h["machine"]))[:MAX_HYPOTHESES]
+    # the busiest of a group tested together first (``together``), else by name
+    found = sorted(best.values(), key=lambda h: (-h["confidence"], -(h.get("together") or {}).get("own_events", 0), h["machine"]))[:MAX_HYPOTHESES]
     if found:
-        return {"hypotheses": found, **({"tied": t} if (t := tied(found)) else {})}
+        for g in groups:
+            if events_n < MIN_EVENTS:
+                g["confidence"] = round(g["confidence"] * events_n / MIN_EVENTS, 3)
+        return {"hypotheses": found, **({"tied": t} if (t := tied(found)) else {}),
+                **({"together": [g for g in groups if g["machines"]]} if groups else {})}
     return {"hypotheses": [], "why": f"{UNSET}: no machine's events on the bus match its counter"}

@@ -29,6 +29,9 @@ from .intended import attach_dynamics, attach_machines, machine_subsystems
 from .intended import install as install_intended
 from .machines import model_parts
 from .pages import STATIC, render
+from .people import announced_fields as people_fields
+from .people import grouped as group_people
+from .people import members as people_members
 from .plugins_mount import mount_plugins
 from .redact import install as install_redact
 from .sd_extra import install as install_sd_extra
@@ -398,19 +401,15 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         from ..sd.reads import eras
         return eras(bg.models)
 
-    @app.get("/api/machines")
-    def machines(era: str | None = None) -> dict:
-        """The machines seen on the bus and who publishes and listens for what, and the machines,
-        channels and counted edges known from counted traffic: from the web server's background
-        reads, never a read of the bus or a source on request, except a past era's first (then
-        kept). ``era``: the current era by default (sd/eras.py), an era's id, ``none`` (before
-        any era) or ``all``."""
+    def machines_answer(era: str | None) -> tuple[dict, object | None]:
+        """The machines of an era, observed, counted and declared (``/api/machines`` before its
+        boxes), and the era's index; or an answer saying why there is none, and None."""
         bg.want("counted")                          # counted traffic is read from other stores while a page shows it
         if not bg.ready("index"):
-            return {"ok": False, "error": "reading the event bus for the first time…", "warming": True}
+            return {"ok": False, "error": "reading the event bus for the first time…", "warming": True}, None
         idx = bg.era_index(era)
         if idx is None:
-            return {"ok": False, "error": f"there is no era {era}"}
+            return {"ok": False, "error": f"there is no era {era}"}, None
         out = {"ok": True, **idx.view(flows=bg.flows), "era": era or bg.era, "current_era": bg.era,
                "eras": [vars(e) for e in era_eras(project)]}
         merge_counted(out, bg.counted, time.time())
@@ -418,7 +417,25 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
             out["counted_failed"] = bg.counted["failed"]
         declare(out["machines"])
         attach_machines(project, out, bg.model(), bg.measured)   # the declared machines and what measures them (web/intended.py)
-        machine_subsystems(project, out, bg.model(), idx.announced_fields())   # boxes on the map (web/machine_subsystems.py)
+        return out, idx
+
+    @app.get("/api/machines")
+    def machines(era: str | None = None, people: str = "each", expand: str = "") -> dict:
+        """The machines seen on the bus and who publishes and listens for what, and the machines,
+        channels and counted edges known from counted traffic: from the web server's background
+        reads, never a read of the bus or a source on request, except a past era's first (then
+        kept). ``era``: the current era by default (sd/eras.py), an era's id, ``none`` (before
+        any era) or ``all``. ``people=grouped``: the people relayed from one system as one group
+        row each (web/people.py), but those ``expand`` names (comma-separated group ids); by
+        default every machine is a row of its own."""
+        out, idx = machines_answer(era)
+        if idx is None:
+            return out
+        announced = idx.announced_fields()
+        if people == "grouped":
+            to = group_people(out, {k for k in expand.split(",") if k})
+            announced = people_fields(announced, to)
+        machine_subsystems(project, out, bg.model(), announced)   # boxes on the map (web/machine_subsystems.py)
         # the host publishes only when it starts and stops; whether it runs is in the runtime record
         # (``active_by``: what the flag was judged by, so no page says "in rhythm" of it)
         up = bool(runtime.hosts(runtime.read(project)))
@@ -429,6 +446,15 @@ def create_app(project: Project, host: str = "127.0.0.1") -> FastAPI:
         if bg.errors:
             out["errors"] = dict(bg.errors)
         return out
+
+    @app.get("/api/machines/people")
+    def machines_people(group: str, era: str | None = None) -> dict:
+        """One group's people (web/people.py ``members``), for the Machines page's group card."""
+        out, idx = machines_answer(era)
+        if idx is None:
+            return out
+        got = people_members(out["machines"], group)
+        return {"ok": True, **got} if got is not None else {"ok": False, "error": f"there is no group {group}"}
 
     def lent_names(model) -> dict | None:
         """The names declarations lend the model's parts (sd/intended/display.py); None when the

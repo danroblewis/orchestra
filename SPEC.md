@@ -145,6 +145,16 @@ counted its traffic; a count no machine is attributed to is **unattributed**, an
 Counted traffic is never turned into events: no envelope is made from a count, so the bus's volume
 is unchanged and replay never lies (`docs/proposals/event-sources.md` §1).
 
+**Many people.** A bridge relays each act on a system it reads as the person who did it,
+`person.<system>.<account>`, and announces each one (kind `person`, with their display name): at
+work, hundreds of machines from one system. Each is a machine like any other. Orchestra tells them
+apart by the `source` alone (`orchestra/people.py`): the people relayed from one system, when there
+are at least eight of them, are shown as one group per system (and per announced `group` or
+`team`) on the Machines page, the Event Map and the Dashboard (§10), and are tested together by
+discovery's attribution (§4.3, step 5). An owner-mapped `person.<key>` (the bridges' identity map:
+two parts) is never grouped. The grouping is display and a way of testing, never a machine: the
+bus, the model and the declared layer name each person.
+
 **Subscriptions.** Until the bus adapters provide subscriptions with leases
 (`docs/proposals/empty-orchestra.md` §3), a machine reads the bus by offset and announces what it
 listens for in `orchestra.machine.started`. The Machines page draws
@@ -698,7 +708,14 @@ Conservation (`sd/discover.py`):
    correlated at least 0.9 with totals within a factor of two, each with its confidence; and a
    counter that is itself a machine's event count is that machine's. Every machine that matches
    is a hypothesis, so several may be for one flow, and a machine may be for none. Orchestra's
-   own event types never are. Nothing declares an association (no configuration, no plugin), who
+   own event types never are. **The people relayed from one system** (`person.<system>.<account>`,
+   `orchestra/people.py`), at least eight of them, are tested together: their events of each type
+   summed into one candidate, as a machine's instances are, so 600 people cost two comparisons per
+   flow, not 1,200 (3.6 s to 0.01 s for 22 flows, 2026-11-04). A match names each of those people
+   who published the type, as machines, sharing the group's confidence, the busiest first, with
+   the group in `together`; an owner-mapped `person.<key>` is tested on its own. One person whose
+   events alone match, among many of the system's people publishing the same type, is not told
+   apart from them. Nothing declares an association (no configuration, no plugin), who
    wrote a series (its `instrument` or `machine` label, counted traffic's included) is never read
    for it, and it changes no equation and no stock or flow. A flow with none says **no machine
    associated yet**: a question about the system, not an answer. The limits: a match is a
@@ -2143,6 +2160,25 @@ minutes, which allows for the store's scrape interval and the minute between rea
   display only: a folded machine is still a machine, observed; nothing deletes or alters an
   observed event, and discovery and the flows' hypotheses (`sd/attribute.py`) never read the fold
   or the mark. Orchestra's own host is never folded.
+  **Many people** (§2; `web/people.py`, `static/people-groups.js`; the owner, 2026-11-04: "way too
+  many people names sometimes, and it's breaking various things"). The page asks
+  `/api/machines?people=grouped`: the people relayed from one system (`person.<system>.<account>`,
+  at least eight) come as one row, "Jira people (600)", id `people/<system>` (a `/` no machine's id
+  has), or `people/<system>/<group>` for those whose announcement names a group or team, and
+  every hand-off, relay, edge, hub, counted or declared edge, listener and subsystem box that named
+  one of them names the group, summed (the hand-offs between two of its people are counted as
+  `within`, drawn by no line); `people_groups` lists every group. Kept one by one: an owner-mapped
+  `person.<key>`, a person the owner declared or hid, and a machine known by counted traffic; a
+  group whose people all only announced themselves folds as one. The group is one card (its count,
+  how many are active, a few names, what they publish, their flows), which opens into a list of its
+  people with search, a hundred at a time (`/api/machines/people?group=`, fetched when opened); and
+  one node on the map, which opens into its people one by one (`expand=<group ids>`, remembered in
+  the browser), each still marked as the group's and none a card of its own, folded back by "draw
+  as one" in the map's bar. A person in the list, or a `#<id>` link to one, opens the group on the
+  map and that person. The machine count counts each person. The default answer is unchanged, every
+  machine a row (the agents read it through `machines_view`, the plugins' tests by the API): 600
+  people made it 749 KB, 30 KB grouped. The Dashboard and Dynamics ask for the grouped answer too,
+  counting a group as its people. Display only, as the fold is.
 - **Instruments:** every instrument (`web/instruments.py`): a script (`[[collect]]`), a URL
   (`[[scrape]]`) or a source (`[[sources]]`), the project's and the plugins', with its target, how
   often it is read, its last write and how many points, its failures and last error, and its log;
@@ -2306,7 +2342,8 @@ it. Pages read only the web server's background caches
 - **Core:** the host (with the processes it keeps running: state, restarts, command), the bus and
   the metrics store, each probed against its real backend within a time limit; explorers for the
   metrics (a catalogue of every series with the project's label, naming any series in the file
-  store that lacks it, and a PromQL editor) and the events (types, volumes, sources); logs (the
+  store that lacks it, and a PromQL editor) and the events (types, volumes, sources: the 40 busiest
+  sources one by one, the rest counted in one line, so hundreds of people relayed in are one row); logs (the
   host's, Core's, the event stream and each launched process's). It imports only the bus, the metrics store and the runtime record,
   and, for its **External stores** section, `orchestra.sources` (AGENTS.md rule 8, amended 2026-11-03: the owner counts the
   external stores as part of the core, as its adaptors). That section (`web/core_stores.py`, `static/core-stores.js`) lists

@@ -13,7 +13,11 @@ external stores are part of the core, as its adaptors (the owner). Rules 2 and
 9 were amended on 2026-11-04: the owner hides a machine (`ignore` on a
 machine), and a machine that only announced itself is folded away, both
 display only (the owner, of people a relay announced who never acted: "is
-there any way I can get rid of these ... things? they really suck").
+there any way I can get rid of these ... things? they really suck"). Rule 6
+was amended on 2026-11-04: the people relayed from one system are tested
+together for a flow's hypotheses, and each is still named as a machine (the
+owner: "way too many people names sometimes, and it's breaking various
+things").
 
 1. **Orchestra knows no tickets and no tasks, and runs no AI.** It has an
    event bus, a metrics store, a system dynamics model, a bootstrap host (with
@@ -113,7 +117,10 @@ there any way I can get rid of these ... things? they really suck").
    A declared equation is an assumption until it is fitted. A machine is
    associated with a flow only as a hypothesis, inferred with its evidence
    and confidence (`orchestra/sd/attribute.py`: its events on the bus matching
-   the flow's counter); several machines may be hypotheses for one flow.
+   the flow's counter); several machines may be hypotheses for one flow. The
+   people relayed from one system (`person.<system>.<account>`) may be tested
+   together, their events summed, and a match is then a hypothesis for each of
+   them, named as the machine it is, never for the group.
    Nothing declares the association, not configuration and not a plugin, and
    it never changes a flow's equation or the model's stocks and flows.
    A machine's draft expected effect is an unpublished prediction, not an

@@ -288,8 +288,9 @@ class MachineIndex:
                 answered[(a, ty, b)] += n
         per: dict[str, dict] = defaultdict(dict)
         by_type: dict[str, dict] = {}
+        hearing = {x: subs for x, subs in self.subs.items() if subs}     # who listens for anything (people relayed in listen for nothing)
         for (src, ty), q in self.recent.items():
-            listeners = sorted(x for x, subs in self.subs.items() if x != src and any(hears(p, ty) for p in subs))
+            listeners = sorted(x for x, subs in hearing.items() if x != src and any(hears(p, ty) for p in subs))
             if not listeners:
                 continue
             after = max((t for t in (lasts.get(x) for x in listeners) if t is not None), default=None)

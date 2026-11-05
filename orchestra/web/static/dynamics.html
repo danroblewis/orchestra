@@ -128,6 +128,7 @@
 </div>
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
+<script src="/static/people-groups.js?v={{v}}"></script>
 <script src="/static/focus.js?v={{v}}"></script>
 <script src="/static/subsystem-boxes.js?v={{v}}"></script>
 <script src="/static/subsystem-offers.js?v={{v}}"></script>
@@ -202,11 +203,12 @@ const STOCK_PAL = ["#7dd3fc", "#86efac", "#f0abfc", "#5eead4", "#c4b5fd", "#a5b4
 // coefficient. A loop with an odd number of − links is balancing (B), otherwise reinforcing (R).
   // what a machine is comes from what it announced (the Machines page's /api/machines: its kind,
   // or its package's declaration), never from the model, which only knows it writes series
-  window.MKINDS = window.MKINDS || {}; window.MLIST = window.MLIST || [];
+  window.MKINDS = window.MKINDS || {}; window.MLIST = window.MLIST || []; window.MCOUNT = window.MCOUNT || 0;
   async function loadKinds() {
-    try { const d = await (await fetch("/api/machines?era=all")).json();
-      for (const m of d.machines || []) MKINDS[m.id] = m.kind || "";
-      if (d.ok) { MLIST = d.machines || []; Orchestra.setMachines(MLIST); }
+    // grouped (web/people.py): a group's people each take its kind, and are counted as many as they are
+    try { const d = await (await fetch("/api/machines?era=all&people=grouped")).json();
+      for (const m of d.machines || []) for (const id of PeopleGroups.ids(m)) MKINDS[id] = m.kind || "";
+      if (d.ok) { MLIST = d.machines || []; MCOUNT = MLIST.reduce((a, m) => a + PeopleGroups.ids(m).length, 0); Orchestra.setMachines(PeopleGroups.allIds(d).map((id) => ({ id }))); }
     } catch (e) {}
   }
   // as the Machines page says it: the kind announced (program, person, service, …, or mixed: "program ×1,
@@ -554,7 +556,7 @@ function tables() {
   const trustCell = Evidence.trustCell;
   const stocksHtml = `<tr><th>stock</th><th>now</th><th>trust</th><th>bound to series</th></tr>` + fx.stocks.map((s) => `<tr data-sid="${esc(s.id)}" ${opens(`Live.openStock('${esc(s.id)}')`)}><td>${stockHead(s.id)}${stockAbout(s.id)}</td><td class="num" style="white-space:nowrap">${!Live.has() ? '<span class="muted">loading…</span>' : Live.now(s.id) != null ? levelText(Live.now(s.id), unitOf(s)) : "—"}</td><td>${trustCell(s)}</td>
       <td class="muted bound">${boundCell(s)}</td></tr>`).join("");
-  const hypm = m.machines.filter((x) => x.attributed.length), total = (window.MLIST || []).length;
+  const hypm = m.machines.filter((x) => x.attributed.length), total = window.MCOUNT || 0;
   const machinesHtml = `<tr><th>machine</th><th>kind</th><th title="${esc(Evidence.GUESSED)}">flows (guessed from timing)</th></tr>` + hypm.map((x) => `<tr><td><span class="mdot" style="--c:${mcolor(x.id)}"></span><a href="/machines#${encodeURIComponent(x.id)}">${esc(x.name)}</a>${x.bootstrap ? ' <span class="origin declared">bootstrap</span>' : ""}</td>
       <td>${kindWord(x.id, x.kind)}</td><td class="num">${x.attributed.length}</td></tr>`).join("");
   // a poll that changes nothing redraws nothing: focus, a selection and the declared layer's marks stay

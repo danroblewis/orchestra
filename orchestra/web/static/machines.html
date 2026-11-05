@@ -41,6 +41,11 @@
   #folded details { margin-top:14px; font-size:12.5px } #folded summary { cursor:pointer; color:var(--text2) } #folded .fold-row { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; padding:4px 0; border-bottom:1px solid var(--border) }
   #folded .fold-row .mname { font-weight:600; cursor:pointer; overflow-wrap:anywhere; min-width:0 } #folded .fold-row button, #folded .fold-all { margin-left:auto; font-size:11.5px } #folded .fold-all { margin:6px 0 }
   .hide-row { margin-top:8px; text-align:right } .hide-row button { font-size:11px }
+  /* a group of people relayed from one system (people-groups.js): one card, its people listed on demand */
+  .people-acts { margin-top:8px } .people-acts button { font-size:11px }
+  .people-list { margin-top:8px; border-top:1px solid var(--border); padding-top:6px; cursor:default } .people-list input { width:100%; box-sizing:border-box; font-size:12px; margin-bottom:4px; background:var(--panel3); color:var(--text); border:1px solid var(--border2); border-radius:6px; padding:3px 8px }
+  .people-list .pl-rows { max-height:320px; overflow:auto } .people-list .pl-person { display:flex; gap:6px; align-items:baseline; flex-wrap:wrap; padding:3px 0; border-bottom:1px solid var(--border); font-size:12px; cursor:pointer; min-width:0 }
+  .people-list .pl-person b { overflow-wrap:anywhere; min-width:0 } .people-list .pl-person .muted { overflow-wrap:anywhere; min-width:0 } .people-list .pl-person button { margin-left:auto; font-size:11px }
   .evbar .fam { font-family:var(--mono); font-size:11px; padding:1px 8px; border-radius:999px; border:1px solid #6b5313; color:#fcd34d; background:none; cursor:pointer; user-select:none } .evbar .fam:focus-visible { outline:2px solid var(--accent); outline-offset:1px } .evbar .fam.off { opacity:.35; text-decoration:line-through; border-style:dashed }
 </style>
 </head>
@@ -73,6 +78,7 @@
 <script src="/static/loops.js?v={{v}}"></script>
 <script src="/static/machine-graph.js?v={{v}}"></script>
 <script src="/static/machine-fold.js?v={{v}}"></script>
+<script src="/static/people-groups.js?v={{v}}"></script>
 <script src="/static/intended-core.js?v={{v}}"></script>
 <script src="/static/intended-machines.js?v={{v}}"></script>
 <script>
@@ -153,7 +159,7 @@ function familyBar(d) {
   const day = {};
   for (const m of d.machines) { for (const p of m.publishes) day[family(p.type)] = (day[family(p.type)] || 0) + p.day; for (const t of m.subscribes) day[family(t)] = day[family(t)] || 0; }
   const fams = Object.keys(day).sort((a, b) => day[b] - day[a] || a.localeCompare(b));
-  $("ev-bar").innerHTML = `<span class="seg"><button class="${EV_MODE === "machines" ? "on" : ""}" onclick="setMode('machines')" title="one arrow per pair of machines that talk, standing for every event type between them">machines</button><button class="${EV_MODE === "events" ? "on" : ""}" onclick="setMode('events')" title="every event type as a box between the machines that publish and listen for it">with event types</button></span><span id="ev-proto"></span>
+  $("ev-bar").innerHTML = `<span class="seg"><button class="${EV_MODE === "machines" ? "on" : ""}" onclick="setMode('machines')" title="one arrow per pair of machines that talk, standing for every event type between them">machines</button><button class="${EV_MODE === "events" ? "on" : ""}" onclick="setMode('events')" title="every event type as a box between the machines that publish and listen for it">with event types</button></span><span id="ev-proto"></span><span id="ev-people"></span>
     <span class="muted">event families (click to hide or show):</span>` + fams.map((f) => `<button type="button" class="fam ${EV_HIDDEN.has(f) ? "off" : ""}" aria-pressed="${EV_HIDDEN.has(f) ? "false" : "true"}" onclick="toggleFamily('${esc(f)}')" title="${day[f]} in the last 24 h · ${EV_HIDDEN.has(f) ? "hidden: press to show" : "shown: press to hide"}">${esc(f)}.*</button>`).join("");
 }
 // Subsystems' boxes on the map (subsystem-boxes.js, subsystem-offers.js; docs/proposals/subsystems.md
@@ -215,22 +221,25 @@ function eventMap(dIn) {
       boxes: { title: (v) => { const t = MAP_TITLE(v), C = Orchestra.focus.current(), on = !!(C && C.title === t), said = SubsystemBoxes.hintOf(MAP_P, v);
           return { text: t, on, hint: (said ? said + " · " : "") + (on ? "showing only this subsystem: press to show everything" : "a subsystem: press to show only it, the machines outside it as grey named stubs") }; },
         onTitle: (v) => Orchestra.focus.toggle(MAP_TITLE(v)), pairs: () => MAP_PAIRS }, isolateHops: EV_MODE === "machines" ? 1 : 2, isolatedRow: true, resetOnStructure: true,
-      onClick: (x, kind) => { if (kind === "node" && x.machine) openMachine(x.mid || x.label); },   // the panel (or, elsewhere, the dialog)
-      tip: (x, kind) => kind === "node" ? (x.subEmpty ? `<div class="tt">${esc(x.subEmpty.group)}</div><div class="hint">${esc(SubsystemBoxes.emptyHint(MAP_P, x.box, (id) => (byMid(id) || {}).name || id))}</div>` : x.subGhost ? `<div class="tt">${esc(x.label)}</div><div class="hint">${esc(x.subGhost.caption)}: gathered into ${esc(x.subGhost.group)}, drawn as a ghost in its box</div>` : x.stub ? `<div class="tt">${esc(x.label)}</div><div class="hint">outside this focus: it ${x.ins && x.outs ? "hands work in and takes it out" : x.ins ? "hands work in" : "takes work out"} · show everything to see it in place</div>` : x.machine ? `<div class="tt">${esc(x.label)}</div><div class="hint">${esc(rhythm(x.mid))} · click for its details${(byMid(x.mid) || {}).logs && byMid(x.mid).logs.length ? " and log" : ""}</div>`
+      onClick: (x, kind) => { if (kind === "node" && x.machine) { if (x.people) return setPeopleOnMap(x.mid, true); openMachine(x.mid || x.label); } },   // the panel (or, elsewhere, the dialog); a group of people opens into them
+      tip: (x, kind) => kind === "node" ? (x.subEmpty ? `<div class="tt">${esc(x.subEmpty.group)}</div><div class="hint">${esc(SubsystemBoxes.emptyHint(MAP_P, x.box, (id) => (byMid(id) || {}).name || id))}</div>` : x.subGhost ? `<div class="tt">${esc(x.label)}</div><div class="hint">${esc(x.subGhost.caption)}: gathered into ${esc(x.subGhost.group)}, drawn as a ghost in its box</div>` : x.people ? `<div class="tt">${esc(x.label)}</div><div class="hint">${esc(PeopleGroups.summary(byMid(x.mid)))} · drawn as one, each still a machine · click to show each</div>` : x.stub ? `<div class="tt">${esc(x.label)}</div><div class="hint">outside this focus: it ${x.ins && x.outs ? "hands work in and takes it out" : x.ins ? "hands work in" : "takes work out"} · show everything to see it in place</div>` : x.machine ? `<div class="tt">${esc(x.label)}</div><div class="hint">${esc(rhythm(x.mid))} · click for its details${(byMid(x.mid) || {}).logs && byMid(x.mid).logs.length ? " and log" : ""}</div>`
           : x.channel ? `<div class="tt">${esc(x.label)}</div><div class="hint">a channel on another system's bus, known by counts</div><div class="tr"><span>produced</span><b>${perMin(x.channel.out_per_min)}/min</b></div><div class="tr"><span>consumed</span><b>${perMin(x.channel.in_per_min)}/min</b></div>${x.channel.backlog != null ? `<div class="tr"><span>waiting</span><b>${Math.round(x.channel.backlog).toLocaleString()}</b></div>` : ""}`
           : x.unattributed ? `<div class="tt">unattributed</div><div class="hint">counted traffic no source names a machine for</div>`
           : `<div class="tt">${esc((x.labels || [x.label]).join(", "))}</div><div class="tr"><span>last 24h</span><b>${x.cnt}</b></div>`)
         : `<div>${esc(x.source.label)} → ${esc(x.target.label)}</div>${x.declared && !x.seen ? '<div class="muted">declared: not observed</div>' : ""}${x.vias ? `<div class="muted">${x.vias.map(esc).join("<br>")}</div>` : ""}${x.seen ? `<div class="tr"><span>last 24h</span><b>${x.seen}</b></div>` : ""}` });
   }
   familyBar(d0);
+  peopleBar(d0);
   const anchors = P ? {} : groupAnchors(d0.machines);
   const nodes = g.nodes.map((n) => n.kind === "event"
     ? { id: n.id, kind: "box", cls: "ng-event", label: n.label, lines: n.labels || [n.label], sub: n.cnt ? n.cnt + "/24h" : "", color: "#6b5313", hop: true, cnt: n.cnt, labels: n.labels }
     : { id: n.id, kind: "circle", label: n.label, mid: n.mid, machine: true, active: n.active, halo: !!byMid(n.mid) && Orchestra.liveness(byMid(n.mid)).cls === "live", color: n.bootstrap ? "var(--panel3)" : mcolor(n.mid || n.label),
-        stroke: n.bootstrap ? "#fbbf24" : null, strokeWidth: n.bootstrap ? 2 : null, sub: machineSub(n), anchor: anchors[n.group] });
+        stroke: n.bootstrap ? "#fbbf24" : null, strokeWidth: n.bootstrap ? 2 : null, sub: machineSub(n), anchor: anchors[n.group],
+        ...(PeopleGroups.isGroup(byMid(n.mid)) ? { people: true, stroke: "#cbd5e1", strokeWidth: 2.5, sub: "people · click to show each" } : {}) });
   // an edge takes the colour of its machine (the publisher's, or the listener's: dashed), toned
   // down so the machines stand out (edge-color.js); unseen in 24 h: near-grey and fainter
-  const nodeColor = (id) => { const n = nodes.find((x) => x.id === id); return !n ? "#94a3b8" : n.stroke === "#fbbf24" ? "#fbbf24" : n.color; };
+  const nodeOf = new Map(nodes.map((x) => [x.id, x]));
+  const nodeColor = (id) => { const n = nodeOf.get(id); return !n ? "#94a3b8" : n.stroke === "#fbbf24" ? "#fbbf24" : n.color; };
   // a listener edge: solid when a hand-off through the type to it was observed, dotted when only
   // hand-offs say it listens (it never announced it), dashed and faint when it only announced it
   const subjects = (n) => `${n} subject${n === 1 ? "" : "s"}`;
@@ -258,7 +267,7 @@ function eventMap(dIn) {
   const chains = MachineGraph.chains(evEdges).map((c) => ({ ...c, declared: c.evIds.some((i) => (evById.get(i) || {}).declared) }))
     .filter((c) => !folded || !c.protocol);
   // the hub's protocol, folded: one thin edge per hub and member, labelled by its families (both ways)
-  const foldEdges = !folded ? [] : proto.folds.filter((f) => nodes.some((n) => n.id === "m:" + f.member) && nodes.some((n) => n.id === "m:" + f.hub)).map((f) => ({
+  const foldEdges = !folded ? [] : proto.folds.filter((f) => nodeOf.has("m:" + f.member) && nodeOf.has("m:" + f.hub)).map((f) => ({
     id: `proto:${f.hub}>${f.member}`, source: "m:" + f.hub, target: "m:" + f.member, both: true, protocol: true,
     color: edgeColor(nodeColor("m:" + f.hub), "unseen"), hoverColor: nodeColor("m:" + f.hub), width: 0.8, dash: "2 3", bend: 0, distance: 150, cls: "ev-protocol",
     vias: [`${f.hub}'s protocol with ${f.member}: ${f.types.join(", ")}`, "the plumbing every member shares; show the protocol's event types to draw them"] }));
@@ -276,7 +285,7 @@ function eventMap(dIn) {
     drawNodes = nodes.filter((n) => n.machine || used.has(n.id));
   }
   if (EV_MODE === "machines") {
-    const label = (ev) => (nodes.find((n) => n.id === ev) || {}).lines || [ev.slice(3)];
+    const label = (ev) => (nodeOf.get(ev) || {}).lines || [ev.slice(3)];
     const pairs = new Map();
     // who handed work to whom through a hub: one machine to the other, "via" the hub
     if (folded) for (const r of MachineGraph.relays(d0, proto)) {
@@ -361,7 +370,7 @@ function eventMap(dIn) {
   // communication cycles (loops.js): machine → machine when one handed something on to the other
   // through an event type (an observed hand-off, never only an announcement). Two machines that talk both ways directly are an exchange (a request and its reply);
   // the rest is shown as its feedback structures and their independent loops, not every cycle
-  const name = (id) => { const n = nodes.find((x) => x.id === id); return n ? (n.lines ? n.lines.join("/") : n.label) : id; };
+  const name = (id) => { const n = nodeOf.get(id); return n ? (n.lines ? n.lines.join("/") : n.label) : id; };
   // communication: observed in the last 24 h (the edges' window), in a fixed order so the count is the same on every load
   // a link counts toward a cycle when seen at least CYCLE_MIN times and at least a tenth of the busiest
   // link into the same machine: a one-off guess makes no cycle
@@ -442,9 +451,11 @@ function legendOf(edges, nodes, d0) {
 function cards() {
   // with a focus, the cards of the machines it names, counted against all of them
   // the folded machines (machine-fold.js) are not cards: they are listed in their groups below them
-  const fold = MachineFold.split(DATA.machines), listed = fold.shown;
+  const fold = MachineFold.split(PeopleGroups.forCards(DATA)), listed = fold.shown;
   const F = Orchestra.focus.current(), shown = F ? listed.filter((m) => Focus.machineIn(F, m)) : listed;
-  $("nm").textContent = F ? `${shown.length} of ${listed.length} · ${F.title}` : listed.length;
+  // counted as machines: a group of people is as many as it has
+  const count = (ms) => ms.reduce((a, m) => a + (PeopleGroups.isGroup(m) ? m.people_group.size : 1), 0);
+  $("nm").textContent = F ? `${count(shown)} of ${count(listed)} · ${F.title}` : count(listed);
   // a type several machines listen for that none of them answered: once, above the cards (web/machines.py)
   $("unanswered-types").innerHTML = Orchestra.unansweredTypes(DATA).map((t) => `<div>${esc(t)}</div>`).join("");
   // a package draws the inside of its own machines' cards; what Orchestra observed is under it on every card.
@@ -452,6 +463,11 @@ function cards() {
   const host = $("cards"), have = new Map([...host.children].map((el) => [el.dataset.id, el]));
   let prev = null;
   for (const m of IntendedMachines.sort(Orchestra.machineCards.sort(shown))) {
+    if (PeopleGroups.isGroup(m)) { const html = groupCard(m); let el = have.get(m.id);
+      if (!el || el.dataset.html !== html) { const t = document.createElement("template"); t.innerHTML = html.trim(); const fresh = t.content.firstElementChild; fresh.dataset.html = html;
+        if (el) Orchestra.keepFocus(host, () => el.replaceWith(fresh)); el = fresh; }
+      const at = prev ? prev.nextElementSibling : host.firstElementChild; if (at !== el) host.insertBefore(el, at);
+      have.delete(m.id); prev = el; fillPeople(m.id); continue; }
     const own = Orchestra.machineCards.card(m);
     const head = own != null ? own : `<h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span><span class="mname" title="${esc(m.name || m.id)}">${esc(m.name || m.id)}</span>${m.name ? ` <span class="mname muted" style="font-size:12px" title="${esc(m.id)}">${esc(m.id)}</span>` : ""}${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}${m.counted ? ' <span class="tag" title="known by counts a source read from another system\'s bus">counted</span>' : ""}</h3>`;
     const html = Orchestra.machineCards.wrap(m, head + Orchestra.machineCards.rows(m) + hideRow(m));
@@ -489,7 +505,8 @@ function phoneList(d) {
   if (folded) for (const r of MachineGraph.relays(d, proto)) add(relayed, r.source.slice(2), r.target.slice(2), r.count, `via ${r.through}`);
   const F = Orchestra.focus.current(), inF = (id) => !F || Focus.machineIn(F, byMid(id) || { id });
   for (const map of [handed, acted, relayed]) for (const [k, r] of map) if (!inF(r.from) && !inF(r.to)) map.delete(k);
-  const line = (r) => `<div class="pl"><b>${esc(r.from)}</b> → <b>${esc(r.to)}</b> <span class="muted">· ${esc([...r.what].join(", "))} · ${r.n} time${r.n === 1 ? "" : "s"}</span></div>`;
+  const who = (id) => { const m = byMid(id); return PeopleGroups.isGroup(m) ? m.name : id; };
+  const line = (r) => `<div class="pl"><b>${esc(who(r.from))}</b> → <b>${esc(who(r.to))}</b> <span class="muted">· ${esc([...r.what].join(", "))} · ${r.n} time${r.n === 1 ? "" : "s"}</span></div>`;
   const group = (title, map) => { const rs = [...map.values()].sort((a, b) => b.n - a.n || a.from.localeCompare(b.from));
     return rs.length ? `<h4 style="margin:8px 0 2px">${esc(title)} <span class="count">${rs.length}</span></h4>${rs.map(line).join("")}` : ""; };
   const html = group("hand-offs observed", handed) + group("acted next (inferred, not announced)", acted) + group("relayed through a hub", relayed);
@@ -514,6 +531,68 @@ function phoneBoxes(d, P, inF) {
     + s.outside.spanning.filter((x) => inF(x.machine)).map((x) => `<div class="pl"><span>${esc(name(x.machine))}</span> <span class="muted">${esc(SubsystemBoxes.spanText({ ...x, groups: x.groups.map(MAP_TITLE) }))}</span></div>`).join("");
   return groups.replace("<h3>", '<h3 style="margin-top:0">') + (between ? `<h3>Between subsystems</h3>${between}` : "") + (outside ? `<h3>Outside every subsystem</h3>${outside}` : "");
 }
+// The people relayed from one system, as one group (people-groups.js, web/people.py): one card that
+// opens into its people's list, with search (fetched when opened); one node on the map that opens
+// into the people one by one (remembered), and folds back from the map's bar. Display only.
+let PEOPLE_OPEN = PeopleGroups.expanded();         // the groups drawn one by one on the map
+const PEOPLE_LIST = new Map();                     // the cards whose list is open: group id -> {q, data, loading, sig}
+const PEOPLE_SHOWN = 100;                          // a list shows this many of the people its search names
+function groupCard(g) {
+  const p = g.people_group, open = PEOPLE_LIST.has(g.id), onMap = PEOPLE_OPEN.has(g.id), st = PEOPLE_LIST.get(g.id);
+  const chip = (x) => `<span class="ty" title="${x.count} events, ${x.day} in 24 h, by all of them">${esc(x.type)} · ${x.count.toLocaleString()}</span>`;
+  const flows = (g.flows || []).map((f) => `<a class="ty fl" href="/dynamics#f:${encodeURIComponent(f.flow)}" onclick="event.stopPropagation()" title="${esc(f.people)} of them guessed on it from timing">${esc(Orchestra.flowLabel(f))} · ${esc(f.people)} ${f.people === 1 ? "person" : "people"}</a>`).join("");
+  return `<div class="panel mcard people-card" data-id="${esc(g.id)}" tabindex="0" role="button" aria-expanded="${open}" aria-label="${esc(g.name)}: ${open ? "close" : "open"} the list of its people"
+    onclick="if(!event.target.closest('.people-list,button,a,input'))togglePeople(this.dataset.id)" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();togglePeople(this.dataset.id)}">
+    <span class="mcard-id" style="background:${mcolor(g.id)}" title="its colour on every page"></span>
+    <h3><span class="dot ${g.active ? "" : "off"}" style="--rc:${mcolor(g.id)}"></span><span class="mname" title="${esc(g.name)}">${esc(g.name)}</span> <span class="tag" title="the people relayed from ${esc(p.system)}, drawn as one: each is still a machine of its own">group</span></h3>
+    <div class="row"><span class="muted">who</span><span>${esc(PeopleGroups.summary(g))}</span></div>
+    <div class="row"><span class="muted">kind</span><span><span class="tag">person</span></span><span class="muted">package</span><span>${g.package ? esc(g.package) : '<span class="muted">several, or none</span>'}</span></div>
+    <div class="row"><span class="muted">seen</span><span>${g.last_seen ? `last ${esc(Orchestra.when(g.last_seen, { date: true }))}` : "never"}</span></div>
+    <div class="row"><span class="muted">publishes</span>${(g.publishes || []).map(chip).join("") || '<span class="muted">nothing</span>'}</div>
+    ${flows ? `<div class="row"><span class="muted" title="some of them guessed on these flows from timing">flows (guessed from timing)</span>${flows}</div>` : ""}
+    <div class="people-acts"><button type="button" class="ctl" data-id="${esc(g.id)}" onclick="event.stopPropagation();togglePeople(this.dataset.id)">${open ? "close the list" : `list the ${p.size.toLocaleString()}`}</button>
+      <button type="button" class="ctl" data-id="${esc(g.id)}" onclick="event.stopPropagation();setPeopleOnMap(this.dataset.id, ${!onMap})" title="${onMap ? "one node on the Event Map for all of them" : "each of them a node on the Event Map"}">${onMap ? "draw as one on the map" : "show each on the map"}</button></div>
+    ${open ? `<div class="people-list" data-key="${esc(g.id)}"><input type="search" class="ctl" aria-label="search the ${p.size} people" placeholder="search ${p.size.toLocaleString()} people by name or id" value="${esc(st.q)}" oninput="peopleSearch(this.closest('.people-list').dataset.key, this.value)"><div class="pl-rows"></div></div>` : ""}</div>`;
+}
+// the list of an open card: fetched when opened, and again when the group changed; the search filters it here
+async function fillPeople(key) {
+  const st = PEOPLE_LIST.get(key), host = document.querySelector(`#cards .people-list[data-key="${CSS.escape(key)}"] .pl-rows`);
+  if (!st || !host) return;
+  const g = PeopleGroups.forCards(DATA).find((m) => m.id === key), sig = g ? `${g.people_group.size}|${g.last_seen}` : "";
+  if (!st.loading && (!st.data || st.sig !== sig)) {
+    st.loading = true;
+    try { const d = await (await fetch(`/api/machines/people?group=${encodeURIComponent(key)}` + (ERA ? `&era=${encodeURIComponent(ERA)}` : ""))).json(); if (d.ok) { st.data = d; st.sig = sig; } else st.error = d.error; }
+    catch (e) { st.error = String(e); }
+    st.loading = false;
+    return fillPeople(key);
+  }
+  const now = Date.now() / 1000;
+  const html = !st.data ? `<div class="muted">${esc(st.error || "reading…")}</div>` : (() => {
+    const found = PeopleGroups.search(st.data.members, st.q), more = found.length - PEOPLE_SHOWN;
+    return found.slice(0, PEOPLE_SHOWN).map((x) => `<div class="pl-person" data-id="${esc(x.id)}" onclick="openPerson('${esc(key)}', this.dataset.id)" title="show them one by one on the map and open this one">
+      <span class="dot ${x.active ? "" : "off"}" style="--rc:${mcolor(x.id)}"></span><b>${esc(x.name || x.id)}</b><span class="muted">${x.name ? esc(x.id) + " · " : ""}${x.events.toLocaleString()} event${x.events === 1 ? "" : "s"}${x.last_seen ? ` · last ${ago(now - x.last_seen)} ago` : ""}${x.announced_only ? " · announced only" : ""}</span>
+      <button type="button" class="ctl" data-id="${esc(x.id)}" onclick="event.stopPropagation();hideMachines([this.dataset.id])" title="moves them to “hidden by you”; their events stay on the bus">Hide</button></div>`).join("")
+      + (more > 0 ? `<div class="muted" style="padding:4px 0">${more.toLocaleString()} more${st.q ? " match" : ""}: narrow the search</div>` : "")
+      + (!found.length ? `<div class="muted">no one's name or id has “${esc(st.q)}”</div>` : "");
+  })();
+  if (host.dataset.html !== html) { host.dataset.html = html; host.innerHTML = html; }
+}
+function togglePeople(key) { if (PEOPLE_LIST.has(key)) PEOPLE_LIST.delete(key); else PEOPLE_LIST.set(key, { q: "", data: null }); cards(); }
+function peopleSearch(key, q) { const st = PEOPLE_LIST.get(key); if (!st) return; st.q = q; fillPeople(key); }
+// a group drawn one by one on the map, or as one again: the page asks for it so (``expand``)
+async function setPeopleOnMap(key, on) {
+  if (on) PEOPLE_OPEN.add(key); else PEOPLE_OPEN.delete(key);
+  PeopleGroups.remember(PEOPLE_OPEN); window.LOOPSIG = null; await load();
+}
+// a person of a group: the group drawn one by one, then that person opened
+async function openPerson(key, id) { if (!PEOPLE_OPEN.has(key)) await setPeopleOnMap(key, true); openMachine(id); }
+// the bar over the map: each group drawn one by one, with the control that draws it as one again
+function peopleBar(d) {
+  const el = $("ev-people"); if (!el) return;
+  const open = (d.people_groups || []).filter((g) => g.people_group.expanded);
+  const html = open.map((g) => `<button type="button" class="ctl" data-id="${esc(g.id)}" onclick="setPeopleOnMap(this.dataset.id, false)" title="its ${g.people_group.size} people as one node again">${esc(g.people_group.title)}: draw as one</button>`).join(" ");
+  if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; }
+}
 function render() { if (DATA) { IntendedMachines.draw(DATA); eventMap(DATA); cards(); phoneList(MachineFold.forMap(DATA, EV_SHOW_FOLDED)); } }
 // "Hide this machine" on a card: the owner's ignore mark (a page control, AGENTS.md rule 9); display only
 const hideRow = (m) => (m.bootstrap ? "" : `<div class="hide-row"><button type="button" class="ctl" data-id="${esc(m.id)}" onclick="event.stopPropagation();hideMachines([this.dataset.id])" onkeydown="event.stopPropagation()" title="moves it to “hidden by you” at the end of the page and off the map; its events stay on the bus, and discovery is unchanged">Hide this machine</button></div>`);
@@ -527,8 +606,9 @@ function foldedGroups(fold) {
   const btn = (text, js, id, title) => `<button type="button" class="ctl" data-id="${esc(id)}" onclick="${js}" title="${esc(title)}">${text}</button>`;
   const a = fold.announced, h = fold.hidden;
   const groupA = a.length ? `<details id="fold-announced"${open["fold-announced"] ? " open" : ""}><summary>announced only, never acted <span class="count">${a.length}</span> <span class="muted">· each announced itself and published nothing else; back in the list the moment it does</span></summary>
-    <button type="button" class="ctl fold-all" onclick="hideMachines(MachineFold.split(DATA.machines).announced.map((m) => m.id))" title="hides all ${a.length} in one change, as “Hide this machine” does one">Hide all of these</button>
-    ${a.map((m) => `<div class="fold-row">${name(m)} ${said(m)}${btn("Hide", "hideMachines([this.dataset.id])", m.id, "moves it to “hidden by you”, so it stays off even if it acts")}</div>`).join("")}</details>` : "";
+    <button type="button" class="ctl fold-all" onclick="hideMachines(MachineFold.split(PeopleGroups.forCards(DATA)).announced.flatMap(PeopleGroups.ids))" title="hides all ${a.length} in one change, as “Hide this machine” does one">Hide all of these</button>
+    ${a.map((m) => `<div class="fold-row">${name(m)} ${said(m)}${PeopleGroups.isGroup(m) ? btn(`Hide all ${m.people_group.size}`, "hideMachines(PeopleGroups.ids(PeopleGroups.forCards(DATA).find((x) => x.id === this.dataset.id)))", m.id, "moves each of them to “hidden by you”")
+      : btn("Hide", "hideMachines([this.dataset.id])", m.id, "moves it to “hidden by you”, so it stays off even if it acts")}</div>`).join("")}</details>` : "";
   const groupH = h.length ? `<details id="fold-hidden"${open["fold-hidden"] ? " open" : ""}><summary>hidden by you <span class="count">${h.length}</span> <span class="muted">· off the cards and the map; their events stay on the bus and discovery is unchanged</span></summary>
     ${h.map((m) => `<div class="fold-row">${name(m)} <span class="muted">hidden by ${esc(hiddenBy(m.hidden.provenance))}${m.hidden.provenance && m.hidden.provenance.at ? ` ${ago(now - m.hidden.provenance.at)} ago` : ""}${m.announced_only ? " · announced only, never acted" : ""}</span>${btn("Show", "showMachine(this.dataset.id)", m.id, "returns it to the cards and the map")}</div>`).join("")}</details>` : "";
   const html = groupA + groupH;
@@ -551,12 +631,13 @@ const showMachine = (id) => markMachines("unignore", [id]);
 const withCls = (st, base) => (st ? { ...st, cls: `${base} ${st.cls}` } : {});
 async function load() {
   try {
-    const d = await (await fetch("/api/machines" + (ERA ? `?era=${encodeURIComponent(ERA)}` : ""))).json();
+    // grouped: the people relayed from one system as one row each, but the groups opened on the map (people-groups.js)
+    const d = await (await fetch("/api/machines?" + PeopleGroups.query(PEOPLE_OPEN) + (ERA ? `&era=${encodeURIComponent(ERA)}` : ""))).json();
     eraPicker(d);
     if (!d.ok) { $("evmap-host").innerHTML = `<div class="empty">${esc(d.error)}</div>`; return; }
     const first = !DATA;
     Orchestra.modelParts = d.model_parts || null;
-    if (!ERA) Orchestra.setMachines(d.machines);
+    if (!ERA) Orchestra.setMachines(PeopleGroups.allIds(d).map((id) => ({ id })));   // every machine, a group's people included
     DATA = d; render();
     if (first && Focus.hashId(location.hash)) setTimeout(() => openFromHash(Focus.hashId(location.hash)), 300);   // /machines#<id> (a focus beside it: focus.js)
     Orchestra.conn(true);
@@ -567,10 +648,14 @@ window.addEventListener("hashchange", () => { const id = Focus.hashId(location.h
 // a machine by its id, as a click opens it (fitted with its neighbours); an id no machine has
 // closes whatever was open and says so in the panel's place
 function openFromHash(id) {
+  const g = DATA.machines.find((m) => PeopleGroups.isGroup(m) && m.people_group.ids.includes(id));
+  if (g) { openPerson(g.id, id); return; }                    // a person of a group drawn as one: shown one by one first
   if (DATA.machines.some((m) => m.id === id)) openMachine(id); else IntendedMachines.unknown(id);
 }
 // how a machine's activity is said everywhere on this page: by its own rhythm, or never heard
-const byMid = (id) => (DATA ? DATA.machines.find((m) => m.id === id) : null);
+// (a map, built once per answer: the map's nodes and lines ask it for every one of hundreds of machines)
+let BYID = null, BYID_OF = null;
+const byMid = (id) => { if (!DATA) return null; if (BYID_OF !== DATA) { BYID = new Map(DATA.machines.map((m) => [m.id, m])); BYID_OF = DATA; } return BYID.get(id) || null; };
 function rhythm(id) {
   const m = byMid(id); if (!m) return "";
   if (!m.last_seen && !m.active_by) return m.intent ? "never heard: declared, nothing on the bus under it" : "never heard";

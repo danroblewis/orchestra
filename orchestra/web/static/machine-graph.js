@@ -36,14 +36,18 @@
     for (const e of intended || []) add(e.kind === "publishes" ? pub : sub, e.machine, e.type);
     const listens = (id, type) => [...(sub.get(id) || [])].some((p) => hears(p, type));
     const sends = (a, b) => [...(pub.get(a) || [])].filter((t) => listens(b, t));     // types a publishes that b listens for
-    const ids = [...new Set([...pub.keys(), ...sub.keys()])], hubs = new Map();
-    // the widest first: a member of a hub is no hub of its own (roles that pass the hub's own type
-    // to each other are its members, and what they hand each other stays drawn)
-    const cands = ids.map((h) => [h, new Set(ids.filter((m) => m !== h && sends(h, m).length && sends(m, h).length))])
-      .filter(([, ms]) => ms.size >= 2).sort((a, b) => b[1].size - a[1].size || a[0].localeCompare(b[0]));
+    // only a machine that publishes and listens can exchange both ways (hundreds of people a relay
+    // announced, who listen for nothing, are never a pair to try)
+    const ids = [...new Set([...pub.keys(), ...sub.keys()])].filter((id) => pub.has(id) && sub.has(id)), hubs = new Map();
     // the server's hubs when it serves them (web/hubs.py: one answer for this page and the Supervisor)
     if (Array.isArray(d.hubs)) for (const x of d.hubs) hubs.set(x.hub, new Set(x.members || []));
-    else for (const [h, members] of cands) if (![...hubs.values()].some((ms) => ms.has(h))) hubs.set(h, members);
+    else {
+      // the widest first: a member of a hub is no hub of its own (roles that pass the hub's own type
+      // to each other are its members, and what they hand each other stays drawn)
+      const cands = ids.map((h) => [h, new Set(ids.filter((m) => m !== h && sends(h, m).length && sends(m, h).length))])
+        .filter(([, ms]) => ms.size >= 2).sort((a, b) => b[1].size - a[1].size || a[0].localeCompare(b[0]));
+      for (const [h, members] of cands) if (![...hubs.values()].some((ms) => ms.has(h))) hubs.set(h, members);
+    }
     // a type from ``a`` that ``b`` receives is protocol: between a hub and its member, or a hub's own
     const is = (a, type, b) => (a === b ? hubs.has(a) && listens(a, type)
       : (hubs.has(a) && hubs.get(a).has(b)) || (hubs.has(b) && hubs.get(b).has(a)));
