@@ -41,7 +41,8 @@ def a_plugin(tmp_path):
         def hello() -> dict:
             return {"project": project.key}
         return plugins.Plugin("bakery", [plugins.Page("/bakery", "Bakery", page), plugins.Page("/machines", "Mine", page)], tmp_path / "s", r,
-                              scripts=["everywhere.js", "missing.js"], stylesheets=["look.css", "missing.css"])
+                              scripts=["everywhere.js", "missing.js"], stylesheets=["look.css", "missing.css"],
+                              links=[plugins.Link("Ovens", "/machines#ovens"), plugins.Link("Away", "https://example.org/")])
     return make
 
 
@@ -59,6 +60,8 @@ def test_a_plugin_adds_pages_static_files_and_routes_and_a_broken_one_is_reporte
     d = c.get("/api/plugins").json()
     assert d["pages"] == [{"plugin": "bakery", "path": "/bakery", "title": "Bakery"}]          # /machines is Orchestra's
     assert d["scripts"] == ["/plugins/bakery/static/everywhere.js"]                         # a missing file is left out
+    assert d["links"] == [{"plugin": "bakery", "title": "Ovens", "href": "/machines#ovens"}]  # a place on a served page
+    assert any("link 'https://example.org/' is not a path on this site" in e["error"] for e in d["errors"])
     assert {e["plugin"] for e in d["errors"]} == {"bad", "bakery"}
     assert "bakery of" not in c.get("/machines").text                                       # still Orchestra's page
     link = '<link rel="stylesheet" href="/plugins/bakery/static/look.css">'

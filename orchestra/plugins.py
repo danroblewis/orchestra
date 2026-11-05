@@ -21,6 +21,10 @@ The web app mounts what it returns:
   serves, its own and every plugin's, after Orchestra's stylesheet: the look of what the
   package's pages and every-page scripts draw;
 - its ``router`` (a FastAPI ``APIRouter``) at ``/api/plugins/<name>``;
+- its ``links``, optionally: navigation entries to a place on a page already served (``Link``: a
+  title and an ``href`` on this site, such as ``/machines#workflows``), added after the plugins'
+  pages; the page's element with the hash's id is scrolled to (the Machines page: when no machine
+  has that id). Orchestra serves nothing for a link and knows nothing of what is there;
 - its ``machines``, optionally: the machines it provides, declared (``Declared``: the id, the
   kind of thing it is, how it is engaged and what it listens for, the same as an announcement
   says), so the Machines page lists one before it is first seen. What is observed always wins: a
@@ -94,6 +98,12 @@ class Page:
 
 
 @dataclass
+class Link:
+    title: str           # its entry in the navigation
+    href: str            # a place on a page this site serves: "/machines#workflows"
+
+
+@dataclass
 class Declared:
     id: str                                   # the machine, as its events' source names it
     kind: str | None = "program"              # what the package says it is: program, person, service, ...; None: unknown
@@ -114,6 +124,7 @@ class Plugin:
     collectors: list[Collector] = field(default_factory=list)   # what `orchestra run` scrapes or runs for measurements
     guide: Path | None = None   # a markdown file in the package: how to configure the plugin, for an AI operator
     check: Callable[[dict, Path | None], list[str]] | None = None   # (merged raw, repo root) -> problems with its sections
+    links: list[Link] = field(default_factory=list)   # navigation entries to a place on a served page
 
 
 @dataclass

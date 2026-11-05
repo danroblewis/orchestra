@@ -296,6 +296,12 @@ point's name: `load` reports errors under the entry point's name, everything els
 Each `Page(path, title, file)` is served with `GET path` and linked in the navigation as `title`,
 after Orchestra's own links. `app.js` adds the links on every page from `/api/plugins`.
 
+A plugin's `links` (`Link(title, href)`) are navigation entries to a place on a page already
+served, not pages: `Link("Workflows", "/machines#workflows")` adds "Workflows" to the navigation
+after the plugins' pages, linking to the element with id `workflows` that the plugin's every-page
+script draws on the Machines page (which scrolls to an element its hash names when no machine has
+that id). An `href` that is not a path on this site is left out and reported in the errors.
+
 - A page whose `path` Orchestra already serves (`/`, `/machines`, `/dynamics`, `/core`, any
   `/api/...`), or that an earlier plugin took, is left out and reported in `/api/plugins` errors.
 - The file is read **on every request**, so editing the HTML takes effect at once. `{{v}}` in it is

@@ -2391,7 +2391,10 @@ of the machines it claims (`Orchestra.machineCards`: what is inside Orchestra's 
 frame, a few words for the Dashboard's machine list, and the machine's dialog). Its look is in its
 own stylesheets, files from its static directory that every page links in its head after
 Orchestra's (`stylesheets`): Orchestra's has nothing of any package's domain. `/api/plugins` lists
-the pages, which the navigation adds after Orchestra's own, and any plugin that failed to load.
+the pages, which the navigation adds after Orchestra's own, the links (`links`: `Link(title, href)`,
+a place on a page already served, such as `/machines#workflows`, added after the pages; the Machines
+page scrolls to the element a hash names when no machine has that id), and any plugin that failed
+to load.
 A plugin may also ship a guide (`guide`: a markdown file in its package) written for an AI
 operator that configures it for the owner; `orchestra.guides.collect` and `/api/guides` return
 Orchestra's own guide (`orchestra/guide.md`: its settings, instruments, machines, the overlay)

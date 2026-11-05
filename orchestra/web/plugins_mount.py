@@ -32,7 +32,7 @@ def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
     from .. import plugins as plug
     loaded = plug.load(project)
     taken = {getattr(r, "path", None) for r in app.routes}
-    pages, scripts, errors = [], [], list(loaded.errors)
+    pages, scripts, links, errors = [], [], [], list(loaded.errors)
     for p in loaded.plugins:
         for what, files, into in (("script", p.scripts, scripts), ("stylesheet", p.stylesheets, stylesheets)):
             for f in files:
@@ -48,6 +48,12 @@ def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
                     f"/plugins/{p.name}/static", StaticFiles(directory=str(p.static)), name=f"plugin-{p.name}"))
             else:
                 errors.append({"plugin": p.name, "error": f"static directory {p.static} is not a directory; left out"})
+        for ln in getattr(p, "links", None) or []:
+            href = str(getattr(ln, "href", ""))
+            if href.startswith("/") and not href.startswith("//"):
+                links.append({"plugin": p.name, "title": str(ln.title), "href": href})
+            else:
+                errors.append({"plugin": p.name, "error": f"link {href!r} is not a path on this site; left out"})
         if p.router is not None:
             _part(errors, p.name, "router", lambda p=p: app.include_router(p.router, prefix=f"/api/plugins/{p.name}"))
         for pg in p.pages:
@@ -64,9 +70,10 @@ def mount_plugins(app: FastAPI, project: Project, stylesheets: list[str]):
 
     @app.get("/api/plugins")
     def plugin_list() -> dict:
-        """The installed plugins' pages (for the navigation), any that failed to load, and the
+        """The installed plugins' pages and links (for the navigation), any that failed to load, and the
         project's own plugins and overrides as they were loaded (``local``; the Core page lists them)."""
-        return {"ok": True, "pages": pages, "scripts": scripts, "errors": errors, "local": loaded.local}
+        return {"ok": True, "pages": pages, "links": links, "scripts": scripts, "errors": errors,
+                "local": loaded.local}
 
     @app.get("/api/guides")
     def guides() -> dict:

@@ -646,11 +646,14 @@ async function load() {
 // /machines#<id>: opens that machine whenever the hash changes, not only on the first load
 window.addEventListener("hashchange", () => { const id = Focus.hashId(location.hash); if (id && DATA && IntendedMachines.opened() !== id) openFromHash(id); });
 // a machine by its id, as a click opens it (fitted with its neighbours); an id no machine has
-// closes whatever was open and says so in the panel's place
+// closes whatever was open and says so in the panel's place, unless it is the id of an element on
+// the page (a plugin's section, linked from the nav), which is scrolled to
 function openFromHash(id) {
   const g = DATA.machines.find((m) => PeopleGroups.isGroup(m) && m.people_group.ids.includes(id));
   if (g) { openPerson(g.id, id); return; }                    // a person of a group drawn as one: shown one by one first
-  if (DATA.machines.some((m) => m.id === id)) openMachine(id); else IntendedMachines.unknown(id);
+  if (DATA.machines.some((m) => m.id === id)) openMachine(id);
+  else if (document.getElementById(id)) document.getElementById(id).scrollIntoView({ block: "start" });   // a place on the page (a plugin's link, plugins.py Link)
+  else IntendedMachines.unknown(id);
 }
 // how a machine's activity is said everywhere on this page: by its own rhythm, or never heard
 // (a map, built once per answer: the map's nodes and lines ask it for every one of hundreds of machines)
