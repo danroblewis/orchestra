@@ -77,18 +77,27 @@ Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 
       Orchestra.modelParts = MACHINES.model_parts || null;
       Orchestra.setMachines(MACHINES.machines);
       // every machine is a row or in a note below them: the rows and notes add up to the header's count
-      const all = MACHINES.machines, G = Orchestra.dashboardGroups(all), run = G.rows;
+      // what the Machines page folds away (hidden by the owner, announced and never acted) is left
+      // out here too; it is counted on the Machines page
+      const all = MACHINES.machines.filter((m) => !m.hidden && !m.announced_only), G = Orchestra.dashboardGroups(all), run = G.rows;
       // one count, split by the one word set (Orchestra.liveness): "11 machines: 1 active, 2 not answering, 8 quiet"
       const by = {}; for (const m of all) { const w = G.group.get(m); by[w] = (by[w] || 0) + 1; }
       ui.setSub(`${all.length} machines: ${["active", "not answering", "late", "heard, no rhythm yet", "disabled", "quiet", "no evidence yet"].filter((w) => by[w]).map((w) => `${by[w]} ${w}`).join(", ")}`);
-      const link = (m, extra = "") => `<a href="/machines#${encodeURIComponent(m.id)}">${esc(m.id)}</a>${extra}`;
+      // a machine is shown by the name it announced (a person's, from the relay that saw them), its id in the tooltip
+      const shown = (m) => m.name || m.id;
+      const link = (m, extra = "") => `<a href="/machines#${encodeURIComponent(m.id)}" title="${esc(m.id)}">${esc(shown(m))}</a>${extra}`;
       // the bus's word for it, always shown, even beside a package's own summary (the host's: the runtime record's)
       const live = (m) => { const lv = Orchestra.liveness(m); return `<span class="lw ${lv.cls}" title="${esc(lv.title)}">${esc(lv.word)}</span>`; };
       const down = (m) => { const n = Orchestra.downOf(m).length; return n ? ` <span class="stale" title="points arrive and its up series reads 0: a report, not a verdict">(${n} instance${n === 1 ? "" : "s"} report${n === 1 ? "s" : ""} down)</span>` : ""; };
       const note = (ms, what) => (ms.length ? `<div class="mnote">· ${ms.length} ${what}: ${ms.map((m) => link(m, what.startsWith("declared") ? down(m) : what.startsWith("quiet") ? ` <span class="muted">(${m.mode ? esc(m.mode) + ", " : ""}${m.last_seen ? "since " + hhmm(m.last_seen) : "never heard"})</span>` : "")).join(", ")}</div>` : "");
       // heard, but with no rhythm of its own yet: one line, not a row each, so no machine is cut off below
       const young = run.filter((m) => G.group.get(m) === "heard, no rhythm yet"), rows = run.filter((m) => !young.includes(m));
-      const notes = note(young, "heard, no rhythm yet") + note(G.declared, "declared, not heard") + note(G.proposed, "proposed, never heard") + note(G.unseen, "no evidence yet") + note(G.quiet, "quiet");
+      // people (ad hoc, relayed by a bridge) are counted in one line each, never one name each in a long list
+      const person = (m) => m.kind === "person";
+      const people = (ms, what) => { const ps = ms.filter(person); return ps.length ? `<div class="mnote">· ${ps.length} ${ps.length === 1 ? "person" : "people"} ${what} <a href="/machines">(on the Machines page)</a></div>` : ""; };
+      const notPeople = (ms) => ms.filter((m) => !person(m));
+      const notes = note(notPeople(young), "heard, no rhythm yet") + note(G.declared, "declared, not heard") + note(G.proposed, "proposed, never heard") + note(G.unseen, "no evidence yet") + note(notPeople(G.quiet), "quiet")
+        + people(young, "heard, no rhythm yet") + people(G.quiet, "quiet");
       // a type several machines listen for that none of them answered: said once, above the rows
       const waiting = Orchestra.unansweredTypes(MACHINES).map((t) => `<div class="mnote lv-late">${esc(t)}</div>`).join("");
       Orchestra.keepFocus(body, () => { body.innerHTML = waiting + (rows.length ? Orchestra.machineCards.sort(rows).map((m) => {
@@ -96,8 +105,8 @@ Orchestra.panels.register({ id: "machines", title: "Machines", size: { w: 5, h: 
         const own = Orchestra.machineCards.summary(m), lv = Orchestra.liveness(m);
         // a package's own summary is its own element beside the bus's word, never joined by a dot to it
         const right = own != null ? `${live(m)} <span class="own">${own}</span>` : [live(m), lv.detail ? esc(lv.detail) : ""].filter(Boolean).join(" · ");
-        return `<div class="mline" data-id="${esc(m.id)}" data-lv="${esc(lv.cls)}" tabindex="0" role="button" aria-label="${esc(m.id)}: open its details" onclick="openMachine(this.dataset.id)" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openMachine(this.dataset.id)}" title="click for its details">
-          <span class="d" style="background:${m.bootstrap ? "#fbbf24" : mcolor(m.id)};box-shadow:${lv.cls === "live" ? "0 0 0 2px #22c55e" : lv.cls === "late" ? "0 0 0 2px #f59e0b" : "none"}" title="its colour on every page${lv.cls === "live" || lv.cls === "late" ? `; the ring: ${esc(lv.word)}` : ""}"></span><b>${esc(m.id)}</b>
+        return `<div class="mline" data-id="${esc(m.id)}" data-lv="${esc(lv.cls)}" tabindex="0" role="button" aria-label="${esc(m.id)}: open its details" onclick="openMachine(this.dataset.id)" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openMachine(this.dataset.id)}" title="${esc(m.id)}: click for its details">
+          <span class="d" style="background:${m.bootstrap ? "#fbbf24" : mcolor(m.id)};box-shadow:${lv.cls === "live" ? "0 0 0 2px #22c55e" : lv.cls === "late" ? "0 0 0 2px #f59e0b" : "none"}" title="its colour on every page${lv.cls === "live" || lv.cls === "late" ? `; the ring: ${esc(lv.word)}` : ""}"></span><b>${esc(shown(m))}</b>
           <span>${kind ? `<span class="k">${esc(kind)}</span> ` : ""}${m.mode ? `<span class="k">${esc(m.mode)}</span>` : ""}${m.package ? `<span class="k" title="the package this machine belongs to">${esc(m.package)}</span>` : ""}</span>
           <span class="r">${right}</span></div>`;
       }).join("") : `<div class="empty">Nothing is active: no machine has been heard within its own rhythm.</div>`) + notes; });
