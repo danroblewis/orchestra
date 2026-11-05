@@ -9,6 +9,7 @@ declared machine also gains ``comparison`` (§6.1, ``measured.comparison``): ``h
 measured" while nothing is measured. Heard is one rule here and in ``design``
 (``heard_as``): the machine's id or one of its aliases (a counted ``<prefix>.<name>`` included)
 among the observed machines (``observed_ids``: those on the bus and those counted traffic names).
+Each machine also gains ``hidden`` (``hidden``): the owner's ``ignore`` mark on it, display only.
 A pending change the owner's overrides carries ``overridden_by`` (``revise.pending_view``), and
 each attachment row its owner's unanswered request (``requested``).
 
@@ -24,6 +25,7 @@ from .keys import Keys
 from .machine_ops import ENVELOPE_DEFAULTS
 from .measured import comparison
 from .names import link, resolve
+from .ops import mark_slot
 from .requests import unanswered
 from .revise import pending_view
 
@@ -163,7 +165,19 @@ def merge(out: dict, intended, model=None, predictions: list[dict] | None = None
                   for t in removed.get("receives") or []]
         edges += [{"from": node, "to": t, "kind": "publishes", "state": m["state"], "observed": False, "gone": True}
                   for t in removed.get("emits") or []]
+    hidden(machines, layer)
     out["intended_edges"] = edges
     out["intended_types"] = [{"type": t, "description": e.get("description"), "implicit": e.get("implicit", False)}
                              for t, e in sorted(layer["events"].items())]
     out["intended_version"] = intended.current_version() or 0
+
+
+def hidden(machines: list[dict], layer: dict) -> None:
+    """Each machine the owner hid (``ignore`` on ``part: machine``, keyed by its source) carries
+    ``hidden`` (who hid it and when: the mark's provenance and change); the page lists it in a
+    collapsed "hidden by you" group and leaves it off the Event Map. Display only: the machine
+    is still observed, and its events, discovery and ``sd/attribute.py`` are untouched."""
+    marks = layer["marks"]["ignored"]
+    for m in machines:
+        mk = marks.get(mark_slot("machine", m["id"]))
+        m["hidden"] = {"provenance": mk["provenance"], "change": mk["change"]} if mk else None

@@ -1514,7 +1514,10 @@ it (rule 7).
   credential only as `bearer_env`, an environment variable's name, and a url never with a password), flows (`from`, `to`: declared or
   discovered stock keys, `null` outside), targets (`{op: below|above|within, value, hi?, over_s}`,
   judged on the mean over `over_s`: a level, or a flow's count over the window; met, missed or
-  unknown, never met on simulated parts), expected marks and ignores (by key), machines (the
+  unknown, never met on simulated parts), expected marks and ignores (by key; an ignore may also
+  be on a machine, by its `source`, kept as `machine:<source>` apart from any part's key: it hides
+  the machine from the Machines page and the Event Map, §10, display only, read by neither
+  discovery nor `sd/attribute.py`; a machine is never expected), machines (the
   envelope `id` (the `source`, `^[a-z][a-z0-9_]{1,40}$`), `title`, `description`, `tags`,
   `kind` universal | programmatic, `managed` orchestra | external, `engagement {mode, at, tz,
   missed}`, `receives`, `emits`, `reads`, checked; `spec` stored as sent, unread), event types,
@@ -1667,7 +1670,9 @@ it (rule 7).
   confirmed it (`confirmed`), and each pending change `overridden_by` when the owner's overrides it. The page controls (rule 9): `POST /api/intended/control` records an observation
   (`expect`, `unexpect`, `ignore`, `confirm` or `discard` on a stock, effect or flow; a mark is
   stored by `key`, or by the key of the part with that `id` in the latest model, and an `expect`
-  or `ignore` of a key no latest model has is refused), and `POST /api/intended/request`
+  or `ignore` of a key no latest model has is refused; `ignore` and `unignore` on a machine, by
+  its `id` or, for several in one change, `keys`, hiding one the Machines page does not list
+  refused, and `/api/machines` gives each machine `hidden`, the mark's provenance, or null), and `POST /api/intended/request`
   publishes the owner's request (`confirm`, `discard` on a machine or attachment, `switch_kind`
   on a machine; it must name a declared element, and for `change` one of its pending changes; a
   `confirm` or `discard` with no change is of a proposed element, 409 otherwise) as
@@ -2125,6 +2130,19 @@ minutes, which allows for the store's scrape interval and the minute between rea
   and the cards are filtered the same way, with a bar ("showing <title>: n of N machines · show
   everything"). A focus is a view of the one map, never a separate one: it hides, and changes
   nothing computed; it is kept in the hash (`#focus=<title>`) and restored when offered again.
+  **Folded machines** (`static/machine-fold.js`): two kinds of machine are left off the cards and
+  the map, each listed in a collapsed group after the cards, with its count. **Announced only,
+  never acted** (`announced_only`, `web/machines.py`): every event of the machine on the bus is its
+  own `orchestra.machine.started`, the first more than ten minutes ago (`ANNOUNCED_ONLY_S`), and no
+  counted traffic names it (a person a relay announced who never did anything); it returns to the
+  cards by itself the moment it publishes anything else. **Hidden by you** (`hidden`): the owner's
+  `ignore` mark on the machine, by its `source` (§4.6, AGENTS.md rule 9 as amended), from "Hide
+  this machine" on its card, undone by "Show" (`unignore`) in the group; the announced-only group's
+  "Hide all of these" hides every one of them in one change (one `dN`). Hidden wins over announced
+  only. The map's legend offers "show the N folded machines", remembered in the browser. Both are
+  display only: a folded machine is still a machine, observed; nothing deletes or alters an
+  observed event, and discovery and the flows' hypotheses (`sd/attribute.py`) never read the fold
+  or the mark. Orchestra's own host is never folded.
 - **Instruments:** every instrument (`web/instruments.py`): a script (`[[collect]]`), a URL
   (`[[scrape]]`) or a source (`[[sources]]`), the project's and the plugins', with its target, how
   often it is read, its last write and how many points, its failures and last error, and its log;

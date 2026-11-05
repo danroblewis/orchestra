@@ -9,7 +9,11 @@ These replaced the old task system's invariants on 2026-10-25, when the ticket
 tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
 Rules 2, 3, 4, 5, 6, 7 and 9 were amended on 2026-11-01 for the intended model
 (`docs/proposals/intended-model.md` §8). Rule 8 was amended on 2026-11-03: the
-external stores are part of the core, as its adaptors (the owner).
+external stores are part of the core, as its adaptors (the owner). Rules 2 and
+9 were amended on 2026-11-04: the owner hides a machine (`ignore` on a
+machine), and a machine that only announced itself is folded away, both
+display only (the owner, of people a relay announced who never acted: "is
+there any way I can get rid of these ... things? they really suck").
 
 1. **Orchestra knows no tickets and no tasks, and runs no AI.** It has an
    event bus, a metrics store, a system dynamics model, a bootstrap host (with
@@ -44,7 +48,10 @@ external stores are part of the core, as its adaptors (the owner).
    (SPEC §2; the rest of the announcement is passed on to that package's
    card, unread), and the machines a plugin declares
    (`Plugin.machines`): placeholders that only fill in machines not seen yet,
-   never override what is observed, and say nothing about flows. The owner may declare machines
+   never override what is observed, and say nothing about flows. The Machines
+   page folds away, as display only, a machine whose only events on the bus
+   are its own announcements (it returns the moment it publishes anything
+   else) and a machine the owner hid (rule 9); either is still observed. The owner may declare machines
    (the intended model, `orchestra/sd/intended/`), through a plugin or by confirming a proposal.
    A declaration persists until retracted. A declared machine is shown as declared, and as heard
    only once its `source` is on the bus; its declared envelope and `spec` are shown as the
@@ -156,9 +163,14 @@ external stores are part of the core, as its adaptors (the owner).
    page's button, `orchestra sd discover`) re-reads the metrics and may save a
    model version, and changes no machine; and a closed list of intended-model
    page controls that carry no values: `expect`, `unexpect`, `ignore`, and
-   `confirm` and `discard` on a stock, effect or flow. Each records a
+   `confirm` and `discard` on a stock, effect or flow; and `ignore` and
+   `unignore` on a machine, by its `source` (one, or several in one change),
+   which hide it from the Machines page and the Event Map and show it again.
+   Each records a
    declaration with its provenance and changes no machine, no configuration
-   and no discovered version. A machine's `confirm`, `discard` and kind switch
+   and no discovered version. Hiding a machine is display only: it deletes or
+   alters no observed event, the machine is still observed, and discovery and
+   `sd/attribute.py` never read it. A machine's `confirm`, `discard` and kind switch
    are requests: published as `orchestra.intent.requested` from `owner`,
    changing nothing until the Supervisor acts. Any human path that changes the
    system belongs to a plugin (the Supervisor in `~/orchestra-agents`; the

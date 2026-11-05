@@ -41,6 +41,12 @@ Everything here is observed, or announced by the machine itself:
   launcher entry its latest announcement named (``ORCHESTRA_PROCESS``, SPEC §8). It says which
   process published and nothing more: a launcher process that never announces is no machine, and
   the name makes none (AGENTS.md rule 2);
+- **announced only, never acted** (``announced_only``): its only events are its own
+  announcements, the first more than ``ANNOUNCED_ONLY_S`` ago (a person a relay announced who
+  never did anything, say). The page folds it into a collapsed group and off the Event Map; it
+  is still a machine, observed, and returns by itself the moment it publishes anything else.
+  Display only. The owner's ``hidden`` mark (``sd.intended.machines_view.hidden``) folds any
+  machine the same way, into its own group;
 - **its announcements**, per instance: how many ``orchestra.machine.started`` it published and when the
   latest was (``announced``, ``announced_at``; envelopes only), so a restart reads as one;
 - **its cadence** (``cadence_s``): the machine's own rhythm, from its instances' beats merged (a beat
@@ -108,6 +114,9 @@ NOT_WORK = ("orchestra.intent.changed", "orchestra.intent.requested")
 # card says what it is, since Orchestra knows what its own event type means.
 REQUESTED = "orchestra.intent.requested"
 ASKER_NOTE = "requests sent from the pages' controls (confirm, discard, kind switch)"
+# a machine whose only events are its own announcements, the first longer ago than this, is
+# folded away on the page ("announced only, never acted"): display only, back the moment it acts
+ANNOUNCED_ONLY_S = 600
 RATE_S = 600         # a publication rate is over the last ten minutes, or over the machine's life when shorter
 # the cadence rule (beats, bursts, how long an instance stays active) is orchestra/cadence.py's,
 # shared with the host's quiet watch (orchestra/quiet.py)
@@ -309,6 +318,13 @@ class MachineIndex:
                 u["listeners"] = sorted(set(u["listeners"]) | set(listeners))
         return dict(per), sorted(by_type.values(), key=lambda u: (u["since"], u["type"]))
 
+    def _announced_only(self, m: str, first: float | None, now: float) -> bool:
+        """Whether the machine announced itself and never acted: every event of it on the bus (in
+        the index's span) an ``orchestra.machine.started``, none other, the first more than
+        ``ANNOUNCED_ONLY_S`` ago. Orchestra's host is never folded away."""
+        return (m != HOST and not self.total[m] and any(a[0] for a in self.announced[m].values())
+                and first is not None and now - first > ANNOUNCED_ONLY_S)
+
     def bus_since(self) -> float | None:
         """When the bus was first heard: the earliest any instance was first seen, or None."""
         with self._lock:
@@ -392,6 +408,7 @@ class MachineIndex:
                                  "instances": [i for i in insts if i["id"] != m] if any(k for k in self.instances[m]) else [],
                                  "first_seen": first, "last_seen": last, "active": alive, "cadence_s": gaps(merged),
                                  "announced": sum(a[0] for a in self.announced[m].values()),
+                                 "announced_only": self._announced_only(m, first, now),
                                  "announced_at": max((a[1] for a in self.announced[m].values() if a[1] is not None), default=None),
                                  **({"unanswered": unanswered} if unanswered else {})})
             types = sorted({p["type"] for x in machines for p in x["publishes"]} | {t for x in machines for t in x["subscribes"]})

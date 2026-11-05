@@ -184,7 +184,7 @@ def test_a_passing_state_stock_gets_the_servers_level_key_and_an_expect_on_it_is
     ms = saved(tmp_path, model([st("a"), implied], [f]))
     keys = block(ms)["keys"]
     assert keys == {"stocks": {"a": "a", "after_in": "after_in_total"}, "flows": {"f": "a -> after_in_total by moved_total"}}
-    op, _ = observation({"control": "expect", "part": "stock", "key": keys["stocks"]["after_in"], "page": "dynamics"}, ms)
+    (op,), _ = observation({"control": "expect", "part": "stock", "key": keys["stocks"]["after_in"], "page": "dynamics"}, ms)
     assert op == {"op": "expect", "part": "stock", "key": "after_in_total"}
-    op, _ = observation({"control": "expect", "part": "flow", "key": keys["flows"]["f"], "page": "dynamics"}, ms)
+    (op,), _ = observation({"control": "expect", "part": "flow", "key": keys["flows"]["f"], "page": "dynamics"}, ms)
     assert op["key"] == "a -> after_in_total by moved_total"

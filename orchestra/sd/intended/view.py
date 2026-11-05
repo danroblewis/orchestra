@@ -155,7 +155,8 @@ def dynamics_block(intended, model=None, since=None, *, hold: int, version: int 
                       hold, models, stamp, nums)
     facts = Facts(metrics, limit_s, now, project=getattr(getattr(intended, "project", None), "key", None))
     status = st["status"]
-    ignored = layer["marks"]["ignored"]
+    # a hidden machine's mark is the Machines page's (``machines_view.hidden``), never a part's
+    ignored = {k: mk for k, mk in layer["marks"]["ignored"].items() if mk.get("part") != "machine"}
     expected_keys = set(layer["marks"]["expected"])
     entries, marks = [], {"stocks": {}, "flows": {}}
 
