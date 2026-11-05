@@ -45,6 +45,20 @@ review_usd_per_day = 2.0    # daily cap on its own initiative
 
 With Claude Code: `harness = "claude_code"`, no `provider`. Your chat turns are not capped.
 
+With Claude Code's sandbox on, the Supervisor reaches Orchestra only at two local ports, the
+events endpoint's and the web server's, and writes only in the project's state directory
+(`~/.orchestrator/<key>`). It never retries outside the sandbox. Fix the two ports first:
+`[events] listen = "127.0.0.1:<port>"` and `orchestra web --port <port>`. If your company manages
+Claude Code's settings, the Supervisor stops at the first blocked call and names what to ask IT
+to allow:
+
+```json
+"sandbox": {
+  "network": {"allowedDomains": ["127.0.0.1:<events port>", "127.0.0.1:<web port>"]},
+  "filesystem": {"allowWrite": ["~/.orchestrator/<key>"]}
+}
+```
+
 ## 5. Start it
 
 ```bash
