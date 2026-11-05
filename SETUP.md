@@ -3,7 +3,7 @@
 You give the Supervisor (an AI agent) a few details; it does the setup. You watch.
 
 Every command you need is in this file. Run them in order, in a terminal, from the top. To start
-again from nothing, run section 9, then this file again from section 2.
+again from nothing, run section 8, then this file again from section 2.
 
 ## 1. What you need
 
@@ -21,54 +21,18 @@ again from nothing, run section 9, then this file again from section 2.
 uv tool install --force 'orchestra[sd,dev] @ git+https://github.com/danroblewis/orchestra@main' \
   --with 'orchestra-agents @ git+https://github.com/danroblewis/orchestra-agents@main' \
   --with 'orchestra-bridges @ git+https://github.com/danroblewis/orchestra-bridges@main' \
-  --with 'orchestra-workflows @ git+https://github.com/danroblewis/orchestra-workflows@main'
+  --with 'orchestra-workflows @ git+https://github.com/danroblewis/orchestra-workflows@main' \
+  --with 'orchestra-scm @ git+https://github.com/danroblewis/orchestra-scm@main'
 uv tool update-shell        # the first time only; then open a new terminal
 ```
 
-Run the same command to upgrade. Stop Orchestra first (section 8), and start it again after.
+Run the same command to upgrade. Stop Orchestra first (section 7), and start it again after.
 
-## 3. Let the Supervisor leave Claude Code's sandbox
+The scm plugin turns a worker's branch into a GitHub pull request. Installed, it does nothing until
+you ask the Supervisor to set it up (an `[scm]` section, with a GitHub token file that can open
+pull requests). Leave it unset while you only observe.
 
-Until the agents plugin has its `[agents] sandbox_escape` setting, this patch lets the Supervisor
-rerun a command outside Claude Code's sandbox when the sandbox blocks something Orchestra needs
-(its own tools, a source reading its token file). Run it after every install or upgrade. It is
-safe to run twice. If it prints "expected one match", stop: the plugin changed, and the patch
-needs updating.
-
-```bash
-cat > /tmp/escape.py <<'EOF'
-import re, sys, pathlib
-pkg = pathlib.Path(sys.argv[1])
-NEW = ("- **When Claude Code's sandbox blocks a command Orchestra needs** (its tool command, a source's probe reading "
-       "its token file), rerun it outside the sandbox (`dangerouslyDisableSandbox: true`) and say so in one line. "
-       "The owner allows this. Never print a token.\n")
-def edit(rel, old, new, done, regex=False):
-    p = pkg / rel; s = p.read_text()
-    if done in s:
-        print("already changed", rel); return
-    n = len(re.findall(old, s, re.S)) if regex else s.count(old)
-    if n != 1:
-        sys.exit(f"{rel}: expected one match, found {n}; stop here")
-    s = re.sub(old, lambda m: new, s, flags=re.S) if regex else s.replace(old, new)
-    p.write_text(s); print("changed", rel)
-edit("harness/sandbox.py", '{"sandbox": out | {"allowUnsandboxedCommands": False}}', '{"sandbox": out}', '{"sandbox": out}\n')
-edit("harness/claude_code.py", "return sandbox.BLOCKED.report(found)", "return None  # the owner allows leaving the sandbox",
-     "the owner allows leaving the sandbox")
-edit("prompts/supervisor_core.md", r"- \*\*You never rerun a command outside the sandbox\.\*\*.*?\n(?=\n|- \*\*|#)", NEW,
-     "When Claude Code's sandbox blocks a command Orchestra needs", regex=True)
-RERUN = "Rerun this command outside the sandbox (dangerouslyDisableSandbox: true); the owner allows it. If that is refused too, tell the owner"
-edit("local_http.py", "Never rerun this command outside the sandbox: stop, and tell the owner", RERUN, "the owner allows it. If that is refused")
-edit("sandbox_writes.py", "Never rerun this command outside the sandbox: stop, and tell the owner", RERUN, "the owner allows it. If that is refused")
-print("done: the Supervisor may now leave the sandbox")
-EOF
-PY="$(uv tool dir)/orchestra/bin/python"
-"$PY" /tmp/escape.py "$("$PY" -c 'import orchestra_agents, os; print(os.path.dirname(orchestra_agents.__file__))')"
-```
-
-If your company's managed Claude Code settings forbid leaving the sandbox, Claude Code refuses
-anyway and the Supervisor tells you what to ask IT for.
-
-## 4. The project
+## 3. The project
 
 Orchestra works on a git repository: your own, or an empty one made for it. Either way, keep
 Orchestra's files out of the repository: `--clean` writes nothing in it, and the private overlay in
@@ -82,7 +46,7 @@ OVERLAY=$(orchestra init --clean | sed -n 's/^  config: \(.*\) (the private over
 It prints the overlay's path, `~/.orchestrator/<key>/orchestra.local.toml`, and keeps it in
 `$OVERLAY` for the next step. If it prints nothing, run `orchestra init --clean` alone to see why.
 
-## 5. The Supervisor's settings
+## 4. The Supervisor's settings
 
 ```bash
 cat >> "$OVERLAY" <<'EOF'
@@ -97,6 +61,11 @@ chat_usd_per_day = 5.0      # what your chat turns may spend a day
 EOF
 ```
 
+The Supervisor may rerun a command outside Claude Code's sandbox when the sandbox blocks
+something Orchestra needs, and says so (`sandbox_escape = true`, the default). Set
+`sandbox_escape = false` if your company requires the sandbox; the Supervisor then stops at a
+blocked command and names the setting to ask IT for.
+
 With Pi instead: `harness = "pi"`, `provider = "anthropic"`, `model = "claude-sonnet-5"` (the id Pi
 lists for Sonnet).
 
@@ -104,7 +73,7 @@ To stop all spending at once but keep Orchestra observing, set `harness = "dummy
 `orchestra run`. The Agents page also has "Pause the Supervisor's own initiative until tomorrow";
 your chat keeps working while it is paused.
 
-## 6. Start it
+## 5. Start it
 
 In two terminals, from the project directory:
 
@@ -118,7 +87,7 @@ orchestra web
 
 Open the "log in" link `orchestra web` prints, then the **Agents** page: the Supervisor's chat.
 
-## 7. The first message
+## 6. The first message
 
 Fill in the values in angle brackets and send it as one message:
 
@@ -144,7 +113,7 @@ Fill in the values in angle brackets and send it as one message:
 Leave out the parts you don't have. Add Slack, alerting or another store the same way: its
 address, its token file's path, and the part of it the Supervisor may read.
 
-## 8. Watch, and stop
+## 7. Watch, and stop
 
 - **Core**: each store and whether it is reachable.
 - **Dynamics**: the model; its run drawer lists each discovery and what it cost.
@@ -153,7 +122,7 @@ address, its token file's path, and the part of it the Supervisor may read.
 
 Raise problems with the Supervisor in the chat. To stop, press Ctrl-C in both terminals.
 
-## 9. Start over from nothing
+## 8. Start over from nothing
 
 Stop both terminals first. Then, from the project directory:
 
