@@ -38,6 +38,9 @@
   .evbar { display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-size:11.5px; margin:2px 0 8px }
   .evbar .seg { display:inline-flex; gap:0; margin-right:8px } .evbar .seg button { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); font:inherit; padding:2px 10px; cursor:pointer }
   .evbar .seg button:first-child { border-radius:6px 0 0 6px } .evbar .seg button:last-child { border-radius:0 6px 6px 0; border-left:none } .evbar .seg button.on { color:var(--text); background:var(--panel2); border-color:var(--accent) }
+  #folded details { margin-top:14px; font-size:12.5px } #folded summary { cursor:pointer; color:var(--text2) } #folded .fold-row { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; padding:4px 0; border-bottom:1px solid var(--border) }
+  #folded .fold-row .mname { font-weight:600; cursor:pointer; overflow-wrap:anywhere; min-width:0 } #folded .fold-row button, #folded .fold-all { margin-left:auto; font-size:11.5px } #folded .fold-all { margin:6px 0 }
+  .hide-row { margin-top:8px; text-align:right } .hide-row button { font-size:11px }
   .evbar .fam { font-family:var(--mono); font-size:11px; padding:1px 8px; border-radius:999px; border:1px solid #6b5313; color:#fcd34d; background:none; cursor:pointer; user-select:none } .evbar .fam:focus-visible { outline:2px solid var(--accent); outline-offset:1px } .evbar .fam.off { opacity:.35; text-decoration:line-through; border-style:dashed }
 </style>
 </head>
@@ -53,6 +56,7 @@
   <h2>Machines <span class="count" id="nm"></span></h2>
   <div id="unanswered-types" class="lv-late" style="font-size:12px;margin:0 0 8px"></div>
   <div class="cards" id="cards"></div>
+  <div id="folded"></div>
   <div class="note" id="note"></div>
 </div>
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeMachine()"><div id="drawer" class="drawer"></div></div>
@@ -68,6 +72,7 @@
 <script src="/static/edge-color.js?v={{v}}"></script>
 <script src="/static/loops.js?v={{v}}"></script>
 <script src="/static/machine-graph.js?v={{v}}"></script>
+<script src="/static/machine-fold.js?v={{v}}"></script>
 <script src="/static/intended-core.js?v={{v}}"></script>
 <script src="/static/intended-machines.js?v={{v}}"></script>
 <script>
@@ -137,6 +142,9 @@ let EV_MODE = pref("orchestra.evmap.mode", "machines");
 let EV_HIDDEN = new Set(JSON.parse(pref("orchestra.evmap.hidden", "[]")));
 // a hub's protocol (machine-graph.js): folded into one thin edge per member unless asked; remembered
 let EV_PROTOCOL = pref("orchestra.evmap.protocol", "") === "1";
+// the folded machines (machine-fold.js: announced only, or hidden by you) drawn on the map too; remembered
+let EV_SHOW_FOLDED = pref("orchestra.evmap.folded", "") === "1";
+function setShowFolded(on) { EV_SHOW_FOLDED = on; try { localStorage.setItem("orchestra.evmap.folded", on ? "1" : ""); } catch (e) {} window.LOOPSIG = null; render(); }
 function setProtocol(on) { EV_PROTOCOL = on; try { localStorage.setItem("orchestra.evmap.protocol", on ? "1" : ""); } catch (e) {} window.LOOPSIG = null; render(); }
 const family = (type) => type.split(".")[0];
 function setMode(m, keep = true) { EV_MODE = m; if (keep) { try { localStorage.setItem("orchestra.evmap.mode", m); } catch (e) {} } window.LOOPSIG = null; render(); }
@@ -186,7 +194,9 @@ function setMapBoxes(value) {
   try { history.replaceState(null, "", location.pathname + location.search + SubsystemBoxes.hashWith(value, location.hash)); } catch (e) {}
   window.LOOPSIG = null; render();
 }
-function eventMap(d0) {
+function eventMap(dIn) {
+  // the folded machines are left off the map, with everything that names them, unless asked (machine-fold.js)
+  const d0 = MachineFold.forMap(dIn, EV_SHOW_FOLDED);
   // subsystems' boxes (subsystem-boxes.js; docs/proposals/subsystems.md B10): the partition chosen (the
   // default when none is), each group a box around its machines; they replace the announced groups' anchors
   const P = mapPartition(d0), gkey = SubsystemBoxes.layoutKey("machines." + EV_MODE, P);
@@ -424,13 +434,17 @@ function legendOf(edges, nodes, d0) {
     has((e) => e.both) ? `<span>arrowheads at both ends: both ways</span>` : "",
     has((e) => e.double) ? `<span>${sw("5px double #94a3b8")} counted on another system's bus (no events)</span>` : "",
   ].filter(Boolean);
+  const fold = MachineFold.split(DATA ? DATA.machines : []), nFold = fold.announced.length + fold.hidden.length;
   return items.join("") + `<label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_ALL ? "checked" : ""} onchange="window.EV_SHOW_ALL=this.checked;window.LOOPSIG=null;render()"> show events nobody listens for</label>`
+    + (nFold ? `<label style="cursor:pointer" title="machines that announced themselves and never acted, and machines you hid: listed at the end of the page, off the map unless shown here"><input type="checkbox" id="ev-folded" ${EV_SHOW_FOLDED ? "checked" : ""} onchange="setShowFolded(this.checked)"> show the ${nFold} folded machine${nFold === 1 ? "" : "s"} (${[fold.announced.length ? `${fold.announced.length} announced only` : "", fold.hidden.length ? `${fold.hidden.length} hidden by you` : ""].filter(Boolean).join(", ")})</label>` : "")
     + `<span class="muted">drag nodes (they stay where dropped until the structure of the map changes, which lays it out afresh as reset does; double-click to release) · scroll to zoom · hover to isolate · click a machine for its details</span>`;
 }
 function cards() {
   // with a focus, the cards of the machines it names, counted against all of them
-  const F = Orchestra.focus.current(), shown = F ? DATA.machines.filter((m) => Focus.machineIn(F, m)) : DATA.machines;
-  $("nm").textContent = F ? `${shown.length} of ${DATA.machines.length} · ${F.title}` : DATA.machines.length;
+  // the folded machines (machine-fold.js) are not cards: they are listed in their groups below them
+  const fold = MachineFold.split(DATA.machines), listed = fold.shown;
+  const F = Orchestra.focus.current(), shown = F ? listed.filter((m) => Focus.machineIn(F, m)) : listed;
+  $("nm").textContent = F ? `${shown.length} of ${listed.length} · ${F.title}` : listed.length;
   // a type several machines listen for that none of them answered: once, above the cards (web/machines.py)
   $("unanswered-types").innerHTML = Orchestra.unansweredTypes(DATA).map((t) => `<div>${esc(t)}</div>`).join("");
   // a package draws the inside of its own machines' cards; what Orchestra observed is under it on every card.
@@ -440,7 +454,7 @@ function cards() {
   for (const m of IntendedMachines.sort(Orchestra.machineCards.sort(shown))) {
     const own = Orchestra.machineCards.card(m);
     const head = own != null ? own : `<h3><span class="dot ${m.active ? "" : "off"}" style="--rc:${m.bootstrap ? "#fbbf24" : mcolor(m.id)}"></span><span class="mname" title="${esc(m.name || m.id)}">${esc(m.name || m.id)}</span>${m.name ? ` <span class="mname muted" style="font-size:12px" title="${esc(m.id)}">${esc(m.id)}</span>` : ""}${m.bootstrap ? ' <span class="tag">bootstrap host</span>' : ""}${m.counted ? ' <span class="tag" title="known by counts a source read from another system\'s bus">counted</span>' : ""}</h3>`;
-    const html = Orchestra.machineCards.wrap(m, head + Orchestra.machineCards.rows(m));
+    const html = Orchestra.machineCards.wrap(m, head + Orchestra.machineCards.rows(m) + hideRow(m));
     let el = have.get(m.id);
     if (!el || el.dataset.html !== html) {
       const t = document.createElement("template"); t.innerHTML = html.trim();
@@ -454,6 +468,7 @@ function cards() {
   }
   for (const el of have.values()) el.remove();
   IntendedMachines.decorateCards(host);
+  foldedGroups(fold);
   $("note").textContent = [DATA.unattributed_events ? `${DATA.unattributed_events.toLocaleString()} older events carry no source (they predate the event envelope) and are not attributed to any machine.` : "",
     ...Object.entries(DATA.counted_failed || {}).map(([k, v]) => `Counted traffic from ${k} could not be read: ${v}`)].filter(Boolean).join(" ");
 }
@@ -499,7 +514,39 @@ function phoneBoxes(d, P, inF) {
     + s.outside.spanning.filter((x) => inF(x.machine)).map((x) => `<div class="pl"><span>${esc(name(x.machine))}</span> <span class="muted">${esc(SubsystemBoxes.spanText({ ...x, groups: x.groups.map(MAP_TITLE) }))}</span></div>`).join("");
   return groups.replace("<h3>", '<h3 style="margin-top:0">') + (between ? `<h3>Between subsystems</h3>${between}` : "") + (outside ? `<h3>Outside every subsystem</h3>${outside}` : "");
 }
-function render() { if (DATA) { IntendedMachines.draw(DATA); eventMap(DATA); cards(); phoneList(DATA); } }
+function render() { if (DATA) { IntendedMachines.draw(DATA); eventMap(DATA); cards(); phoneList(MachineFold.forMap(DATA, EV_SHOW_FOLDED)); } }
+// "Hide this machine" on a card: the owner's ignore mark (a page control, AGENTS.md rule 9); display only
+const hideRow = (m) => (m.bootstrap ? "" : `<div class="hide-row"><button type="button" class="ctl" data-id="${esc(m.id)}" onclick="event.stopPropagation();hideMachines([this.dataset.id])" onkeydown="event.stopPropagation()" title="moves it to “hidden by you” at the end of the page and off the map; its events stay on the bus, and discovery is unchanged">Hide this machine</button></div>`);
+// the folded machines, after the cards: announced only (with "Hide all of these"), then hidden by you
+// (each with "Show"); each group collapsed, and kept open across refreshes once opened
+function foldedGroups(fold) {
+  const el = $("folded"), open = {};
+  for (const d of el.querySelectorAll("details")) open[d.id] = d.open;
+  const now = Date.now() / 1000, name = (m) => `<span class="mname" data-id="${esc(m.id)}" onclick="openMachine(this.dataset.id)" title="${esc(m.id)}">${esc(m.name || m.id)}</span>${m.name ? ` <span class="muted">${esc(m.id)}</span>` : ""}`;
+  const said = (m) => `<span class="muted">${m.kind ? esc(kindWord(m.kind)) + " · " : ""}announced ${m.announced || 1} time${m.announced === 1 ? "" : "s"}${m.first_seen ? `, first ${ago(now - m.first_seen)} ago` : ""}${m.announced_only ? ", nothing else since" : ""}</span>`;
+  const btn = (text, js, id, title) => `<button type="button" class="ctl" data-id="${esc(id)}" onclick="${js}" title="${esc(title)}">${text}</button>`;
+  const a = fold.announced, h = fold.hidden;
+  const groupA = a.length ? `<details id="fold-announced"${open["fold-announced"] ? " open" : ""}><summary>announced only, never acted <span class="count">${a.length}</span> <span class="muted">· each announced itself and published nothing else; back in the list the moment it does</span></summary>
+    <button type="button" class="ctl fold-all" onclick="hideMachines(MachineFold.split(DATA.machines).announced.map((m) => m.id))" title="hides all ${a.length} in one change, as “Hide this machine” does one">Hide all of these</button>
+    ${a.map((m) => `<div class="fold-row">${name(m)} ${said(m)}${btn("Hide", "hideMachines([this.dataset.id])", m.id, "moves it to “hidden by you”, so it stays off even if it acts")}</div>`).join("")}</details>` : "";
+  const groupH = h.length ? `<details id="fold-hidden"${open["fold-hidden"] ? " open" : ""}><summary>hidden by you <span class="count">${h.length}</span> <span class="muted">· off the cards and the map; their events stay on the bus and discovery is unchanged</span></summary>
+    ${h.map((m) => `<div class="fold-row">${name(m)} <span class="muted">hidden by ${esc(hiddenBy(m.hidden.provenance))}${m.hidden.provenance && m.hidden.provenance.at ? ` ${ago(now - m.hidden.provenance.at)} ago` : ""}${m.announced_only ? " · announced only, never acted" : ""}</span>${btn("Show", "showMachine(this.dataset.id)", m.id, "returns it to the cards and the map")}</div>`).join("")}</details>` : "";
+  const html = groupA + groupH;
+  if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; }
+}
+// who hid it: "you" for the page's own control, else who asked (a plugin quoting the owner, say)
+const hiddenBy = (p) => (!p || p.via === "page" ? "you" : p.author === "owner" ? `the owner (quoted), per ${p.source || p.via}` : p.source || p.author || "a plugin");
+async function markMachines(control, ids) {
+  if (!ids.length) return;
+  let d;
+  try {
+    d = await (await fetch("/api/intended/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(MachineFold.body(control, ids)) })).json();
+  } catch (e) { d = { ok: false, error: String(e) }; }
+  if (!d.ok) { $("note").textContent = `${control === "ignore" ? "Hiding" : "Showing"} was not recorded: ${d.error || "no answer"}`; return; }
+  window.LOOPSIG = null; await load();
+}
+const hideMachines = (ids) => markMachines("ignore", ids);
+const showMachine = (id) => markMachines("unignore", [id]);
 // a style from the declared layer over an edge's own: its class added to the page's
 const withCls = (st, base) => (st ? { ...st, cls: `${base} ${st.cls}` } : {});
 async function load() {
