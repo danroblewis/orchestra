@@ -31,9 +31,13 @@ Orchestra.setMachines = (ms) => { const ids = [...new Set((ms || []).map((m) => 
 // One time formatter, with the zone, for every page (a plugin's pages delegate to it):
 // "12:03 PST"; {seconds: true} "12:03:07 PST"; {date: true} "Nov 1, 12:03 PST".
 // ``t`` in seconds since the epoch; none reads "—"
-Orchestra.when = (t, o = {}) => (t == null ? "—" : new Date(t * 1000).toLocaleString(undefined, {
-  ...(o.date ? { month: "short", day: "numeric" } : {}), hour: "2-digit", minute: "2-digit", ...(o.seconds ? { second: "2-digit" } : {}),
-  hourCycle: "h23", timeZoneName: "short" }));
+// (one formatter per set of options, made once: a page of hundreds of machines says hundreds of times)
+const WHEN_FMT = new Map();
+Orchestra.when = (t, o = {}) => { if (t == null) return "—";
+  const k = `${!!o.date}${!!o.seconds}`;
+  if (!WHEN_FMT.has(k)) WHEN_FMT.set(k, new Intl.DateTimeFormat(undefined, { ...(o.date ? { month: "short", day: "numeric" } : {}), hour: "2-digit", minute: "2-digit",
+    ...(o.seconds ? { second: "2-digit" } : {}), hourCycle: "h23", timeZoneName: "short" }));
+  return WHEN_FMT.get(k).format(new Date(t * 1000)); };
 const hhmm = (t) => Orchestra.when(t);
 // Whether a machine is active, said the same way everywhere (the Dashboard's row, a card's seen row,
 // the map's tooltip, the dialog), in one word set: active / late / quiet / no evidence yet (and

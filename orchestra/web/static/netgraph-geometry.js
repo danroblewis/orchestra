@@ -181,19 +181,32 @@ const NetGeometry = (() => {
   function placeLabels(nodes, edges, mids, obstacles = []) {
     const boxes = [...nodes.filter((n) => n.x !== undefined).flatMap((n) => { const s = size(n), hw = (s.r || s.w / 2) + 2, hh = (s.r || s.h / 2) + 2; return [[n.x - hw, n.y - hh, n.x + hw, n.y + hh], ...tagBoxes(n)]; }), ...obstacles];
     const area = (a, b) => Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
-    const out = {}, placed = [];
+    // the boxes in a grid of cells, so a label is tried against the boxes near it only (a map of
+    // hundreds of machines has hundreds of boxes and labels); a box far away covers nothing anyway
+    const CELL = 80, cells = (b) => { const out = []; for (let i = Math.floor(b[0] / CELL); i <= Math.floor(b[2] / CELL); i++) for (let j = Math.floor(b[1] / CELL); j <= Math.floor(b[3] / CELL); j++) out.push(i + "," + j); return out; };
+    const grid = () => { const g = new Map(); return { add(b) { for (const c of cells(b)) { if (!g.has(c)) g.set(c, []); g.get(c).push(b); } },
+      near(b) { const seen = new Set(); for (const c of cells(b)) for (const x of g.get(c) || []) seen.add(x); return seen; } }; };
+    const fixed = grid(), placedNear = grid();
+    for (const b of boxes) if (b.every(Number.isFinite)) fixed.add(b);
+    const huge = boxes.filter((b) => !b.every(Number.isFinite));             // never in a cell: always tried
+    const out = {};
     const todo = edges.filter((e) => mids[e.id] && labelSize(e)).sort((a, b) => labelSize(b).w - labelSize(a).w);
     for (const e of todo) {
       const m = mids[e.id], s = labelSize(e);
       let best = null;
       for (const [dx, dy] of OFFSETS) {
         const b = [m.x + dx - s.w / 2, m.y + dy - s.h / 2, m.x + dx + s.w / 2, m.y + dy + s.h / 2];
-        const cost = boxes.reduce((a, x) => a + area(b, x), 0) + placed.reduce((a, x) => a + 2 * area(b, x), 0);
+        let cost = 0;
+        if (b.every(Number.isFinite)) {
+          for (const x of fixed.near(b)) cost += area(b, x);
+          for (const x of placedNear.near(b)) cost += 2 * area(b, x);
+        } else cost = boxes.reduce((a, x) => a + area(b, x), 0);
+        for (const x of huge) cost += area(b, x);
         if (!best || cost < best.cost - 1e-9) best = { cost, dx, dy, b };
         if (cost === 0) break;
       }
       out[e.id] = [best.dx, best.dy];
-      placed.push(best.b);
+      if (best.b.every(Number.isFinite)) placedNear.add(best.b);
     }
     return out;
   }

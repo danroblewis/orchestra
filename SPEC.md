@@ -2160,6 +2160,25 @@ minutes, which allows for the store's scrape interval and the minute between rea
   display only: a folded machine is still a machine, observed; nothing deletes or alters an
   observed event, and discovery and the flows' hypotheses (`sd/attribute.py`) never read the fold
   or the mark. Orchestra's own host is never folded.
+  **Many people** (§2; `web/people.py`, `static/people-groups.js`; the owner, 2026-11-04: "way too
+  many people names sometimes, and it's breaking various things"). The page asks
+  `/api/machines?people=grouped`: the people relayed from one system (`person.<system>.<account>`,
+  at least eight) come as one row, "Jira people (600)", id `people/<system>` (a `/` no machine's id
+  has), or `people/<system>/<group>` for those whose announcement names a group or team, and
+  every hand-off, relay, edge, hub, counted or declared edge, listener and subsystem box that named
+  one of them names the group, summed (the hand-offs between two of its people are counted as
+  `within`, drawn by no line); `people_groups` lists every group. Kept one by one: an owner-mapped
+  `person.<key>`, a person the owner declared or hid, and a machine known by counted traffic; a
+  group whose people all only announced themselves folds as one. The group is one card (its count,
+  how many are active, a few names, what they publish, their flows), which opens into a list of its
+  people with search, a hundred at a time (`/api/machines/people?group=`, fetched when opened); and
+  one node on the map, which opens into its people one by one (`expand=<group ids>`, remembered in
+  the browser), each still marked as the group's and none a card of its own, folded back by "draw
+  as one" in the map's bar. A person in the list, or a `#<id>` link to one, opens the group on the
+  map and that person. The machine count counts each person. The default answer is unchanged, every
+  machine a row (the agents read it through `machines_view`, the plugins' tests by the API): 600
+  people made it 749 KB, 30 KB grouped. The Dashboard and Dynamics ask for the grouped answer too,
+  counting a group as its people. Display only, as the fold is.
 - **Instruments:** every instrument (`web/instruments.py`): a script (`[[collect]]`), a URL
   (`[[scrape]]`) or a source (`[[sources]]`), the project's and the plugins', with its target, how
   often it is read, its last write and how many points, its failures and last error, and its log;
