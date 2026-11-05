@@ -91,6 +91,8 @@ pass_env = ["MY_GATEWAY_KEY"]   # kept in every agent's session; only you can se
 and restart `orchestra run`. When a session cannot sign in, the Supervisor says which of these
 variables the host has, by name, and what to set.
 
+For a worker's change to become a draft pull request on GitHub with no Outbox (the program `open_pr`), add `open_drafts = true` under `[scm]` in the overlay: only you can set it.
+
 With Pi instead: `harness = "pi"`, `provider = "anthropic"`, `model = "claude-sonnet-5"` (the id Pi
 lists for Sonnet).
 
