@@ -188,7 +188,8 @@ class Launcher:
         if not callable(self.plugin_processes):
             self._plugins = list(self.plugin_processes)
         stamp = self.project.config_stamp()
-        if self.project.repo_config_missing():
+        missing = getattr(self.project, "repo_config_missing", None)        # a stand-in project: as before
+        if (missing() if callable(missing) else stamp[0] is None):
             self._say_once(f"cannot read {self.project.config_file.name}: it is not there; keeping what runs")
             return self._project, self._plugins
         if stamp != self._mtime:

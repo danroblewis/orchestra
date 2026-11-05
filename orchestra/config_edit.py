@@ -322,7 +322,7 @@ class ConfigEdit:
         return merge(raw, tomllib.loads(overlay), str(self.file(OVERLAY)))
 
     def _change(self, target: str, edit, check: Check | None, dry_run: bool, on_text: bool = False) -> Change:
-        clean = self.project.clean                   # no orchestra.toml by the owner's choice: the overlay holds it all
+        clean = bool(getattr(self.project, "clean", False))   # no orchestra.toml by the owner's choice: the overlay holds it all (a stand-in project has none)
         asked, target = target, (OVERLAY if clean and target == REPO else target)
         path = self.file(target)
         texts = {REPO: "" if clean else self.text(REPO), OVERLAY: self.text(OVERLAY)}
