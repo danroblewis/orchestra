@@ -29,6 +29,13 @@ git init -q                 # if needed
 orchestra init
 ```
 
+**To keep an existing repository free of Orchestra's files**, run `orchestra init --clean` in it
+instead. Nothing is written in the repository: the private overlay,
+`~/.orchestrator/<key>/orchestra.local.toml`, holds the whole configuration, and every setting
+in this document goes there. Tell the Supervisor the repository must stay clean, so it puts
+machines, workflows and resource kinds in the state directory too. On a project that already has an
+`orchestra.toml`, `--clean` copies it to a new overlay; check the overlay, then delete the file.
+
 ## 4. The Supervisor's settings
 
 Append to `orchestra.toml`:

@@ -228,6 +228,25 @@ class Project:
         return self.repo_root / CONFIG_FILE
 
     @property
+    def clean(self) -> bool:
+        """Whether this project keeps its repository clean (``orchestra init --clean``): no
+        ``orchestra.toml`` in it, the private overlay holding the whole configuration. Recorded in
+        the state directory's ``project.json``; a repository that has an ``orchestra.toml`` is
+        never clean, so the file, once there, is read as always."""
+        if self.config_file.exists():
+            return False
+        try:
+            return bool(json.loads((self.state_dir / "project.json").read_text()).get("clean"))
+        except (OSError, ValueError):
+            return False
+
+    def repo_config_missing(self) -> bool:
+        """``orchestra.toml`` is not there and should be (a file deleted or moved by mistake): what
+        readers that follow the configuration keep their last good reading for. Never in a clean
+        project, where its absence is the setting."""
+        return not self.config_file.exists() and not self.clean
+
+    @property
     def overlay_file(self) -> Path:
         """Where the private overlay is read from: ``ORCHESTRA_CONFIG_OVERLAY`` (relative to the
         repository root unless absolute), else ``orchestra.local.toml`` in the state directory. It
@@ -254,7 +273,7 @@ class Project:
         """``orchestra.toml`` with the private overlay merged over it, read now. Raises if either
         does not parse, or if ``ORCHESTRA_CONFIG_OVERLAY`` names a file that is not there (a
         mistyped path must not silently drop the private configuration)."""
-        raw = tomllib.loads(self.config_file.read_text(encoding="utf-8"))
+        raw = {} if self.clean else tomllib.loads(self.config_file.read_text(encoding="utf-8"))
         path = self.overlay_file
         try:
             text = path.read_text(encoding="utf-8")
@@ -324,25 +343,33 @@ def find_repo_root(start: Path) -> Path:
 def load_project(repo: Path | str | None = None) -> Project:
     """Resolve the project for ``repo`` (default: ORCHESTRA_REPO, else the cwd).
 
-    ``orchestra.toml`` must exist at the repository root; the private overlay, if there is one,
-    is merged over it (``Project.read_config``). The state directory under
-    ``~/.orchestrator`` is created on demand, so a freshly cloned repository that
+    ``orchestra.toml`` must exist at the repository root, unless the project keeps its repository
+    clean (``orchestra init --clean``: the private overlay is then the whole configuration); the
+    private overlay, if there is one, is merged over it (``Project.read_config``). The state
+    directory under ``~/.orchestrator`` is created on demand, so a freshly cloned repository that
     already carries an ``orchestra.toml`` needs no ``orchestra init``."""
     root = find_repo_root(Path(repo or os.environ.get("ORCHESTRA_REPO") or Path.cwd()))
     toml_path = root / CONFIG_FILE
-    if not toml_path.exists():
-        raise ConfigError(f"no orchestra.toml in {root}; run `orchestra init` there first")
     project = Project(key=project_key(root), repo_root=root, config=Config())
+    if not toml_path.exists() and not project.clean:
+        raise ConfigError(f"no orchestra.toml in {root}; run `orchestra init` there first "
+                          "(or `orchestra init --clean` to keep the repository free of Orchestra's files)")
     project.reload_config()
     if not project.state_dir.exists():
         _register(project)
     return project
 
 
-def _register(project: Project) -> None:
+def _register(project: Project, clean: bool | None = None) -> None:
     project.ensure_dirs()
-    (project.state_dir / "project.json").write_text(json.dumps(
-        {"key": project.key, "repo_root": str(project.repo_root), "backend": "local"}, indent=2))
+    meta = project.state_dir / "project.json"
+    try:
+        was = json.loads(meta.read_text())
+    except (OSError, ValueError):
+        was = {}
+    keep = bool(was.get("clean")) if clean is None else clean
+    meta.write_text(json.dumps({"key": project.key, "repo_root": str(project.repo_root), "backend": "local",
+                                **({"clean": True} if keep else {})}, indent=2))
     index = home() / "projects.json"
     try:
         data = json.loads(index.read_text()) if index.exists() else {}
@@ -356,13 +383,27 @@ def _register(project: Project) -> None:
     os.replace(tmp, index)            # atomic: processes starting together (orchestra run, web, a plugin's host) never read half a file
 
 
-def init_project(repo: Path) -> Project:
-    """Write a starter ``orchestra.toml`` (if missing) and register the project."""
+def init_project(repo: Path, clean: bool = False) -> Project:
+    """Write a starter ``orchestra.toml`` (if missing) and register the project.
+
+    ``clean``: keep the repository free of Orchestra's files. Nothing is written in it; the starter
+    goes to the private overlay, which then holds the whole configuration. An ``orchestra.toml``
+    already in the repository is copied to the overlay when there is none yet, and left for the
+    owner to delete (Orchestra never deletes it: a clean project is one whose repository has none,
+    so until it is gone it is read as always)."""
     root = find_repo_root(repo)
     toml_path = root / "orchestra.toml"
-    if not toml_path.exists():
-        toml_path.write_text(STARTER_TOML)
     project = Project(key=project_key(root), repo_root=root, config=Config())
+    if clean:
+        overlay = project.overlay_file
+        if not overlay.exists():
+            overlay.parent.mkdir(parents=True, exist_ok=True)
+            overlay.write_text(toml_path.read_text(encoding="utf-8") if toml_path.exists() else STARTER_TOML,
+                               encoding="utf-8")
+            overlay.chmod(0o600)
+        _register(project, clean=True)
+    elif not toml_path.exists():
+        toml_path.write_text(STARTER_TOML)
     project.reload_config()
-    _register(project)
+    _register(project, clean=True if clean else None)
     return project

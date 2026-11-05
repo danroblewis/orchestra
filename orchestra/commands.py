@@ -84,13 +84,13 @@ def apply_overrides(repo: str | None = None) -> list[dict]:
     launcher starts plugin processes as commands, so their code runs patched too. No project (a
     command run outside one, ``orchestra queue init``) is nothing to apply; a broken one is said on
     stderr, never fatal."""
-    from .config import CONFIG_FILE, ConfigError, find_repo_root
+    from .config import CONFIG_FILE, Config, ConfigError, Project, find_repo_root, project_key
     from .overrides import apply
     try:
         root = find_repo_root(Path(repo or os.environ.get("ORCHESTRA_REPO") or Path.cwd()))
     except (ConfigError, OSError):
         return []
-    if not (root / CONFIG_FILE).exists():
+    if not (root / CONFIG_FILE).exists() and not Project(key=project_key(root), repo_root=root, config=Config()).clean:
         return []
     out = apply(root)
     for r in out:

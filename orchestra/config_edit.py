@@ -309,10 +309,12 @@ class ConfigEdit:
         return merge(raw, tomllib.loads(overlay), str(self.file(OVERLAY)))
 
     def _change(self, target: str, edit, check: Check | None, dry_run: bool, on_text: bool = False) -> Change:
+        clean = self.project.clean                   # no orchestra.toml by the owner's choice: the overlay holds it all
+        asked, target = target, (OVERLAY if clean and target == REPO else target)
         path = self.file(target)
-        texts = {REPO: self.text(REPO), OVERLAY: self.text(OVERLAY)}
+        texts = {REPO: "" if clean else self.text(REPO), OVERLAY: self.text(OVERLAY)}
         if texts[REPO] is None:
-            raise ConfigError(f"there is no {path}")
+            raise ConfigError(f"there is no {self.file(REPO)}")
         before = texts[target]
         try:
             merged, layers = self._merged(texts[REPO], texts[OVERLAY])
@@ -346,4 +348,6 @@ class ConfigEdit:
         change.keys = sorted(k for k in was.keys() | now.keys() if was.get(k) != now.get(k))
         if not change.keys and target == REPO and texts[OVERLAY] is not None:
             change.note = f"the private overlay ({self.file(OVERLAY)}) sets this, and its value still wins"
+        elif asked != target:
+            change.note = "this project keeps its repository clean (no orchestra.toml), so it was written to the private overlay"
         return change if dry_run else self.apply(change)
