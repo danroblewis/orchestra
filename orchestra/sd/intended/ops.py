@@ -12,7 +12,9 @@ by request, makes the element the owner's (``confirmed.by``). What is the owner'
 mark, target or described event type: ``consent.owners``) is retracted, unmarked, overwritten or
 re-targeted only by the owner, or in answer to the owner's request: another author's re-mark of
 the owner's mark leaves it as it is. A key is expected or ignored, never both: one mark replaces
-the other. A declared stock or effect that a declared flow, a keyed target or a machine's
+the other. A machine is only ignored (hidden from the Machines page and the Event Map), keyed by
+its source: display only, it deletes or alters no observed event and is read by neither discovery
+nor ``sd/attribute.py``. A declared stock or effect that a declared flow, a keyed target or a machine's
 expected effect names (a pending change's included) is not retracted or discarded until they are
 changed, so no flow is left to resolve its end some other way; an event type a machine names is
 not retracted until the machine changes. Nothing here reads a discovered model: a declaration
@@ -128,24 +130,34 @@ def set_target(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
 def mark(layer: dict, op: dict, ctx: dict, which: str, on: bool) -> tuple[str, str]:
     only(op, ("part", "key"), op["op"])
     part = op.get("part")
-    if part not in ("stock", "flow"):
-        raise IntentError(f"a mark is on a discovered stock or flow, by key, not {part!r}")
+    if part == "machine" and which != "ignored":
+        raise IntentError("a machine is only hidden (ignore) or shown again (unignore), by its source; it is never expected")
+    if part not in ("stock", "flow", "machine"):
+        raise IntentError(f"a mark is on a discovered stock or flow, or (ignore) a machine, by key, not {part!r}")
     key = text(op.get("key"), "key", required=True, limit=1000)
+    slot = mark_slot(part, key)                   # a machine's apart from any stock or flow of the same name
     marks = layer["marks"][which]
     if on:
         other = layer["marks"]["ignored" if which == "expected" else "expected"]
-        if key in other:                          # expected or ignored, never both
-            guard_owners(other[key], ctx, part, key)
-            del other[key]
-        if key in marks and owners(marks[key]) and not consents(ctx, part, key):
+        if slot in other:                         # expected or ignored, never both
+            guard_owners(other[slot], ctx, part, key)
+            del other[slot]
+        if slot in marks and owners(marks[slot]) and not consents(ctx, part, key):
             return part, key                      # the owner's mark stands, with the owner's provenance
-        marks[key] = {"part": part, "key": key, "provenance": ctx["provenance"], "change": ctx["change"]}
+        marks[slot] = {"part": part, "key": key, "provenance": ctx["provenance"], "change": ctx["change"]}
         return part, key
-    if key not in marks:
+    if slot not in marks:
         raise IntentError(f"{key} is not {which}")
-    guard_owners(marks[key], ctx, part, key)
-    del marks[key]
+    guard_owners(marks[slot], ctx, part, key)
+    del marks[slot]
     return part, key
+
+
+def mark_slot(part: str, key: str) -> str:
+    """Where a mark is kept in ``marks``: a stock's or flow's by its key, a machine's by
+    ``machine:<source>`` (as a hidden stock is keyed ``stock:<id>``), so hiding a machine never
+    ignores a stock whose series has the machine's name."""
+    return f"machine:{key}" if part == "machine" else key
 
 
 def link(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
@@ -309,4 +321,4 @@ def apply_op(layer: dict, op: dict, ctx: dict) -> tuple[str, str]:
     raise IntentError(f"unknown op {name!r}")
 
 
-__all__ = ["GROUP", "apply_op", "element", "empty"]
+__all__ = ["GROUP", "apply_op", "element", "empty", "mark_slot"]

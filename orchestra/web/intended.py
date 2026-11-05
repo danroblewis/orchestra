@@ -9,7 +9,7 @@ Machines pages read of the declared layer, and the closed list of page controls.
 | ``GET /api/intended/diff?d=&v=&since=`` | the comparison of ``dN`` with ``vM`` against ``vK`` (the Dynamics block) |
 | ``GET /api/intended/design`` | the declared layer's summary (``design()``) |
 | ``GET /api/intended/script?instrument=`` | an option's script and its ``[[collect]]`` entry, read only inside the repository or the state directory (404 no such entry, 403 a script outside) |
-| ``POST /api/intended/control`` | an observation: ``expect``, ``unexpect``, ``ignore``, and ``confirm`` / ``discard`` on a stock, effect or flow |
+| ``POST /api/intended/control`` | an observation: ``expect``, ``unexpect``, ``ignore``, and ``confirm`` / ``discard`` on a stock, effect or flow; ``ignore`` / ``unignore`` on a machine (``id``, or ``keys``: several at once), hiding it from the Machines page and the Event Map |
 | ``POST /api/intended/request`` | a request: ``confirm``, ``discard``, ``switch_kind`` on a machine or an attachment, published as ``orchestra.intent.requested`` from ``owner`` |
 
 An observation records a declaration with ``via: page`` provenance and changes no machine, no
@@ -29,14 +29,15 @@ from fastapi.responses import JSONResponse
 
 from ..sd.intended import IntentError
 from ..sd.intended import requests as owner_requests
-from ..sd.intended.controls import OBSERVATIONS, PAGE_MARKS, PAGE_PARTS
+from ..sd.intended.controls import MACHINE_MARKS, OBSERVATIONS, PAGE_MARKS, PAGE_PARTS
 from ..sd.intended.keys import mark_key
 from ..sd.intended.params import integer, saved_version
 from ..sd.intended.view import dynamics_block
 from ..sd.model import Model
 from ..sd.store import ModelStore
 
-BODY = {"control", "part", "id", "key", "change", "from", "page"}
+BODY = {"control", "part", "id", "key", "keys", "change", "from", "page"}
+MAX_KEYS = 1000          # machines hidden in one call ("Hide all of these")
 
 
 def _refused(e: IntentError) -> JSONResponse:
@@ -46,11 +47,13 @@ def _refused(e: IntentError) -> JSONResponse:
     return JSONResponse(out, status_code=e.status)
 
 
-def observation(body, models) -> tuple[dict, dict]:
-    """A page control's op and provenance; refuses a machine or attachment, and any value. A mark
-    is stored by key: ``key`` when the page has it (a Changes row), else the key of the part
-    with that ``id`` in the latest model; an ``expect`` or ``ignore`` of a key no latest model has
-    is refused."""
+def observation(body, models, machines=None) -> tuple[list[dict], dict]:
+    """A page control's ops and provenance; refuses an attachment, a machine's control other than
+    ``ignore`` / ``unignore``, and any value. A mark is stored by key: ``key`` when the page has it
+    (a Changes row), else the key of the part with that ``id`` in the latest model; an ``expect``
+    or ``ignore`` of a key no latest model has is refused. A machine is marked by its source
+    (``id``, or ``keys`` for several at once); ``machines`` (the ids the Machines page lists, None
+    while it cannot say) refuses hiding one it does not list."""
     if not isinstance(body, dict):
         raise IntentError("the body is an object {control, part, id, change?, from}", status=400)
     if extra := sorted(set(body) - BODY):
@@ -61,6 +64,14 @@ def observation(body, models) -> tuple[dict, dict]:
     control, part = body.get("control"), body.get("part")
     if control not in OBSERVATIONS:
         raise IntentError(f"control is one of {', '.join(OBSERVATIONS)}; a machine's confirm and discard are requests", status=400)
+    prov = {"author": "owner", "control": control, "page": body.get("page") or ("machines" if part == "machine" else "dynamics"),
+            **({"from": body["from"]} if body.get("from") else {})}
+    if part == "machine" and control in MACHINE_MARKS:
+        return machine_marks(body, control, machines), prov
+    if body.get("keys") is not None:
+        raise IntentError("several at once (keys) are only machines hidden or shown again", status=400)
+    if control == "unignore":
+        raise IntentError("listing a stock or flow again (unignore) is asked of the Supervisor", status=400)
     if part not in PAGE_PARTS:
         raise IntentError("a page observation is on a stock, an effect or a flow; machines and attachments are requests "
                           "(POST /api/intended/request)", status=400)
@@ -73,9 +84,27 @@ def observation(body, models) -> tuple[dict, dict]:
         op = {"op": control, "part": part, "key": key}
     else:
         op = {"op": control, "part": part, "id": body.get("id"), **({"change": body["change"]} if body.get("change") else {})}
-    prov = {"author": "owner", "control": control, "page": body.get("page") or "dynamics",
-            **({"from": body["from"]} if body.get("from") else {})}
-    return op, prov
+    return [op], prov
+
+
+def machine_marks(body: dict, control: str, machines) -> list[dict]:
+    """The ops hiding (``ignore``) or showing again (``unignore``) machines by their source: ``id``
+    (or ``key``) for one, ``keys`` for several in one change. Hiding a machine the page does not
+    list is refused, so a typo leaves no lasting mark."""
+    keys = body.get("keys")
+    if keys is not None:
+        if not isinstance(keys, list) or not keys or len(keys) > MAX_KEYS or \
+                not all(isinstance(k, str) and 0 < len(k) <= 1000 for k in keys):
+            raise IntentError(f"keys is a list of 1 to {MAX_KEYS} machine ids", status=400)
+    else:
+        one = body.get("id") or body.get("key")
+        if not one:
+            raise IntentError("a machine is hidden or shown again by its id", status=400)
+        keys = [one]
+    keys = list(dict.fromkeys(keys))
+    if control == "ignore" and machines is not None and (unknown := [k for k in keys if k not in machines]):
+        raise IntentError(f"no machine {', '.join(sorted(unknown)[:5])} on the Machines page", status=400)
+    return [{"op": control, "part": "machine", "key": k} for k in keys]
 
 
 def script_of(project, instrument: str) -> dict:
@@ -231,6 +260,14 @@ def install(app: FastAPI, project, events, metrics, observed=None) -> None:
     def intended():
         return project.intended
 
+    def listed(store) -> set[str] | None:
+        """The machines the Machines page lists: observed (``observed``) and declared; None while
+        the bus has not been read."""
+        seen = observed() if observed else None
+        if seen is None:
+            return None
+        return set(seen) | set(store.read()["layer"]["machines"])
+
     def answer(fn):
         try:
             return fn()
@@ -281,8 +318,8 @@ def install(app: FastAPI, project, events, metrics, observed=None) -> None:
 
         def go():
             store = intended()
-            op, prov = observation(body, store.models)
-            return {"ok": True, **store.apply([op], prov, via="page")}
+            ops, prov = observation(body, store.models, machines=listed(store) if body.get("part") == "machine" else None)
+            return {"ok": True, **store.apply(ops, prov, via="page")}
         return await run_in_threadpool(answer, go)     # the file lock off the event loop (rule 8)
 
     @app.post("/api/intended/request")

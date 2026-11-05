@@ -104,6 +104,7 @@ def merge(view: dict, summary: dict | None, now: float) -> None:
         if not m.get("first_seen") and not m.get("publishes"):
             m["counted_only"] = True         # however else it is known (a model's series), never seen on the bus: known by counts
         m["counted"] = sorted(c["traffic"], key=lambda t: (t["channel"], t["direction"]))
+        m["announced_only"] = False          # counted traffic is acting: never folded as announced only
         if c["last"] and c["last"] > (m.get("last_seen") or 0.0):
             m["last_seen"] = c["last"]
         m["active"] = bool(m.get("active") or (c["last"] and now - c["last"] < ACTIVE_S))

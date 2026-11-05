@@ -289,6 +289,7 @@ A closed list; no control carries a value.
 |---|---|---|---|
 | `expect`, `unexpect` | D2 Changes panel; D3 drawer switch | observation | a mark on a discovered key |
 | `ignore` | D2 Changes panel | observation | the suggestion to "ignored" |
+| `ignore`, `unignore` on a machine (by its `source`; several at once with `keys`) | a machine's card ("Hide this machine"); the "hidden by you" group ("Show"); the "announced only" group ("Hide all of these") | observation | the machine off the Machines page's cards and the Event Map, into a collapsed "hidden by you" group, and back; display only: no observed event deleted or altered, discovery and `sd/attribute.py` unaffected (added 2026-11-04, rules 2 and 9 amended) |
 | `confirm`, `discard` on a stock, effect or flow (or a pending change on one) | D1 drawer; D2 panel | observation | a proposal declared or discarded |
 | `confirm`, `discard` on a machine or an attachment (or a pending change on one); `switch_kind` | E1–E3 status strip, card; the Universal \| Programmatic switch | **request** | nothing changes until the Supervisor applies it |
 
