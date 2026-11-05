@@ -4,6 +4,7 @@ it's breaking various things"): the bridges relay each act as the person who did
 with 600 of them; each person is still a machine (AGENTS.md rule 2)."""
 
 import time
+from datetime import UTC, datetime
 
 from people_seed import T0, people_events
 
@@ -102,3 +103,21 @@ def test_a_few_people_of_one_system_and_an_owner_mapped_person_are_tested_one_by
     events, _ = attribution_world(people=GROUP_MIN - 1, steps=200)
     on_bus = candidates(events)
     assert len(on_bus) == len(events) and not any("relayed" in s.__dict__ for s in on_bus)
+
+
+def test_the_core_pages_sources_list_the_busiest_and_count_the_rest_in_one_line(tmp_path):
+    from types import SimpleNamespace
+
+    from orchestra.bus.file import FileBus
+    from orchestra.metrics.file import FileMetrics
+    from orchestra.web.core_explore import MAX_SOURCES, Explorer
+    bus = FileBus(tmp_path / "events.jsonl")
+    now = time.time()
+    evs = people_events(600, step=0.01)
+    for e in evs:
+        bus.append({**{k: v for k, v in e.items() if k != "time"}, "ts": datetime.fromtimestamp(now - 60, UTC).isoformat()})
+    core = SimpleNamespace(project=SimpleNamespace(key="p"), metrics=FileMetrics(tmp_path / "m.jsonl"), events=SimpleNamespace(bus=bus))
+    d = Explorer(core).events(1)
+    assert d["ok"] and len(d["machines"]) == MAX_SOURCES and d["machines"][0]["machine"] == "triage"
+    assert d["more_machines"]["sources"] == 604 - MAX_SOURCES          # 600 people, alice and three programs
+    assert sum(m["events"] for m in d["machines"]) + d["more_machines"]["events"] == len(evs)

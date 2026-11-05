@@ -2342,7 +2342,8 @@ it. Pages read only the web server's background caches
 - **Core:** the host (with the processes it keeps running: state, restarts, command), the bus and
   the metrics store, each probed against its real backend within a time limit; explorers for the
   metrics (a catalogue of every series with the project's label, naming any series in the file
-  store that lacks it, and a PromQL editor) and the events (types, volumes, sources); logs (the
+  store that lacks it, and a PromQL editor) and the events (types, volumes, sources: the 40 busiest
+  sources one by one, the rest counted in one line, so hundreds of people relayed in are one row); logs (the
   host's, Core's, the event stream and each launched process's). It imports only the bus, the metrics store and the runtime record,
   and, for its **External stores** section, `orchestra.sources` (AGENTS.md rule 8, amended 2026-11-03: the owner counts the
   external stores as part of the core, as its adaptors). That section (`web/core_stores.py`, `static/core-stores.js`) lists
