@@ -22,7 +22,9 @@ class Hubs:
 
     def __init__(self, pub: dict[str, set[str]], sub: dict[str, set[str]]):
         self.pub, self.sub = pub, sub
-        ids = sorted(set(pub) | set(sub))
+        # only a machine that both publishes and listens can exchange both ways: a person a relay
+        # announced, who listens for nothing, is never a hub's member (hundreds of them cost nothing)
+        ids = sorted(m for m in set(pub) | set(sub) if pub.get(m) and sub.get(m))
         cands = [(h, {m for m in ids if m != h and self.sends(h, m) and self.sends(m, h)}) for h in ids]
         cands = sorted(((h, ms) for h, ms in cands if len(ms) >= 2), key=lambda c: (-len(c[1]), c[0]))
         self.hubs: dict[str, set[str]] = {}
