@@ -93,7 +93,7 @@ class Collecting:
             if stamp == self._mtime:
                 return
             self._mtime = stamp
-            if stamp[0] is None:
+            if self.project.repo_config_missing():
                 raise FileNotFoundError(self.project.config_file)
             self._ask_plugins()
             found, errors = from_toml(self.project.read_config().raw, self._plugins)

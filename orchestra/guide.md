@@ -24,6 +24,10 @@ metrics live**, and **how the model is discovered**.
   the repository (`[[sources]]` `auth = { bearer_file = "~/..." }` or `{ bearer_env = "..." }`). A literal secret in a
   `[[sources]]` entry refuses the source.
 - Sections Orchestra does not know are ignored: each plugin keeps its own section here.
+- **A clean repository** (`orchestra init --clean`): the owner keeps Orchestra's files out of the
+  repository. There is no `orchestra.toml`; the private overlay is the whole configuration, and a
+  change made with `target="repo"` is written to the overlay (its `note` says so). Put machines,
+  workflows and resource kinds in the state directory, never under the repository's `.orchestra/`.
 
 Choose the target by audience: what every clone of the repository should run goes to the
 repository; what only the owner wants, or what names the owner, goes to the overlay. When unsure,

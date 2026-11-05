@@ -31,10 +31,17 @@ def _when(t: float | None) -> str:
 
 def cmd_init(args) -> int:
     try:
-        p = init_project(Path(args.repo or os.getcwd()))
+        p = init_project(Path(args.repo or os.getcwd()), clean=args.clean)
     except ConfigError as e:
         print(f"orchestra: {e}" + ("; run git init first" if "git repository" in str(e) else ""), file=sys.stderr)
         return 1
+    if args.clean:
+        print(f"initialized {p.key}, keeping the repository clean\n  repo:   {p.repo_root}\n  state:  {p.state_dir}\n"
+              f"  config: {p.overlay_file} (the private overlay holds the whole configuration)")
+        if p.config_file.exists():
+            print(f"  {p.config_file} is still there and is read until you delete it; its settings were copied to the "
+                  "overlay if the overlay was new. Check the overlay, then delete the repository's file.")
+        return 0
     print(f"initialized {p.key}\n  repo:   {p.repo_root}\n  state:  {p.state_dir}\n  config: {p.config_file}\n  private overlay (if any): {p.overlay_file}")
     return 0
 
@@ -402,6 +409,9 @@ def build_parser(plugin_help: dict[str, str] | None = None) -> argparse.Argument
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("init", help="register this repository and write orchestra.toml")
+    s.add_argument("--clean", action="store_true",
+                   help="keep the repository free of Orchestra's files: no orchestra.toml; the private overlay in the "
+                        "state directory holds the whole configuration")
     s.set_defaults(fn=cmd_init)
 
     s = sub.add_parser("run", help="run the bootstrap host: its event collector, discovery, and the processes the project and plugins declare")
