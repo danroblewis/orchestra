@@ -65,11 +65,24 @@ const IntendedCore = (() => {
       const said = `${it.author === "owner" ? "added" : "proposed"} by ${by}`;
       return it.heard ? { text: "", cls: "", by: said } : { text: "proposed, never heard", cls: "im-t-ghost", by: said };
     }
+    // confirmed by its own author under the owner's standing consent ([intended] settle_own): said
+    // so, never "by you", and the owner can still discard it (the status strip's discard)
+    if (byStanding(it)) {
+      const said = `proposed by ${by}, confirmed by ${name(c.by)} under your standing consent (discard to undo)`;
+      return it.heard ? { text: "", cls: "", by: said, standing: true } : { text: "declared, never heard", cls: "im-t-ghost", by: said, standing: true };
+    }
     const who = c && c.by ? (c.by === "owner" ? owner(c) : c.by) : null;
     const said = who ? `proposed by ${by}, confirmed by ${who}` : `declared by ${by}`;
     return it.heard ? { text: "", cls: "", by: said } : { text: "declared, never heard", cls: "im-t-ghost", by: said };
   }
+  // "the Supervisor" for the author "supervisor"
+  const name = (a) => `the ${String(a).charAt(0).toUpperCase() + String(a).slice(1)}`;
+  // an element its author confirmed under the owner's standing consent, and the owner not since
+  function byStanding(it) {
+    const c = it && it.confirmed;
+    return !!(c && c.standing_consent && c.by !== "owner");
+  }
   // what confirming does, said on the control (rule 9: a request, changing nothing until acted on)
   const CONFIRMS = "adopt this proposal as a declaration; it changes nothing observed";
-  return { REQ, NONE, hears, listenersOf, asker, declaredBy, owner, author, machineWords, CONFIRMS };
+  return { REQ, NONE, hears, listenersOf, asker, declaredBy, owner, author, machineWords, byStanding, CONFIRMS };
 })();

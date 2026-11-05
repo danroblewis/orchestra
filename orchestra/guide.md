@@ -807,7 +807,11 @@ machines**, each with the instruments that measure it attached
 An attachment's id is `<machine>_<instrument>` (`_2` for a second of the pair), as the answer's
 `changes` say. Its match labels are the source's canonical ones, after `[sources.labels]`. Without
 the owner's quoted yes, stop at `propose_…`: proposals are drawn dashed, "unconfirmed", for the owner
-to confirm on the Machines page (a request you then act on).
+to confirm on the Machines page (a request you then act on). The exception is the owner's standing
+consent, `[intended] settle_own = ["supervisor"]` in the private overlay (only the owner sets it;
+`config_edit` refuses to): with it you confirm or discard your own proposals with your `reason`,
+recorded as yours (`confirmed.by: supervisor`), never the owner's; say so, and that the owner can
+discard it.
 
 The rules that bind it (rules 2 and 7): **a series never makes a machine**, and **a label never
 associates a machine with a flow**. The owner's declaration makes each machine; the label only told

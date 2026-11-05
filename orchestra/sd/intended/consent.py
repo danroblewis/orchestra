@@ -11,6 +11,16 @@
   and a set (``ctx["answered"]``) that ``verified`` adds each request it finds answered to: only
   those are written on the journal line as answered (``requests.open_requests``).
 
+- The owner **stands consenting** (``standing``, AGENTS.md rule 9 as amended 2026-11-04): the
+  owner names, by hand in the private overlay, the authors who may settle their own proposals
+  (``[intended] settle_own = ["supervisor"]``, ``config.py``; ``config_edit`` refuses to change it,
+  so no plugin gives it to itself). The store gives the ops where it was given (``ctx["standing"]``:
+  ``{"authors", "from"}``). Under it, a named author confirms or discards a proposal it made, or a
+  pending change it made, with its reason; the confirmation says so (``confirmed``: ``by`` the
+  author, ``standing_consent``, ``reason``), never ``by: owner``, so the element stays the
+  author's, which the owner may still discard (``by_standing``) or retract. It never reaches what
+  is the owner's (``owners``), nor a pending change the owner's overrides.
+
 What is the owner's (``owners``: an element, mark or target the owner declared, or an element the
 owner confirmed, on a page, through a plugin quoting the owner, or by a plugin answering the
 owner's request) is changed or removed only with the owner's consent; what a plugin proposed by
@@ -53,17 +63,47 @@ def verified(ctx: dict, part: str, eid, control: str, change: str | None = None,
     return ok
 
 
-def may_settle(ctx: dict, part: str, eid, control: str, change: str | None = None) -> None:
+def standing(ctx: dict, el: dict | None, change: str | None = None) -> str | None:
+    """Where the owner gave the standing consent that lets this call's author settle ``el`` (its
+    pending ``change``, when given) on its own; None when there is none for it: the author is not
+    named, the element is the owner's, or the proposal (or the pending change) is another's."""
+    st, author = ctx.get("standing") or {}, ctx["provenance"].get("author")
+    if not el or author == "owner" or author not in (st.get("authors") or ()) or owners(el):
+        return None
+    if change is not None:
+        p = next((x for x in el.get("pending") or [] if x.get("change") == change), None)
+        mine = p is not None and (p.get("provenance") or {}).get("author") == author
+    else:
+        mine = el.get("state") == "proposed" and (el.get("provenance") or {}).get("author") == author
+    return (st.get("from") or "the owner's standing consent") if mine else None
+
+
+def by_standing(el: dict | None) -> bool:
+    """Whether ``el`` was confirmed by its author under the owner's standing consent (and not since
+    by the owner): the owner may discard it, which removes it."""
+    c = (el or {}).get("confirmed") or {}
+    return bool(c.get("standing_consent")) and c.get("by") != "owner"
+
+
+def may_settle(ctx: dict, part: str, eid, control: str, change: str | None = None, el: dict | None = None) -> str | None:
     """A proposal or pending change is settled by the owner, or in answer to the owner's request
-    to do just that; never by its author alone."""
+    to do just that, or by its author under the owner's standing consent (returned: where the owner
+    gave it), with the author's reason; never by its author alone."""
     prov = ctx["provenance"]
     if prov.get("author") == "owner":
-        return
+        return None
+    if not prov.get("request") and (where := standing(ctx, el, change)):
+        if not str(prov.get("reason") or "").strip():
+            raise IntentError(f"{control} under the owner's standing consent ({where}) carries the author's reason")
+        if ctx.get("standing_used") is not None:
+            ctx["standing_used"].add(where)
+        return where
     if not prov.get("request"):
         raise IntentError("a proposal is confirmed by the owner: give the owner's quote or the request's event id")
     if not verified(ctx, part, eid, control, change):
         raise IntentError(f"provenance.request {prov['request']} is not the owner's unanswered request to {control} {part} {eid}"
                           + (f" (change {change})" if change else ""))
+    return None
 
 
 def owners(owned: dict | None) -> bool:

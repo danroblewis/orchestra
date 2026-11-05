@@ -21,6 +21,7 @@ import uuid
 
 from . import lines
 from .checks import IntentError, text
+from .consent import by_standing
 from .ops import GROUP
 
 REQUESTED = "orchestra.intent.requested"
@@ -67,13 +68,15 @@ def check(body: dict) -> dict:
 
 def named(intended, data: dict) -> None:
     """The request's machine or attachment is in the declared layer, its change pending there, and
-    a confirm or discard naming no change is of a proposed element (409 otherwise)."""
+    a confirm or discard naming no change is of a proposed element (409 otherwise), except the
+    discard of one its author confirmed under the owner's standing consent (``consent.by_standing``)."""
     el = intended.read()["layer"][GROUP[data["part"]]].get(data["id"])
     if el is None:
         raise IntentError(f"there is no declared {data['part']} {data['id']!r}", status=404)
     if data["change"] is not None and data["change"] not in {p.get("change") for p in el.get("pending") or []}:
         raise IntentError(f"{data['part']} {data['id']} has no pending change {data['change']}", status=404)
-    if data["change"] is None and data["control"] in SETTLES and el.get("state") != "proposed":
+    if data["change"] is None and data["control"] in SETTLES and el.get("state") != "proposed" \
+            and not (data["control"] == "discard" and by_standing(el)):
         raise IntentError(f"{data['part']} {data['id']} is {el.get('state')}, not proposed: there is nothing to {data['control']}",
                           status=409)
 
@@ -115,7 +118,7 @@ def actionable(r: dict, layer: dict) -> bool:
         return False
     if r.get("change"):
         return r["change"] in {p.get("change") for p in el.get("pending") or []}
-    return r.get("control") not in SETTLES or el.get("state") == "proposed"
+    return r.get("control") not in SETTLES or el.get("state") == "proposed" or (r.get("control") == "discard" and by_standing(el))
 
 
 def open_requests(intended, layer: dict | None = None) -> dict[str, dict]:

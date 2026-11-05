@@ -289,8 +289,12 @@ const IntendedMachines = (() => {
     const acts = (change) => settling && (!change || asked.change === change) ? waitText()
       : !listeners.length ? ""                    // said once, at the top of the declared part (.im-noact)
       : `<span class="im-acts"><button class="ctl im-primary" title="${esc(a.title(IntendedCore.CONFIRMS))}" onclick="IntendedMachines.request('confirm','${esc(m.id)}'${change ? `,'${esc(change)}'` : ""})">confirm</button><button class="ctl" title="${esc(a.title("discard it"))}" onclick="IntendedMachines.request('discard','${esc(m.id)}'${change ? `,'${esc(change)}'` : ""})">discard</button></span>`;
+    // confirmed by its author under the owner's standing consent: the owner may still discard it
+    const standing = IntendedCore.byStanding(it);
+    const undo = () => (settling ? waitText() : !listeners.length ? ""
+      : `<span class="im-acts"><button class="ctl" title="${esc(a.title("discard what it confirmed under your standing consent"))}" onclick="IntendedMachines.request('discard','${esc(m.id)}')">discard</button></span>`);
     let html = it.state === "proposed" ? `<div class="im-status"><span>${byWhom(m)}${when}</span>${acts(null)}</div>`
-      : `<div class="im-status im-status-declared"><span>${byWhom(m)}${when}</span></div>`;
+      : `<div class="im-status im-status-declared${standing ? " im-status-standing" : ""}"><span>${byWhom(m)}${when}</span>${standing ? undo() : ""}</div>`;
     if (asked && asked.control === "switch_kind") html += `<div class="im-status im-pending-ask">${waitText()}</div>`;
     for (const pc of it.pending || []) {
       const what = [...Object.keys(pc.set || {}).map((k) => `set ${words(k)}`), ...Object.entries(pc.add || {}).map(([k, v]) => `add ${v.join(", ")} to ${words(k)}`), ...Object.entries(pc.remove || {}).map(([k, v]) => `remove ${v.join(", ")} from ${words(k)}`)].join("; ");

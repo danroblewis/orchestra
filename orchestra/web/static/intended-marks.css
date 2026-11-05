@@ -27,6 +27,7 @@
 /* a status line, its requests and its controls (observations and requests: the closed list) */
 .im-status { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:6px 0; padding:6px 8px; border-radius:8px; background:#1b1430; border:1px dashed #5b21b6; color:#ddd6fe; font-size:12px }
 .im-status-declared { background:var(--panel); border:1px solid var(--border2); color:var(--text) }
+.im-status-standing { border:1px dashed #b45309 }   /* confirmed by its author under the owner's standing consent, not by the owner */
 .im-pending { background:#2a2208; border-color:#92400e; color:#fde68a }
 .im-acts { display:flex; gap:4px; flex:none } .im-acts .ctl { margin:0 }
 .im-waiting { font-size:11px; color:var(--im-user); white-space:nowrap }

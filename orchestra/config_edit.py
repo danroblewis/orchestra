@@ -27,7 +27,11 @@ Orchestra never commits, and the overlay lives outside the repository, so it is 
 In the overlay an entry is replaced whole by name when merged, so ``add_entry`` there starts from
 the repository's entry of that name, and ``remove_entry`` there writes ``{ name, enabled = false }``
 when the repository has the entry (which takes it out of the merged configuration) and drops the
-overlay's own entry otherwise."""
+overlay's own entry otherwise.
+
+``[intended] settle_own`` (the owner's standing consent, ``config.py``) is never changed here: a
+change that would set, alter or remove it is refused (``STANDING``), so no plugin gives itself the
+consent; the owner writes it by hand in the private overlay."""
 
 from __future__ import annotations
 
@@ -122,6 +126,15 @@ def plugin_problems(raw: dict, plugins: list[tuple[str, PluginCheck]], repo_root
             continue
         out += [f"{name}: {x}" for x in said]
     return out
+
+
+STANDING = ("the change was not made: [intended] settle_own is the owner's standing consent, which only the owner gives or "
+            "takes back, by hand in the private overlay; no plugin changes it")
+
+
+def _standing(raw: dict) -> Any:
+    """The owner's standing consent as a merged configuration holds it (``Config._settle_own``)."""
+    return (raw.get("intended") or {}).get("settle_own") if isinstance(raw.get("intended"), dict) else None
 
 
 def problems(raw: dict, check: Check | None = None) -> list[str]:
@@ -335,6 +348,8 @@ class ConfigEdit:
             new, new_layers = self._merged(*(after if t == target else texts[t] for t in TARGETS))
         except (tomllib.TOMLDecodeError, OverlayError) as e:
             raise ConfigError(f"the change was not made: the result would not read ({e})") from e
+        if _standing(merged) != _standing(new):
+            raise ConfigError(STANDING)
         plugins, warnings = self._plugin_checks()
         warnings = list(warnings)
         root = self.project.repo_root

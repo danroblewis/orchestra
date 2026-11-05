@@ -1559,8 +1559,21 @@ it (rule 7).
   still proposed (recorded as `latest`: added, removed, before); on a confirmed machine or
   attachment, and by any other author, it is a pending change until `confirm` or `discard` names
   it. A proposal or pending change is confirmed or discarded by the owner (a page, or a plugin
-  quoting the owner) or with `provenance.request` (answering the owner's request), never by its
-  author alone. A plugin answers the owner's request (`provenance.request`) only with the op asked
+  quoting the owner) or with `provenance.request` (answering the owner's request), or by its own
+  author under the owner's standing consent, never by its author alone. The standing consent
+  (AGENTS.md rule 9 as amended 2026-11-04, `consent.standing`) is `[intended] settle_own = ["supervisor"]`,
+  the authors it names, read only from the private overlay (ignored in `orchestra.toml`; never
+  `owner`), and `config_edit` refuses any change to it, so no plugin gives it to itself: it is the
+  owner's, written by hand, and taken back the same way. Under it a named author confirms or
+  discards a proposal it made, or a pending change it made, with its `reason` (refused without
+  one); the call's journal line carries `standing_consent` (where the owner gave it: `[intended]
+  settle_own in <overlay>`), and the confirmation is the author's: `confirmed: {by: <author>,
+  standing_consent, reason, change}`, never `by: owner`, so the element stays the author's. It
+  never reaches what is the owner's (below), nor a pending change the owner's overrides. The owner
+  discards what was confirmed so at any time (a page's discard request, which is not a 409 for it,
+  or their quoted words): the element is removed, as a discarded proposal is; the pages say
+  "confirmed by the Supervisor under your standing consent", apart from the owner's own
+  confirmations, with the discard beside it. A plugin answers the owner's request (`provenance.request`) only with the op asked
   for: the request must be one the web server noted, unanswered, about the same part and id, with
   the same control and, when it names one, the same change; any call citing a request that is not
   open, whatever its ops, is a 422. A request is answered only by an op that answers it (the
