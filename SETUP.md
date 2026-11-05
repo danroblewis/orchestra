@@ -94,7 +94,7 @@ Open the "log in" link `orchestra web` prints, then the **Agents** page: the Sup
 
 Fill in the values in angle brackets and send it as one message:
 
-> Set up observation only, in this order, and ask me before anything that writes outside this machine.
+> Set up observation only, in this order. Don't ask me; decide and tell me what you did. The one exception: ask before anything that writes outside this machine.
 >
 > 1. **Keep Orchestra's own files out of the repository.** Every setting goes in the private overlay.
 >    Every machine, workflow and resource kind goes in the state directory. This is about Orchestra's
@@ -103,7 +103,8 @@ Fill in the values in angle brackets and send it as one message:
 > 2. **The metrics store**, a Prometheus API, read-only: `<the store's URL>`, bearer token in
 >    `<path to its token file>`. Match only `<a selector, e.g. {__name__=~"queue_.*", env="prod"}>`.
 >    Never a selector that matches everything. Keep the rate at 1 request a second, with a daily cap.
->    Name the stocks with general naming rules, not one by one. Ask me before widening the match.
+>    Name the stocks with general naming rules, not one by one. Widen or narrow the match yourself
+>    as discovery needs, within `<a wider selector you may survey, e.g. {env="prod"}>`.
 > 3. **The tracker** (Jira Data Center), read-only, through the bridges' Jira reader:
 >    `<Jira base URL>`, token in `<path to its token file>`, scope `<your team's JQL, e.g. project = ABC>`.
 >    One Jira machine only. Never write to Jira or Slack.
