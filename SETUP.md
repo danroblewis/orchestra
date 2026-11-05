@@ -76,6 +76,21 @@ something Orchestra needs, and says so (`sandbox_escape = true`, the default). S
 `sandbox_escape = false` if your company requires the sandbox; the Supervisor then stops at a
 blocked command and names the setting to ask IT for.
 
+The agents sign in with what `orchestra run` itself sees: start it from a shell where `claude` works.
+Each agent's session (and each job the Supervisor delegates, which the host starts) keeps Claude
+Code's own sign-in variables, a company gateway's (`ANTHROPIC_BASE_URL`, `ANTHROPIC_CUSTOM_HEADERS`,
+the `ANTHROPIC_*MODEL` variables), and Bedrock's or Vertex's credentials while
+`CLAUDE_CODE_USE_BEDROCK` or `CLAUDE_CODE_USE_VERTEX` is on; any other credential is stripped. If your
+company's LLM service needs another variable, name it (the name only) in the overlay:
+
+```toml
+[agents]
+pass_env = ["MY_GATEWAY_KEY"]   # kept in every agent's session; only you can set this
+```
+
+and restart `orchestra run`. When a session cannot sign in, the Supervisor says which of these
+variables the host has, by name, and what to set.
+
 With Pi instead: `harness = "pi"`, `provider = "anthropic"`, `model = "claude-sonnet-5"` (the id Pi
 lists for Sonnet).
 
