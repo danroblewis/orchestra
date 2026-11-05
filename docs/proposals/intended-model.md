@@ -440,6 +440,12 @@ Why: the scenario has the user clicking (D2 "expect", E1 "confirm"). Stock and f
 change what Orchestra believes, like the rediscover button; a machine's confirm is what a plugin
 starts a machine on, so it goes to the Supervisor (decision D1).
 
+**Amended 2026-11-04** (the owner: "why am I using AI if I need to do this"): rule 9 adds the
+owner's standing consent, `[intended] settle_own` in the private overlay, under which a named
+author settles its own proposals and pending changes, recorded as its own (`confirmed.by` the
+author, `standing_consent`, its reason), never the owner's, and discarded by the owner at any time
+(AGENTS.md rule 9, SPEC's declared layer).
+
 **Not a rule change:** discovery gains one flag, `simulated` on every part fitted from a series
 labelled `simulated="true"`, and the verdict and targets skip such parts (§6.3). Rule 3 is unchanged: the host's
 announcement is its own type, and a request is a person's event whose `data` Orchestra reads as

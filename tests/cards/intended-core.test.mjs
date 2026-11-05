@@ -56,6 +56,21 @@ test("a declared machine's tag says what is heard and who said what", () => {
   for (const it of [{ state: "proposed", heard: true }, { state: "proposed" }, { state: "declared" }]) assert.ok(!/unconfirmed/.test(JSON.stringify(w(it))));
 });
 
+// The owner (2026-11-04): a machine the Supervisor confirmed under the owner's standing consent says
+// so, visibly apart from the owner's own confirmation, and is the owner's to discard.
+test("a machine confirmed under the owner's standing consent says the Supervisor confirmed it", () => {
+  const sup = { author: "supervisor", provenance: { author: "supervisor", source: "supervisor" } };
+  const it = { state: "declared", heard: true, ...sup,
+    confirmed: { by: "supervisor", standing_consent: "[intended] settle_own in /x/orchestra.local.toml", reason: "designed for the queue" } };
+  const w = IntendedCore.machineWords({ id: "triage", intent: it });
+  assert.equal(w.by, "proposed by the Supervisor, confirmed by the Supervisor under your standing consent (discard to undo)");
+  assert.equal(w.standing, true);
+  assert.ok(!/by you/.test(w.by));
+  assert.ok(IntendedCore.byStanding(it));
+  assert.ok(!IntendedCore.byStanding({ ...it, confirmed: { by: "owner", via: "page" } }));
+  assert.ok(!IntendedCore.byStanding({ ...it, confirmed: { by: "supervisor" } }));
+});
+
 test("the confirm control says what confirming does", () => {
   assert.equal(IntendedCore.asker(["supervisor"]).title(IntendedCore.CONFIRMS),
     "asks supervisor to adopt this proposal as a declaration; it changes nothing observed");

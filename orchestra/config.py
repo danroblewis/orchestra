@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .overlay import Layers, OverlayError, merge
+from .overlay import Layers, OverlayError, _under, merge
 
 CONFIG_FILE = "orchestra.toml"
 OVERLAY_FILE = "orchestra.local.toml"      # the private overlay's name in the state directory
@@ -71,6 +71,8 @@ class Config:
     stall_after: float = 900.0              # [discovery] stall_after: the window a stock or flow must stand still in before orchestra.model.stalled
     stall_share: float = 0.1                # [discovery] stall_share: an outflow below this share of its usual rate counts as stopped
     max_instances: int = 50                 # [intended] max_instances: an attachment's instance label with more values lists none
+    settle_own: tuple[str, ...] = ()        # [intended] settle_own: the authors the owner lets settle their own proposals (consent.py)
+    settle_own_from: str | None = None      # where the owner gave that standing consent (the private overlay), or None
     raw: dict[str, Any] = field(default_factory=dict)   # the whole configuration, the overlay merged in
     layers: Layers | None = None       # what the private overlay did (orchestra/overlay.py); None: no overlay
 
@@ -94,6 +96,7 @@ class Config:
         cap = (raw.get("intended", {}) or {}).get("max_instances", 50)
         if not isinstance(cap, int) or isinstance(cap, bool) or cap < 1:
             raise ConfigError(f"[intended] max_instances must be a whole number, at least 1, not {cap!r}")
+        settle_own, settle_own_from = _settle_own(raw, layers)
         share = disc.get("stall_share", 0.1)
         if not isinstance(share, int | float) or isinstance(share, bool) or not 0 <= share < 1:
             raise ConfigError(f"[discovery] stall_share must be a number from 0 up to (not including) 1, not {share!r}")
@@ -115,9 +118,30 @@ class Config:
             stall_after=parse_duration(disc.get("stall_after"), 900.0),
             stall_share=float(share),
             max_instances=cap,
+            settle_own=settle_own,
+            settle_own_from=settle_own_from,
             raw=raw,
             layers=layers,
         )
+
+
+def _settle_own(raw: dict[str, Any], layers: Layers | None) -> tuple[tuple[str, ...], str | None]:
+    """``[intended] settle_own``: the owner's standing consent that the named authors (a plugin's
+    source, as ``"supervisor"``) settle their own proposals and pending changes in the declared
+    layer (``sd/intended/consent.py``, AGENTS.md rule 9 as amended 2026-11-04). It is the owner's,
+    so it is read only from the private overlay (the owner's file); in ``orchestra.toml``, which
+    anyone with the repository may commit, it is ignored, and ``config_edit`` refuses to change it,
+    so no plugin gives it to itself."""
+    names = (raw.get("intended", {}) or {}).get("settle_own")
+    if names is None:
+        return (), None
+    if not isinstance(names, list) or not all(isinstance(n, str) and n.strip() for n in names):
+        raise ConfigError(f"[intended] settle_own is a list of authors, as [\"supervisor\"], not {names!r}")
+    if "owner" in names:
+        raise ConfigError("[intended] settle_own names the authors other than the owner; the owner settles anything already")
+    if layers is None or not _under("intended.settle_own", layers.set) or not names:
+        return (), None
+    return tuple(dict.fromkeys(n.strip() for n in names)), f"[intended] settle_own in {layers.path}"
 
 
 STARTER_TOML = """# Orchestra: the event bus, the metrics store and the system dynamics model for this repository.

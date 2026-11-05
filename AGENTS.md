@@ -9,7 +9,9 @@ These replaced the old task system's invariants on 2026-10-25, when the ticket
 tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
 Rules 2, 3, 4, 5, 6, 7 and 9 were amended on 2026-11-01 for the intended model
 (`docs/proposals/intended-model.md` §8). Rule 8 was amended on 2026-11-03: the
-external stores are part of the core, as its adaptors (the owner). Rules 2 and
+external stores are part of the core, as its adaptors (the owner). Rule 9 was amended on
+2026-11-04: the owner's standing consent (`[intended] settle_own`) lets a named author settle its
+own proposals (the owner: "why am I using AI if I need to do this"). Rules 2 and
 9 were amended on 2026-11-04: the owner hides a machine (`ignore` on a
 machine), and a machine that only announced itself is folded away, both
 display only (the owner, of people a relay announced who never acted: "is
@@ -179,7 +181,11 @@ things").
    alters no observed event, the machine is still observed, and discovery and
    `sd/attribute.py` never read it. A machine's `confirm`, `discard` and kind switch
    are requests: published as `orchestra.intent.requested` from `owner`,
-   changing nothing until the Supervisor acts. Any human path that changes the
+   changing nothing until the Supervisor acts. A standing consent the owner writes by hand in the
+   private overlay (`[intended] settle_own`, which no plugin may change) lets the authors it names
+   confirm or discard their own proposals and pending changes: each recorded as that author's
+   (`confirmed.by` the author, with `standing_consent` and its reason), never as the owner's, never
+   reaching what the owner declared or confirmed, and discarded by the owner at any time. Any human path that changes the
    system belongs to a plugin (the Supervisor in `~/orchestra-agents`; the
    task plugin's operator controls, `docs/roadmap/decisions.md` D1), never to
    this repository.

@@ -61,8 +61,15 @@ tools_via = "bash"          # tools from its shell; no MCP server
 serves = []                 # the Supervisor only, for now
 review_usd_per_day = 1.0    # what its own initiative (reviews, notices) may spend a day
 chat_usd_per_day = 5.0      # what your chat turns may spend a day
+
+[intended]
+settle_own = ["supervisor"] # the Supervisor confirms what it designs; leave this out to confirm each yourself
 EOF
 ```
+
+`settle_own` is your standing consent: the Supervisor confirms its own machine designs and
+proposals, each shown as "confirmed by the Supervisor" with its reason, and you can discard any of
+them on the Machines page at any time (only you can set it, here in the overlay).
 
 The Supervisor may rerun a command outside Claude Code's sandbox when the sandbox blocks
 something Orchestra needs, and says so (`sandbox_escape = true`, the default). Set

@@ -15,7 +15,9 @@ call ``via: page`` is one control of rule 9's closed list (``controls.page_contr
 citing ``provenance.request`` must cite one of the owner's open requests (``requests.open_requests``,
 a 422 otherwise); the ops are given them, so one that answers it is checked against what the owner
 asked (``consent.py``), and the requests an op answered are written on the journal line
-(``answered``): only those are answered, not every call that cites one.
+(``answered``): only those are answered, not every call that cites one. The ops are given the
+owner's standing consent (``standing``, ``consent.standing``); a call that settled anything under
+it has ``standing_consent`` (where the owner gave it) on its journal line's provenance.
 ``dN`` and ``vN`` are separate numberings: neither makes the other's versions (rule 4 as
 amended). Only the host and the web server write here (rule 5 as amended); everything derived
 (present, heard, recording, met, …) is computed on read and never stored.
@@ -58,6 +60,19 @@ class IntendedStore:
     @property
     def hold(self) -> int | None:
         return self.project.config.announce_hold if self.project is not None else None
+
+    @property
+    def standing(self) -> dict | None:
+        """The owner's standing consent (``[intended] settle_own``, read from the private overlay
+        only, ``config.py``): ``{"authors", "from"}``, or None without it or without a project. Read
+        again when the configuration changed (``fresh_config``): the owner gives or takes it back by
+        hand while the host runs."""
+        from ...config import fresh_config
+        if self.project is not None:
+            fresh_config(self.project)
+        cfg = getattr(self.project, "config", None)
+        authors = tuple(getattr(cfg, "settle_own", ()) or ())
+        return {"authors": authors, "from": getattr(cfg, "settle_own_from", None)} if authors else None
 
     def _numbers(self) -> list[int]:
         try:
@@ -146,6 +161,8 @@ class IntendedStore:
             if prov.get("request") and prov["request"] not in asked:
                 raise IntentError(f"provenance.request {prov['request']} is not one of the owner's unanswered requests")
             answered: set[str] = set()
+            used: set[str] = set()
+            standing = self.standing
             prov["at"] = time.time()
             layer = copy.deepcopy(cur["layer"])
             seq = (self.current_version() or 0) + 1
@@ -154,7 +171,7 @@ class IntendedStore:
                 cid = f"c{seq}.{i}"
                 try:
                     part, eid = apply_op(layer, op, {"provenance": prov, "change": cid, "requests": asked, "answered": answered,
-                                                     "instruments": instruments})
+                                                     "instruments": instruments, "standing": standing, "standing_used": used})
                 except IntentError as e:
                     raise IntentError(str(e), index=i, status=e.status) from None
                 changes.append({"op": op.get("op"), "part": part, "id": eid, "change": cid})
@@ -164,7 +181,8 @@ class IntendedStore:
             tmp.write_text(json.dumps({"version": seq, "at": prov["at"], "layer": layer}) + "\n", encoding="utf-8")
             tmp.replace(p)
             stamped = [{**op, "change": c["change"]} for op, c in zip(ops, changes)]
-            lines.append(self.dir / "journal.jsonl", {"seq": seq, "at": prov["at"], "provenance": prov, "ops": stamped,
+            said = {**prov, "standing_consent": min(used)} if used else prov
+            lines.append(self.dir / "journal.jsonl", {"seq": seq, "at": prov["at"], "provenance": said, "ops": stamped,
                                                       "changes": changes, **({"answered": sorted(answered)} if answered else {})})
         return {"version": seq, "changes": changes}
 

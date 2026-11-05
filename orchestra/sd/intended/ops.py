@@ -7,7 +7,9 @@ What the owner asks for (``author: owner``) is declared at once, a re-declaratio
 stock, effect or flow included (and of a declared flow: a revision); what another author proposes
 enters ``proposed`` (§3). A proposal or a pending change is confirmed or discarded by the owner,
 or by the plugin answering the owner's request to do just that (``provenance.request``, §6.2,
-checked in ``consent.py``), never by its author alone; a confirmation the owner gave, directly or
+checked in ``consent.py``), or by its author under the owner's standing consent (``[intended]
+settle_own``, ``consent.standing``: recorded ``confirmed.by`` the author with ``standing_consent``
+and its reason, and discarded by the owner at any time), never by its author alone; a confirmation the owner gave, directly or
 by request, makes the element the owner's (``confirmed.by``). What is the owner's (an element,
 mark, target or described event type: ``consent.owners``) is retracted, unmarked, overwritten or
 re-targeted only by the owner, or in answer to the owner's request: another author's re-mark of
@@ -26,7 +28,7 @@ import re
 
 from . import machine_ops
 from .checks import IntentError, make_slug, no_derived, only, slug, strings, target, text
-from .consent import consents, guard_owners, may_settle, owner_asks, owners
+from .consent import by_standing, consents, guard_owners, may_settle, owner_asks, owners
 from .revise import revise, settle_pending
 from .subsystem_ops import declare_subsystem
 
@@ -226,7 +228,11 @@ def confirm(layer: dict, op: dict, ctx: dict, accept: bool) -> tuple[str, str]:
     only(op, ("part", "id", "change"), op["op"])
     part, eid = op.get("part"), op.get("id")
     el = element(layer, part, eid)
-    may_settle(ctx, part, eid, op["op"], op.get("change") or None)
+    if not accept and not op.get("change") and el.get("state") != "proposed" and by_standing(el) \
+            and consents(ctx, part, eid, "discard"):
+        _remove(layer, part, eid)                 # the owner discards what its author confirmed under their standing consent
+        return part, eid
+    where = may_settle(ctx, part, eid, op["op"], op.get("change") or None, el)
     if op.get("change"):
         settle_pending(el, op["change"], accept, ctx, part)
         if accept and part == "machine":
@@ -235,17 +241,21 @@ def confirm(layer: dict, op: dict, ctx: dict, accept: bool) -> tuple[str, str]:
     if el.get("state") != "proposed":
         raise IntentError(f"{part} {eid} is {el.get('state')}, not proposed" + ("" if accept else ": retract it"))
     if accept:
-        el.update(state="declared", guessed=[], confirmed=_confirmed_by(ctx))
+        el.update(state="declared", guessed=[], confirmed=_confirmed_by(ctx, where))
     else:
         _remove(layer, part, eid)
     return part, eid
 
 
-def _confirmed_by(ctx: dict) -> dict:
-    """Who confirmed: the owner (asking, or by the request the call answers), else the author. The
+def _confirmed_by(ctx: dict, standing: str | None = None) -> dict:
+    """Who confirmed: the owner (asking, or by the request the call answers), else the author, who
+    confirms only under the owner's standing consent (``standing``: where the owner gave it, kept
+    with the author's reason, so the pages say "confirmed by the Supervisor", never "by you"). The
     owner's confirmation relayed by a plugin or the endpoint keeps who relayed it (``via``,
     ``source``), so the pages say "owner (quoted), per <source>", and "you" only for a page control."""
     prov, cid = ctx["provenance"], ctx["change"]
+    if standing:
+        return {"by": prov.get("author"), "standing_consent": standing, "reason": prov.get("reason"), "change": cid}
     if owner_asks(prov):
         relayed = {k: prov[k] for k in ("via", "source") if prov.get(k)} if prov.get("via") != "page" else {}
         return {"by": "owner", **relayed, "change": cid}
