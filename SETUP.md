@@ -36,7 +36,10 @@ pull requests). Leave it unset while you only observe.
 
 Orchestra works on a git repository: your own, or an empty one made for it. Either way, keep
 Orchestra's files out of the repository: `--clean` writes nothing in it, and the private overlay in
-Orchestra's state directory holds the whole configuration.
+Orchestra's state directory holds the whole configuration. This is about Orchestra's own files only.
+Workers that change your project's code later do it in their own worktrees, in the state directory,
+on their own branches (`workflows/<item>-<hash>`); your checkout is never touched, and nothing is
+pushed unless you allow it.
 
 ```bash
 cd <your repository>        # or: mkdir ~/my-orchestra && cd ~/my-orchestra && git init -q
@@ -93,8 +96,10 @@ Fill in the values in angle brackets and send it as one message:
 
 > Set up observation only, in this order, and ask me before anything that writes outside this machine.
 >
-> 1. **The repository must stay clean.** Every setting goes in the private overlay. Every machine,
->    workflow and resource kind goes in the state directory. Write nothing in the repository.
+> 1. **Keep Orchestra's own files out of the repository.** Every setting goes in the private overlay.
+>    Every machine, workflow and resource kind goes in the state directory. This is about Orchestra's
+>    files only: code changes to the project come later, from workers in their own worktrees and
+>    branches.
 > 2. **The metrics store**, a Prometheus API, read-only: `<the store's URL>`, bearer token in
 >    `<path to its token file>`. Match only `<a selector, e.g. {__name__=~"queue_.*", env="prod"}>`.
 >    Never a selector that matches everything. Keep the rate at 1 request a second, with a daily cap.
