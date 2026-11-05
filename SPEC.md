@@ -145,6 +145,16 @@ counted its traffic; a count no machine is attributed to is **unattributed**, an
 Counted traffic is never turned into events: no envelope is made from a count, so the bus's volume
 is unchanged and replay never lies (`docs/proposals/event-sources.md` §1).
 
+**Many people.** A bridge relays each act on a system it reads as the person who did it,
+`person.<system>.<account>`, and announces each one (kind `person`, with their display name): at
+work, hundreds of machines from one system. Each is a machine like any other. Orchestra tells them
+apart by the `source` alone (`orchestra/people.py`): the people relayed from one system, when there
+are at least eight of them, are shown as one group per system (and per announced `group` or
+`team`) on the Machines page, the Event Map and the Dashboard (§10), and are tested together by
+discovery's attribution (§4.3, step 5). An owner-mapped `person.<key>` (the bridges' identity map:
+two parts) is never grouped. The grouping is display and a way of testing, never a machine: the
+bus, the model and the declared layer name each person.
+
 **Subscriptions.** Until the bus adapters provide subscriptions with leases
 (`docs/proposals/empty-orchestra.md` §3), a machine reads the bus by offset and announces what it
 listens for in `orchestra.machine.started`. The Machines page draws

@@ -54,6 +54,8 @@ What `config_edit` does not prove is that the thing works. After a change, look:
 - **Processes** (`GET /api/core`, the Core page): each `[[machines]]` entry's pid, exits, and
   whether it was given up on. Its log: `~/.orchestrator/<key>/logs/machines/<name>.log`.
 - **Machines** (`GET /api/machines`): a process is a machine only once it publishes on the bus.
+  With hundreds of people relayed in, `?people=grouped` answers with one row per system's people
+  (`people/<system>`) and `GET /api/machines/people?group=people/<system>` lists them.
 - **The configuration as read** (`GET /api/project`): each key and whether it came from the
   repository or the overlay.
 
