@@ -318,7 +318,7 @@ if ($("nav")) { $("nav").addEventListener("scroll", () => $("nav").classList.tog
   }).catch(() => {});
 })();
 
-// This fills in the project label on every page, and adds the installed plugins' pages
+// This fills in the project label on every page, and adds the installed plugins' pages and links
 // (orchestra/plugins.py) after Orchestra's own.
 fetch("/api/project").then((r) => r.json()).then((p) => { const el = $("proj"); if (el) el.textContent = p.key; }).catch(() => {});
 fetch("/api/plugins").then((r) => r.json()).then((d) => {
@@ -328,6 +328,12 @@ fetch("/api/plugins").then((r) => r.json()).then((d) => {
     const a = document.createElement("a");
     a.href = pg.path; a.textContent = pg.title;
     if (location.pathname === pg.path || location.pathname.startsWith(pg.path + "/")) a.className = "on";
+    nav.insertBefore(a, at);
+  }
+  // a plugin's links: a place on a page already served (/machines#workflows); the page scrolls there
+  for (const ln of d.links || []) {
+    const a = document.createElement("a");
+    a.href = ln.href; a.textContent = ln.title; a.dataset.link = ln.plugin;
     nav.insertBefore(a, at);
   }
   navFit();
