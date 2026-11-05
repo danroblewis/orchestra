@@ -107,7 +107,9 @@ Fill in the values in angle brackets and send it as one message:
 >    as discovery needs, within `<a wider selector you may survey, e.g. {env="prod"}>`.
 > 3. **The tracker** (Jira Data Center), read-only, through the bridges' Jira reader:
 >    `<Jira base URL>`, token in `<path to its token file>`, scope `<your team's JQL, e.g. project = ABC>`.
->    One Jira machine only. Never write to Jira or Slack.
+>    One Jira machine only. Set its `history = "full"` and `since = "7d"`, so the first run fills in
+>    the whole history of every ticket updated in the last 7 days, finished ones included. Never
+>    write to Jira or Slack.
 > 4. **Workflows**: make each ticket in that scope an item, with steps that follow its status
 >    category (to do, in progress, done). Only observe; nothing is offered to any role.
 > 5. **Keep your own wake-ups to trouble signals.** Add no duty that wakes on routine events.
