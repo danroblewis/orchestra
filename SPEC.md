@@ -698,7 +698,14 @@ Conservation (`sd/discover.py`):
    correlated at least 0.9 with totals within a factor of two, each with its confidence; and a
    counter that is itself a machine's event count is that machine's. Every machine that matches
    is a hypothesis, so several may be for one flow, and a machine may be for none. Orchestra's
-   own event types never are. Nothing declares an association (no configuration, no plugin), who
+   own event types never are. **The people relayed from one system** (`person.<system>.<account>`,
+   `orchestra/people.py`), at least eight of them, are tested together: their events of each type
+   summed into one candidate, as a machine's instances are, so 600 people cost two comparisons per
+   flow, not 1,200 (3.6 s to 0.01 s for 22 flows, 2026-11-04). A match names each of those people
+   who published the type, as machines, sharing the group's confidence, the busiest first, with
+   the group in `together`; an owner-mapped `person.<key>` is tested on its own. One person whose
+   events alone match, among many of the system's people publishing the same type, is not told
+   apart from them. Nothing declares an association (no configuration, no plugin), who
    wrote a series (its `instrument` or `machine` label, counted traffic's included) is never read
    for it, and it changes no equation and no stock or flow. A flow with none says **no machine
    associated yet**: a question about the system, not an answer. The limits: a match is a
